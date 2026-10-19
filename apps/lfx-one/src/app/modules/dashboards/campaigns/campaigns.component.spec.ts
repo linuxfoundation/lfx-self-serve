@@ -1002,6 +1002,64 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
+       * The record winning says its METADATA is the newer account — never that the offer's
+       * `approved: true` may be ORed in anyway. A save that replaced the stored brief and could
+       * not re-approve it leaves the row a draft and files `approved: false`; the cached offer
+       * still says `true`, because it was read before that save. Taking the offer's word there
+       * skips the approval and enables Create against a draft campaign-service refuses.
+       */
+      it('re-approves a row its own save left unapproved, despite a cached offer that says approved', async () => {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v3"', created: false, approved: false }));
+        proceed();
+        await fixture.whenStable();
+        expect(state().approved).toBe(false);
+
+        // The offer Planning holds, carrying the approval state from before that save.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v4"', approved: true }));
+        restore(brief, 'restored-a', true, 'W/"v3"');
+        await fixture.whenStable();
+
+        // The record's own `false` is what counts, so the row is approved rather than assumed.
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+        expect(state().approved).toBe(true);
+      });
+
+      /**
+       * A restore hands the Implement tab the OFFER's content while the metadata comes from
+       * whichever account won. Once this session has saved over the row, those two describe
+       * different versions: the screen shows what Planning cached, and the id, validator and
+       * approval all describe what is stored. Create builds from the stored row, so carrying the
+       * approval through would create a campaign from a brief the user never saw.
+       */
+      it('refuses to pair a cached brief with metadata from a version saved over it', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(state().approved).toBe(true);
+
+        // A save REPLACES the content. Everything this session knows now describes that version.
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v3"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+        const afterSave = refreshToken();
+
+        // Planning's re-read has not landed, so Restore still offers the pre-save content.
+        approveBrief.mockClear();
+        restore(brief, 'restored-a', true, 'W/"v1"');
+        await fixture.whenStable();
+
+        // Opened, because it is the only copy of that content anyone has -- but not create-ready,
+        // and with the id kept so the next save still replaces the row instead of creating a second.
+        expect(state().status).toBe('error');
+        expect(state().approved).toBe(false);
+        expect(state().briefId).toBe('restored-a');
+        // No approval either: approving would succeed and flip Create back on against the mismatch.
+        expect(approveBrief).not.toHaveBeenCalled();
+        // The remedy is the re-read, which makes the next Restore offer a pair whose halves agree.
+        expect(refreshToken()).toBe(afterSave + 1);
+      });
+
+      /**
        * The session's record is keyed by `(project, event, delivery, stage)`, but what it describes
        * is one ROW. A different brief id under that same key is a different row, and nothing this
        * session learned about the previous occupant — its validator or its approval state — may be
@@ -1163,9 +1221,15 @@ describe('CampaignsComponent brief persistence', () => {
         expect(refreshToken()).toBe(before + 1);
 
         // The next restore must ask the server again rather than replay what this session knew.
+        //
+        // Stamped with the token the bump above produced, because that is what this offer IS: the
+        // answer to the re-read the conflict triggered, carrying a validator (`v3`) no earlier
+        // lookup could have seen. A first-lookup stamp would describe a cached replay of the row
+        // as it was before the conflict -- which the adopt branch rightly refuses to pair with
+        // this session's metadata, and which is covered by its own test above.
         approveBrief.mockClear();
         approveBrief.mockReturnValue(NEVER);
-        restore(brief, 'restored-a', false, 'W/"v3"');
+        restoreAt(refreshToken(), brief, 'restored-a', false, 'W/"v3"');
         await fixture.whenStable();
 
         expect(approveBrief).toHaveBeenCalledTimes(1);

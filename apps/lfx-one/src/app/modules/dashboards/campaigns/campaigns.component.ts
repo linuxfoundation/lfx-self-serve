@@ -462,8 +462,19 @@ export class CampaignsComponent {
    * "this session does not know" — and callers then fall back to whatever the restore offer
    * carried, i.e. the behavior that existed before this field. Defaulting it to `false` would
    * turn that honest ignorance into a false claim and re-approve rows that are already approved.
+   *
+   * ### Why `contentAt` sits beside `readAt`
+   * `readAt` dates the RECORD; `contentAt` dates the row's CONTENT as this session last knew it.
+   * They are separate because the two move independently: approving a brief bumps its version and
+   * its ETag while leaving the stored bytes exactly as they were, and a replace changes both. A
+   * restore hands the offer's CONTENT to the Implement tab while taking the metadata from
+   * whichever account won, so the two are only safe to combine when no content change happened
+   * between the offer's read and the record — which is precisely `readAt >= contentAt`.
    */
-  private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt: number }>();
+  private knownBriefIds = new Map<
+    string,
+    { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt: number; contentAt: number }
+  >();
 
   /**
    * Bumped on every write to `knownBriefIds`, so a computed can depend on the map.
@@ -2678,7 +2689,12 @@ export class CampaignsComponent {
    * not model would be silently replaced by the narrower shape on the way back out. A restore
    * that quietly rewrites the thing it restored is the one outcome this path must not have.
    */
-  protected onProceedToImplementation(brief: CampaignBriefOutput, alreadyPersisted = false, restoredApproved = false): void {
+  protected onProceedToImplementation(
+    brief: CampaignBriefOutput,
+    alreadyPersisted = false,
+    restoredApproved = false,
+    supersededNotice: string | null = null
+  ): void {
     // BEFORE `briefOutput`, not after. Setting the brief first lets the child's effect run with
     // the stale draft still in place — it seeds from the new brief and then immediately restores
     // the old edits over it, which is the outcome this clear exists to prevent.
@@ -2705,15 +2721,22 @@ export class CampaignsComponent {
       const restoredKey = this.ownershipKey(this.activeFoundationSlug(), brief);
       const restoredOwnership = restoredKey === null ? null : (this.knownBriefIds.get(restoredKey) ?? null);
       this.briefPersistence.set({
-        status: 'off',
+        // `error` only when the caller says the content on screen and the metadata behind it come
+        // from different versions of the row. The id is still carried, exactly as the approval
+        // path's refusals carry it: it is the provenance of what is displayed, and dropping it
+        // would make the next save create a second row for an event that already has one.
+        status: supersededNotice === null ? 'off' : 'error',
         briefId: restoredOwnership?.id ?? null,
-        message: null,
+        message: supersededNotice,
         // The RESTORED brief's own approval, carried through the restore output. campaign-service
         // refuses a create from an unapproved brief, so filing one as create-ready here would
         // enable a button whose request cannot succeed — the same defect the save path guards,
         // one restore apart. Only this branch is reachable with a restored brief, so the default
         // of false never reaches a genuinely-approved one.
-        approved: restoredApproved,
+        //
+        // A superseded restore is never create-ready, whatever the metadata says: the approval
+        // describes the stored row, and the stored row is not what is on screen.
+        approved: supersededNotice === null && restoredApproved,
       });
       // AFTER the branch, not before it. This path sets the tab directly, bypassing `selectTab`,
       // so the capability must be asked for here — but the restored brief's id is written by the
@@ -2734,7 +2757,11 @@ export class CampaignsComponent {
       // Guarded on an id, not merely on `!restoredApproved`. With no known id there is no row to
       // name, and `off` with a null brief id is the "no opinion" state `CampaignBriefPersistenceState`
       // documents — not an unapproved brief.
-      if (!restoredApproved && restoredKey !== null && restoredOwnership !== null) {
+      // Skipped outright on a superseded restore. Approving would succeed — the row is real and
+      // the validator is this session's own — and would then flip `approved` to true and overwrite
+      // the banner, re-enabling Create against the very mismatch the notice exists to report. The
+      // refresh the caller already triggered is the remedy, not an approval.
+      if (supersededNotice === null && !restoredApproved && restoredKey !== null && restoredOwnership !== null) {
         this.approveRestoredBrief(restoredKey, restoredOwnership);
       }
       return;
@@ -3949,16 +3976,42 @@ export class CampaignsComponent {
       // between a save and its re-lookup landing would then disqualify that very lookup.
       const held = this.knownBriefIds.get(key);
       const offerIsNewer = held !== undefined && readAt > held.readAt;
-      const record: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt: number } =
+      const record: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt: number; contentAt: number } =
         held !== undefined && held.id === briefId && !offerIsNewer
           ? held
-          : { id: briefId, etag: validator, readAt, ...(validator === null ? { absence: 'overwrite' as const } : {}) };
+          : { id: briefId, etag: validator, readAt, contentAt: readAt, ...(validator === null ? { absence: 'overwrite' as const } : {}) };
       this.rememberBriefId(key, record);
+      // Keeping the record's metadata means the CONTENT and the metadata now come from two
+      // different reads, and that is only sound while nothing changed the content in between.
+      // When something did — this session saved a new version, or a conflict told it another
+      // writer had — the offer still carries the bytes Planning cached BEFORE that write, while
+      // the ETag, the approval and the id all describe the row as it is now. Handing that pair on
+      // would show one version and enable Create Campaign against another, which upstream builds
+      // from the stored row rather than from anything on screen.
+      //
+      // So the restore still opens — the user asked for this content and it is the only copy
+      // anyone has — but it opens as a refusal: no approval is carried, the auto-approve is
+      // skipped, and the banner says the stored brief moved. The bump re-reads the row, and the
+      // next Restore offers a pair whose two halves agree, at which point `offerIsNewer` makes it
+      // win outright. One round trip, and nothing is created from a brief the user never saw.
+      const supersededNotice =
+        record === held && readAt < held.contentAt
+          ? 'This saved brief changed after the copy shown here was read, so Create Campaign stays disabled. The stored brief has been re-read — return to Planning and choose Restore again to work from the current version.'
+          : null;
+      if (supersededNotice !== null) {
+        this.savedBriefRefreshToken.update((token) => token + 1);
+      }
       // Read off `record`, NOT off `held`: when the id guard above rejected `held` it describes a
-      // different row, and its approval state says nothing about this one. `=== true` rather than a
-      // truthiness test, because absent means this session never learned the row's approval state,
-      // and the offer's own `approved` is then the only answer available.
-      this.onProceedToImplementation(brief, true, approved || record.approved === true);
+      // different row, and its approval state says nothing about this one.
+      //
+      // `??`, not `approved || …`: the winning account's own answer settles it, and an OR cannot
+      // express that. A save that replaced an approved brief and then failed to re-approve it
+      // files `approved: false` and outranks the offer — and `approved || …` would still short-
+      // circuit on the offer's stale `true`, skip `approveRestoredBrief`, and enable Create
+      // against a draft campaign-service refuses: #3801 through yet another door. The offer is
+      // consulted only where the record is SILENT, which is the honest-ignorance case the field's
+      // own docs describe — a conflict promotion deliberately drops `approved` to fall back here.
+      this.onProceedToImplementation(brief, true, record.approved ?? approved, supersededNotice);
       return;
     }
     this.onProceedToImplementation(brief, true, approved);
@@ -4340,12 +4393,24 @@ export class CampaignsComponent {
    * session made. One such restore would then make the very next genuinely-fresh lookup — the one
    * that bump went out to trigger — compare as a cached replay and lose, which is the hole this
    * whole mechanism exists to close.
+   *
+   * `contentAt` defaults to the record's OWN `readAt`, which is the right answer for every site
+   * that either changed the row's content itself (a save; a `stale-brief` or `superseded-after-write`
+   * conflict promotion, where someone's PUT did) or learned content and metadata together from one
+   * read (a restore). A `unverified-validator` promotion shares that default while changing nothing,
+   * and deliberately: the default can only make a stale replay compare as superseded, which costs
+   * one re-read of a row this session has just refused to write and never carries a false approval.
+   *
+   * The one site that must pass it explicitly is an approval, which moves the version and the ETag
+   * without touching the stored bytes: defaulting there would date content forward to a write that
+   * never happened, and refuse the next replay of an offer whose content is in fact still current.
    */
   private rememberBriefId(
     key: string,
-    value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt?: number }
+    value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt?: number; contentAt?: number }
   ): void {
-    this.knownBriefIds.set(key, { ...value, readAt: value.readAt ?? this.savedBriefRefreshToken() });
+    const readAt = value.readAt ?? this.savedBriefRefreshToken();
+    this.knownBriefIds.set(key, { ...value, readAt, contentAt: value.contentAt ?? readAt });
     this.knownBriefIdsVersion.update((v) => v + 1);
   }
 
@@ -5803,7 +5868,14 @@ export class CampaignsComponent {
    * which has just replaced what is on screen. Queueing it behind an unrelated save of a previous
    * brief would delay the only thing standing between the user and a disabled Create button.
    */
-  private approveRestoredBrief(ownershipKey: string, known: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean }): void {
+  private approveRestoredBrief(
+    ownershipKey: string,
+    // `contentAt` is required here rather than optional: the only caller passes a record straight
+    // out of `knownBriefIds`, where every entry carries one, and the write below must CARRY that
+    // date rather than invent a fresh one. An optional field would let a future caller omit it
+    // and silently re-date content an approval never touched.
+    known: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; contentAt: number }
+  ): void {
     // NOT `++`. The caller bumped the generation as its first act -- the restore is the event that
     // invalidates whatever was in flight -- and bumping again here would invalidate the restore's
     // own banner writes, which are the ones this approval is about to replace.
@@ -5891,6 +5963,13 @@ export class CampaignsComponent {
             id: known.id,
             etag: result.etag,
             approved: true,
+            // CARRIED, not re-dated. An approval moves the row's version and ETag and leaves its
+            // content untouched, so the content is still as old as whatever this record already
+            // said. Letting it default would claim this session had just written content, and the
+            // next replay of an offer read before the approval — the ordinary case, since
+            // Planning's cache outlives the request — would be refused as superseded when its
+            // content is in fact the same bytes.
+            contentAt: known.contentAt,
             ...(result.etag === null ? { absence: known.absence ?? ('overwrite' as const) } : {}),
           });
         }
