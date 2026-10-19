@@ -327,6 +327,12 @@ describe('NavbarComponent', () => {
     const healthy = await createNavbar([{ label: 'Dashboard', routerLink: '/foundation/overview' }], [], {}, { lens: 'foundation' });
     expect(healthy.showPartialLookupFailed()).toBe(false);
 
+    // Off the foundation / project lenses the failed lookups don't shape the menu: no row on Home or Org.
+    expect((await createNavbar([{ label: 'Dashboard', routerLink: '/' }], [], {}, { lens: 'me', lookupFailed: true })).showPartialLookupFailed()).toBe(false);
+    expect(
+      (await createNavbar([{ label: 'Overview', routerLink: '/org/overview' }], [], {}, { lens: 'org', lookupFailed: true })).showPartialLookupFailed()
+    ).toBe(false);
+
     // Not announced before the visible panel shows the row.
     const unhydrated = await createNavbar([{ label: 'Dashboard', routerLink: '/foundation/overview' }], [], {}, { lens: 'foundation', lookupFailed: true });
     unhydrated.hydrated.set(false);

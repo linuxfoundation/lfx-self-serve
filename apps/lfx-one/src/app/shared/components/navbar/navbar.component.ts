@@ -185,9 +185,11 @@ export class NavbarComponent extends NavMenuBase {
   /**
    * A lookup that shapes the menu failed, but the menu still has items (e.g. an unconfirmed marketing grant
    * is the only thing missing): the empty-state card never shows, so an inline row offers the retry instead.
+   * Foundation / project lens only, like that card: those lookups don't shape the Home or Org menus.
    */
   protected readonly showPartialLookupFailed: Signal<boolean> = computed(
     () =>
+      this.navLens() !== null &&
       this.showNoAccessState() === null &&
       (this.menuLookupFailed() || this.retryingLookups()) &&
       (this.itemsWithTestIds().length > 0 || this.footerMenuItems().length > 0)
