@@ -44,7 +44,7 @@ describe('NavTooltipDirective', () => {
     vi.useRealTimers();
   });
 
-  it('shows a label-only tooltip after the hover delay and removes it on leave', () => {
+  it('shows a label-only tooltip after the hover delay and removes it after leave', () => {
     first.dispatchEvent(new MouseEvent('mouseenter'));
     expect(tooltips()).toHaveLength(0);
 
@@ -54,6 +54,22 @@ describe('NavTooltipDirective', () => {
     expect(tooltips()[0].getAttribute('aria-hidden')).toBe('true');
 
     first.dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS);
+    expect(tooltips()).toHaveLength(0);
+  });
+
+  it('keeps a label-only tooltip open while the pointer crosses into it (WCAG 1.4.13)', () => {
+    first.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+
+    first.dispatchEvent(new MouseEvent('mouseleave'));
+    tooltips()[0].dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS);
+    expect(tooltips()).toHaveLength(1);
+    expect(tooltips()[0].hasAttribute('tabindex')).toBe(false);
+
+    tooltips()[0].dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS);
     expect(tooltips()).toHaveLength(0);
   });
 

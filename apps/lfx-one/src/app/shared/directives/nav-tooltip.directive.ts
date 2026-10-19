@@ -144,14 +144,20 @@ export class NavTooltipDirective {
   }
 
   /**
-   * Label-only tooltips hide at once; interactive ones wait so the pointer can reach the card.
+   * When the pointer leaves, every tooltip waits briefly so the pointer can cross into it (WCAG 1.4.13
+   * hoverable content); a label-only tooltip losing focus hides at once.
    * `fromPointer`: the pointer left (rather than focus moving away), so a trigger still holding keyboard
    * focus keeps its card.
    */
   private dismiss(fromPointer = false): void {
     this.clearShowTimer();
     if (!this.isInteractive()) {
-      this.hide();
+      if (!fromPointer) {
+        this.hide();
+        return;
+      }
+      this.cancelHide();
+      this.hideTimer = setTimeout(() => this.hide(), NAV_TOOLTIP_HIDE_DELAY_MS);
       return;
     }
     this.cancelHide();
@@ -212,6 +218,11 @@ export class NavTooltipDirective {
     } else {
       this.renderer.setAttribute(tooltip, 'aria-hidden', 'true');
       this.renderer.appendChild(tooltip, this.buildTitle(label));
+      // Hoverable, not focusable: the pointer crossing into the label keeps it open (WCAG 1.4.13).
+      this.unlisten.push(
+        this.renderer.listen(tooltip, 'mouseenter', () => this.cancelHide()),
+        this.renderer.listen(tooltip, 'mouseleave', () => this.dismiss(true))
+      );
     }
 
     // Escape closes the card; listening only while it is open keeps idle triggers off the document.

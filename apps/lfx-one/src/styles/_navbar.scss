@@ -1463,6 +1463,8 @@
   &.is-visible {
     opacity: 1;
     transform: translateY(0);
+    // Hoverable once shown (WCAG 1.4.13): the pointer can cross into a label tooltip to read it.
+    pointer-events: auto;
   }
 
   @media (prefers-reduced-motion: reduce) {
