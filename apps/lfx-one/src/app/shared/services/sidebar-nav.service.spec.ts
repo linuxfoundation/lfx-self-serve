@@ -65,7 +65,7 @@ describe('SidebarNavService', () => {
   const marketingOpsEnabled = signal(false);
   const authenticated = signal(false);
   const writerGrantsResolved = signal(true);
-  let refreshEnrichedPersonas = vi.fn((): Observable<unknown> => of({}));
+  let refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -105,7 +105,7 @@ describe('SidebarNavService', () => {
     marketingOpsEnabled.set(false);
     authenticated.set(false);
     writerGrantsResolved.set(true);
-    refreshEnrichedPersonas = vi.fn((): Observable<unknown> => of({}));
+    refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
     TestBed.configureTestingModule({
       providers: [
@@ -144,7 +144,7 @@ describe('SidebarNavService', () => {
             personaLoaded,
             personaLookupFailed,
             // Late-bound so a case can swap in a probe that stays in flight.
-            refreshEnrichedPersonas: () => refreshEnrichedPersonas(),
+            refreshEnrichedPersonas: (force?: boolean, slug?: string) => refreshEnrichedPersonas(force, slug),
           },
         },
         {
@@ -889,6 +889,36 @@ describe('SidebarNavService', () => {
       personaLookupFailed.set(false);
       retry.next({});
       retry.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('flags a failed scoped marketing probe on its own, and retry waits for both lookups before clearing it', () => {
+      const firstScoped = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => (slug ? firstScoped : of({})));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      // The scoped probe fails while the root lookup is fine.
+      firstScoped.next(null);
+      firstScoped.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      const root = new Subject<unknown>();
+      const scoped = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => (slug ? scoped : root));
+      service.retryMenuLookups();
+
+      root.next({});
+      root.complete();
+      expect(service.sidebarItemsPending()).toBe(true);
+      expect(service.menuLookupFailed()).toBe(true);
+
+      scoped.next({ error: null });
+      scoped.complete();
       expect(service.sidebarItemsPending()).toBe(false);
       expect(service.menuLookupFailed()).toBe(false);
     });

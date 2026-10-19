@@ -38,7 +38,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
-import { finalize, map, of, startWith, switchMap } from 'rxjs';
+import { finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
 /**
  * Builds the lens-aware sidebar menu items. Extracted from MainLayoutComponent so both the main
@@ -125,8 +125,8 @@ export class SidebarNavService {
 
   /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
   private readonly foundationAuditorProbePending = signal(false);
-  /** Bumped by `retryMenuLookups()` so the scoped marketing probe re-runs for the same scope. */
-  private readonly lookupRetry = signal(0);
+  /** True when the latest scoped marketing probe failed rather than answered (tracked apart from the root lookup). */
+  private readonly marketingProbeFailed = signal(false);
   /** In flight while a `retryMenuLookups()` persona refresh runs. */
   private readonly retryPending = signal(false);
 
@@ -134,7 +134,9 @@ export class SidebarNavService {
    * True when a lookup that shapes the menu failed instead of answering — an empty menu then means
    * "couldn't check", not "no access". Retry with `retryMenuLookups()`.
    */
-  public readonly menuLookupFailed: Signal<boolean> = computed(() => this.personaService.personaLookupFailed());
+  public readonly menuLookupFailed: Signal<boolean> = computed(
+    () => this.personaService.personaLookupFailed() || (this.marketingScopeSlug() !== '' && this.marketingProbeFailed())
+  );
 
   /**
    * True while `sidebarItems` is empty only because what decides its shape is still loading — the
@@ -444,14 +446,15 @@ export class SidebarNavService {
   });
 
   private readonly marketingPersonaSlug: Signal<string> = toSignal(
-    // `lookupRetry` re-emits the same scope so a failed probe can run again.
-    toObservable(computed(() => ({ slug: this.marketingScopeSlug(), retry: this.lookupRetry() }))).pipe(
-      map(({ slug }) => slug),
+    toObservable(this.marketingScopeSlug).pipe(
       switchMap((slug) => {
         if (!slug) {
           return of('');
         }
-        return this.personaService.refreshEnrichedPersonas(false, slug).pipe(map(() => slug));
+        return this.personaService.refreshEnrichedPersonas(false, slug).pipe(
+          tap((response) => this.marketingProbeFailed.set(!response || !!response.error)),
+          map(() => slug)
+        );
       })
     ),
     { initialValue: '' }
@@ -931,17 +934,20 @@ export class SidebarNavService {
 
   /**
    * Re-runs the lookups that shape the menu after one failed: a forced persona refresh (root grants,
-   * auditor / root-writer) and the scoped marketing probe. The menu stays pending until the refresh
-   * settles, then shows the menu, the no-access state, or the error again.
+   * auditor / root-writer) and the scoped marketing probe. The menu stays pending until both settle,
+   * then shows the menu, the no-access state, or the error again.
    */
   public retryMenuLookups(): void {
     if (this.retryPending()) return;
     this.retryPending.set(true);
-    this.lookupRetry.update((count) => count + 1);
-    this.personaService
-      .refreshEnrichedPersonas(true)
+    const slug = this.marketingScopeSlug();
+    // Both lookups re-run together and the menu stays pending until both settle, so neither can
+    // resolve the menu (or clear the error) while the other is still in flight.
+    forkJoin([this.personaService.refreshEnrichedPersonas(true), slug ? this.personaService.refreshEnrichedPersonas(false, slug) : of(null)])
       .pipe(finalize(() => this.retryPending.set(false)))
-      .subscribe();
+      .subscribe(([, scoped]) => {
+        if (slug) this.marketingProbeFailed.set(!scoped || !!scoped.error);
+      });
   }
 
   private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {
