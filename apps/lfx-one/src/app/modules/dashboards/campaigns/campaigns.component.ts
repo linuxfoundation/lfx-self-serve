@@ -365,11 +365,21 @@ export class CampaignsComponent {
    * uses for an outcome it cannot determine (a 5xx, a timeout) and this map needs a sentence for.
    */
   private readonly approveConflictMessages: Record<NonNullable<CampaignBriefApproveResult['conflict']> | 'unknown', string> = {
-    // Names the one action that helps. The stored row moved since this page read it, so the
-    // content on screen is not what is stored — approving again from the same stale read would be
-    // refused identically, and re-entering the URL is what fetches the version that exists now.
+    // Names BOTH actions, because this refusal silently licenses the second one. The stored row
+    // moved since this page read it, so the content on screen is not what is stored, and
+    // approving again from the same stale read would be refused identically — re-entering the
+    // URL is what fetches the version that exists now.
+    //
+    // But this is also the ONE approve conflict that promotes the session to `absence:
+    // 'overwrite'` (`approveRestoredBrief`'s refusal handler, guarded on this conflict alone), so
+    // the next Proceed from Planning sends `etag_fallback=1` and REPLACES the other editor's
+    // content. Naming only the reload would leave the user authorising that replacement by
+    // clicking a button whose label implied a retry. The save-side `conflictMessages` above state
+    // the same consequence in so many words ("Proceed again to save your version over theirs."),
+    // and the licence granted here is the same one, so this sentence says the same thing: a
+    // permission the user was never told about is not a permission they granted.
     'stale-brief':
-      'This saved brief changed while you were working, so it was not approved. Reload and re-enter the event URL to open the version that is stored now.',
+      'This saved brief changed while you were working, so it was not approved. Reload and re-enter the event URL to open the version that is stored now, or proceed again from Planning to save your version over theirs.',
     // The row is gone, so there is nothing to approve and nothing to reload. Proceeding from the
     // Planning tab writes a new brief, which is the remedy — and the one this message names.
     'brief-not-found': 'This saved brief no longer exists, so it could not be approved. Go back to Planning and proceed again to save a new one.',
@@ -379,8 +389,10 @@ export class CampaignsComponent {
     rejected: 'This saved brief could not be approved, so campaigns cannot be created from it. Go back to Planning and proceed again to save a new one.',
     // Nothing was sent: this page holds no validator for the stored row, so it cannot tell
     // whether what is stored is still what was restored onto the screen. A fresh read is both
-    // the remedy and the only thing that produces a validator, which is why this names the same
-    // action as `stale-brief` without claiming, as that one does, that the row actually moved.
+    // the remedy and the only thing that produces a validator, which is why this names the reload
+    // too — without claiming, as `stale-brief` does, that the row actually moved. And it stops
+    // there: no `absence: 'overwrite'` is granted on this conflict, so there is no second action
+    // to disclose and offering one would promise a licence this refusal never hands out.
     'unverified-validator':
       'This saved brief could not be confirmed as the version on your screen, so it was not approved. Reload and re-enter the event URL to open the version that is stored now.',
     // Deliberately says "could not be confirmed", not "failed": the approval may well have
