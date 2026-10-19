@@ -958,8 +958,7 @@ export interface OrgClaSignHandoffDialogData {
  * After that a signature is being created, and closing would hide the result and allow a
  * second send.
  *
- * `onMailed` is how it tells the opener the POST succeeded, so Close cannot re-enable Identify
- * someone else against the same unsigned preview.
+ * `onMailed` is how it tells the opener the POST succeeded.
  */
 export interface OrgClaSendByEmailDialogData {
   orgUid: string;
@@ -1446,7 +1445,7 @@ export interface OrgClaDesigneeNominationValidation {
 
 export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
 
-/** Dismissing the question closes it with `undefined`, as does an assignment that ends the flow on the overview. */
+/** Dismissing the question closes it with `undefined`, as does an assignment. */
 export type OrgClaManagerQuestionResult = 'no';
 
 export interface OrgClaManagerQuestionDialogData {

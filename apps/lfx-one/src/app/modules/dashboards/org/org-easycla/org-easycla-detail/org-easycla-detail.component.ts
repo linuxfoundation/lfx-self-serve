@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
+  OrgClaAttestationClose,
   OrgClaCoverageChip,
   OrgClaDesigneeRefusal,
   OrgClaDetailTab,
@@ -19,7 +20,6 @@ import type {
   OrgClaSignHandoffDialogData,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
-  OrgClaAttestationClose,
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,

@@ -600,6 +600,7 @@ describe('OrgEasyclaDetailComponent', () => {
             orgUid: SELECTED_ACCOUNT.uid,
             companyName: SELECTED_ACCOUNT.accountName,
             projectSfid: 'a09410000182dD2AAI',
+            claGroupId: GROUP_ID,
           }),
         })
       );
