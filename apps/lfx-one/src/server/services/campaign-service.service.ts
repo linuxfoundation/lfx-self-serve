@@ -31,6 +31,7 @@ import type {
   ApiResponse,
   BriefMetrics,
   CampaignAudience,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBidUpdateParams,
@@ -219,6 +220,16 @@ interface CampaignServiceBrief {
   delivery_type?: string;
   stage?: string;
   status: string;
+  /**
+   * The row's optimistic-concurrency version — and, quoted, the validator itself.
+   *
+   * The `ETag` header and this field are rendered from the SAME `b.Version` in one `briefResult`
+   * literal upstream (`internal/service/brief.go`: `Version: b.Version` beside
+   * `Etag: optStr(briefETag(b.Version))`, where `briefETag` is `"` + the decimal + `"`). The
+   * `etag` attribute is header-mapped, so Goa keeps it OUT of every brief response body — the
+   * version is the body's copy of it. See `readBriefValidator`, which quotes this when the
+   * header does not survive the hop.
+   */
   version: number;
   // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
   // these come back on the find whether or not this phase renders them. Declared for the create
@@ -887,9 +898,12 @@ export class CampaignServiceClient {
     const brief = fromBriefResponse(found.brief);
     // Only the exact `approved` token counts. A brief left in `draft` by a failed approve step is
     // stored but unusable -- `build-audience` and campaign creation both gate on `approved` -- and
-    // restoring it suppresses the save that would otherwise retry. Any other or unreadable value
-    // is treated as NOT approved so the restore path re-approves; claiming approval we cannot see
-    // is the one answer that silently strands the brief.
+    // restoring it suppresses the save that would otherwise retry. So this value is what the
+    // restore path ACTS on: a `false` here is what makes it approve the stored row through
+    // `approveStoredBrief`, writing nothing. Any other or unreadable value is treated as NOT
+    // approved; claiming approval we cannot see is the one answer that silently strands the brief,
+    // because it skips that approval and leaves campaign creation refusing a brief the UI calls
+    // ready.
     const approved = found.brief.status === 'approved';
 
     // Defence in depth, and no longer the thing that keeps the surfaces apart. Since LFXV2-3198's
@@ -951,9 +965,121 @@ export class CampaignServiceClient {
     const brief = fromBriefResponse(response.data);
     const approved = response.data.status === 'approved';
 
+    // `readBriefValidator`, not `readEtag`: the validator this returns is what the caller's next
+    // version-gated write is checked against, and `approveStoredBrief` below refuses outright on
+    // a null one. Recovering it from the body keeps that refusal out of reach whenever upstream
+    // answered at all.
     return brief === null
-      ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readEtag(response), approved }
-      : { status: 'loaded', briefId: response.data.id, brief, etag: readEtag(response), approved };
+      ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readBriefValidator(response), approved }
+      : { status: 'loaded', briefId: response.data.id, brief, etag: readBriefValidator(response), approved };
+  }
+
+  /**
+   * Approve a brief that is ALREADY STORED, writing nothing.
+   *
+   * The sibling of `approveBrief` above, and deliberately a separate method rather than a
+   * parameter on it: that one approves the response of a write it just made and reports a SAVE
+   * (`CampaignBriefPersistResult`, `created` and all), while this one is handed only an id and
+   * reports an approval. Folding them together would mean a result whose `created` field is a
+   * lie on one of the two paths.
+   *
+   * It exists because of the one state nothing else could leave. A stored brief sits in `draft`
+   * whenever the save's own approval failed, and `replaceBriefQuery` resets `status` to `draft`
+   * on every PUT — yet campaign creation and audience building both refuse an unapproved brief.
+   * RESTORING such a brief suppresses the save on purpose (re-saving would PUT
+   * `fromBriefResponse`'s lossy reconstruction over the stored `event_details`, `copy`,
+   * `keywords` and `targeting`), so before this method the only route back to `approved` was the
+   * one route the restore must never take, and Create Campaign stayed disabled forever.
+   *
+   * `knownEtag` is the validator the caller already holds — the one the restore read carried.
+   * `knownEtag` is REQUIRED in substance: when it holds none, this refuses as
+   * `unverified-validator` rather than fetching one itself.
+   *
+   * An earlier revision re-read the row by id and approved with whatever validator that read
+   * returned, reasoning that approval sends no content so a self-read validator can only approve
+   * "exactly what is stored". That reasoning does not survive the restore path it serves. The
+   * restore approves AUTOMATICALLY, one round trip after its own read, and campaign-service
+   * refuses a create from an unapproved brief — so the row this service approves is the row
+   * Create then builds from. A writer who replaced the brief between those two GETs gets their
+   * content approved and built on, while the user looks at the content the restore put on their
+   * screen and is told the approval succeeded. "Exactly what is stored" is the wrong unit: the
+   * question is whether what is stored is what was SHOWN, and a validator the caller did not
+   * bring is precisely the thing that cannot answer it. The same reasoning `replaceBrief` makes
+   * for `unverified-validator`, reached from the same direction.
+   *
+   * This is not the dead end refusing it used to be, because the caller now almost always has
+   * one: `readBriefValidator` recovers the validator from the body's `version` when the `ETag`
+   * header does not survive the hop, so a null here means upstream answered with neither — and
+   * re-reading would have yielded neither too. The remedy the UI names, reloading and re-entering
+   * the event URL, is a fresh read, which is the only thing that can produce a validator at all.
+   */
+  public async approveStoredBrief(req: Request, projectSlug: string, briefId: string, knownEtag: string | null): Promise<CampaignBriefApproveResult> {
+    const basePath = `/projects/${encodePathSegment(projectSlug)}/briefs`;
+    const refused = { enabled: true as const, briefId, etag: null, approved: false };
+
+    // No validator, no approval — see the docblock. Classified rather than indeterminate: this
+    // is a decision, not a lost answer, and `approve-brief` declares `PreconditionRequired` so
+    // an `If-Match`-less approval would be refused upstream in any case.
+    if (knownEtag === null) {
+      logger.warning(req, 'campaign_approve_stored_brief', 'the caller holds no validator for the stored brief; refusing to approve it unverified', {
+        briefId,
+      });
+      return { ...refused, conflict: 'unverified-validator' };
+    }
+
+    try {
+      const approved = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `${basePath}/${encodePathSegment(briefId)}/approve`,
+        'POST',
+        undefined,
+        undefined,
+        { 'If-Match': knownEtag }
+      );
+      // The NEW validator, never the one we approved with. `approve-brief` does
+      // `version = version + 1` and the ETag mirrors the version, so the caller's existing
+      // validator is stale the instant this succeeds — keeping it would have the caller's next
+      // save refused with a 412 by its own approval.
+      return { enabled: true, briefId, etag: readEtag(approved), approved: true };
+    } catch (error) {
+      // The same classification `approveBrief` makes, for the same reasons, mapped onto this
+      // result's own conflicts. The one difference is that nothing was written here, so there is
+      // no `superseded-after-write`: a 412 is simply a stale validator, and a typed 404 is simply
+      // a brief that is gone.
+      //
+      // 408 is excluded from the 4xx arm because `ApiClientService` turns a local `AbortError`
+      // into `MicroserviceError(408, 'TIMEOUT')` — our own deadline, not a refusal, and the
+      // approval may have committed with its reply lost.
+      const staleValidator = error instanceof MicroserviceError && error.statusCode === 412;
+      const briefRemoved = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      const definitelyRejected =
+        error instanceof MicroserviceError &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500 &&
+        error.statusCode !== 412 &&
+        error.statusCode !== 408 &&
+        !briefRemoved;
+
+      logger.warning(req, 'campaign_approve_stored_brief', 'the stored brief could not be approved', {
+        briefId,
+        definitelyRejected,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      if (staleValidator) {
+        return { ...refused, conflict: 'stale-brief' };
+      }
+      if (briefRemoved) {
+        return { ...refused, conflict: 'brief-not-found' };
+      }
+      if (definitelyRejected) {
+        return { ...refused, conflict: 'rejected' };
+      }
+      // Indeterminate: a 5xx, a timeout, a reset. No conflict — the approval may have landed, and
+      // naming a reason the user could act on would be inventing one.
+      return refused;
+    }
   }
 
   /**
@@ -2840,6 +2966,15 @@ export class CampaignServiceClient {
    * `FindBriefResponseBody` has no ETag field). Reading `data.etag` yields `undefined` every
    * time, which would make the second save of any event throw on the guard above rather than
    * issue its PUT.
+   *
+   * `readBriefValidator`, not `readEtag`, for exactly that reason taken one step further: the
+   * body has no `etag`, but it does have the `version` the header is rendered from, so when the
+   * header itself does not survive the hop the validator is still recoverable. Both consumers
+   * are better for it. `loadBrief` hands it to the restore, whose `approveStoredBrief` refuses
+   * outright on a null validator; `saveBrief` hands it to `replaceBrief`, whose
+   * `etag_fallback` arm would otherwise fall back to a SAVE-TIME read — the validator that
+   * always matches and can never 412, which is the last-write-wins hazard `loadBrief`'s own
+   * comment above describes.
    */
   // `deliveryType` and `stage` are part of the LOOKUP KEY upstream, not a filter applied to its
   // result. Omitting them does not widen the search; it addresses the paid brief with no stage,
@@ -2858,7 +2993,7 @@ export class CampaignServiceClient {
         delivery_type: deliveryType,
         stage,
       });
-      return { brief: response.data, etag: readEtag(response) };
+      return { brief: response.data, etag: readBriefValidator(response) };
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return null;
@@ -2967,6 +3102,47 @@ function deepEqual(a: unknown, b: unknown): boolean {
 export function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
+}
+
+/**
+ * The validator for a BRIEF read: the `ETag` header, or the body's `version` quoted when the
+ * header did not reach us.
+ *
+ * The brief body does NOT carry an `etag` field — `design/brief.go` maps that attribute to the
+ * response header (`Header("etag:ETag")`), so Goa omits it from every generated brief response
+ * body (`FindBriefResponseBody` and `GetBriefResponseBody` have no such field). What the body
+ * does carry is `version`, and upstream renders both from the same value in one literal:
+ * `briefResult` sets `Version: b.Version` beside `Etag: optStr(briefETag(b.Version))`, and
+ * `briefETag` is nothing but `"` + `strconv.FormatInt(version, 10)` + `"`. Quoting the version
+ * here therefore reconstructs the header's own string rather than guessing at a second one, and
+ * `parseBriefIfMatch` upstream accepts the quoted form explicitly so it round-trips.
+ *
+ * Why bother: a read that hands its caller a validator means the caller's next version-gated
+ * write is CHECKED. An absent validator is not a weaker check, it is the absence of one, and
+ * the paths that cope with it either approve or overwrite a row nobody proved was still the row
+ * on screen — which is why `approveStoredBrief` now refuses instead of coping, and why
+ * `replaceBrief`'s `etag_fallback` arm is the weakest check in this file. Recovering the
+ * validator here keeps both out of reach for any row upstream actually answered with, which is a
+ * stronger fix than hardening each of them.
+ *
+ * `Number.isSafeInteger` is the guard, not a truthiness test. `version` is an int64 upstream:
+ * one past 2^53 has already lost digits in `JSON.parse` by the time it reaches this line, and a
+ * quoted wrong number is worse than no validator — it is an `If-Match` that cannot match, which
+ * surfaces as a stale-brief conflict the user never caused. Zero is a legitimate value and is
+ * kept: it is what the header would have said.
+ *
+ * READS only. The write paths keep bare `readEtag`: a write's own response is reconciled against
+ * what that write sent, a different question from "which row am I looking at", and one this
+ * change has no evidence about.
+ */
+export function readBriefValidator(response: ApiResponse<CampaignServiceBrief>): string | null {
+  const header = readEtag(response);
+  if (header !== null) {
+    return header;
+  }
+
+  const version = response.data?.version;
+  return Number.isSafeInteger(version) ? `"${version}"` : null;
 }
 
 /**

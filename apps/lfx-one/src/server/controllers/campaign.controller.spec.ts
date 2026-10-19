@@ -28,6 +28,7 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
   saveBrief,
+  approveStoredBrief,
   loadBrief,
   loadBriefById,
   createCampaigns,
@@ -62,6 +63,7 @@ const {
   logger,
 } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
+  approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
   loadBriefById: vi.fn(),
   createCampaigns: vi.fn(),
@@ -105,6 +107,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     ...actual,
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
+      public approveStoredBrief = approveStoredBrief;
       public loadBrief = loadBrief;
       public loadBriefById = loadBriefById;
       public createCampaigns = createCampaigns;
@@ -306,6 +309,135 @@ describe('CampaignController.persistBrief', () => {
 
     // The whole point of the feature is that the user learns the brief is not durable. Answering
     // 200 here would leave them working on a brief they believe is saved.
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+/**
+ * The third verb beside `persistBrief` and `loadBrief`: approving a brief that is already stored.
+ *
+ * What is only decidable at this layer is that the validator arrives as a HEADER and an absent one
+ * is a supported case rather than an error, that the foundation and the brief id are refused
+ * instead of defaulted, and that a dark cutover answers a complete `CampaignBriefApproveResult`
+ * the client can branch on. Everything about the upstream call itself belongs to the service spec.
+ */
+describe('CampaignController.approveBrief', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function buildApproveReq(
+    params: Record<string, unknown> = { briefId: 'brief-1' },
+    query: Record<string, unknown> = { project: 'tlf' },
+    headers: Record<string, string> = {}
+  ): Request {
+    return {
+      params,
+      query,
+      path: '/api/campaigns/brief/brief-1/approve',
+      get: (name: string) => headers[name],
+    } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockReturnValue(true);
+    approveStoredBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: 'W/"2"', approved: true });
+  });
+
+  it('answers a dark cutover with enabled:false and never calls campaign-service', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    // Every field present, and no `conflict`: nothing was refused, the cutover is simply dark,
+    // and the client branches on `enabled` alone.
+    expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, approved: false });
+  });
+
+  it("approves with the caller's If-Match and returns the result unchanged", async () => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, { project: 'tlf' }, { 'If-Match': 'W/"1"' }), res, next);
+
+    expect(approveStoredBrief).toHaveBeenCalledTimes(1);
+    expect(approveStoredBrief.mock.calls[0].slice(1)).toEqual(['tlf', 'brief-1', 'W/"1"']);
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-1', etag: 'W/"2"', approved: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // The controller NORMALISES rather than decides. Absent and blank both become a null
+  // validator and are forwarded, because what to do about a missing one is the service's call:
+  // `approveStoredBrief` answers it with `conflict: 'unverified-validator'` and approves
+  // nothing. Rejecting here instead would turn that classified refusal — which the client has a
+  // message and a recovery path for — into a 400 the client cannot tell apart from a bad
+  // request, and would duplicate a decision that already has exactly one home.
+  it.each([
+    ['no If-Match header at all', {}],
+    ['a blank If-Match header', { 'If-Match': '   ' }],
+  ])('normalises %s to a null validator and forwards it for the service to classify', async (_label, headers) => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, { project: 'tlf' }, headers), res, next);
+
+    expect(approveStoredBrief).toHaveBeenCalledTimes(1);
+    expect(approveStoredBrief.mock.calls[0][3]).toBeNull();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // Same rule as `persistBrief`: a brief lives inside one foundation's project, and guessing
+  // which would approve a row in a foundation the user never chose.
+  it.each([
+    ['no project param at all', {}],
+    ['a blank project param', { project: '   ' }],
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'] }],
+  ])('refuses %s rather than defaulting the foundation', async (_label, query) => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, query), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'project', message: 'no foundation is selected; reload the campaigns page from the sidebar', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it.each([
+    ['a blank brief id', { briefId: '   ' }],
+    ['a missing brief id', {}],
+  ])('refuses %s before spending a round trip', async (_label, params) => {
+    await controller.approveBrief(buildApproveReq(params), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([{ field: 'briefId', message: 'brief id is required', code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+
+  // A conflict is a RESULT, not a failure: the service already classified it, and the component
+  // turns each value into its own sentence. Turning it into an error here would replace that
+  // with a generic failure the user can do nothing with.
+  it('passes a refused approval through as a result the client can explain', async () => {
+    approveStoredBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: null, approved: false, conflict: 'stale-brief' });
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-1', etag: null, approved: false, conflict: 'stale-brief' });
+  });
+
+  it('sends a thrown failure to the error middleware instead of answering 200', async () => {
+    const failure = new Error('campaign-service returned 500');
+    approveStoredBrief.mockRejectedValue(failure);
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(failure);
   });

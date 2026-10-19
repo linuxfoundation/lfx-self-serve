@@ -17,6 +17,7 @@ import type {
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
@@ -1785,6 +1786,79 @@ export class CampaignController {
         briefId: result.briefId,
         created: result.created,
         approved: result.approved,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Approve a brief that is already stored, without rewriting it.
+   *
+   * The missing third verb beside `persistBrief` and `loadBrief`. Until now approval existed only
+   * as the tail of a save, so a stored brief sitting in `draft` — the state every failed approval
+   * and every replace leaves behind — could be restored and read but never made usable, because
+   * campaign creation refuses an unapproved brief and the restore path deliberately does not
+   * re-save. The Restore offer led to a disabled Create Campaign button with no action that could
+   * enable it.
+   *
+   * `POST` with an EMPTY body, which is the honest shape: this sends no content at all, it moves a
+   * status. The brief is named by the path, the foundation by `?project=`, and the validator by
+   * the request's own `If-Match` header — a header rather than a query parameter because that is
+   * what it is, and because `approve-brief` upstream requires one.
+   *
+   * Flag-gated with `persistBrief` and `loadBrief`, on the same flag for the same reason: all
+   * three are the one cutover.
+   */
+  public async approveBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Every field present so the response satisfies `CampaignBriefApproveResult` on both arms —
+      // the client branches on `enabled` alone. No `conflict`: nothing was refused, the cutover
+      // is simply dark.
+      res.json({ enabled: false, briefId: '', etag: null, approved: false } satisfies CampaignBriefApproveResult);
+      return;
+    }
+
+    // Same rule as `persistBrief`: never defaulted. A brief is approved inside one foundation's
+    // project, and guessing which would approve a row in a foundation the user did not choose.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_approve_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const briefId = typeof req.params['briefId'] === 'string' ? req.params['briefId'].trim() : '';
+    if (briefId.length === 0) {
+      next(
+        ServiceValidationError.forField('briefId', 'brief id is required', {
+          operation: 'campaign_approve_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_approve_brief', { briefId, projectSlug });
+
+    try {
+      // The validator the caller already holds, from the read that put this brief on their
+      // screen. Absent is a classified outcome, not an error: `approveStoredBrief` refuses to
+      // approve a brief it cannot verify and returns `conflict: 'unverified-validator'`, which
+      // the response below carries to the client like any other conflict.
+      const ifMatch = req.get('If-Match');
+      const knownEtag = typeof ifMatch === 'string' && ifMatch.trim() !== '' ? ifMatch : null;
+      const result = await this.campaignServiceClient.approveStoredBrief(req, projectSlug, briefId, knownEtag);
+      logger.success(req, 'campaign_approve_brief', startTime, {
+        briefId,
+        projectSlug,
+        approved: result.approved,
+        conflict: result.conflict ?? null,
       });
       res.json(result);
     } catch (error) {
