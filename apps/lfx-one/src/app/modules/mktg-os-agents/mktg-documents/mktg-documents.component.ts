@@ -30,6 +30,9 @@ import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } fro
 // hydration, so SSR output stays stable — same pattern as the marketplace.
 @Component({
   selector: 'lfx-mktg-documents',
+  // Excluding layout gutters: ~620px host at 1024, ~876px at 1280.
+  // The 800px switch leaves headroom for classic scrollbars.
+  host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-documents-width' },
   imports: [DatePipe, NgClass, RouterLink, MessageComponent],
   templateUrl: './mktg-documents.component.html',
 })
@@ -53,10 +56,8 @@ export class MktgDocumentsComponent {
   protected readonly detailLoading = signal(false);
   protected readonly restoringId = signal<string | null>(null);
   protected readonly notice = signal('');
-  private readonly reloads = signal(0);
-  // The project whose list is shown. A read for another project must not leave
-  // this one's documents and badges on screen under the new project's name; a
-  // restore-triggered reload of the same project keeps them visible meanwhile.
+  // The project whose list is shown. Switching projects clears the previous
+  // project's documents and badges while the new project's list loads.
   private listedProject = '';
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
@@ -83,10 +84,10 @@ export class MktgDocumentsComponent {
         }))
       : [];
   });
-  protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions[0] ?? null);
+  protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions.find((revision) => revision.latest) ?? null);
 
   // Requests, as observables of their inputs (toObservable needs the injection context).
-  private readonly listRequest$ = toObservable(computed(() => ({ project: this.projectContext.activeContextUid(), reload: this.reloads() })));
+  private readonly listRequest$ = toObservable(computed(() => ({ project: this.projectContext.activeContextUid() })));
   private readonly detailRequest$ = toObservable(
     computed(() => {
       const living = this.selectedLiving();
@@ -94,7 +95,6 @@ export class MktgDocumentsComponent {
         project: this.projectContext.activeContextUid(),
         agentKey: living?.type.agentKey ?? '',
         documentId: living?.document?.documentId ?? '',
-        latestRevisionId: living?.document?.latestRevisionId ?? '',
       };
     })
   );
@@ -137,13 +137,22 @@ export class MktgDocumentsComponent {
       this.detailRequest$
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
-          tap(() => this.detail.set(null)),
+          tap(() => {
+            this.detail.set(null);
+            this.notice.set('');
+            if (!this.listFailed()) this.errorText.set('');
+          }),
           switchMap((request) => {
             if (!request.project || !request.documentId) {
               return of(null);
             }
             this.detailLoading.set(true);
-            return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(catchError(() => of(null)));
+            return this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
+              catchError((error: HttpErrorResponse) => {
+                this.errorText.set(this.actionErrorText(error));
+                return of(null);
+              })
+            );
           }),
           takeUntilDestroyed()
         )
@@ -158,27 +167,28 @@ export class MktgDocumentsComponent {
   protected onRestore(revision: MktgRevisionSummary): void {
     const detail = this.detail();
     const project = this.projectContext.activeContextUid();
-    if (!detail || !project || this.restoringId()) {
+    if (!detail || detail.type.kind === 'run' || !project || this.restoringId()) {
       return;
     }
 
     this.restoringId.set(revision.id);
     this.notice.set('');
     this.errorText.set('');
-    this.documentStore
-      .restoreRevision(project, detail.type.agentKey, detail.documentId, revision.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (restored) => {
-          this.restoringId.set(null);
-          this.notice.set(`Revision ${revision.number} restored as revision ${restored.revision.number}, now the latest.`);
-          this.reloads.update((count) => count + 1);
-        },
-        error: () => {
-          this.restoringId.set(null);
-          this.errorText.set(`Revision ${revision.number} could not be restored. Nothing was changed; try again.`);
-        },
-      });
+    // Do not cancel an accepted write when the component is destroyed.
+    this.documentStore.restoreRevision(project, detail.type.agentKey, detail.documentId, revision.id).subscribe({
+      next: (restored) => {
+        this.restoringId.set(null);
+        if (this.destroyRef.destroyed || this.projectContext.activeContextUid() !== project) return;
+        this.documents.update((documents) => this.withCurrentRevision(documents, detail, restored.revision));
+        if (!this.sameDocument(project, detail.type.agentKey)) return;
+        this.detail.set(restored);
+        this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
+      },
+      error: (error: HttpErrorResponse) => {
+        this.restoringId.set(null);
+        if (this.sameDocument(project, detail.type.agentKey)) this.errorText.set(this.actionErrorText(error));
+      },
+    });
   }
 
   // === Private initializers ===
@@ -209,7 +219,9 @@ export class MktgDocumentsComponent {
         return {
           type,
           position: kind === 'living' ? index + 1 : null,
-          ...(countsUnknown ? { badge: '', badgeClass: '' } : this.navBadge(type, documents.length, documents[0]?.revisionCount ?? 0)),
+          ...(countsUnknown
+            ? { badge: '', badgeClass: '' }
+            : this.navBadge(type, documents.length, documents[0]?.currentRevisionNumber ?? documents[0]?.revisionCount ?? 0)),
           selected: type.agentKey === selected,
         };
       });
@@ -217,6 +229,39 @@ export class MktgDocumentsComponent {
   }
 
   // === Private helpers ===
+  private withCurrentRevision(
+    documents: MktgDocumentsResponse | null,
+    detail: MktgDocumentDetailResponse,
+    revision: MktgRevisionSummary
+  ): MktgDocumentsResponse | null {
+    if (!documents) return null;
+    return {
+      ...documents,
+      groups: documents.groups.map((group) => {
+        if (group.type.agentKey !== detail.type.agentKey) return group;
+        return {
+          ...group,
+          documents: group.documents.map((document) => {
+            if (document.documentId !== detail.documentId) return document;
+            return { ...document, latestRevisionId: revision.id, currentRevisionNumber: revision.number };
+          }),
+        };
+      }),
+    };
+  }
+
+  private sameDocument(project: string, agentKey: string): boolean {
+    return !this.destroyRef.destroyed && this.projectContext.activeContextUid() === project && this.selectedType().agentKey === agentKey;
+  }
+
+  private actionErrorText(error: HttpErrorResponse): string {
+    if (error.status === 403) return 'You need write access to this project to use its Marketing OS documents.';
+    if (error.status === 404)
+      return error.error?.code === 'MKTG_DOCUMENT_NOT_FOUND' ? 'This document could not be found.' : 'This document has no such revision.';
+    if (error.status === 412) return 'The document changed. Reload before making a revision current.';
+    return 'The document could not be updated or loaded. Reload to check its state, then try again.';
+  }
+
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
     if (type.kind === 'run') {
       if (documentCount === 0) {
