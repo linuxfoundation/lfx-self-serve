@@ -153,11 +153,17 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
   };
 }
 
+/** Rounds participation against a positive electorate, capping incomplete counts at 99% and complete/excess counts at 100%. */
+function computeParticipationPercent(responses: number, invited: number): number {
+  return Math.min(responses < invited ? 99 : 100, Math.round((responses / invited) * 100));
+}
+
 /**
  * Computes participation stats for the results drawer from the results API payload
  * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes them from
  * per-choice tallies, so `abstainedVoters` is a subset of `totalResponses`; `abstainedRate` is their share of all
  * responses cast — the same `num_votes_cast` base upstream uses for per-choice percentages, so the two always agree.
+ * Participation uses the same completion-aware rounding as the table: incomplete counts cap at 99%, complete/excess counts at 100%.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @returns VoteParticipationStats for the participation card and abstain row
  */
@@ -169,7 +175,7 @@ export function computeVoteParticipationStats(results: VoteResultsResponse | nul
   const eligibleVoters = results.num_recipients || 0;
   const totalResponses = results.num_votes_cast || 0;
   const abstainedVoters = results.num_abstained || 0;
-  const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
+  const participationRate = eligibleVoters > 0 ? computeParticipationPercent(totalResponses, eligibleVoters) : 0;
   const abstainedRate = totalResponses > 0 ? Math.round((abstainedVoters / totalResponses) * 100) : 0;
 
   return { eligibleVoters, totalResponses, participationRate, abstainedVoters, abstainedRate };
@@ -185,7 +191,8 @@ function isParticipationCount(value: unknown): value is number {
  * @description The denominator is the invited electorate (`total_voting_request_invitations`), not current group
  * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` in the results drawer.
  * Drafts never show counts; missing counts degrade to UNAVAILABLE/COUNT_ONLY instead of a false zero; a zero electorate
- * never yields a percent. Round to the nearest integer, but reserve 100% for responses at or above the invited total.
+ * never yields a percent. Use the same completion-aware rounding as the results drawer: incomplete counts cap at 99%,
+ * complete/excess counts at 100%.
  * @param vote - Vote list row from the query-service index or per-vote REST
  * @returns VoteRowParticipation for the Responses cell
  */
@@ -223,7 +230,7 @@ export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
     };
   }
 
-  const percent = Math.min(responses < invited ? 99 : 100, Math.round((responses / invited) * 100));
+  const percent = computeParticipationPercent(responses, invited);
   return {
     state: VoteRowParticipationState.PROGRESS,
     responses,

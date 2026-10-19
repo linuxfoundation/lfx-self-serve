@@ -293,6 +293,40 @@ describe('computeVoteParticipationStats', () => {
   it('keeps participationRate as the share of eligible voters (abstentions count as responses)', () => {
     expect(computeVoteParticipationStats(results()).participationRate).toBe(75);
   });
+
+  it.each([
+    [0, 200, 0],
+    [1, 200, 1],
+    [8, 12, 67],
+    [198, 200, 99],
+    [199, 200, 99],
+    [200, 200, 100],
+    [240, 200, 100],
+  ])('matches table participation for %i of %i responses at %i percent', (responses, invited, expectedPercent) => {
+    const stats = computeVoteParticipationStats(results({ num_votes_cast: responses, num_recipients: invited }));
+
+    expect(stats.participationRate).toBe(expectedPercent);
+    expect(stats.totalResponses).toBe(responses);
+    expect(stats.eligibleVoters).toBe(invited);
+
+    for (const status of [PollStatus.ACTIVE, PollStatus.ENDED]) {
+      const vote: Vote = {
+        uid: 'vote-uid',
+        name: 'Board election',
+        end_time: '2025-06-01T00:00:00Z',
+        status,
+        project_uid: 'project-uid',
+        num_response_received: responses,
+        total_voting_request_invitations: invited,
+      };
+
+      expect(computeVoteRowParticipation(vote).percent).toBe(stats.participationRate);
+    }
+  });
+
+  it('keeps a zero-person electorate at zero in the results drawer', () => {
+    expect(computeVoteParticipationStats(results({ num_votes_cast: 0, num_recipients: 0 })).participationRate).toBe(0);
+  });
 });
 
 describe('computeVoteRowParticipation', () => {
