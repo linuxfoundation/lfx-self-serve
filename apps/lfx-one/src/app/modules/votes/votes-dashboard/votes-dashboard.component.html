@@ -85,6 +85,8 @@
         [showFoundationFilter]="showFoundationFilter()"
         [showProjectFilter]="showProjectFilter()"
         [showDraftTab]="!isMeLens()"
+        [showStatusCounts]="isMeLens() || isManagementVotesLens()"
+        [statusCounts]="tabStatusCounts()"
         [(statusTab)]="myVotesStatusTab"
         [quickFilter]="isMeLens() ? myVotesQuickFilter() : null"
         [quickFilterNowMs]="myVotesNowMs()"
