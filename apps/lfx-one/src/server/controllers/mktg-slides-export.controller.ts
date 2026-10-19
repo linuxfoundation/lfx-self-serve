@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_DOCUMENT_ID_REGEX, MKTG_REVISION_ID_REGEX, MKTG_SLIDES_EXPORT_MODES } from '@lfx-one/shared/constants';
+import {
+  MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_DOCUMENT_ID_REGEX,
+  MKTG_REVISION_ID_REGEX,
+  MKTG_SLIDES_EXPORT_MODES,
+  MKTG_SLIDES_EXPORT_SHA256_REGEX,
+} from '@lfx-one/shared/constants';
 import {
   MktgDocumentType,
   MktgSlidesExportAgentKey,
@@ -17,7 +23,7 @@ import { AuthenticationError, AuthorizationError, ServiceValidationError } from 
 import { logger } from '../services/logger.service';
 import { MktgSlidesExportService } from '../services/mktg-slides-export.service';
 import { ProjectService } from '../services/project.service';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveUsername } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
 /**
@@ -52,7 +58,7 @@ export class MktgSlidesExportController {
       next(this.invalidField(req, operation, 'mode', `mode must be one of ${MKTG_SLIDES_EXPORT_MODES.join(', ')}`));
       return;
     }
-    const userId = getEffectiveSub(req);
+    const userId = getEffectiveUsername(req);
     if (!userId) {
       next(new AuthenticationError('Could not identify the requesting user.', { operation, service: 'mktg_slides_export_controller', path: req.path }));
       return;
@@ -98,7 +104,7 @@ export class MktgSlidesExportController {
       next(this.invalidField(req, operation, 'revisionId', 'revisionId is required: the revision the export was started for'));
       return;
     }
-    const userId = getEffectiveSub(req);
+    const userId = getEffectiveUsername(req);
     if (!userId) {
       next(new AuthenticationError('Could not identify the requesting user.', { operation, service: 'mktg_slides_export_controller', path: req.path }));
       return;
@@ -169,7 +175,7 @@ export class MktgSlidesExportController {
     if (raw.revisionId !== undefined && (typeof raw.revisionId !== 'string' || !MKTG_REVISION_ID_REGEX.test(raw.revisionId))) {
       return this.invalidField(req, operation, 'revisionId', 'revisionId is not a revision id');
     }
-    if (raw.contentSha256 !== undefined && (typeof raw.contentSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(raw.contentSha256))) {
+    if (raw.contentSha256 !== undefined && (typeof raw.contentSha256 !== 'string' || !MKTG_SLIDES_EXPORT_SHA256_REGEX.test(raw.contentSha256))) {
       return this.invalidField(req, operation, 'contentSha256', 'contentSha256 must be 64 lowercase hex characters');
     }
     return {

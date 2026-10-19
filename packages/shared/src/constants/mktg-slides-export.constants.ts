@@ -4,12 +4,15 @@
 // Export to Google Slides (slides-export-output/v1): the Guild agent
 // linux-foundation~slides-export copies the LF 2025 Slides template into a
 // Drive folder (or refreshes a deck it made before), applies the kit's brand
-// to its layouts and fills it from an asset as LFX One stores it. Transcribed
-// from marketing-os-agents agents/slides-export (src/form.ts, src/envelope.ts;
-// docs/contracts/slides-export-output.md is the contract of record). The
-// rendered intake's marker lines are load-bearing: the agent parses them back.
+// to its layouts and fills it from an asset as LFX One stores it. Mirrors
+// marketing-os-agents agents/slides-export 1.1.0 (src/form.ts,
+// src/envelope.ts; docs/contracts/slides-export-output.md is the contract of
+// record); a Brand Kit export's chapters need 1.1.0 or later. The rendered
+// intake's marker lines are load-bearing: the agent parses them back.
 
 import type { MktgSlidesExportAgentKey } from '../interfaces/mktg-slides-export.interface';
+import { BRAND_KIT_HEX_REGEX, BRAND_KIT_PROJECT_SLUG_REGEX } from './brand-kit.constants';
+import { MKTG_ARTIFACT_SHA256_REGEX } from './mktg-artifact.constants';
 
 /** The BFF routes of the export. */
 export const MKTG_SLIDES_EXPORT_API_PATH = '/api/mktg-agents/slides-export';
@@ -20,15 +23,19 @@ export const MKTG_SLIDES_EXPORT_GUILD_HANDLE = 'slides-export';
 /** The agent identifier the envelope must carry. */
 export const MKTG_SLIDES_EXPORT_AGENT_IDENTIFIER = 'linux-foundation~slides-export';
 
+/** The contract id the exporter's result envelope carries. */
 export const MKTG_SLIDES_EXPORT_CONTRACT_ID = 'slides-export-output/v1';
 
+/** The envelope's `kind`. */
 export const MKTG_SLIDES_EXPORT_KIND = 'slides-export';
 
+/** How an export lands: a new deck in the folder, or the document's last deck refreshed in place. */
 export const MKTG_SLIDES_EXPORT_MODES = ['create', 'update'] as const;
 
 /** The asset members the exporter reads, in the deck's order. */
 export const MKTG_SLIDES_EXPORT_ASSET_KINDS = ['framework', 'kit', 'boilerplates', 'faq'] as const;
 
+/** The kinds of slide the envelope reports, one per slide filled. */
 export const MKTG_SLIDES_EXPORT_SLIDE_KINDS = ['title', 'statement', 'section', 'bullets', 'text', 'two-columns', 'table', 'closing'] as const;
 
 /** The documents LFX One exports today: the Messaging Framework and the Brand Kit. */
@@ -40,6 +47,15 @@ export const MKTG_SLIDES_EXPORT_AGENT_KEYS = ['foundation-message', 'brand-kit']
  * the LF 2025 template) until a project's own folder is stored.
  */
 export const MKTG_SLIDES_EXPORT_FOLDER_ID = '1rH6qCSXSb_GEQ5-N1-IEosGjy2y8GcoH';
+
+/** A content hash: 64 lowercase hex characters (the envelope's `content_sha256`, a revision's hash). */
+export const MKTG_SLIDES_EXPORT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
+
+/** The envelope's project slug, as the Brand Kit contract shapes it. */
+export const MKTG_SLIDES_EXPORT_PROJECT_SLUG_REGEX = BRAND_KIT_PROJECT_SLUG_REGEX;
+
+/** A colour the envelope reports (`tables_header`), as the Brand Kit stores its colours. */
+export const MKTG_SLIDES_EXPORT_HEX_REGEX = BRAND_KIT_HEX_REGEX;
 
 /** A Drive file id, as the agent's form takes it. */
 export const MKTG_SLIDES_EXPORT_DRIVE_ID_REGEX = /^[A-Za-z0-9_-]{10,}$/;

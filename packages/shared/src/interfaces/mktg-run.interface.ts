@@ -741,8 +741,8 @@ export interface MktgRunQuestionChip {
 
 /**
  * Receipt of an agent's server-side persistence write, returned on a `ready`
- * result by agents whose contract persists the validated document (the Brand
- * Kit's dec-brand-kit-storage-v2 write path today). The run shell keeps its
+ * result by every agent whose contract persists the validated document (the
+ * Brand Kit, the Messaging Framework and the ICP). The run shell keeps its
  * `content_sha256` on the version (an export names the stored revision by
  * it), and a ready result WITHOUT a receipt means the object-store write
  * did not happen — transient by default, and because the keys are
@@ -1172,7 +1172,8 @@ export interface MktgRunQuestionsPending {
  * server version until a page reload, and this is the event that says the
  * shared copy has caught up. It carries the stored run with the receipt's
  * hash on the version it persisted, which is what names that version's
- * stored revision (an export reads it).
+ * stored revision (an export reads it), or null when this browser no longer
+ * holds the run: the shared copy has still caught up.
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }

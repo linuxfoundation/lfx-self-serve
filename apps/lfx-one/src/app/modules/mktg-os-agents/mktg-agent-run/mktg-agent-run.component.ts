@@ -367,7 +367,7 @@ export class MktgAgentRunComponent {
    * to the document's latest revision, which may be another version.
    */
   protected readonly slidesExportTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
-    const agentKey = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey;
+    const agentKey = this.documentsAgentKey;
     const project = this.projectContext.activeContextUid();
     const version = this.currentVersion();
     if (this.phase() !== 'result' || !version?.contentSha256 || !project || !isMktgSlidesExportAgentKey(agentKey)) {

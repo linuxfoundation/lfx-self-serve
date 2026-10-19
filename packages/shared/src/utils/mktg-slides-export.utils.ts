@@ -19,13 +19,16 @@ import {
   MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS,
   MKTG_SLIDES_EXPORT_DRIVE_ID_REGEX,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
+  MKTG_SLIDES_EXPORT_HEX_REGEX,
   MKTG_SLIDES_EXPORT_INTAKE_HEADER,
   MKTG_SLIDES_EXPORT_KEY_PREFIX,
   MKTG_SLIDES_EXPORT_KEY_TIME_DIGITS,
   MKTG_SLIDES_EXPORT_KIND,
   MKTG_SLIDES_EXPORT_LOGO_NOTES,
   MKTG_SLIDES_EXPORT_MODES,
+  MKTG_SLIDES_EXPORT_PROJECT_SLUG_REGEX,
   MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
+  MKTG_SLIDES_EXPORT_SHA256_REGEX,
   MKTG_SLIDES_EXPORT_SLIDE_KINDS,
 } from '../constants/mktg-slides-export.constants';
 import type {
@@ -46,9 +49,6 @@ import type {
 type UnknownRecord = Record<string, unknown>;
 
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const PROJECT_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
-const SHA256 = /^[0-9a-f]{64}$/;
-const HEX_COLOR = /^#[0-9A-F]{6}$/;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -161,7 +161,7 @@ function brandedErrors(value: unknown): string[] {
     }
   }
   const header = value['tables_header'];
-  if (header !== null && !(typeof header === 'string' && HEX_COLOR.test(header))) {
+  if (header !== null && !(typeof header === 'string' && MKTG_SLIDES_EXPORT_HEX_REGEX.test(header))) {
     errors.push('content.branded.tables_header must be #RRGGBB or null');
   }
   return errors;
@@ -233,7 +233,7 @@ export function validateMktgSlidesExportEnvelope(candidate: unknown): MktgSlides
   if (candidate['kind'] !== MKTG_SLIDES_EXPORT_KIND) {
     errors.push(`kind must be "${MKTG_SLIDES_EXPORT_KIND}"`);
   }
-  if (typeof candidate['project'] !== 'string' || !PROJECT_SLUG.test(candidate['project'])) {
+  if (typeof candidate['project'] !== 'string' || !MKTG_SLIDES_EXPORT_PROJECT_SLUG_REGEX.test(candidate['project'])) {
     errors.push('project must be a lowercase kebab-case slug');
   }
   if (!isText(candidate['project_name'])) {
@@ -247,7 +247,7 @@ export function validateMktgSlidesExportEnvelope(candidate: unknown): MktgSlides
     errors.push('slide_count must be an integer >= 1');
   }
   errors.push(...contentErrors(candidate['content']));
-  if (typeof candidate['content_sha256'] !== 'string' || !SHA256.test(candidate['content_sha256'])) {
+  if (typeof candidate['content_sha256'] !== 'string' || !MKTG_SLIDES_EXPORT_SHA256_REGEX.test(candidate['content_sha256'])) {
     errors.push('content_sha256 must be 64 lowercase hex characters');
   }
   if (typeof candidate['generated_at'] !== 'string' || !ISO_DATE_TIME.test(candidate['generated_at'])) {
@@ -333,7 +333,7 @@ export function isMktgSlidesExportRecord(value: unknown): value is MktgSlidesExp
     isText(value['revisionId']) &&
     isCount(value['revisionNumber'], 1) &&
     typeof value['contentSha256'] === 'string' &&
-    SHA256.test(value['contentSha256']) &&
+    MKTG_SLIDES_EXPORT_SHA256_REGEX.test(value['contentSha256']) &&
     (MKTG_SLIDES_EXPORT_MODES as readonly unknown[]).includes(value['mode']) &&
     isMktgSlidesExportDriveId(value['deckId']) &&
     value['link'] === mktgSlidesExportDeckLink(value['deckId']) &&

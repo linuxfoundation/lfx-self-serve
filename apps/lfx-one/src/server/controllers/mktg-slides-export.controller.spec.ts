@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // session token util runs for real.
 const exportMocks = vi.hoisted(() => ({ startExport: vi.fn(), getResult: vi.fn(), getLast: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
-const authMocks = vi.hoisted(() => ({ getEffectiveSub: vi.fn((): string | null => 'auth0|user-1') }));
+const authMocks = vi.hoisted(() => ({ getEffectiveUsername: vi.fn((): string | null => 'user-1') }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
   success: vi.fn(),
@@ -74,7 +74,7 @@ const startBody = (overrides: Record<string, unknown> = {}): Record<string, unkn
 describe('MktgSlidesExportController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    authMocks.getEffectiveSub.mockReturnValue('auth0|user-1');
+    authMocks.getEffectiveUsername.mockReturnValue('user-1');
     projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', name: 'Example Project', writer: true });
     exportMocks.startExport.mockResolvedValue({
       sessionId: 'session-1',

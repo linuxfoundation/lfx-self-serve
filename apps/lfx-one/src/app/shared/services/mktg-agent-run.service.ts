@@ -460,15 +460,17 @@ export class MktgAgentRunService {
    * stream never errors a run that already succeeded: a failed retry poll is
    * just a spent attempt, exactly as on the standalone Brand Kit form, and the
    * budget is shared with it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Its ONE
-   * emission is `{ type: 'persisted' }` when a receipt finally arrives, after
-   * which polling stops. The receipt's hash is written onto the stored
-   * `version` it persisted, and the event carries that run: the hash is what
-   * names the version's stored revision, so an export of it reads exactly
-   * that revision and never the document's latest. That event exists because dependency resolution
-   * prefers the SERVER copy over any browser-stored run: a v2 announced while
-   * the write was still failing would leave consumers attached to the server's
-   * v1 with nothing to tell them it had been superseded. No project scope
-   * means the BFF never persists at all, so there is nothing to retry.
+   * emission is `{ type: 'persisted', run }` when a receipt finally arrives,
+   * after which polling stops. The receipt's hash is written onto the stored
+   * `version` it persisted and `run` is that stored run (null when this
+   * browser no longer holds the run): the hash is what names the version's
+   * stored revision, so an export of it reads exactly that revision and
+   * never the document's latest. The event exists because
+   * dependency resolution prefers the SERVER copy over any browser-stored
+   * run: a v2 announced while the write was still failing would leave
+   * consumers attached to the server's v1 with nothing to tell them it had
+   * been superseded. No project scope means the BFF never persists at all,
+   * so there is nothing to retry.
    */
   private retryPersistence(
     request: MktgGenerateRequest,

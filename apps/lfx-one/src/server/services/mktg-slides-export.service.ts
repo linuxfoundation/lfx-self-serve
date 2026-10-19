@@ -68,12 +68,14 @@ import { ObjectStoreService } from './object-store.service';
  *    browser — the revision the page names, as LFX One stores it: a
  *    framework revision's `{mf, icp, mh, nums}` plus the project's stored
  *    Brand Kit tokens when it has a kit (so the deck takes its colours and
- *    typeface), a kit revision's tokens. The deck goes to the Marketing OS
- *    folder (`folder_id`) or, on an update, refreshes the deck of the
- *    document's last export (`deck_id`, from the stored export record, never
- *    the browser). The form is sent as the one rendered text message the
- *    exporter parses back, with the `@slides-export` mention on a line of
- *    its own so the intake header line stays intact.
+ *    typeface), or a kit revision's whole stored kit with its chapters (so
+ *    the deck lays out the book; slides-export 1.1.0 or later). The deck
+ *    goes to the Marketing OS folder (`folder_id`) or, on an update,
+ *    refreshes the deck of the document's last export (`deck_id`, from the
+ *    stored export record, never the browser). The form is sent as the one
+ *    rendered text message the exporter parses back, with the
+ *    `@slides-export` mention on a line of its own so the intake header line
+ *    stays intact.
  * 2. The logo: the Slides API fetches a public PNG, JPEG or GIF; the kit
  *    stores SVG. This server draws the stored kit's primary logo as a PNG
  *    (never bytes from the browser: what is published is always the kit's
@@ -271,7 +273,10 @@ export class MktgSlidesExportService {
   /**
    * The assets object as the exporter reads it, and the kit whose logo the
    * deck carries: a framework revision's content with the project's stored
-   * kit tokens when there is a kit, or a kit revision's tokens.
+   * kit tokens only when there is a kit (they brand the deck without adding
+   * the kit's pages), or a kit revision's whole stored kit with its chapters,
+   * project name, version, date and website (the full book deck, which needs
+   * slides-export 1.1.0 or later).
    */
   private async exportAssets(
     req: Request,

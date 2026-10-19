@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 // Export to Google Slides: the exporter's form and result envelope
-// (slides-export-output/v1, transcribed from marketing-os-agents
-// agents/slides-export/src/form.ts and src/envelope.ts), the BFF's routes and
-// the export record a deck is kept with, beside the document revision it was
-// made from.
+// (slides-export-output/v1, mirroring marketing-os-agents
+// agents/slides-export 1.1.0, src/form.ts and src/envelope.ts; a Brand Kit
+// export's chapters need 1.1.0 or later), the BFF's routes and the export
+// record a deck is kept with, beside the document revision it was made from.
 
 import {
   MKTG_SLIDES_EXPORT_AGENT_KEYS,
@@ -74,6 +74,7 @@ export interface MktgSlidesExportBranded {
   tables_header: string | null;
 }
 
+/** What the deck holds, as the envelope reports it (the bytes `content_sha256` is computed over). */
 export interface MktgSlidesExportContent {
   assets: MktgSlidesExportAssetKind[];
   slides: MktgSlidesExportSlide[];
