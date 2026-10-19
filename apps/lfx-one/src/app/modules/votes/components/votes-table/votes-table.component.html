@@ -97,9 +97,9 @@
           data-testid="votes-table">
           <ng-template #header>
             <tr>
-              <th class="w-[28%]">{{ voteLabel.singular }} Name</th>
+              <th class="w-[24%]">{{ voteLabel.singular }} Name</th>
               <th class="w-[20%]">Group</th>
-              <th class="w-[12%]">Responses</th>
+              <th class="w-[16%]">Responses</th>
               <th class="w-[18%]">Due</th>
               <th class="w-[8%]">Status</th>
               <th class="w-[14%]"></th>
@@ -125,9 +125,44 @@
               </td>
 
               <td>
-                <span class="text-sm text-gray-700" [attr.data-testid]="'votes-responses-' + vote.uid">
-                  {{ vote.num_response_received }}
-                </span>
+                @if (!showParticipationProgress()) {
+                  <span class="text-sm text-gray-700" [attr.data-testid]="'votes-responses-' + vote.uid">
+                    {{ vote.num_response_received }}
+                  </span>
+                } @else {
+                  <div class="flex flex-col gap-1" [attr.data-testid]="'votes-participation-' + vote.uid">
+                    @if (vote.participation.state === VoteRowParticipationState.PROGRESS) {
+                      <span class="text-sm text-gray-700 tabular-nums whitespace-nowrap" [attr.data-testid]="'votes-participation-label-' + vote.uid">
+                        {{ vote.participation.label }}
+                      </span>
+                      @if (vote.status === PollStatus.ACTIVE) {
+                        <div
+                          class="h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-gray-200"
+                          role="progressbar"
+                          [attr.aria-valuenow]="vote.participation.percent"
+                          aria-valuemin="0"
+                          aria-valuemax="100"
+                          [attr.aria-label]="vote.participation.ariaLabel"
+                          [attr.data-testid]="'votes-participation-bar-' + vote.uid">
+                          <div class="h-full rounded-full bg-blue-500" [style.width.%]="vote.participation.percent"></div>
+                        </div>
+                      }
+                    } @else if (vote.participation.state === VoteRowParticipationState.COUNT_ONLY) {
+                      <span class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                        <span class="text-sm text-gray-700 tabular-nums whitespace-nowrap" [attr.data-testid]="'votes-participation-label-' + vote.uid">
+                          {{ vote.participation.label }}
+                        </span>
+                        <span class="text-xs text-gray-500 whitespace-nowrap" [attr.data-testid]="'votes-participation-secondary-' + vote.uid">
+                          {{ vote.participation.secondaryLabel }}
+                        </span>
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-500" [attr.data-testid]="'votes-participation-label-' + vote.uid">
+                        {{ vote.participation.label }}
+                      </span>
+                    }
+                  </div>
+                }
               </td>
 
               <td>

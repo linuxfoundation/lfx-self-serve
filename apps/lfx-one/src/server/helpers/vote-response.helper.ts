@@ -23,6 +23,8 @@ export interface FetchCurrentUserVoteResponsesOptions {
    * catch and degrade.
    */
   failOnPartial?: boolean;
+  /** Notifies callers that keep usable rows but cannot treat a partial feed as a complete total. */
+  onPartial?: () => void;
 }
 
 /**
@@ -103,7 +105,7 @@ export async function fetchCurrentUserVoteResponses(
         filters_or: filtersOr,
         ...(pageToken && { page_token: pageToken }),
       }),
-    { failOnPartial: options.failOnPartial }
+    { failOnPartial: options.failOnPartial, onPartial: options.onPartial }
   );
 
   logger.debug(req, 'fetch_current_user_vote_responses', 'Fetched vote_response rows', { row_count: rows.length });

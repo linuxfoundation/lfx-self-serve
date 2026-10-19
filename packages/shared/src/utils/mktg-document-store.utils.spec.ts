@@ -30,6 +30,7 @@ describe('mktg-document-store utils', () => {
       'living:brand-kit',
       'living:foundation-message',
       'living:icp',
+      'living:boilerplates',
       'run:aeo-geo',
       'run:linkedin-post',
       'run:member-360',

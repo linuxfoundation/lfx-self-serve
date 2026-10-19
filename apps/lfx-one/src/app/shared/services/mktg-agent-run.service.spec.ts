@@ -5,7 +5,6 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
-  BRAND_KIT_INTAKE,
   FOUNDATION_MESSAGE_INTAKE,
   ICP_INTAKE,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
@@ -14,6 +13,8 @@ import {
   MKTG_RUN_STORAGE_TTL_MS,
 } from '@lfx-one/shared/constants';
 import {
+  MktgAgentIntake,
+  MktgFrameworkAsset,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgRunActivity,
@@ -31,6 +32,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgAgentRunService } from './mktg-agent-run.service';
 
 /**
+ * The generic chat follow-up intake: the ICP's form (a batch preamble, a flat
+ * question list, a persisting result) without its regenerate-via-generate
+ * flag, so the default path — a chat follow-up on the stored session — is
+ * what these cases exercise. No catalog intake takes that path any more.
+ */
+const CHAT_INTAKE: MktgAgentIntake = { ...ICP_INTAKE, regenerateViaGenerate: undefined, attachments: undefined };
+
+/**
  * Locks the run flow to the real BFF contract: the validated generate/result
  * endpoint pair is always POSTed with the owner token in the BODY (never a GET,
  * never a query string), regenerations ride the chat/session contract on the
@@ -45,7 +54,7 @@ import { MktgAgentRunService } from './mktg-agent-run.service';
 describe('MktgAgentRunService', () => {
   const USER_SUB = 'auth0|user-1';
   const STORAGE_KEY = `${MKTG_RUN_STORAGE_KEY_PREFIX}:${USER_SUB}:proj-1:brand-kit`;
-  const ANSWERS: Record<string, string> = Object.fromEntries(BRAND_KIT_INTAKE.fields.map((field) => [field.key, `Answer for ${field.key}`]));
+  const ANSWERS: Record<string, string> = Object.fromEntries(CHAT_INTAKE.fields.map((field) => [field.key, `Answer for ${field.key}`]));
 
   let service: MktgAgentRunService;
   let userSignal: WritableSignal<User | null>;
@@ -60,7 +69,7 @@ describe('MktgAgentRunService', () => {
   const generateRequest = (feedback?: string): MktgGenerateRequest => ({
     agentId: 'brand-kit',
     projectUid: 'proj-1',
-    intake: BRAND_KIT_INTAKE,
+    intake: CHAT_INTAKE,
     answers: ANSWERS,
     feedback,
   });
@@ -84,13 +93,13 @@ describe('MktgAgentRunService', () => {
     chatError = null;
     userSignal = signal<User | null>({ sub: USER_SUB } as User);
     httpPost = vi.fn((url: string) => {
-      if (url === BRAND_KIT_INTAKE.endpoints.generate) {
+      if (url === CHAT_INTAKE.endpoints.generate) {
         return of({ sessionId: 'sess-1', ownerToken: 'token-1' });
       }
       if (url === '/api/mktg-agents/chat') {
         return chatError ? throwError(() => chatError) : of({ success: true });
       }
-      if (url === BRAND_KIT_INTAKE.endpoints.result) {
+      if (url === CHAT_INTAKE.endpoints.result) {
         const next = resultResponses.length > 1 ? resultResponses.shift() : resultResponses[0];
         const response$ = next instanceof HttpErrorResponse ? throwError(() => next) : of(next ?? { status: 'pending' });
         return resultDelayMs > 0 ? timer(resultDelayMs).pipe(concatMap(() => response$)) : response$;
@@ -117,7 +126,7 @@ describe('MktgAgentRunService', () => {
     const events: MktgGenerateProgress[] = [];
     service.generate(generateRequest()).subscribe((event) => events.push(event));
 
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, { answers: ANSWERS });
     expect(events).toEqual([{ type: 'submitted' }]);
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
@@ -135,7 +144,7 @@ describe('MktgAgentRunService', () => {
     // The run's project uid rides the poll too: agents that persist their
     // output partition storage by the SERVER-resolved project and check the
     // caller's writer grant on it before writing.
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.result, { sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-1' });
+    expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.result, { sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-1' });
   });
 
   it('keeps polling through pending results and stores the ready document under the user-scoped key', async () => {
@@ -167,7 +176,7 @@ describe('MktgAgentRunService', () => {
    */
   it('carries the generate response’s README outcome onto the version it produced', async () => {
     httpPost.mockImplementation((url: string) => {
-      if (url === BRAND_KIT_INTAKE.endpoints.generate) {
+      if (url === CHAT_INTAKE.endpoints.generate) {
         return of({ sessionId: 'sess-1', ownerToken: 'token-1', readme: { fetched: false, skipReason: 'not-a-repo-url' } });
       }
       return of<MktgRunResultResponse>({ status: 'ready', documentMarkdown: '# Brand Kit', version: 1 });
@@ -227,7 +236,7 @@ describe('MktgAgentRunService', () => {
 
     // No TTL clock means the token's age is unknowable — never ride that session.
     expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, { answers: ANSWERS });
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     expect(events).toHaveLength(2);
@@ -247,7 +256,7 @@ describe('MktgAgentRunService', () => {
     // prior_version is derived from the STORED run, never passed by the caller.
     expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', {
       agentId: 'brand-kit',
-      message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
+      message: renderMktgIntakeMessage(CHAT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
       sessionId: 'sess-1',
       ownerToken: 'token-1',
     });
@@ -280,7 +289,7 @@ describe('MktgAgentRunService', () => {
     const chatCall = httpPost.mock.calls.find(([url]) => url === '/api/mktg-agents/chat');
     expect(chatCall?.[1]).toEqual({
       agentId: 'brand-kit',
-      message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, undefined, 1),
+      message: renderMktgIntakeMessage(CHAT_INTAKE, ANSWERS, undefined, 1),
       sessionId: 'sess-1',
       ownerToken: 'token-1',
     });
@@ -313,7 +322,7 @@ describe('MktgAgentRunService', () => {
     // user-1's session must never be replayed as user-2: no chat follow-up,
     // a brand-new validated generate instead.
     expect(httpPost).not.toHaveBeenCalledWith('/api/mktg-agents/chat', expect.anything());
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, { answers: ANSWERS });
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     expect(events).toHaveLength(2);
@@ -350,7 +359,7 @@ describe('MktgAgentRunService', () => {
     // generate — the user is never dead-ended on the unusable session.
     expect(error).toBeUndefined();
     expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', expect.objectContaining({ sessionId: 'sess-1', ownerToken: 'token-1' }));
-    expect(httpPost).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, { answers: ANSWERS });
+    expect(httpPost).toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, { answers: ANSWERS });
     expect(events).toEqual([{ type: 'submitted' }]);
 
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
@@ -397,7 +406,7 @@ describe('MktgAgentRunService', () => {
     // The next tick fires while the first poll is still in flight — it must be
     // ignored: no second POST, and no cancellation of the first.
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
-    expect(httpPost.mock.calls.filter(([url]) => url === BRAND_KIT_INTAKE.endpoints.result)).toHaveLength(1);
+    expect(httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result)).toHaveLength(1);
     expect(events).toEqual([{ type: 'submitted' }]);
 
     // The slow first attempt resolves and its document is accepted.
@@ -439,7 +448,7 @@ describe('MktgAgentRunService', () => {
 
       expect(httpPost).toHaveBeenCalledWith('/api/mktg-agents/chat', {
         agentId: 'brand-kit',
-        message: renderMktgIntakeMessage(BRAND_KIT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
+        message: renderMktgIntakeMessage(CHAT_INTAKE, ANSWERS, 'Tighten the taglines.', 1),
         sessionId: 'sess-1',
         ownerToken: 'token-1',
       });
@@ -461,7 +470,7 @@ describe('MktgAgentRunService', () => {
     service.generate(generateRequest()).subscribe({ error: (err) => (error = err) });
 
     expect(error).toBe(chatError);
-    expect(httpPost).not.toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.generate, expect.anything());
+    expect(httpPost).not.toHaveBeenCalledWith(CHAT_INTAKE.endpoints.generate, expect.anything());
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null')).toMatchObject(existingRun);
   });
 
@@ -473,9 +482,8 @@ describe('MktgAgentRunService', () => {
    * browser's only copy, so the project's stored kit — what dependency gating
    * serves every OTHER browser and user — silently does not exist. Because
    * the write is content-addressed and idempotent, extra polls re-run it.
-   * This is the marketplace path (`/mktg-os-agents/brand-kit` → the generic
-   * run shell); the standalone brand-kit-form route already retried, and both
-   * now spend the same budget.
+   * The marketplace run shell (`/mktg-os-agents/brand-kit`) is the only
+   * Brand Kit path, and the only one that retries the persistence receipt.
    */
   describe('persistence-receipt retry', () => {
     const READY_NO_RECEIPT: MktgRunResultResponse = { status: 'ready', documentMarkdown: '# Brand Kit', version: 1 };
@@ -483,7 +491,7 @@ describe('MktgAgentRunService', () => {
       ...READY_NO_RECEIPT,
       persistence: { s3_key: 'brand-kit/proj-1/abc.md', content_sha256: 'abc', project: 'proj-1', version: 1 },
     };
-    const resultCalls = (): unknown[][] => httpPost.mock.calls.filter(([url]) => url === BRAND_KIT_INTAKE.endpoints.result);
+    const resultCalls = (): unknown[][] => httpPost.mock.calls.filter(([url]) => url === CHAT_INTAKE.endpoints.result);
 
     it('keeps polling a receipt-less ready result so the idempotent server write is retried, and stops once the receipt lands', async () => {
       resultResponses = [READY_NO_RECEIPT, READY_WITH_RECEIPT];
@@ -509,7 +517,34 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 5);
       expect(resultCalls()).toHaveLength(2);
       expect(events).toHaveLength(3);
-      expect(events[2]).toEqual({ type: 'persisted' });
+      expect(events[2].type).toBe('persisted');
+    });
+
+    it('writes a late receipt’s hash onto the version it persisted, so an export of it reads that exact revision', async () => {
+      resultResponses = [READY_NO_RECEIPT, READY_WITH_RECEIPT];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      const document = events.find((event) => event.type === 'document');
+      expect(document?.type === 'document' ? document.run.versions.at(-1)?.contentSha256 : 'missing').toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      const persisted = events.find((event) => event.type === 'persisted');
+      expect(persisted?.type === 'persisted' ? persisted.run?.versions.at(-1)?.contentSha256 : undefined).toBe('abc');
+      // The stored run carries it too, so a restored run exports the same revision.
+      expect(service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1)?.contentSha256).toBe('abc');
+    });
+
+    it('keeps the hash of what the server stored with the version, which names the revision an export reads', async () => {
+      resultResponses = [READY_WITH_RECEIPT];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+
+      const document = events.find((event) => event.type === 'document');
+      expect(document?.type === 'document' ? document.run.versions.at(-1)?.contentSha256 : undefined).toBe('abc');
     });
 
     it('bounds the retry — a permanently receipt-less result never polls beyond the shared budget', async () => {
@@ -550,7 +585,7 @@ describe('MktgAgentRunService', () => {
       expect(resultCalls()).toHaveLength(3);
       expect(error).toBeUndefined();
       expect(events).toHaveLength(3);
-      expect(events[2]).toEqual({ type: 'persisted' });
+      expect(events[2].type).toBe('persisted');
     });
 
     it('does not retry a run with no project scope — the BFF never persists without one, so there is nothing to write', async () => {
@@ -576,21 +611,28 @@ describe('MktgAgentRunService', () => {
     });
   });
 
-  describe('fresh-run intakes that research first (Messaging Document)', () => {
+  describe('fresh-run intakes that research first (Messaging Framework)', () => {
     const MF_STORAGE_KEY = `${MKTG_RUN_STORAGE_KEY_PREFIX}:${USER_SUB}:proj-1:foundation-setup`;
     const MF_ANSWERS: Record<string, string> = {
       project_name: 'TestOrbit',
-      github_url: 'https://github.com/aaif',
-      other_links: 'https://blog.example.org/launch',
+      website_url: 'https://testorbit.example.org',
+      links: 'https://blog.example.org/launch',
     };
     const QUESTIONS: MktgRunQuestion[] = [
-      { key: 'audiences', label: 'Audiences', question: 'Who?', why: 'Unclear.', suggestedAnswer: 'Platform teams.', basis: ['https://testorbit.example.org'] },
-      { key: 'pillars', label: 'Pillars', question: 'Which?', why: '', suggestedAnswer: '', basis: [] },
+      {
+        key: 'ranked-goals',
+        label: 'Ranked goals',
+        question: 'Which goals?',
+        why: 'Unclear.',
+        suggestedAnswer: 'Adoption first.',
+        basis: ['https://testorbit.example.org'],
+      },
+      { key: 'words-to-avoid', label: 'Words to avoid', question: 'Which words?', why: '', suggestedAnswer: '', basis: [] },
     ];
     const QUESTIONS_RESULT: MktgRunResultResponse = { status: 'questions', questions: QUESTIONS, questionsId: 'abc12345' };
     const ANSWERS = [
-      { key: 'audiences', text: 'Platform teams.', origin: 'accepted' as const },
-      { key: 'pillars', text: 'Reliability; openness.', origin: 'requester' as const },
+      { key: 'ranked-goals', text: 'Adoption first.', origin: 'accepted' as const },
+      { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' as const },
     ];
     /** Where answers POSTs went. */
     let answersCalls: unknown[][];
@@ -617,7 +659,7 @@ describe('MktgAgentRunService', () => {
 
     beforeEach(() => {
       answersCalls = [];
-      // Same contract-locked mock, retargeted at the Messaging Document
+      // Same contract-locked mock, retargeted at the Messaging Framework
       // endpoints: every submission is a generate POST on a FRESH session;
       // posting to the chat endpoint would be the regression. Answers go to
       // the answers endpoint, on the same session.
@@ -665,6 +707,27 @@ describe('MktgAgentRunService', () => {
       expect(httpPost).toHaveBeenCalledWith(FOUNDATION_MESSAGE_INTAKE.endpoints.generate, { answers: MF_ANSWERS, project: 'proj-1' });
     });
 
+    it('ends the poll on a ready result that carries the framework as an asset — no document at all — and stores the asset with the version', async () => {
+      const asset: MktgFrameworkAsset = {
+        kind: 'messaging-framework',
+        content: { mf: { tagline: 'Release, open.' }, icp: [], mh: {}, nums: [] } as unknown as MktgFrameworkAsset['content'],
+        report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+        checks: { findings: [] },
+        mode: 'draft',
+      };
+      resultResponses = [{ status: 'pending' }, { status: 'ready', asset, version: 1 }];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(mfRequest()).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+
+      const landed = events.find((event) => event.type === 'document');
+      expect(landed).toBeDefined();
+      const stored = JSON.parse(window.localStorage.getItem(MF_STORAGE_KEY) ?? 'null') as MktgStoredAgentRun;
+      expect(stored.versions).toHaveLength(1);
+      expect(stored.versions[0]).toMatchObject({ version: 1, document: '', asset });
+    });
+
     it('stops at the agent’s questions: emits them with the session to continue and completes, storing no version', async () => {
       resultResponses = [{ status: 'pending' }, QUESTIONS_RESULT];
       const events: MktgGenerateProgress[] = [];
@@ -687,6 +750,23 @@ describe('MktgAgentRunService', () => {
       expect(completed).toBe(true);
       expect(window.localStorage.getItem(MF_STORAGE_KEY)).toBeNull();
       // Polling stopped with the questions: nothing more is asked of the result endpoint.
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+      expect(mfResultCalls()).toHaveLength(2);
+    });
+
+    it('stops at the agent’s refusal: emits the reply as the outcome and completes, storing no version', async () => {
+      const reply = 'The Brand Kit request for TestOrbit has no approved messaging framework attached, so this run was not started.';
+      resultResponses = [{ status: 'pending' }, { status: 'refused', reply }];
+      const events: MktgGenerateProgress[] = [];
+      let completed = false;
+      service.generate(mfRequest()).subscribe({ next: (event) => events.push(event), complete: () => (completed = true) });
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+
+      expect(events).toEqual([{ type: 'submitted' }, { type: 'refused', reply }]);
+      expect(completed).toBe(true);
+      expect(window.localStorage.getItem(MF_STORAGE_KEY)).toBeNull();
+      // The session is over: nothing more is asked of the result endpoint.
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
       expect(mfResultCalls()).toHaveLength(2);
     });
@@ -835,7 +915,7 @@ describe('MktgAgentRunService', () => {
 
     it('poll-retries a receipt-less ready result — this intake now persists, so a missing receipt is a failed write', async () => {
       // Was: "this intake persists nothing, so a receipt would never arrive".
-      // The Messaging Document's result endpoint writes through the shared
+      // The Messaging Framework's result endpoint writes through the shared
       // agent-artifact layer, so a ready result WITHOUT a receipt is a failed
       // server-side write — exactly the Brand Kit case, recovered by the same
       // bounded, idempotent retry. Without it the only copy of the document
@@ -867,10 +947,10 @@ describe('MktgAgentRunService', () => {
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 10);
       expect(mfResultCalls()).toHaveLength(2);
       expect(events).toHaveLength(3);
-      expect(events[2]).toEqual({ type: 'persisted' });
+      expect(events[2].type).toBe('persisted');
     });
 
-    it('bounds the Messaging Document retry to the same shared budget', async () => {
+    it('bounds the Messaging Framework retry to the same shared budget', async () => {
       resultResponses = [{ status: 'ready', documentMarkdown: '# v1', version: 1 }];
       service.generate(mfRequest()).subscribe();
 
