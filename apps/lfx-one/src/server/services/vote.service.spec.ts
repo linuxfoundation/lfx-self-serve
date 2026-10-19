@@ -1653,7 +1653,7 @@ describe('VoteService', () => {
       await expect(service.getMyVotes(req)).resolves.toEqual({ votes: [], complete: true });
     });
 
-    it.each([503, 404, null])('keeps successful details but marks skipped detail reads incomplete: %s', async (statusCode) => {
+    it.each([401, 429, 500, 503, null])('keeps successful details but marks skipped detail reads incomplete: %s', async (statusCode) => {
       fetchAllQueryResources.mockResolvedValue([
         { vote_uid: MY_VOTE_UID, username: 'spec-user' },
         { vote_uid: 'unavailable-vote', username: 'spec-user' },
@@ -1661,7 +1661,53 @@ describe('VoteService', () => {
       proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
         if (path === `/votes/${MY_VOTE_UID}`) return Promise.resolve(detailVote);
         if (statusCode === null) return Promise.resolve(null);
-        return Promise.reject(Object.assign(new Error('Detail unavailable'), { statusCode }));
+        return Promise.reject(new MicroserviceError('Detail unavailable', statusCode, 'UPSTREAM_ERROR'));
+      });
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getMyVotes(req);
+
+      expect(result.complete).toBe(false);
+      expect(result.votes).toEqual([expect.objectContaining({ uid: MY_VOTE_UID })]);
+    });
+
+    it.each([
+      { statusCode: 403, includeReadable: true },
+      { statusCode: 404, includeReadable: true },
+      { statusCode: 403, includeReadable: false },
+      { statusCode: 404, includeReadable: false },
+    ])('counts only visible votes after a $statusCode detail response (readable vote: $includeReadable)', async ({ statusCode, includeReadable }) => {
+      const responses = [{ vote_uid: 'invisible-vote', username: 'spec-user' }];
+      if (includeReadable) responses.push({ vote_uid: MY_VOTE_UID, username: 'spec-user' });
+      fetchAllQueryResources.mockResolvedValue(responses);
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === `/votes/${MY_VOTE_UID}`) return Promise.resolve(detailVote);
+        return Promise.reject(new MicroserviceError('Vote not visible', statusCode, 'UPSTREAM_ERROR'));
+      });
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      for (let refresh = 0; refresh < 2; refresh++) {
+        const result = await service.getMyVotes(req);
+
+        expect(result.complete).toBe(true);
+        expect(result.votes.map((vote) => vote.uid)).toEqual(includeReadable ? [MY_VOTE_UID] : []);
+      }
+    });
+
+    it.each([
+      new Error('Network unavailable'),
+      Object.assign(new Error('Unexpected forbidden error'), { statusCode: 403 }),
+      Object.assign(new Error('Unexpected not-found error'), { statusCode: 404 }),
+    ])('keeps counts unavailable for unexpected detail errors even alongside an invisible vote: %s', async (error) => {
+      fetchAllQueryResources.mockResolvedValue([
+        { vote_uid: MY_VOTE_UID, username: 'spec-user' },
+        { vote_uid: 'unavailable-vote', username: 'spec-user' },
+        { vote_uid: 'invisible-vote', username: 'spec-user' },
+      ]);
+      proxyRequest.mockImplementation((_req: Request, _service: string, path: string) => {
+        if (path === `/votes/${MY_VOTE_UID}`) return Promise.resolve(detailVote);
+        if (path === '/votes/invisible-vote') return Promise.reject(new MicroserviceError('Vote not found', 404, 'NOT_FOUND'));
+        return Promise.reject(error);
       });
       getProjectsByIds.mockResolvedValue(new Map());
 

@@ -137,7 +137,9 @@ clients. New clients request `include_status=true` to receive `{ votes, complete
 the personal-newsletter feed's opt-in convention. Only the exact single string `true` opts in.
 Invitation enumeration retains successfully fetched pages when a later page exhausts retries,
 but marks the feed incomplete.
-Failed or empty required vote-detail reads also mark it incomplete while keeping other usable
+Per-vote detail reads that explicitly return upstream 403/404 are skipped as not visible to the
+caller without marking the feed incomplete; exact counts describe the remaining readable votes.
+Other failed or empty required vote-detail reads still mark it incomplete while keeping usable
 votes. A first-page failure still fails the request. Optional project metadata does not prove
 invitation or vote-detail completeness.
 

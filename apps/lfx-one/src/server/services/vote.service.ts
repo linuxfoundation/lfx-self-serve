@@ -588,7 +588,10 @@ export class VoteService {
           };
           return decorated;
         } catch (error) {
-          complete = false;
+          // Stale invitations for deleted or inaccessible votes do not belong to the readable feed.
+          // Only explicit upstream 403/404 responses establish that; other failures still hide exact counts.
+          const notVisible = error instanceof MicroserviceError && (error.statusCode === 403 || error.statusCode === 404);
+          if (!notVisible) complete = false;
           logger.warning(req, 'get_my_votes', 'Failed to fetch vote details, skipping', {
             vote_uid: uid,
             error: error instanceof Error ? error.message : 'Unknown error',
