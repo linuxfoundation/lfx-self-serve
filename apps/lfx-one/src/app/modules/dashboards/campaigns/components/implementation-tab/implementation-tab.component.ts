@@ -789,6 +789,8 @@ export class ImplementationTabComponent implements OnInit {
    * resumes by THIS brief, not whichever one is current (a foundation switch clears the current).
    */
   private readonly redditImageUploadPendingBriefId = signal('');
+  /** The brief a failed upload was for; empty for a pick refused before any upload started. */
+  private readonly redditImageUploadFailedBriefId = signal('');
   /** The readable reason the last upload was refused; empty unless the status is `error`. */
   protected readonly redditImageUploadError = signal('');
   /** The `accept` list for the file picker — the same allowlist the BFF route enforces. */
@@ -2917,7 +2919,9 @@ export class ImplementationTabComponent implements OnInit {
       // A failed upload's reason lives in the upload control, so while that is hidden (a resumed
       // upload that failed after a tab switch) it is shown here, holding Create until the operator
       // removes it: otherwise the campaign would go out without the image they chose, unannounced.
-      if (this.redditImageUploadStatus() === 'error') {
+      // Only for an upload made for the OPEN brief: one for a brief left behind (a foundation
+      // switch with the tab still open) could never have been sent with this one.
+      if (this.redditImageUploadStatus() === 'error' && briefId && this.redditImageUploadFailedBriefId() === briefId) {
         return {
           kind: 'uploadFailed',
           message: `The Reddit image upload did not complete: ${this.redditImageUploadError()} Remove it to create the campaign without the image.`,
@@ -2966,7 +2970,7 @@ export class ImplementationTabComponent implements OnInit {
         this.redditImageUploadPendingBriefId.set('');
         // The brief changed while the upload was in flight: the asset belongs to the old one.
         if ((this.briefPersistence().briefId ?? '') !== briefId) {
-          this.failRedditImageUpload('The brief changed during the upload. Choose the image again.');
+          this.failRedditImageUpload('The brief changed during the upload. Choose the image again.', briefId);
           this.emitDraft();
           return;
         }
@@ -2980,7 +2984,7 @@ export class ImplementationTabComponent implements OnInit {
         this.campaignService.forgetCreativeAssetUpload(upload$);
         this.redditImageUploadPendingName.set('');
         this.redditImageUploadPendingBriefId.set('');
-        this.failRedditImageUpload(this.redditImageUploadErrorMessage(err));
+        this.failRedditImageUpload(this.redditImageUploadErrorMessage(err), briefId);
         this.emitDraft();
       },
     });
@@ -3005,7 +3009,7 @@ export class ImplementationTabComponent implements OnInit {
     }
     const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload(briefId) : null;
     if (!upload$) {
-      this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`);
+      this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
       return;
     }
     this.followRedditImageUpload(upload$, briefId, fileName);
@@ -3028,11 +3032,13 @@ export class ImplementationTabComponent implements OnInit {
     this.redditImageAssetBriefId.set('');
     this.redditImageUploadStatus.set('idle');
     this.redditImageUploadError.set('');
+    this.redditImageUploadFailedBriefId.set('');
   }
 
-  private failRedditImageUpload(message: string): void {
+  private failRedditImageUpload(message: string, briefId = ''): void {
     this.redditImageUploadStatus.set('error');
     this.redditImageUploadError.set(message);
+    this.redditImageUploadFailedBriefId.set(briefId);
   }
 
   /**

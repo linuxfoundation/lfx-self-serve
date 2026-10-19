@@ -7950,6 +7950,23 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(c.canSubmit()).toBe(true);
   });
 
+  it('does not hold Create on another brief for an upload that failed for the one left behind', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f);
+
+    // A foundation switch with the tab open: the brief is cleared and the capabilities reset.
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: '0f8fad5b-d9cb-469f-a165-70867728950e', message: null, approved: true });
+    f.componentRef.setInput('redditAssetUploadEnabled', null);
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('error');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]')).toBeNull();
+  });
+
   it('says the upload was interrupted when there is nothing left to resume', async () => {
     uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
     const first = await mount(true);
