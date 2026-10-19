@@ -88,6 +88,8 @@ export class VotesTableComponent {
   public readonly votes = input.required<Vote[]>();
   public readonly hasPMOAccess = input<boolean>(false);
   public readonly loading = input<boolean>(false);
+  // Partial personal feeds must not present missing rows as confirmed empty results.
+  public readonly resultsComplete = input<boolean>(true);
   public readonly totalRecords = input<number>(0);
   public readonly paginationLoading = input<boolean>(false);
   public readonly rowsPerPage = input<number>(10);
@@ -339,6 +341,9 @@ export class VotesTableComponent {
 
   private initEmptyStateCopy(): Signal<{ title: string; subtitle: string }> {
     return computed(() => {
+      if (!this.resultsComplete()) {
+        return { title: 'Some votes could not be loaded', subtitle: 'Your vote list is incomplete. Retry to check for votes in this view.' };
+      }
       if (!this.hasAdditionalFilters()) {
         switch (this.statusTab()) {
           case PollStatus.ACTIVE:

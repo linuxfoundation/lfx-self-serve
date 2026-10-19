@@ -77,6 +77,7 @@
         [hasPMOAccess]="!isMeLens() && canWrite()"
         [showParticipationProgress]="!isMeLens()"
         [loading]="isMeLens() ? myVotesLoading() || myVotesError() : loading()"
+        [resultsComplete]="!isMeLens() || myVotesComplete()"
         [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
         [paginationLoading]="!isMeLens() && (loading() || (!managementClosingOnly() && !totalCountReady()))"
         [rowsPerPage]="rowsPerPage()"

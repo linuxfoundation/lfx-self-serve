@@ -416,6 +416,58 @@ describe('VotesTableComponent — empty-state copy', () => {
     });
   }
 
+  it.each(['all', PollStatus.ACTIVE, PollStatus.ENDED])('offers Retry instead of definitive empty copy for an incomplete %s feed', async (status) => {
+    fixture.componentRef.setInput('votes', []);
+    fixture.componentRef.setInput('statusTab', status);
+    fixture.componentRef.setInput('resultsComplete', false);
+    const refresh = vi.fn();
+    const reset = vi.fn();
+    table.refresh.subscribe(refresh);
+    table.filtersReset.subscribe(reset);
+    await settle();
+
+    expect(copy()).toEqual(['Some votes could not be loaded', 'Your vote list is incomplete. Retry to check for votes in this view.']);
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
+    const retry = fixture.nativeElement.querySelector('[data-testid="votes-table-empty-state"] button') as HTMLButtonElement;
+    expect(retry.textContent?.trim()).toBe('Retry');
+    retry.click();
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(reset).not.toHaveBeenCalled();
+    expect(table.statusTab()).toBe(status);
+  });
+
+  it.each(['search', 'group', 'quick filter', 'scope'])('prefers incomplete copy over no-match advice with %s', async (kind) => {
+    fixture.componentRef.setInput('resultsComplete', false);
+    await renderEmpty(PollStatus.ACTIVE, false);
+    if (kind === 'search') table.searchForm.controls.search.setValue('absent');
+    if (kind === 'group') table.searchForm.controls.group.setValue('Alpha Group');
+    if (kind === 'quick filter') fixture.componentRef.setInput('quickFilter', 'closing-soon');
+    if (kind === 'scope') fixture.componentRef.setInput('scopeActive', true);
+    await settle();
+    expect(copy()?.[0]).toBe('Some votes could not be loaded');
+  });
+
+  it('keeps usable partial rows and suppresses incomplete copy while loading, then restores confirmed empty copy', async () => {
+    fixture.componentRef.setInput('votes', [vote('active')]);
+    fixture.componentRef.setInput('statusTab', PollStatus.ACTIVE);
+    fixture.componentRef.setInput('resultsComplete', false);
+    await settle();
+    expect(rows()).toEqual(['active']);
+    expect(copy()).toBeNull();
+
+    fixture.componentRef.setInput('votes', []);
+    fixture.componentRef.setInput('loading', true);
+    await settle(false);
+    expect(copy()).toBeNull();
+    fixture.componentRef.setInput('loading', false);
+    await settle(false);
+    expect(copy()?.[0]).toBe('Some votes could not be loaded');
+    fixture.componentRef.setInput('resultsComplete', true);
+    await settle(false);
+    expect(copy()?.[0]).toBe('No active votes');
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-table-empty-state"] button').textContent.trim()).toBe('Reset filters');
+  });
+
   it('keeps invitation copy on unfiltered client All', async () => {
     fixture.componentRef.setInput('votes', []);
     await settle();

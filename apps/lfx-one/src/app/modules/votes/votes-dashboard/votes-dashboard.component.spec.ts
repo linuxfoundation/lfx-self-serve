@@ -781,6 +781,9 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(tabLabels()).toEqual(['All (–)', 'Active (–)', 'Ended (–)']);
     expect(rows()).toEqual(votes.map((vote) => vote.uid));
     expect(element('votes-load-error')).toBeNull();
+    expect(table.resultsComplete()).toBe(false);
+    expect(element('votes-table-empty-state')?.textContent ?? '').not.toContain('No active votes');
+    expect(!!element('votes-table-empty-state')).toBe(empty);
     const tabs: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]');
     expect(Array.from(tabs, (tab) => tab.getAttribute('aria-label'))).toEqual([
       'All, count unavailable',
@@ -792,11 +795,56 @@ describe('VotesDashboardComponent personal summary', () => {
     table.searchForm.patchValue({ search: 'no matching vote' });
     await settle();
     expect(dashboard['tabStatusCounts']()).toBeNull();
+    expect(element('votes-table-empty-state')?.textContent).toContain('Some votes could not be loaded');
+    const beforeRetry = getMyVotes.mock.calls.length;
+    element('votes-table-empty-state')!.querySelector<HTMLButtonElement>('button')!.click();
+    await settle();
+    expect(getMyVotes).toHaveBeenCalledTimes(beforeRetry + 1);
+    expect(table.resultsComplete()).toBe(true);
+    expect(table.searchForm.controls.search.value).toBe('no matching vote');
+    expect(table.statusTab()).toBe(PollStatus.ACTIVE);
+    expect(element('votes-table-empty-state')?.textContent).toContain('No votes match your filters');
     table.searchForm.patchValue({ search: '' });
-    dashboard['refreshVotes']();
     await settle();
     expect(dashboard['tabStatusCounts']()).toEqual({ all: 7, active: 6, disabled: 0, ended: 1 });
     expect(tabLabels()).toEqual(['All (7)', 'Active (6)', 'Ended (1)']);
+  });
+
+  it('does not infer an empty Active status from an incomplete feed containing only ended votes', async () => {
+    const ended = feed.find((item) => item.status === PollStatus.ENDED)!;
+    getMyVotes.mockReturnValueOnce(of({ votes: [ended], complete: false }));
+    dashboard['refreshVotes']();
+    await settle();
+    expect(rows()).toEqual([]);
+    expect(element('votes-table-empty-state')?.textContent).toContain('Some votes could not be loaded');
+
+    table['onStatusTabChange'](PollStatus.ENDED);
+    await settle();
+    expect(rows()).toEqual([ended.uid]);
+    expect(element('votes-table-empty-state')).toBeNull();
+  });
+
+  it('retries an incomplete empty All feed without showing a false no-invitations message', async () => {
+    getMyVotes.mockReturnValueOnce(of({ votes: [], complete: false }));
+    table['onStatusTabChange']('all');
+    dashboard['refreshVotes']();
+    await settle();
+    expect(element('votes-table-empty-state')?.textContent).toContain('Some votes could not be loaded');
+    expect(fixture.nativeElement.textContent).not.toContain("Votes you've been invited to participate in will appear here.");
+
+    const request = new Subject<MyVotesResponse>();
+    getMyVotes.mockReturnValueOnce(request);
+    element('votes-table-empty-state')!.querySelector<HTMLButtonElement>('button')!.click();
+    await settle();
+    expect(dashboard['myVotesLoading']()).toBe(true);
+    expect(element('votes-table-empty-state')).toBeNull();
+    request.next({ votes: [], complete: true });
+    request.complete();
+    await settle();
+    expect(table.statusTab()).toBe('all');
+    expect(table.resultsComplete()).toBe(true);
+    expect(element('votes-table-empty-state')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain("Votes you've been invited to participate in will appear here.");
   });
 
   describe('permalink target', () => {

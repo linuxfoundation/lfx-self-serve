@@ -57,6 +57,8 @@ When a list has no votes, the message names the situation:
 
 Search ignores leading and trailing spaces, so a search of only spaces does not filter the list. **Reset filters** clears every filter and selects **All**.
 
+If **My Votes** returns an incomplete list and no returned votes match your view, **Some votes could not be loaded** appears instead of an empty-status or no-match message. Select **Retry** to reload without changing your status tab or filters. Any returned votes that match your view remain usable.
+
 ### Sharing a link to a vote
 
 Select **⋮ → Copy link** on an active or ended vote to copy a direct link to it, which you can paste into an email, a chat or a mailing list. Draft votes have no link.
