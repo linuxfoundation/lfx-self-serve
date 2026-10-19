@@ -162,9 +162,9 @@
       -->
       <!-- lfxScrollShadow tracks the scroll edges; the fade classes mask items as they scroll under the header/footer. -->
       <!-- Persistent live region: the no-access message is swapped in here rather than mounting a new status node. -->
-      <!-- Gated like the visible panel below, so screen readers never hear a state the panel hasn't shown yet. -->
+      <!-- Shares the visible panel's gate (menuStateReady), so screen readers never hear a state the panel hasn't shown yet. -->
       <div class="sr-only" role="status" data-testid="navbar-no-access-status">
-        @if (hydrated() && lensLoaded() && !menuPending() && showNoAccessState(); as kind) {
+        @if (announcedNoAccessState(); as kind) {
           @if (retryingLookups()) {
             Retrying…
           } @else if (menuLookupFailed()) {
@@ -175,7 +175,7 @@
         }
       </div>
       <div class="lfxn__menu" lfxScrollShadow [class.is-fade-top]="menuScroll()?.showTopShadow()" [class.is-fade-bottom]="menuScroll()?.showBottomShadow()">
-        @if (hydrated() && lensLoaded() && !menuPending()) {
+        @if (menuStateReady()) {
           @if (showNoAccessState(); as kind) {
             <!-- The message card overlaps a faded menu that emerges from beneath it. -->
             <div class="lfxn__no-access">

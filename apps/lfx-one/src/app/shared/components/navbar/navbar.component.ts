@@ -167,6 +167,17 @@ export class NavbarComponent extends SidebarComponent {
     () => this.navLens() !== null && this.itemsWithTestIds().length === 0 && this.sidebarNavService.sidebarItemsPending() && !this.retryingLookups()
   );
 
+  /**
+   * The menu panel has settled enough to show its items or its empty state. The single gate for both the
+   * visible panel and its live region, so screen readers never hear a state the panel hasn't shown.
+   */
+  protected readonly menuStateReady: Signal<boolean> = computed(() => this.hydrated() && this.lensLoaded() && !this.menuPending());
+
+  /** The no-access / lookup-failed state as the live region announces it: only once the visible panel shows it. */
+  protected readonly announcedNoAccessState: Signal<'foundation' | 'project' | null> = computed(() =>
+    this.menuStateReady() ? this.showNoAccessState() : null
+  );
+
   /** A Retry from the lookup-error card is running: the card stays up, its button busy, until the lookups settle. */
   protected readonly retryingLookups: Signal<boolean> = computed(() => this.sidebarNavService.menuRetryPending());
 

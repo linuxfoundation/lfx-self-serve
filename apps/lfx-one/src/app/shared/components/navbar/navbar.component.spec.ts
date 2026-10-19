@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, signal } from '@angular/core';
-import type { Signal } from '@angular/core';
+import type { Signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, Router } from '@angular/router';
 import { ALL_LENSES, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
@@ -35,6 +35,9 @@ interface NavbarView {
   menuPending: Signal<boolean>;
   menuLookupFailed: Signal<boolean>;
   retryingLookups: Signal<boolean>;
+  menuStateReady: Signal<boolean>;
+  announcedNoAccessState: Signal<'foundation' | 'project' | null>;
+  hydrated: WritableSignal<boolean>;
   retryMenu(): void;
 }
 
@@ -224,6 +227,23 @@ describe('NavbarComponent', () => {
     TestBed.tick();
     expect(hideWithin).toHaveBeenCalledTimes(1);
     hideWithin.mockRestore();
+  });
+
+  it('announces the no-access state only through the same gate that shows the visible panel', async () => {
+    const resolved = await createNavbar([], [], {}, { lens: 'foundation' });
+    resolved.hydrated.set(false);
+    expect(resolved.menuStateReady()).toBe(false);
+    expect(resolved.announcedNoAccessState()).toBeNull();
+    resolved.hydrated.set(true);
+    expect(resolved.menuStateReady()).toBe(true);
+    expect(resolved.announcedNoAccessState()).toBe(resolved.showNoAccessState());
+    expect(resolved.announcedNoAccessState()).toBe('foundation');
+
+    // Still pending: neither the panel nor the live region shows a state.
+    const pending = await createNavbar([], [], {}, { lens: 'foundation', itemsPending: true });
+    pending.hydrated.set(true);
+    expect(pending.menuStateReady()).toBe(false);
+    expect(pending.announcedNoAccessState()).toBeNull();
   });
 
   it('keeps the lookup-error card (not the skeleton) up while a retry runs', async () => {
