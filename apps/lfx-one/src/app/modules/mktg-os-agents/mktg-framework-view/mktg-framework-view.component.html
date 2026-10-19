@@ -1,0 +1,403 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-4 w-full" data-testid="mktg-framework-view">
+  <!-- Asset header: what this is, which version, where the run stands -->
+  <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-framework-view-header">
+    <span class="w-2 h-2 rounded-full shrink-0" [ngClass]="ready() ? 'bg-emerald-500' : 'bg-blue-400 motion-safe:animate-pulse'" aria-hidden="true"></span>
+    <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-framework-view-title">{{ title() }}</h2>
+    @if (version() !== null) {
+      <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500" data-testid="mktg-framework-view-version">v{{ version() }}</span>
+    }
+    @if (note()) {
+      <span class="text-xs text-gray-400">{{ note() }}</span>
+    }
+    @if (modeLabel()) {
+      <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-framework-view-mode">{{
+        modeLabel()
+      }}</span>
+    }
+    @if (stateLabel()) {
+      <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700" data-testid="mktg-framework-view-state">
+        {{ stateLabel() }}
+      </span>
+    }
+  </div>
+
+  <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
+  <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs" (keydown)="onTabKeydown($event)">
+    <div class="flex flex-wrap gap-x-1">
+      @for (tab of tabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="-mb-px border-b-2 px-3 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:text-gray-300"
+          [ngClass]="tab.tabClass"
+          [id]="tab.tabId"
+          [attr.aria-selected]="tab.selected"
+          [attr.aria-controls]="tab.panelId"
+          [attr.tabindex]="tab.selected ? 0 : -1"
+          [disabled]="!ready()"
+          [attr.data-testid]="'mktg-framework-view-tab-' + tab.id"
+          (click)="onSelectTab(tab.id)">
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (!ready()) {
+    <!-- The run is live: the feed, or the questions, where the framework will be -->
+    <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" data-testid="mktg-framework-view-generating">
+      <ng-content />
+    </div>
+  } @else if (content(); as framework) {
+    @switch (selectedTab()) {
+      <!-- FRAMEWORK: the statements, the goal columns, say and avoid -->
+      @case ('framework') {
+        <div
+          class="flex flex-col gap-5"
+          role="tabpanel"
+          id="mktg-framework-panel-framework"
+          aria-labelledby="mktg-framework-tab-framework"
+          data-testid="mktg-framework-view-panel-framework">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1">
+              <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Vision</span>
+              <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-vision">{{ framework.mf.vision }}</p>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1">
+              <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Mission</span>
+              <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-mission">{{ framework.mf.mission }}</p>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1">
+              <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Positioning</span>
+              <p class="text-sm leading-relaxed text-gray-900" data-testid="mktg-framework-view-positioning">{{ framework.mf.positioning }}</p>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col gap-1">
+              <span class="text-xs font-semibold uppercase tracking-wider text-blue-700">Tagline</span>
+              <p class="font-display text-xl text-blue-900" data-testid="mktg-framework-view-tagline">{{ framework.mf.tagline }}</p>
+            </div>
+          </div>
+
+          <!-- Goal columns, one card each, side by side on wide screens -->
+          <div class="flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Goal columns</h3>
+            <!-- auto-fit: as many columns as fit at 18rem each, so two to five goals share the width (arbitrary value, see styling.md). -->
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(18rem,1fr))] gap-3" data-testid="mktg-framework-view-goals">
+              @for (goal of goals(); track goal.id) {
+                <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [attr.data-testid]="'mktg-framework-view-goal-' + goal.id">
+                  <div class="flex items-baseline justify-between gap-2">
+                    <h4 class="text-base font-semibold text-gray-900">{{ goal.t }}</h4>
+                    <span class="text-xs text-gray-400">Goal {{ goal.n }}</span>
+                  </div>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Value proposition</span>
+                    <p class="text-sm text-gray-800">{{ goal.vp }}</p>
+                  </div>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Key message</span>
+                    <p class="text-sm text-gray-800">{{ goal.key }}</p>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Proof</span>
+                    <ul class="flex flex-col gap-1">
+                      @for (proof of goal.proofRows; track $index) {
+                        <li class="flex items-start gap-2 text-sm text-gray-800">
+                          <span class="grow">{{ proof.fact }}</span>
+                          <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                  <blockquote class="rounded-lg bg-gray-50 px-3 py-2 text-sm italic text-gray-700" [attr.data-testid]="'mktg-framework-view-bite-' + goal.id">
+                    “{{ goal.bite }}”
+                  </blockquote>
+                  @if (goal.segmentNames.length > 0) {
+                    <div class="flex flex-wrap items-center gap-1">
+                      <span class="text-2xs text-gray-400">For</span>
+                      @for (name of goal.segmentNames; track name) {
+                        <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-2xs text-blue-700">{{ name }}</span>
+                      }
+                    </div>
+                  }
+                </article>
+              }
+            </div>
+            <p class="text-xs text-gray-500" data-testid="mktg-framework-view-crosscut">{{ framework.mf.crosscut }}</p>
+          </div>
+
+          <!-- Say and avoid -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+              <h3 class="text-sm font-semibold text-gray-900">Say</h3>
+              <ul class="flex flex-wrap gap-1.5" data-testid="mktg-framework-view-say">
+                @for (phrase of framework.mf.say; track phrase) {
+                  <li class="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs text-emerald-800">{{ phrase }}</li>
+                }
+              </ul>
+            </div>
+            <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+              <h3 class="text-sm font-semibold text-gray-900">Avoid</h3>
+              @if (avoidRows().length > 0) {
+                <table class="w-full text-sm" data-testid="mktg-framework-view-avoid">
+                  <thead>
+                    <tr class="text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">
+                      <th class="pb-1 pr-2 font-semibold">Avoid</th>
+                      <th class="pb-1 font-semibold">Say instead</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of avoidRows(); track row.avoid) {
+                      <tr class="border-t border-gray-100 align-top">
+                        <td class="py-1.5 pr-2 text-red-700 line-through decoration-red-300">{{ row.avoid }}</td>
+                        <td class="py-1.5 text-gray-800">{{ row.instead }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              } @else {
+                <p class="text-xs text-gray-500" data-testid="mktg-framework-view-avoid-empty">Nothing to avoid was stated.</p>
+              }
+            </div>
+          </div>
+
+          <!-- The anchor questions and the reviewer's notes -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+              <h3 class="text-sm font-semibold text-gray-900">Every piece of content answers</h3>
+              <ol class="flex flex-col gap-1 list-decimal pl-5 text-sm text-gray-800" data-testid="mktg-framework-view-anchor">
+                @for (question of framework.mf.anchor; track question) {
+                  <li>{{ question }}</li>
+                }
+              </ol>
+            </div>
+            @if (framework.mf.notes) {
+              <!-- The agent writes each choice with a link to the page it rests on (4.0.2); restricted Markdown renders the links and nothing else. -->
+              <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-col gap-2">
+                <h3 class="text-sm font-semibold text-amber-800">For the reviewer</h3>
+                <div class="text-sm text-amber-900 [&_a]:underline [&_a]:text-amber-900 hover:[&_a]:text-amber-700" data-testid="mktg-framework-view-notes">
+                  <lfx-markdown-renderer [content]="framework.mf.notes" [breaks]="true" [restricted]="true" />
+                </div>
+                <button
+                  type="button"
+                  class="self-start text-xs font-medium text-amber-800 underline hover:text-amber-900"
+                  data-testid="mktg-framework-view-notes-sources"
+                  (click)="onGoToTab('sources')">
+                  Sources read, failed and gaps
+                </button>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- ICPs: one card per segment -->
+      @case ('icps') {
+        <div
+          class="grid grid-cols-1 xl:grid-cols-2 gap-3"
+          role="tabpanel"
+          id="mktg-framework-panel-icps"
+          aria-labelledby="mktg-framework-tab-icps"
+          data-testid="mktg-framework-view-panel-icps">
+          @for (icp of icps(); track icp.id) {
+            <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3" [attr.data-testid]="'mktg-framework-view-icp-' + icp.id">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="text-base font-semibold text-gray-900">{{ icp.name }}</h3>
+                <span class="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-2xs text-gray-600">{{ icp.kind }}</span>
+                <span class="text-2xs text-gray-400">Basis: {{ icp.basis }}</span>
+              </div>
+              <p class="text-sm text-gray-800">{{ icp.who }}</p>
+              @if (icp.goalTitles.length > 0) {
+                <div class="flex flex-wrap items-center gap-1">
+                  <span class="text-2xs text-gray-400">Goals</span>
+                  @for (title of icp.goalTitles; track title) {
+                    <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-2xs text-blue-700">{{ title }}</span>
+                  }
+                </div>
+              }
+              <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+                <dt class="text-gray-500">Need</dt>
+                <dd class="text-gray-800">{{ icp.need }}</dd>
+                <dt class="text-gray-500">Value</dt>
+                <dd class="text-gray-800">{{ icp.value }}</dd>
+                <dt class="text-gray-500">Lead</dt>
+                <dd class="font-medium text-gray-900" [attr.data-testid]="'mktg-framework-view-icp-lead-' + icp.id">{{ icp.lead }}</dd>
+                <dt class="text-gray-500">Proof</dt>
+                <dd>
+                  <ul class="flex flex-col gap-1">
+                    @for (proof of icp.proofRows; track $index) {
+                      <li class="flex items-start gap-2 text-gray-800">
+                        <span class="grow">{{ proof.fact }}</span>
+                        <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
+                      </li>
+                    }
+                  </ul>
+                </dd>
+                <dt class="text-gray-500">Call to action</dt>
+                <dd class="text-gray-800">{{ icp.cta }}</dd>
+                <dt class="text-gray-500">Channels</dt>
+                <dd class="flex flex-wrap gap-1">
+                  @for (channel of icp.channels; track channel) {
+                    <span class="rounded-full border border-gray-200 px-2 py-0.5 text-2xs text-gray-600">{{ channel }}</span>
+                  }
+                </dd>
+                <dt class="text-gray-500">Objection</dt>
+                <dd class="flex flex-col gap-0.5">
+                  <span class="text-gray-800">{{ icp.objectionText }}</span>
+                  @if (icp.objectionResponse) {
+                    <span class="text-gray-600">→ {{ icp.objectionResponse }}</span>
+                  }
+                </dd>
+                <dt class="text-gray-500">Personas</dt>
+                <dd>
+                  <ul class="flex flex-col gap-0.5">
+                    @for (persona of icp.personaRows; track persona.role) {
+                      <li class="text-gray-800">
+                        <span class="font-medium">{{ persona.role }}</span> — {{ persona.cares }}
+                      </li>
+                    }
+                  </ul>
+                </dd>
+              </dl>
+            </article>
+          }
+        </div>
+      }
+
+      <!-- MESSAGE HOUSE: umbrella, the line, three pillars, the foundation, the audiences -->
+      @case ('message-house') {
+        <div
+          class="flex flex-col gap-3"
+          role="tabpanel"
+          id="mktg-framework-panel-message-house"
+          aria-labelledby="mktg-framework-tab-message-house"
+          data-testid="mktg-framework-view-panel-message-house">
+          <div class="bg-blue-50 border border-blue-200 rounded-xl p-5 flex flex-col gap-1 text-center">
+            <span class="text-2xs font-semibold uppercase tracking-wider text-blue-700">Umbrella</span>
+            <p class="text-base font-medium text-blue-900" data-testid="mktg-framework-view-umbrella">{{ framework.mh.umbrella }}</p>
+            <p class="font-display text-lg text-blue-900" data-testid="mktg-framework-view-line">{{ framework.mh.line }}</p>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3" data-testid="mktg-framework-view-pillars">
+            @for (pillar of pillars(); track pillar.t) {
+              <article class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+                <h3 class="text-sm font-semibold text-gray-900">{{ pillar.t }}</h3>
+                <p class="text-sm text-gray-800">{{ pillar.m }}</p>
+                <ul class="flex flex-col gap-1 border-t border-gray-100 pt-2">
+                  @for (proof of pillar.proofRows; track $index) {
+                    <li class="flex items-start gap-2 text-xs text-gray-700">
+                      <span class="grow">{{ proof.fact }}</span>
+                      <span class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500">{{ proof.source }}</span>
+                    </li>
+                  }
+                </ul>
+              </article>
+            }
+          </div>
+          <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 flex flex-col gap-1 text-center">
+            <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">Foundation</span>
+            <p class="text-sm text-gray-800" data-testid="mktg-framework-view-found">{{ framework.mh.found }}</p>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Audiences</h3>
+            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm" data-testid="mktg-framework-view-audiences">
+              @for (row of audiences(); track row.name) {
+                <dt class="font-medium text-gray-900">{{ row.name }}</dt>
+                <dd class="text-gray-800">{{ row.lead }}</dd>
+              }
+            </dl>
+          </div>
+        </div>
+      }
+
+      <!-- KEY NUMBERS -->
+      @case ('numbers') {
+        <div
+          class="grid grid-cols-2 lg:grid-cols-4 gap-3"
+          role="tabpanel"
+          id="mktg-framework-panel-numbers"
+          aria-labelledby="mktg-framework-tab-numbers"
+          data-testid="mktg-framework-view-panel-numbers">
+          @for (row of numbers(); track $index) {
+            <div class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-1 text-center">
+              <span class="font-display text-3xl text-gray-900">{{ row.number }}</span>
+              <span class="text-xs text-gray-500">{{ row.label }}</span>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state -->
+      @case ('sources') {
+        <div
+          class="grid grid-cols-1 lg:grid-cols-2 gap-3"
+          role="tabpanel"
+          id="mktg-framework-panel-sources"
+          aria-labelledby="mktg-framework-tab-sources"
+          data-testid="mktg-framework-view-panel-sources">
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Sources read</h3>
+            @if (report()?.sources_read?.length) {
+              <ul class="flex flex-col gap-1 text-sm text-gray-800 break-all" data-testid="mktg-framework-view-sources-read">
+                @for (source of report()?.sources_read; track source) {
+                  <li class="flex items-start gap-2">
+                    <i class="fa-light fa-check mt-1 text-xs text-emerald-600 shrink-0" aria-hidden="true"></i>{{ source }}
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-read-empty">Nothing was read.</p>
+            }
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Could not be read</h3>
+            @if (report()?.sources_failed?.length) {
+              <ul class="flex flex-col gap-1.5 text-sm" data-testid="mktg-framework-view-sources-failed">
+                @for (failed of report()?.sources_failed; track failed.name) {
+                  <li class="flex flex-col">
+                    <span class="text-gray-800 break-all">{{ failed.name }}</span>
+                    <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-sources-failed-empty">Every source was read.</p>
+            }
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Gaps</h3>
+            @if (report()?.gaps?.length) {
+              <ul class="flex flex-col gap-1 list-disc pl-5 text-sm text-gray-800" data-testid="mktg-framework-view-gaps">
+                @for (gap of report()?.gaps; track gap) {
+                  <li>{{ gap }}</li>
+                }
+              </ul>
+            } @else {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-gaps-empty">The sources left no gap.</p>
+            }
+          </div>
+          <div class="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-gray-900">Notes and checks</h3>
+            @if (reportNotes().length > 0) {
+              <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="mktg-framework-view-report-notes">
+                @for (line of reportNotes(); track line) {
+                  <li>{{ line }}</li>
+                }
+              </ul>
+            }
+            @if (findings().length > 0) {
+              <ul class="flex flex-col gap-1 text-sm text-amber-800" data-testid="mktg-framework-view-findings">
+                @for (finding of findings(); track finding) {
+                  <li class="flex items-start gap-2"><i class="fa-light fa-triangle-exclamation mt-1 text-xs shrink-0" aria-hidden="true"></i>{{ finding }}</li>
+                }
+              </ul>
+            }
+            @if (reportNotes().length === 0 && findings().length === 0) {
+              <p class="text-xs text-gray-500" data-testid="mktg-framework-view-checks-empty">Nothing to check.</p>
+            }
+          </div>
+        </div>
+      }
+    }
+  }
+</section>

@@ -40,12 +40,27 @@
       <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</div>
     } @else if (view(); as current) {
       <div class="flex flex-wrap items-start gap-6">
-        <!-- The revision's document, as the agent wrote it -->
-        <!-- basis-[640px]: the design of record's document column width (arbitrary value, see styling.md). -->
-        <main class="min-w-0 grow shrink basis-[640px]">
-          <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
-            <lfx-markdown-renderer [content]="current.markdown" />
-          </article>
+        <!-- The revision's content, as the agent wrote it: the framework's own view for a Messaging Framework revision, the Markdown for a document -->
+        <!-- A framework takes the full width (full-width pages); basis-[640px] is the design of record's document column width (arbitrary value, see styling.md). -->
+        <main class="min-w-0 grow shrink" [ngClass]="asset() ? 'basis-full' : 'basis-[640px]'">
+          @if (asset(); as framework) {
+            <lfx-mktg-framework-view
+              [projectName]="projectName()"
+              [asset]="framework"
+              state="ready"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              data-testid="mktg-document-view-framework" />
+          } @else {
+            <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
+              @if (current.revision.format === 'json') {
+                <!-- A JSON revision that is not a readable framework: shown as it is stored, never silently dropped. -->
+                <pre class="whitespace-pre-wrap break-all text-xs text-gray-700" data-testid="mktg-document-view-json">{{ current.markdown }}</pre>
+              } @else {
+                <lfx-markdown-renderer [content]="current.markdown" />
+              }
+            </article>
+          }
         </main>
 
         <aside class="flex flex-col gap-4 grow-0 shrink basis-80 min-w-72">

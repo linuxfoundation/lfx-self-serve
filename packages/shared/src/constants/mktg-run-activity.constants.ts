@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
-import { FOUNDATION_MESSAGE_FINALIZE_TOOL } from './foundation-message.constants';
+import { FOUNDATION_MESSAGE_ASK_TOOL, FOUNDATION_MESSAGE_FINALIZE_TOOL, FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID } from './foundation-message.constants';
 
 // The live activity feed of an agent run: what the agent is doing while it
 // works, built server-side from the session's raw events and shown on the run
@@ -32,7 +32,7 @@ export const MKTG_RUN_ACTIVITY_TOOLS = {
   lfxSearchProjects: 'lfx_mcp_search_projects',
   lfxGetProject: 'lfx_mcp_get_project',
   lfxSemanticLayer: 'lfx_mcp_query_lfx_semantic_layer',
-  askRequester: 'ask_requester',
+  askRequester: FOUNDATION_MESSAGE_ASK_TOOL,
   finalize: FOUNDATION_MESSAGE_FINALIZE_TOOL,
 } as const;
 
@@ -57,9 +57,9 @@ export const MKTG_RUN_ACTIVITY_LABELS = {
   lfxFigures: 'Pulling live LFX figures',
   lfxOther: 'Checking LFX',
   questions: 'Preparing a few questions for you',
-  checking: 'Checking the document against the template',
+  checking: 'Checking the framework',
   fixing: 'Fixing what the check found',
-  writing: 'Writing the document',
+  writing: 'Writing the framework',
 } as const;
 
 /** Platform task statuses that mean the tool finished, and those that mean it did not. */
@@ -90,18 +90,30 @@ export const MKTG_RUN_ACTIVITY_ICONS: Record<MktgRunActivityKind, string> = {
 export const MKTG_RUN_ACTIVITY_OPAQUE_PATH_SEGMENTS: readonly string[] = ['wp-json', 'api', 'index.php', 'index.html'];
 
 /** The contract line a questions turn starts with — where the writing stretch of a run begins. */
-export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKER = 'messaging-document-questions/v1';
+export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKER = FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID;
 
-/** Short chip labels for the questions stepper, by answer key; any other key falls back to its label's first two words. */
-export const MKTG_RUN_QUESTION_SHORT_LABELS: Record<string, string> = {
-  vision_mission: 'Vision',
-  category: 'Category',
-  audiences: 'Audiences',
-  alternatives: 'Alternatives',
-  differentiation: 'Difference',
-  use_cases: 'Use cases',
-  proof_points: 'Proof points',
-  pillars: 'Pillars',
-  objections: 'Objections',
-  tagline_ctas_constraints: 'Tagline',
-};
+/**
+ * Most words of a question's label the stepper's chip shows. The agent's
+ * labels come from its question ids ("Ranked goals", "Words to avoid") and are
+ * shown whole up to this length; a longer one is cut, never on a connector.
+ */
+export const MKTG_RUN_QUESTION_CHIP_WORDS = 3;
+
+/** Words a chip label never ends on: a cut there reads as a broken phrase ("Words to"). */
+export const MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS: readonly string[] = [
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'by',
+  'for',
+  'from',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+];

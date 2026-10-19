@@ -30,6 +30,7 @@ describe('MktgDocumentViewComponent', () => {
       intakeMode: 'form',
       status: 'Draft — for review',
       contentSha256: String(number).repeat(64),
+      format: 'markdown',
       commentCount: 0,
       latest: false,
       ...overrides,
@@ -42,7 +43,7 @@ describe('MktgDocumentViewComponent', () => {
   const detail: MktgDocumentDetailResponse = { project: PROJECT.uid, type: BRAND_KIT, documentId: 'living', revisions: [LATEST, OLDER] };
 
   function revisionResponse(current: MktgRevisionSummary): MktgRevisionResponse {
-    return { ...detail, revision: current, markdown: `# Revision ${current.number}\n` };
+    return { ...detail, revision: current, markdown: `# Revision ${current.number}\n`, sidecar: null };
   }
 
   let harness: RouterTestingHarness;
@@ -107,6 +108,85 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
     expect(query('mktg-document-view-restore-current')?.textContent).toContain('Restore revision 1');
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
+  });
+
+  it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
+    const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
+    const content = {
+      mf: {
+        vision: 'A vision.',
+        mission: 'A mission.',
+        positioning: 'For platform teams.',
+        tagline: 'Release, open.',
+        goals: [
+          { id: 'adoption', n: 1, t: 'Adoption', vp: 'VP.', key: 'Key.', proof: [['1,200 members', 'Website']], bite: 'Adoption in the open', icps: ['users'] },
+        ],
+        crosscut: 'Every column grows the audience.',
+        say: ['open'],
+        avoid: [['synergy', 'working together']],
+        anchor: ['Which goal does this serve?'],
+        notes: '',
+      },
+      icp: [
+        {
+          id: 'users',
+          name: 'End users',
+          kind: 'Individual',
+          who: 'Engineers.',
+          goals: ['adoption'],
+          need: 'Need.',
+          value: 'Value.',
+          lead: 'Lead for users.',
+          proof: [['A fact', 'Docs']],
+          cta: 'Try it.',
+          channels: ['Docs'],
+          objection: ['Too early?', null],
+          personas: [['SRE', 'uptime']],
+          basis: 'Website',
+        },
+      ],
+      mh: {
+        umbrella: 'Umbrella.',
+        line: 'Release, open.',
+        pillars: [{ t: 'Open', m: 'Open message.', p: [['Fact', 'Web']] }],
+        found: 'A Linux Foundation project.',
+        aud: [['End users', 'Lead for users.']],
+      },
+      nums: [['1,200', 'members']],
+    };
+    const jsonRevision = revision(2, { latest: true, format: 'json', status: '' });
+    store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision] }));
+    store.getRevision.mockReturnValue(
+      of({
+        ...detail,
+        type: FRAMEWORK,
+        revisions: [jsonRevision],
+        revision: jsonRevision,
+        markdown: JSON.stringify(content),
+        sidecar: {
+          report: { sources_read: ['https://testorbit.example.org'], sources_failed: [], gaps: ['No member count.'], notes: '' },
+          checks: { findings: [] },
+          mode: 'draft',
+        },
+      })
+    );
+
+    await render('/documents/foundation-message/living');
+
+    expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Messaging framework');
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-framework-view-title')?.textContent).toContain('TestOrbit Messaging framework');
+    expect(query('mktg-framework-view-version')?.textContent).toContain('v2');
+    expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
+    expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
+    expect(harness.routeNativeElement?.querySelector('main')?.className).toContain('basis-full');
+
+    harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-framework-view-tab-sources"]')?.click();
+    await settle();
+    expect(query('mktg-framework-view-gaps')?.textContent).toContain('No member count.');
+    expect(query('mktg-framework-view-sources-read')?.textContent).toContain('testorbit.example.org');
+    // The revisions panel is as built: open and restore any other revision.
+    expect(query('mktg-document-view-revisions')).not.toBeNull();
   });
 
   it('says the document has no such revision on a 404', async () => {

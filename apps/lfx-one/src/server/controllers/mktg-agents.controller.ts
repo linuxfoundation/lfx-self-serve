@@ -424,14 +424,19 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/generate
-   * Starts a one-shot Messaging Document generation from the intake form: the
-   * project name, the four sources and any other links as URLs (the agent
-   * fetches and researches them itself), the LFX project uid, and the
-   * optional existing documents — an uploaded file as the text the BFF read
-   * from it, a link as its URL. Every submission is a fresh generate — the
-   * agent's generate form carries no prior version or feedback, so a body
-   * with either is refused rather than silently ignored. Returns the session
-   * id + creator-binding owner token for polling the result.
+   * Starts a Messaging Framework draft from the intake form: the project name
+   * and description, the website, the repository and the page fields as URLs
+   * (the agent fetches and researches them itself), the LFX project uid, and
+   * the optional documents — an uploaded file as the text the BFF read from
+   * it, a link as its URL, each tagged with what it is. The website is the
+   * one required source — a real http(s) page, never blank or "none", as
+   * `validateFoundationMessageIntakeAnswers` holds it — and every other
+   * source is optional: a link or a document alone is refused with a 400,
+   * matching the guided form's own rule. Every submission is a fresh
+   * draft — a redraft from comments and a check of a hand-edited version are
+   * later work, so a body with feedback or a prior version is refused rather
+   * than silently ignored. Returns the session id + creator-binding owner
+   * token for polling the result.
    */
   public async generateFoundationMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
@@ -450,7 +455,7 @@ export class MktgAgentsController {
       return;
     }
     if (feedback !== undefined || priorVersion !== undefined) {
-      fail('feedback', 'The Messaging Document is revised by commenting on it in Documents; a generate takes no feedback or prior version.');
+      fail('feedback', 'A generate is always a fresh draft of the Messaging Framework; it takes no feedback or prior version.');
       return;
     }
     // The project uid goes to the agent as data (its LFX lookups), never as
@@ -478,7 +483,7 @@ export class MktgAgentsController {
     // Routing handle comes from the shared catalog only — never the client.
     const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
     if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
-      fail('agentId', 'The Messaging Document agent is not available.');
+      fail('agentId', 'The Messaging Framework agent is not available.');
       return;
     }
 
@@ -560,7 +565,7 @@ export class MktgAgentsController {
     // Routing handle comes from the shared catalog only — never the client.
     const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
     if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
-      fail('agentId', 'The Messaging Document agent is not available.');
+      fail('agentId', 'The Messaging Framework agent is not available.');
       return;
     }
 
@@ -580,8 +585,8 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/documents/file
-   * Reads one uploaded existing document (PDF, Word .docx, Markdown or text;
-   * raw `application/octet-stream` body, at most 20 MB) to text and returns
+   * Reads one uploaded document (PDF, Word .docx, PowerPoint .pptx, Markdown
+   * or text; raw `application/octet-stream` body, at most 20 MB) to text and returns
    * it, so the form can show what was read and submit the text with the run.
    * The file name travels URI-encoded in the `X-File-Name` header — never the
    * URL, which the request logger writes — and is logged by extension only.
@@ -625,9 +630,9 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/result
-   * Polls a generation session for the validated Messaging Document (and its
-   * word-count-locked copy primitives). Only the session's creator may
-   * read the result (owner-token proof).
+   * Polls a generation session for the validated Messaging Framework — the
+   * run's asset, or the agent's questions while it waits for answers. Only
+   * the session's creator may read the result (owner-token proof).
    *
    * `project` (the run's LFX project uid) scopes the persistence write that
    * rides a ready result: the service resolves it server-side and requires
@@ -879,11 +884,12 @@ export class MktgAgentsController {
 
   /**
    * GET /api/mktg-agents/foundation-message/stored?project=<uid>
-   * Returns the project's LATEST stored Messaging Document (the latest
-   * revision of its foundation-message document) with its receipt metadata
-   * (the dec-agent-dependency-gating read path), or 404 when nothing is stored
-   * for the project. This is what lets a sibling agent — or the same user in a
-   * different browser — reach a Messaging Document it did not generate.
+   * Returns the project's LATEST stored Messaging Framework (the latest
+   * revision of its foundation-message document, as the JSON text of its
+   * content) with its receipt metadata (the dec-agent-dependency-gating read
+   * path), or 404 when nothing is stored for the project. This is what lets
+   * a sibling agent — or the same user in a different browser — reach a
+   * framework it did not generate.
    *
    * AUTHZ — the same read boundary as `storedBrandKit`, deliberately
    * identical: the caller must hold writer entitlement on the requested
@@ -920,7 +926,7 @@ export class MktgAgentsController {
       const project = await this.projectService.getProjectById(req, projectUid, true);
       if (!project.writer) {
         next(
-          new AuthorizationError('You do not have permission to read this project’s Messaging Document.', {
+          new AuthorizationError('You do not have permission to read this project’s Messaging Framework.', {
             operation: 'foundation_message_stored',
             service: 'mktg_agents_controller',
             path: req.path,
@@ -932,7 +938,7 @@ export class MktgAgentsController {
       const stored: FoundationMessageStoredResponse | null = await this.foundationMessageService.getStoredFoundationMessage(req, project.uid);
       if (!stored) {
         next(
-          new ResourceNotFoundError('Stored Messaging Document', project.uid, {
+          new ResourceNotFoundError('Stored Messaging Framework', project.uid, {
             operation: 'foundation_message_stored',
             service: 'mktg_agents_controller',
             path: req.path,

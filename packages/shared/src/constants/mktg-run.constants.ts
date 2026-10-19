@@ -6,23 +6,23 @@ import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './bra
 import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
-  FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
+  FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+  FOUNDATION_MESSAGE_DECK_KEY,
+  FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND,
+  FOUNDATION_MESSAGE_DESCRIPTION_KEY,
   FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS,
+  FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS,
   FOUNDATION_MESSAGE_FILE_EXTENSIONS,
+  FOUNDATION_MESSAGE_GITHUB_KEY,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
   FOUNDATION_MESSAGE_MAX_FILE_BYTES,
-  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
-  FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
-  FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
-  FOUNDATION_MESSAGE_SOURCE_KINDS,
-  FOUNDATION_MESSAGE_SOURCE_LABELS,
-  FOUNDATION_MESSAGE_SOURCE_URL_KEYS,
+  FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+  FOUNDATION_MESSAGE_PLAN_KEY,
+  FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+  FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+  FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
-
-/** Paul's label for each source, sentence-cased for the form. */
-const sourceLabel = (kind: (typeof FOUNDATION_MESSAGE_SOURCE_KINDS)[number]): string =>
-  FOUNDATION_MESSAGE_SOURCE_LABELS[kind].charAt(0).toUpperCase() + FOUNDATION_MESSAGE_SOURCE_LABELS[kind].slice(1);
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -103,114 +103,182 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
 };
 
 /**
- * Messaging Document intake (marketing-os-agents agents/foundation-message,
- * Paul's messaging-document 1.0.0; wi-message-foundation-existing-documents-form).
- * The form from the design canvas, in two parts:
+ * Messaging Framework intake (marketing-os-agents agents/foundation-message
+ * 4.0.0, messaging-framework-output/v1; wi-messaging-framework-intake-and-run).
+ * A GUIDED form (hand test, 17 Oct: the first cut was "too unguided — I did
+ * not even know myself what to put there"), in two parts:
  *
- * - Sources: the project name, Paul's four Step 0b sources and any other
- *   links, as URLs only. The agent fetches every link itself and researches
- *   the rest (web fetch, Exa search); "none" is a valid answer. The project
- *   name and the GitHub page come from LFX; the GitHub field takes a
- *   repository or an organization page.
- * - Existing documents, optional and last: PDF, Word, Markdown or text files,
- *   turned into text by the BFF, and links the agent reads itself. The agent
- *   maps them first.
+ * - Project: the name and the one-line description, both from LFX.
+ * - Sources: one labelled field per source the agent reads, each with a
+ *   one-line explanation and an example, in this order — the website (the
+ *   one required field), the GitHub repository or README (hand test, 18 Oct:
+ *   "add the GitHub"), the launch press release, the members page, the
+ *   projects page, the deck (upload or link), the plan (upload or link),
+ *   and the brand page. Every link field
+ *   maps to the agent's contract by key (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`
+ *   → `documents[]` with the matching kind; the repository and the pages →
+ *   `links`); the agent fetches every one itself and researches the rest
+ *   (web fetch, Exa search, the LF press archive when no press release is
+ *   given).
  *
- * There are no questions on this form. After reading and researching, the
- * agent asks only the gaps it could not settle, each with a suggested answer
- * (`endpoints.answers`): the run page shows them as a second step on the
- * same run, every answer required, and the answers go back to the same
- * session. The questions and answers are stored with the version.
+ * Other links and documents come last: files uploaded here (PDF, Word, PowerPoint,
+ * Markdown or text, read to text by the BFF) and document links, each tagged
+ * with what it is. A file picked on the deck or plan field lands here already
+ * tagged (`uploadTag`).
  *
- * It runs first and needs no other document, so nothing is attached. Every
- * submission is a fresh generate (`freshRunPerSubmission`): the generate form
- * carries no prior version or feedback, and each result is stored as a new
- * revision of the project's foundation-message document.
+ * There are no notes and no questions on this form (hand test, 18 Oct:
+ * "remove notes"). After reading and researching, the agent asks only the
+ * gaps it could not settle — audiences, the goals for the year, words to
+ * avoid — each with a suggested answer (`endpoints.answers`): the run shows
+ * them one at a time on the same run, every answer required, and the
+ * answers go back to the same session. The questions and answers are stored
+ * with the version.
+ *
+ * The output is not a document but the framework's JSON bundle, so the run
+ * lands on the framework's own view (`assetView`): the feed and the questions
+ * while the run is live, then the rendered framework. Every submission is a
+ * fresh draft (`freshRunPerSubmission`): the form carries no prior version or
+ * feedback (a redraft from comments and a check of a hand-edited version are
+ * later work), and each result is stored as a new revision of the project's
+ * foundation-message document, as the JSON content. A dependent agent that
+ * takes it as a document (the ICP's `message_foundation_markdown`) gets it
+ * rendered to Markdown (`renderFoundationMessageMarkdown`), never the JSON.
  */
 export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   agentId: 'foundation-setup',
   formTitleAction: 'Build',
-  documentName: 'Messaging Document',
+  documentName: 'Messaging framework',
   intro:
-    'Runs first; it needs no other document. Give the agent your sources as links: it reads every one, researches the rest on its own, and comes back with questions only for what the sources leave open — each with a suggested answer for you to accept or edit. Existing messaging or positioning documents can be attached at the end; the agent reads them first. Every result is stored as a new revision of the document in Documents.',
+    'Give the agent its sources. It reads them, searches the web and LFX for the rest, and asks you only for what is still missing, with a suggested answer each time. Only the website is required. You get a messaging framework: vision, mission, positioning, tagline, goals, ICPs, message house and key numbers, saved as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
   fields: [
-    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name' },
+    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name', oneLine: true },
     {
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.website,
-      question: sourceLabel('website'),
+      key: FOUNDATION_MESSAGE_DESCRIPTION_KEY,
+      question: 'One-line description',
       kind: 'text',
       optional: true,
-      placeholder: 'https://… or none',
+      oneLine: true,
+      prefill: 'project-description',
+      placeholder: 'What the project does, in one line',
+      missingPrefillHint: 'Not set on your LFX project — describe it in one line, or leave it to the sources.',
+    },
+    {
+      key: FOUNDATION_MESSAGE_WEBSITE_KEY,
+      question: 'Website',
+      kind: 'text',
+      prefill: 'website-url',
+      placeholder: 'https://aaif.io',
+      hint: 'The project’s public site. The agent starts here and follows what it finds.',
       format: 'source-url',
     },
     {
-      // A repository or an organization page: the agent reads either (hand
-      // test, 2026-10-15 — https://github.com/aaif is an organization page).
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.readme,
-      question: sourceLabel('readme'),
+      key: FOUNDATION_MESSAGE_GITHUB_KEY,
+      question: 'GitHub repository or README',
       kind: 'text',
       optional: true,
       prefill: 'repository-url',
-      placeholder: 'https://github.com/org or https://github.com/org/repo',
-      format: 'github-url',
-    },
-    {
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.press_release,
-      question: sourceLabel('press_release'),
-      kind: 'text',
-      optional: true,
-      placeholder: 'https://… or none',
+      placeholder: 'https://github.com/…',
+      hint: 'The project’s repository or its README. Purpose, licence, governance and adopters come from there. Leave it empty and the agent looks for it itself.',
       format: 'source-url',
     },
     {
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.brand_page,
-      question: sourceLabel('brand_page'),
+      key: FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+      question: 'Launch press release or announcement',
       kind: 'text',
       optional: true,
-      placeholder: 'https://… or none',
+      placeholder: 'https://www.linuxfoundation.org/press/…',
+      hint: 'The LF or project press release that announced the project. Leave it empty and the agent searches the LF press archive itself.',
       format: 'source-url',
     },
     {
-      key: FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
-      question: 'Other links',
-      kind: 'textarea',
-      rows: 3,
+      key: FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+      question: 'Members or partners page',
+      kind: 'text',
       optional: true,
-      placeholder: 'One link per line — docs, blog posts, talks, anything the agent should read',
-      hint: `Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS} links.`,
-      format: 'source-url-list',
+      placeholder: 'https://aaif.io/members',
+      hint: 'The page that lists who backs the project — members, partners, sponsors.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+      question: 'Projects or products page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/projects',
+      hint: 'The page that lists what the project ships or hosts — sub-projects, products, specifications.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_DECK_KEY,
+      question: 'Existing deck or pitch',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://docs.google.com/presentation/d/…',
+      hint: 'A board deck, a pitch, a keynote. Upload the file (PDF, PowerPoint, Word, Markdown or text) or give its link; an upload appears under Other links and documents below, tagged Deck.',
+      format: 'source-url',
+      uploadTag: 'deck',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PLAN_KEY,
+      question: 'Marketing or strategy plan',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://docs.google.com/document/d/…',
+      hint: 'The marketing plan, the strategy for the year, the goals as written down. Upload the file or give its link; an upload appears under Other links and documents below, tagged Marketing plan.',
+      format: 'source-url',
+      uploadTag: 'plan',
+    },
+    {
+      key: FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+      question: 'Brand page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/brand',
+      hint: 'The brand or style guidelines page, when the project has one — how it already describes itself.',
+      format: 'source-url',
     },
   ],
   fieldGroups: [
+    { id: 'project', title: 'Project', fieldKeys: ['project_name', FOUNDATION_MESSAGE_DESCRIPTION_KEY] },
     {
       id: 'sources',
       title: 'Sources',
-      hint: 'links only — “none” is a valid answer',
-      footnote: 'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say.',
+      hint: 'the website is required; the rest is optional',
+      footnote:
+        'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. Leave a field empty when you do not have it.',
       fieldKeys: [
-        'project_name',
-        ...FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind]),
-        FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
+        FOUNDATION_MESSAGE_WEBSITE_KEY,
+        FOUNDATION_MESSAGE_GITHUB_KEY,
+        FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+        FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+        FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+        FOUNDATION_MESSAGE_DECK_KEY,
+        FOUNDATION_MESSAGE_PLAN_KEY,
+        FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
       ],
     },
   ],
   documents: {
-    title: 'Existing documents',
-    hint: 'Messaging, positioning, brand, audience or competitive documents. Several allowed.',
-    footnote: `Accepted: PDF, Word (.docx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it.`,
+    title: 'Other links and documents',
+    hint: 'Anything else worth reading — the docs, a blog post, a talk — and the logo package. Add a link or upload a file, then tag it.',
+    footnote: `Accepted: PDF, Word (.docx), PowerPoint (.pptx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it. A file uploaded on the deck or plan field above lands here with its tag. A logo package is passed on for later agents and never read as a source.`,
     maxDocuments: FOUNDATION_MESSAGE_MAX_DOCUMENTS,
     maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
     fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
     endpoints: { ...FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS },
+    tags: FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+    defaultTag: FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND,
   },
-  derivativeChips: FOUNDATION_MESSAGE_DERIVATIVE_CHIPS.map((chip) => ({ key: chip.key, label: chip.label })),
+  requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
   submitsProject: true,
-  sections: FOUNDATION_MESSAGE_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
+  assetView: 'messaging-framework',
+  // The asset view shows the framework itself; there is no section checklist to tick.
+  sections: [],
   endpoints: {
     generate: '/api/mktg-agents/foundation-message/generate',
     result: '/api/mktg-agents/foundation-message/result',
@@ -254,7 +322,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Define',
   documentName: 'ICP & Target Markets',
   intro:
-    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Messaging Document are attached automatically when they exist.',
+    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Messaging Framework are attached automatically when they exist.',
   // The agent's own form-mode preamble (src/form.ts renderFormMessage),
   // verbatim — the same ICP_FORM_PREAMBLE_LINES the BFF's `renderIcpFormText`
   // opens the batch submission with, so the agent's MODE RULES trigger
@@ -288,7 +356,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
   ],
   attachments: [
     { sourceAgentId: 'brand-kit', answerKey: 'brand_kit_markdown', documentName: 'Brand Kit', optional: true },
-    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Messaging Document', optional: true },
+    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Messaging framework', optional: true },
   ],
   regenerateViaGenerate: true,
   sections: ICP_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
@@ -349,12 +417,20 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
       'That doesn’t look like a GitHub URL. Enter the project’s repository or organization URL, e.g. https://github.com/org/repo or https://github.com/org.',
   },
   'source-url': {
-    unrecognized: 'Enter the full link, starting with https://, or “none”.',
+    unrecognized: 'Enter the full link, starting with https://.',
   },
   'source-url-list': {
-    unrecognized: 'Every line must be a full link, starting with https://.',
+    unrecognized: 'Every link must be a full link, starting with https://.',
   },
 };
+
+/**
+ * Blocking field-error copy for a single-line intake field (`kind: 'text'`)
+ * whose value holds a line break (`oneLineValidator`). The input hides the
+ * break, so without this the form looks valid and the BFF refuses the run
+ * with a cause the user cannot see.
+ */
+export const MKTG_INTAKE_ONE_LINE_ERROR = 'Keep this to one line — the line breaks in it would make the run fail.';
 
 /**
  * What the result says when the document was generated WITHOUT a README. The

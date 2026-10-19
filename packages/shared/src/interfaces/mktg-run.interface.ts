@@ -12,17 +12,23 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
+import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
 
-/** How a single intake field is rendered on the run page. */
-export type MktgIntakeFieldKind = 'text' | 'textarea';
+/**
+ * How a single intake field is rendered on the run page: one line, several
+ * lines, or a repeatable list of links (`url-list`: one `https://` link per
+ * row with an "Add another link" control; the answer is the rows joined by
+ * newlines, so it validates and travels like a `source-url-list` textarea).
+ */
+export type MktgIntakeFieldKind = 'text' | 'textarea' | 'url-list';
 
 /**
  * LFX data source a field can be pre-filled from. Prefilled fields render a
  * "From LFX" chip and stay editable — the marketplace never re-asks what LFX
  * already knows.
  */
-export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'project-description';
+export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'website-url' | 'project-description';
 
 /**
  * Format rule enforced on a field's value. Unlike the agents' own contracts —
@@ -37,11 +43,10 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'proje
  *   a GitHub organization). For the Brand Kit, whose BFF sends the URL to
  *   the agent as text and fetches nothing, so an organization URL is a usable
  *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
- * - `source-url`: a page the agent fetches itself (the Messaging Document's
- *   website, press release and brand page) — an `https://` link, or "none"
- *   (Paul: "none" is a valid answer).
- * - `source-url-list`: several such links, one per line (the Messaging
- *   Document's other links); blank lines are ignored.
+ * - `source-url`: a page the agent fetches itself (the Messaging Framework's
+ *   website) — an `https://` link, or "none".
+ * - `source-url-list`: several such links, one per line; blank lines are
+ *   ignored. No intake uses it at present.
  */
 export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list';
 
@@ -128,6 +133,23 @@ export interface MktgIntakeField {
    * omitted from the submitted answers when the trimmed value is empty.
    */
   optional?: boolean;
+  /**
+   * The agent's BFF refuses a line break in this answer ("must be one line"),
+   * so the form validates it where it is fixable. Only set on fields whose
+   * BFF enforces it; the other agents accept multi-line text in their `text`
+   * fields.
+   */
+  oneLine?: boolean;
+  /**
+   * Offers a file upload beside the control (the Messaging Framework's deck
+   * and plan: "upload or URL"). A file picked here joins the intake's
+   * documents section already tagged with this kind — the requester never
+   * tags it by hand — and is read to text there like any other upload.
+   * Needs an intake with a documents section.
+   */
+  uploadTag?: string;
+  /** Most rows a `url-list` field takes; the "Add another link" control stops there. */
+  maxItems?: number;
 }
 
 /**
@@ -176,6 +198,13 @@ export interface MktgIntakeDocument {
   url?: string;
   /** The extracted text, for `kind: 'file'`. */
   text?: string;
+  /**
+   * What the document is, for intakes whose documents section offers tags
+   * ({@link MktgIntakeDocumentsConfig.tags}): the Messaging Framework's press
+   * release, deck, document, plan or logo package. Absent for intakes without
+   * tags.
+   */
+  tag?: string;
 }
 
 /** An existing document on the form, with what reading it produced. */
@@ -204,6 +233,16 @@ export interface MktgIntakeDocumentRow {
   status: string;
   /** Tailwind colour class of the status. */
   statusClass: string;
+  /** The tag picker's control name (the entry's id), for intakes with tags; '' otherwise. */
+  tagControl: string;
+}
+
+/** One tag a document on the form can carry: the agent's kind and what the form calls it. */
+export interface MktgIntakeDocumentTag {
+  /** The agent's document kind, e.g. `press`. */
+  value: string;
+  /** What the form calls it, e.g. `Press release`. */
+  label: string;
 }
 
 /** Response of the existing-document file endpoint: what LFX One read from an uploaded file. */
@@ -269,6 +308,13 @@ export interface MktgIntakeDocumentsConfig {
   fileExtensions: string[];
   /** BFF endpoint that reads an uploaded file (raw body) to text. */
   endpoints: { file: string };
+  /**
+   * Tags the requester picks per document (what it is), for agents whose
+   * form takes a document kind. Without them a document carries no tag.
+   */
+  tags?: MktgIntakeDocumentTag[];
+  /** The tag a new document gets until the requester changes it; required when `tags` is set. */
+  defaultTag?: string;
 }
 
 /**
@@ -317,7 +363,11 @@ export interface MktgDependencyDocument {
   source: 'server' | 'browser';
   /** Latest stored draft version. */
   version: number;
-  /** The stored document (Markdown). */
+  /**
+   * The stored document as a dependent agent reads it: always Markdown. A
+   * structured asset (the Messaging Framework's JSON) is rendered to
+   * Markdown when it is resolved, never handed over as JSON text.
+   */
   document: string;
 }
 
@@ -466,9 +516,9 @@ export type MktgRunAnswerOrigin = (typeof FOUNDATION_MESSAGE_ANSWER_ORIGINS)[num
  * as the run's second step; the requester accepts or edits every one.
  */
 export interface MktgRunQuestion {
-  /** The field the answer fills; the answer travels back under it. */
+  /** The agent's stable id for the question (`ranked-goals`); the answer travels back under it. */
   key: string;
-  /** Short label. */
+  /** Short label, derived from the id (`Ranked goals`). */
   label: string;
   /** The question itself. */
   question: string;
@@ -616,8 +666,14 @@ export interface MktgRunResultResponse {
    * reports the same id is the block it already answered, not a new one.
    */
   questionsId?: string;
-  /** The validated document (Markdown). Present when ready. */
+  /** The validated document (Markdown). Present when ready, for agents that write a document. */
   documentMarkdown?: string;
+  /**
+   * The validated asset, for agents that write structured JSON instead of a
+   * document (the Messaging Framework). Present when ready; a ready result
+   * carries exactly one of `documentMarkdown` and `asset`.
+   */
+  asset?: MktgRunAsset;
   /** Draft version from the validated envelope. Present when ready. */
   version?: number;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
@@ -637,6 +693,27 @@ export interface MktgRunResultResponse {
    * it happens.
    */
   activity?: MktgRunActivity[];
+}
+
+/**
+ * The asset views the run page and the Documents area know how to render,
+ * besides a Markdown document. The Messaging Framework's is built inside the
+ * mktg-os-agents module; a shared asset-view registry is later work.
+ */
+export type MktgAssetViewKind = 'messaging-framework';
+
+/**
+ * A validated structured output — what an agent that writes JSON returns
+ * instead of a document: the Messaging Framework bundle with the report and
+ * checks the view shows beside it. Stored with the run's version and, by the
+ * BFF, as the revision's content.
+ */
+export interface MktgRunAsset {
+  kind: 'messaging-framework';
+  content: FoundationMessageContent;
+  report: FoundationMessageReport;
+  checks: FoundationMessageChecks;
+  mode: FoundationMessageMode;
 }
 
 /** One kind of step in a run's live activity feed — also the header phase it belongs to. */
@@ -761,8 +838,9 @@ export interface MktgAgentIntake {
   /**
    * Every submission, the first and every edit-inputs resubmit, is a FRESH
    * generate with no prior version and no feedback: the agent's generate form
-   * carries neither (the Messaging Document is revised by comment-and-revise
-   * in Documents instead). The run page offers no "Request changes" box, and
+   * carries neither (for the Messaging Framework, a redraft from comments and
+   * a check of a hand-edited version are later work). The run page offers no
+   * "Request changes" box, and
    * the run shell numbers its own versions, since each envelope says version 1.
    */
   freshRunPerSubmission?: boolean;
@@ -776,14 +854,29 @@ export interface MktgAgentIntake {
    * timeline while the agent works.
    */
   liveActivity?: boolean;
+  /**
+   * The agent writes a structured asset, not a document: the run lands on
+   * this view — generating state, the feed and the questions while the run
+   * is live, then the rendered asset — instead of the document result card,
+   * and the Documents area renders its revisions with the same view.
+   */
+  assetView?: MktgAssetViewKind;
+  /**
+   * What the asterisk beside the submit button means, when the run page's
+   * default ("answers are open-ended, in your own words") does not fit the
+   * form — a sources form says that everything else is optional.
+   */
+  requiredNote?: string;
 }
 
 /** One generated document version for an agent run. */
 export interface MktgRunVersion {
   /** 1-based version number; regeneration produces v+1. */
   version: number;
-  /** The generated document (Markdown) returned by the agent. */
+  /** The generated document (Markdown) returned by the agent; '' for an agent that writes an asset instead. */
   document: string;
+  /** The validated asset, for agents whose intake declares an `assetView`. */
+  asset?: MktgRunAsset;
   /** The feedback that produced this version, when it was a regeneration. */
   feedback?: string;
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
