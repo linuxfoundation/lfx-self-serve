@@ -895,6 +895,11 @@ export class MeetingJoinComponent implements OnInit {
         const meetingId = params.get('id');
         this.applyPassword(queryParams);
 
+        // A signed-out visitor is sent to login by the browser; fetching here would bounce a private meeting to not-found first.
+        if (isPlatformServer(this.platformId) && queryParams.get('action') === 'leave' && !this.authenticated()) {
+          return EMPTY;
+        }
+
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
           return EMPTY;
@@ -1788,14 +1793,24 @@ export class MeetingJoinComponent implements OnInit {
     // A new Zoom tab would bury the confirmation; stays off for the visit, including after the param is dropped.
     this.hasAutoJoined.set(true);
 
+    const { paramMap, queryParamMap } = this.activatedRoute.snapshot;
+    const leaveRouteId = paramMap.get('id');
+
     if (!this.authenticated()) {
-      window.location.href = `/login?returnTo=${encodeURIComponent(this.router.url)}`;
+      // `router.url` still holds the previous URL while the first navigation is in flight, so the link is rebuilt from the route.
+      const returnParams = new URLSearchParams({ action: 'leave' });
+      const password = queryParamMap.get('password');
+      if (password) {
+        returnParams.set('password', password);
+      }
+      window.location.href = `/login?returnTo=${encodeURIComponent(`/meetings/${encodeURIComponent(leaveRouteId ?? '')}?${returnParams.toString()}`)}`;
       return;
     }
 
     combineLatest([toObservable(this.meeting), toObservable(this.meetingMatchesRoute)])
       .pipe(
-        filter(([meeting, matchesRoute]) => matchesRoute && !!meeting?.id),
+        // Tied to the meeting the link named, so a reused component navigating elsewhere never prompts for another meeting.
+        filter(([meeting, matchesRoute]) => matchesRoute && !!meeting?.id && this.meetingRouteId() === leaveRouteId),
         take(1),
         takeUntilDestroyed(this.destroyRef)
       )

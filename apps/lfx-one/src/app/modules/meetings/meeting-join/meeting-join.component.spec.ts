@@ -1361,6 +1361,57 @@ describe('MeetingJoinComponent', () => {
         expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'email-link');
       });
 
+      describe('when the viewer is signed out', () => {
+        const stubLocation = () => {
+          const location = { href: '' } as Location;
+          vi.spyOn(window, 'location', 'get').mockReturnValue(location);
+          return location;
+        };
+
+        it('sends them to login with a return link built from the route, keeping the password', async () => {
+          authenticated.set(false);
+          paramMap$.next(convertToParamMap({ id: MEETING_ID }));
+          queryParamMap$.next(convertToParamMap({ action: 'leave', password: 'synthetic-pass' }));
+          const location = stubLocation();
+
+          await createFixture(buildMeeting({ organizer: false, invited: false }));
+
+          expect(location.href).toBe(`/login?returnTo=${encodeURIComponent(`/meetings/${MEETING_ID}?action=leave&password=synthetic-pass`)}`);
+        });
+
+        it('does not fetch the meeting during server rendering, so a private meeting is not bounced to not-found', async () => {
+          authenticated.set(false);
+          queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+          TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+
+          await TestBed.compileComponents();
+          TestBed.createComponent(MeetingJoinComponent);
+          await TestBed.inject(ApplicationRef).whenStable();
+
+          expect(getPublicMeeting).not.toHaveBeenCalled();
+          expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
+        });
+      });
+
+      it('does not prompt for another meeting when the route changes before the linked one loads', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = confirmSpy();
+        const first$ = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+        getPublicMeeting.mockReturnValue(first$);
+
+        await TestBed.compileComponents();
+        const fixture = TestBed.createComponent(MeetingJoinComponent);
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        getPublicMeeting.mockReturnValue(of({ meeting: buildMeeting({ id: 'meeting-2', organizer: false, invited: true }), project: buildProject() }));
+        paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+        await vi.waitFor(() => expect(fixture.componentInstance.meeting()?.id).toBe('meeting-2'));
+        await TestBed.inject(ApplicationRef).whenStable();
+
+        expect(confirm).not.toHaveBeenCalled();
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+      });
+
       it('does nothing without the action param', async () => {
         const confirm = confirmSpy();
 
