@@ -271,6 +271,18 @@ describe('MktgSlidesExportService', () => {
       expect(store.publicImages.size).toBe(0);
     });
 
+    it('sends the stored kit with its chapters on a brand kit export, so the deck lays out the whole book', async () => {
+      await seedKit(documentStore);
+
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+
+      expect(sentMessage()).toContain('\nASSETS: kit\n');
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+      expect(assets['kit']['kit']).toMatchObject({ dark: '#4D4E4E', accent: '#F37625', font: 'Montserrat' });
+      expect(Object.keys(assets['kit']['chapters'] as object)).toEqual(expect.arrayContaining(['logo', 'color', 'type', 'visual', 'usage', 'voice']));
+      expect(assets['kit']).toMatchObject({ projectName: expect.any(String), version: expect.any(Number) });
+    });
+
     it('exports a framework without a kit in the LF look', async () => {
       await seedFramework(documentStore);
 

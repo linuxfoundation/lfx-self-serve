@@ -284,7 +284,12 @@ export class MktgSlidesExportService {
       if (!kit) {
         throw nothing('brand kit');
       }
-      return { assets: { kit: kit.kit }, kit };
+      // The kit's own export sends the stored kit with its chapters, so the deck
+      // lays out the whole book (slides-export >= 1.1.0); its tokens alone only
+      // make the short deck. A framework export below sends the tokens: they
+      // brand that deck without adding the kit's pages to it.
+      const { projectName, version, generatedAt, websiteUrl, chapters } = kit;
+      return { assets: { kit: { kit: kit.kit, chapters, projectName, version, generatedAt, websiteUrl } }, kit };
     }
 
     const framework = revision.record.bundle.format === 'json' ? readFoundationMessageContent(revision.record.bundle.markdown) : null;
