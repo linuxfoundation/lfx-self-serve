@@ -37,8 +37,11 @@ import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take } from 'rxjs';
+
+import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
 
 @Component({
   selector: 'lfx-votes-table',
@@ -71,6 +74,7 @@ export class VotesTableComponent {
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
   private readonly clipboardShare = inject(ClipboardShareService);
+  private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -215,8 +219,25 @@ export class VotesTableComponent {
   protected toggleRowActionMenu(event: Event, vote: VoteTableRow, menu: MenuComponent): void {
     event.stopPropagation();
     this.rowActionMenuVoteUid.set(vote.uid);
-    this.rowActionMenuItems.set([{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }]);
+    const items: MenuItem[] = [{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }];
+    // Managers only, and only while the vote is open — upstream rejects reminders for any other status.
+    if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
+      items.push({ label: 'Send reminder', icon: 'fa-light fa-envelope', command: () => this.openReminderDialog(vote) });
+    }
+    this.rowActionMenuItems.set(items);
     menu.toggle(event);
+  }
+
+  /** Opens the reminder dialog for an active vote's eligible non-voters (#3769). */
+  protected openReminderDialog(vote: VoteTableRow): void {
+    this.dialogService.open(VoteReminderDialogComponent, {
+      header: 'Send vote reminder',
+      width: 'min(960px, 96vw)',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { vote },
+    });
   }
 
   protected resetFilters(): void {
