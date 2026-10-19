@@ -354,7 +354,9 @@ describe('MktgDocumentRunService', () => {
     flows.getResult.mockResolvedValue(ready);
     io.get.mockClear();
     io.head.mockClear();
-    expect(await service.reconcile(req, project, undefined, undefined, true)).toEqual([]);
+    const skipped: string[] = [];
+    expect(await service.reconcile(req, project, undefined, undefined, true, skipped)).toEqual([]);
+    expect(skipped).toEqual([runId]);
     expect(io.get).not.toHaveBeenCalled();
     expect(io.head).not.toHaveBeenCalled();
     expect(flows.getResult).not.toHaveBeenCalled();

@@ -42,6 +42,9 @@
         >
       }
     }
+    @if (refreshWarning()) {
+      <lfx-message severity="warn" size="small" [text]="refreshWarning()" data-testid="mktg-document-view-refresh-warning" />
+    }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />
     }

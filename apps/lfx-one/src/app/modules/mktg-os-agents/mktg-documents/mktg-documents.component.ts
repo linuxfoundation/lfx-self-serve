@@ -18,11 +18,12 @@ import {
   MktgRevisionSummary,
   MktgSelectedLivingDocument,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision } from '@lfx-one/shared/utils';
+import { describeMktgRevision, mergeMktgDocumentRuns } from '@lfx-one/shared/utils';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { catchError, distinctUntilChanged, EMPTY, expand, map, of, switchMap, tap, timer } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, expand, map, of, scan, switchMap, tap, throwError, timer } from 'rxjs';
 
 // The Marketing OS Documents area (design of record: "Document store", Main
 // board): living documents in run order with their revision state, the
@@ -46,6 +47,7 @@ export class MktgDocumentsComponent {
   // === Signals ===
   protected readonly loading = signal(true);
   protected readonly errorText = signal('');
+  protected readonly refreshWarning = signal('');
   // The documents list could not be read: nothing is known about what the
   // project has stored, so neither the empty states nor the nav badges may
   // assert an absence while this is set.
@@ -111,6 +113,7 @@ export class MktgDocumentsComponent {
         .pipe(
           tap((request) => {
             this.errorText.set('');
+            this.refreshWarning.set('');
             this.listFailed.set(false);
             const scope = JSON.stringify([request.project, request.userSub]);
             if (scope !== this.listedScope) {
@@ -127,10 +130,31 @@ export class MktgDocumentsComponent {
             return this.documentStore.listDocuments(request.project).pipe(
               expand((documents) =>
                 documents.runs?.some((run) => run.state !== 'failed')
-                  ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => this.documentStore.listDocuments(request.project, true)))
+                  ? timer(MKTG_RUN_POLL.intervalMs).pipe(
+                      switchMap(() =>
+                        this.documentStore.listDocuments(request.project, true).pipe(
+                          tap(() => this.refreshWarning.set('')),
+                          catchError((error: unknown) => {
+                            if (!isTransientHttpError(error)) {
+                              return throwError(() => error);
+                            }
+                            this.refreshWarning.set('Could not refresh. Showing the last loaded documents; retrying.');
+                            return of(documents);
+                          })
+                        )
+                      )
+                    )
                   : EMPTY
               ),
+              scan(
+                (known: MktgDocumentsResponse | null, current: MktgDocumentsResponse) => ({
+                  ...current,
+                  runs: mergeMktgDocumentRuns(known?.runs ?? [], current.runs ?? [], current.skippedRunIds ?? []),
+                }),
+                null
+              ),
               catchError((error: HttpErrorResponse) => {
+                this.refreshWarning.set('');
                 this.listFailed.set(true);
                 this.errorText.set(
                   error.status === 403

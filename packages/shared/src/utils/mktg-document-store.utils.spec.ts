@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
+import type { MktgDocumentRunProgress } from '../interfaces/mktg-document-run.interface';
 import {
   buildMktgDocumentPrefix,
   buildMktgDocumentProjectPrefix,
@@ -17,6 +18,7 @@ import {
   buildMktgRevisionKey,
   describeMktgRevision,
   findMktgDocumentType,
+  mergeMktgDocumentRuns,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from './mktg-document-store.utils';
@@ -25,6 +27,22 @@ const SHA = 'ab'.repeat(32);
 const BRAND_KIT = findMktgDocumentType('brand-kit') as MktgDocumentType;
 
 describe('mktg-document-store utils', () => {
+  it('retains only explicitly skipped known runs, never terminal absences or an older duplicate', () => {
+    const old: MktgDocumentRunProgress = {
+      project: 'synthetic-project',
+      runId: 'a'.repeat(64),
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      startedAt: '2026-10-17T00:00:00Z',
+      state: 'failed',
+    };
+    const current = { ...old, runId: 'b'.repeat(64), startedAt: '2026-10-19T00:00:00Z', state: 'writing' as const };
+    expect(mergeMktgDocumentRuns([old], [current], [old.runId])).toEqual([current, old]);
+    expect(mergeMktgDocumentRuns([old, current], [], [])).toEqual([]);
+    const retried = { ...old, state: 'writing' as const };
+    expect(mergeMktgDocumentRuns([old], [retried], [old.runId])).toEqual([retried]);
+  });
+
   it('lists living documents in run order before the one-off run types', () => {
     expect(MKTG_DOCUMENT_TYPES.map((type) => `${type.kind}:${type.agentKey}`)).toEqual([
       'living:brand-kit',

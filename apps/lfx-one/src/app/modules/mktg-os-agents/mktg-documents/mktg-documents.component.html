@@ -15,6 +15,9 @@
     @if (errorText()) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-documents-error" />
     }
+    @if (refreshWarning()) {
+      <lfx-message severity="warn" size="small" [text]="refreshWarning()" data-testid="mktg-documents-refresh-warning" />
+    }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-documents-notice" />
     }

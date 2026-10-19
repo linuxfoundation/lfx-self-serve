@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, signal } from '@angular/core';
+import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { NEVER, of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentsComponent } from './mktg-documents.component';
 
@@ -89,6 +89,90 @@ describe('MktgDocumentsComponent', () => {
         { provide: MktgDocumentStoreService, useValue: store },
       ],
     }).compileComponents();
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    vi.useRealTimers();
+  });
+
+  it.each([503, 401, 403])('retains loaded list state only for a transient timer failure: %s', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const initial = documentsResponse();
+    initial.runs = [
+      { project: PROJECT.uid, runId: 'b'.repeat(64), agentKey: 'brand-kit', documentId: 'living', startedAt: '2026-10-19T00:00:00Z', state: 'writing' },
+    ];
+    store.listDocuments
+      .mockReturnValueOnce(of(initial))
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status })))
+      .mockReturnValue(of(initial));
+    await render();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    if (status === 503) {
+      expect(query('mktg-documents-started-runs')).not.toBeNull();
+      expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Writing');
+      expect(query('mktg-documents-refresh-warning')).not.toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-documents-refresh-warning')).toBeNull();
+    } else {
+      expect(query('mktg-documents-started-runs')).toBeNull();
+      expect(query('mktg-documents-document-subtitle')).toBeNull();
+      expect(query('mktg-documents-list-failed')).not.toBeNull();
+    }
+  });
+
+  it.each(['writing', 'failed'] as const)('keeps explicitly skipped old %s rows but schedules only from the raw slice', async (state) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const old = { project: PROJECT.uid, runId: 'a'.repeat(64), agentKey: 'brand-kit' as const, documentId: 'living', startedAt: '2026-10-17T00:00:00Z', state };
+    const recent = { ...old, runId: 'b'.repeat(64), startedAt: '2026-10-19T00:00:00Z', state: 'writing' as const };
+    const full = documentsResponse();
+    store.listDocuments
+      .mockReturnValueOnce(of({ ...full, runs: [recent, old] }))
+      .mockReturnValueOnce(of({ ...full, runs: [recent], skippedRunIds: [old.runId] }))
+      .mockReturnValueOnce(of({ ...full, runs: [], skippedRunIds: [old.runId] }))
+      .mockReturnValue(of({ ...full, runs: [] }));
+    await render();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 2);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-run-' + old.runId)).not.toBeNull();
+    expect(query('mktg-documents-started-run-' + recent.runId)).toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 5);
+    expect(store.listDocuments).toHaveBeenCalledTimes(3);
+    fixture.componentInstance['reloads'].update((value) => value + 1);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-run-' + old.runId)).toBeNull();
+  });
+
+  it.each(['project', 'subject'])('clears the retained poll cache on a %s change', async (scope) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const full = documentsResponse();
+    const run = {
+      project: PROJECT.uid,
+      runId: 'a'.repeat(64),
+      agentKey: 'brand-kit' as const,
+      documentId: 'living',
+      startedAt: '2026-10-17T00:00:00Z',
+      state: 'writing' as const,
+    };
+    store.listDocuments.mockReturnValueOnce(of({ ...full, runs: [run] })).mockReturnValueOnce(of({ ...full, runs: [], skippedRunIds: [run.runId] }));
+    await render();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    store.listDocuments.mockReturnValue(NEVER);
+    if (scope === 'project') {
+      activeContext.set({ uid: 'synthetic-other', name: 'Synthetic Other', slug: 'synthetic-other' });
+    } else {
+      (TestBed.inject(UserService).user as WritableSignal<User | null>).set({ sub: 'synthetic-other' } as User);
+    }
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(query('mktg-documents-started-runs')).toBeNull();
+    expect(query('mktg-documents-document-subtitle')).toBeNull();
   });
 
   it('lists a server-recorded first run without presenting it as an absent or already-stored document', async () => {

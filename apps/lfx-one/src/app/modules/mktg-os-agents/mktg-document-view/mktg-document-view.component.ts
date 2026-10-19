@@ -17,13 +17,14 @@ import {
   MktgRevisionRow,
   MktgRevisionSummary,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision, findMktgDocumentType } from '@lfx-one/shared/utils';
+import { describeMktgRevision, findMktgDocumentType, mergeMktgDocumentRuns } from '@lfx-one/shared/utils';
+import { isTransientHttpError } from '@shared/utils/http-error.utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { UserService } from '@services/user.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, concat, defer, distinctUntilChanged, EMPTY, expand, finalize, map, Observable, of, switchMap, timer } from 'rxjs';
+import { catchError, concat, defer, distinctUntilChanged, EMPTY, expand, finalize, map, Observable, of, switchMap, tap, throwError, timer } from 'rxjs';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -52,6 +53,7 @@ export class MktgDocumentViewComponent {
   // === Signals ===
   protected readonly loading = signal(true);
   protected readonly errorText = signal('');
+  protected readonly refreshWarning = signal('');
   protected readonly notice = signal('');
   protected readonly view = signal<MktgRevisionResponse | null>(null);
   protected readonly restoringId = signal<string | null>(null);
@@ -121,6 +123,8 @@ export class MktgDocumentViewComponent {
             this.retryTarget = '';
             this.retryServerRunId = '';
             this.serverRun.set(null);
+            this.generating.set(false);
+            this.refreshWarning.set('');
             this.loading.set(true);
             this.errorText.set('');
             this.view.set(null);
@@ -376,7 +380,7 @@ export class MktgDocumentViewComponent {
             ? this.documentStore.getRevision(project, agentKey, documentId, view.revisions[0].id, poll)
             : of(view)
         ),
-        map((view) => ({ detail: { ...detail, runs: view.runs ?? detail.runs }, view }))
+        map((view) => ({ detail: { ...detail, runs: view.runs ?? detail.runs, skippedRunIds: view.skippedRunIds ?? detail.skippedRunIds }, view }))
       );
     };
     const read = (poll = false) =>
@@ -386,10 +390,29 @@ export class MktgDocumentViewComponent {
             .pipe(map((view) => ({ detail: view as MktgDocumentDetailResponse, view })))
         : this.documentStore.getDocument(project, agentKey, documentId, poll).pipe(switchMap((detail) => revision(detail, poll)));
     const first$ = retryId ? this.documentStore.retryRun(project, agentKey, documentId, retryId).pipe(switchMap((detail) => revision(detail))) : read();
+    let knownRuns: MktgDocumentRunProgress[] = [];
     return first$.pipe(
-      expand((state) => (state.detail.runs?.some((run) => run.state !== 'failed') ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => read(true))) : EMPTY)),
+      expand((state) =>
+        state.detail.runs?.some((run) => run.state !== 'failed')
+          ? timer(MKTG_RUN_POLL.intervalMs).pipe(
+              switchMap(() =>
+                read(true).pipe(
+                  tap(() => this.refreshWarning.set('')),
+                  catchError((error: unknown) => {
+                    if (!isTransientHttpError(error)) {
+                      return throwError(() => error);
+                    }
+                    this.refreshWarning.set('Could not refresh. Showing the last loaded document; retrying.');
+                    return of(state);
+                  })
+                )
+              )
+            )
+          : EMPTY
+      ),
       map(({ detail, view }) => {
-        const run = detail.runs?.find((entry) => entry.state !== 'failed') ?? detail.runs?.[0] ?? null;
+        knownRuns = mergeMktgDocumentRuns(knownRuns, detail.runs ?? [], detail.skippedRunIds ?? []);
+        const run = knownRuns.find((entry) => entry.state !== 'failed') ?? knownRuns[0] ?? null;
         this.serverRun.set(run);
         this.generating.set(!!run && run.state !== 'failed');
         if (run) {
@@ -410,6 +433,7 @@ export class MktgDocumentViewComponent {
       }),
       catchError((error: HttpErrorResponse) => {
         console.error('Marketing OS document progress could not be loaded', error);
+        this.refreshWarning.set('');
         this.serverRun.set(null);
         this.generating.set(false);
         this.loading.set(false);

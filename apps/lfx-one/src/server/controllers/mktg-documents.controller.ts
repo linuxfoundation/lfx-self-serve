@@ -40,10 +40,12 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, {});
     try {
       const project = await this.resolveWritableProject(req, projectUid, operation);
-      const runs = await this.documentRuns.reconcile(req, project, undefined, undefined, req.query['poll'] === '1');
+      const poll = req.query['poll'] === '1';
+      const skippedRunIds: string[] = [];
+      const runs = await this.documentRuns.reconcile(req, project, undefined, undefined, poll, skippedRunIds);
       const documents = await this.documentStore.listDocuments(req, project);
       logger.success(req, operation, startTime, { project, groups: documents.groups.length });
-      res.json({ ...documents, runs });
+      res.json({ ...documents, runs, ...(poll && { skippedRunIds }) });
     } catch (error) {
       next(error);
     }
@@ -61,13 +63,16 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, req.query['poll'] === '1');
+      const poll = req.query['poll'] === '1';
+      const skippedRunIds: string[] = [];
+      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, poll, skippedRunIds);
       const detail = await this.documentStore.getDocument(req, project, params.type, params.documentId);
-      if (!detail && runs.length === 0) {
+      // A bounded poll is a partial update, not an authoritative existence read.
+      if (!detail && runs.length === 0 && !(poll && skippedRunIds.length)) {
         throw new ResourceNotFoundError('Marketing OS document', params.documentId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
       logger.success(req, operation, startTime, { project, revisions: detail?.revisions.length ?? 0 });
-      res.json({ ...(detail ?? { project, type: params.type, documentId: params.documentId, revisions: [] }), runs });
+      res.json({ ...(detail ?? { project, type: params.type, documentId: params.documentId, revisions: [] }), runs, ...(poll && { skippedRunIds }) });
     } catch (error) {
       next(error);
     }
@@ -90,13 +95,15 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
-      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, req.query['poll'] === '1');
+      const poll = req.query['poll'] === '1';
+      const skippedRunIds: string[] = [];
+      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, poll, skippedRunIds);
       const revision = await this.documentStore.getRevision(req, project, params.type, params.documentId, revisionId);
       if (!revision) {
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
       logger.success(req, operation, startTime, { project, revision: revision.revision.number });
-      res.json({ ...revision, runs });
+      res.json({ ...revision, runs, ...(poll && { skippedRunIds }) });
     } catch (error) {
       next(error);
     }

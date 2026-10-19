@@ -203,9 +203,17 @@ export class MktgDocumentRunService {
   }
 
   /** Caller has already resolved and writer-authorized project; sessions come only from stored records. */
-  public async reconcile(req: Request, project: string, agentKey?: string, documentId?: string, poll = false): Promise<MktgDocumentRunProgress[]> {
+  public async reconcile(
+    req: Request,
+    project: string,
+    agentKey?: string,
+    documentId?: string,
+    poll = false,
+    skippedRunIds?: string[]
+  ): Promise<MktgDocumentRunProgress[]> {
     logger.debug(req, 'mktg_run_reconcile', 'Checking recorded document runs', { project, agent: agentKey, document: documentId, poll });
-    const listed = await this.store.listObjects(req, 'marketing-os-artifacts', this.prefix(project));
+    const prefix = this.prefix(project);
+    const listed = await this.store.listObjects(req, 'marketing-os-artifacts', prefix);
     const storedRuns: MktgStoredStartedRun[] = [];
     for (let offset = 0; offset < listed.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
       const batch = listed.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY);
@@ -214,6 +222,10 @@ export class MktgDocumentRunService {
           const modifiedAt = entry.lastModified?.getTime();
           // Timer reads are bounded; navigation reads discover unfinished sessions of any age.
           if (poll && (modifiedAt === undefined || !Number.isFinite(modifiedAt) || Date.now() - modifiedAt > MKTG_STARTED_RUN_POLL_WINDOW_MS)) {
+            const id = entry.key.slice(prefix.length, -5);
+            if (entry.key.startsWith(prefix) && entry.key.endsWith('.json') && MKTG_STARTED_RUN_ID_REGEX.test(id)) {
+              skippedRunIds?.push(id);
+            }
             return null;
           }
           const metadata = await this.store.headObject(req, 'marketing-os-artifacts', entry.key);

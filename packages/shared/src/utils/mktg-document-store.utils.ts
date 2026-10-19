@@ -18,6 +18,14 @@ import {
   MKTG_REVISION_SEQUENCE_DIGITS,
 } from '../constants/mktg-document-store.constants';
 import type { MktgDocumentType, MktgRevisionSummary, ParsedMktgRevisionKey } from '../interfaces/mktg-document-store.interface';
+import type { MktgDocumentRunProgress } from '../interfaces/mktg-document-run.interface';
+
+/** Merge only explicitly skipped, previously discovered rows; callers own the request scope. */
+export function mergeMktgDocumentRuns(previous: MktgDocumentRunProgress[], current: MktgDocumentRunProgress[], skipped: string[]): MktgDocumentRunProgress[] {
+  const observed = new Set(current.map((run) => run.runId));
+  const omitted = new Set(skipped);
+  return [...current, ...previous.filter((run) => omitted.has(run.runId) && !observed.has(run.runId))].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+}
 
 /** The registered document type for an agent key, or undefined when the key names none. */
 export function findMktgDocumentType(agentKey: string): MktgDocumentType | undefined {

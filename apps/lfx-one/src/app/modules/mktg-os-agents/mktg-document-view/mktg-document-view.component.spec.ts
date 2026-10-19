@@ -3,21 +3,21 @@
 
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, signal } from '@angular/core';
+import { computed, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_README_SKIP_NOTES } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_README_SKIP_NOTES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { UserService } from '@services/user.service';
-import { MktgGenerateProgress, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
+import { MktgGenerateProgress, MktgStoredAgentRun, User } from '@lfx-one/shared/interfaces';
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { NEVER, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 
@@ -113,6 +113,95 @@ describe('MktgDocumentViewComponent', () => {
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-user' }) } },
       ],
     }).compileComponents();
+  });
+
+  afterEach(() => {
+    harness?.fixture.destroy();
+    vi.useRealTimers();
+  });
+
+  it.each(['detail', 'revision'])('retains the loaded revision and progress after a transient timer %s failure', async (part) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const run = {
+      project: PROJECT.uid,
+      runId: 'b'.repeat(64),
+      agentKey: 'brand-kit' as const,
+      documentId: 'living',
+      startedAt: '2026-10-19T00:00:00Z',
+      state: 'writing' as const,
+    };
+    const pending = { ...detail, runs: [run] };
+    const complete = { ...detail, revisions: [RESTORED, LATEST], runs: [] };
+    store.getDocument.mockReturnValueOnce(of(pending));
+    store.getRevision.mockReturnValueOnce(of({ ...revisionResponse(LATEST), runs: [run] }));
+    if (part === 'detail') {
+      store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    } else {
+      store.getDocument.mockReturnValueOnce(of(pending));
+      store.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    }
+    store.getDocument.mockReturnValue(of(complete));
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(RESTORED), revisions: [RESTORED, LATEST], runs: [] }));
+    await render('/documents/brand-kit/living');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 2');
+    expect(query('mktg-document-view-generating')).not.toBeNull();
+    expect(query('mktg-document-view-refresh-warning')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-document')?.textContent).toContain('Revision 3');
+    expect(query('mktg-document-view-refresh-warning')).toBeNull();
+    expect(query('mktg-document-view-generating')).toBeNull();
+  });
+
+  it.each([401, 403])('clears the loaded revision and progress when a timer loses access: %s', async (status) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const run = {
+      project: PROJECT.uid,
+      runId: 'b'.repeat(64),
+      agentKey: 'brand-kit' as const,
+      documentId: 'living',
+      startedAt: '2026-10-19T00:00:00Z',
+      state: 'writing' as const,
+    };
+    store.getDocument.mockReturnValueOnce(of({ ...detail, runs: [run] })).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status })));
+    await render('/documents/brand-kit/living');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-error')).not.toBeNull();
+  });
+
+  it.each(['project', 'subject'])('retains skipped progress without extra timers, but clears it on a %s change', async (scope) => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const run = {
+      project: PROJECT.uid,
+      runId: 'a'.repeat(64),
+      agentKey: 'brand-kit' as const,
+      documentId: 'living',
+      startedAt: '2026-10-17T00:00:00Z',
+      state: 'writing' as const,
+    };
+    store.getDocument
+      .mockReturnValueOnce(of({ ...detail, revisions: [], runs: [run] }))
+      .mockReturnValueOnce(of({ ...detail, revisions: [], runs: [], skippedRunIds: [run.runId] }));
+    await render('/documents/brand-kit/living');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-generating')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 4);
+    expect(store.getDocument).toHaveBeenCalledTimes(2);
+    store.getDocument.mockReturnValue(NEVER);
+    if (scope === 'project') {
+      activeContext.set({ uid: 'synthetic-other', name: 'Synthetic Other', slug: 'synthetic-other' });
+    } else {
+      (TestBed.inject(UserService).user as WritableSignal<User | null>).set({ sub: 'synthetic-other' } as User);
+    }
+    await settle();
+    expect(query('mktg-document-view-generating')).toBeNull();
+    expect(query('mktg-document-view-document')).toBeNull();
   });
 
   it.each([false, true])('keeps the design-aligned responsive columns with generating=%s', async (generating) => {

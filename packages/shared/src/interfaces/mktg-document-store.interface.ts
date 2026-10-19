@@ -169,6 +169,8 @@ export interface MktgDocumentsResponse {
   groups: MktgDocumentGroup[];
   /** Server-visible unfinished runs, including documents with no revision yet; newest first. */
   runs?: MktgDocumentRunProgress[];
+  /** Bounded timer polls omitted these ids; absence from runs is not proof they finished. */
+  skippedRunIds?: string[];
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId?project=<uid>`: the document and its revisions, newest first. */
@@ -179,6 +181,8 @@ export interface MktgDocumentDetailResponse {
   revisions: MktgRevisionSummary[];
   /** Server-visible unfinished runs for this document; revisions may be empty on a first run. */
   runs?: MktgDocumentRunProgress[];
+  /** Project-scoped poll coverage; retain only previously known ids in this document's scope. */
+  skippedRunIds?: string[];
 }
 
 /** The exact stored revision produced by a result poll, never a lookup of whichever revision is latest. */

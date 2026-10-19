@@ -86,7 +86,7 @@ describe('MktgDocumentsController', () => {
     expect(projectMocks.getProjectById).toHaveBeenCalledWith(expect.anything(), PROJECT, true);
     expect(storeMocks.listDocuments).toHaveBeenCalledWith(expect.anything(), 'resolved-uid');
     expect(res.json).toHaveBeenCalledWith({ project: 'resolved-uid', groups: [], runs: [] });
-    expect(runMocks.reconcile).toHaveBeenCalledWith(expect.anything(), 'resolved-uid', undefined, undefined, false);
+    expect(runMocks.reconcile).toHaveBeenCalledWith(expect.anything(), 'resolved-uid', undefined, undefined, false, []);
   });
 
   it.each(['listDocuments', 'getDocument', 'getRevision'] as const)('%s passes the explicit timer-poll mode after authorization', async (method) => {
@@ -97,6 +97,24 @@ describe('MktgDocumentsController', () => {
     await controller[method](req, buildRes(), next);
     expect(next).not.toHaveBeenCalled();
     expect(runMocks.reconcile.mock.calls[0][4]).toBe(true);
+  });
+
+  it.each([false, true])('returns skipped-run coverage on bounded polls but keeps full navigation authoritative: poll=%s', async (poll) => {
+    storeMocks.getDocument.mockResolvedValue(null);
+    runMocks.reconcile.mockImplementationOnce(async (_req, _project, _agent, _document, _poll, skipped: string[]) => {
+      if (poll) {
+        skipped.push('a'.repeat(64));
+      }
+      return [];
+    });
+    const res = buildRes();
+    await controller.getDocument(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT, ...(poll && { poll: '1' }) }), res, next);
+    if (poll) {
+      expect(next).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ revisions: [], runs: [], skippedRunIds: ['a'.repeat(64)] }));
+    } else {
+      expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+    }
   });
 
   it('refuses a caller without the project writer grant', async () => {
