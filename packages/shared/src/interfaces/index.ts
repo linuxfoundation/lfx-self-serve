@@ -237,6 +237,9 @@ export * from './stat-card.interface';
 // Download-card (PNG export) interfaces
 export * from './download-card.interface';
 
+// Transcend consent-manager (CMP) interfaces
+export * from './transcend.interface';
+
 // Intercom interfaces
 export * from './intercom.interface';
 
