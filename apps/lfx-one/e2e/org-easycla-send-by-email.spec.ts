@@ -6,11 +6,10 @@
  *
  * The content half of the repository's dual E2E architecture; `org-easycla-send-by-email-robust.spec.ts`
  * is the structural half. This one walks the chain a CLA manager walks when they are not the
- * signatory — Identify someone else, or I am not authorized — and asserts on the words and that
- * the browser stays in Org Lens.
+ * signatory and asserts on the words and that the browser stays in Org Lens.
  *
  * The unit tests cover the dialog on its own, with its inputs handed to it directly. What they
- * cannot cover is the chain: two entry points on a parent, an HTTP round trip in the middle, and
+ * cannot cover is the chain: an HTTP round trip in the middle, and
  * the absence of a full-page navigation at the end.
  *
  * **Nothing in this file may reach a real signing service.** The request creates a corporate
@@ -64,6 +63,13 @@ async function chooseClaGroup(page: Page): Promise<void> {
   await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`), { timeout: PAGE_LOAD_TIMEOUT });
 }
 
+async function openSendByEmail(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-start-cla').locator('button').click();
+  await expect(page.getByTestId('org-easycla-attestation-dialog')).toBeVisible();
+  await page.getByTestId('org-easycla-attestation-not-authorized').locator('button').click();
+  await expect(page.getByTestId('org-easycla-send-by-email-dialog')).toBeVisible();
+}
+
 async function fillAndSend(page: Page): Promise<void> {
   await nameInput(page).fill(SIGNATORY_NAME);
   await emailInput(page).fill(SIGNATORY_EMAIL);
@@ -75,15 +81,26 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
 
   test.beforeEach(() => skipWithoutCredentials());
 
-  test('emails the CCLA from Identify someone else and stays in Org Lens', async ({ page }) => {
+  test('offers no Not the right person to sign link on the unsigned overview', async ({ page }) => {
+    await gotoEasyclaList(page, async (p) => {
+      await stubList(p);
+    });
+
+    await chooseClaGroup(page);
+
+    await expect(page.getByTestId('org-easycla-detail-start-cla')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-detail-not-started')).not.toContainText('Not the right person to sign');
+  });
+
+  test('emails the CCLA from I am not authorized and stays in Org Lens', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
       await stubList(p);
       await stubHandoff(p, { sign: { status: 200, body: { signUrl: '', signatureId: '' } } });
     });
 
     await chooseClaGroup(page);
-    await page.getByTestId('org-easycla-detail-identify-someone-else').click();
-    await expect(page.getByTestId('org-easycla-send-by-email-dialog')).toBeVisible();
+    await openSendByEmail(page);
+    await expect(page.getByTestId('org-easycla-attestation-dialog')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-send-by-email-heading')).toHaveText(CCLA_SIGN_COPY.sendByEmail.header);
 
     await fillAndSend(page);
@@ -91,23 +108,6 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
     await expect(page.getByTestId('org-easycla-send-by-email-sent')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-send-by-email-sent-body')).toHaveText(CCLA_SIGN_COPY.sendByEmail.successBody(SIGNATORY_EMAIL));
     await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${CASCADE.claGroupId}$`));
-  });
-
-  test('opens the same dialog from I am not authorized', async ({ page }) => {
-    await gotoEasyclaList(page, async (p) => {
-      await stubList(p);
-      await stubHandoff(p, { sign: { status: 200, body: { signUrl: '', signatureId: '' } } });
-    });
-
-    await chooseClaGroup(page);
-    await page.getByTestId('org-easycla-detail-start-cla').locator('button').click();
-    await expect(page.getByTestId('org-easycla-attestation-dialog')).toBeVisible();
-
-    await page.getByTestId('org-easycla-attestation-not-authorized').locator('button').click();
-
-    await expect(page.getByTestId('org-easycla-send-by-email-dialog')).toBeVisible();
-    await expect(page.getByTestId('org-easycla-attestation-dialog')).toHaveCount(0);
-    await expect(page.getByTestId('org-easycla-send-by-email-heading')).toHaveText(CCLA_SIGN_COPY.sendByEmail.header);
   });
 
   test('shows a refusal in the words the CLA service used, not the self-sign prepare sentence', async ({ page }) => {
@@ -119,7 +119,7 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
     });
 
     await chooseClaGroup(page);
-    await page.getByTestId('org-easycla-detail-identify-someone-else').click();
+    await openSendByEmail(page);
     await fillAndSend(page);
 
     await expect(page.getByTestId('org-easycla-send-by-email-failed')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
