@@ -30,7 +30,12 @@
             styleClass="w-full"
             dataTest="events-orgs-search" />
         </div>
-        <lfx-filter-pills [options]="segmentOptions" [selectedFilter]="segment()" (filterChange)="onSegmentChange($event)" data-testid="events-orgs-segments" />
+        <lfx-filter-pills
+          variant="track"
+          [options]="segmentOptions"
+          [selectedFilter]="segment()"
+          (filterChange)="onSegmentChange($event)"
+          data-testid="events-orgs-segments" />
       </div>
       <span class="text-[13px] text-gray-500" data-testid="events-orgs-count">
         @if (loading()) {

@@ -4,7 +4,8 @@
 <div class="flex flex-col gap-4" data-testid="engagement-group-attendance">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <lfx-filter-pills
-      [options]="typeFilters()"
+      variant="track"
+      [options]="typeFilters"
       [selectedFilter]="groupType()"
       (filterChange)="onFilterChange($event)"
       data-testid="engagement-group-attendance-filters" />

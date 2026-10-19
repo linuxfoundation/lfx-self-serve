@@ -19,7 +19,12 @@
       data-testid="members-tiers-empty" />
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-tiers-controls">
-      <lfx-filter-pills [options]="modeOptions" [selectedFilter]="mode()" (filterChange)="onModeChange($event)" data-testid="members-tiers-mode-pills" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="modeOptions"
+        [selectedFilter]="mode()"
+        (filterChange)="onModeChange($event)"
+        data-testid="members-tiers-mode-pills" />
       <span class="text-[13px] text-gray-500" data-testid="members-tiers-meta">{{ view().metaLabel }}</span>
     </div>
 

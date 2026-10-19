@@ -16,8 +16,11 @@ export type FilterOption = FilterPillOption;
 export class FilterPillsComponent {
   public readonly options = input.required<FilterPillOption[]>();
   public readonly selectedFilter = input.required<string>();
-  /** `segmented` joins the options into one control for mutually exclusive choices. */
-  public readonly variant = input<'pill' | 'segmented'>('pill');
+  /**
+   * `segmented` joins the options into one bordered control for mutually exclusive choices; `track` sets them in
+   * a grey track with the selected option as a white chip.
+   */
+  public readonly variant = input<'pill' | 'segmented' | 'track'>('pill');
   /** Accessible name for the segmented group. */
   public readonly ariaLabel = input<string>('');
   public readonly filterChange = output<string>();

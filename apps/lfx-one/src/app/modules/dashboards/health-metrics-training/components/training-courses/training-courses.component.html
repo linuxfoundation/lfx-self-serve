@@ -30,7 +30,12 @@
             styleClass="w-full"
             dataTest="training-courses-search" />
         </div>
-        <lfx-filter-pills [options]="typeOptions" [selectedFilter]="type()" (filterChange)="onTypeChange($event)" data-testid="training-courses-types" />
+        <lfx-filter-pills
+          variant="track"
+          [options]="typeOptions"
+          [selectedFilter]="type()"
+          (filterChange)="onTypeChange($event)"
+          data-testid="training-courses-types" />
       </div>
       <span class="text-[13px] text-gray-500" data-testid="training-courses-count">
         @if (loading()) {

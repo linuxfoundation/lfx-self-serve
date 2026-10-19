@@ -81,7 +81,7 @@ describe('FilterPillsComponent', () => {
 
   // ariaLabel names the pill for assistive technology without a tooltip — e.g. a status tab whose
   // visible count is unavailable reads "Active, count unavailable" rather than "Active (–)".
-  it.each(['pill', 'segmented'] as const)('prefers ariaLabel for the accessible name without enabling a tooltip (%s)', async (variant) => {
+  it.each(['pill', 'segmented', 'track'] as const)('prefers ariaLabel for the accessible name without enabling a tooltip (%s)', async (variant) => {
     fixture.componentRef.setInput('variant', variant);
     fixture.componentRef.setInput('options', [...options, { id: 'active', label: 'Active (–)', ariaLabel: 'Active, count unavailable' }]);
     await fixture.whenStable();
@@ -102,5 +102,27 @@ describe('FilterPillsComponent', () => {
     expect(group?.querySelectorAll('[data-testid^="filter-pill-"]')).toHaveLength(2);
     expect(pill('all').getAttribute('aria-pressed')).toBe('true');
     expect(pill('kubecon').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('keeps the default pill look, so pages that do not opt in are unchanged', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="filter-pills-track"]')).toBeNull();
+    expect(pill('all').className).toContain('bg-blue-500');
+    expect(pill('kubecon').className).toContain('bg-gray-100');
+  });
+
+  it('renders the track variant as one grey track with the selected option as a white chip', async () => {
+    fixture.componentRef.setInput('variant', 'track');
+    fixture.componentRef.setInput('ariaLabel', 'Group type');
+    await fixture.whenStable();
+
+    const track = fixture.nativeElement.querySelector('[data-testid="filter-pills-track"]') as HTMLElement | null;
+    expect(track?.classList).toContain('overflow-x-auto');
+    const group = track?.querySelector('[role="group"]') as HTMLElement | null;
+    expect(group?.getAttribute('aria-label')).toBe('Group type');
+    expect(group?.classList).toContain('bg-gray-100');
+    expect(pill('all').className).toContain('bg-white');
+    expect(pill('all').className).not.toContain('bg-blue-500');
+    expect(pill('kubecon').className).toContain('text-gray-600');
+    expect(pill('all').getAttribute('aria-pressed')).toBe('true');
   });
 });

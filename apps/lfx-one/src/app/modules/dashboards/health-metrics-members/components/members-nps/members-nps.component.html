@@ -6,6 +6,7 @@
   @if (audienceOptions().length > 0) {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-nps-controls">
       <lfx-filter-pills
+        variant="track"
         [options]="audienceOptions()"
         [selectedFilter]="selectedAudience()?.audience ?? ''"
         (filterChange)="onAudienceChange($event)"

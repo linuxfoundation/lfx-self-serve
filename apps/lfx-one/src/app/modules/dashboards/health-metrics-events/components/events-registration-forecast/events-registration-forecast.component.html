@@ -29,6 +29,7 @@
   } @else {
     @if (selectedEvent()) {
       <lfx-filter-pills
+        variant="track"
         [options]="eventOptions()"
         [selectedFilter]="selectedEvent()?.eventId ?? ''"
         (filterChange)="onEventChange($event)"
@@ -115,6 +116,7 @@
           <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             @if (formatOptions().length > 0) {
               <lfx-filter-pills
+                variant="track"
                 [options]="formatOptions()"
                 [selectedFilter]="format() ?? ''"
                 (filterChange)="onFormatChange($event)"

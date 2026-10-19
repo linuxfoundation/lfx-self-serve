@@ -30,7 +30,12 @@
           styleClass="w-full"
           dataTest="non-members-orgs-search" />
       </div>
-      <lfx-filter-pills [options]="filterOptions" [selectedFilter]="filter()" (filterChange)="onFilterChange($event)" data-testid="non-members-orgs-filter" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="filterOptions"
+        [selectedFilter]="filter()"
+        (filterChange)="onFilterChange($event)"
+        data-testid="non-members-orgs-filter" />
     </div>
 
     <p class="text-[13px] text-gray-500" data-testid="non-members-orgs-count">
