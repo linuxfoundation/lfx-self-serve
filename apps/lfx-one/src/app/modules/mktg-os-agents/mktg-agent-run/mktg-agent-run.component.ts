@@ -10,16 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import {
-  MKTG_AGENT_INTAKES,
-  MKTG_AGENTS,
-  MKTG_DOCUMENT_TYPES,
-  MKTG_INTAKE_FORMAT_ERRORS,
-  MKTG_LIVING_DOCUMENT_ID,
-  MKTG_RUN_STAGES,
-  MKTG_README_SKIP_NOTES,
-  MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
-} from '@lfx-one/shared/constants';
+import { MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_DOCUMENT_TYPES, MKTG_INTAKE_FORMAT_ERRORS, MKTG_LIVING_DOCUMENT_ID } from '@lfx-one/shared/constants';
 import {
   GithubRepoUrlError,
   MktgAgent,
@@ -35,20 +26,14 @@ import {
   MktgIntakePrefillSource,
   MktgResolvedFieldGroup,
   MktgRunAnswer,
-  MktgRunAnsweredQuestionRow,
-  MktgRunAnswerOrigin,
-  MktgRunVersion,
-  MktgStoredAgentRun,
-  MktgDocumentStatusChip,
   MktgRunActivity,
   MktgRunPhase,
   MktgRunQuestionsPending,
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
+import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
-import { MessageService } from 'primeng/api';
 import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap, take } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
@@ -90,7 +75,6 @@ export class MktgAgentRunComponent {
   private readonly answerMemory = inject(MktgAnswerMemoryService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
-  private readonly messageService = inject(MessageService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -107,8 +91,6 @@ export class MktgAgentRunComponent {
   private generationSub: Subscription | null = null;
   /** The existing-documents section, when the intake has one and the form is on screen: its file reads are cancelled with the generation. */
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
-  /** Reset timer for the transient "Copied" chip state — cleared on destroy. */
-  private copyTimer: ReturnType<typeof setTimeout> | null = null;
   /** The generate request of the run in flight — what an answers round continues. */
   private activeRequest: MktgGenerateRequest | null = null;
 
@@ -128,20 +110,13 @@ export class MktgAgentRunComponent {
   ];
 
   // === Constants ===
-  protected readonly stageLabels = MKTG_RUN_STAGES;
-
-  // === Constants ===
 
   // === Forms ===
   protected readonly intakeForm: FormGroup<Record<string, FormControl<string>>> = this.buildIntakeForm();
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
-  protected readonly stage = signal(0);
   protected readonly errorText = signal('');
-  protected readonly run = signal<MktgStoredAgentRun | null>(null);
-  protected readonly viewVersion = signal<number | null>(null);
-  protected readonly docExpanded = signal(false);
   /** Field keys pre-filled from LFX data this session — the raw record behind the "From LFX" chips. */
   private readonly fromLfxApplied = signal<Record<string, boolean>>({});
   /**
@@ -182,8 +157,6 @@ export class MktgAgentRunComponent {
    * run can never be submitted without its attachments.
    */
   protected readonly dependencyDocs = signal<Record<string, MktgDependencyDocument | null> | null>(null);
-  /** Derivative chip key whose value was just copied — drives the transient "Copied" state. */
-  protected readonly copiedDerivative = signal('');
   /**
    * The existing documents on the form (intakes with a documents section),
    * already read to text by the BFF. Kept for edit-inputs resubmits; not
@@ -194,8 +167,6 @@ export class MktgAgentRunComponent {
   protected readonly documentsBusy = signal(false);
   /** The questions turn waiting for answers, while the page is on the questions step. */
   protected readonly questionsPending = signal<MktgRunQuestionsPending | null>(null);
-  /** Whether the result card shows what the agent asked and what went back. */
-  protected readonly askedExpanded = signal(false);
   /** The agent's activity so far (intakes with a live feed), as the result endpoint last reported it. */
   protected readonly activity = signal<MktgRunActivity[]>([]);
   /** Epoch ms the current stretch of the run started — the feed's timer. */
@@ -213,10 +184,7 @@ export class MktgAgentRunComponent {
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
-  protected readonly docTitle = computed(() => `${this.projectName()} ${this.intake?.documentName}`);
   protected readonly submitLabel = computed(() => `Generate ${this.intake?.documentName}`);
-  protected readonly versions = computed(() => this.run()?.versions ?? []);
-  protected readonly currentVersion: Signal<MktgRunVersion | null> = this.initCurrentVersion();
   protected readonly submitDisabled = computed(
     () => !this.intakeValid() || this.phase() === 'running' || this.documentsBusy() || !this.dependenciesSatisfied()
   );
@@ -228,8 +196,6 @@ export class MktgAgentRunComponent {
   protected readonly activityTitle = computed(() =>
     this.writingStretch() ? `Writing your ${this.intake?.documentName ?? 'document'}…` : `Researching ${this.projectName()}…`
   );
-  /** What the agent asked before writing the current version, with the answers that went back. */
-  protected readonly askedRows: Signal<MktgRunAnsweredQuestionRow[]> = this.initAskedRows();
   /**
    * Non-interactive "Using <project>'s <document> (vN)" chips for the
    * intake's auto-attached dependency documents (dec-agent-dependency-gating)
@@ -287,42 +253,6 @@ export class MktgAgentRunComponent {
     const reused = this.gateOnIntactPrefill(this.filledFromMemoryApplied());
     return Object.fromEntries(Object.entries(missing).map(([key, isMissing]) => [key, isMissing && !reused[key]]));
   });
-  /**
-   * Honest note on the result when the document was generated WITHOUT a
-   * README (the agent has no web access; the BFF fetches it). A README-less
-   * run produces a materially thinner document, and without this the user has
-   * no way to connect that to the repo URL they gave. Empty when a README was
-   * used, and for agents whose runs involve no README at all.
-   *
-   * Also empty for versions stored BEFORE this outcome existed: they carry no
-   * `readme` field, so whether their document was thin for this reason is
-   * unknown. Asserting a reason we never recorded would trade a real
-   * explanation for a plausible-sounding guess, which is the failure this note
-   * exists to end — the note appears from the next generation onward.
-   */
-  protected readonly readmeNote = computed(() => {
-    const readme = this.currentVersion()?.readme;
-    if (!readme || readme.fetched || !readme.skipReason) {
-      return '';
-    }
-    return MKTG_README_SKIP_NOTES[readme.skipReason];
-  });
-  /**
-   * The document's own review status — the label read out of the document
-   * (`Draft — pre-filled`, `Draft — from your documents`, `ED-reviewed —
-   * [name], [date]`, …). Null when the document carries none, so nothing is
-   * asserted that the document does not say.
-   */
-  protected readonly statusChip: Signal<MktgDocumentStatusChip | null> = this.initStatusChip();
-  /** Copyable derivative chips for the current version (empty when the agent has none). */
-  protected readonly derivativeChips: Signal<{ key: string; label: string; value: string; copied: boolean }[]> = this.initDerivativeChips();
-  /** Screen-reader copy confirmation for the template's live region — the visible chip flip alone is never announced. */
-  protected readonly copiedAnnouncement = computed(() => {
-    const copied = this.derivativeChips().find((chip) => chip.copied);
-    return copied ? `${copied.label} copied to the clipboard` : '';
-  });
-  protected readonly stages: Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> = this.initStages();
-  protected readonly sectionChecklist: Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> = this.initSectionChecklist();
 
   // Accent → Tailwind classes, kept as a class field with literal class names so
   // Tailwind's content scan (./src/**/*.ts) generates them.
@@ -342,24 +272,6 @@ export class MktgAgentRunComponent {
     present: { chipClass: 'border-blue-200 bg-blue-50 text-blue-700', iconClass: 'fa-light fa-paperclip' },
     absent: { chipClass: 'border-gray-200 bg-gray-50 text-gray-600', iconClass: 'fa-light fa-circle-info' },
   };
-  // Status chip presentation: a draft (any of the "Draft — …" labels) is
-  // amber, a reviewed document emerald. Literal class names for the same
-  // Tailwind content-scan reason as above.
-  private readonly statusChipStyle: Record<'draft' | 'reviewed', string> = {
-    draft: 'border-amber-200 bg-amber-50 text-amber-700',
-    reviewed: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  };
-  private readonly stageLabelClass: Record<'done' | 'active' | 'pending', string> = {
-    done: 'text-gray-400',
-    active: 'text-gray-600',
-    pending: 'text-gray-300',
-  };
-  /** How the result names where an answer came from. */
-  private readonly answerOriginLabel: Record<MktgRunAnswerOrigin, string> = {
-    accepted: 'Suggested by the agent, accepted',
-    edited: 'Suggested by the agent, edited',
-    requester: 'Your answer',
-  };
 
   // The agent is fixed for the component's lifetime (route param), so its
   // presentation derives once here — templates bind properties, never call
@@ -372,12 +284,6 @@ export class MktgAgentRunComponent {
   protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
   public constructor() {
-    this.destroyRef.onDestroy(() => {
-      if (this.copyTimer !== null) {
-        clearTimeout(this.copyTimer);
-        this.copyTimer = null;
-      }
-    });
     // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
       this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
@@ -478,122 +384,6 @@ export class MktgAgentRunComponent {
       });
   }
 
-  protected onToggleAsked(): void {
-    this.askedExpanded.update((expanded) => !expanded);
-  }
-
-  protected onPickVersion(version: number): void {
-    this.viewVersion.set(version);
-    this.docExpanded.set(false);
-    this.phase.set('result');
-  }
-
-  protected onToggleDocument(): void {
-    this.docExpanded.update((expanded) => !expanded);
-  }
-
-  protected onDownload(): void {
-    // SSR guard: Blob/URL/document are browser-only (ssr-safety rule).
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-    const current = this.currentVersion();
-    if (!current) {
-      return;
-    }
-    const blob = new Blob([current.document], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${this.docTitle()} v${current.version}.md`;
-    anchor.click();
-    // Deferred: some browsers begin the download asynchronously, and revoking
-    // synchronously can invalidate the blob URL before it is consumed.
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  }
-
-  /** Copies a derivative chip's value; the chip flashes "Copied" for a moment. */
-  protected async onCopyDerivative(chip: { key: string; label: string; value: string }): Promise<void> {
-    // SSR guard: navigator/clipboard are browser-only (ssr-safety rule).
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-    // Failure must be visible (badge-card clipboard precedent): a silent
-    // return would leave the button looking dead, indistinguishable from a
-    // successful copy that just didn't flash yet.
-    if (!navigator.clipboard?.writeText) {
-      this.messageService.add({ severity: 'error', summary: 'Copy not supported', detail: 'Clipboard access is unavailable in this browser.' });
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(chip.value);
-    } catch {
-      // Clipboard permission denied — surface it and leave the chip un-flashed rather than lie.
-      this.messageService.add({ severity: 'error', summary: 'Copy failed', detail: `Unable to copy the ${chip.label} to the clipboard.` });
-      return;
-    }
-    this.copiedDerivative.set(chip.key);
-    if (this.copyTimer !== null) {
-      clearTimeout(this.copyTimer);
-    }
-    this.copyTimer = setTimeout(() => {
-      this.copyTimer = null;
-      this.copiedDerivative.set('');
-    }, 2000);
-  }
-
-  // === Private initializers ===
-  private initCurrentVersion(): Signal<MktgRunVersion | null> {
-    return computed(() => {
-      const versions = this.versions();
-      return versions.find((candidate) => candidate.version === this.viewVersion()) ?? versions.at(-1) ?? null;
-    });
-  }
-
-  private initStages(): Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> {
-    return computed(() => {
-      const current = this.stage();
-      return this.stageLabels.map((label, index) => {
-        let state: 'done' | 'active' | 'pending' = 'pending';
-        if (index < current) {
-          state = 'done';
-        } else if (index === current) {
-          state = 'active';
-        }
-        return { label, state, labelClass: this.stageLabelClass[state] };
-      });
-    });
-  }
-
-  private initSectionChecklist(): Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> {
-    return computed(() => {
-      const document = this.currentVersion()?.document ?? '';
-      const lowerDoc = document.toLowerCase();
-      // Present vs missing is conveyed by DISTINCT icons plus screen-reader
-      // text, never color alone.
-      return (this.intake?.sections ?? []).map((label) => {
-        const present = this.sectionPresent(lowerDoc, label);
-        return {
-          label,
-          present,
-          iconClass: present ? 'fa-light fa-circle-check text-emerald-500' : 'fa-light fa-circle-xmark text-gray-400',
-          srText: present ? 'included' : 'missing',
-        };
-      });
-    });
-  }
-
-  private initStatusChip(): Signal<MktgDocumentStatusChip | null> {
-    return computed(() => {
-      const label = findMktgDocumentStatus(this.currentVersion()?.document ?? '');
-      if (!label) {
-        return null;
-      }
-      const reviewed = label.toLowerCase().startsWith(MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX.toLowerCase());
-      return { label, chipClass: this.statusChipStyle[reviewed ? 'reviewed' : 'draft'] };
-    });
-  }
-
   private initAttachmentChips(): Signal<MktgAttachmentChip[]> {
     return computed(() => {
       const docs = this.dependencyDocs();
@@ -639,23 +429,6 @@ export class MktgAgentRunComponent {
     }));
   }
 
-  private initAskedRows(): Signal<MktgRunAnsweredQuestionRow[]> {
-    return computed(() => {
-      const version = this.currentVersion();
-      const answers = new Map((version?.answers ?? []).map((answer) => [answer.key, answer]));
-      return (version?.questions ?? []).map((question) => {
-        const answer = answers.get(question.key);
-        return {
-          key: question.key,
-          label: question.label,
-          question: question.question,
-          answer: answer?.text ?? '',
-          originLabel: answer ? this.answerOriginLabel[answer.origin] : '',
-        };
-      });
-    });
-  }
-
   private initFieldFormatErrors(): Signal<Record<string, string>> {
     return computed(() => {
       // Depend on the form's value so the message follows every keystroke.
@@ -672,17 +445,6 @@ export class MktgAgentRunComponent {
         }
       }
       return messages;
-    });
-  }
-
-  private initDerivativeChips(): Signal<{ key: string; label: string; value: string; copied: boolean }[]> {
-    return computed(() => {
-      const chips = this.intake?.derivativeChips ?? [];
-      const derivatives = this.currentVersion()?.derivatives ?? {};
-      const copiedKey = this.copiedDerivative();
-      return chips
-        .filter((chip) => !!derivatives[chip.key]?.trim())
-        .map((chip) => ({ key: chip.key, label: chip.label, value: derivatives[chip.key], copied: chip.key === copiedKey }));
     });
   }
 
@@ -1083,20 +845,5 @@ export class MktgAgentRunComponent {
 
   private clearQuestions(): void {
     this.questionsPending.set(null);
-  }
-
-  private sectionPresent(lowerDoc: string, label: string): boolean {
-    if (!lowerDoc) {
-      return false;
-    }
-    if (lowerDoc.includes(label.toLowerCase())) {
-      return true;
-    }
-    // Fallback: match the heading without the config label's numbering/appendix
-    // prefix ("1. Project Definition" → "Project Definition", "Appendix A:
-    // Document Architecture" → "Document Architecture") — the agent may render
-    // its own numbering, but the section name itself must appear.
-    const core = label.replace(/^\d+\.\s*/, '').replace(/^appendix [a-z]:\s*/i, '');
-    return lowerDoc.includes(core.toLowerCase());
   }
 }
