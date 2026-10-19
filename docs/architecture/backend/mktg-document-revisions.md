@@ -31,7 +31,10 @@ bundle is first created with `If-None-Match: *`, then a compare-and-swap of the
 current record publishes its ID and selects it together. An interrupted or
 losing write can leave an immutable object, but it is not visible history.
 New objects carry `managed` metadata so an interrupted first save is not mistaken
-for historical data when no current record exists yet.
+for historical data when no current record exists yet. First publication initializes
+the manifest from all valid, eligible historical keys without validating their bodies;
+managed orphan objects and malformed keys stay out. Display summaries still require
+readable historical bodies, so repair restores visibility without rewriting the manifest.
 
 A bounded retry handles competing new writers. Each attempt derives an automatic
 base from its fresh committed snapshot and sequence listing. A caller's explicit

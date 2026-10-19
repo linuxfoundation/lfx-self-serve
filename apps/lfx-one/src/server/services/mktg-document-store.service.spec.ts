@@ -416,6 +416,45 @@ describe('MktgDocumentStoreService', () => {
     });
   });
 
+  describe('first-publication manifest recovery', () => {
+    it.each(['append', 'make-current'])('keeps unreadable historical IDs on first %s publication but not orphan or malformed IDs', async (action) => {
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Historical first'), 'first');
+      const second = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Historical second'), 'second');
+      const third = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Historical third'), 'third');
+      const currentKey = `documents/${PROJECT}/brand-kit/living/current.json`;
+      store.failPutsMatching = /current\.json$/;
+      await expect(service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Uncommitted orphan'), 'orphan')).rejects.toThrow('store unavailable');
+      store.failPutsMatching = null;
+      const orphanKey = revisionKeys().find((key) => ![first.key, second.key, third.key].includes(key));
+      if (!orphanKey) throw new Error('Expected the failed pointer write to leave an orphan fixture');
+      const orphanId = orphanKey.slice(orphanKey.lastIndexOf('/') + 1, -5);
+      expect(storedObject(orphanKey).metadata['managed']).toBe('true');
+      store.objects.delete(currentKey);
+      for (const revision of [first, second, third]) {
+        storedObject(revision.key).metadata = { origin: 'generated', sequence: String(revision.record.sequence) };
+      }
+      const original = { ...storedObject(second.key) };
+      store.objects.set(second.key, { ...original, body: 'unreadable historical body' });
+      const invalidId = `000000-${'f'.repeat(64)}`;
+      store.objects.set(`documents/${PROJECT}/brand-kit/living/${invalidId}.json`, { ...original });
+      const before = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(before?.revisions.map((entry) => entry.id)).toEqual([third.id, first.id]);
+      expect(store.objects.has(currentKey)).toBe(false);
+      if (action === 'append') await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# New generation'), 'new');
+      else await service.restoreRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      const manifest = JSON.parse(storedObject(currentKey).body);
+      expect(manifest.revisionIds).toEqual(expect.arrayContaining([first.id, second.id, third.id]));
+      expect(manifest.revisionIds).not.toContain(orphanId);
+      expect(manifest.revisionIds).not.toContain(invalidId);
+      expect(new Set(manifest.revisionIds).size).toBe(manifest.revisionIds.length);
+      store.objects.set(second.key, original);
+      const recovered = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(recovered?.revisions.some((entry) => entry.id === second.id)).toBe(true);
+      expect(recovered?.revisions.some((entry) => entry.id === orphanId || entry.id === invalidId)).toBe(false);
+      expect((await service.getRevision(req, PROJECT, BRAND_KIT, 'living', second.id))?.markdown).toBe(second.record.bundle.markdown);
+    });
+  });
+
   describe('PR round 2 contracts', () => {
     it.each(['automatic', 'explicit', 'root'])('retries a lost CAS with a fresh sequence and the %s base contract', async (base) => {
       const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Initial'), 'initial');

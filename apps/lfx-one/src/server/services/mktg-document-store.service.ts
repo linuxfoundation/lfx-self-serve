@@ -525,7 +525,10 @@ export class MktgDocumentStoreService {
     revisionId: string,
     revisionIds: string[]
   ): Promise<MktgDocumentCurrentRecord | null> {
-    const committedIds = [...new Set([...(snapshot.record?.revisionIds ?? []), ...revisionIds])];
+    const existingIds = snapshot.record
+      ? snapshot.record.revisionIds
+      : (await this.listRevisions(req, project, type, documentId, snapshot, MKTG_DOCUMENT_READ_CONCURRENCY, false)).map((entry) => entry.id);
+    const committedIds = [...new Set([...existingIds, ...revisionIds])];
     const record = { revisionId, revisionIds: committedIds, changedAt: new Date().toISOString(), changedBy: this.author(req) };
     const written = await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', this.currentKey(project, type, documentId), {
       body: Buffer.from(JSON.stringify(record)),
@@ -546,14 +549,18 @@ export class MktgDocumentStoreService {
     return `${buildMktgDocumentPrefix(project, type.agentKey, documentId)}${MKTG_DOCUMENT_CURRENT_KEY}`;
   }
 
-  /** List committed revisions with bounded HEADs and body fallback for historical metadata. */
+  /**
+   * List eligible keys with bounded HEADs; hydrate historical bodies for readable summaries by default.
+   * First-publication manifests disable hydration so an unreadable historical object cannot erase its ID.
+   */
   private async listRevisions(
     req: Request,
     project: string,
     type: MktgDocumentType,
     documentId: string,
     snapshot: MktgDocumentCurrentSnapshot,
-    readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY
+    readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY,
+    loadHistoricalBodies = true
   ): Promise<MktgListedRevision[]> {
     const prefix = buildMktgDocumentProjectPrefix(project);
     const objects = await this.objectStore.listObjects(req, 'marketing-os-artifacts', buildMktgDocumentPrefix(project, type.agentKey, documentId));
@@ -567,7 +574,7 @@ export class MktgDocumentStoreService {
           const metadata = await this.objectStore.headObject(req, 'marketing-os-artifacts', object.key);
           if (!metadata || (!snapshot.record && metadata['managed'] === 'true')) return null;
           const entry = { ...parsed, ...object, metadata };
-          if (!metadata['content-sha']) {
+          if (loadHistoricalBodies && !metadata['content-sha']) {
             const stored = await this.loadRevision(req, entry, project);
             return stored ? { ...entry, record: stored.record } : null;
           }
