@@ -19,6 +19,9 @@ router.get('/count', (req, res, next) => voteController.getVotesCount(req, res, 
 // GET /votes/summary - scoped management totals (must precede /:uid)
 router.get('/summary', (req, res, next) => voteController.getVotesSummary(req, res, next));
 
+// GET /votes/status-counts - per-status tab totals (must precede /:uid)
+router.get('/status-counts', (req, res, next) => voteController.getVoteStatusCounts(req, res, next));
+
 // GET /votes/my-votes - get votes the current user has been invited to
 router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, next));
 
