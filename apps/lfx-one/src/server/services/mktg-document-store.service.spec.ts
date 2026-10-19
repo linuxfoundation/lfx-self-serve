@@ -440,6 +440,94 @@ describe('MktgDocumentStoreService', () => {
       await expect(service.readLatest(req, SPEC, PROJECT)).resolves.toMatchObject({ documentMarkdown: '# Old Brand Kit\n', receipt: { version: 2 } });
     });
 
+    describe('the latest revision with its sidecar — what the Brand Kit attaches as the messaging framework', () => {
+      const draft = (title: string): string => `# ${title}\n\n| Status | Draft — from your documents |\n`;
+
+      it('serves the newest revision, approved or not, with its date and sidecar JSON', async () => {
+        await service.persistGeneration(req, SPEC, envelope(draft('First'), 1), PROJECT, 'session-1');
+        await service.persistGeneration(req, SPEC, envelope(draft('Newer draft'), 2), PROJECT, 'session-2');
+
+        const latest = await service.readLatest(req, SPEC, PROJECT, { withSidecar: true });
+
+        expect(latest?.documentMarkdown).toBe(draft('Newer draft'));
+        expect(latest?.receipt.version).toBe(2);
+        expect(latest?.revisionNumber).toBe(2);
+        expect(latest?.storedAt).toBeTruthy();
+        expect(latest?.sidecar).toMatchObject({ contract: 'brand-kit-output/v1', version: 2 });
+        expect(latest?.sidecar).not.toHaveProperty('document_markdown');
+        expect(latest).not.toHaveProperty('status');
+        // The plain latest read is unchanged: the newest revision, Markdown only.
+        const plain = await service.readLatest(req, SPEC, PROJECT);
+        expect(plain?.documentMarkdown).toBe(draft('Newer draft'));
+        expect(plain?.sidecar).toBeUndefined();
+      });
+
+      it('serves a JSON framework revision as the envelope it was stored from — the framework back under `content`, its own key as the receipt', async () => {
+        const generated = jsonEnvelope('Search, open.');
+        await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'session-1');
+
+        const latest = await service.readLatest(req, FRAMEWORK_SPEC, PROJECT, { withSidecar: true });
+
+        expect(latest?.documentMarkdown).toBe(JSON.stringify(generated.content));
+        expect(latest?.receipt.s3_key).toBe(revisionKeys()[0]);
+        // The Brand Kit's framework reader unwraps `content`: the voice is there, with the report beside it.
+        expect(latest?.sidecar).toMatchObject({
+          contract: 'messaging-framework-output/v1',
+          content: generated.content,
+          report: { gaps: ['No member count.'] },
+        });
+        // The stored record is untouched: its sidecar still holds the rest of the envelope only.
+        expect(storedRecord(revisionKeys()[0]).bundle.sidecar).not.toHaveProperty('content');
+      });
+
+      it('numbers the revision as Documents does — every fresh run is draft 1, and a revision failing its checks is not counted', async () => {
+        await service.persistGeneration(req, SPEC, envelope(draft('First'), 1), PROJECT, 'session-1');
+        await service.persistGeneration(req, SPEC, envelope(draft('Broken'), 1), PROJECT, 'session-2');
+        await service.persistGeneration(req, SPEC, envelope(draft('Second'), 1), PROJECT, 'session-3');
+        await service.persistGeneration(req, SPEC, envelope(draft('Third'), 1), PROJECT, 'session-4');
+        const tamperedKey = revisionKeys()[1];
+        const tampered = store.objects.get(tamperedKey);
+        store.objects.set(tamperedKey, { ...(tampered as { body: string; metadata: Record<string, string>; lastModified: Date }), body: '{"tampered":true}' });
+
+        const latest = await service.readLatest(req, SPEC, PROJECT, { withSidecar: true });
+        const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+
+        expect(latest?.documentMarkdown).toBe(draft('Third'));
+        expect(latest?.receipt.version).toBe(1);
+        expect(latest?.revisionNumber).toBe(3);
+        expect(detail?.revisions.find((revision) => revision.latest)?.number).toBe(3);
+        // The plain read names no revision: the marketplace's dependency check reads only the newest.
+        expect((await service.readLatest(req, SPEC, PROJECT))?.revisionNumber).toBeUndefined();
+      });
+
+      it('is null when the document has no revision — the pre-revision document carries no sidecar and never stands in', async () => {
+        seedLegacy('# Old Brand Kit\n');
+
+        await expect(service.readLatest(req, SPEC, PROJECT, { withSidecar: true })).resolves.toBeNull();
+      });
+
+      it('is null, not the pre-revision document, when the only revision fails its integrity check', async () => {
+        await service.persistGeneration(req, SPEC, envelope(draft('Only one'), 1), PROJECT, 'session-1');
+        const tamperedKey = revisionKeys()[0];
+        const tampered = store.objects.get(tamperedKey);
+        store.objects.set(tamperedKey, { ...(tampered as { body: string; metadata: Record<string, string>; lastModified: Date }), body: '{"tampered":true}' });
+        seedLegacy('# Old Brand Kit\n');
+
+        await expect(service.readLatest(req, SPEC, PROJECT, { withSidecar: true })).resolves.toBeNull();
+      });
+
+      it('rejects, never resolves to null, when the store cannot list the revisions — an outage is not "no revision"', async () => {
+        await service.persistGeneration(req, SPEC, envelope(draft('Only one'), 1), PROJECT, 'session-1');
+        seedLegacy('# Old Brand Kit\n');
+        store.failListsMatching = /^documents\//;
+
+        await expect(service.readLatest(req, SPEC, PROJECT, { withSidecar: true })).rejects.toThrow('store unavailable');
+        expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_document_store_read_latest', expect.stringContaining('rethrowing'), expect.any(Object));
+        // The plain latest read degrades to null, never to the older pre-revision copy: nothing there gates a run on the answer.
+        await expect(service.readLatest(req, SPEC, PROJECT)).resolves.toBeNull();
+      });
+    });
+
     it('lists every document type in order, with empty groups for types that have nothing stored', async () => {
       const listed = await service.listDocuments(req, PROJECT);
 

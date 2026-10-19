@@ -12,6 +12,7 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
+import type { BrandKitRevision } from './brand-kit.interface';
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
 
@@ -44,11 +45,13 @@ export type MktgIntakePrefillSource = 'project-name' | 'repository-url' | 'websi
  *   the agent as text and fetches nothing, so an organization URL is a usable
  *   answer to "the project's GitHub repo or README" (hand test, 2026-10-12).
  * - `source-url`: a page the agent fetches itself (the Messaging Framework's
- *   website) — an `https://` link, or "none".
+ *   website, the Brand Kit's brand page) — an `https://` link, or "none".
  * - `source-url-list`: several such links, one per line; blank lines are
  *   ignored. No intake uses it at present.
+ * - `https-url`: one `https://` link, "none" not accepted (the Brand Kit's
+ *   website, which the agent must read).
  */
-export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list';
+export type MktgIntakeFieldFormat = 'github-repo-url' | 'github-url' | 'source-url' | 'source-url-list' | 'https-url';
 
 /**
  * Where a README the BFF fetched for an agent came from: the repository the
@@ -318,6 +321,57 @@ export interface MktgIntakeDocumentsConfig {
 }
 
 /**
+ * One logo file as an agent's form takes it (the Brand Kit's `logo_files[]`):
+ * its name and exactly one of SVG text, base64 bytes (a PNG or a ZIP), or a
+ * link the agent fetches itself.
+ */
+export interface MktgIntakeLogoFile {
+  /** The file name as uploaded, with its extension; the reference the kit uses. */
+  name: string;
+  /** The SVG source text (an .svg upload). */
+  text?: string;
+  /** The file's bytes as base64 (a .png or .zip upload). */
+  base64?: string;
+  /** A link to the file instead of its content. */
+  url?: string;
+}
+
+/** A logo file on the form, with how it will travel. */
+export interface MktgIntakeLogoFileEntry {
+  /** Client-side id; the `@for` track key. */
+  id: string;
+  /** The file as the generate request submits it. */
+  file: MktgIntakeLogoFile;
+  /** `SVG`, `PNG`, `ZIP` or `LINK`. */
+  badge: string;
+  /** What the agent gets: "12 KB, as text", "340 KB, as bytes" or "the agent fetches it". */
+  status: string;
+}
+
+/**
+ * The optional logo-files section of an intake (the Brand Kit's artwork):
+ * SVG, PNG and ZIP files read in the browser and sent with the form, and
+ * links the agent fetches itself. With none, the agent asks for them in its
+ * question round.
+ */
+export interface MktgIntakeLogoFilesConfig {
+  /** Section heading. */
+  title: string;
+  /** Short note beside the heading. */
+  hint: string;
+  /** Helper paragraph under the controls. */
+  footnote: string;
+  /** Most files one run takes. */
+  maxFiles: number;
+  /** Largest file, in characters once read (SVG text, or base64 bytes). */
+  maxFileChars: number;
+  /** All files together, in characters — one request body carries them. */
+  maxPayloadChars: number;
+  /** Accepted file extensions, lowercase with the dot. */
+  fileExtensions: string[];
+}
+
+/**
  * A sibling agent's document auto-attached to an intake's submitted answers
  * (dec-agent-dependency-gating): agents that CONSUME another agent's output
  * (e.g. the Message Foundation consumes the Brand Kit) never ask for it —
@@ -328,9 +382,10 @@ export interface MktgIntakeDocumentsConfig {
  */
 export interface MktgIntakeAttachment {
   /**
-   * Catalog agent id whose stored output is attached. A required attachment's
-   * source must also appear in the consuming agent's `dependsOn` (that is
-   * what gates the run); an `optional` one must NOT, or it becomes a hard gate.
+   * Catalog agent id whose stored output is attached. A required attachment
+   * gates the run page's submit (fail-closed until it resolves); listing its
+   * source in the consuming agent's `dependsOn` as well locks the marketplace
+   * card too. An `optional` one must appear in neither, or it becomes a hard gate.
    */
   sourceAgentId: string;
   /** Answer key the document is submitted under (the agent's own batch schema key, e.g. `brand_kit_markdown`). */
@@ -347,9 +402,45 @@ export interface MktgIntakeAttachment {
    * different document depending on which inputs the agent actually had.
    *
    * Required attachments (the default) belong to agents that cannot run
-   * without the document — those must also list the source in `dependsOn`.
+   * without the document: the run page disables its submit and says what is
+   * needed, with a link to the source agent's page.
    */
   optional?: boolean;
+  /**
+   * What is submitted under `answerKey`: the document's Markdown (the
+   * default, what the ICP's attachments take) or the stored revision's
+   * sidecar JSON — the envelope's structured fields — serialized (the
+   * Brand Kit takes the messaging framework as JSON).
+   *
+   * A `json` attachment resolves from the server's LATEST stored revision
+   * only — the newest revision that passes its integrity checks (a restore
+   * is itself the newest revision) — read with its sidecar and its date,
+   * so the chip names the revision ("Uses the latest
+   * messaging framework · v3 · 16 Oct"); never this browser's stored run,
+   * which carries no sidecar. The latest revision regardless of its review
+   * status (product decision, 17 Oct 2026): LFX One has no Approve action
+   * yet, so an approved-only gate could never open. Approve is a later
+   * item; when it lands, this is where the resolution narrows to the
+   * approved revision.
+   *
+   * A resolved revision counts as the attachment only when the consuming
+   * agent can read from its sidecar what it takes
+   * (`mktgJsonAttachmentUsable` — the client-side copy of the agent's own
+   * validator rule, e.g. a voice for the Brand Kit). A revision it cannot
+   * read is neither submitted nor named on a chip: the run page shows
+   * `incompleteNote` with the link instead, since submitting it would only
+   * earn the server's 400 and a retry could never succeed.
+   */
+  format?: 'markdown' | 'json';
+  /**
+   * The note the run page shows, with the link to the source agent's page,
+   * when the project's latest revision exists but the agent can read
+   * nothing from it (a `json` attachment whose sidecar lacks the fields the
+   * agent takes — the Brand Kit's framework with no positioning or tagline
+   * yet). Defaults to "Finish the <document> first." Only read for a
+   * required `json` attachment.
+   */
+  incompleteNote?: string;
 }
 
 /**
@@ -369,6 +460,22 @@ export interface MktgDependencyDocument {
    * Markdown when it is resolved, never handed over as JSON text.
    */
   document: string;
+  /** ISO-8601 timestamp the revision was stored, when the server reported one. */
+  storedAt?: string;
+  /** The revision's sidecar JSON (the envelope's structured fields), when the read carried it — what a `json` attachment submits. */
+  sidecar?: Record<string, unknown>;
+}
+
+/**
+ * The link the run page offers under its "Run the <document> first" note
+ * (and on the attachment chip): the source agent's own page, where the
+ * document is made.
+ */
+export interface MktgMissingDependencyLink {
+  /** Button text, e.g. `Open the Messaging Framework page`. */
+  label: string;
+  /** Catalog agent id of the source agent — the sibling route segment. */
+  agentId: string;
 }
 
 /**
@@ -381,12 +488,18 @@ export interface MktgDependencyDocument {
 export interface MktgAttachmentChip {
   /** Source agent id the chip describes; the `@for` track key. */
   key: string;
-  /** Chip text — either "Using <project>'s <document> (vN)" or the honest absent note. */
+  /** Chip text — "Using <project>'s <document> (vN)", "Uses the latest <document> · vN · <date>" or the honest absent note. */
   label: string;
   /** Tailwind colour classes for the chip. */
   chipClass: string;
   /** Font Awesome icon class for the chip. */
   iconClass: string;
+  /**
+   * Catalog agent id of the page the chip links to (the source agent's own
+   * page — the Messaging Framework page for the Brand Kit's framework chip).
+   * A chip with one renders as a link; without, as plain text.
+   */
+  linkAgentId?: string;
 }
 
 /**
@@ -464,6 +577,8 @@ export interface MktgRunGenerateBody {
   priorVersion?: number;
   /** Existing documents, for intakes with a documents section. */
   documents?: MktgIntakeDocument[];
+  /** Logo files, for intakes with a logo-files section (the Brand Kit). */
+  logoFiles?: MktgIntakeLogoFile[];
   /**
    * LFX project uid the run belongs to, for intakes that declare
    * {@link MktgAgentIntake.submitsProject}: the agent receives it with the
@@ -653,13 +768,18 @@ export interface MktgRunPersistReceipt {
  * document — or `questions` while the session holds a questions block the
  * agent wrote and no envelope yet: the latest block, reported on every poll
  * until a newer one or the envelope appears (`questionsId` tells an
- * already-answered block from a new one).
+ * already-answered block from a new one) — or `refused` when the agent
+ * ended the session with a refusal reply instead of running (the Brand
+ * Kit without a messaging framework): the session is over, and the reply
+ * is the run's outcome.
  */
 export interface MktgRunResultResponse {
   /** Generation state. */
-  status: 'pending' | 'ready' | 'questions';
+  status: 'pending' | 'ready' | 'questions' | 'refused';
   /** The agent's questions, present when `questions`. */
   questions?: MktgRunQuestion[];
+  /** The agent's refusal reply, as the requester reads it. Present when `refused`. */
+  reply?: string;
   /**
    * Stable id of the questions block (a content hash), present when
    * `questions`. The run shell answers a block once: a later poll that
@@ -693,6 +813,14 @@ export interface MktgRunResultResponse {
    * it happens.
    */
   activity?: MktgRunActivity[];
+  /**
+   * The Brand Kit of a ready result: the tokens, the six chapters and the
+   * report the kit view renders. The Brand Kit agent's revision is a JSON
+   * kit, not a Markdown document — `documentMarkdown` still carries the
+   * kit's Markdown rendering for the store and the sibling agents, but the
+   * page shows this.
+   */
+  brandKit?: BrandKitRevision;
 }
 
 /**
@@ -802,11 +930,12 @@ export interface MktgAgentIntake {
   /**
    * Sibling-agent documents auto-attached to the submitted answers at submit
    * time (dec-agent-dependency-gating), for agents that consume another
-   * agent's stored output. A REQUIRED attachment's `sourceAgentId` must also
-   * appear in the catalog agent's `dependsOn`, which gates the marketplace
-   * card until the stored output exists; an `optional` attachment must not,
-   * because the agent runs either way (the ICP consumes the Brand Kit and the
-   * Message Foundation only when the project has them).
+   * agent's stored output. A REQUIRED attachment gates the run page's submit
+   * until it resolves (the Brand Kit needs the project's messaging
+   * framework); listing its `sourceAgentId` in the catalog agent's `dependsOn`
+   * as well locks the marketplace card too. An `optional` attachment appears
+   * in neither, because the agent runs either way (the ICP consumes the
+   * Brand Kit and the Message Foundation only when the project has them).
    */
   attachments?: MktgIntakeAttachment[];
   /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
@@ -848,6 +977,13 @@ export interface MktgAgentIntake {
   fieldGroups?: MktgIntakeFieldGroup[];
   /** The optional existing-documents section, shown after the fields. */
   documents?: MktgIntakeDocumentsConfig;
+  /** The optional logo-files section, shown after the fields (the Brand Kit's artwork). */
+  logoFiles?: MktgIntakeLogoFilesConfig;
+  /**
+   * The page spans the whole viewport width instead of the centred container:
+   * for results laid out as pages (the Brand Kit's book), which need the room.
+   */
+  fullWidth?: boolean;
   /**
    * The result endpoint reports the agent's live activity
    * ({@link MktgRunResultResponse.activity}): the run page shows it as a
@@ -892,6 +1028,8 @@ export interface MktgRunVersion {
   questions?: MktgRunQuestion[];
   /** The answers that went back, one per question. */
   answers?: MktgRunAnswer[];
+  /** The Brand Kit this version is, for the Brand Kit agent: what the kit view renders (the document is its Markdown rendering). */
+  brandKit?: BrandKitRevision;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
@@ -988,6 +1126,10 @@ export interface MktgRunQuestionsPending {
  * the run continues through the service's `answerQuestions` on the same
  * session.
  *
+ * `refused` ends the stream too: the agent did not run and replied why (the
+ * Brand Kit's refusal without a messaging framework). The session is over;
+ * nothing is stored, and the reply is shown as the run's outcome.
+ *
  * `persisted` is emitted only by the bounded background persistence retry,
  * when a late server-side write finally lands. It matters because the SERVER
  * copy is what dependency gating reads for every browser and user: a document
@@ -999,6 +1141,7 @@ export type MktgGenerateProgress =
   | { type: 'submitted' }
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
+  | { type: 'refused'; reply: string }
   | { type: 'document'; run: MktgStoredAgentRun }
   | { type: 'persisted' };
 
@@ -1014,6 +1157,8 @@ export interface MktgGenerateRequest {
   answers: Record<string, string>;
   /** Existing documents, for intakes with a documents section. */
   documents?: MktgIntakeDocument[];
+  /** Logo files, for intakes with a logo-files section. */
+  logoFiles?: MktgIntakeLogoFile[];
   /**
    * Feedback on the prior draft; present only for "Request changes"
    * regenerations. The prior draft's version is NOT part of the request — the

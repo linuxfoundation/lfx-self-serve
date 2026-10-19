@@ -7,9 +7,10 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { BRAND_KIT_CONTRACT_ID, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -108,6 +109,34 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
     expect(query('mktg-document-view-restore-current')?.textContent).toContain('Restore revision 1');
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
+  });
+
+  it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
+    const kit = brandKitTestRevision();
+    const sidecar = {
+      contract: BRAND_KIT_CONTRACT_ID,
+      project_name: kit.projectName,
+      project: kit.project,
+      version: kit.version,
+      mode: kit.mode,
+      kit: kit.kit,
+      chapters: kit.chapters,
+      report: kit.report,
+      inputs: { website_url: kit.websiteUrl },
+      generated_at: kit.generatedAt,
+      agent: { agent_version: kit.agentVersion },
+    };
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar }));
+
+    await render('/documents/brand-kit/living');
+
+    expect(query('mktg-document-view-brand-kit')).not.toBeNull();
+    expect(query('mktg-document-view-framework')).toBeNull();
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-document-view-brand-kit')?.parentElement?.className).toContain('basis-full');
+    expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
+    expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
+    expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
   });
 
   it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
