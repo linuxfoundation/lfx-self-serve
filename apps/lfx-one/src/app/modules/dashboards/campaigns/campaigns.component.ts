@@ -4404,13 +4404,43 @@ export class CampaignsComponent {
    * The one site that must pass it explicitly is an approval, which moves the version and the ETag
    * without touching the stored bytes: defaulting there would date content forward to a write that
    * never happened, and refuse the next replay of an offer whose content is in fact still current.
+   *
+   * `contentChanged` is what a site that CHANGED the bytes passes instead, and the plain default is
+   * wrong for exactly those sites. Such a site takes the live token for its `readAt` — deliberately,
+   * so the re-lookup its own bump triggers can outrank the record — and Planning's cached offer was
+   * dispatched under that SAME token, because the bump announcing this write has not happened yet.
+   * Defaulting `contentAt` to it therefore stamps the new content with the old read's number, and
+   * `readAt < contentAt` is false between equals: the pre-write offer compares as current, and its
+   * stale bytes are paired with this write's ETag and approval. That is the superseded-restore hole
+   * reopening one token lower down — Create stays enabled, and campaigns are built from stored
+   * content the screen never showed.
+   *
+   * So the stamp lands ONE ABOVE: strictly later than any token a pre-write lookup can carry, and
+   * exactly equal to the token the bump these sites all make is about to publish — so a lookup
+   * dispatched AFTER the write still compares as current and is accepted, which is the half that
+   * must not break. The `+ 1` is tied to that bump: each of these sites bumps the token by one as
+   * it reports the write. Where a site files the record and then returns before bumping — the save
+   * path records ownership ahead of its generation check, so a superseded response does exactly
+   * that — the stamp simply sits one above the live token until the next bump of any kind brings
+   * it level, which costs at most one re-read of a row this page has already moved on from.
    */
   private rememberBriefId(
     key: string,
-    value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt?: number; contentAt?: number }
+    value: {
+      id: string;
+      etag: string | null;
+      absence?: 'overwrite' | 'unknown';
+      approved?: boolean;
+      readAt?: number;
+      contentAt?: number;
+      contentChanged?: true;
+    }
   ): void {
+    // Destructured out rather than spread: it is an instruction to this method, not a field of the
+    // record, and leaving it on the stored value would put a key on the map that its type forbids.
+    const { contentChanged, ...record } = value;
     const readAt = value.readAt ?? this.savedBriefRefreshToken();
-    this.knownBriefIds.set(key, { ...value, readAt, contentAt: value.contentAt ?? readAt });
+    this.knownBriefIds.set(key, { ...record, readAt, contentAt: value.contentAt ?? (contentChanged === true ? readAt + 1 : readAt) });
     this.knownBriefIdsVersion.update((v) => v + 1);
   }
 
@@ -5636,6 +5666,10 @@ export class CampaignsComponent {
               id: result.briefId,
               etag: result.etag,
               approved: result.approved,
+              // This write replaced the stored bytes, so the content stamp must outrank every
+              // offer Planning read BEFORE it — including one dispatched under the very token this
+              // record is about to take, which is the equality case a plain default would miss.
+              contentChanged: true,
               ...(result.etag === null ? { absence: 'unknown' as const } : {}),
             });
           }
@@ -5714,7 +5748,16 @@ export class CampaignsComponent {
                 // instead of this session's, and the worst case is one redundant approve POST
                 // that the version gate makes harmless. One rule for all three beats a per-
                 // conflict branch whose correctness depends on upstream SQL staying as it is.
-                this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
+                //
+                // `contentChanged` carries that same one-rule-for-all-three. Two of them MOVED THE
+                // BYTES — `stale-brief` means another writer's PUT landed, `superseded-after-write`
+                // means ours did — so the offer Planning cached beforehand describes content the
+                // row no longer holds, and it may carry the very token this record takes, which is
+                // the equality a plain content stamp would wave through. `unverified-validator`
+                // wrote nothing and is stamped forward anyway, erring the same direction the
+                // paragraph above already accepts: it can only cost one re-read of a row this
+                // session just refused to write, and never carries a false approval.
+                this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite', contentChanged: true });
               }
             }
             // Planning is visibility-toggled, not destroyed, so its lookup cache outlives this
@@ -6032,7 +6075,12 @@ export class CampaignsComponent {
               // knowledge is the thing that is now wrong, so it stops asserting it and the next
               // restore asks the server. Nothing is invented either way — an absent flag is read
               // as "not approved", which is the safe side of a gate on campaign creation.
-              this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
+              //
+              // `contentChanged` for the same reason the flag is dropped: this branch is reached
+              // only on `stale-brief`, which says another writer's PUT landed — and that PUT moved
+              // the BYTES, not just the version. The offer Planning cached before it describes
+              // content the row no longer holds, and it may carry the very token this record takes.
+              this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite', contentChanged: true });
             }
           }
           // Same bump the save path's conflict branch makes, and UNCONDITIONAL unlike the

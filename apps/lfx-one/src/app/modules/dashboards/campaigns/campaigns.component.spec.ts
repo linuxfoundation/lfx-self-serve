@@ -1002,26 +1002,36 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
-       * The record winning says its METADATA is the newer account — never that the offer's
-       * `approved: true` may be ORed in anyway. A save that replaced the stored brief and could
-       * not re-approve it leaves the row a draft and files `approved: false`; the cached offer
-       * still says `true`, because it was read before that save. Taking the offer's word there
-       * skips the approval and enables Create against a draft campaign-service refuses.
+       * A save that replaced the stored brief and could not re-approve it leaves the row a draft
+       * and files `approved: false`; the cached offer still says `true`, because it was read
+       * before that save. Taking the offer's word there skips the approval and enables Create
+       * against a draft campaign-service refuses.
+       *
+       * Two guards shut that door, and the OUTER one answers first. The content stamp this save
+       * files sits above every offer read before it, so the replay below is refused as superseded
+       * before `record.approved ?? approved` is ever consulted — no approval is carried, Create
+       * stays disabled, and the bump re-reads the row. The `??` precedence behind it still
+       * matters for a record whose content never moved (a restore's own, or an approval's) and is
+       * covered by the tests above; here the stale pair never gets that far.
        */
-      it('re-approves a row its own save left unapproved, despite a cached offer that says approved', async () => {
+      it('refuses a cached offer that says approved when its own save left the row unapproved', async () => {
         persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v3"', created: false, approved: false }));
         proceed();
         await fixture.whenStable();
         expect(state().approved).toBe(false);
+        const afterSave = refreshToken();
 
         // The offer Planning holds, carrying the approval state from before that save.
-        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v4"', approved: true }));
+        approveBrief.mockClear();
         restore(brief, 'restored-a', true, 'W/"v3"');
         await fixture.whenStable();
 
-        // The record's own `false` is what counts, so the row is approved rather than assumed.
-        expect(approveBrief).toHaveBeenCalledTimes(1);
-        expect(state().approved).toBe(true);
+        expect(state().status).toBe('error');
+        expect(state().message).toContain('Create Campaign stays disabled');
+        expect(state().approved).toBe(false);
+        // Nothing was approved on the strength of the offer, and the row is being re-read.
+        expect(approveBrief).not.toHaveBeenCalled();
+        expect(refreshToken()).toBe(afterSave + 1);
       });
 
       /**
@@ -1234,6 +1244,44 @@ describe('CampaignsComponent brief persistence', () => {
 
         expect(approveBrief).toHaveBeenCalledTimes(1);
         expect(state().approved).toBe(false);
+      });
+
+      /**
+       * The equality case, which every test above masks by approving first.
+       *
+       * An approve bumps the token, so a restore that triggers one leaves the record's date below
+       * the live value and any later write stamps strictly above the cached offer. Restoring an
+       * ALREADY-APPROVED brief fires no approve and no bump — so the save that follows takes the
+       * very same token Planning's cached offer was dispatched under. With the content stamp
+       * defaulted to that token the guard compares `T < T`, waves the replay through, and pairs
+       * the bytes Planning read BEFORE the save with this write's ETag and approval: Create stays
+       * enabled against a brief the screen never showed. The stamp lands one above for exactly
+       * this sequence.
+       */
+      it('refuses a replay of the offer read before a save, when the restore before it approved nothing', async () => {
+        // Already approved, so no approve POST and no bump: the record is filed at the page's
+        // first-lookup token, and the token is still that value when the save below reads it.
+        restore(brief, 'restored-a', true, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).not.toHaveBeenCalled();
+        const beforeSave = refreshToken();
+
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+        expect(state().status).toBe('saved');
+        expect(refreshToken()).toBe(beforeSave + 1);
+
+        // The replay: the pair Planning cached before that save, offered again while the re-read
+        // the bump triggered is still in flight. Same id, same first-lookup stamp, stale bytes.
+        restoreAt(beforeSave, brief, 'restored-a', true, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().message).toContain('Create Campaign stays disabled');
+        expect(state().approved).toBe(false);
+        // And no approve was fired on the way: a superseded restore approves nothing.
+        expect(approveBrief).not.toHaveBeenCalled();
       });
 
       /**
