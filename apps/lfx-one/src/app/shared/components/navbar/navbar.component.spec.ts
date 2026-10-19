@@ -8,6 +8,7 @@ import { DefaultUrlSerializer, Router } from '@angular/router';
 import { ALL_LENSES, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
 import type { Lens, LensOption, NavbarMenuBlock, NavbarRoleMark, PersonaProject, PersonaType, SidebarMenuItem, User } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -17,6 +18,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
 import { UserService } from '@services/user.service';
+import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -46,7 +48,8 @@ const createNavbar = async (
     tierResolved = true,
     lookupFailed = false,
     lenses = [ALL_LENSES.me, ALL_LENSES.project],
-  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean; lenses?: LensOption[] } = {}
+    mobile = false,
+  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean; lenses?: LensOption[]; mobile?: boolean } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -98,6 +101,7 @@ const createNavbar = async (
   TestBed.overrideComponent(NavbarComponent, { set: { template: '', imports: [], providers: [] } });
   const fixture = TestBed.createComponent(NavbarComponent);
   fixture.componentRef.setInput('items', items);
+  fixture.componentRef.setInput('mobile', mobile);
   await fixture.whenStable();
   return fixture.componentInstance as unknown as NavbarView;
 };
@@ -185,6 +189,19 @@ describe('NavbarComponent', () => {
 
     expect(unenriched.projects[0].isFoundation).toBe(true);
     expect(enriched.projects[0].isFoundation).toBe(false);
+  });
+
+  it('closes its body-level overlays as soon as the mobile drawer starts closing', async () => {
+    await createNavbar([], [], {}, { mobile: true });
+    const appService = TestBed.inject(AppService);
+    appService.openMobileSidebar();
+    TestBed.tick();
+    const hideWithin = vi.spyOn(NavTooltipDirective, 'hideWithin');
+
+    appService.closeMobileSidebar();
+    TestBed.tick();
+    expect(hideWithin).toHaveBeenCalledTimes(1);
+    hideWithin.mockRestore();
   });
 
   it('shows the no-access state once an empty project or foundation menu has resolved', async () => {

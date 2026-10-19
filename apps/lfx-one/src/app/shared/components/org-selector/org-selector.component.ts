@@ -18,6 +18,7 @@ import {
 import { Account, ContextSelectorVariant, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { ElementIdService } from '@services/element-id.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -37,9 +38,6 @@ import { distinctUntilChanged, filter, map } from 'rxjs';
   styleUrl: './org-selector.component.scss',
 })
 export class OrgSelectorComponent {
-  /** Per-instance suffix — main-layout mounts the navbar twice (desktop column + mobile drawer). */
-  private static nextInstanceId = 0;
-
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
@@ -50,6 +48,7 @@ export class OrgSelectorComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly elementIds = inject(ElementIdService);
 
   private readonly popoverRef = viewChild<Popover>('popover');
   private readonly triggerRef = viewChild<ElementRef<HTMLElement>>('selectorTrigger');
@@ -157,8 +156,12 @@ export class OrgSelectorComponent {
     return items[0].uid === this.selectedAccountUid() && !this.onNotFound();
   });
 
-  /** Unique per instance, so each card's `aria-describedby` resolves to its own description. */
-  protected readonly roleDescriptionId = `org-selector-role-description-${OrgSelectorComponent.nextInstanceId++}`;
+  /**
+   * Unique per instance — main-layout mounts the navbar twice (desktop column + mobile drawer) — so each
+   * card's `aria-describedby` resolves to its own description. Per render, not per process, so server and
+   * browser number it alike.
+   */
+  protected readonly roleDescriptionId = this.elementIds.next('org-selector-role-description');
 
   /** Navbar card tooltip: what the role lets the user do, in plain language (rather than repeating the label). */
   protected readonly navbarRoleTooltip: Signal<string> = computed(() => {

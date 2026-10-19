@@ -57,6 +57,12 @@ export class NavTooltipDirective {
     inject(DestroyRef).onDestroy(() => this.hide());
   }
 
+  /** Closes the open navbar tooltip when its trigger sits inside `container` — e.g. a drawer that starts closing. */
+  public static hideWithin(container: Node): void {
+    const active = NavTooltipDirective.active;
+    if (active && container.contains(active.host.nativeElement)) active.hide();
+  }
+
   @HostListener('mouseenter')
   protected onMouseEnter(): void {
     this.cancelHide();

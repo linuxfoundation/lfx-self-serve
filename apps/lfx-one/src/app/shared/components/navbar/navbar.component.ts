@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  afterRenderEffect,
+  Component,
+  computed,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  Signal,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
@@ -94,6 +108,7 @@ export class NavbarComponent extends SidebarComponent {
   private readonly changelogService = inject(ChangelogService);
   private readonly sidebarNavService = inject(SidebarNavService);
   private readonly appService = inject(AppService);
+  private readonly navbarHost = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly createPermissionService = inject(CreatePermissionService);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
@@ -227,6 +242,7 @@ export class NavbarComponent extends SidebarComponent {
       }
     });
     this.initTabIndicator();
+    this.initDrawerCloseCleanup();
   }
 
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
@@ -376,6 +392,23 @@ export class NavbarComponent extends SidebarComponent {
           const title = projects.length ? `${label} ${NAVBAR_ROLE_PREPOSITIONS[persona]}` : label;
           return { ...NAVBAR_ROLE_STYLES[persona], persona, label, title, projects, chips, ariaLabel };
         });
+    });
+  }
+
+  /**
+   * The mobile drawer keeps its navbar alive through the close animation, and the popovers and tooltips
+   * are appended to `body` — so they would float over the page until the drawer finishes. Close them as
+   * soon as the drawer starts closing.
+   */
+  private initDrawerCloseCleanup(): void {
+    effect(() => {
+      if (!this.mobile() || this.appService.showMobileSidebar()) return;
+      untracked(() => {
+        this.brandMenu()?.hide();
+        this.createMenu()?.hide();
+        this.userMenu()?.hide();
+        NavTooltipDirective.hideWithin(this.navbarHost.nativeElement);
+      });
     });
   }
 

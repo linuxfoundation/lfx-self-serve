@@ -103,6 +103,17 @@ describe('NavTooltipDirective', () => {
     expect(document.activeElement?.getAttribute('data-testid')).toBe('nav-tooltip-chip-cncf');
   });
 
+  it('hideWithin closes the open tooltip only when its trigger is inside the container', () => {
+    first.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+
+    NavTooltipDirective.hideWithin(second);
+    expect(tooltips()).toHaveLength(1);
+
+    NavTooltipDirective.hideWithin(first.parentElement as HTMLElement);
+    expect(tooltips()).toHaveLength(0);
+  });
+
   it('holds an interactive card open while the pointer crosses into it', () => {
     host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
     TestBed.tick();
