@@ -79,6 +79,7 @@ export * from './committee-engagement-display.utils';
 export * from './committee-engagement-freshness.utils';
 export * from './public-profile.utils';
 export * from './mentorship-lfx-profile-card.utils';
+export * from './brand-kit-book.utils';
 export * from './brand-kit.utils';
 export * from './foundation-message.utils';
 export * from './icp.utils';

@@ -51,6 +51,9 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'blue',
     guildAgentHandle: 'foundation-message',
   },
+  // Live Guild agent (linux-foundation~brand-kit 2.0.0): the kit's tokens
+  // come from the project's real logo files, the site's CSS and the approved
+  // messaging framework, every colour sourced; the result is a 16-page kit.
   {
     id: 'brand-kit',
     number: 2,
@@ -58,7 +61,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
     tags: ['Brand', 'Identity'],
     status: 'active',
     description:
-      'Develops a full project brand kit — positioning, voice, visual identity brief, palette, typography, and taglines — from seven intake questions. Logos, colors, and fonts are generated output, not inputs.',
+      'Builds the project’s brand kit from its real logo files and website: the logo system, the palette with every colour sourced and its contrast checked, the typeface, the visual rules, example usage and the voice — a 16-page kit you can print to PDF.',
     icon: 'fa-light fa-droplet',
     accent: 'violet',
     guildAgentHandle: 'brand-kit',

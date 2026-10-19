@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
+import { BRAND_KIT_FINALIZE_TOOL, BRAND_KIT_INSPECT_LOGOS_TOOL, BRAND_KIT_QUESTIONS_CONTRACT_ID } from './brand-kit.constants';
 import { FOUNDATION_MESSAGE_ASK_TOOL, FOUNDATION_MESSAGE_FINALIZE_TOOL, FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID } from './foundation-message.constants';
 
 // The live activity feed of an agent run: what the agent is doing while it
@@ -34,17 +35,26 @@ export const MKTG_RUN_ACTIVITY_TOOLS = {
   lfxSemanticLayer: 'lfx_mcp_query_lfx_semantic_layer',
   askRequester: FOUNDATION_MESSAGE_ASK_TOOL,
   finalize: FOUNDATION_MESSAGE_FINALIZE_TOOL,
+  finalizeBrandKit: BRAND_KIT_FINALIZE_TOOL,
+  inspectLogos: BRAND_KIT_INSPECT_LOGOS_TOOL,
 } as const;
 
 /** Every LFX MCP tool starts with this. */
 export const MKTG_RUN_ACTIVITY_LFX_TOOL_PREFIX = 'lfx_mcp_';
+
+/** The agents' finalize tools: the check of the document (or the kit) against its gates. */
+export const MKTG_RUN_ACTIVITY_FINALIZE_TOOLS: readonly string[] = [MKTG_RUN_ACTIVITY_TOOLS.finalize, MKTG_RUN_ACTIVITY_TOOLS.finalizeBrandKit];
 
 /**
  * Tools the agent runs inside its own code rather than through the platform:
  * they appear in the model's responses, not as tool tasks, so the feed reads
  * them from there.
  */
-export const MKTG_RUN_ACTIVITY_AGENT_TOOLS: readonly string[] = [MKTG_RUN_ACTIVITY_TOOLS.askRequester, MKTG_RUN_ACTIVITY_TOOLS.finalize];
+export const MKTG_RUN_ACTIVITY_AGENT_TOOLS: readonly string[] = [
+  MKTG_RUN_ACTIVITY_TOOLS.askRequester,
+  MKTG_RUN_ACTIVITY_TOOLS.inspectLogos,
+  ...MKTG_RUN_ACTIVITY_FINALIZE_TOOLS,
+];
 
 /** Tools that never show in the feed: the agent talking to the page, and handing in its output. */
 export const MKTG_RUN_ACTIVITY_HIDDEN_TOOLS: readonly string[] = ['ui_notify', 'ui_prompt', '__submit__'];
@@ -57,9 +67,12 @@ export const MKTG_RUN_ACTIVITY_LABELS = {
   lfxFigures: 'Pulling live LFX figures',
   lfxOther: 'Checking LFX',
   questions: 'Preparing a few questions for you',
+  inspectingLogos: 'Inspecting the logo files',
   checking: 'Checking the framework',
   fixing: 'Fixing what the check found',
   writing: 'Writing the framework',
+  checkingBrandKit: 'Checking the document against the template',
+  writingBrandKit: 'Writing the document',
 } as const;
 
 /** Platform task statuses that mean the tool finished, and those that mean it did not. */
@@ -89,8 +102,8 @@ export const MKTG_RUN_ACTIVITY_ICONS: Record<MktgRunActivityKind, string> = {
 /** Path segments that say nothing about a page ("wp-json", "api") — a "Reading <host>" label drops them. */
 export const MKTG_RUN_ACTIVITY_OPAQUE_PATH_SEGMENTS: readonly string[] = ['wp-json', 'api', 'index.php', 'index.html'];
 
-/** The contract line a questions turn starts with — where the writing stretch of a run begins. */
-export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKER = FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID;
+/** The contract ids a questions turn carries, one per agent that asks — where the writing stretch of a run begins. */
+export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS: readonly string[] = [FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID, BRAND_KIT_QUESTIONS_CONTRACT_ID];
 
 /**
  * Most words of a question's label the stepper's chip shows. The agent's
