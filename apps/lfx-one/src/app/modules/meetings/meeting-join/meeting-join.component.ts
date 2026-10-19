@@ -1775,7 +1775,7 @@ export class MeetingJoinComponent implements OnInit {
     this.leavingMeeting.set(true);
 
     this.meetingService
-      .removeMyMeetingRegistration(meetingId)
+      .removeMyMeetingRegistration(meetingId, 'meeting-join')
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))

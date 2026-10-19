@@ -861,7 +861,7 @@ export class MeetingCardComponent implements OnInit {
     this.leavingMeeting.set(true);
 
     this.meetingService
-      .removeMyMeetingRegistration(meetingId)
+      .removeMyMeetingRegistration(meetingId, 'meeting-card')
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))

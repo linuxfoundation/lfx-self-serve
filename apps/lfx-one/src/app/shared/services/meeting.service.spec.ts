@@ -211,10 +211,16 @@ describe('MeetingService.removeMyMeetingRegistration', () => {
   });
 
   it('sends a body-less DELETE to the self registrant route, with no registrant id from the client', () => {
-    service.removeMyMeetingRegistration(MEETING_UID).subscribe();
+    service.removeMyMeetingRegistration(MEETING_UID, 'meeting-card').subscribe();
 
     expect(del).toHaveBeenCalledTimes(1);
-    expect(del).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/registrants/self`);
+    expect(del.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self`);
+  });
+
+  it.each(['meeting-card', 'meeting-join'] as const)('names the %s surface in the removal-source header', (source) => {
+    service.removeMyMeetingRegistration(MEETING_UID, source).subscribe();
+
+    expect(del.mock.calls[0][1].headers.get('x-lfx-removal-source')).toBe(source);
   });
 });
 
