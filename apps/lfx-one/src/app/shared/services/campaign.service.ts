@@ -102,13 +102,15 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { retryTransientHttpError } from '@shared/utils/http-error.utils';
-import { catchError, exhaustMap, last, map, Observable, of, take, takeWhile, throwError, timer } from 'rxjs';
+import { catchError, exhaustMap, last, map, Observable, of, ReplaySubject, share, take, takeWhile, throwError, timer } from 'rxjs';
 
 import { SseService } from './sse.service';
 
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
+  /** Each brief's latest creative-asset upload, kept until its answer is taken up: see `uploadCreativeAsset`. */
+  private readonly creativeAssetUploads = new Map<string, Observable<CreativeAssetUploadResult>>();
   private readonly sse = inject(SseService);
 
   public generateBrief(projectSlug: string, request: CampaignBriefRequest): Observable<SSEEvent<CampaignSSEEventType>> {
@@ -289,10 +291,31 @@ export class CampaignService {
    * `createCampaign`, because they are path segments upstream.
    */
   public uploadCreativeAsset(file: Blob, projectSlug: string, briefId: string): Observable<CreativeAssetUploadResult> {
-    return this.http.post<CreativeAssetUploadResult>('/api/campaigns/brief/creative-assets', file, {
-      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
-      headers: { 'Content-Type': file.type },
-    });
+    // Shared and replayed, never reset: the Implementation tab is destroyed on a tab switch, and
+    // unsubscribing must not abort the upload or lose its answer. A remount resumes it by brief
+    // (`resumeCreativeAssetUpload`) and gets the id, or the refusal, it would have seen.
+    const upload$ = this.http
+      .post<CreativeAssetUploadResult>('/api/campaigns/brief/creative-assets', file, {
+        params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+        headers: { 'Content-Type': file.type },
+      })
+      .pipe(
+        share({ connector: () => new ReplaySubject<CreativeAssetUploadResult>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false })
+      );
+    this.creativeAssetUploads.set(briefId, upload$);
+    return upload$;
+  }
+
+  /** The brief's latest upload, in flight or answered but not yet taken up, or null. */
+  public resumeCreativeAssetUpload(briefId: string): Observable<CreativeAssetUploadResult> | null {
+    return this.creativeAssetUploads.get(briefId) ?? null;
+  }
+
+  /** Drop the brief's upload once its answer is taken up, or `upload$` only if it is still the latest. */
+  public forgetCreativeAssetUpload(briefId: string, upload$?: Observable<CreativeAssetUploadResult>): void {
+    if (upload$ === undefined || this.creativeAssetUploads.get(briefId) === upload$) {
+      this.creativeAssetUploads.delete(briefId);
+    }
   }
 
   public getCreateResult(jobId: string, projectSlug: string): Observable<CampaignJobOutcome | null> {

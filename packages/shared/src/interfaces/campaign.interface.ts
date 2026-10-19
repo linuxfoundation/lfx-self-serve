@@ -753,6 +753,12 @@ export interface CampaignImplementationDraft {
   redditImageAssetName?: string;
   redditImageAssetBriefId?: string;
   /**
+   * The file name of a Reddit image upload still in flight when the draft was taken. The request
+   * outlives the tab (`CampaignService.uploadCreativeAsset`), so a remount resumes it by brief
+   * instead of losing the image the operator picked; empty when nothing is uploading.
+   */
+  redditImageUploadPendingName?: string;
+  /**
    * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
    * objective is, so switching away from Video Views and back does not lose the choice; only the
    * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.

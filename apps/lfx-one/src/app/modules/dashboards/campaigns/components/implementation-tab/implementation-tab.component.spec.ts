@@ -7589,6 +7589,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
   let createCampaign: ReturnType<typeof vi.fn>;
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
+  let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
 
   interface Internals {
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
@@ -7672,6 +7673,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
     uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
+    resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
 
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
@@ -7681,7 +7683,10 @@ describe('ImplementationTabComponent reddit image upload', () => {
         provideRouter([]),
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'tlf' }) } },
         { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CampaignService, useValue: { createCampaign, uploadCreativeAsset, getLinkedInAccounts: () => of([]) } },
+        {
+          provide: CampaignService,
+          useValue: { createCampaign, uploadCreativeAsset, resumeCreativeAssetUpload, forgetCreativeAssetUpload: vi.fn(), getLinkedInAccounts: () => of([]) },
+        },
       ],
     }).compileComponents();
   });
@@ -7733,6 +7738,45 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(c.canSubmit()).toBe(false);
     pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
     expect(c.canSubmit()).toBe(true);
+  });
+
+  // A tab switch destroys this component mid-upload. The request runs on in the service, and the
+  // remount picks it back up from the draft rather than losing the image the operator chose.
+  it('resumes an upload that was still in flight when the tab was left', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    expect(draft.redditImageUploadPendingName).toBe('promo.png');
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const second = await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith(BRIEF_ID);
+    expect(at(second.fixture).redditImageUploadStatus()).toBe('uploading');
+
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    second.fixture.detectChanges();
+
+    expect(at(second.fixture).redditImageAssetId()).toBe(ASSET_ID);
+    expect(second.latest()?.redditImageAssetId).toBe(ASSET_ID);
+    expect(second.latest()?.redditImageUploadPendingName).toBe('');
+    expect(submit(second.fixture)['imageAssetId']).toBe(ASSET_ID);
+  });
+
+  it('says the upload was interrupted when there is nothing left to resume', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+
+    const f = (await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+
+    expect(at(f).redditImageUploadStatus()).toBe('error');
+    expect(at(f).redditImageUploadError()).toBe('The upload of promo.png was interrupted. Choose the image again.');
+    expect(at(f).redditImageAssetId()).toBe('');
   });
 
   it('does not send an asset uploaded to a different brief', async () => {

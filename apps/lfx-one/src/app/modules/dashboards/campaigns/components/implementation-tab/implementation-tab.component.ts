@@ -102,7 +102,7 @@ import {
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { filter, map, merge, scan, skip, startWith, Subscription, take } from 'rxjs';
+import { filter, map, merge, Observable, scan, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
@@ -126,6 +126,7 @@ import type {
   CampaignRedditImageAssetBlock,
   CampaignSitelink,
   CampaignType,
+  CreativeAssetUploadResult,
   CreativeAssetUploadStatus,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
@@ -781,6 +782,8 @@ export class ImplementationTabComponent implements OnInit {
   /** The brief the asset was uploaded to; upstream refuses the id for any other brief. */
   protected readonly redditImageAssetBriefId = signal('');
   protected readonly redditImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  /** The file name of the upload in flight, carried in the draft so a remount can resume it. */
+  private readonly redditImageUploadPendingName = signal('');
   /** The readable reason the last upload was refused; empty unless the status is `error`. */
   protected readonly redditImageUploadError = signal('');
   /** The `accept` list for the file picker — the same allowlist the BFF route enforces. */
@@ -2199,26 +2202,10 @@ export class ImplementationTabComponent implements OnInit {
       return;
     }
 
-    this.redditImageUploadStatus.set('uploading');
-    this.redditImageUploadError.set('');
-    this.redditImageUploadSub = this.campaignService
-      .uploadCreativeAsset(file, projectSlug, briefId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: (asset) => {
-          // The brief changed while the upload was in flight: the asset belongs to the old one.
-          if ((this.briefPersistence().briefId ?? '') !== briefId) {
-            this.failRedditImageUpload('The brief changed during the upload. Choose the image again.');
-            return;
-          }
-          this.redditImageAssetId.set(asset.id);
-          this.redditImageAssetName.set(file.name);
-          this.redditImageAssetBriefId.set(briefId);
-          this.redditImageUploadStatus.set('idle');
-          this.emitDraft();
-        },
-        error: (err: unknown) => this.failRedditImageUpload(this.redditImageUploadErrorMessage(err)),
-      });
+    this.followRedditImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId), briefId, file.name);
+    // Told to the parent at once: a tab switch now destroys this component but not the request,
+    // and the remount resumes it from the draft (`resumeRedditImageUpload`).
+    this.emitDraft();
   }
 
   /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
@@ -2938,9 +2925,62 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /**
+   * Show an upload in flight and keep its answer. Unsubscribing on destroy only detaches this
+   * component: the service's shared request runs on, so a tab switch does not abort the upload.
+   */
+  private followRedditImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.redditImageUploadStatus.set('uploading');
+    this.redditImageUploadError.set('');
+    this.redditImageUploadPendingName.set(fileName);
+    this.redditImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload(briefId, upload$);
+        this.redditImageUploadPendingName.set('');
+        // The brief changed while the upload was in flight: the asset belongs to the old one.
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failRedditImageUpload('The brief changed during the upload. Choose the image again.');
+          this.emitDraft();
+          return;
+        }
+        this.redditImageAssetId.set(asset.id);
+        this.redditImageAssetName.set(fileName);
+        this.redditImageAssetBriefId.set(briefId);
+        this.redditImageUploadStatus.set('idle');
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload(briefId, upload$);
+        this.redditImageUploadPendingName.set('');
+        this.failRedditImageUpload(this.redditImageUploadErrorMessage(err));
+        this.emitDraft();
+      },
+    });
+  }
+
+  /**
+   * Pick an upload back up after a remount. The request outlived the previous mount, so the
+   * service still has it, finished or not; with none (a reload ended it) the operator is told
+   * rather than left with an image that silently never arrived.
+   */
+  private resumeRedditImageUpload(fileName: string): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload(briefId) : null;
+    if (!upload$) {
+      this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`);
+      return;
+    }
+    this.followRedditImageUpload(upload$, briefId, fileName);
+  }
+
   private clearRedditImageAsset(): void {
     this.redditImageUploadSub?.unsubscribe();
     this.redditImageUploadSub = null;
+    // The replaced or removed upload runs on in the service; dropping it here keeps a later
+    // remount from resuming the image the operator let go.
+    const briefId = this.briefPersistence().briefId ?? '';
+    if (briefId) this.campaignService.forgetCreativeAssetUpload(briefId);
+    this.redditImageUploadPendingName.set('');
     this.redditImageAssetId.set('');
     this.redditImageAssetName.set('');
     this.redditImageAssetBriefId.set('');
@@ -3198,6 +3238,9 @@ export class ImplementationTabComponent implements OnInit {
       this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
       this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
     }
+    if (draft.redditImageUploadPendingName) {
+      this.resumeRedditImageUpload(draft.redditImageUploadPendingName);
+    }
     if (draft.redditVideoGoal !== undefined) {
       this.redditVideoGoal.set(draft.redditVideoGoal);
     }
@@ -3368,6 +3411,7 @@ export class ImplementationTabComponent implements OnInit {
       redditImageAssetId: this.redditImageAssetId(),
       redditImageAssetName: this.redditImageAssetName(),
       redditImageAssetBriefId: this.redditImageAssetBriefId(),
+      redditImageUploadPendingName: this.redditImageUploadPendingName(),
       redditVideoGoal: this.redditVideoGoal(),
     });
   }
