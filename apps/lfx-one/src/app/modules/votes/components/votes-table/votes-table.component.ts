@@ -318,27 +318,17 @@ export class VotesTableComponent {
 
   private initEmptyStateCopy(): Signal<{ title: string; subtitle: string }> {
     return computed(() => {
-      if (this.hasAdditionalFilters()) {
-        return { title: 'No votes match your filters', subtitle: 'Try changing your search or filters, or reset filters to see all votes.' };
+      if (!this.hasAdditionalFilters()) {
+        switch (this.statusTab()) {
+          case PollStatus.ACTIVE:
+            return { title: 'No active votes', subtitle: 'There are no votes open for voting in this view. Select All to see votes with other statuses.' };
+          case PollStatus.DISABLED:
+            return { title: 'No draft votes', subtitle: 'Votes saved as drafts will appear here before they are opened for voting.' };
+          case PollStatus.ENDED:
+            return { title: 'No ended votes yet', subtitle: 'Votes will appear here after voting ends.' };
+        }
       }
-      switch (this.statusTab()) {
-        case PollStatus.ACTIVE:
-          return { title: 'No active votes', subtitle: 'There are no votes open for voting in this view. Select All to see votes with other statuses.' };
-        case PollStatus.DISABLED:
-          return { title: 'No draft votes', subtitle: 'Votes saved as drafts will appear here before they are opened for voting.' };
-        case PollStatus.ENDED:
-          return { title: 'No ended votes yet', subtitle: 'Votes will appear here after voting ends.' };
-        default:
-          break;
-      }
-      // All tab: lazy tables back the project/foundation dashboard; client tables list the viewer's invitations.
-      if (!this.lazy()) {
-        return { title: 'No votes yet', subtitle: "Votes you've been invited to participate in will appear here." };
-      }
-      return {
-        title: 'No votes yet',
-        subtitle: this.hasPMOAccess() ? 'Create a vote to gather decisions from project groups.' : 'Votes for this project or foundation will appear here.',
-      };
+      return { title: 'No votes match your filters', subtitle: 'Try changing your search or filters, or reset filters to see all votes.' };
     });
   }
 

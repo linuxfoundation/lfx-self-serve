@@ -19,7 +19,7 @@ const vote = (uid: string, overrides: Partial<Vote> = {}): Vote => ({
   uid,
   name: `Board ${uid}`,
   project_uid: 'synthetic-project',
-  committee_name: 'Audi Group',
+  committee_name: 'Alpha Group',
   status: PollStatus.ACTIVE,
   response_status: VoteResponseStatus.AWAITING_RESPONSE,
   end_time: '2026-10-12T12:00:00Z',
@@ -36,7 +36,7 @@ const VOTES = [
 ];
 const GROUPS = [
   { label: 'All Groups', value: null },
-  { label: 'Audi Group', value: 'Audi Group' },
+  { label: 'Alpha Group', value: 'Alpha Group' },
   { label: 'Other Group', value: 'Other Group' },
 ];
 
@@ -200,7 +200,7 @@ describe('VotesTableComponent — personal summary filters', () => {
   ] as const)('intersects %s with search and group without sorting', async (filter, expected) => {
     await render();
     fixture.componentRef.setInput('quickFilter', filter);
-    table.searchForm.patchValue({ search: 'bOaRd', group: 'Audi Group' });
+    table.searchForm.patchValue({ search: 'bOaRd', group: 'Alpha Group' });
     await settle(true);
     expect(rows()).toEqual(expected);
   });
@@ -223,7 +223,7 @@ describe('VotesTableComponent — personal summary filters', () => {
     fixture.componentRef.setInput('lazy', true);
     fixture.componentRef.setInput('totalRecords', VOTES.length);
     fixture.componentRef.setInput('quickFilter', 'needs-vote');
-    table.searchForm.patchValue({ search: 'absent', group: 'Audi Group' });
+    table.searchForm.patchValue({ search: 'absent', group: 'Alpha Group' });
     await tab(PollStatus.ENDED);
     await settle(true);
     expect(rows()).toEqual(VOTES.map((v) => v.uid));
@@ -277,7 +277,7 @@ describe('VotesTableComponent — personal summary filters', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeNull();
     fixture.componentRef.setInput('serverFiltersActive', true);
     await settle();
-    expect(emptyState()?.textContent).toContain('No votes yet');
+    expect(emptyState()?.textContent).toContain('No votes match your filters');
     expect(fixture.nativeElement.querySelector('[data-testid="votes-search-input"]')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('[data-testid="votes-group-filter"]')).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('Reset filters');
@@ -307,7 +307,7 @@ describe('VotesTableComponent — personal summary filters', () => {
   it('clears an unavailable group only after loading, preserving search and summary', async () => {
     await render();
     fixture.componentRef.setInput('quickFilter', 'needs-vote');
-    table.searchForm.patchValue({ search: 'Board', group: 'Audi Group' });
+    table.searchForm.patchValue({ search: 'Board', group: 'Alpha Group' });
     await settle(true);
     expect(rows()).toEqual(['z', 'a', 'distant']);
     fixture.componentRef.setInput('loading', true);
@@ -318,10 +318,10 @@ describe('VotesTableComponent — personal summary filters', () => {
     ]);
     fixture.componentRef.setInput(
       'groupOptions',
-      GROUPS.filter((g) => g.value !== 'Audi Group')
+      GROUPS.filter((g) => g.value !== 'Alpha Group')
     );
     await settle();
-    expect(table.searchForm.controls.group.value).toBe('Audi Group');
+    expect(table.searchForm.controls.group.value).toBe('Alpha Group');
     fixture.componentRef.setInput('loading', false);
     await settle();
     expect(table.searchForm.controls.group.value).toBeNull();
@@ -388,7 +388,7 @@ describe('VotesTableComponent — empty-state copy', () => {
     it.each(['search', 'group', 'quick filter', 'scope'])(`prefers no-match copy over status copy for %s (lazy: ${lazy})`, async (kind) => {
       await renderEmpty(PollStatus.ACTIVE, lazy);
       if (kind === 'search') table.searchForm.controls.search.setValue('absent');
-      if (kind === 'group') table.searchForm.controls.group.setValue('Audi Group');
+      if (kind === 'group') table.searchForm.controls.group.setValue('Alpha Group');
       if (kind === 'quick filter') fixture.componentRef.setInput('quickFilter', 'closing-soon');
       if (kind === 'scope') fixture.componentRef.setInput('scopeActive', true);
       await settle();
@@ -396,34 +396,16 @@ describe('VotesTableComponent — empty-state copy', () => {
     });
   }
 
-  it.each([
-    [false, "Votes you've been invited to participate in will appear here."],
-    [true, 'Votes for this project or foundation will appear here.'],
-  ])('uses All copy for the table context (lazy: %s, read-only)', async (lazy, subtitle) => {
-    fixture.componentRef.setInput('lazy', lazy);
-    fixture.componentRef.setInput('serverFiltersActive', true);
-    fixture.componentRef.setInput('scopeActive', false);
+  it('keeps invitation copy on unfiltered client All', async () => {
     fixture.componentRef.setInput('votes', []);
     await settle();
-    if (!lazy) {
-      // Unfiltered client All never reaches the filtered branch; it keeps the invitation message.
-      expect(copy()).toBeNull();
-      expect(fixture.nativeElement.textContent).toContain(subtitle);
-      return;
-    }
-    expect(copy()).toEqual(['No votes yet', subtitle]);
+    expect(copy()).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain("Votes you've been invited to participate in will appear here.");
   });
 
-  it('offers creation wording on the lazy All copy only to writers', async () => {
-    fixture.componentRef.setInput('lazy', true);
-    fixture.componentRef.setInput('serverFiltersActive', true);
+  it('keeps status wording neutral for writers', async () => {
     fixture.componentRef.setInput('hasPMOAccess', true);
-    fixture.componentRef.setInput('votes', []);
-    await settle();
-    expect(copy()).toEqual(['No votes yet', 'Create a vote to gather decisions from project groups.']);
-    fixture.componentRef.setInput('statusTab', PollStatus.DISABLED);
-    await settle();
-    // Status copy stays neutral even for writers.
+    await renderEmpty(PollStatus.DISABLED, true);
     expect(copy()).toEqual(['No draft votes', 'Votes saved as drafts will appear here before they are opened for voting.']);
   });
 

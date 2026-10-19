@@ -686,8 +686,8 @@ describe('VotesDashboardComponent personal summary', () => {
       table.searchForm.controls.search.setValue(search);
       await settle();
 
-      expect(list).toHaveBeenCalledExactlyOnceWith('project-a', 10, undefined, expected, undefined, undefined);
-      expect(count).toHaveBeenCalledExactlyOnceWith('project-a', expected, undefined);
+      expect(list).toHaveBeenCalledExactlyOnceWith('project-a', 10, undefined, expected, ['status:active'], undefined);
+      expect(count).toHaveBeenCalledExactlyOnceWith('project-a', expected, ['status:active']);
       expect(statusCounts).toHaveBeenCalledExactlyOnceWith('project-a', expected, undefined);
       expect(table.searchForm.controls.search.value).toBe(search);
     });
