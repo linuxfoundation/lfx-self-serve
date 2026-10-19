@@ -41,6 +41,7 @@ import type {
   CampaignServiceKeywordTargeting,
   CampaignServiceKeywordTargetingRemovalResult,
   CampaignServiceKeywordTargetingRemovals,
+  CampaignServiceMetaAds,
   CampaignServiceMetaAdSets,
   CampaignServiceMetaAdSetStatusChange,
   CampaignServicePlatformAudienceMap,
@@ -51,6 +52,7 @@ import type {
   QueryServiceResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
+import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -66,7 +68,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 /**
  * Proxies the Optimize tab's campaign-service reads and levers that the BFF did not reach before:
  * per-platform audience reads, campaign-ref resolves, the Reddit keyword read, the campaign
- * settings readback, Meta ad sets (list and status), keyword targeting (read and remove, Reddit
+ * settings readback, Meta ad sets (list and status) and their ads (list), keyword targeting (read and remove, Reddit
  * and X) and campaign adoption.
  *
  * Kept apart from `CampaignServiceClient` so it can grow without colliding with the monitor
@@ -195,7 +197,8 @@ export class CampaignOptimizeService {
   public async getCampaign(req: Request, ref: CampaignServiceCampaignTarget): Promise<CampaignServiceCampaign> {
     logger.debug(req, 'get_campaign', 'Reading campaign row from campaign-service', { campaign_id: ref.campaignId });
     const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(req, 'LFX_V2_CAMPAIGN_SERVICE', campaignPath(ref), 'GET');
-    return { ...response.data, etag: readEtag(response) ?? response.data.etag };
+    // `adopted` is kept only as a literal `true`: the act dialog withholds Resume on it.
+    return withAdoptedMarker({ ...response.data, etag: readEtag(response) ?? response.data.etag });
   }
 
   /**
@@ -214,6 +217,30 @@ export class CampaignOptimizeService {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `${campaignPath(ref)}/meta-ad-sets`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
+   * The ads under ONE ad set of a Meta campaign with their delivery over `window`, read live.
+   * Strictly read-only upstream: there is no per-ad pause or edit. `truncated` says the listing
+   * passed its page cap; delivery is never truncated.
+   */
+  public async listMetaAds(
+    req: Request,
+    params: CampaignServiceCampaignTarget & { adSetId: string },
+    window?: CampaignMetricsWindow
+  ): Promise<CampaignServiceMetaAds> {
+    logger.debug(req, 'list_meta_ads', 'Reading Meta ads of an ad set from campaign-service', {
+      campaign_id: params.campaignId,
+      ad_set_id: params.adSetId,
+      window,
+    });
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaAds>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `${campaignPath(params)}/meta-ad-sets/${encodePathSegment(params.adSetId)}/ads`,
       'GET',
       window ? { window } : undefined
     );

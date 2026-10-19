@@ -31,6 +31,18 @@ export enum VoteResponseStatus {
   AWAITING_RESPONSE = 'awaiting_response',
 }
 
+/**
+ * Votes-table participation display state
+ * @description Which participation summary a management votes-table row renders, derived from the row's indexed counts
+ */
+export enum VoteRowParticipationState {
+  NOT_OPEN = 'not_open',
+  UNAVAILABLE = 'unavailable',
+  COUNT_ONLY = 'count_only',
+  NO_ELECTORATE = 'no_electorate',
+  PROGRESS = 'progress',
+}
+
 /** Status values as stored in `lfx.index.individual_vote`. */
 export enum IndividualVoteStatus {
   AWAITING_RESPONSE = 'awaiting response',

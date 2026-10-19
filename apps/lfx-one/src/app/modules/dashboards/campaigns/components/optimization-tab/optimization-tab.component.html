@@ -286,6 +286,19 @@
                     >
                   }
                   <!--
+                    Why an adopted campaign's Resume does nothing: campaign-service never resumes an
+                    adopted campaign. Like the reason above, a standing property of the row and the
+                    button's `aria-describedby` target, so it is not a live region.
+                  -->
+                  @if (row.resumeAdopted) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-resume-adopted-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-resume-adopted-' + row.campaign.id"
+                      >{{ row.resumeAdoptedReason }}</span
+                    >
+                  }
+                  <!--
                     The budget this session confirmed. The index carries no budget, so nothing is shown
                     until a change lands here. No currency symbol: the amount is in the ad account's own
                     currency, which this app does not know, and it is shown exactly as accepted.
@@ -484,6 +497,10 @@
 
                     `aria-describedby` points at the row's error only when one exists; a dangling
                     reference to an element that renders conditionally is worse than none.
+
+                    An adopted campaign's Resume is `aria-disabled`, not `disabled`: it stays in the
+                    focus order so its reason (described) is reachable, and `toggleCampaign()` ignores
+                    the click.
                   -->
                   <button
                     type="button"
@@ -498,8 +515,9 @@
                     "
                     [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
                     [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-disabled]="row.resumeAdopted ? 'true' : null"
                     [attr.aria-describedby]="row.describedBy"
-                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
                     [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
                     <!--
                       The visible label stays the ACTION word while pending, rather than becoming
@@ -516,6 +534,18 @@
                   </button>
                 </div>
               </div>
+              <!--
+                The row's live counters. Shown from the brief-wide metrics read the tab already makes
+                when this campaign's row there is `ok`; the row reads campaign-service for itself only
+                on Refresh, or when clicked after the brief-wide read could not measure it.
+              -->
+              <lfx-campaign-live-metrics
+                [projectSlug]="projectSlug()"
+                [briefId]="briefId()"
+                [campaignId]="row.campaign.id"
+                [campaignName]="row.campaign.campaign_name"
+                [platform]="row.campaign.platform"
+                [briefRow]="briefMetricsRowsById()[row.campaign.id] ?? null" />
               @if (budgetEditorOpen()[row.campaign.id]) {
                 <lfx-campaign-budget-form
                   [id]="'campaign-budget-panel-' + row.campaign.id"

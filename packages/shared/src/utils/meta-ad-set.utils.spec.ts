@@ -4,13 +4,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  META_AD_CREATIVE_NOT_REPORTED,
   META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON,
   META_AD_SET_NO_ACTION_REASON,
   META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON,
   META_AD_SET_RESUME_ELSEWHERE_REASON,
 } from '../constants/campaign-optimize.constants';
-import type { CampaignServiceMetaAdSet } from '../interfaces/campaign-optimize.interface';
-import { metaAdSetCampaignEligibility, toMetaAdSetDisplayRow } from './meta-ad-set.utils';
+import type { CampaignServiceMetaAd, CampaignServiceMetaAdSet } from '../interfaces/campaign-optimize.interface';
+import { metaAdSetCampaignEligibility, toMetaAdDisplayRow, toMetaAdSetDisplayRow } from './meta-ad-set.utils';
 
 const TOGGLEABLE = metaAdSetCampaignEligibility('active');
 
@@ -149,5 +150,60 @@ describe('toMetaAdSetDisplayRow — campaign-state directions', () => {
     expect(active.actionBlockedReason).toBe(META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON);
     expect(paused.actionBlockedReason).toBe(META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON);
     expect(paused.recordActionBlockedReason).toBe(META_AD_SET_CHANGE_BLOCKED_CAMPAIGN_STATE_REASON);
+  });
+});
+
+describe('toMetaAdDisplayRow', () => {
+  const ad = (over: Partial<CampaignServiceMetaAd> = {}): CampaignServiceMetaAd => ({
+    id: '999',
+    listed: true,
+    name: 'Leads — Image A',
+    status: 'ACTIVE',
+    effective_status: 'ACTIVE',
+    creative_id: '777',
+    creative_name: 'Image A',
+    impressions: 920,
+    clicks: 21,
+    cost_micros: 6_170_000,
+    ctr: 0.0228,
+    ...over,
+  });
+
+  it('maps a listed ad, converting spend from micros and hiding a redundant effective status', () => {
+    expect(toMetaAdDisplayRow(ad())).toEqual({
+      id: '999',
+      name: 'Leads — Image A',
+      listed: true,
+      status: 'ACTIVE',
+      effectiveStatus: null,
+      creative: 'Image A',
+      impressions: 920,
+      clicks: 21,
+      ctr: 0.0228,
+      spend: 6.17,
+    });
+  });
+
+  it('shows an effective status that differs, and falls back to the creative id', () => {
+    const row = toMetaAdDisplayRow(ad({ effective_status: 'ADSET_PAUSED', creative_name: undefined }));
+
+    expect(row).toMatchObject({ effectiveStatus: 'ADSET_PAUSED', creative: '777' });
+  });
+
+  it('describes an unlisted ad by its id alone and keeps its counters', () => {
+    const row = toMetaAdDisplayRow({ id: '888', listed: false, impressions: 10, clicks: 1, cost_micros: 0, ctr: 0.1 });
+
+    expect(row).toMatchObject({ name: '888', listed: false, status: null, effectiveStatus: null, creative: META_AD_CREATIVE_NOT_REPORTED, spend: 0 });
+  });
+
+  it('never turns a counter that is not a finite number into 0', () => {
+    const raw = ad({ cost_micros: Number.NaN });
+    // @ts-expect-error -- an explicit null off the unvalidated wire
+    raw.impressions = null;
+    // @ts-expect-error -- a string off the unvalidated wire
+    raw.clicks = '3';
+    const row = toMetaAdDisplayRow(raw);
+
+    expect(row).toMatchObject({ impressions: null, clicks: null, spend: null, ctr: 0.0228 });
   });
 });

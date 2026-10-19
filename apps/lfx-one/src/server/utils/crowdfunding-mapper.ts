@@ -4,9 +4,11 @@
 import {
   Announcement,
   Beneficiary,
+  CrowdfundingAttributionType,
   CrowdfundingTransaction,
   FinancialSummary,
   FundingGoal,
+  InitiativeAttribution,
   InitiativeBase,
   InitiativeDetail,
   SponsorEntry,
@@ -19,10 +21,16 @@ import {
   SponsorshipDonationMode,
 } from '@lfx-one/shared/interfaces';
 import { FundType } from '@lfx-one/shared/enums';
-import { CROWDFUNDING_INITIATIVE_STATUSES, SPONSORSHIP_TIER_NAMES, SPONSORSHIP_DONATION_MODES } from '@lfx-one/shared/constants';
+import {
+  CROWDFUNDING_ATTRIBUTION_TYPES,
+  CROWDFUNDING_INITIATIVE_STATUSES,
+  SPONSORSHIP_TIER_NAMES,
+  SPONSORSHIP_DONATION_MODES,
+} from '@lfx-one/shared/constants';
 
 import {
   BackendAnnouncement,
+  BackendAttribution,
   BackendBeneficiary,
   BackendGoal,
   BackendInitiative,
@@ -45,6 +53,12 @@ function toValidDonationMode(value: unknown): SponsorshipDonationMode | undefine
 function mapSponsorshipTier(t: BackendSponsorshipTier): SponsorshipTier | undefined {
   if (!SPONSORSHIP_TIER_NAMES.includes(t.name as SponsorshipTier['name'])) return undefined;
   return { name: t.name as SponsorshipTier['name'], enabled: t.enabled, goalCents: t.minimum, benefits: t.benefits };
+}
+
+// An unknown or missing type maps to undefined, which the UI reads as personal.
+function mapAttribution(a: BackendAttribution | undefined): InitiativeAttribution | undefined {
+  if (!a || !CROWDFUNDING_ATTRIBUTION_TYPES.includes(a.type as CrowdfundingAttributionType)) return undefined;
+  return { type: a.type as CrowdfundingAttributionType, entityUid: a.entity_uid, name: a.name, logoUrl: a.logo_url };
 }
 
 function toValidFundType(value: unknown): FundType {
@@ -77,6 +91,7 @@ export function mapToInitiativeBase(b: BackendInitiative): InitiativeBase {
         }
       : undefined,
     initiativeStats: b.financials ? { supporters: b.financials.supporters } : undefined,
+    attribution: mapAttribution(b.attribution),
   };
 }
 
@@ -90,6 +105,7 @@ export function mapToInitiativeDetail(b: BackendInitiative): InitiativeDetail {
     beneficiaries: (b.beneficiaries ?? []).map(mapBeneficiary),
     sponsorshipTiers: b.sponsorship_tiers?.map(mapSponsorshipTier).filter((t): t is SponsorshipTier => t !== undefined),
     donationMode: toValidDonationMode(b.donation_mode),
+    isOwner: b.is_owner === true,
     // Not yet available from the backend
     githubUrl: undefined,
     impactStats: undefined,

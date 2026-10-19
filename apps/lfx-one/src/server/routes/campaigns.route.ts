@@ -115,6 +115,12 @@ router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCa
 // campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
 // negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
+// One campaign's live counters (`get-campaign-metrics`): the Optimize tab's per-row Refresh, and the
+// precise reason for a row the brief-wide read could not measure. Takes `?project=&briefId=` and an
+// optional `?window=`. Behind LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS — 404 while it is off.
+// Order is safe because the only fixed `/<segment>/metrics` GET, `/brief/metrics`, is registered ABOVE
+// and so matches first; no fixed `/x/metrics` GET is registered after this one for it to shadow.
+router.get('/:campaignId/metrics', (req, res, next) => campaignController.getCampaignMetrics(req, res, next));
 
 // --- Optimize: campaign-service reads and levers ------------------------------
 //
@@ -145,6 +151,8 @@ router.get('/briefs', (req, res, next) => optimizeController.listAdoptableBriefs
 router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
 router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
 router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
+// Read-only: there is no per-ad lever. `truncated` in the answer says Meta's ad listing passed its page cap.
+router.get('/:campaignId/meta-ad-sets/:adSetId/ads', (req, res, next) => optimizeController.listMetaAds(req, res, next));
 // If-Match from the body's etag. A 503 that may have reached Meta answers code META_AD_SET_STATUS_UNCONFIRMED.
 router.post('/:campaignId/meta-ad-sets/:adSetId/status', (req, res, next) => optimizeController.updateMetaAdSetStatus(req, res, next));
 router.get('/:campaignId/keyword-targeting', (req, res, next) => optimizeController.getKeywordTargeting(req, res, next));

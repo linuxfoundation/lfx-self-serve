@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { PollStatus } from '../enums';
 import type { PollCommentResponse } from '../interfaces/poll.interface';
-import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
+import { countVotesByStatus, normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
 
 describe('normalizePollStatus', () => {
   it('returns an already-lowercase status unchanged', () => {
@@ -27,6 +27,26 @@ describe('normalizePollStatus', () => {
   it('returns undefined for a value that is not a real PollStatus member', () => {
     expect(normalizePollStatus('archived')).toBeUndefined();
     expect(normalizePollStatus('')).toBeUndefined();
+  });
+});
+
+describe('countVotesByStatus', () => {
+  it('returns all zeros for an empty collection', () => {
+    expect(countVotesByStatus([])).toEqual({ all: 0, active: 0, disabled: 0, ended: 0 });
+  });
+
+  it('buckets each recognized status, normalizing legacy mixed-case values', () => {
+    const votes = [{ status: PollStatus.ACTIVE }, { status: 'AcTiVe' }, { status: PollStatus.DISABLED }, { status: 'ENDED' }, { status: PollStatus.ENDED }];
+
+    // @ts-expect-error Mixed-case legacy strings intentionally violate the canonical status enum.
+    expect(countVotesByStatus(votes)).toEqual({ all: 5, active: 2, disabled: 1, ended: 2 });
+  });
+
+  it('counts an unrecognized or missing status toward all only', () => {
+    const votes = [{ status: 'unrecognized' }, { status: undefined }, { status: PollStatus.ACTIVE }];
+
+    // @ts-expect-error Unknown and missing statuses intentionally violate the required enum contract.
+    expect(countVotesByStatus(votes)).toEqual({ all: 3, active: 1, disabled: 0, ended: 0 });
   });
 });
 

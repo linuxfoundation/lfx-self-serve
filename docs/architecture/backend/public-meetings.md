@@ -11,6 +11,7 @@ The public meetings feature allows unauthenticated users to access specific meet
 The system exposes public endpoints that bypass user authentication:
 
 - **Public API Endpoint**: `/public/api/meetings/:id` - Returns meeting and project data
+- **Public Past-Meeting Endpoint**: `/public/api/meetings/past/:id` - Tiered `full_access` past-meeting detail
 - **Self-Registration Endpoint**: `POST /public/api/meetings/register` - Registers the caller for a public, non-restricted meeting. Mounted on the same optional-auth router, but the handler requires a session of its own — see [Self-Registration Contract](#self-registration-contract-post-publicapimeetingsregister)
 - **Frontend Route**: `/meetings/:id` - Displays the meeting page without authentication
 - **Access Control**: Meeting visibility levels and optional passcode protection
@@ -97,6 +98,16 @@ client that still believes it holds a full `MeetingRegistrant`. Every key is opt
 response omits what upstream did not return rather than stating it as `undefined`. Adding a key to the
 allowlist is therefore a deliberate two-sided contract change, and it is asserted in
 `public-meeting.controller.spec.ts`.
+
+### Anonymous Past-Meeting Response Allowlist (`GET /public/api/meetings/past/:id`)
+
+`getPublicPastMeetingById` returns three response tiers after the existing access checks:
+
+- **Authenticated full access**: the enriched past-meeting detail is returned unchanged. Organizer identity (`organizers`, `created_by`, `owner`) is authenticated-visible (LFXV2-2802).
+- **Anonymous full access**: only fields named in `PUBLIC_ANONYMOUS_PAST_MEETING_KEYS` (`packages/shared/src/constants/public-past-meeting.constants.ts`) are returned. A session without a captured user bearer token, such as an optional-auth refresh failure, also uses this tier.
+- **Non-full access**: the existing basic UI projection is retained. Anonymous callers still have organizer identity stripped before this projection; authenticated callers can retain `created_by` and `owner`.
+
+The anonymous full-access contract is an allowlist rather than a strip list: a new upstream field reaches anonymous callers only after it is named in the list. The server projection is typed by `PublicAnonymousPastMeeting`; absent upstream fields are omitted. Meeting display fields and the public meeting `password` remain available, while organizer identities, Zoom configuration, session data and platform meeting IDs are excluded. Past-meeting responses never expose the host key in any tier.
 
 ## 📁 Frontend Implementation
 

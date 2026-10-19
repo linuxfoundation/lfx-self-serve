@@ -85,9 +85,11 @@ import type {
   CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaign,
+  CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceKeywordTargeting,
   CampaignServiceKeywordTargetingRemovals,
+  CampaignServiceMetaAds,
   CampaignServiceMetaAdSets,
   CampaignServiceMetaAdSetStatusChange,
   CampaignServicePlatformAudienceMap,
@@ -591,6 +593,35 @@ export class CampaignService {
     return this.http.get<BriefMetrics>('/api/campaigns/brief/metrics', { params });
   }
 
+  /**
+   * Reads campaign-service's live metrics for ONE campaign on a brief: impressions, clicks, cost (in
+   * micro-units: USD on LinkedIn, the ad account's own currency elsewhere; the response names neither) and CTR.
+   *
+   * Every read reaches the campaign's ad platform. The Optimize tab shows each row's counters from
+   * `getBriefMetrics` and calls this only for one row at a time: on Refresh, or for a row the
+   * brief-wide read could not measure. `window` is optional and not defaulted, for the reason
+   * `getBriefMetrics` gives. A failure is an HTTP error, not a row status: campaign-service's 400
+   * means the platform has no metrics read, 409 that the campaign cannot be measured yet (its
+   * sentence says why). The error is logged and rethrown; the caller decides what the row shows.
+   */
+  public getCampaignMetrics(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    window?: CampaignMetricsWindow
+  ): Observable<CampaignServiceCampaignMetrics> {
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    if (window !== undefined) {
+      params = params.set('window', window);
+    }
+    return this.http.get<CampaignServiceCampaignMetrics>(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`, { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to read campaign live metrics', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {
     return this.http.get<HubSpotUtmLookupResult>('/api/campaigns/hubspot/utm', {
       // Declares that THIS bundle understands `found: true` with a null `hs_utm` (a campaign that
@@ -799,6 +830,30 @@ export class CampaignService {
       params = params.set('window', window);
     }
     return this.http.get<CampaignServiceMetaAdSets>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets`, { params });
+  }
+
+  /** The ads under one Meta ad set and their delivery over `window`. Read-only: there is no per-ad lever. */
+  public listMetaAds(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    adSetId: string,
+    window?: CampaignMetricsWindow
+  ): Observable<CampaignServiceMetaAds> {
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    if (window) {
+      params = params.set('window', window);
+    }
+    // Logged and rethrown, never defaulted: an empty list would read as "no ads", and the section
+    // states a failed read as such.
+    return this.http
+      .get<CampaignServiceMetaAds>(`/api/campaigns/${encodeURIComponent(campaignId)}/meta-ad-sets/${encodeURIComponent(adSetId)}/ads`, { params })
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('Failed to list Meta ads', error);
+          return throwError(() => error);
+        })
+      );
   }
 
   /**

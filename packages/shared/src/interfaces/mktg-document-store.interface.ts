@@ -58,16 +58,25 @@ export interface MktgDocumentType {
 }
 
 /**
- * The agent's bundle of one revision. The Markdown is the document; the
- * sidecar holds the envelope's structured fields (intake answers, inputs,
- * structure) and the brand file the brand the agent applied, when the agent
- * delivers one. Revisions migrated from the pre-revision store carry the
- * Markdown only.
+ * What a revision's content is: a Markdown document, or the JSON text of a
+ * structured asset (the Messaging Framework's `{ mf, icp, mh, nums }`).
+ */
+export type MktgRevisionFormat = 'markdown' | 'json';
+
+/**
+ * The agent's bundle of one revision. `markdown` is the content text: the
+ * Markdown document, or — for `format: 'json'` — the JSON text of the asset,
+ * exactly the bytes `contentSha256` hashes. The sidecar holds the rest of
+ * the envelope (the report, the inputs record, the intake answers, the
+ * structure) and the brand file the agent applied, when it delivers one.
+ * Revisions migrated from the pre-revision store carry the Markdown only.
  */
 export interface MktgRevisionBundle {
   markdown: string;
-  /** Lowercase hex SHA-256 of the UTF-8 Markdown bytes. */
+  /** Lowercase hex SHA-256 of the UTF-8 content bytes. */
   contentSha256: string;
+  /** Absent on records written before structured assets existed: Markdown. */
+  format?: MktgRevisionFormat;
   sidecar: Record<string, unknown> | null;
   brandFile: string | null;
 }
@@ -136,6 +145,8 @@ export interface MktgRevisionSummary {
   /** Review status as the document states it (`Draft — pre-filled from your documents`); empty when it states none. */
   status: string;
   contentSha256: string;
+  /** Whether the revision's content is a Markdown document or a JSON asset. */
+  format: MktgRevisionFormat;
   commentCount: number;
   latest: boolean;
 }
@@ -176,7 +187,15 @@ export interface MktgDocumentDetailResponse {
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
+  /** The content text: the Markdown document, or the JSON text of the asset when `revision.format` is `json`. */
   markdown: string;
+  /**
+   * The revision's sidecar — the envelope's structured fields — when the
+   * stored record has one; null for a migrated revision. The Brand Kit view
+   * renders the kit from it; the framework view reads the report and the
+   * inputs record from it.
+   */
+  sidecar: Record<string, unknown> | null;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */
@@ -227,6 +246,20 @@ export interface MktgLegacyDocument {
   markdown: string;
   storedAt: string | null;
   draftVersion: number;
+  intakeMode: MktgArtifactIntakeMode;
+}
+
+/**
+ * What one generation hands the revision writer: the content text (a Markdown
+ * document, or the JSON text of an asset), its sha, the format, the rest of
+ * the envelope as the sidecar, and the run's draft version and intake mode.
+ */
+export interface MktgRevisionContentSource {
+  text: string;
+  contentSha256: string;
+  format: MktgRevisionFormat;
+  sidecar: Record<string, unknown> | null;
+  version: number;
   intakeMode: MktgArtifactIntakeMode;
 }
 

@@ -18,6 +18,7 @@ import {
   CAMPAIGN_BID_BLOCKED_STALE_REASON,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON,
   CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_BLOCKED_STALE_REASON,
   CAMPAIGN_BUDGET_BLOCKED_TOGGLE_REASON,
@@ -34,6 +35,7 @@ import {
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeAdoptedReason,
   campaignResumeWithheldForPlatform,
   CAMPAIGN_UNAVAILABLE_REASONS,
   DEFAULT_CAMPAIGN_BID_TYPE,
@@ -134,9 +136,19 @@ export class CampaignActDialogComponent {
   protected readonly toggleAction: Signal<CampaignToggleAction> = this.initToggleAction();
   protected readonly toggleLabel = computed(() => CAMPAIGN_TOGGLE_LABELS[this.toggleAction()]);
   protected readonly toggleUnavailableReason: Signal<string> = this.initToggleUnavailableReason();
-  /** Notes stated before a Resume: adopted campaigns are refused, and Meta keeps a deliberately paused ad set paused. */
+  /**
+   * The campaign offers Resume but campaign-service marks it adopted (`adopted: true`), which it never
+   * resumes (409 `campaign_adopted`). Resume is then shown `aria-disabled` with
+   * `resumeAdoptedReason`, and `toggle()` ignores it. Absent `adopted` keeps today's button.
+   */
+  protected readonly resumeAdopted = computed(() => this.toggleAction() === 'resume' && this.record()?.adopted === true);
+  protected readonly resumeAdoptedReason = computed(() => (this.resumeAdopted() ? campaignResumeAdoptedReason(this.platformLabel) : ''));
+  /**
+   * Notes stated before a Resume: adopted campaigns are refused, and Meta keeps a deliberately paused
+   * ad set paused. None for a campaign known to be adopted: `resumeAdoptedReason` says it outright.
+   */
   protected readonly resumeNotes: Signal<string[]> = computed(() => {
-    if (this.toggleAction() !== 'resume') {
+    if (this.toggleAction() !== 'resume' || this.resumeAdopted()) {
       return [];
     }
     return this.data.platform === 'meta-ads' ? [CAMPAIGN_ACT_RESUME_ADOPTED_NOTE, CAMPAIGN_ACT_META_RESUME_NOTE] : [CAMPAIGN_ACT_RESUME_ADOPTED_NOTE];
@@ -149,8 +161,11 @@ export class CampaignActDialogComponent {
         CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON
       ) || (this.budgetPacing() === 'lifetime' ? CAMPAIGN_BUDGET_X_LIFETIME_REASON : '')
   );
-  protected readonly bidUnavailableReason: Signal<string> = computed(() =>
-    this.leverUnavailableReason(BID_WRITABLE_CAMPAIGN_PLATFORMS, CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON, CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON)
+  /** An adopted X campaign has no line item recorded, and X bids live there, so its bid is withheld. */
+  protected readonly bidUnavailableReason: Signal<string> = computed(
+    () =>
+      this.leverUnavailableReason(BID_WRITABLE_CAMPAIGN_PLATFORMS, CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON, CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON) ||
+      (this.data.platform === 'twitter-ads' && this.record()?.adopted === true ? CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON : '')
   );
   protected readonly budgetBlockedReason = computed(
     () =>
@@ -250,7 +265,8 @@ export class CampaignActDialogComponent {
   protected toggle(): void {
     const campaign = this.record();
     const action = this.toggleAction();
-    if (!campaign || this.pending() || this.conflicted() || action === 'unavailable') {
+    // An adopted campaign's Resume is `aria-disabled` (focusable), so a click still lands here.
+    if (!campaign || this.pending() || this.conflicted() || action === 'unavailable' || this.resumeAdopted()) {
       return;
     }
     const etag = this.etagOrRefuse((message) => this.toggleOutcome.set({ state: 'failed', message }));

@@ -12,12 +12,14 @@ import {
   CAMPAIGN_ACT_RESOLVE_UNEXPECTED_MESSAGE,
   CAMPAIGN_ACT_RESUME_ADOPTED_NOTE,
   CAMPAIGN_ACT_UNOWNED_MESSAGE,
+  CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON,
   CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_ETAG_STALE_MESSAGE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   CAMPAIGN_UNAVAILABLE_DEPLOYMENT_REASON,
   CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  campaignResumeAdoptedReason,
   campaignResumeRefusedMessage,
 } from '@lfx-one/shared/constants';
 import type {
@@ -208,6 +210,49 @@ describe('CampaignActDialogComponent (#3299)', () => {
     expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
   });
 
+  // campaign-service marks an adopted campaign `adopted: true` and never resumes it, so Resume is
+  // withheld up front: still focusable (aria-disabled), described, and a click sends nothing.
+  it('withholds Resume on a campaign campaign-service marks adopted, and a click sends nothing', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, status: 'paused', adopted: true } });
+
+    const button = q('campaign-act-dialog-toggle') as HTMLButtonElement;
+    const reason = q('campaign-act-dialog-resume-adopted');
+    expect(button.textContent).toContain('Resume');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.disabled).toBe(false);
+    expect(reason?.textContent?.trim()).toBe(campaignResumeAdoptedReason('LinkedIn Ads'));
+    expect(button.getAttribute('aria-describedby')).toBe(reason?.id);
+    // The hedged note gives way to the precise reason.
+    expect(q('campaign-act-dialog-resume-note')).toBeNull();
+
+    click('campaign-act-dialog-toggle');
+
+    expect(service.updateCampaignStatus).not.toHaveBeenCalled();
+    expect(q('campaign-act-dialog-toggle-error')).toBeNull();
+  });
+
+  it('keeps Pause on a running adopted campaign', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, adopted: true } });
+    service.updateCampaignStatus.mockReturnValue(of({ platform: 'linkedin-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, etag: '"4"' }));
+
+    expect(q('campaign-act-dialog-toggle')?.textContent).toContain('Pause');
+    expect(q('campaign-act-dialog-resume-adopted')).toBeNull();
+    click('campaign-act-dialog-toggle');
+
+    expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Resume as before when adopted is absent', async () => {
+    await setup({}, { campaign: { ...CAMPAIGN, status: 'paused' } });
+    service.updateCampaignStatus.mockReturnValue(of({ platform: 'linkedin-ads', campaignId: 'c-1', newStatus: 'ACTIVE', success: true, etag: '"4"' }));
+
+    expect(q('campaign-act-dialog-resume-adopted')).toBeNull();
+    expect(q('campaign-act-dialog-resume-note')?.textContent).toContain(CAMPAIGN_ACT_RESUME_ADOPTED_NOTE);
+    click('campaign-act-dialog-toggle');
+
+    expect(service.updateCampaignStatus).toHaveBeenCalledTimes(1);
+  });
+
   it('notes on a Meta resume that a deliberately paused ad set must be handled first', async () => {
     await setup({ platform: 'meta-ads' }, { campaign: { ...CAMPAIGN, platform: 'meta-ads', status: 'paused' } });
 
@@ -262,6 +307,34 @@ describe('CampaignActDialogComponent (#3299)', () => {
     expect(q('campaign-act-dialog-bid-current')?.textContent).toContain('2.5');
   });
 
+  // An adopted X campaign records no line item, and X bids live on the line item, so campaign-service
+  // refuses the write (409). The editor is withheld with where to change it; Pause and Budget stay.
+  it('withholds the bid editor for an adopted X campaign and sends nothing', async () => {
+    await setup({ lever: 'bid', platform: 'twitter-ads' }, { campaign: { ...CAMPAIGN, platform: 'twitter-ads', adopted: true } });
+
+    expect(q('campaign-act-dialog-bid-unavailable')?.textContent?.trim()).toBe(CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON);
+    expect(fixture.debugElement.query(By.directive(CampaignBidFormComponent))).toBeNull();
+    fixture.componentInstance['changeBid']({ bid: 2.5 });
+    expect(service.updateCampaignBid).not.toHaveBeenCalled();
+  });
+
+  it('keeps the bid editor for an X campaign created here', async () => {
+    await setup({ lever: 'bid', platform: 'twitter-ads' }, { campaign: { ...CAMPAIGN, platform: 'twitter-ads' } });
+
+    expect(q('campaign-act-dialog-bid-unavailable')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(CampaignBidFormComponent))).not.toBeNull();
+  });
+
+  it('keeps Pause and Budget for an adopted X campaign', async () => {
+    const adoptedX = { campaign: { ...CAMPAIGN, platform: 'twitter-ads', adopted: true } };
+    await setup({ platform: 'twitter-ads' }, adoptedX);
+    expect(q('campaign-act-dialog-toggle')?.textContent).toContain('Pause');
+
+    await setup({ lever: 'budget', platform: 'twitter-ads' }, adoptedX);
+    expect(q('campaign-act-dialog-budget-unavailable')).toBeNull();
+    expect(fixture.debugElement.query(By.directive(CampaignBudgetFormComponent))).not.toBeNull();
+  });
+
   it('does not refill the bid editor with a stale amount after a 412 and Reload', async () => {
     await setup({ lever: 'bid' });
     service.updateCampaignBid.mockReturnValueOnce(of({ campaignId: 'c-1', bid: 2.5, bidType: 'cpc', etag: '"4"' }));
@@ -308,10 +381,9 @@ describe('CampaignActDialogComponent (#3299)', () => {
   });
 
   // X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with 409.
-  // No Monitor row opens the dialog for X today, but the dialog must not depend on that.
   describe('daily-only platform (X)', () => {
     const X_CAMPAIGN: CampaignServiceCampaign = { ...CAMPAIGN, platform: 'twitter-ads' };
-    const setupX = (): Promise<void> => setup({ lever: 'budget', platform: 'twitter-ads' as CampaignActDialogData['platform'] }, { campaign: X_CAMPAIGN });
+    const setupX = (): Promise<void> => setup({ lever: 'budget', platform: 'twitter-ads' }, { campaign: X_CAMPAIGN });
     const budgetForm = (): CampaignBudgetFormComponent =>
       fixture.debugElement.query(By.directive(CampaignBudgetFormComponent)).componentInstance as CampaignBudgetFormComponent;
     const typeAmount = (value: string): void => {

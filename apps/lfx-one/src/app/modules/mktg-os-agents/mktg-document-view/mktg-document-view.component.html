@@ -40,12 +40,45 @@
       <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</div>
     } @else if (view(); as current) {
       <div class="flex flex-wrap items-start gap-6">
-        <!-- The revision's document, as the agent wrote it -->
-        <!-- basis-[640px]: the design of record's document column width (arbitrary value, see styling.md). -->
-        <main class="min-w-0 grow shrink basis-[640px]">
-          <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
-            <lfx-markdown-renderer [content]="current.markdown" />
-          </article>
+        <!-- The revision's content, as the agent wrote it: the framework's own view for a Messaging Framework revision, the Boilerplates view for a Boilerplates revision, the kit's web view for a Brand Kit revision, the Markdown for a document -->
+        <!-- A framework, the boilerplates or a kit takes the full width (full-width pages); basis-[640px] is the design of record's document column width (arbitrary value, see styling.md). -->
+        <main class="min-w-0 grow shrink" [ngClass]="fullWidth() ? 'basis-full' : 'basis-[640px]'">
+          @if (asset(); as framework) {
+            <lfx-mktg-framework-view
+              [projectName]="projectName()"
+              [asset]="framework"
+              state="ready"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              [kit]="printKit()"
+              [exportTarget]="exportTarget()"
+              data-testid="mktg-document-view-framework" />
+          } @else if (boilerplates(); as boilerplatesAsset) {
+            <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
+            <lfx-mktg-boilerplates-view
+              [projectName]="projectName()"
+              [asset]="boilerplatesAsset"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              data-testid="mktg-document-view-boilerplates" />
+          } @else if (brandKit(); as kit) {
+            <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
+            <lfx-brand-kit-web-view
+              [kit]="kit"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              [exportTarget]="exportTarget()"
+              data-testid="mktg-document-view-brand-kit" />
+          } @else {
+            <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
+              @if (current.revision.format === 'json') {
+                <!-- A JSON revision that is not a readable framework: shown as it is stored, never silently dropped. -->
+                <pre class="whitespace-pre-wrap break-all text-xs text-gray-700" data-testid="mktg-document-view-json">{{ current.markdown }}</pre>
+              } @else {
+                <lfx-markdown-renderer [content]="current.markdown" />
+              }
+            </article>
+          }
         </main>
 
         <aside class="flex flex-col gap-4 grow-0 shrink basis-80 min-w-72">

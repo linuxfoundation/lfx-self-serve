@@ -3,10 +3,11 @@
 
 import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions';
 import type { NextFunction, Request, Response } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
@@ -21,7 +22,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
@@ -42,6 +43,7 @@ const {
   svcGetMicrosoftKeywords,
   listBriefCampaigns,
   getBriefMetrics,
+  getCampaignMetrics,
   svcListAudiences,
   svcGetKeywords,
   svcResolveCampaign,
@@ -75,6 +77,7 @@ const {
   svcGetMicrosoftKeywords: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
+  getCampaignMetrics: vi.fn(),
   svcListAudiences: vi.fn(),
   svcGetKeywords: vi.fn(),
   svcResolveCampaign: vi.fn(),
@@ -115,6 +118,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getMicrosoftAdsKeywords = svcGetMicrosoftKeywords;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
+      public getCampaignMetrics = getCampaignMetrics;
       public listAudiences = svcListAudiences;
       public getGoogleAdsKeywords = svcGetKeywords;
       public resolveGoogleAdsCampaign = svcResolveCampaign;
@@ -5188,6 +5192,21 @@ describe('CampaignController.updateCampaignStatus', () => {
     expect(error.toResponse()['code']).toBe(CAMPAIGN_RESUME_REFUSED_CODE);
   });
 
+  // lfx-v2-campaign-service#366 names the adoption case with `reason: "campaign_adopted"`.
+  it('re-codes an upstream 409 with reason campaign_adopted as CAMPAIGN_RESUME_REFUSED_ADOPTED', async () => {
+    const message = 'campaign was adopted; resume it in the ad platform';
+    toggleCampaignStatus.mockRejectedValue(
+      new MicroserviceError(message, 409, 'UPSTREAM', { errorBody: { code: '409', message, reason: 'campaign_adopted' } })
+    );
+
+    await controller.updateCampaignStatus(statusReq(UUID, { platform: 'twitter-ads', status: 'ACTIVE', briefId: 'b-1', etag: '1' }), res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as MicroserviceError;
+    expect(error.statusCode).toBe(409);
+    expect(error.toResponse()['code']).toBe(CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE);
+    expect(error.toResponse()['error']).toContain('This campaign was adopted from X / Twitter Ads');
+  });
+
   // Also found by mutation: dropping `.trim()` left these green. A whitespace-only etag then
   // reaches upstream as `If-Match: " "` and comes back 412 — the very refusal the guard exists to
   // pre-empt with a named field, arriving instead as an opaque upstream error.
@@ -6138,6 +6157,107 @@ describe('CampaignController.getBriefMetrics', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+/**
+ * The single-campaign read: gated on campaign-service briefs (it is addressed by one), both ids
+ * checked as the UUIDs upstream declares, and `window` handled exactly as the brief-wide read does.
+ */
+describe('CampaignController.getCampaignMetrics', () => {
+  const CAMPAIGN_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const METRICS = {
+    campaign_id: CAMPAIGN_ID,
+    platform_campaign_id: '123',
+    window: 'last_30_days',
+    impressions: 1840,
+    clicks: 212,
+    cost_micros: 1284000,
+    ctr: 0.1152,
+  };
+  let controller: CampaignController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockImplementation((flag: ServerFeatureFlag) => flag === ServerFeatureFlag.CampaignServiceBriefs);
+    controller = new CampaignController();
+  });
+
+  // `clearAllMocks` keeps implementations, so the flag stub is reset here rather than leaking into later suites.
+  afterEach(() => {
+    isServerFeatureEnabled.mockReset();
+  });
+
+  function metricsReq(query: Record<string, unknown>, campaignId: unknown = CAMPAIGN_ID): Request {
+    return { query, params: { campaignId }, path: `/api/campaigns/${String(campaignId)}/metrics` } as unknown as Request;
+  }
+
+  it('reads the campaign and passes a valid window through', async () => {
+    getCampaignMetrics.mockResolvedValue({ ...METRICS, window: 'last_7_days' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID, window: 'last_7_days' }), res, next);
+
+    expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, 'last_7_days');
+    expect(res.json).toHaveBeenCalledWith({ ...METRICS, window: 'last_7_days' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  /** Omitted, so campaign-service applies its per-platform default (7 days on X Ads). */
+  it('passes undefined when no window is given, rather than a default', async () => {
+    getCampaignMetrics.mockResolvedValue(METRICS);
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), vi.fn() as unknown as NextFunction);
+
+    expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, undefined);
+  });
+
+  /** Dark like the adoptable-brief list: with campaign-service briefs off there is no brief to address. */
+  it('answers 404 without an upstream call while campaign-service briefs are off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), next);
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+  });
+
+  it.each([
+    ['a campaign id that is not a UUID', { project: 'cncf', briefId: BRIEF_ID }, 'c-1'],
+    ['no briefId', { project: 'cncf' }, CAMPAIGN_ID],
+    ['a briefId that is not a UUID', { project: 'cncf', briefId: 'b-1' }, CAMPAIGN_ID],
+    ['a repeated briefId param', { project: 'cncf', briefId: [BRIEF_ID, BRIEF_ID] }, CAMPAIGN_ID],
+    ['no project', { briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['a blank project', { project: '   ', briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['an unrecognised window', { project: 'cncf', briefId: BRIEF_ID, window: 'last_90_days' }, CAMPAIGN_ID],
+    ['a repeated window param', { project: 'cncf', briefId: BRIEF_ID, window: ['today', 'today'] }, CAMPAIGN_ID],
+    ['an empty window param', { project: 'cncf', briefId: BRIEF_ID, window: '' }, CAMPAIGN_ID],
+  ])('refuses a request with %s', async (_label, query, campaignId) => {
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq(query, campaignId), buildRes(), next);
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /** An upstream refusal (400 unsupported platform, 409 not measurable, 503) reaches the error middleware as is. */
+  it('forwards an upstream refusal to next rather than answering with a body', async () => {
+    const refusal = new MicroserviceError("metrics reads are not supported for this campaign's platform", 400, 'BAD_REQUEST', {
+      operation: 'campaign_metrics_read',
+      service: 'campaign_service',
+    });
+    getCampaignMetrics.mockRejectedValue(refusal);
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(refusal);
   });
 });
 

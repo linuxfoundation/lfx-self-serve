@@ -3699,6 +3699,14 @@ export interface CampaignIndexDoc {
    * ABSENT when the service never set one.
    */
   max_cpc_bid?: number;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
 }
 
 /**
@@ -3735,6 +3743,15 @@ export interface CampaignRow {
    * has not seen falls into it rather than into a doomed button.
    */
   action: CampaignToggleAction;
+  /**
+   * The row offers Resume, but the campaign was ADOPTED (`campaign.adopted === true`), which
+   * campaign-service never resumes. The button stays labelled Resume and focusable, rendered
+   * `aria-disabled` with `resumeAdoptedReason` as its description, and a click does nothing.
+   * `action` stays `resume`: the campaign is paused, and Pause is not on offer.
+   */
+  resumeAdopted: boolean;
+  /** Why an adopted campaign cannot be resumed here, naming its platform — set when `resumeAdopted`, empty otherwise. */
+  resumeAdoptedReason: string;
   /**
    * Why the toggle is disabled — set for `unavailable` rows only, empty otherwise.
    *
@@ -4257,6 +4274,14 @@ export interface CampaignServiceCampaign {
   status: string;
   version: number;
   etag?: string;
+  /**
+   * `true` when campaign-service bound this campaign by adopting it rather than creating it
+   * (lfx-v2-campaign-service#366), ABSENT otherwise — never `false`. Absent also means "not
+   * recorded": a deployment before #366, or a campaign adopted before the marker existed on its
+   * platform. An adopted campaign can be paused from LFX One but never resumed (campaign-service
+   * refuses with 409 `reason: "campaign_adopted"`). The BFF keeps only a literal `true`.
+   */
+  adopted?: boolean;
 }
 
 export interface CampaignStatusUpdateResult {
@@ -4728,8 +4753,10 @@ export interface CampaignServiceCampaignMetrics {
   impressions: number;
   clicks: number;
   /**
-   * Cost in MICRO-UNITS of the platform's OWN native currency — USD for LinkedIn/Reddit, X's
-   * billing unit for Twitter. campaign-service performs no FX conversion, so these must never be
+   * Cost in MICRO-UNITS. ALWAYS USD on LinkedIn (its Ad Analytics `costInUsd`, whatever the ad
+   * account bills in); the ad ACCOUNT's own currency everywhere else — Google Ads, Meta, Microsoft,
+   * Reddit (its report's "microcurrency") and X (`billed_charge_local_micro`), none of which the
+   * read names. campaign-service performs no FX conversion, so these must never be
    * summed across platforms: the result would carry no currency and no meaning. Always 0 on the
    * email channel, which bills no per-send cost; do not blend that 0 into a cross-channel CPA.
    */

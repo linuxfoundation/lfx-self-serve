@@ -2286,6 +2286,14 @@ export const CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON = 'Bid changes are availab
 export const CAMPAIGN_BID_UNAVAILABLE_UNPROVISIONED_REASON = 'This campaign has not been created on its ad platform, so its bid cannot be changed.';
 
 /**
+ * Why the bid editor is disabled for an X campaign campaign-service marks adopted (`adopted: true`).
+ * Adoption records the campaign only, not its line item, and the X bid lives on the line item, so
+ * campaign-service refuses the write (409). Pause and Budget act on the campaign and stay offered.
+ */
+export const CAMPAIGN_BID_UNAVAILABLE_X_ADOPTED_REASON =
+  'This X campaign was adopted rather than created here, so its bid cannot be changed here. Change it in X Ads Manager.';
+
+/**
  * What the bid editor says about bidding strategies, always, before anything is sent. Upstream
  * refuses an automated or non-per-click strategy with a neutral 409 rather than switching it.
  */

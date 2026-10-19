@@ -273,6 +273,26 @@ describe('CampaignOptimizeService per-campaign reads', () => {
     });
   });
 
+  it("GETs one ad set's Meta ads under the encoded ad-set path, with the window as a QUERY parameter", async () => {
+    const data = { ad_set_id: '888', ads: [], ad_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(data);
+
+    const result = await new CampaignOptimizeService().listMetaAds(req, { ...ref, adSetId: '888' }, 'this_month');
+
+    expect(result).toBe(data);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/campaigns/c-1/meta-ad-sets/888/ads', 'GET', {
+      window: 'this_month',
+    });
+  });
+
+  it('GETs the Meta ads with no query when no window is given, and lets a failure through', async () => {
+    const failure = upstreamError(409, 'The ad set does not belong to this campaign.');
+    proxyRequest.mockRejectedValueOnce(failure);
+
+    await expect(new CampaignOptimizeService().listMetaAds(req, { ...ref, adSetId: '888' })).rejects.toBe(failure);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/campaigns/c-1/meta-ad-sets/888/ads', 'GET', undefined);
+  });
+
   it('GETs the keyword targeting', async () => {
     proxyRequest.mockResolvedValueOnce({ campaign_id: 'c-1', platform: 'reddit-ads', targeting_entity_id: 't', keywords: [] });
 
@@ -561,6 +581,20 @@ describe('CampaignOptimizeService.getCampaign', () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: '"3"' }));
 
     expect((await new CampaignOptimizeService().getCampaign(req, ref)).etag).toBe('"3"');
+  });
+
+  // lfx-v2-campaign-service#366: `adopted` is `true` or absent; only a literal `true` is carried.
+  it.each([
+    [true, true],
+    ['true', undefined],
+    [false, undefined],
+  ])('carries adopted %s as %s', async (sent, expected) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'c-1', etag: '"3"', adopted: sent }));
+
+    const result = await new CampaignOptimizeService().getCampaign(req, ref);
+
+    expect(result.adopted).toBe(expected);
+    expect('adopted' in result).toBe(expected === true);
   });
 });
 

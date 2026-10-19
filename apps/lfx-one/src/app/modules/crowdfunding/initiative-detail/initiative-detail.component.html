@@ -19,8 +19,10 @@
     <lfx-initiative-detail-header
       [initiative]="detail"
       [activeTab]="activeTab()"
+      [canEditAttribution]="canEditAttribution()"
       (tabChange)="activeTab.set($event)"
       (settingsClick)="settingsDrawerVisible.set(true)"
+      (editAttributionClick)="openEditAttribution(detail)"
       (statusChange)="onStatusChange($event)" />
 
     <lfx-initiative-settings-drawer [initiative]="detail" [(visible)]="settingsDrawerVisible" (initiativeSaved)="onInitiativeSaved($event)" />

@@ -5,6 +5,7 @@ export * from './audience-builder.constants';
 export * from './gateway.constants';
 export * from './mentorship.constants';
 export * from './meta.constants';
+export * from './mktg-slides-export.constants';
 export * from './object-store.constants';
 export * from './public-profile.constants';
 export * from './query-service.constants';

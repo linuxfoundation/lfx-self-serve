@@ -3536,3 +3536,36 @@ describe('ProjectService — getPubliclyDiscoverableProject', () => {
     await expect(service.getPubliclyDiscoverableProject(req, 'p1')).rejects.toBe(err);
   });
 });
+
+describe('ProjectService — getProjectIdBySlug', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a uid reply', async () => {
+    natsRequest.mockResolvedValue({ data: ' 00000000-0000-4000-8000-000000000001 ' });
+
+    await expect(service.getProjectIdBySlug(req, 'synthetic-project')).resolves.toEqual({
+      uid: '00000000-0000-4000-8000-000000000001',
+      slug: 'synthetic-project',
+      exists: true,
+    });
+  });
+
+  // The responder answers an unknown or hidden slug with a JSON error body; taking it for a uid sent
+  // callers on to an access check against a garbage project id.
+  it('treats the responder not_found error body as a missing project, never as a uid', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'not_found', message: 'project not found' }) });
+
+    await expect(service.getProjectIdBySlug(req, 'hidden-project')).resolves.toEqual({ uid: '', slug: 'hidden-project', exists: false });
+  });
+
+  it('rethrows any other error body instead of reporting the project as missing', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'internal', message: 'boom' }) });
+
+    await expect(service.getProjectIdBySlug(req, 'synthetic-project')).rejects.toThrow('Project slug lookup failed: internal');
+  });
+});

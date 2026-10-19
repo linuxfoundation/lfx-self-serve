@@ -3,8 +3,8 @@ title: Manage Initiatives
 description: How to view initiative details, edit settings, and archive or activate an initiative in LFX Self Serve.
 audience: [all]
 product_area: Crowdfunding
-tags: [crowdfunding, initiatives, manage, edit, archive, activate]
-last_updated: 2026-07-21
+tags: [crowdfunding, initiatives, manage, edit, attribution, archive, activate]
+last_updated: 2026-10-13
 intercom_collection: Crowdfunding
 ---
 
@@ -44,6 +44,20 @@ The detail page is organized into a header and two tabs.
 1. Save your changes.
 
 > **Note:** The Announcements tab isn't part of the drawer's shared Save step. Each add, edit, or delete uses its own **Add**, **Save**, or delete-confirmation action and takes effect right away, independent of the drawer's Save button.
+
+## Change an initiative's attribution
+
+An initiative can be attributed to you personally, to an organization, or to a project or foundation. An attributed initiative shows that organization's or project's name and logo on its public page. In LFX Self Serve, the initiative header shows it as **On behalf of** followed by the name, and the initiatives list shows a building (organization) or folder (project) icon next to the initiative name; hover over either for details. Personal initiatives show neither.
+
+Only the person who created the initiative can change its attribution, and only while the initiative is **Submitted**. Once it moves on, the attribution is fixed.
+
+1. Open a **Submitted** initiative from the [View Initiatives](../view-initiatives/) page.
+1. Select **Edit attribution** in the initiative header.
+1. Choose **Personal**, **On behalf of an organization**, or **On behalf of a project or foundation**.
+1. If you chose an organization or a project, select it from the list. The list shows the organizations where you've been granted a role, and the projects and foundations where you've been granted access directly.
+1. Select **Save**.
+
+> **Note:** Changing the attribution is separate from the settings drawer and its Save button. The change takes effect as soon as you select **Save** in the Edit attribution dialog. If the save is rejected, the dialog explains why, for example when you aren't affiliated with the organization or project you chose.
 
 ## Archive an initiative
 

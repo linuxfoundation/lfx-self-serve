@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="initiative-edit-attribution-dialog">
+  <p class="text-sm text-gray-600">Choose who this initiative is run on behalf of. You can change this only while the initiative is submitted for review.</p>
+
+  <div class="flex flex-col gap-3" role="radiogroup" aria-label="Attribution" data-testid="initiative-edit-attribution-type">
+    @for (option of typeOptions; track option.value) {
+      <lfx-radio-button
+        [form]="form"
+        control="type"
+        name="attribution-type"
+        [inputId]="'attribution-type-' + option.value"
+        [value]="option.value"
+        [label]="option.label"
+        (onChange)="onTypeChange()"></lfx-radio-button>
+    }
+  </div>
+
+  @if (selectedType() !== 'personal') {
+    <div class="flex flex-col gap-2" data-testid="initiative-edit-attribution-entity">
+      @if (options() === null) {
+        <p class="text-xs text-red-500" role="alert" data-testid="initiative-edit-attribution-options-error">
+          Couldn't load your organizations and projects. Close this dialog and try again.
+        </p>
+      } @else if (options() && entities().length === 0) {
+        <p class="text-sm text-gray-600" data-testid="initiative-edit-attribution-empty">
+          You don't have a role on any {{ selectedType() === 'organization' ? 'organization' : 'project or foundation' }} yet.
+        </p>
+      } @else {
+        <lfx-select
+          [form]="form"
+          control="entityUid"
+          [options]="entities()"
+          optionLabel="name"
+          optionValue="id"
+          [loading]="options() === undefined"
+          [filter]="true"
+          filterBy="name"
+          placeholder="Select..."
+          filterPlaceholder="Search..."
+          styleClass="w-full"
+          data-testid="initiative-edit-attribution-select"></lfx-select>
+      }
+    </div>
+  }
+
+  @if (saveError()) {
+    <p class="text-xs text-red-500" role="alert" data-testid="initiative-edit-attribution-error">{{ saveError() }}</p>
+  }
+</div>
+
+<div class="flex justify-end gap-2 mt-4">
+  <lfx-button
+    label="Cancel"
+    severity="secondary"
+    [outlined]="true"
+    size="small"
+    [disabled]="saving()"
+    data-testid="initiative-edit-attribution-cancel-btn"
+    (onClick)="onCancel()"></lfx-button>
+  <lfx-button
+    label="Save"
+    severity="primary"
+    size="small"
+    [loading]="saving()"
+    [disabled]="!canSave()"
+    data-testid="initiative-edit-attribution-save-btn"
+    (onClick)="onSave()"></lfx-button>
+</div>

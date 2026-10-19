@@ -4,6 +4,7 @@
 import { Component, computed, input, output, Signal } from '@angular/core';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import {
+  CROWDFUNDING_ATTRIBUTION_TYPE_ICONS,
   CROWDFUNDING_FUND_TYPE_AVATAR_CLASSES,
   CROWDFUNDING_FUND_TYPE_COLOR_CLASSES,
   CROWDFUNDING_FUND_TYPE_ICONS,
@@ -12,10 +13,11 @@ import {
 import { InitiativeBase } from '@lfx-one/shared/interfaces';
 import { formatCurrency, stripHtml } from '@lfx-one/shared/utils';
 import { environment } from '@environments/environment';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-initiative-card',
-  imports: [AvatarComponent],
+  imports: [AvatarComponent, TooltipModule],
   templateUrl: './initiative-card.component.html',
   styleUrl: './initiative-card.component.scss',
 })
@@ -27,6 +29,16 @@ export class InitiativeCardComponent {
   protected readonly fundTypeIcon = computed(() => CROWDFUNDING_FUND_TYPE_ICONS[this.initiative().initiativeType]);
   protected readonly fundTypeColorClass = computed(() => CROWDFUNDING_FUND_TYPE_COLOR_CLASSES[this.initiative().initiativeType]);
   protected readonly avatarStyleClass = computed(() => CROWDFUNDING_FUND_TYPE_AVATAR_CLASSES[this.initiative().initiativeType]);
+  protected readonly attributionIcon = computed(() => {
+    const type = this.initiative().attribution?.type;
+    return type ? CROWDFUNDING_ATTRIBUTION_TYPE_ICONS[type] : '';
+  });
+  // Empty for personal or a nameless attribution, which hides the icon.
+  protected readonly attributionTooltip = computed(() => {
+    const name = this.initiative().attribution?.name;
+    return this.attributionIcon() && name ? `On behalf of ${name}` : '';
+  });
+  protected readonly cardLabel = computed(() => [this.initiative().name, this.attributionTooltip()].filter(Boolean).join(', '));
 
   protected readonly progressPercent = this.initProgressPercent();
 

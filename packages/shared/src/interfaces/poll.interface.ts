@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
+import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
 import type { CommitteeReference } from './committee.interface';
 
@@ -11,6 +11,19 @@ export interface VoteSummary {
   closing_soon: number;
   /** RFC3339 snapshot used to evaluate the closing window. */
   as_of: string;
+}
+
+/**
+ * Per-status vote totals for the votes table's status tabs (#3687).
+ * @description Buckets use the normalized poll status. `all` counts every vote in the matching
+ * collection, including rows whose status is unrecognized after normalization, so it equals the
+ * All-tab list total; unrecognized rows fall into no per-status bucket.
+ */
+export interface VoteStatusCounts {
+  all: number;
+  active: number;
+  disabled: number;
+  ended: number;
 }
 
 /** Closing-filtered lists carry their authoritative pre-pagination count. */
@@ -212,6 +225,8 @@ export interface Vote {
   end_time_timezone?: string;
   /** Current poll status */
   status: PollStatus;
+  /** BFF list decoration: effective vote#writer access, including committee-derived grants. */
+  writer?: boolean;
   /** V2 project UID */
   project_uid: string;
   /** Project display name. Carried by indexed list rows (and optionally by the upstream detail payload); the authenticated BFF detail response (GET /api/votes/:uid) re-enriches it canonically from the project record. */
@@ -252,12 +267,45 @@ export interface Vote {
   response_status?: VoteResponseStatus;
 }
 
+/** Personal feed retains usable votes even when enumeration or required detail reads are incomplete. */
+export interface MyVotesResponse {
+  votes: Vote[];
+  /** Only true when all invitation pages and referenced vote details loaded successfully. */
+  complete: boolean;
+}
+
+/** Legacy arrays have unknown completeness and must not be presented as exact totals. */
+export type MyVotesApiResponse = MyVotesResponse | Vote[];
+
 /** Optional personal-feed filter shared by the summary and client-side table. */
 export type MyVotesQuickFilter = 'closing-soon' | 'needs-vote';
+
+/**
+ * Participation summary for one votes-table row
+ * @description Derived from the row's indexed `num_response_received` / `total_voting_request_invitations`; counts are
+ * null when the state carries none, and `percent` is set only for `PROGRESS` (clamped to 0-100)
+ */
+export interface VoteRowParticipation {
+  state: VoteRowParticipationState;
+  /** Responses received (abstentions included), or null when not shown */
+  responses: number | null;
+  /** Invited electorate, or null when not shown */
+  invited: number | null;
+  /** Rounded response rate (0-100) for PROGRESS summaries; capped at 99 until responses reach the invited total. */
+  percent: number | null;
+  /** Visible summary text */
+  label: string;
+  /** Muted follow-up text (e.g. "Total unavailable"), or null */
+  secondaryLabel: string | null;
+  /** Screen-reader summary for an active PROGRESS bar, otherwise null. */
+  ariaLabel: string | null;
+}
 
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
 export interface VoteTableRow extends Vote {
   endedEarlyTooltip: string | null;
+  /** Participation summary for the Responses cell in management contexts. */
+  participation: VoteRowParticipation;
   /** Canonical edit-link commands derived from the row's own project tier (`/foundation/...` vs `/project/...`); flat `/votes/:uid/edit` fallback when the tier is unknown (lensRedirectGuard resolves it). */
   editCommands: string[];
   /** Per-row edit-link query params — `project` from the row's own project_slug, `committee_uid` from its committee. A table-level record can't express per-row projects (dashboard rows span projects). */
@@ -330,6 +378,48 @@ export interface IndexedVoteResponse {
   vote_status?: string;
   /** Whether the voter has been removed from the poll's eligible list */
   voter_removed?: boolean;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role at invitation time */
+  user_role?: string;
+  /** Invitee's voting eligibility status (e.g. `'Voting Rep'`) */
+  user_voting_status?: string;
+  /** When the ballot was cast — empty until the invitee votes */
+  vote_creation_time?: string;
+}
+
+/**
+ * Eligible voter who has not voted yet, returned by GET /api/votes/:uid/reminder-recipients (#3769).
+ * An identity-only projection of an `IndexedVoteResponse` row — ballot content (`poll_answers`,
+ * `comment_responses`) is never forwarded.
+ */
+export interface VoteReminderRecipient {
+  /** Vote response row identifier — the ID `bulk_resend` expects */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role */
+  user_role?: string;
+  /** Invitee's voting eligibility status */
+  user_voting_status?: string;
+}
+
+/** Request body for POST /api/votes/:uid/reminders (#3769) */
+export interface SendVoteReminderRequest {
+  /** Vote response row identifiers (`VoteReminderRecipient.uid`) to remind */
+  recipient_ids: string[];
+}
+
+/** Response for POST /api/votes/:uid/reminders (#3769) */
+export interface SendVoteReminderResponse {
+  /** Number of distinct voters the reminder was sent to */
+  recipient_count: number;
 }
 
 /**

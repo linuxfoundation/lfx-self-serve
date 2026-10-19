@@ -83,6 +83,44 @@ describe('VoteService', () => {
     }
   );
 
+  it.each([
+    { search: undefined, group: undefined, keys: ['parent'] },
+    { search: ' ', group: '', keys: ['parent'] },
+    { search: ' Steering ', group: 'Synthetic Board', keys: ['group', 'name', 'parent'] },
+  ])('requests only parent/name/group status-count parameters and preserves the response: %j', ({ search, group, keys }) => {
+    const result = { all: 5, active: 2, disabled: 0, ended: 3 };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+    service.getVoteStatusCountsByProject('synthetic-project', search, group).subscribe(next);
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes/status-counts');
+    expect(options.params.keys().sort()).toEqual(keys);
+    expect(options.params.get('parent')).toBe('project:synthetic-project');
+    expect(options.params.get('name')).toBe(search?.trim() || null);
+    expect(options.params.get('group')).toBe(group || null);
+    expect(next).toHaveBeenCalledWith(result);
+  });
+
+  it.each([new HttpErrorResponse({ status: 503, error: { message: 'Synthetic private upstream detail' } }), new Error('Synthetic network failure')])(
+    'logs only the status-count failure status once and propagates the original error: %s',
+    (failure) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        http.get.mockReturnValue(throwError(() => failure));
+        const error = vi.fn();
+        const next = vi.fn();
+        service.getVoteStatusCountsByProject('synthetic-project').subscribe({ next, error });
+        expect(next).not.toHaveBeenCalled();
+        expect(error).toHaveBeenCalledExactlyOnceWith(failure);
+        expect(log).toHaveBeenCalledExactlyOnceWith('Failed to load vote status counts', {
+          status: failure instanceof HttpErrorResponse ? failure.status : undefined,
+        });
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
+
   it.each([undefined, false, true])('adds only the optional closing flag and forwards authoritative totals: %s', (closingOnly) => {
     const result = { data: [], total_records: 0 };
     http.get.mockReturnValue(of(result));
@@ -99,6 +137,30 @@ describe('VoteService', () => {
     expect(options.params.get('name')).toBe('Board');
     expect(options.params.getAll('filters')).toEqual(['status:active', 'committee_name:Synthetic Board']);
     expect(next).toHaveBeenCalledWith(result);
+  });
+
+  it.each([true, false])('requests the opt-in envelope and preserves personal-feed completeness: %s', (complete) => {
+    const result = { votes: [buildVote()], complete };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+
+    service.getMyVotes().subscribe(next);
+
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes/my-votes');
+    expect(options.params.keys()).toEqual(['include_status']);
+    expect(options.params.get('include_status')).toBe('true');
+    expect(next).toHaveBeenCalledExactlyOnceWith(result);
+  });
+
+  it.each([false, true])('keeps legacy array rows without treating their totals as complete (empty: %s)', (empty) => {
+    const votes = empty ? [] : [buildVote()];
+    http.get.mockReturnValue(of(votes));
+    const next = vi.fn();
+
+    service.getMyVotes().subscribe(next);
+
+    expect(next).toHaveBeenCalledExactlyOnceWith({ votes, complete: false });
   });
 
   it('propagates personal-feed HTTP failures instead of reporting confirmed empty success', () => {
@@ -219,6 +281,29 @@ describe('VoteService', () => {
     service.enableVote('vote-1').subscribe();
 
     expect(http.put).toHaveBeenCalledWith('/api/votes/vote-1/enable', {});
+  });
+
+  describe('reminders (#3769)', () => {
+    it('getReminderRecipients GETs the encoded reminder-recipients URL', () => {
+      const recipients = [{ uid: 'r-1' }];
+      http.get.mockReturnValue(of(recipients));
+      const next = vi.fn();
+
+      service.getReminderRecipients('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/reminder-recipients');
+      expect(next).toHaveBeenCalledWith(recipients);
+    });
+
+    it('sendReminders POSTs the recipient IDs to the encoded reminders URL', () => {
+      http.post.mockReturnValue(of({ recipient_count: 2 }));
+      const next = vi.fn();
+
+      service.sendReminders('vote/1', ['r-1', 'r-2']).subscribe(next);
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/reminders', { recipient_ids: ['r-1', 'r-2'] });
+      expect(next).toHaveBeenCalledWith({ recipient_count: 2 });
+    });
   });
 
   // GH-2826 Design A: dialog-open fires the speculative create; accept chains the enable onto it. The

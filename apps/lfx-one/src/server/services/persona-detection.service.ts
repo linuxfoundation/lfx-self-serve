@@ -136,22 +136,18 @@ export class PersonaDetectionService {
     const needsMarketingAuditor = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'marketing_auditor');
     const needsCampaignManager = marketingOpsFgaEnabled && (marketingRelations === 'both' || marketingRelations === 'campaign_manager');
     // isMarketingAuditorRootGrant reuses checkRootMarketingAuditor's per-request WeakMap cache (see
-    // below), so it adds no round trip. isCampaignManagerRootGrant asks for the cascading ROOT
-    // `marketing_ops` alone (checkRootCampaignManagerCascade): the frontend treats a true value as
-    // a grant on every project, which ROOT `global_marketing_ops` is not. Surfacing them separately lets the frontend tell a ROOT-cascading grant apart
-    // from a project-scoped one instead of inferring scope from the `projectSlug` it happened to pass
-    // (Copilot finding, PR #1835).
-    const [detections, isRootWriter, isLFStaff, isAuditor, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant, isCampaignManagerRootGrant] =
-      await Promise.all([
-        this.getPersonaDetections(req, username, email, cacheKey),
-        this.checkRootWriter(req),
-        this.checkLFStaff(req),
-        this.checkRootAuditor(req),
-        needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
-        needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
-        needsMarketingAuditor ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
-        needsCampaignManager ? this.checkRootCampaignManagerCascade(req) : Promise.resolve(false),
-      ]);
+    // below), so it adds no round trip. isCampaignManagerRootGrant is always false: the frontend treats
+    // a true value as a grant on every project, and no campaign-manager grant cascades from ROOT once
+    // the ROOT `marketing_ops` team tuple is removed, which this change assumes.
+    const [detections, isRootWriter, isLFStaff, isAuditor, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant] = await Promise.all([
+      this.getPersonaDetections(req, username, email, cacheKey),
+      this.checkRootWriter(req),
+      this.checkLFStaff(req),
+      this.checkRootAuditor(req),
+      needsMarketingAuditor ? this.checkMarketingAuditorAccess(req, projectSlug) : Promise.resolve(false),
+      needsCampaignManager ? this.checkCampaignManagerAccess(req, projectSlug) : Promise.resolve(false),
+      needsMarketingAuditor ? this.checkRootMarketingAuditor(req) : Promise.resolve(false),
+    ]);
 
     // Compute the per-request persona list without mutating the cached detections object.
     let personas = detections.personas;
@@ -175,7 +171,7 @@ export class PersonaDetectionService {
       isMarketingAuditor,
       isCampaignManager,
       isMarketingAuditorRootGrant,
-      isCampaignManagerRootGrant,
+      isCampaignManagerRootGrant: false,
     };
   }
 
@@ -247,28 +243,15 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Checks whether the current user holds `marketing_ops` or `global_marketing_ops` on the tenant
-   * ROOT project — NOT `campaign_manager` itself. `campaign_manager` has no `from parent` disjunct
-   * (`campaign_manager: executive_director or marketing_ops or global_marketing_ops`), so a ROOT
-   * `executive_director` grant must NOT be treated as campaign_manager everywhere. This is the
-   * signal for requests that name no project; a request that names one is answered by that
-   * project's own `campaign_manager` relation (see {@link checkCampaignManagerAccess}).
-   * `global_marketing_ops` is included because the marketing-ops team moves to it as
-   * `marketing_ops` is retired.
+   * Checks whether the current user holds `global_marketing_ops` on the tenant ROOT project — NOT
+   * `campaign_manager` itself. `campaign_manager` has no `from parent` disjunct
+   * (`campaign_manager: executive_director or global_marketing_ops`), so a ROOT `executive_director`
+   * grant must NOT be treated as campaign_manager everywhere. This is the signal for requests that
+   * name no project; a request that names one is answered by that project's own `campaign_manager`
+   * relation (see {@link checkCampaignManagerAccess}).
    */
   public async checkRootCampaignManager(req: Request): Promise<boolean> {
-    const grants = await this.checkRootMarketingOps(req);
-    return grants.marketingOps || grants.globalMarketingOps;
-  }
-
-  /**
-   * The cascading half of {@link checkRootCampaignManager}: ROOT `marketing_ops` only. Backs
-   * `isCampaignManagerRootGrant`, which the frontend stores as a grant for every project, and
-   * `requireMarketingAccess`'s named-project campaign pass, so it must exclude
-   * `global_marketing_ops` — that relation does not cascade from ROOT.
-   */
-  public async checkRootCampaignManagerCascade(req: Request): Promise<boolean> {
-    return (await this.checkRootMarketingOps(req)).marketingOps;
+    return (await this.checkRootMarketingOps(req)).globalMarketingOps;
   }
 
   /**
@@ -288,44 +271,34 @@ export class PersonaDetectionService {
   }
 
   /**
-   * `campaign_manager` on `projectSlug` when given — that relation already folds in the cascading
-   * `marketing_ops`, the per-project `global_marketing_ops`, and a project-scoped
-   * `executive_director`, so a ROOT-only `global_marketing_ops` grant must not short-circuit it:
-   * it does not cascade and would otherwise answer for every project. ROOT `marketing_ops` does
-   * cascade, so it answers first and the result never depends on the slug lookup succeeding.
+   * `campaign_manager` on `projectSlug` when given — that relation already folds in the per-project
+   * `global_marketing_ops` and a project-scoped `executive_director`, so a ROOT-only
+   * `global_marketing_ops` grant must not short-circuit it: it does not cascade and would otherwise
+   * answer for every project.
    * Without a slug, the ROOT grant from {@link checkRootCampaignManager}. This is a client hint;
    * `requireMarketingAccess` enforces against the named project's own relation.
    */
   private async checkCampaignManagerAccess(req: Request, projectSlug?: string): Promise<boolean> {
     if (!projectSlug) return this.checkRootCampaignManager(req);
-    if (await this.checkRootCampaignManagerCascade(req)) return true;
     return this.checkProjectAccess(req, projectSlug, 'campaign_manager', 'check_project_campaign_manager');
   }
 
   /**
-   * ROOT `marketing_ops` and `global_marketing_ops` in one batched access check, cached per request,
-   * so {@link checkRootCampaignManager} and {@link checkRootCampaignManagerCascade} share a single
-   * round trip. Fails closed to no grants.
+   * ROOT `global_marketing_ops` access check, cached per request. Fails closed to no grants.
    */
   private checkRootMarketingOps(req: Request): Promise<RootMarketingOpsGrants> {
     const cached = this.rootMarketingOpsRequestCache.get(req);
     if (cached) return cached;
 
-    const none: RootMarketingOpsGrants = { marketingOps: false, globalMarketingOps: false };
+    const none: RootMarketingOpsGrants = { globalMarketingOps: false };
     const promise = resolveRootProjectUid(req, this.natsService)
       .then(async (rootUid) => {
         if (!rootUid) return none;
-        const results = await this.accessCheckService.checkAccess(req, [
-          { resource: 'project', id: rootUid, access: 'marketing_ops' },
-          { resource: 'project', id: rootUid, access: 'global_marketing_ops' },
-        ]);
-        return {
-          marketingOps: results.get(`${rootUid}#marketing_ops`) ?? false,
-          globalMarketingOps: results.get(`${rootUid}#global_marketing_ops`) ?? false,
-        };
+        const results = await this.accessCheckService.checkAccess(req, [{ resource: 'project', id: rootUid, access: 'global_marketing_ops' }]);
+        return { globalMarketingOps: results.get(`${rootUid}#global_marketing_ops`) ?? false };
       })
       .catch((error) => {
-        logger.warning(req, 'check_root_campaign_manager', 'Root marketing_ops/global_marketing_ops check failed, assuming no access', { err: error });
+        logger.warning(req, 'check_root_campaign_manager', 'Root global_marketing_ops check failed, assuming no access', { err: error });
         return none;
       });
     this.rootMarketingOpsRequestCache.set(req, promise);

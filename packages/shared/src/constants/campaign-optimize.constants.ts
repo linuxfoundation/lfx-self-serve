@@ -20,6 +20,7 @@ import type {
   RedditKeywordsWindow,
   RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
+import type { CampaignMetricsWindow } from '../interfaces/campaign.interface';
 import { CAMPAIGN_METRICS_WINDOWS, isCanonicalPositiveInt64, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
 // ---------------------------------------------------------------------------
@@ -359,19 +360,77 @@ export const CAMPAIGN_SETTINGS_READ_CONFLICT_FALLBACK =
 export const CAMPAIGN_SETTINGS_READ_FALLBACK = 'The live settings could not be read. Nothing was changed; try again.';
 
 // ---------------------------------------------------------------------------
+// Live counters (one campaign's get-campaign-metrics read, on demand)
+// ---------------------------------------------------------------------------
+
+/** The email channel's platform token on a campaign row: its live counters are opens to date, with no cost. */
+export const CAMPAIGN_EMAIL_CHANNEL_PLATFORM = 'hubspot';
+
+/**
+ * Platforms whose metrics read reports cost in USD whatever the ad account bills in: LinkedIn, whose
+ * Ad Analytics `costInUsd` campaign-service converts to micros. Every other platform reports the ad
+ * account's own currency (Google Ads, Meta, Microsoft, Reddit's "microcurrency", X's
+ * `billed_charge_local_micro`), which the read does not name.
+ */
+export const CAMPAIGN_USD_COST_PLATFORMS: ReadonlySet<string> = new Set(['linkedin-ads']);
+
+/** The live cost counter's label, by what the platform's read reports cost in. */
+export const CAMPAIGN_LIVE_COST_LABELS = {
+  usd: 'Cost (USD)',
+  account: 'Cost (ad account currency)',
+} as const;
+
+/** The window a row's live counters cover, in words, keyed by campaign-service's `window`. */
+export const CAMPAIGN_LIVE_METRICS_WINDOW_PHRASES: Readonly<Record<CampaignMetricsWindow, string>> = {
+  today: 'today',
+  yesterday: 'yesterday',
+  last_7_days: 'the last 7 days',
+  last_14_days: 'the last 14 days',
+  last_30_days: 'the last 30 days',
+  this_month: 'this month',
+  last_month: 'last month',
+};
+
+/**
+ * Upstream's 400: no metrics read is wired for the campaign's platform. Not a failure, so it is shown
+ * as a property of the row and offers no retry.
+ */
+export const CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE = 'Live counters are not available for this platform.';
+
+/**
+ * What a row says when its live counters read is refused, by status. A 404 is either campaign-service
+ * (no connection for the channel) or this BFF (the read is not served while campaign-service briefs
+ * are off); the sentence covers both.
+ */
+export const CAMPAIGN_LIVE_METRICS_READ_ERRORS: Readonly<Record<number, string>> = {
+  403: 'You do not have permission to read this campaign.',
+  404: "Live counters are not available here: this project has no connection for the campaign's channel, or this deployment does not serve them.",
+  500: 'The live counters could not be read because of a connection problem an administrator must fix.',
+  503: 'The platform could not be reached, or answered with something LFX One could not trust. Try again.',
+};
+
+/** A 409's fallback when the response carried no readable reason. */
+export const CAMPAIGN_LIVE_METRICS_READ_CONFLICT_FALLBACK =
+  'The live counters cannot be read for this campaign: it is not created on its platform yet, reported no data for the window, or belongs to a different ad account than this project now uses.';
+
+export const CAMPAIGN_LIVE_METRICS_READ_FALLBACK = 'The live counters could not be read. Try again.';
+
+// ---------------------------------------------------------------------------
 // Act from Monitor
 // ---------------------------------------------------------------------------
 
 /**
- * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta and Microsoft Ads (Google Ads is
- * another owner's lane). X shares Microsoft's report-backed panel but is not here: its toggle and
- * budget levers are not offered yet.
+ * The Monitor tables whose rows offer actions: LinkedIn, Reddit, Meta, Microsoft Ads and X (Google Ads
+ * is another owner's lane). X shares Microsoft's report-backed panel. Its rows are adopted ones, since X
+ * create is off, so the act dialog withholds Resume (`PAUSE_ONLY_CAMPAIGN_PLATFORMS`) and offers a
+ * daily budget only (`DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`).
  */
 export const CAMPAIGN_MONITOR_ACT_PLATFORMS: ReadonlySet<CampaignMonitorActPlatform> = new Set<CampaignMonitorActPlatform>([
   'linkedin-ads',
   'reddit-ads',
   'meta-ads',
   'microsoft-ads',
+  'twitter-ads',
 ]);
 
 /** The act dialog's header per lever, and the Monitor row button's visible text. */
@@ -422,17 +481,41 @@ export const CAMPAIGN_ACT_RESUME_ADOPTED_NOTE =
   "A campaign adopted into LFX One cannot be resumed from here; resume it in the ad platform's own UI. Pausing always works.";
 
 /**
- * The BFF's `code` for a resume that campaign-service refused with 409. The UI branches on this
- * code, never on the wording.
+ * The BFF's `code` for a resume that campaign-service refused with 409 for a reason it did not name
+ * as adoption. The UI branches on this code, never on the wording.
  *
- * campaign-service refuses ACTIVATE on every adopted campaign, on every platform. Its 409 carries
- * only `{ code: "409", message }`, the same shape as its other toggle 409s: a campaign that is not
- * fully provisioned for another reason, a Meta ad set paused on purpose that is running again, or a
- * campaign under another ad account. Nothing in the answer, the campaign record or the index says
- * a row was adopted. So the message (`campaignResumeRefusedMessage`) states the adoption case as a
- * condition and keeps campaign-service's own sentence for the others.
+ * Besides adoption, campaign-service answers a resume with 409 when the campaign is not fully
+ * provisioned for another reason, a Meta ad set paused on purpose is running again, the campaign is
+ * under another ad account, or another write holds its lock. A service deployed before
+ * `reason: "campaign_adopted"` (lfx-v2-campaign-service#366) also refuses an adopted campaign this
+ * way, so the message (`campaignResumeRefusedMessage`) states the adoption case as a condition and
+ * keeps campaign-service's own sentence for the others.
  */
 export const CAMPAIGN_RESUME_REFUSED_CODE = 'CAMPAIGN_RESUME_REFUSED';
+
+/**
+ * The BFF's `code` for a resume campaign-service refused because the campaign was ADOPTED: its 409
+ * carries `reason: "campaign_adopted"` (lfx-v2-campaign-service#366). The message
+ * (`campaignResumeRefusedAdoptedMessage`) says so without hedging.
+ */
+export const CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE = 'CAMPAIGN_RESUME_REFUSED_ADOPTED';
+
+/** campaign-service's `reason` on the 409 that refuses to resume an adopted campaign. Matched exactly; the message text is never read. */
+export const CAMPAIGN_ADOPTED_REFUSAL_REASON = 'campaign_adopted';
+
+/**
+ * Why an ADOPTED campaign cannot be resumed from LFX One, naming its platform. Shown beside the
+ * unavailable Resume of a row campaign-service marks `adopted: true`, and inside
+ * `campaignResumeRefusedAdoptedMessage`.
+ */
+export function campaignResumeAdoptedReason(platformLabel: string): string {
+  return `This campaign was adopted from ${platformLabel}, so LFX One can pause it but not resume it — resume it in ${platformLabel} itself.`;
+}
+
+/** The message for `CAMPAIGN_RESUME_REFUSED_ADOPTED`: the resume was refused because the campaign was adopted. */
+export function campaignResumeRefusedAdoptedMessage(platformLabel: string): string {
+  return `Could not resume this campaign; it is still paused. ${campaignResumeAdoptedReason(platformLabel)}`;
+}
 
 /**
  * Why a resume was refused (409), naming the platform where an adopted campaign is resumed.
@@ -693,6 +776,37 @@ export const META_AD_SET_BUDGET_AMOUNT_NOT_REPORTED = '{type} budget, amount not
 
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';
+
+/**
+ * A reporting window as a sentence names it ("Last 30 days"), for a read that states which window
+ * its counters cover. `PLATFORM_AUDIENCE_WINDOW_LABELS` covers the same values but in the audience
+ * selector's compact form ("30d"), which does not read as a label beside a timestamp.
+ */
+export const CAMPAIGN_METRICS_WINDOW_LABELS: Readonly<Record<CampaignMetricsWindow, string>> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  last_7_days: 'Last 7 days',
+  last_14_days: 'Last 14 days',
+  last_30_days: 'Last 30 days',
+  this_month: 'This month',
+  last_month: 'Last month',
+};
+
+/** What the Ads section says when the read fails without a readable message. */
+export const META_ADS_READ_FAILED_MESSAGE = "This ad set's ads could not be read from Meta.";
+
+/**
+ * What the Ads section says when `truncated` is true: the LISTING passed its page cap, so some ads
+ * are missing, but delivery is all or nothing, so any unlisted ad that delivered is still shown.
+ */
+export const META_ADS_TRUNCATED_NOTE =
+  'Meta lists more ads in this ad set than can be read at once, so not every ad is shown. Any ad past the listing that delivered in this window is still shown, with its counters only.';
+
+/** An ad Meta's listing did not return (`listed: false`): its counters count, but nothing describes it. */
+export const META_AD_UNLISTED_NOTE = 'Not listed by Meta (deleted, archived, or past the listing); counters only.';
+
+/** The creative cell when neither the creative's name nor its id is reported. */
+export const META_AD_CREATIVE_NOT_REPORTED = 'Creative not reported';
 
 // --- Keyword targeting panel (Reddit and X) ----------------------------------
 

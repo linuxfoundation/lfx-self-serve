@@ -712,6 +712,7 @@ Server-side credentials for the Marketing OS agents proxy. Consumed only by the 
 | `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier. Defaults in code; override to target a different workspace                                                           | No       | `linux-foundation`     |
 | `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name. Defaults in code; override to target a different workspace                                                                       | No       | `marketing-os`         |
 | `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                    | No       | `"false"`              |
+| `environment.MKTG_SLIDES_EXPORT_FOLDER_ID` | Google Drive folder new Slides export decks are created in. Defaults in code to the Marketing OS folder; set it outside production                     | No       | Marketing OS folder    |
 | `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour | No       | -                      |
 
 #### Runtime Client Configuration

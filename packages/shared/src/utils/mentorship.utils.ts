@@ -32,6 +32,8 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
+  MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
+  MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_COUNTRY_CODES,
   MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
@@ -129,6 +131,8 @@ import type {
   MentorshipMenteeApplicationStatus,
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
+  MentorshipMenteeApplyBlockedReason,
+  MentorshipMenteeApplyBlockedState,
   MentorshipMenteeApplicationView,
   MentorshipMenteeDemographicGroupName,
   MentorshipMenteeDemographics,
@@ -900,6 +904,20 @@ export function mentorshipMenteeApplyIds(params: { get(name: string): string | n
   const programTermId = trimmedParam(params, 'programTermId');
   if (!programId || !programTermId) return null;
   return { programId, programTermId };
+}
+
+/**
+ * The state the apply page shows for a refused application: the entry of
+ * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` whose fragment the upstream message contains, or the
+ * status's own state when there is no message or none matches.
+ */
+export function mentorshipMenteeApplyBlockedState(
+  reason: MentorshipMenteeApplyBlockedReason,
+  upstreamMessage?: string | null
+): MentorshipMenteeApplyBlockedState {
+  const message = upstreamMessage?.toLowerCase() ?? '';
+  const match = message ? MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES.find((entry) => message.includes(entry.match)) : undefined;
+  return match?.state ?? MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES[reason];
 }
 
 /**

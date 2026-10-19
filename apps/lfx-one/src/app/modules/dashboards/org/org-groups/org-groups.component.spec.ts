@@ -180,7 +180,7 @@ function renderedItemUids(fixture: ComponentFixture<OrgGroupsComponent>): string
   );
 }
 
-/** filterForm/typeOptions are `protected` — reach in via a narrow cast, mirroring the repo's existing spec convention (see brand-kit-form.component.spec.ts). */
+/** filterForm/typeOptions are `protected` — reach in via a narrow cast, mirroring the repo's existing spec convention (see mktg-agent-run.component.spec.ts). */
 function filterForm(fixture: ComponentFixture<OrgGroupsComponent>): {
   get(key: string): { setValue(v: string): void } | null;
   reset(v: Record<string, string>): void;

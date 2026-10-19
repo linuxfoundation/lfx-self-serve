@@ -10,7 +10,10 @@ import {
   CAMPAIGN_NEGATIVE_KEYWORD_OUTCOMES,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
   CAMPAIGN_PLATFORMS,
+  CAMPAIGN_ADOPTED_REFUSAL_REASON,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
+  campaignResumeRefusedAdoptedMessage,
   campaignResumeRefusedMessage,
   COUNTRIES,
   GOOGLE_CAMPAIGN_CHANNELS,
@@ -23,6 +26,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
+import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
@@ -51,6 +55,7 @@ import type {
   CampaignServiceAccountMonitor,
   CampaignServiceAudience,
   CampaignServiceCampaign,
+  CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
@@ -596,7 +601,10 @@ export class CampaignServiceClient {
     // `"<version>"` — quotes included (`briefETag` in internal/service/brief.go). Deriving it once
     // beats leaving each caller to rediscover a quoting rule that only Go source states; a caller
     // that got it wrong would see a 412 and read it as someone else's concurrent edit.
-    const campaigns = docs.filter((d) => d?.brief_id === briefId).map((d) => ({ ...d, etag: typeof d.version === 'number' ? `"${d.version}"` : undefined }));
+    // `adopted` is kept only as a literal `true` (`withAdoptedMarker`): it withholds Resume on the row.
+    const campaigns = docs
+      .filter((d) => d?.brief_id === briefId)
+      .map((d) => withAdoptedMarker({ ...d, etag: typeof d.version === 'number' ? `"${d.version}"` : undefined }));
     if (campaigns.length !== docs.length) {
       // The filter matched rows this brief does not own — the field is analysed, not a term, or
       // the contract moved. Report it loudly: the rows are dropped here, but every other consumer
@@ -2082,6 +2090,59 @@ export class CampaignServiceClient {
   }
 
   /**
+   * Read live metrics for ONE campaign on a brief: `get-campaign-metrics`.
+   *
+   * The single-campaign sibling of `getBriefMetrics`, and the two differ in how a failure arrives.
+   * There is no per-row `status` here: every failure mode the brief-wide read folds into a row is
+   * its own HTTP status on this one — 400 when the platform has no metrics read (or cannot serve
+   * the window), 409 when the campaign has no platform id yet, reported no data for the window, or
+   * belongs to another account, 404 when the project has no connection for the channel, and
+   * 500/503 for an unusable connection or a failed platform read. They are thrown, not mapped, so
+   * the error middleware relays campaign-service's own status and sentence.
+   *
+   * A pure read upstream; nothing is persisted. `cost_micros` is USD on LinkedIn and the ad
+   * account's own currency elsewhere; the response names neither.
+   *
+   * The Optimize tab shows a row's counters from the brief-wide read it already makes, and calls
+   * this only when the operator refreshes one row, or asks about a row the brief-wide read could not
+   * measure (to get this read's precise 400/409 reason).
+   *
+   * The window is a QUERY parameter and is omitted unless the caller names one, for the reason
+   * `getBriefMetrics` gives: upstream picks a per-platform default (`last_7_days` on X Ads), and an
+   * explicit `last_30_days` sent on the caller's behalf would turn that X read into a 400.
+   */
+  public async getCampaignMetrics(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    window?: CampaignMetricsWindow
+  ): Promise<CampaignServiceCampaignMetrics> {
+    // Refused rather than sent, as `getBriefMetrics` refuses: an empty segment makes a different
+    // route that 404s at the gateway, which a caller cannot tell from campaign-service's own 404.
+    // Named per field, so the 400 says which one was missing.
+    for (const [field, value] of [
+      ['project', projectSlug],
+      ['briefId', briefId],
+      ['campaignId', campaignId],
+    ] as const) {
+      if (value === '') {
+        throw ServiceValidationError.forField(field, 'A campaign metrics read requires the project, the brief and the campaign it is scoped to.', {
+          operation: 'campaign_metrics_read',
+          service: 'campaign_service',
+        });
+      }
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceCampaignMetrics>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/campaigns/${encodePathSegment(campaignId)}/metrics`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
    * Google Ads keyword performance for the project's OWN campaigns.
    *
    * ## This is narrower than the read it replaces
@@ -3043,15 +3104,18 @@ export function asUnconfirmedWriteFailure(error: unknown, operation: string, cli
 }
 
 /**
- * The error a refused RESUME should surface: campaign-service's own 409, re-coded
- * `CAMPAIGN_RESUME_REFUSED` with a message that says what to do.
+ * The error a refused RESUME should surface: campaign-service's own 409, re-coded with a message
+ * that says what to do.
  *
- * campaign-service refuses ACTIVATE on every adopted campaign, but its 409 has the same
- * `{ code: "409", message }` shape as its other toggle refusals, and nothing in the campaign record
- * says a row was adopted. So the match is on the shape alone (an answered 409 to a resume), never
- * the wording, and the message states adoption as a condition. campaign-service's sentence is kept
- * in it for the other refusals. Everything else passes through unchanged. `message` stays as it
- * was, so the log keeps the upstream text.
+ * - `reason: "campaign_adopted"` (lfx-v2-campaign-service#366): the campaign was adopted, which
+ *   campaign-service never resumes. Re-coded `CAMPAIGN_RESUME_REFUSED_ADOPTED` with a message that
+ *   says so plainly.
+ * - Any other answered 409 (no `reason`, or another one): re-coded `CAMPAIGN_RESUME_REFUSED`. The
+ *   message states adoption as a condition, because a service deployed before #366 refuses an
+ *   adopted campaign without a `reason`, and keeps campaign-service's sentence for the others.
+ *
+ * Decided by the status and the `reason` field alone, never the wording. Everything else passes
+ * through unchanged. `message` stays as it was, so the log keeps the upstream text.
  *
  * `platform` is the caller's label: it names the console in the message and is never sent upstream.
  */
@@ -3060,8 +3124,9 @@ export function asResumeRefusal(error: unknown, platform: string, operation: str
     return error;
   }
   const label = CAMPAIGN_PLATFORMS.find((p) => p.id === platform)?.label ?? 'the ad platform';
+  const adopted = error.errorBody?.reason === CAMPAIGN_ADOPTED_REFUSAL_REASON;
   const reason = typeof error.errorBody?.message === 'string' ? error.errorBody.message : undefined;
-  return new MicroserviceError(error.message, error.statusCode, CAMPAIGN_RESUME_REFUSED_CODE, {
+  return new MicroserviceError(error.message, error.statusCode, adopted ? CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE : CAMPAIGN_RESUME_REFUSED_CODE, {
     operation,
     service: error.service,
     path: error.path,
@@ -3069,7 +3134,7 @@ export function asResumeRefusal(error: unknown, platform: string, operation: str
     originalMessage: error.originalMessage,
     originalError: error,
     transportFailure: error.transportFailure,
-    clientMessage: campaignResumeRefusedMessage(label, reason),
+    clientMessage: adopted ? campaignResumeRefusedAdoptedMessage(label) : campaignResumeRefusedMessage(label, reason),
   });
 }
 

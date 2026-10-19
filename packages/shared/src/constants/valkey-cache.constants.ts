@@ -125,6 +125,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). `v2`: tag options folded to lowercase, author options guarded + newly cached, mentions-count resource added — stale `v1` entries must never be served as the new shapes. */
   SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v2',
 
+  /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). */
+  PROJECT_PARTICIPATING_ORGS_NAMESPACE: 'project-participating-orgs-sf:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -167,6 +170,9 @@ export const VALKEY_CACHE = {
 
   /** Governed Social Listening analytics cache (5 minutes); source models refresh hourly. */
   SOCIAL_LISTENING_ANALYTICS_TTL_SECONDS: 300,
+
+  /** Freshness window for the Participating Organizations cache (1 hour, matching Org Lens); the source models rebuild daily. */
+  PROJECT_PARTICIPATING_ORGS_TTL_SECONDS: 3600,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,

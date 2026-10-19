@@ -164,7 +164,7 @@ export class MentorshipMenteeService {
   /**
    * Applies the signed-in user as a mentee to a program term. On success the cached applications
    * are dropped, so the Overview and My Tasks show the new application. A failure is left to the
-   * caller, which maps upstream's 422 (closed) and 409 (already applied) to their own states.
+   * caller, which maps upstream's 422 (ineligible) and 409 (already applied) to their own states.
    */
   public applyToMenteeTerm(ids: MentorshipMenteeApplyIds): Observable<void> {
     return this.http.post<void>('/api/mentorship/mentee/apply', ids).pipe(

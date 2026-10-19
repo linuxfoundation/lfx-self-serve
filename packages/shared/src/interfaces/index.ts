@@ -306,6 +306,10 @@ export * from './person-detail-drawer.interface';
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
 
+// Project Lens — Participating Organizations (#2091)
+export * from './project-participating-orgs.interface';
+export * from './project-participating-orgs.internal.interface';
+
 // Org Events interfaces
 export * from './org-events.interface';
 
@@ -385,11 +389,18 @@ export * from './profile-visibility.interface';
 export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
+export * from './boilerplates.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
 export * from './foundation-message.interface';
 export * from './icp.interface';
+
+// Marketing OS asset print documents (Download PDF)
+export * from './mktg-print.interface';
+
+// Marketing OS Export to Google Slides (slides-export-output/v1)
+export * from './mktg-slides-export.interface';
 
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';

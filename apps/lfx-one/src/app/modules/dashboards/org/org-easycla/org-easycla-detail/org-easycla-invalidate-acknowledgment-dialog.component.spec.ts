@@ -77,7 +77,7 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     const body = byTestId(fixture, 'org-easycla-invalidate-dialog-body');
 
     expect(body?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      "This marks Ada Lovelace as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against. If Ada Lovelace still matches the approval list, they can acknowledge again themselves. Auto ECLA won't re-add them."
+      "This marks Ada Lovelace as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against. If Ada Lovelace still matches the approval list, they can acknowledge again themselves. Auto Acknowledge won't re-add them."
     );
     expect(Array.from(body?.querySelectorAll('strong') ?? []).map((node) => node.textContent?.trim())).toEqual([
       'Ada Lovelace',
@@ -85,12 +85,12 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     ]);
   });
 
-  it('never says Auto ECLA will re-add the contributor', async () => {
+  it('never says Auto Acknowledge will re-add the contributor', async () => {
     for (const data of [dialogData(), dialogData(ENTRIES, true)]) {
       const fixture = await render(data);
       const text = byTestId(fixture, 'org-easycla-invalidate-dialog-body')?.textContent?.replace(/\s+/g, ' ') ?? '';
 
-      expect(text).toContain("Auto ECLA won't re-add them.");
+      expect(text).toContain("Auto Acknowledge won't re-add them.");
       expect(text).not.toContain('re-added automatically');
     }
   });
@@ -100,7 +100,7 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
       byTestId(fixture, 'org-easycla-invalidate-dialog-body')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
     const withRemoval = await render(dialogData(ENTRIES, true));
-    expect(bodyText(withRemoval)).toContain("Auto ECLA won't re-add them. Remove the matching entries below to prevent this.");
+    expect(bodyText(withRemoval)).toContain("Auto Acknowledge won't re-add them. Remove the matching entries below to prevent this.");
 
     const noControl: OrgClaInvalidateAcknowledgmentDialogData[] = [
       dialogData([], true), // no individual match

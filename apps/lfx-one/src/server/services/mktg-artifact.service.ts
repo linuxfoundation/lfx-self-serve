@@ -276,8 +276,12 @@ export class MktgArtifactService {
    * Every refusal is a WARN, never an ERROR: the caller degrades by returning
    * the validated document without a receipt, exactly like a storage outage
    * (graceful-degradation logging discipline).
+   *
+   * Public so the document store can run the SAME write boundary for an agent
+   * whose output is a structured asset stored as a revision only (nothing is
+   * written to this layer's `.md` partition for it).
    */
-  private async resolveWritablePartition(req: Request, spec: MktgArtifactSpec, projectUid?: string): Promise<string | null> {
+  public async resolveWritablePartition(req: Request, spec: MktgArtifactSpec, projectUid?: string): Promise<string | null> {
     const operation = this.persistOperation(spec);
     const uid = projectUid?.trim();
     if (!uid) {

@@ -85,11 +85,27 @@ export interface GwEmbedSource {
 
 /**
  * One scoped embed stylesheet as the server caches and serves it (`GwEmbedStylesheetService`):
- * the contained Gatewaze CSS with the LFX theme layer appended, and the ETag derived from it.
+ * the contained Gatewaze CSS with the LFX theme layer appended, the ETag derived from it, and the
+ * body compressed once per encoding so no request pays for compressing several megabytes.
  */
 export interface GwEmbedScopedStylesheet {
   css: string;
   etag: string;
+  /** The UTF-8 body as sent uncompressed, encoded once rather than per request. */
+  identity: Uint8Array;
+  /**
+   * The UTF-8 body, compressed with gzip. `Uint8Array` (which `Buffer` satisfies) so this
+   * browser-consumed package does not couple its types to Node's `Buffer` global.
+   */
+  gzip: Uint8Array;
+  /** The UTF-8 body, compressed with Brotli. */
+  br: Uint8Array;
+}
+
+/** One encoding of a scoped embed stylesheet, as picked for a request. */
+export interface GwEmbedStylesheetVariant {
+  encoding: 'br' | 'gzip' | 'identity';
+  body: Uint8Array;
 }
 
 /** Fatal error shape reported by `@gatewaze/admin-embed` via `GwHostContext.onFatal`. */

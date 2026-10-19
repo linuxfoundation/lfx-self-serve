@@ -4153,6 +4153,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     );
   });
 
+  // lfx-v2-campaign-service#366: the index carries `adopted: true` on an adopted campaign, absent
+  // otherwise. Carried through as a literal `true` only; anything else is dropped, never `false`.
+  it('carries adopted: true through and drops any other adopted value', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        { data: doc({ adopted: true }) },
+        { data: doc({ id: 'c-2' }) },
+        { data: doc({ id: 'c-3', adopted: 'true' }) },
+        { data: doc({ id: 'c-4', adopted: false }) },
+      ],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns[0].adopted).toBe(true);
+    for (const campaign of result.campaigns.slice(1)) {
+      expect('adopted' in campaign).toBe(false);
+    }
+  });
+
   /**
    * The all-foreign case, which the mixed test above does not reach: `possiblyStale` is derived
    * from `campaigns.length`, NOT `docs.length`, and only a read where every row is dropped tells
@@ -4614,6 +4634,85 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     // covers only 1 of the 2 campaigns.
     expect(result.ok_count).toBe(1);
     expect(result.rows).toHaveLength(2);
+  });
+});
+
+describe('CampaignServiceClient.getCampaignMetrics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const METRICS = {
+    campaign_id: 'c-1',
+    platform_campaign_id: 'p-1',
+    window: 'last_30_days',
+    impressions: 1840,
+    clicks: 212,
+    cost_micros: 1284000,
+    ctr: 0.1152,
+  };
+
+  /** Fifth argument, which is `query`, with the body position left empty — as `getBriefMetrics` pins. */
+  it('sends the window as a query parameter, not a body', async () => {
+    proxyRequest.mockResolvedValue({ ...METRICS, window: 'last_7_days' });
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1', 'last_7_days');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', {
+      window: 'last_7_days',
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  /**
+   * Omitted, not defaulted: upstream gives X Ads `last_7_days` when no window is named, and an
+   * explicit `last_30_days` would turn that read into a 400 on the single-campaign endpoint.
+   */
+  it('sends no window at all when the caller specifies none', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', undefined);
+  });
+
+  it('encodes every path segment', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'a b', 'b/1', 'c?1');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b/briefs/b%2F1/campaigns/c%3F1/metrics');
+  });
+
+  it.each([
+    ['no project', '', 'b-1', 'c-1'],
+    ['no brief id', 'cncf', '', 'c-1'],
+    ['no campaign id', 'cncf', 'b-1', ''],
+  ])('refuses a request with %s without calling the proxy', async (_label, slug, brief, campaign) => {
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, slug, brief, campaign)).rejects.toBeInstanceOf(ServiceValidationError);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /** Returned verbatim: an absent `conversions` stays absent rather than becoming a measured 0. */
+  it('returns the measurement unchanged, leaving an unreported conversions count absent', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    const result = await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(result).toEqual(METRICS);
+    expect(result.conversions).toBeUndefined();
+  });
+
+  /** An upstream refusal (400 unsupported platform, 409 not measurable) is thrown for the error middleware, not mapped to data. */
+  it('lets an upstream refusal propagate', async () => {
+    const refusal = new MicroserviceError("metrics reads are not supported for this campaign's platform", 400, 'BAD_REQUEST', {
+      operation: 'campaign_metrics_read',
+      service: 'campaign_service',
+    });
+    proxyRequest.mockRejectedValue(refusal);
+
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1')).rejects.toBe(refusal);
   });
 });
 
@@ -5179,6 +5278,30 @@ describe('asResumeRefusal', () => {
     expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
     expect(clientText(error)).toContain('resume it in Reddit Ads itself.');
     expect(clientText(error)).toContain('Otherwise, the reason given was: not fully provisioned');
+  });
+
+  // lfx-v2-campaign-service#366: `reason: "campaign_adopted"` gets its own code and the unhedged message.
+  it('re-codes a 409 with reason campaign_adopted as CAMPAIGN_RESUME_REFUSED_ADOPTED with the precise message', () => {
+    const error = asResumeRefusal(answered({ message: 'campaign was adopted', reason: 'campaign_adopted' }), 'microsoft-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED_ADOPTED');
+    expect(clientText(error)).toBe(
+      'Could not resume this campaign; it is still paused. This campaign was adopted from Microsoft Ads, so LFX One can pause it but not resume it — resume it in Microsoft Ads itself.'
+    );
+    expect(clientText(error)).not.toContain('If it was adopted');
+    expect(error.statusCode).toBe(409);
+  });
+
+  it.each([
+    ['no reason', { message: 'not fully provisioned' }],
+    ['another reason', { message: 'not fully provisioned', reason: 'stale_approval' }],
+    // Branched on the field, never the text: a message that mentions adoption changes nothing.
+    ['adoption named only in the message', { message: 'campaign_adopted' }],
+  ])("keeps #3741's hedged message for a 409 with %s", (_label, body) => {
+    const error = asResumeRefusal(answered(body), 'reddit-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
+    expect(clientText(error)).toContain('If it was adopted from Reddit Ads');
   });
 
   it('falls back to a generic platform name for an unknown platform id', () => {

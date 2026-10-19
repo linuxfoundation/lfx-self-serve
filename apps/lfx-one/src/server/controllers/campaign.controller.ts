@@ -158,7 +158,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
@@ -2030,41 +2030,10 @@ export class CampaignController {
       return;
     }
 
-    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
-    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
-    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
-    // given", so the enum check is skipped and the read proceeds on the per-platform default.
-    // That is the substitution this method refuses by design: the response's own `window` field
-    // would then report a period the caller never asked for, as though it had. `project` and
-    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
-    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
-    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
-    // already carry.
-    const windowParam = req.query['window'];
-    if (windowParam !== undefined && typeof windowParam !== 'string') {
-      next(
-        ServiceValidationError.forField('window', 'window must be given at most once', {
-          operation: 'campaign_brief_metrics',
-          service: 'campaign_controller',
-        })
-      );
+    const window = this.readMetricsWindow(req, 'campaign_brief_metrics', next);
+    if (window === null) {
       return;
     }
-    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
-    // and treating them as "no window given" would skip the enum check and serve the default —
-    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
-    // may default; every supplied value must be in the enum.
-    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
-    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
-      next(
-        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
-          operation: 'campaign_brief_metrics',
-          service: 'campaign_controller',
-        })
-      );
-      return;
-    }
-    const window = rawWindow as CampaignMetricsWindow | undefined;
 
     const startTime = logger.startOperation(req, 'campaign_brief_metrics', { briefId, projectSlug, window });
 
@@ -2159,6 +2128,81 @@ export class CampaignController {
       const asset = await this.campaignServiceClient.uploadCreativeAsset(req, projectSlug, briefId, declaredType, image);
       logger.success(req, operation, startTime, { briefId, assetId: asset.id, created: asset.created });
       res.status(asset.created ? 201 : 200).json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read campaign-service's live metrics for ONE campaign: impressions, clicks, cost and CTR, read
+   * from its platform on every request. The Optimize tab shows each row's counters from the
+   * brief-wide read (`getBriefMetrics`) it already makes on open, and calls this only when the
+   * operator refreshes one row, or clicks a row the brief-wide read could not measure, to get this
+   * read's precise reason. Each call reaches an ad platform whose rate budget is shared across
+   * foundations.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like the adoptable-brief list: the route is
+   * addressed by a campaign-service brief, and with the flag off none exists here, so it answers
+   * 404 rather than reaching upstream.
+   *
+   * The query takes `project` and `briefId` (camelCase, like the sibling per-campaign Optimize reads)
+   * and an optional `window` refused rather than defaulted or dropped, as `getBriefMetrics` does.
+   * Both ids are checked as UUIDs, which upstream declares them.
+   * Upstream's refusals are relayed as they come: 400 for a platform with no metrics read, 409 for
+   * a campaign that cannot be measured yet or belongs to another account, 404 for a missing
+   * connection, 5xx for a connection or platform failure.
+   */
+  public async getCampaignMetrics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_metrics_read';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+
+    const campaignId = req.params['campaignId'];
+    if (typeof campaignId !== 'string' || !isCampaignServiceJobId(campaignId)) {
+      next(ServiceValidationError.forField('campaignId', 'campaignId must be a campaign UUID', { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+
+    const briefId = typeof req.query['briefId'] === 'string' ? req.query['briefId'].trim() : '';
+    if (!isCampaignServiceJobId(briefId)) {
+      next(
+        ServiceValidationError.forField('briefId', "the brief UUID is required to read a campaign's metrics", {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for the reason `getBriefMetrics` gives.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const window = this.readMetricsWindow(req, operation, next);
+    if (window === null) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId, briefId, projectSlug, window });
+
+    try {
+      const result = await this.campaignServiceClient.getCampaignMetrics(req, projectSlug, briefId, campaignId, window);
+      // The window upstream SERVED, which can be narrower than the one asked for (X Ads), and the
+      // counters themselves are not logged: they are the response, not a diagnostic.
+      logger.success(req, operation, startTime, { campaignId, briefId, projectSlug, window: result.window });
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -3691,6 +3735,49 @@ export class CampaignController {
     } catch (error) {
       next(toAccountMonitorClientError(error, opts.platformLabel, opts.operation));
     }
+  }
+
+  /**
+   * The optional `?window=` of a campaign-service metrics read: the window, `undefined` when it was
+   * OMITTED, or `null` once a malformed value has been reported to `next`. Shared by the brief-wide
+   * and single-campaign reads, which accept the same seven values and refuse the same shapes.
+   */
+  private readMetricsWindow(req: Request, operation: string, next: NextFunction): CampaignMetricsWindow | undefined | null {
+    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
+    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
+    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
+    // given", so the enum check is skipped and the read proceeds on the per-platform default.
+    // That is the substitution this method refuses by design: the response's own `window` field
+    // would then report a period the caller never asked for, as though it had. `project` and
+    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
+    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
+    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
+    // already carry.
+    const windowParam = req.query['window'];
+    if (windowParam !== undefined && typeof windowParam !== 'string') {
+      next(
+        ServiceValidationError.forField('window', 'window must be given at most once', {
+          operation,
+          service: 'campaign_controller',
+        })
+      );
+      return null;
+    }
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
+    // and treating them as "no window given" would skip the enum check and serve the default —
+    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
+    // may default; every supplied value must be in the enum.
+    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
+    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
+      next(
+        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
+          operation,
+          service: 'campaign_controller',
+        })
+      );
+      return null;
+    }
+    return rawWindow as CampaignMetricsWindow | undefined;
   }
 
   /**
