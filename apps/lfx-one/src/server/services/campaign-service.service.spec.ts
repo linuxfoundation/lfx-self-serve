@@ -4605,6 +4605,85 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
   });
 });
 
+describe('CampaignServiceClient.getCampaignMetrics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const METRICS = {
+    campaign_id: 'c-1',
+    platform_campaign_id: 'p-1',
+    window: 'last_30_days',
+    impressions: 1840,
+    clicks: 212,
+    cost_micros: 1284000,
+    ctr: 0.1152,
+  };
+
+  /** Fifth argument, which is `query`, with the body position left empty — as `getBriefMetrics` pins. */
+  it('sends the window as a query parameter, not a body', async () => {
+    proxyRequest.mockResolvedValue({ ...METRICS, window: 'last_7_days' });
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1', 'last_7_days');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', {
+      window: 'last_7_days',
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  /**
+   * Omitted, not defaulted: upstream gives X Ads `last_7_days` when no window is named, and an
+   * explicit `last_30_days` would turn that read into a 400 on the single-campaign endpoint.
+   */
+  it('sends no window at all when the caller specifies none', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', undefined);
+  });
+
+  it('encodes every path segment', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'a b', 'b/1', 'c?1');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b/briefs/b%2F1/campaigns/c%3F1/metrics');
+  });
+
+  it.each([
+    ['no project', '', 'b-1', 'c-1'],
+    ['no brief id', 'cncf', '', 'c-1'],
+    ['no campaign id', 'cncf', 'b-1', ''],
+  ])('refuses a request with %s without calling the proxy', async (_label, slug, brief, campaign) => {
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, slug, brief, campaign)).rejects.toBeInstanceOf(ServiceValidationError);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /** Returned verbatim: an absent `conversions` stays absent rather than becoming a measured 0. */
+  it('returns the measurement unchanged, leaving an unreported conversions count absent', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    const result = await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(result).toEqual(METRICS);
+    expect(result.conversions).toBeUndefined();
+  });
+
+  /** An upstream refusal (400 unsupported platform, 409 not measurable) is thrown for the error middleware, not mapped to data. */
+  it('lets an upstream refusal propagate', async () => {
+    const refusal = new MicroserviceError("metrics reads are not supported for this campaign's platform", 400, 'BAD_REQUEST', {
+      operation: 'campaign_metrics_read',
+      service: 'campaign_service',
+    });
+    proxyRequest.mockRejectedValue(refusal);
+
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1')).rejects.toBe(refusal);
+  });
+});
+
 /**
  * Wire-shape coverage for the two insight reads.
  *

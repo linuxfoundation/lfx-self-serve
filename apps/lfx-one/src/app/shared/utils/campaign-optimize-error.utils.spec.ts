@@ -9,13 +9,22 @@ import {
   CAMPAIGN_ADOPT_FAILURE_COPY,
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
   CAMPAIGN_ADOPT_UNCONFIRMED_TITLE,
+  CAMPAIGN_LIVE_METRICS_READ_CONFLICT_FALLBACK,
+  CAMPAIGN_LIVE_METRICS_READ_ERRORS,
+  CAMPAIGN_LIVE_METRICS_READ_FALLBACK,
+  CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE,
   CAMPAIGN_SETTINGS_READ_CONFLICT_FALLBACK,
   CAMPAIGN_SETTINGS_READ_ERRORS,
   CAMPAIGN_SETTINGS_READ_FALLBACK,
 } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 
-import { campaignActResolveErrorMessage, campaignAdoptFailure, campaignSettingsReadErrorMessage } from './campaign-optimize-error.utils';
+import {
+  campaignActResolveErrorMessage,
+  campaignAdoptFailure,
+  campaignLiveMetricsFailureState,
+  campaignSettingsReadErrorMessage,
+} from './campaign-optimize-error.utils';
 
 const httpError = (status: number, error: unknown): HttpErrorResponse => new HttpErrorResponse({ status, statusText: 'x', error });
 
@@ -149,5 +158,46 @@ describe('campaignAdoptFailure', () => {
 
   it('reports a non-HTTP error as unconfirmed', () => {
     expect(campaignAdoptFailure(new Error('boom'), platform).state).toBe('unconfirmed');
+  });
+});
+
+describe('campaignLiveMetricsFailureState', () => {
+  // A 400 is the platform having no metrics read: a standing property of the row, not a failure.
+  it('reports a 400 as unsupported rather than as an error', () => {
+    expect(campaignLiveMetricsFailureState(httpError(400, { error: "metrics reads are not supported for this campaign's platform", code: 'X' }))).toEqual({
+      status: 'unsupported',
+      counters: null,
+      message: CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE,
+    });
+  });
+
+  // The BFF's own validation 400 is not a statement about the platform: an error, with its field message.
+  it("reports the BFF's own VALIDATION_ERROR 400 as an error, not as unsupported", () => {
+    const body = { error: 'Validation failed for briefId', code: 'VALIDATION_ERROR', errors: [{ field: 'briefId', message: 'briefId must be a brief UUID' }] };
+    expect(campaignLiveMetricsFailureState(httpError(400, body))).toEqual({ status: 'error', counters: null, message: 'briefId must be a brief UUID' });
+  });
+
+  it.each([403, 404, 500, 503])('maps a %i to its fixed sentence, never the upstream text', (status) => {
+    expect(campaignLiveMetricsFailureState(httpError(status, { error: 'upstream words', code: 'X' }))).toEqual({
+      status: 'error',
+      counters: null,
+      message: CAMPAIGN_LIVE_METRICS_READ_ERRORS[status],
+    });
+  });
+
+  // The 409 reasons (no platform id yet, no data in the window, another account) differ only in upstream's sentence.
+  it("keeps campaign-service's sentence from a BFF envelope 409, and falls back without one", () => {
+    const message = 'the platform reported no data for this campaign in the requested window';
+    expect(campaignLiveMetricsFailureState(httpError(409, { error: message, code: 'CONFLICT' })).message).toBe(message);
+    expect(campaignLiveMetricsFailureState(httpError(409, 'Conflict')).message).toBe(CAMPAIGN_LIVE_METRICS_READ_CONFLICT_FALLBACK);
+  });
+
+  it('falls back for an unmapped status or a non-HTTP failure', () => {
+    expect(campaignLiveMetricsFailureState(httpError(502, null)).message).toBe(CAMPAIGN_LIVE_METRICS_READ_FALLBACK);
+    expect(campaignLiveMetricsFailureState(new Error('socket hang up'))).toEqual({
+      status: 'error',
+      counters: null,
+      message: CAMPAIGN_LIVE_METRICS_READ_FALLBACK,
+    });
   });
 });
