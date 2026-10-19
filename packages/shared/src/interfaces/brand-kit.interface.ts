@@ -451,6 +451,8 @@ export interface BrandKitColorwayTile {
   logo: BrandKitLogoImage | null;
   /** CSS filter drawing the primary lockup reversed (white) or one-colour black; '' for full colour or supplied reversed artwork. */
   logoFilter: string;
+  /** CSS filter for the symbol on this tile: the symbol is never the supplied reversed lockup, so it keeps the tile's reversal or one-colour filter. */
+  symbolFilter: string;
 }
 
 /** One palette card of the book. */

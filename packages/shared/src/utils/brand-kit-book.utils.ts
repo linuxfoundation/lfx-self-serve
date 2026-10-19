@@ -100,11 +100,12 @@ export function brandKitTint(dark: string): string {
 export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string, logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>): BrandKitColorwayTile[] {
   const primary = logos.primary;
   const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '' } : { logo: primary, logoFilter: 'brightness(0) invert(1)' };
+  // The symbol is never the supplied reversed lockup, so it always takes the tile's own filter.
   const grounds = [
-    { ground: 'white', light: true, logo: primary, logoFilter: '' },
-    { ground: kit.kit.dark, light: false, ...reversed },
-    { ground: tint, light: true, logo: primary, logoFilter: '' },
-    { ground: 'white', light: true, logo: primary, logoFilter: 'brightness(0)' },
+    { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '' },
+    { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: 'brightness(0) invert(1)' },
+    { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '' },
+    { ground: 'white', light: true, logo: primary, logoFilter: 'brightness(0)', symbolFilter: 'brightness(0)' },
   ];
   return kit.chapters.logo.colorways.map((colorway, index) => ({ name: colorway.name, ...(grounds[index] ?? grounds[0]) }));
 }

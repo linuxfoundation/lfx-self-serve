@@ -269,7 +269,7 @@
                         <div
                           [class]="logoBox"
                           class="max-w-[40%]"
-                          [style.filter]="colorway.logoFilter || null"
+                          [style.filter]="colorway.symbolFilter || null"
                           [style.color]="colorway.light ? v.dark : 'white'">
                           <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
                         </div>

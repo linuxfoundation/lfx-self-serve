@@ -170,6 +170,8 @@ describe('the book’s view model', () => {
       ['orbit-horizontal.svg', ''],
       ['orbit-horizontal.svg', 'brightness(0)'],
     ]);
+    // The symbol is never the supplied reversed lockup: the reversed tile still turns a dark symbol white.
+    expect(supplied.map((tile) => tile.symbolFilter)).toEqual(['', 'brightness(0) invert(1)', '', 'brightness(0)']);
     const fallback = buildBrandKitBookView(withColorways(kitWith({ primary }))).colorways[1];
     expect([fallback.logo?.name, fallback.logoFilter]).toEqual(['orbit-horizontal.svg', 'brightness(0) invert(1)']);
   });
