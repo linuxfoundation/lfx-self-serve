@@ -13,6 +13,19 @@ export interface VoteSummary {
   as_of: string;
 }
 
+/**
+ * Per-status vote totals for the votes table's status tabs (#3687).
+ * @description Buckets use the normalized poll status. `all` counts every vote in the matching
+ * collection, including rows whose status is unrecognized after normalization, so it equals the
+ * All-tab list total; unrecognized rows fall into no per-status bucket.
+ */
+export interface VoteStatusCounts {
+  all: number;
+  active: number;
+  disabled: number;
+  ended: number;
+}
+
 /** Closing-filtered lists carry their authoritative pre-pagination count. */
 export interface VoteListResponse extends PaginatedResponse<Vote> {
   total_records?: number;
@@ -251,6 +264,16 @@ export interface Vote {
   /** Server-decorated by getMyVotes (Me-lens only) — RESPONDED iff the indexed vote_response row has IndexedVoteResponseStatus.RESPONDED. Absent on raw upstream Vote responses. */
   response_status?: VoteResponseStatus;
 }
+
+/** Personal feed retains usable votes even when enumeration or required detail reads are incomplete. */
+export interface MyVotesResponse {
+  votes: Vote[];
+  /** Only true when all invitation pages and referenced vote details loaded successfully. */
+  complete: boolean;
+}
+
+/** Legacy arrays have unknown completeness and must not be presented as exact totals. */
+export type MyVotesApiResponse = MyVotesResponse | Vote[];
 
 /** Optional personal-feed filter shared by the summary and client-side table. */
 export type MyVotesQuickFilter = 'closing-soon' | 'needs-vote';

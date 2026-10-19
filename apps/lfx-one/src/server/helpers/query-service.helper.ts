@@ -54,6 +54,8 @@ export interface FetchAllQueryResourcesOptions {
    * Defaults to false — partial results are returned on later-page failures.
    */
   failOnPartial?: boolean;
+  /** Called when a later-page failure returns partial rows; strict callers still throw instead. */
+  onPartial?: () => void;
   /**
    * Stop paging as soon as the accumulated count exceeds this many results, without fetching
    * further pages. For callers that only need to know "is this over N" (e.g. enforcing a size
@@ -118,6 +120,7 @@ export async function fetchAllQueryResources<T>(
         });
         throw error;
       }
+      options.onPartial?.();
       logger.warning(req, 'fetch_all_query_resources', 'Pagination failed, returning partial results', {
         page,
         accumulated_count: results.length,
