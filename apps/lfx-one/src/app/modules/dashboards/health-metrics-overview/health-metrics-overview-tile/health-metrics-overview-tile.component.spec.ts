@@ -48,38 +48,35 @@ describe('HealthMetricsOverviewTileComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Needs action');
   });
 
-  it('renders the Engagement link with no status chip when a route is set and the status is hidden', async () => {
-    await render({
-      classification: 'none',
-      showStatus: false,
-      route: { commands: ['/foundation/health-metrics', 'engagement'], fragment: 'committees', queryParams: { groupType: null } },
-      routeLabel: 'View groups',
-    });
+  it('makes the whole tile a link to the top of its tab, with no "View" text link', async () => {
+    await render({ classification: 'none', showStatus: false, tabRoute: ['/foundation/health-metrics', 'engagement'] });
 
-    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng-link"]');
-    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement#committees');
-    expect(link.textContent).toContain('View groups');
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-link"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement');
+    expect(link.getAttribute('aria-label')).toBeNull();
+    expect(link.getAttribute('title')).toBe('Open Engagement');
+    expect(link.textContent).toContain('8 of 31');
+    expect(link.textContent).not.toContain('View');
     expect(fixture.nativeElement.textContent).not.toContain('Awaiting data');
   });
 
-  it('keeps the status chip beside the link when the tile shows its status', async () => {
-    await render({
-      area: 'evt',
-      classification: 'watch',
-      route: { commands: ['/foundation/health-metrics', 'events'], fragment: 'forecast', queryParams: { event: null } },
-      routeLabel: 'View forecast',
-    });
+  it('keeps the status chip inside the linked tile', async () => {
+    await render({ area: 'evt', classification: 'watch', tabRoute: ['/foundation/health-metrics', 'events'] });
 
-    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]');
-    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events#forecast');
-    expect(link.textContent).toContain('View forecast');
-    expect(fixture.nativeElement.textContent).toContain('Needs attention');
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-link"]');
+    expect(link.querySelector('[data-testid="health-metrics-overview-tile-status"]')?.textContent).toContain('Needs attention');
   });
 
-  it('renders no status row for a statusless tile without a link, leaving the "as of" label first', async () => {
+  it('renders a tile without a tab route as plain content', async () => {
+    await render({ area: 'code', insightsUrl: 'https://insights.lfx.dev/foundation-slug' });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-link"]')).toBeNull();
+  });
+
+  it('renders no status chip for a statusless tile, leaving the "as of" label', async () => {
     await render({ area: 'evt', classification: 'none', showStatus: false, statValue: '—' });
 
-    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-status-row"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-status"]')).toBeNull();
     expect(fixture.nativeElement.textContent).toContain('as of');
   });
 

@@ -120,6 +120,8 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(getMembersBoardAttendance).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD', cohort: 'board', offset: 0, pageSize: 10 });
     expect(text('members-board-meetings')).toBe('12 meetings in range');
     expect(text('members-board-latest')).toBe('82%');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-board-hero')?.classList).not.toContain('border');
     expect(query('members-board-latest')?.classList).toContain('text-amber-600');
     expect(text('members-board-caption')).toBe('Last board meeting · below the ~100% this should be');
     expect(text('members-board-other')).toBe('65%');

@@ -167,6 +167,13 @@ describe('MembersBridgeComponent', () => {
     expect(drawer().barCount()).toBe(3);
   });
 
+  it('stretches each bar action over its whole column, so the bar opens the list too', async () => {
+    await render();
+
+    expect(query('members-bridge-bar-downgrade')?.classList).toContain('relative');
+    expect(query('members-bridge-action-downgrade')?.classList).toContain('after:inset-0');
+  });
+
   it('sends the churn bar to its section and leaves an empty movement inert', async () => {
     await render();
 

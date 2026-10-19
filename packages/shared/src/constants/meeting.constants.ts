@@ -415,6 +415,13 @@ export const MEETING_QUICK_CREATE_SECTIONS = ['details-access', 'date-schedule',
 export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
 
 /**
+ * UI surfaces a viewer can remove themselves from a meeting on.
+ * @description Sent with the self-removal request and logged by the BFF so removals can be broken
+ * down by where they came from. A value outside this list is logged as `unknown`.
+ */
+export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link'] as const;
+
+/**
  * Feature rows the composer preview lists, in display order.
  * @description Only the labels are the preview's own — shorter wording than the section's toggle
  * titles. Controls and icons come from {@link MEETING_FEATURE_BY_KEY}, so renaming a feature key

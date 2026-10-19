@@ -139,6 +139,8 @@ describe('EventsRevenueComponent', () => {
 
     expect(text('events-revenue-pending')).toBe('All figures pending validation');
     expect(text('events-revenue-headline-value')).toBe('$258K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-revenue-hero')?.classList).not.toContain('border');
     expect(text('events-revenue-headline-delta')).toBe('+6%');
     expect(text('events-revenue-side-registration-value')).toBe('$180K');
     expect(query('events-revenue-side-registration-delta')).not.toBeNull();

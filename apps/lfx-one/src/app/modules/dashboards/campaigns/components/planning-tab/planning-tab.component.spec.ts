@@ -201,6 +201,30 @@ describe('PlanningTabComponent brief read-back', () => {
     // Still offered -- it is real, restorable content, and reviewing it is the point.
     expect(savedBrief()).toEqual(exampleBrief);
     expect(savedBriefWarning()).toContain('never approved');
+    // The paid restore is wired to `onRestoreSavedBrief`, which approves the stored row.
+    expect(savedBriefWarning()).toContain('Restoring it approves the stored brief.');
+  });
+
+  it('does not promise an approval on the email channel, which does not approve', async () => {
+    // One component serves both channels, but only the paid restore reaches
+    // `approveRestoredBrief`; the email tab is wired to `onRestoreSavedEmailBrief`, which
+    // restores without approving. Carrying the paid sentence here would be a promise the code
+    // never keeps.
+    fixture.componentRef.setInput('deliveryType', 'email');
+    // Settled before the lookup: a delivery-type change clears the saved-brief state on its own
+    // subscription, and letting that reset land after the lookup would blank the warning under
+    // test for the wrong reason.
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: false }))
+    );
+
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    expect(savedBriefWarning()).toContain('never approved');
+    expect(savedBriefWarning()).not.toContain('approves the stored brief');
   });
 
   it('announces the unapproved warning alongside the restore offer', async () => {
@@ -665,8 +689,10 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
 
     // `approved` rides along with the id: campaign-service refuses a create from an unapproved
-    // brief, and the parent files a restored brief as create-ready without it.
-    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }]);
+    // brief, and the parent files a restored brief as create-ready without it. `readAt` is the
+    // refresh token this lookup was dispatched under — 0 for a page's first read, which is what
+    // tells the parent this offer does NOT post-date anything it has written.
+    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true, readAt: 0 }]);
     expect(generated).toEqual([]);
   });
 
@@ -692,6 +718,104 @@ describe('PlanningTabComponent brief read-back', () => {
 
     expect(restored).toHaveLength(1);
     expect(restored[0].briefId).toBe('brief-xyz');
+  });
+
+  /**
+   * The cache this component keeps has to be invalidatable from outside, or the parent's writes
+   * are invisible here forever.
+   *
+   * The lookup caches per `(slug, project, delivery, stage)` and this component is
+   * visibility-toggled rather than destroyed, so the answer outlives every row change the parent
+   * makes. The save-without-approval path depends on exactly this: the lookup legitimately found
+   * NOTHING, the save then created the row, and the banner tells the user to go to Planning and
+   * restore it. Without the token the key is unchanged, `distinctUntilChanged` drops the
+   * re-emission, no second lookup runs, and no Restore button ever appears — a message naming an
+   * action the product cannot perform.
+   */
+  it('re-runs the lookup when the parent reports it changed the stored row', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'none', brief: null, briefId: null, etag: null, approved: false }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
+    expect(savedBrief()).toBeNull();
+
+    // The parent saved the row this lookup had just found nothing for.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-new', etag: 'W/"v1"', approved: false }))
+    );
+    fixture.componentRef.setInput('savedBriefRefreshToken', 1);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(2);
+    expect(savedBrief()).toEqual(exampleBrief);
+  });
+
+  /**
+   * The offer must carry the token its own lookup was DISPATCHED under, because that is the only
+   * thing telling the parent whether this answer post-dates the parent's last write to the row.
+   * Read at response time instead, an answer that left before a write could come back claiming
+   * to be newer than it — and the parent would discard a record that is in fact the current one.
+   */
+  it('stamps the restore offer with the token its lookup was dispatched under', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: false }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    // The parent wrote to the row and announced it; this lookup runs after that.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v2"', approved: true }))
+    );
+    fixture.componentRef.setInput('savedBriefRefreshToken', 7);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    const restored: { readAt: number }[] = [];
+    fixture.componentInstance.restoreSavedBriefRequested.subscribe((e) => restored.push(e));
+    (fixture.componentInstance as unknown as { restoreSavedBrief(): void }).restoreSavedBrief();
+    await fixture.whenStable();
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].readAt).toBe(7);
+  });
+
+  /**
+   * The token is OPAQUE — only change matters — so an unchanged one must not cost a request.
+   * Re-setting the same value is what every unrelated change detection pass does.
+   */
+  it('does not re-run the lookup when the token is set to the value it already holds', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
+
+    fixture.componentRef.setInput('savedBriefRefreshToken', 0);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * And a bump before any URL has been typed must not fire a lookup for an empty slug. The token
+   * observable emits immediately (it is a signal), so adding it to the `combineLatest` could have
+   * started the pipeline on its own; `slugInput$` is a plain Subject with no initial value, which
+   * is what keeps the gate closed.
+   */
+  it('does not look anything up when the token bumps before a url is entered', async () => {
+    fixture.componentRef.setInput('savedBriefRefreshToken', 1);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    expect(campaignService.loadBrief).not.toHaveBeenCalled();
   });
 });
 
@@ -1666,6 +1790,133 @@ describe('PlanningTabComponent email brief editing', () => {
     expect(details?.name).toBe('');
     expect(details?.dates).toBe('');
     expect(details?.themes).toEqual([]);
+  });
+
+  interface ExtensionInternals {
+    handleSSEEvent(e: SSEEvent<CampaignSSEEventType>): void;
+    handleRefineSSEEvent(e: SSEEvent<CampaignSSEEventType>, feedback: string): void;
+    googleCallouts(): string[];
+    googleSitelinks(): { text: string; finalUrl: string }[];
+    onProceedToImplementation(): void;
+    reset(): void;
+  }
+
+  function extensions(): ExtensionInternals {
+    return fixture.componentInstance as unknown as ExtensionInternals;
+  }
+
+  async function buildForExtensions(): Promise<void> {
+    fixture = TestBed.createComponent(PlanningTabComponent);
+    fixture.componentRef.setInput('programTypeConfig', programTypeConfig);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  // The two extension events are carried straight through to the Implementation tab's editors,
+  // so an unhandled type here is a silently dropped list -- the generator ran, the operator was
+  // told it ran, and the editor opens empty.
+  it('holds the callout and sitelink lists the generate stream sends', async () => {
+    await buildForExtensions();
+
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+
+    expect(extensions().googleCallouts()).toEqual(['Free To Attend']);
+    expect(extensions().googleSitelinks()).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
+  });
+
+  // The REFINE stream has no arm for either, because the server's refine path yields neither:
+  // re-generating an extension list would overwrite whatever the operator has since edited into
+  // it. A handler that quietly accepted them would undo that decision from the client side.
+  it('ignores callouts and sitelinks arriving on the refine stream', async () => {
+    await buildForExtensions();
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+
+    extensions().handleRefineSSEEvent({ type: 'callouts', data: ['Replaced'] } as SSEEvent<CampaignSSEEventType>, 'more technical');
+
+    expect(extensions().googleCallouts()).toEqual(['Free To Attend']);
+  });
+
+  // New Brief must leave nothing of the discarded brief behind: a stale sitelink points the next
+  // event's ad at the previous event's agenda page.
+  it('clears both extension lists on reset', async () => {
+    await buildForExtensions();
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+
+    extensions().reset();
+
+    expect(extensions().googleCallouts()).toEqual([]);
+    expect(extensions().googleSitelinks()).toEqual([]);
+  });
+
+  /**
+   * The same clear, at the OTHER site that needs it — and the one the reset test above cannot
+   * stand in for.
+   *
+   * `generate()` clears both lists before the new stream starts. Without it, a second generate
+   * that produces no extensions — a page with no linkable sections, a model call that failed and
+   * degraded to a status line — hands the Implementation tab the PREVIOUS event's lists, which
+   * `onProceedToImplementation` emits as present values because they are non-empty. That is the
+   * stale-sitelink defect the reset test names, reached by regenerating rather than by New Brief.
+   */
+  it('clears both extension lists when a new generation starts', async () => {
+    await buildForExtensions();
+    // Never completes, so the component stays in 'generating' and the cleared signals are
+    // observable rather than overwritten by the new stream's own events.
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(new Subject() as never);
+
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+
+    // `generate()` returns early unless the form validates, which would make the assertions below
+    // pass with the clears deleted.
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+
+    expect(extensions().googleCallouts()).toEqual([]);
+    expect(extensions().googleSitelinks()).toEqual([]);
+  });
+
+  /**
+   * The hand-off is where `[]` and absence stop meaning the same thing. `populateFromBrief` and
+   * `applyDraft` seed the Implementation tab's editors on `!== undefined`, so an emitted `[]`
+   * CLEARS an editor the operator may have filled by hand, and stores `[]` on the saved row —
+   * making the `null`-vs-`[]` contract those two functions are built on unreachable.
+   *
+   * Both halves are asserted, because an emitter hard-coded to `undefined` would pass the empty
+   * case on its own.
+   */
+  it('emits the extension lists only when the generator produced them', async () => {
+    await buildForExtensions();
+    const emitted: CampaignBriefOutput[] = [];
+    fixture.componentInstance.proceedToImplementation.subscribe((brief: CampaignBriefOutput) => emitted.push(brief));
+
+    extensions().onProceedToImplementation();
+
+    expect(emitted[0].googleCallouts).toBeUndefined();
+    expect(emitted[0].googleSitelinks).toBeUndefined();
+
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+    extensions().onProceedToImplementation();
+
+    expect(emitted[1].googleCallouts).toEqual(['Free To Attend']);
+    expect(emitted[1].googleSitelinks).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
   });
 });
 

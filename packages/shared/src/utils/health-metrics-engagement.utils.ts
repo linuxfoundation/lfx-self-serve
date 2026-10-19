@@ -151,12 +151,13 @@ export function resolveHealthMetricsEngagementDeltaDirection(value: number | nul
 
 /** A point change on an attendance share: `+3.2pp`. Not a percent — the share itself is one. */
 export function formatHealthMetricsEngagementPpDelta(pointChange: number | null): string {
-  return formatDelta(pointChange, 'pp');
-}
+  if (pointChange === null) {
+    return '—';
+  }
 
-/** A fractional change in a count, rendered as a percent: `+12.0%`. */
-export function formatHealthMetricsEngagementPctDelta(fractionChange: number | null): string {
-  return formatDelta(fractionChange, '%');
+  // The sign comes from the rounded value, never the raw one.
+  const rounded = roundDeltaForDisplay(pointChange);
+  return `${rounded >= 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}pp`;
 }
 
 /**
@@ -292,17 +293,7 @@ function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly
   return periods.find((period) => period.range === range) ?? periods[periods.length - 1] ?? null;
 }
 
-/** The one decimal both delta labels print; the direction resolver reads the same value. */
+/** The one decimal the delta label prints; the direction resolver reads the same value. */
 function roundDeltaForDisplay(fractionChange: number): number {
   return Number((fractionChange * 100).toFixed(1));
-}
-
-/** `pp` and `%` differ only in unit — the sign comes from the rounded value, never the raw one. */
-function formatDelta(fractionChange: number | null, unit: 'pp' | '%'): string {
-  if (fractionChange === null) {
-    return '—';
-  }
-
-  const rounded = roundDeltaForDisplay(fractionChange);
-  return `${rounded >= 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}${unit}`;
 }

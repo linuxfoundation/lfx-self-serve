@@ -8,7 +8,7 @@ import { HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/co
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { NEVER, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -58,6 +58,7 @@ describe('EngagementRepresentativesComponent', () => {
   let fixture: ComponentFixture<EngagementRepresentativesComponent>;
   let getEngagementRepresentatives: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
+  let queryParamMap: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
   async function render(
     payload: HealthMetricsEngagementRepresentatives | Error = response(),
@@ -66,6 +67,7 @@ describe('EngagementRepresentativesComponent', () => {
     lifecycle?: string[]
   ): Promise<void> {
     getEngagementRepresentatives = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
+    queryParamMap = new BehaviorSubject(convertToParamMap(queryParams));
 
     await TestBed.configureTestingModule({
       imports: [EngagementRepresentativesComponent],
@@ -75,8 +77,8 @@ describe('EngagementRepresentativesComponent', () => {
         { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementRepresentatives } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
-        // The component reads its initial segment off the URL, and writes it back.
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
+        // The component reads its initial segment off the URL, writes it back, and follows later changes.
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) }, queryParamMap } },
       ],
     }).compileComponents();
 
@@ -274,6 +276,21 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.componentInstance['filter']()).toBe('never');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).not.toBeNull();
+  });
+
+  it('follows a later URL change to the cut, as when the Never attended stat links here', async () => {
+    const never = repRow({
+      key: 'r-2',
+      periods: [{ range: 'YTD', meetingsInvited: 6, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: 1 }],
+    });
+    await render(response({ rows: [repRow(), never], counts: counts(2, 1) }));
+    expect(fixture.componentInstance['filter']()).toBe('all');
+
+    queryParamMap.next(convertToParamMap({ repFilter: 'never' }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['filter']()).toBe('never');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
   });
 
   // The segment is shareable state, so it belongs in the URL — and the default belongs out of it.

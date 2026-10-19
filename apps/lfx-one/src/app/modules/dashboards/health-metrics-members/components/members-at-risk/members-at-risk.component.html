@@ -29,7 +29,7 @@
       </span>
     </div>
 
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-at-risk-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-at-risk-hero">
       <div class="flex flex-col gap-2">
         <span class="text-3xl font-semibold tabular-nums text-red-600" data-testid="members-at-risk-outstanding">{{ summary().outstandingLabel }}</span>
         <span class="text-[12.5px] text-gray-500">Outstanding balance</span>
@@ -37,15 +37,15 @@
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-at-risk-side">
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">High risk</dt>
+          <dt class="text-[11.5px] text-gray-500">High risk</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-high">{{ summary().highRiskLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">Medium risk</dt>
+          <dt class="text-[11.5px] text-gray-500">Medium risk</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-medium">{{ summary().mediumRiskLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">Members at risk</dt>
+          <dt class="text-[11.5px] text-gray-500">Members at risk</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-red-600" data-testid="members-at-risk-members">{{ summary().memberCountLabel }}</dd>
         </div>
       </dl>
@@ -71,6 +71,7 @@
     }
 
     <lfx-table
+      [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
       [lazy]="true"

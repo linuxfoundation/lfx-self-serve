@@ -140,18 +140,18 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-// Neutralize the Osano consent overlay, which otherwise intercepts pointer events and can affect
+// Neutralize the Transcend consent overlay, which otherwise intercepts pointer events and can affect
 // layout measurements. Registered via addInitScript so it applies before page scripts run (mirrors
 // profile-edit-drawer.spec.ts / me-profile-nav.spec.ts).
 async function suppressCookieBanner(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const hide = (): void => {
-      if (document.getElementById('e2e-hide-osano')) {
+      if (document.getElementById('e2e-hide-transcend')) {
         return;
       }
       const style = document.createElement('style');
-      style.id = 'e2e-hide-osano';
-      style.textContent = '.osano-cm-window { display: none !important; pointer-events: none !important; }';
+      style.id = 'e2e-hide-transcend';
+      style.textContent = '#transcend-consent-manager { display: none !important; pointer-events: none !important; }';
       (document.head ?? document.documentElement).appendChild(style);
     };
     if (document.readyState === 'loading') {

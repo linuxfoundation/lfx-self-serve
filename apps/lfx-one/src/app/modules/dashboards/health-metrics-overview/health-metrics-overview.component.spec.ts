@@ -304,8 +304,8 @@ describe('HealthMetricsOverviewComponent', () => {
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('no registration goal set');
       expect(evtTile.textContent).not.toContain('Awaiting data');
-      // A "no data" figure has nothing to drill into.
-      expect(evtTile.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]')).toBeNull();
+      // A no-data tile still opens its tab, which shows its own empty state.
+      expect(evtTile.querySelector('[data-testid="health-metrics-overview-tile-link"]').getAttribute('href')).toBe('/foundation/health-metrics/events');
       httpMock.verify();
     });
 
@@ -342,15 +342,13 @@ describe('HealthMetricsOverviewComponent', () => {
       const engTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng"]');
       expect(engTile.textContent).toContain('no data this period');
       expect(engTile.textContent).not.toContain('8 of 31');
-      expect(engTile.textContent).not.toContain('View groups');
-      expect(evtTile.textContent).not.toContain('View forecast');
       // Engagement never shows a status chip, failed read included; other areas keep "Awaiting data".
       expect(engTile.textContent).not.toContain('Awaiting data');
       expect(evtTile.textContent).toContain('Awaiting data');
       httpMock.verify();
     });
 
-    it('renders the live Engagement tile with its link to the Engagement tab and no status chip', async () => {
+    it('links the live Engagement tile to the top of the Engagement tab, with no status chip', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
@@ -368,13 +366,12 @@ describe('HealthMetricsOverviewComponent', () => {
       const engTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng"]');
       expect(engTile.textContent).toContain('3 of 12');
       expect(engTile.textContent).not.toContain('Awaiting data');
-      const link: HTMLAnchorElement = engTile.querySelector('[data-testid="health-metrics-overview-tile-eng-link"]');
-      expect(link.getAttribute('href')).toContain('/foundation/health-metrics/engagement');
-      expect(link.getAttribute('href')).toContain('#committees');
+      const link: HTMLAnchorElement = engTile.querySelector('[data-testid="health-metrics-overview-tile-link"]');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement');
       httpMock.verify();
     });
 
-    it('renders the live Events tile with its status chip and a link to the Events tab forecast', async () => {
+    it('links the live Events tile to the top of the Events tab and keeps its status chip', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
@@ -389,13 +386,13 @@ describe('HealthMetricsOverviewComponent', () => {
 
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).toContain('Needs attention');
-      const link: HTMLAnchorElement = evtTile.querySelector('[data-testid="health-metrics-overview-tile-evt-link"]');
-      expect(link.textContent).toContain('View forecast');
-      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events#forecast');
+      const link: HTMLAnchorElement = evtTile.querySelector('[data-testid="health-metrics-overview-tile-link"]');
+      expect(link.textContent).not.toContain('View');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/events');
       httpMock.verify();
     });
 
-    it('renders the live Members tile with its status chip and a link to the all members list', async () => {
+    it('links the live Members tile to the top of the Members tab and keeps its status chip', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
@@ -410,13 +407,12 @@ describe('HealthMetricsOverviewComponent', () => {
 
       const memTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-mem"]');
       expect(memTile.textContent).toContain('Needs action');
-      const link: HTMLAnchorElement = memTile.querySelector('[data-testid="health-metrics-overview-tile-mem-link"]');
-      expect(link.textContent).toContain('View members');
-      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#list');
+      const link: HTMLAnchorElement = memTile.querySelector('[data-testid="health-metrics-overview-tile-link"]');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members');
       httpMock.verify();
     });
 
-    it('renders the live Non-Members tile with a link to the High fit organizations', async () => {
+    it('links the live Non-Members tile to the top of the Non-Members tab', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
@@ -431,13 +427,12 @@ describe('HealthMetricsOverviewComponent', () => {
 
       const nonTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-non"]');
       expect(nonTile.textContent).toContain('Opportunity');
-      const link: HTMLAnchorElement = nonTile.querySelector('[data-testid="health-metrics-overview-tile-non-link"]');
-      expect(link.textContent).toContain('View organizations');
-      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonFit=high-fit#orgs');
+      const link: HTMLAnchorElement = nonTile.querySelector('[data-testid="health-metrics-overview-tile-link"]');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/non-members');
       httpMock.verify();
     });
 
-    it('renders the live Training tile with a link to the Training tab enrollment', async () => {
+    it('links the live Training tile to the top of the Training tab', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
@@ -451,13 +446,12 @@ describe('HealthMetricsOverviewComponent', () => {
       await fixture.whenStable();
 
       const trnTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]');
-      const link: HTMLAnchorElement = trnTile.querySelector('[data-testid="health-metrics-overview-tile-trn-link"]');
-      expect(link.textContent).toContain('View enrollment');
-      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/training#enroll');
+      const link: HTMLAnchorElement = trnTile.querySelector('[data-testid="health-metrics-overview-tile-link"]');
+      expect(link.getAttribute('href')).toBe('/foundation/health-metrics/training');
       httpMock.verify();
     });
 
-    it('keeps a no-data Training tile on the strip, neutral and without a link', async () => {
+    it('keeps a no-data Training tile on the strip, neutral and still linked to its tab', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
@@ -473,7 +467,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const trnTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-trn"]');
       expect(trnTile).not.toBeNull();
       expect(trnTile.textContent).toContain('no data this period');
-      expect(trnTile.querySelector('[data-testid="health-metrics-overview-tile-trn-link"]')).toBeNull();
+      expect(trnTile.querySelector('[data-testid="health-metrics-overview-tile-link"]').getAttribute('href')).toBe('/foundation/health-metrics/training');
       httpMock.verify();
     });
 

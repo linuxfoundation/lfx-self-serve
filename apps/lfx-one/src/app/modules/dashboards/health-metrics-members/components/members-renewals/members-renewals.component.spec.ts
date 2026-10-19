@@ -105,6 +105,8 @@ describe('MembersRenewalsComponent', () => {
     expect(getMembersRenewals).toHaveBeenCalledWith({ foundationSlug: 'acme', window: '90_days', offset: 0, pageSize: 10 });
     expect(text('members-renewals-window')).toBe('Next 90 days Next 180 days This year');
     expect(text('members-renewals-value')).toBe('$185K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-renewals-hero')?.classList).not.toContain('border');
     expect(text('members-renewals-due')).toBe('3');
     expect(text('members-renewals-count')).toBe('3 renewals');
     expect(query('members-renewals-coverage')).toBeNull();

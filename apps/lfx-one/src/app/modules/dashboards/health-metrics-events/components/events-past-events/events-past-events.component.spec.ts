@@ -126,6 +126,14 @@ describe('EventsPastEventsComponent', () => {
     expect(text('events-past-events-revenue-past-2')).toBe('$0');
   });
 
+  it('shows the total unboxed, captioned below, with Hit goal as a side stat', async () => {
+    await render();
+
+    expect(query('events-past-events-card')?.classList).not.toContain('border');
+    expect(query('events-past-events-headline')?.lastElementChild?.textContent?.trim()).toBe('Total registrations, past events');
+    expect(query('events-past-events-goal-met')?.querySelector('dt')?.textContent?.trim()).toBe('Hit goal');
+  });
+
   it('reports the period count for the badge and settles once the list lands', async () => {
     await render();
 

@@ -133,6 +133,8 @@ describe('MembersTiersComponent', () => {
 
     expect(text('members-tiers-meta')).toBe('3 tiers · 3 years');
     expect(text('members-tiers-headline-value')).toBe('22');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-tiers-hero')?.classList).not.toContain('border');
     expect(text('members-tiers-headline-delta')).toBe('not available');
     expect(query('members-tiers-headline-baseline')).toBeNull();
     expect(text('members-tiers-headline-label')).toBe('Members');

@@ -29,7 +29,7 @@
       subtitle="Attendance appears here once a meeting in the selected period is recorded."
       data-testid="members-board-empty" />
   } @else {
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-board-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-board-hero">
       <div class="flex flex-col gap-2">
         <span
           class="text-3xl font-semibold tabular-nums"
@@ -43,15 +43,15 @@
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-board-side">
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">{{ summary().otherCohortLabel }}</dt>
+          <dt class="text-[11.5px] text-gray-500">{{ summary().otherCohortLabel }}</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-board-other">{{ summary().otherCohortPctLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">Attended / invited</dt>
+          <dt class="text-[11.5px] text-gray-500">Attended / invited</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-board-attended">{{ summary().attendedInvitedLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">Never attended</dt>
+          <dt class="text-[11.5px] text-gray-500">Never attended</dt>
           <dd
             class="text-[17px] font-semibold tabular-nums"
             [class.text-red-600]="summary().neverAttendedCount > 0"
@@ -105,6 +105,7 @@
     </div>
 
     <lfx-table
+      [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
       [lazy]="true"
