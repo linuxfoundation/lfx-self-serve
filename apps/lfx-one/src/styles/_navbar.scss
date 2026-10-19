@@ -745,7 +745,8 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     white-space: nowrap;
-    color: #62748e;
+    // Lighter than the design's #62748e (~3.2:1 on the #002741 panel) so the 10px label meets WCAG AA (~5.8:1).
+    color: var(--color-slate-slate-400);
   }
 
   .lfxn__section-rule,
