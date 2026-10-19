@@ -298,7 +298,11 @@ export class PersonaDetectionService {
     const none: RootMarketingOpsGrants = { globalMarketingOps: false };
     const promise = resolveRootProjectUid(req, this.natsService)
       .then(async (rootUid) => {
-        if (!rootUid) return none;
+        // A null ROOT uid means the lookup failed (ROOT always exists), so the grant is unverified, not denied.
+        if (!rootUid) {
+          this.failedMarketingGrantChecks.add(req);
+          return none;
+        }
         const results = await this.accessCheckService.checkAccessStrict(req, [{ resource: 'project', id: rootUid, access: 'global_marketing_ops' }]);
         return { globalMarketingOps: results.get(`${rootUid}#global_marketing_ops`) ?? false };
       })
@@ -358,7 +362,11 @@ export class PersonaDetectionService {
 
     const promise = resolveRootProjectUid(req, this.natsService)
       .then((rootUid) => {
-        if (!rootUid) return false;
+        // A null ROOT uid means the lookup failed (ROOT always exists): unverified, not denied.
+        if (!rootUid) {
+          if (access === 'marketing_auditor') this.failedMarketingGrantChecks.add(req);
+          return false;
+        }
         return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: rootUid, access });
       })
       .catch((error) => {

@@ -335,6 +335,47 @@ describe('PersonaDetectionService', () => {
       expect(response.marketingGrantCheckFailed).toBe(true);
     });
 
+    // Persona detection answers; only the ROOT slug -> uid lookup times out.
+    function rootLookupTimesOut(): void {
+      natsRequest.mockImplementation((subject: string) => {
+        if (subject.includes('personas')) {
+          return Promise.resolve({ data: JSON.stringify({ projects: [] }) });
+        }
+        return Promise.reject(new Error('timeout'));
+      });
+    }
+
+    it('reports a ROOT lookup timeout on the campaign path (global_marketing_ops) as unverified', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(true);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+      expect(checkAccess).not.toHaveBeenCalled();
+    });
+
+    it('reports a ROOT lookup timeout on the marketing-auditor path as unverified', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(true);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'marketing_auditor');
+
+      expect(response.isMarketingAuditor).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    it('does not count a failed ROOT lookup for a non-marketing check (auditor_guard) as a marketing failure', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(false);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'none');
+
+      expect(response.isAuditor).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(false);
+    });
+
     it('reports a plain denial as verified', async () => {
       personaEnv();
       checkSingleAccess.mockResolvedValue(false);
