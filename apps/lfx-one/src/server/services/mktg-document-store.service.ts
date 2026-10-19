@@ -515,7 +515,7 @@ export class MktgDocumentStoreService {
     }
   }
 
-  /** Commit selection and visible revision IDs atomically, returning null on a lost comparison. */
+  /** Preserve committed IDs despite unreadable objects; publish incoming IDs/selection or return null on a lost CAS. */
   private async writeCurrent(
     req: Request,
     project: string,
@@ -525,7 +525,8 @@ export class MktgDocumentStoreService {
     revisionId: string,
     revisionIds: string[]
   ): Promise<MktgDocumentCurrentRecord | null> {
-    const record = { revisionId, revisionIds, changedAt: new Date().toISOString(), changedBy: this.author(req) };
+    const committedIds = [...new Set([...(snapshot.record?.revisionIds ?? []), ...revisionIds])];
+    const record = { revisionId, revisionIds: committedIds, changedAt: new Date().toISOString(), changedBy: this.author(req) };
     const written = await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', this.currentKey(project, type, documentId), {
       body: Buffer.from(JSON.stringify(record)),
       contentType: MKTG_REVISION_CONTENT_TYPE,

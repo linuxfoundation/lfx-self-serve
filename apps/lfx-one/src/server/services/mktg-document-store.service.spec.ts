@@ -390,6 +390,32 @@ describe('MktgDocumentStoreService', () => {
     });
   });
 
+  describe('committed manifest recovery', () => {
+    it.each([
+      { action: 'append', fault: 'missing' },
+      { action: 'append', fault: 'corrupt' },
+      { action: 'make-current', fault: 'missing' },
+      { action: 'make-current', fault: 'corrupt' },
+    ])('preserves and recovers a $fault revision after $action', async ({ action, fault }) => {
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# First'), 'first');
+      const second = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Second'), 'second');
+      const third = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Third'), 'third');
+      const unreadable = action === 'append' ? second : third;
+      const original = storedObject(unreadable.key);
+      if (fault === 'missing') store.objects.delete(unreadable.key);
+      else store.objects.set(unreadable.key, { ...original, body: 'invalid revision bytes', metadata: { origin: 'generated' } });
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions.some((entry) => entry.id === unreadable.id)).toBe(false);
+      if (action === 'append') await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Fourth'), 'fourth');
+      else await service.restoreRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      const manifest = JSON.parse(storedObject(`documents/${PROJECT}/brand-kit/living/current.json`).body);
+      expect(manifest.revisionIds).toEqual(expect.arrayContaining([first.id, second.id, third.id]));
+      expect(new Set(manifest.revisionIds).size).toBe(manifest.revisionIds.length);
+      store.objects.set(unreadable.key, original);
+      expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions.some((entry) => entry.id === unreadable.id)).toBe(true);
+      expect((await service.getRevision(req, PROJECT, BRAND_KIT, 'living', unreadable.id))?.markdown).toBe(unreadable.record.bundle.markdown);
+    });
+  });
+
   describe('PR round 2 contracts', () => {
     it.each(['automatic', 'explicit', 'root'])('retries a lost CAS with a fresh sequence and the %s base contract', async (base) => {
       const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Initial'), 'initial');

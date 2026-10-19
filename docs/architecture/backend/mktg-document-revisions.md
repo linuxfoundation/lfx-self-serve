@@ -24,7 +24,9 @@ change does not introduce a Revise endpoint or UI.
 
 ## Conditional publication
 
-The current record also holds the IDs of committed revisions. An immutable
+The current record also holds the IDs of committed revisions. Appends and Make
+current preserve every previously committed ID even if its object is temporarily
+missing or unreadable; restoring the object makes it visible again. An immutable
 bundle is first created with `If-None-Match: *`, then a compare-and-swap of the
 current record publishes its ID and selects it together. An interrupted or
 losing write can leave an immutable object, but it is not visible history.
