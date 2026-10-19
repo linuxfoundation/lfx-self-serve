@@ -169,4 +169,17 @@ describe('NavTooltipDirective', () => {
     vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
     expect(tooltips().map((tooltip) => tooltip.getAttribute('role'))).toEqual(['group']);
   });
+
+  it('cancels a pending hide when focus moves into the card during the grace period', () => {
+    host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
+    TestBed.tick();
+    first.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+
+    first.dispatchEvent(new MouseEvent('mouseleave'));
+    document.body.querySelector<HTMLElement>('[data-testid="nav-tooltip-chip-k8s"]')?.focus();
+    vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS * 2);
+
+    expect(tooltips()).toHaveLength(1);
+  });
 });

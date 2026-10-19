@@ -167,6 +167,9 @@ export class NavTooltipDirective {
           if (!tooltip.contains(target) && !host.contains(target)) this.hide();
         }),
         this.renderer.listen(tooltip, 'mouseenter', () => this.cancelHide()),
+        // Focus arriving in the card (ArrowDown into a chip) cancels a hide already scheduled by the
+        // pointer leaving during the grace period.
+        this.renderer.listen(tooltip, 'focusin', () => this.cancelHide()),
         this.renderer.listen(tooltip, 'mouseleave', () => this.dismiss()),
         this.renderer.listen(tooltip, 'focusout', (event: FocusEvent) => {
           const next = event.relatedTarget as Node | null;
