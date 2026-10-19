@@ -661,6 +661,27 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
       });
 
+      it('assigns nothing when Yes lands after the question was dismissed but before it is torn down', async () => {
+        const assignDesignee = vi.fn(() => of({ assigned: true }));
+        const onClose = new Subject<unknown>();
+        const onDestroy = new Subject<void>();
+        const question = { onClose, onDestroy, close: vi.fn((value?: unknown) => onClose.next(value)) };
+        openDialog.mockReturnValueOnce(question).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee });
+
+        clickStart(fixture);
+        question.close();
+        answerYes(fixture);
+        onDestroy.next();
+        fixture.detectChanges();
+
+        expect(assignDesignee).not.toHaveBeenCalled();
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
+        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+      });
+
       it('keeps the question open while Yes assigns the viewer, then closes it and rests on the overview', async () => {
         const response = new Subject<{ assigned: true }>();
         const assignDesignee = vi.fn(() => response);

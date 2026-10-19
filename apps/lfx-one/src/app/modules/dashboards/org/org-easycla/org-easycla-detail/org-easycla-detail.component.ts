@@ -1121,6 +1121,8 @@ export class OrgEasyclaDetailComponent {
   }
 
   private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep, questionRef: DynamicDialogRef): void {
+    // A dismissed question stays clickable through its leave animation, still `asking`.
+    if (this.uncommittedSigningDialog !== questionRef) return;
     if (!this.signingContextHeld(orgUid, chosen)) {
       questionRef.close();
       return;
