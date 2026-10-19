@@ -419,7 +419,7 @@ export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-sch
  * @description Sent with the self-removal request and logged by the BFF so removals can be broken
  * down by where they came from. A value outside this list is logged as `unknown`.
  */
-export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join'] as const;
+export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link'] as const;
 
 /**
  * Feature rows the composer preview lists, in display order.
