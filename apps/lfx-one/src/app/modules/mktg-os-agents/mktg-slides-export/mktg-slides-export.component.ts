@@ -18,11 +18,12 @@ import {
   MktgSlidesExportRecord,
   MktgSlidesExportResultResponse,
   MktgSlidesExportRevisionRef,
+  MktgSlidesExportRunUpdate,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
 import { isMktgSlidesExportStale, mktgSlidesExportBrandSummary } from '@lfx-one/shared/utils';
 import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
-import { distinctUntilChanged, of, Subscription, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, Observable, of, startWith, Subject, Subscription, switchMap, tap } from 'rxjs';
 
 // Export to Google Slides on a Marketing OS asset page (the Messaging
 // Framework and the Brand Kit): the panel under the asset's header that the
@@ -31,7 +32,11 @@ import { distinctUntilChanged, of, Subscription, switchMap, tap } from 'rxjs';
 // a newer revision since), asks Update or Create when a deck already exists,
 // shows progress while the exporter works, then the deck (opens in a new
 // tab), its slide count and what was branded — or a plain message with a
-// retry. Slides are only an export: the asset itself stays the app page.
+// retry. When the last export cannot be read it says so and offers to check
+// again rather than Create, and a panel that comes back to a document whose
+// export is still under way in this browser shows that export instead of
+// offering a second deck. Slides are only an export: the asset itself stays
+// the app page.
 @Component({
   selector: 'lfx-mktg-slides-export',
   imports: [DatePipe, ButtonComponent, MessageComponent],
@@ -59,8 +64,10 @@ export class MktgSlidesExportComponent {
   protected readonly failureMessage = signal('');
   protected readonly failureDeckLink = signal<string | null>(null);
   private readonly mode = signal<MktgSlidesExportMode>('create');
-  /** True once the current target's last export has been read (or its read failed): until then Export cannot tell Update from Create. */
+  /** True once the current target's last export has been read: until then Export cannot tell Update from Create. */
   private readonly lookupSettled = signal(false);
+  /** True when the current target's last export could not be read: the panel offers to check again, and Export waits. */
+  protected readonly lookupFailed = signal(false);
 
   // === Computed ===
   /** True while an export runs: the header's button shows it and takes no second click. */
@@ -68,8 +75,8 @@ export class MktgSlidesExportComponent {
   /**
    * The header's button takes a click only for a target whose last export is
    * known and with no export running: a click while the last export is still
-   * being read would see no deck and create a second one instead of offering
-   * Update.
+   * being read, or after the read failed, would see no deck and create a
+   * second one instead of offering Update.
    */
   public readonly canExport = computed(() => this.target() !== null && this.lookupSettled() && !this.busy());
   protected readonly assetLabel = computed(() => {
@@ -91,26 +98,36 @@ export class MktgSlidesExportComponent {
   });
   /** The last export's line shows while nothing newer is on the panel. */
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
-  public readonly visible = computed(() => this.phase() !== 'idle' || this.last() !== null);
+  /** The failed check's line shows while nothing else is on the panel. */
+  protected readonly showLookupFailed = computed(() => this.lookupFailed() && this.phase() === 'idle');
+  public readonly visible = computed(() => this.phase() !== 'idle' || this.last() !== null || this.lookupFailed());
 
   private run: Subscription | null = null;
+  /** "Check again" after a failed read of the last export. */
+  private readonly lookupRetry = new Subject<void>();
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
       // The panel belongs to one target (project, document and revision). When
-      // the page names another, the export under way and its outcome go with
-      // the old one (the server keeps its record either way), and the last
-      // export is read again for the new one.
+      // the page names another, the panel stops watching the export under way
+      // (it keeps running, and the server keeps its record either way), the
+      // last export is read again for the new one, and an export of the new
+      // target's document still under way in this browser is shown again.
       toObservable(this.target)
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
           tap(() => this.reset()),
-          // The service logs a failed read and answers no last export: Export still works and creates a new deck.
-          switchMap((target) => (target ? this.exportService.last(target) : of<MktgSlidesExportLastResponse>({ last: null, latestRevision: null }))),
+          tap((target) => this.attach(target)),
+          switchMap((target) => (target ? this.readLast(target) : of<MktgSlidesExportLastResponse | null>({ last: null, latestRevision: null }))),
           takeUntilDestroyed()
         )
         .subscribe((response) => {
-          this.last.set(response.last);
+          if (!response) {
+            this.lookupFailed.set(true);
+            return;
+          }
+          // A deck this panel saw finished is newer than any record the read found.
+          this.last.set(this.record() ?? response.last);
           this.latest.set(response.latestRevision);
           this.lookupSettled.set(true);
         });
@@ -144,6 +161,10 @@ export class MktgSlidesExportComponent {
     this.phase.set('idle');
   }
 
+  protected onCheckAgain(): void {
+    this.lookupRetry.next();
+  }
+
   // === Private helpers ===
   private startExport(mode: MktgSlidesExportMode): void {
     const target = this.target();
@@ -151,29 +172,52 @@ export class MktgSlidesExportComponent {
       return;
     }
     this.mode.set(mode);
+    this.watch(this.exportService.run(target, mode));
+  }
+
+  /** Show an export of the target's document still under way in this browser (started before the panel last left it). */
+  private attach(target: MktgSlidesExportTarget | null): void {
+    const running = target ? this.exportService.running(target) : null;
+    if (running) {
+      this.watch(running);
+    }
+  }
+
+  /** Follow an export on the panel: progress, then its deck or its failure. */
+  private watch(run$: Observable<MktgSlidesExportRunUpdate>): void {
     this.phase.set('running');
     this.record.set(null);
     this.failure.set(null);
     this.failureMessage.set('');
     this.failureDeckLink.set(null);
     this.run?.unsubscribe();
-    this.run = this.exportService
-      .start({ ...target, mode })
-      .pipe(
-        tap((started) => this.logoNote.set(started.logoNote)),
-        switchMap((started) => this.exportService.poll(target, started))
-      )
-      .subscribe({
-        next: (result) => this.onResult(result),
-        error: (error: unknown) => this.onFailed(null, this.requestErrorMessage(error), null),
-      });
+    this.run = run$.subscribe({
+      next: (update) => {
+        this.logoNote.set(update.logoNote);
+        if (update.result) {
+          this.onResult(update.result);
+        }
+      },
+      error: (error: unknown) => this.onFailed(null, this.requestErrorMessage(error), null),
+    });
   }
 
-  /** Back to an empty panel: the export under way is cancelled and nothing of the previous target stays on screen. */
+  /** The target's last export, read again on "Check again"; null while the read has failed. */
+  private readLast(target: MktgSlidesExportTarget): Observable<MktgSlidesExportLastResponse | null> {
+    return this.lookupRetry.pipe(
+      startWith(undefined),
+      tap(() => this.lookupFailed.set(false)),
+      // The service logs the failure; the panel offers to check again.
+      switchMap(() => this.exportService.last(target).pipe(catchError(() => of(null))))
+    );
+  }
+
+  /** Back to an empty panel: the panel stops watching the export under way and nothing of the previous target stays on screen. */
   private reset(): void {
     this.run?.unsubscribe();
     this.run = null;
     this.lookupSettled.set(false);
+    this.lookupFailed.set(false);
     this.phase.set('idle');
     this.last.set(null);
     this.latest.set(null);

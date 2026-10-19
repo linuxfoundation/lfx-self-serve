@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
-import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -148,10 +148,7 @@ describe('MktgFrameworkViewComponent', () => {
     };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [
-        { provide: MktgPrintService, useValue: printer },
-        { provide: MktgSlidesExportService, useValue: slidesExport },
-      ],
+      providers: [{ provide: MktgPrintService, useValue: printer }, provideMktgSlidesExportStub(slidesExport)],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;

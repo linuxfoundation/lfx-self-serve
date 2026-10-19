@@ -11,7 +11,7 @@ import { BRAND_KIT_CONTRACT_ID, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/cons
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
-import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -182,7 +182,7 @@ describe('MktgDocumentViewComponent', () => {
         // The Boilerplates view says a failed copy through the app's toasts.
         MessageService,
         { provide: MktgDependencyService, useValue: { resolveBrandKit } },
-        { provide: MktgSlidesExportService, useValue: slidesExport },
+        provideMktgSlidesExportStub(slidesExport),
       ],
     }).compileComponents();
   });

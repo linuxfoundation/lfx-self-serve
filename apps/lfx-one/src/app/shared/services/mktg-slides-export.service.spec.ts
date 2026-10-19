@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { MKTG_SLIDES_EXPORT_FAILURE_MESSAGES, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
-import { MktgSlidesExportResultResponse, MktgSlidesExportStartResponse, MktgSlidesExportTarget } from '@lfx-one/shared/interfaces';
+import { MktgSlidesExportResultResponse, MktgSlidesExportRunUpdate, MktgSlidesExportStartResponse, MktgSlidesExportTarget } from '@lfx-one/shared/interfaces';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgSlidesExportService } from './mktg-slides-export.service';
@@ -56,16 +56,45 @@ describe('MktgSlidesExportService', () => {
     http.verify();
   });
 
-  it('logs a failed last-export read and answers no last export', () => {
+  it('logs a failed last-export read and passes the failure on, never answering "no last export"', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const { service, http } = configure();
     const answers: unknown[] = [];
+    let failed = false;
 
-    service.last(TARGET).subscribe((answer) => answers.push(answer));
+    service.last(TARGET).subscribe({ next: (answer) => answers.push(answer), error: () => (failed = true) });
     http.expectOne((request) => request.url === '/api/mktg-agents/slides-export/last').flush(null, { status: 500, statusText: 'Server Error' });
 
-    expect(answers).toEqual([{ last: null, latestRevision: null }]);
+    expect(answers).toEqual([]);
+    expect(failed).toBe(true);
     expect(consoleError).toHaveBeenCalledWith('[mktg-slides-export] last export read failed', expect.objectContaining({ documentId: 'living' }));
+    http.verify();
+  });
+
+  it('runs one export per document: started, then its result, shared with whoever comes back to the document until it ends', async () => {
+    vi.useFakeTimers();
+    const { service, http } = configure();
+    const first: MktgSlidesExportRunUpdate[] = [];
+
+    const subscription = service.run(TARGET, 'create').subscribe((update) => first.push(update));
+    http.expectOne('/api/mktg-agents/slides-export/start').flush(STARTED);
+    expect(first).toEqual([{ logoNote: null, result: null }]);
+    // The panel goes; the export does not.
+    subscription.unsubscribe();
+
+    const otherRevision = { ...TARGET, revisionId: `000002-${'b'.repeat(64)}` };
+    const running = service.running(otherRevision);
+    expect(running).not.toBeNull();
+    expect(service.run(otherRevision, 'create')).toBe(running);
+    expect(service.running({ ...TARGET, documentId: 'other' })).toBeNull();
+    const second: MktgSlidesExportRunUpdate[] = [];
+    running?.subscribe((update) => second.push(update));
+
+    await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/slides-export/result').flush({ status: 'failed', failure: 'google', message: 'm', deckLink: null });
+
+    expect(second.at(-1)).toEqual({ logoNote: null, result: { status: 'failed', failure: 'google', message: 'm', deckLink: null } });
+    expect(service.running(TARGET)).toBeNull();
     http.verify();
   });
 

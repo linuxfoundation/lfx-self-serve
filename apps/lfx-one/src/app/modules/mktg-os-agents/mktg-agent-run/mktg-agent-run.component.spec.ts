@@ -37,7 +37,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
-import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { ProjectContextService } from '@services/project-context.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectService } from '@services/project.service';
@@ -197,7 +197,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
-        { provide: MktgSlidesExportService, useValue: slidesExport },
+        provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
         {
           provide: MktgAnswerMemoryService,
@@ -1930,7 +1930,12 @@ describe('MktgAgentRunComponent', () => {
       query('mktg-agent-run-version-chip-1')?.click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(slidesExport.last).toHaveBeenLastCalledWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', contentSha256: '1'.repeat(64) });
+      expect(slidesExport.last).toHaveBeenLastCalledWith({
+        project: 'proj-1',
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        contentSha256: '1'.repeat(64),
+      });
 
       query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
       await new Promise((resolve) => setTimeout(resolve));

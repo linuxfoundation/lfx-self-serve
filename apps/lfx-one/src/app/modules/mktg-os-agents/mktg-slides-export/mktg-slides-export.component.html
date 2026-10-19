@@ -93,6 +93,21 @@
         }
       }
 
+      @if (showLookupFailed()) {
+        <div class="flex flex-wrap items-center gap-2 text-sm text-gray-700" data-testid="mktg-slides-export-lookup-failed">
+          <span
+            >Could not check for an earlier deck of this {{ assetLabel() }}. Export waits until the check succeeds, so no second deck is made by mistake.</span
+          >
+          <lfx-button
+            label="Check again"
+            icon="fa-light fa-rotate-right"
+            [text]="true"
+            size="small"
+            data-testid="mktg-slides-export-check-again"
+            (onClick)="onCheckAgain()" />
+        </div>
+      }
+
       @if (showLast()) {
         @if (last(); as previous) {
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500" data-testid="mktg-slides-export-last">

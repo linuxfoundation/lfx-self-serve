@@ -14,7 +14,7 @@ import {
   MktgSlidesExportStartResponse,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
-import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -86,7 +86,7 @@ describe('MktgSlidesExportComponent', () => {
     };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [provideNoopAnimations(), { provide: MktgSlidesExportService, useValue: service }, { provide: PLATFORM_ID, useValue: platformId }],
+      providers: [provideNoopAnimations(), provideMktgSlidesExportStub(service), { provide: PLATFORM_ID, useValue: platformId }],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
@@ -208,23 +208,81 @@ describe('MktgSlidesExportComponent', () => {
     expect(query('mktg-slides-export-failed')?.textContent).toContain(MKTG_SLIDES_EXPORT_START_MESSAGES['REVISION_NOT_STORED']);
   });
 
-  it('drops the export under way and its outcome when the page names another revision, and reads its last export', async () => {
+  it('keeps showing the document’s export under way when the page names another of its revisions, and reads its last export', async () => {
     let unsubscribed = false;
-    pollResult = new Observable<MktgSlidesExportResultResponse>(() => () => {
-      unsubscribed = true;
+    const results = new Subject<MktgSlidesExportResultResponse>();
+    pollResult = new Observable<MktgSlidesExportResultResponse>((subscriber) => {
+      const inner = results.subscribe(subscriber);
+      return () => {
+        unsubscribed = true;
+        inner.unsubscribe();
+      };
     });
     await setup();
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
     await click('host-export');
     expect(query('mktg-slides-export-running')).not.toBeNull();
 
-    lastResponse = { last: record({ revisionNumber: 1 }), latestRevision: null };
+    lastResponse = { last: null, latestRevision: null };
     fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
     await fixture.whenStable();
 
-    expect(unsubscribed).toBe(true);
-    expect(query('mktg-slides-export-running')).toBeNull();
-    expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
+    // The deck is the document's: its export goes on, the panel shows it, and Export waits for it.
+    expect(unsubscribed).toBe(false);
+    expect(query('mktg-slides-export-running')).not.toBeNull();
+    expect(exporter.canExport()).toBe(false);
     expect(service.last).toHaveBeenCalledTimes(2);
+
+    results.next({ status: 'ready', record: record() });
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-done')).not.toBeNull();
+    expect(service.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('attaches to an export still under way when the panel comes back to its document, never starting a second deck', async () => {
+    const results = new Subject<MktgSlidesExportResultResponse>();
+    pollResult = results;
+    await setup();
+    await click('host-export');
+
+    // The page goes elsewhere (another project's asset), then comes back while the export still runs.
+    lastResponse = { last: null, latestRevision: null };
+    fixture.componentInstance.target.set({ ...TARGET, project: 'proj-2' });
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-running')).toBeNull();
+    fixture.componentInstance.target.set(TARGET);
+    await fixture.whenStable();
+
+    expect(query('mktg-slides-export-running')).not.toBeNull();
+    await click('host-export');
+    expect(service.start).toHaveBeenCalledTimes(1);
+
+    results.next({ status: 'ready', record: record() });
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-open')?.getAttribute('href')).toBe(DECK_LINK);
+  });
+
+  it('says so when the last export cannot be read, and holds Export until a check succeeds', async () => {
+    await setup();
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    service.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
+    await fixture.whenStable();
+
+    expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
+    expect(exporter.canExport()).toBe(false);
+    await click('host-export');
+    expect(service.start).not.toHaveBeenCalled();
+
+    lastResponse = { last: record(), latestRevision: null };
+    await click('mktg-slides-export-check-again');
+
+    expect(service.last).toHaveBeenCalledTimes(3);
+    expect(query('mktg-slides-export-lookup-failed')).toBeNull();
+    expect(exporter.canExport()).toBe(true);
+    await click('host-export');
+    expect(query('mktg-slides-export-choice')).not.toBeNull();
+    expect(service.start).not.toHaveBeenCalled();
   });
 
   it('takes no Export click until the last export is read, so an existing deck is offered Update and never duplicated', async () => {
@@ -258,7 +316,7 @@ describe('MktgSlidesExportComponent', () => {
     service = { last: vi.fn(() => lookup), start: vi.fn(() => of(started)), poll: vi.fn(() => pollResult) };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [provideNoopAnimations(), { provide: MktgSlidesExportService, useValue: service }, { provide: PLATFORM_ID, useValue: 'browser' }],
+      providers: [provideNoopAnimations(), provideMktgSlidesExportStub(service), { provide: PLATFORM_ID, useValue: 'browser' }],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();

@@ -6,30 +6,58 @@ import { inject, Injectable } from '@angular/core';
 import { MKTG_SLIDES_EXPORT_API_PATH, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import {
   MktgSlidesExportLastResponse,
+  MktgSlidesExportMode,
   MktgSlidesExportResultRequest,
   MktgSlidesExportResultResponse,
+  MktgSlidesExportRunUpdate,
   MktgSlidesExportStartRequest,
   MktgSlidesExportStartResponse,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
 import { mktgSlidesExportFailed } from '@lfx-one/shared/utils';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import { catchError, defer, exhaustMap, map, Observable, of, take, takeLast, takeWhile, tap, throwError, timer, TimeoutError } from 'rxjs';
+import {
+  catchError,
+  defer,
+  exhaustMap,
+  finalize,
+  map,
+  Observable,
+  of,
+  shareReplay,
+  startWith,
+  switchMap,
+  take,
+  takeLast,
+  takeWhile,
+  tap,
+  throwError,
+  timer,
+  TimeoutError,
+} from 'rxjs';
 
 /**
  * Export to Google Slides for the Marketing OS asset pages. The BFF reads
  * the asset from the document store and starts the exporter; this client
  * starts it, polls it until the deck lands, and reads a document's last
  * export. The deck's logo is the BFF's to draw from the stored kit.
+ *
+ * It also holds the exports this browser has under way, one per document:
+ * a panel that goes (another version picked, the page left) does not stop
+ * the export, and a panel that comes back to the document attaches to it
+ * instead of offering Create while its deck is still being made.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgSlidesExportService {
   private readonly http = inject(HttpClient);
 
+  /** The exports under way, by document (project, document type and document id): the deck is the document's, whichever revision filled it. */
+  private readonly inFlight = new Map<string, Observable<MktgSlidesExportRunUpdate>>();
+
   /**
    * The document's last export and its latest revision. A failed read is
-   * logged and answers no last export: Export still works and creates a new
-   * deck, so the panel shows no stale "Open the last export".
+   * logged and rethrown: the panel says the check failed and offers to
+   * check again, never Create, since a deck may already exist.
    */
   public last(target: MktgSlidesExportTarget): Observable<MktgSlidesExportLastResponse> {
     const params = new HttpParams().set('project', target.project).set('agentKey', target.agentKey).set('documentId', target.documentId);
@@ -37,9 +65,42 @@ export class MktgSlidesExportService {
       take(1),
       catchError((error: unknown) => {
         console.error('[mktg-slides-export] last export read failed', { ...target, error });
-        return of<MktgSlidesExportLastResponse>({ last: null, latestRevision: null });
+        return throwError(() => error);
       })
     );
+  }
+
+  /**
+   * Start an export and poll it to its end: the start's logo note first,
+   * then the one result. The export belongs to its document until it ends,
+   * whoever is watching: it keeps running when every subscriber goes, and
+   * {@link running} hands it to the next panel on the same document. An
+   * export already under way for the document is returned instead of a
+   * second one.
+   */
+  public run(target: MktgSlidesExportTarget, mode: MktgSlidesExportMode): Observable<MktgSlidesExportRunUpdate> {
+    const key = this.documentKey(target);
+    const running = this.inFlight.get(key);
+    if (running) {
+      return running;
+    }
+    const run$ = this.start({ ...target, mode }).pipe(
+      switchMap((started) =>
+        this.poll(target, started).pipe(
+          map((result): MktgSlidesExportRunUpdate => ({ logoNote: started.logoNote, result })),
+          startWith<MktgSlidesExportRunUpdate>({ logoNote: started.logoNote, result: null })
+        )
+      ),
+      finalize(() => this.inFlight.delete(key)),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.inFlight.set(key, run$);
+    return run$;
+  }
+
+  /** The export under way for the target's document, or null. */
+  public running(target: MktgSlidesExportTarget): Observable<MktgSlidesExportRunUpdate> | null {
+    return this.inFlight.get(this.documentKey(target)) ?? null;
   }
 
   /** Start an export: the session to poll and the revision it exports. */
@@ -104,5 +165,9 @@ export class MktgSlidesExportService {
         })
       );
     });
+  }
+
+  private documentKey(target: MktgSlidesExportTarget): string {
+    return [target.project, target.agentKey, target.documentId].join('|');
   }
 }

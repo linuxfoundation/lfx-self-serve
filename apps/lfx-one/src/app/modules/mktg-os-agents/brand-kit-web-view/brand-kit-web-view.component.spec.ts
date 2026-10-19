@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
-import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { NEVER, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -47,7 +47,7 @@ describe('BrandKitWebViewComponent', () => {
     };
     await TestBed.configureTestingModule({
       imports: [BrandKitWebViewComponent],
-      providers: [provideNoopAnimations(), { provide: PLATFORM_ID, useValue: platformId }, { provide: MktgSlidesExportService, useValue: slidesExport }],
+      providers: [provideNoopAnimations(), { provide: PLATFORM_ID, useValue: platformId }, provideMktgSlidesExportStub(slidesExport)],
     }).compileComponents();
     fixture = TestBed.createComponent(BrandKitWebViewComponent);
     fixture.componentRef.setInput('kit', kit);

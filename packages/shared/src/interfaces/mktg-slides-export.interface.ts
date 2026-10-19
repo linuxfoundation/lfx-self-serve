@@ -198,6 +198,16 @@ export interface MktgSlidesExportLastResponse {
 /** Where the export panel stands. */
 export type MktgSlidesExportPhase = 'idle' | 'choosing' | 'running' | 'done' | 'failed';
 
+/**
+ * One step of an export the browser runs (client view model): once started,
+ * why no logo was sent (null when one was) and no result yet; then the
+ * poll's one result, ready or failed.
+ */
+export interface MktgSlidesExportRunUpdate {
+  logoNote: MktgSlidesExportLogoNote | null;
+  result: MktgSlidesExportResultResponse | null;
+}
+
 /** What the panel says about a finished export's brand (view model). */
 export interface MktgSlidesExportBrandSummary {
   /** e.g. "In the kit's colours and typeface, with the project logo on 9 layouts." */
