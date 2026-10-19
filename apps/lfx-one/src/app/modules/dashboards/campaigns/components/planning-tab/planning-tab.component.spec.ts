@@ -689,8 +689,10 @@ describe('PlanningTabComponent brief read-back', () => {
     await fixture.whenStable();
 
     // `approved` rides along with the id: campaign-service refuses a create from an unapproved
-    // brief, and the parent files a restored brief as create-ready without it.
-    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true }]);
+    // brief, and the parent files a restored brief as create-ready without it. `readAt` is the
+    // refresh token this lookup was dispatched under — 0 for a page's first read, which is what
+    // tells the parent this offer does NOT post-date anything it has written.
+    expect(restored).toEqual([{ brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: true, readAt: 0 }]);
     expect(generated).toEqual([]);
   });
 
@@ -750,6 +752,36 @@ describe('PlanningTabComponent brief read-back', () => {
 
     expect(campaignService.loadBrief).toHaveBeenCalledTimes(2);
     expect(savedBrief()).toEqual(exampleBrief);
+  });
+
+  /**
+   * The offer must carry the token its own lookup was DISPATCHED under, because that is the only
+   * thing telling the parent whether this answer post-dates the parent's last write to the row.
+   * Read at response time instead, an answer that left before a write could come back claiming
+   * to be newer than it — and the parent would discard a record that is in fact the current one.
+   */
+  it('stamps the restore offer with the token its lookup was dispatched under', async () => {
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v1"', approved: false }))
+    );
+    await typeEventUrl('https://events.example.com/kubecon-eu-2026');
+
+    // The parent wrote to the row and announced it; this lookup runs after that.
+    campaignService.loadBrief.mockReturnValue(
+      new Observable<CampaignBriefLoadResult>((s) => s.next({ status: 'loaded', brief: exampleBrief, briefId: 'brief-123', etag: 'W/"v2"', approved: true }))
+    );
+    fixture.componentRef.setInput('savedBriefRefreshToken', 7);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, BRIEF_LOOKUP_DEBOUNCE_WAIT_MS));
+    await fixture.whenStable();
+
+    const restored: { readAt: number }[] = [];
+    fixture.componentInstance.restoreSavedBriefRequested.subscribe((e) => restored.push(e));
+    (fixture.componentInstance as unknown as { restoreSavedBrief(): void }).restoreSavedBrief();
+    await fixture.whenStable();
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].readAt).toBe(7);
   });
 
   /**

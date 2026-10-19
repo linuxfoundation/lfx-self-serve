@@ -463,7 +463,7 @@ export class CampaignsComponent {
    * carried, i.e. the behavior that existed before this field. Defaulting it to `false` would
    * turn that honest ignorance into a false claim and re-approve rows that are already approved.
    */
-  private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean }>();
+  private knownBriefIds = new Map<string, { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt: number }>();
 
   /**
    * Bumped on every write to `knownBriefIds`, so a computed can depend on the map.
@@ -2884,6 +2884,13 @@ export class CampaignsComponent {
       // demonstrably read this row, so its next save is an edit rather than a blind replace. The
       // ETag is preferred when present so a concurrent editor's change is refused as `stale-brief`
       // instead of being silently overwritten.
+      //
+      // No `readAt` is passed, unlike the paid restore, and the divergence is deliberate rather
+      // than an omission: this surface takes the offer verbatim every time — there is no record-
+      // versus-offer contest here and no approval to skip — so nothing ever reads the stamp back.
+      // `ownershipKey` carries the delivery type, so these records cannot collide with the paid
+      // ones that are compared. Were a contest ever added here, the offer's own `readAt` would
+      // have to be threaded through, exactly as `onRestoreSavedBrief` does.
       this.rememberBriefId(key, { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) });
     }
     // Order matters and is the reverse of what it looks like it should be. The handoff calls
@@ -3826,7 +3833,13 @@ export class CampaignsComponent {
     this.loadBriefCampaigns();
   }
 
-  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean): void {
+  /**
+   * `readAt` is the `savedBriefRefreshToken` Planning's lookup was DISPATCHED under — see the
+   * output's own docblock in `planning-tab.component.ts`. It is the only thing that separates a
+   * cached replay of what this session already knows from a genuinely fresh read of a row that
+   * moved under it, and the adopt branch below is where that distinction is spent.
+   */
+  protected onRestoreSavedBrief(brief: CampaignBriefOutput, briefId: string, etag: string | null | undefined, approved: boolean, readAt: number): void {
     // Adopt the brief's OWN program first. The lookup is keyed on `(event_slug, project)` and
     // carries no program type, so an Events brief can be offered while the page sits on
     // Education, and restoring it would leave the selector describing one program while the brief
@@ -3912,9 +3925,34 @@ export class CampaignsComponent {
       // Guarded on the id, not just the key: a different id under the same key is a different row
       // and this session's record says nothing about it, so the offer is then the only account
       // there is and is taken verbatim.
+      //
+      // The id is NOT enough on its own, and an earlier revision stopped there. A matching id
+      // proves the two accounts describe the same row; it says nothing about which of them is
+      // newer. After this session approved version 2, another editor can replace that row with a
+      // draft version 3 — and campaign-service's replace resets `status` to `draft` — so a
+      // Planning lookup that runs after that (a url switched away and back, say) returns the
+      // draft, while this session's record still says version 2 and `approved: true`. Preferring
+      // the record there skips `approveRestoredBrief` and enables Create Campaign against a
+      // draft upstream refuses: #3801 reached through a third door.
+      //
+      // `readAt` is what separates the two cases, because both sides stamp the same counter.
+      // The offer's is the token its READ was dispatched under; the record's is the token this
+      // session was on when it wrote the record, taken before the bump that announced it. So an
+      // offer stamped ABOVE the record was read after this session's last write and is the newer
+      // account — take it verbatim, including an `approved: false` that contradicts what this
+      // session believed. At or below, it is the cached replay the record exists to outrank.
+      //
+      // Either way the kept account keeps its OWN date: `held` re-files the stamp it already
+      // carried, and a record built from the offer is stamped with the offer's `readAt`. Neither
+      // takes the live token, which is at or above both — see `rememberBriefId`. Re-dating a
+      // record here would raise the bar the next lookup has to clear, and a restore in the window
+      // between a save and its re-lookup landing would then disqualify that very lookup.
       const held = this.knownBriefIds.get(key);
-      const record: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean } =
-        held !== undefined && held.id === briefId ? held : { id: briefId, etag: validator, ...(validator === null ? { absence: 'overwrite' as const } : {}) };
+      const offerIsNewer = held !== undefined && readAt > held.readAt;
+      const record: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt: number } =
+        held !== undefined && held.id === briefId && !offerIsNewer
+          ? held
+          : { id: briefId, etag: validator, readAt, ...(validator === null ? { absence: 'overwrite' as const } : {}) };
       this.rememberBriefId(key, record);
       // Read off `record`, NOT off `held`: when the id guard above rejected `held` it describes a
       // different row, and its approval state says nothing about this one. `=== true` rather than a
@@ -4279,9 +4317,35 @@ export class CampaignsComponent {
     this.unresolvedStages.update((keys) => new Set([...keys].filter((held) => held !== key)));
   }
 
-  /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
-  private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean }): void {
-    this.knownBriefIds.set(key, value);
+  /**
+   * Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map.
+   *
+   * Also where `readAt` is stamped. It records the refresh token this session was on when it
+   * learned what it is writing, and the restore path compares it against the token Planning read
+   * ITS offer under to decide which of the two is the newer account of the row. Stamping here
+   * rather than at each call site is what makes that comparison trustworthy: a record written
+   * without a stamp would have to be treated as provenance-unknown, and every such record is one
+   * the comparison could get wrong.
+   *
+   * A site that learns the row FIRST-HAND — a save, an approval — passes no `readAt` and takes
+   * the live token. Where such a site goes on to bump the token, the stamp is deliberately read
+   * BEFORE that bump: the bump ANNOUNCES the write this record describes, so a lookup dispatched
+   * under the bumped value is one that saw the row afterwards and is entitled to outrank the
+   * record.
+   *
+   * A site that learns it SECOND-HAND — a restore filing what Planning handed it, or re-filing
+   * the record that just outranked the offer — passes the `readAt` of whichever account it kept,
+   * and MUST. The live token is at or above every record's stamp (a bump follows each write), so
+   * taking it here would quietly date a second-hand record forward to the newest write this
+   * session made. One such restore would then make the very next genuinely-fresh lookup — the one
+   * that bump went out to trigger — compare as a cached replay and lose, which is the hole this
+   * whole mechanism exists to close.
+   */
+  private rememberBriefId(
+    key: string,
+    value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown'; approved?: boolean; readAt?: number }
+  ): void {
+    this.knownBriefIds.set(key, { ...value, readAt: value.readAt ?? this.savedBriefRefreshToken() });
     this.knownBriefIdsVersion.update((v) => v + 1);
   }
 
@@ -5864,7 +5928,21 @@ export class CampaignsComponent {
           // Guarded on `stillOurs` so a refusal for a row this session no longer holds cannot
           // hand out permission over whatever arrived in its place, and on the id for the same
           // reason: `knownBriefIds` may already describe a different brief under this key.
-          if (stillOurs) {
+          //
+          // And guarded on the CONFLICT, because `approved: false` is not one outcome. The BFF
+          // answers a 412 with `conflict: 'stale-brief'`, a missing row with `'brief-not-found'`,
+          // a refusal with `'rejected'` — and a 5xx, a timeout or a reset with NO conflict at all
+          // (`campaign-service.service.ts`, the bare `refused` return), because the approval may
+          // in fact have landed. Only the first of those tells the user someone else moved the
+          // row, and being told that is the entire content of `'overwrite'`: a warning was shown
+          // and a choice was made. Granting the licence on the others hands the next Proceed an
+          // ETag fallback off the back of a message that said only "could not be confirmed" —
+          // which is how this session silently overwrites an editor nobody was warned about.
+          //
+          // Every other outcome leaves the record exactly as it was: the validator this session
+          // was last shown still describes the row as far as anyone here knows, and a retry that
+          // is refused again is the honest result.
+          if (stillOurs && result.conflict === 'stale-brief') {
             const owned = this.knownBriefIds.get(ownershipKey);
             if (owned !== undefined) {
               // `approved` is rebuilt away here for the same reason the save path's conflict
@@ -5878,10 +5956,12 @@ export class CampaignsComponent {
               this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
             }
           }
-          // Same bump the save path's conflict branch makes, for the same reason: the refusal
-          // says the stored row moved, and Planning is still holding the pair it read before it
-          // did. Re-reading is what makes the offer the next Restore replays describe the row
-          // that actually exists rather than the one this approval lost to.
+          // Same bump the save path's conflict branch makes, and UNCONDITIONAL unlike the
+          // promotion above: whatever the conflict was — or that there was none — a refused
+          // approval means this session's picture of the row may be behind, while Planning still
+          // holds the pair it read before the request. Re-reading is what makes the offer the next
+          // Restore replays describe the row that actually exists. It costs a GET and licenses
+          // nothing, so there is no outcome where withholding it is the safer choice.
           this.savedBriefRefreshToken.update((token) => token + 1);
           this.briefPersistence.set({
             status: 'error',

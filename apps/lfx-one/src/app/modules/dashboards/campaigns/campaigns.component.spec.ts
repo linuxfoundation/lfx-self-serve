@@ -91,11 +91,24 @@ describe('CampaignsComponent brief persistence', () => {
     // code that mishandles `undefined`. The rest form distinguishes "not passed" (length 0,
     // legacy callers -> null) from "passed as undefined" (length 1, value preserved).
     const validator = etag.length === 0 ? null : etag[0];
+    // `readAt: 0` is the value a page's FIRST lookup carries, which is what every test above
+    // means by a restore: Planning read the row before this session wrote anything to it. A
+    // restore whose read post-dates a write here goes through `restoreAt` instead, and the two
+    // must stay distinct — defaulting these to the live token would make every cached-replay
+    // test silently assert the fresh-read path.
+    restoreAt(0, b, briefId, approved, validator);
+  }
+
+  /**
+   * The same restore, with the refresh token Planning's lookup was DISPATCHED under stated
+   * explicitly — the provenance stamp the adopt branch compares against its own record.
+   */
+  function restoreAt(readAt: number, b: CampaignBriefOutput, briefId: string, approved: boolean, etag: string | null | undefined): void {
     (
       fixture.componentInstance as unknown as {
-        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null | undefined, approved: boolean): void;
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null | undefined, approved: boolean, readAt: number): void;
       }
-    ).onRestoreSavedBrief(b, briefId, validator, approved);
+    ).onRestoreSavedBrief(b, briefId, etag, approved, readAt);
   }
 
   /** The invalidation channel to the Planning tab; protected, and bound only on the paid planner. */
@@ -929,6 +942,66 @@ describe('CampaignsComponent brief persistence', () => {
       });
 
       /**
+       * The other half of the rule above, and the one the id guard cannot reach on its own.
+       *
+       * A matching id proves the two accounts describe the same row; it says nothing about which
+       * is NEWER. After this session approves version 2, another editor can PUT version 3 — which
+       * campaign-service writes as `draft` — and a Planning lookup dispatched after that returns
+       * the draft. Preferring the record there would skip the approval and enable Create against
+       * a row upstream refuses. The offer's `readAt` is above the record's, so it wins.
+       */
+      it('takes a restore offer that was read after its own record was written', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        // The approval bumped the token, so a lookup dispatched under the bumped value saw the
+        // row after it — here, after a third party replaced it with an unapproved version 3.
+        const afterApproval = refreshToken();
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v4"', approved: true }));
+        restoreAt(afterApproval, brief, 'restored-a', false, 'W/"v3"');
+        await fixture.whenStable();
+
+        // Approved again, against the validator the FRESH read carried — not skipped on the
+        // strength of an approval that belongs to a version that no longer exists.
+        expect(approveBrief).toHaveBeenCalledTimes(2);
+        expect(approveBrief).toHaveBeenLastCalledWith(expect.anything(), 'restored-a', 'W/"v3"');
+        expect(state().approved).toBe(true);
+      });
+
+      /**
+       * The replay in the middle is the whole point. Between a write and the re-lookup it triggers
+       * landing, the Restore button still offers the pair Planning read BEFORE the write — and the
+       * record rightly outranks it. What must not happen is the record taking the live token as its
+       * own date on the way back into the map: that is strictly above its real one, and it would
+       * disqualify the very lookup the bump went out to trigger.
+       */
+      it('does not re-date its own record when a stale offer is replayed before the fresh read lands', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        const afterApproval = refreshToken();
+
+        // The pre-approval pair, replayed while the re-lookup is still in flight. The record wins.
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        // Now the re-lookup answers, carrying an unapproved version a third party wrote. It was
+        // dispatched after the approval, so it outranks the record — the replay above must not
+        // have moved the record's date up to meet it.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v4"', approved: true }));
+        restoreAt(afterApproval, brief, 'restored-a', false, 'W/"v3"');
+        await fixture.whenStable();
+
+        expect(approveBrief).toHaveBeenCalledTimes(2);
+        expect(approveBrief).toHaveBeenLastCalledWith(expect.anything(), 'restored-a', 'W/"v3"');
+      });
+
+      /**
        * The session's record is keyed by `(project, event, delivery, stage)`, but what it describes
        * is one ROW. A different brief id under that same key is a different row, and nothing this
        * session learned about the previous occupant — its validator or its approval state — may be
@@ -975,6 +1048,28 @@ describe('CampaignsComponent brief persistence', () => {
         // No validator, and `allowFallback` true: the rejected ETag is not replayed, and the
         // server may use the one it reads itself.
         expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+      });
+
+      /**
+       * ...and ONLY after a conflict the user was actually shown. A 5xx, a timeout or a reset
+       * comes back `approved: false` with no `conflict` at all, because the approval may in fact
+       * have landed, and the banner says only that it could not be confirmed. Granting the
+       * overwrite licence there would let the next Proceed replace an editor nobody was warned
+       * about — the silent overwrite the carried validator exists to prevent.
+       */
+      it('does not license an overwrite when the approval outcome is indeterminate', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(state().status).toBe('error');
+
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+
+        // The validator the user was shown, and no fallback licence: a save that lands on a row
+        // someone else moved is refused rather than overwriting it.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v1"', false);
       });
 
       /**
