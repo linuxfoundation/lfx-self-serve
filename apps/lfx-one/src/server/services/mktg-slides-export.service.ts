@@ -371,6 +371,12 @@ export class MktgSlidesExportService {
    * something else has failed). Only the runtime's final outputs are read —
    * `agent_notification_message` events — never a tool's result, where a
    * deck's own text comes back from Slides.
+   *
+   * A valid envelope wins over any other output, wherever it falls: the
+   * exporter returns it only once the deck is filled, and its hash is checked
+   * here, so the deck it names is finished. Reporting a later output as a
+   * failure would drop that deck's record, and the next visit would offer
+   * Create and make a second deck.
    */
   private readOutputs(req: Request, payloads: string[]): { envelope: MktgSlidesExportEnvelope | null; otherOutput: string | null } {
     let envelope: MktgSlidesExportEnvelope | null = null;

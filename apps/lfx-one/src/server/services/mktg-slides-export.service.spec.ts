@@ -532,5 +532,20 @@ describe('MktgSlidesExportService', () => {
       expect(await service.getResult(req, 'session-1', context)).toMatchObject({ status: 'failed', failure: 'intake' });
     });
 
+    it('keeps a finished deck when another output follows its envelope, and takes the later of two envelopes', async () => {
+      await seedFramework(documentStore);
+      const started = await service.startExport(req, input());
+      const context = { project: PROJECT, type: FRAMEWORK, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: started.revision.id };
+      const otherDeck = '1ZyXwVuTsRqPoNmLkJiHgFeDcBa';
+
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        outputEvent(),
+        JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: 'the input is not a Slides export intake (…)' } }),
+      ]);
+      expect(await service.getResult(req, 'session-1', context)).toMatchObject({ status: 'ready', record: { deckId: DECK_ID } });
+
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent(), outputEvent({ deckId: otherDeck })]);
+      expect(await service.getResult(req, 'session-1', context)).toMatchObject({ status: 'ready', record: { deckId: otherDeck } });
+    });
   });
 });
