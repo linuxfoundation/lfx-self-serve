@@ -824,6 +824,38 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(element('votes-table-empty-state')).toBeNull();
   });
 
+  for (const lens of ['project', 'foundation'] as const) {
+    it.each([false, true])(`keeps the personal feed pending when returning from ${lens} until a response arrives (complete: %s)`, async (complete) => {
+      await management(lens);
+      expect(table.loading()).toBe(false);
+      expect(table.resultsComplete()).toBe(true);
+      const request = new Subject<MyVotesResponse>();
+      getMyVotes.mockReturnValueOnce(request);
+      const callsBeforeReturn = getMyVotes.mock.calls.length;
+
+      activeLens.set('me');
+      // The lens changes synchronously, before toObservable starts the personal request.
+      expect(getMyVotes).toHaveBeenCalledTimes(callsBeforeReturn);
+      expect(dashboard['myVotesLoading']()).toBe(true);
+      fixture.changeDetectorRef.detectChanges();
+      expect(table.loading()).toBe(true);
+      expect(element('votes-table-empty-state')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('Some votes could not be loaded');
+
+      await settle();
+      expect(getMyVotes).toHaveBeenCalledTimes(callsBeforeReturn + 1);
+      expect(table.loading()).toBe(true);
+      expect(element('votes-table-empty-state')).toBeNull();
+      request.next({ votes: [], complete });
+      request.complete();
+      await settle();
+
+      expect(table.loading()).toBe(false);
+      expect(table.resultsComplete()).toBe(complete);
+      expect(element('votes-table-empty-state')?.textContent).toContain(complete ? 'No active votes' : 'Some votes could not be loaded');
+    });
+  }
+
   it('retries an incomplete empty All feed without showing a false no-invitations message', async () => {
     getMyVotes.mockReturnValueOnce(of({ votes: [], complete: false }));
     table['onStatusTabChange']('all');

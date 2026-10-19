@@ -671,11 +671,11 @@ export class VotesDashboardComponent {
       combineLatest([lens$, this.refresh$]).pipe(
         switchMap(([lens]) => {
           this.myVotesComplete.set(false);
+          // A cleared personal feed stays pending so returning to Me cannot show an incomplete result before its request starts.
+          this.myVotesLoading.set(true);
           if (lens !== 'me') {
-            this.myVotesLoading.set(false);
             return of([] as Vote[]);
           }
-          this.myVotesLoading.set(true);
           this.myVotesError.set(false);
           return this.voteService.getMyVotes().pipe(
             tap((response) => this.myVotesComplete.set(response.complete === true)),
