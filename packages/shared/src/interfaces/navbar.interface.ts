@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Lens } from './lens.interface';
 import type { PersonaType } from './persona.interface';
 
 /** Which trigger a lens context selector renders: the classic sidebar card, or the navbar's dark context card. */
@@ -20,6 +21,8 @@ export interface NavbarRoleProject {
   slug: string;
   name: string;
   isFoundation: boolean;
+  /** Lens its overview opens in, or `null` when the viewer can use neither lens for it (its chip is then a plain label). */
+  lens: Lens | null;
 }
 
 /** A role mark as rendered on the navbar's me card. */
@@ -59,11 +62,13 @@ export interface NavbarMenuBlock<T> {
 /** Side of the trigger a navbar tooltip opens on. */
 export type NavTooltipPlacement = 'top' | 'bottom';
 
-/** A clickable chip in an interactive navbar tooltip. */
+/** A chip in an interactive navbar tooltip. */
 export interface NavTooltipItem {
   /** Stable identity, emitted when the chip is chosen. */
   key: string;
   label: string;
+  /** Listed for context only: rendered as a plain label rather than a button, and never emitted. */
+  static?: boolean;
 }
 
 /** A decorative, non-interactive menu row (the faded preview under the no-access message). */

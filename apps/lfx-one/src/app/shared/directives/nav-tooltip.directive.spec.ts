@@ -84,6 +84,25 @@ describe('NavTooltipDirective', () => {
     expect(tooltips()).toHaveLength(0);
   });
 
+  it('renders a static item as a plain label that is never focused or emitted', () => {
+    host.items.set([
+      { key: 'k8s', label: 'Kubernetes', static: true },
+      { key: 'cncf', label: 'CNCF' },
+    ]);
+    TestBed.tick();
+    first.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+
+    const label = document.body.querySelector<HTMLElement>('[data-testid="nav-tooltip-chip-k8s"]');
+    expect(label?.tagName).toBe('SPAN');
+    label?.click();
+    expect(host.selected()).toBeNull();
+
+    // ArrowDown skips the label and lands on the first chip button.
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('nav-tooltip-chip-cncf');
+  });
+
   it('holds an interactive card open while the pointer crosses into it', () => {
     host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
     TestBed.tick();

@@ -31,6 +31,7 @@ import {
   NavbarBrandApp,
   NavbarMenuBlock,
   NavbarRoleMark,
+  NavbarRoleProject,
   NavbarTabIndicator,
   NavTooltipItem,
   SidebarMenuItem,
@@ -231,11 +232,8 @@ export class NavbarComponent extends SidebarComponent {
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
   protected openRoleProject(mark: NavbarRoleMark, chip: NavTooltipItem): void {
     const project = mark.projects.find((candidate) => candidate.slug === chip.key);
-    if (!project) return;
-    // Project-only personas cannot open the Foundation lens; they see a foundation as a project (as the selector does).
-    const foundationAllowed = this.navbarLensService.availableLenses().some((option) => option.id === 'foundation');
-    const lens = project.isFoundation && foundationAllowed ? 'foundation' : 'project';
-    this.navbarRouter.navigate([`/${lens}`, 'overview'], { queryParams: { project: project.slug } });
+    if (!project?.lens) return;
+    this.navbarRouter.navigate([`/${project.lens}`, 'overview'], { queryParams: { project: project.slug } });
   }
 
   protected onPhotoError(url: string): void {
@@ -352,24 +350,43 @@ export class NavbarComponent extends SidebarComponent {
           .map((project) => [project.projectUid, project.isFoundation])
       );
       const priority = new Map(PERSONA_PRIORITY.map((persona, index) => [persona, index]));
+      const allowed = new Set(this.navbarLensService.availableLenses().map((option) => option.id));
       return [...this.navbarPersonaService.allPersonas()]
         .sort((a, b) => (priority.get(a) ?? Number.MAX_SAFE_INTEGER) - (priority.get(b) ?? Number.MAX_SAFE_INTEGER))
         .slice(0, 3)
         .map((persona) => {
           const label = PERSONA_OPTIONS.find((option) => option.value === persona)?.label ?? toTitleCase(persona);
-          const projects = (personaProjects[persona] ?? []).map((project) => ({
-            uid: project.projectUid,
-            slug: project.projectSlug,
-            name: project.projectName || project.projectSlug,
+          const projects: NavbarRoleProject[] = (personaProjects[persona] ?? []).map((project) => {
             // The role's own entry carries no tier; take it from detection, else from the role's scope.
-            isFoundation: foundationByUid.get(project.projectUid) ?? BOARD_SCOPED_PERSONAS.has(persona),
-          }));
-          const chips: NavTooltipItem[] = projects.map((project) => ({ key: project.slug, label: project.name }));
+            const isFoundation = foundationByUid.get(project.projectUid) ?? BOARD_SCOPED_PERSONAS.has(persona);
+            return {
+              uid: project.projectUid,
+              slug: project.projectSlug,
+              name: project.projectName || project.projectSlug,
+              isFoundation,
+              lens: this.roleProjectLens(isFoundation, allowed),
+            };
+          });
+          // A project the viewer has no lens for stays listed, as a label: navigating would land on a lens
+          // the layout can't activate, which renders the Home dashboard under a project URL.
+          const chips: NavTooltipItem[] = projects.map((project) =>
+            project.lens ? { key: project.slug, label: project.name } : { key: project.slug, label: project.name, static: true }
+          );
           const ariaLabel = projects.length ? `Role: ${label} (${projects.map((project) => project.name).join(', ')})` : `Role: ${label}`;
           const title = projects.length ? `${label} ${NAVBAR_ROLE_PREPOSITIONS[persona]}` : label;
           return { ...NAVBAR_ROLE_STYLES[persona], persona, label, title, projects, chips, ariaLabel };
         });
     });
+  }
+
+  /**
+   * The lens a role chip opens its project in. A foundation opens in the Foundation lens when the viewer
+   * has it; otherwise — and for any non-foundation project — in the Project lens, as the selector shows
+   * it. `null` when the viewer has neither, so the chip is not a link.
+   */
+  private roleProjectLens(isFoundation: boolean, allowed: ReadonlySet<Lens>): Lens | null {
+    if (isFoundation && allowed.has('foundation')) return 'foundation';
+    return allowed.has('project') ? 'project' : null;
   }
 
   /**

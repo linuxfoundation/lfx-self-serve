@@ -45,7 +45,8 @@ const createNavbar = async (
     itemsPending = false,
     tierResolved = true,
     lookupFailed = false,
-  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean } = {}
+    lenses = [ALL_LENSES.me, ALL_LENSES.project],
+  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean; lenses?: LensOption[] } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -58,7 +59,7 @@ const createNavbar = async (
         useValue: {
           activeLens: signal(lens),
           isHybridPersona: signal(false),
-          availableLenses: signal([ALL_LENSES.me, ALL_LENSES.project]),
+          availableLenses: signal(lenses),
           displayLenses: signal([ALL_LENSES.me, ALL_LENSES.project]),
           displayActiveLens: signal(lens),
           setLens: vi.fn(),
@@ -150,6 +151,30 @@ describe('NavbarComponent', () => {
       { key: 'kubernetes', label: 'Kubernetes' },
       { key: 'cncf', label: 'cncf' },
     ]);
+  });
+
+  it('opens a role’s projects in a lens the viewer has, and lists one with no such lens as a plain label', async () => {
+    const projects = {
+      'board-member': [
+        { projectUid: 'uid-k8s', projectSlug: 'kubernetes', projectName: 'Kubernetes' },
+        { projectUid: 'uid-cncf', projectSlug: 'cncf', projectName: 'CNCF' },
+      ],
+    };
+
+    // Board Member with Foundation but no Project lens: the confirmed non-foundation project has nowhere to open.
+    const [foundationOnly] = (await createNavbar([], ['board-member'], projects, { lenses: [ALL_LENSES.me, ALL_LENSES.foundation] })).roleMarks();
+    expect(foundationOnly.projects.map((project) => [project.slug, project.lens])).toEqual([
+      ['kubernetes', null],
+      ['cncf', 'foundation'],
+    ]);
+    expect(foundationOnly.chips).toEqual([
+      { key: 'kubernetes', label: 'Kubernetes', static: true },
+      { key: 'cncf', label: 'CNCF' },
+    ]);
+
+    // Project-only viewer: a foundation opens in the Project lens, as the selector shows it.
+    const [projectOnly] = (await createNavbar([], ['board-member'], projects)).roleMarks();
+    expect(projectOnly.projects.map((project) => project.lens)).toEqual(['project', 'project']);
   });
 
   it('trusts only an enrichment-resolved tier, falling back to the role’s scope before enrichment or on a batch miss', async () => {

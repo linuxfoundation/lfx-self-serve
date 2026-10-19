@@ -18,7 +18,7 @@ import { ZIndexUtils } from 'primeng/utils';
  * Two modes:
  * - **Label only** — visual only (`aria-hidden`): the trigger's `aria-label` already names it.
  * - **Interactive** — when `lfxNavTooltipItems` is non-empty, the items render as chip buttons under
- *   the label. The card stays open while the pointer crosses into it (a short hide delay bridges the
+ *   the label (a `static` item as a plain label chip). The card stays open while the pointer crosses into it (a short hide delay bridges the
  *   gap), ArrowDown on the trigger moves focus to the first chip, Escape returns focus to the
  *   trigger, and choosing a chip emits `lfxNavTooltipItemSelected`.
  *
@@ -99,7 +99,7 @@ export class NavTooltipDirective {
   @HostListener('keydown', ['$event'])
   protected onHostKeydown(event: KeyboardEvent): void {
     if (event.key === 'ArrowDown' && this.isInteractive()) {
-      const firstChip = this.tooltip?.querySelector<HTMLElement>('.lfxn-tooltip__chip');
+      const firstChip = this.tooltip?.querySelector<HTMLElement>('button.lfxn-tooltip__chip');
       if (firstChip) {
         event.preventDefault();
         firstChip.focus();
@@ -227,11 +227,17 @@ export class NavTooltipDirective {
     const list = this.renderer.createElement('div') as HTMLElement;
     this.renderer.addClass(list, 'lfxn-tooltip__chips');
     for (const item of this.items()) {
-      const chip = this.renderer.createElement('button') as HTMLElement;
-      this.renderer.setAttribute(chip, 'type', 'button');
+      const chip = this.renderer.createElement(item.static ? 'span' : 'button') as HTMLElement;
       this.renderer.addClass(chip, 'lfxn-tooltip__chip');
       this.renderer.setAttribute(chip, 'data-testid', `nav-tooltip-chip-${item.key}`);
       this.renderer.appendChild(chip, this.renderer.createText(item.label));
+      // A static item is context only — a label, never focused or emitted.
+      if (item.static) {
+        this.renderer.addClass(chip, 'lfxn-tooltip__chip--static');
+        this.renderer.appendChild(list, chip);
+        continue;
+      }
+      this.renderer.setAttribute(chip, 'type', 'button');
       this.unlisten.push(
         this.renderer.listen(chip, 'click', () => {
           this.hide();

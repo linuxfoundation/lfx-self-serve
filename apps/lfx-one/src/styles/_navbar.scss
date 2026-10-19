@@ -1514,6 +1514,17 @@
   }
 }
 
+// A chip listed for context only (no lens to open it in): a label, so no pointer or hover lift.
+.lfxn-tooltip__chip--static {
+  cursor: default;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
+    color: #cad5e2;
+  }
+}
+
 .lfxn-tooltip--top {
   transform: translateY(2px);
 }
