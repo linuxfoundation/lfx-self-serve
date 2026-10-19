@@ -865,6 +865,13 @@ export interface CampaignImplementationDraft {
   /** The brief that upload was started for, so a remount resumes that upload, not the current brief's. */
   redditImageUploadPendingBriefId?: string;
   /**
+   * A failed upload's reason and the brief it was for, kept until the operator removes or replaces
+   * the image, so a tab switch cannot lift the block it raises (`uploadFailed`) and let Create send
+   * the campaign without the image they chose. Empty when no upload has failed.
+   */
+  redditImageUploadFailedMessage?: string;
+  redditImageUploadFailedBriefId?: string;
+  /**
    * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
    * objective is, so switching away from Video Views and back does not lose the choice; only the
    * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.

@@ -1698,6 +1698,11 @@
                    yes from `redditAssetUploadAvailable()`: the legacy creator never reads an uploaded
                    image, and campaign-service refuses one until its URL signing is configured. The
                    image URL above stays offered either way; the upload wins when both are present. -->
+              <!-- Always mounted, like the asset block's region below: a live region created with the
+                   control as upload support settles would miss its first announcement. -->
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-image-status-live">
+                {{ redditImageUploadLiveMessage() }}
+              </div>
               @if (redditAssetUploadAvailable()) {
                 <div class="flex flex-col gap-1" data-testid="implementation-reddit-image-upload">
                   <label class="text-xs font-medium text-gray-700" for="reddit-image-file">Or upload an image</label>
@@ -1713,19 +1718,11 @@
                   <p id="reddit-image-file-hint" class="text-xs text-gray-500">
                     PNG or JPEG, up to 10 MB. Used instead of the image URL; ignored when a post URL is set.
                   </p>
-                  <!-- One live region for progress and success, so a screen reader hears each change;
-                       the refusal is its own alert. -->
-                  <p
-                    id="reddit-image-file-status"
-                    role="status"
-                    aria-live="polite"
-                    class="text-xs text-gray-700"
-                    data-testid="implementation-reddit-image-status">
-                    @if (redditImageUploadStatus() === 'uploading') {
-                      Uploading image…
-                    } @else if (redditImageAssetForThisBrief()) {
-                      Uploaded: {{ redditImageAssetName() || 'image' }}
-                    }
+                  <!-- Progress and success are announced by the always-mounted live region above the
+                       control; this is the visible line the input is described by. The refusal is its
+                       own alert. -->
+                  <p id="reddit-image-file-status" class="text-xs text-gray-700" data-testid="implementation-reddit-image-status">
+                    {{ redditImageUploadStatusMessage() }}
                   </p>
                   @if (redditImageUploadStatus() === 'uploading') {
                     <div>

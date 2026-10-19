@@ -7793,8 +7793,10 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID);
     expect(at(f).redditImageAssetId()).toBe(ASSET_ID);
     const status = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status"]') as HTMLElement;
-    expect(status.getAttribute('role')).toBe('status');
     expect(status.textContent).toContain('Uploaded: promo.png');
+    const live = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status-live"]') as HTMLElement;
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent).toContain('Uploaded: promo.png');
   });
 
   it('announces the upload while it is in flight', async () => {
@@ -8034,6 +8036,48 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
     expect(c.redditImageUploadStatus()).toBe('error');
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]')).toBeNull();
+  });
+
+  // The live region must exist before the control does: created with it as upload support settles,
+  // it would drop the first announcement.
+  it('keeps the upload status live region mounted while the upload control is hidden', async () => {
+    const f = (await mount(null)).fixture;
+    expect(fileInput(f)).toBeNull();
+    const live = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status-live"]') as HTMLElement | null;
+    expect(live?.getAttribute('role')).toBe('status');
+    expect(live?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  // The failure must outlive a second tab switch too, or the block lifts and Create sends the
+  // campaign without the image the operator chose and never removed.
+  it('keeps a failed upload, and its hold on Create, across another tab switch', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    let draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const second = await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    second.fixture.detectChanges();
+    draft = second.latest() as CampaignImplementationDraft;
+    expect(draft.redditImageUploadFailedBriefId).toBe(BRIEF_ID);
+    second.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(null);
+
+    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('error');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]')).not.toBeNull();
+    expect(c.canSubmit()).toBe(false);
   });
 
   it('says the upload was interrupted when there is nothing left to resume', async () => {

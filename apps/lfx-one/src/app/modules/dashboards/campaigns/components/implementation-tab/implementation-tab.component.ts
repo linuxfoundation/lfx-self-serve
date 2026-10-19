@@ -1577,6 +1577,17 @@ export class ImplementationTabComponent implements OnInit {
   );
   /** The always-mounted live region's text for `redditImageAssetBlock`; `''` when nothing blocks. */
   protected readonly redditImageAssetBlockMessage = computed(() => this.redditImageAssetBlock()?.message ?? '');
+  /** The upload control's progress or success line; empty when there is nothing to report. */
+  protected readonly redditImageUploadStatusMessage = computed(() => {
+    if (this.redditImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.redditImageAssetForThisBrief() ? `Uploaded: ${this.redditImageAssetName() || 'image'}` : '';
+  });
+  /**
+   * What the always-mounted live region announces: the control's status while it is shown. Kept out
+   * of the control so the region is not created and destroyed as upload support settles, which
+   * drops the first announcement; while the control is hidden, the asset block's region speaks.
+   */
+  protected readonly redditImageUploadLiveMessage = computed(() => (this.redditAssetUploadAvailable() ? this.redditImageUploadStatusMessage() : ''));
 
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
@@ -3287,6 +3298,9 @@ export class ImplementationTabComponent implements OnInit {
       this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
       this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
     }
+    if (draft.redditImageUploadFailedMessage && draft.redditImageUploadFailedBriefId) {
+      this.failRedditImageUpload(draft.redditImageUploadFailedMessage, draft.redditImageUploadFailedBriefId);
+    }
     if (draft.redditImageUploadPendingName) {
       this.resumeRedditImageUpload(draft.redditImageUploadPendingName, draft.redditImageUploadPendingBriefId ?? '');
     }
@@ -3462,6 +3476,10 @@ export class ImplementationTabComponent implements OnInit {
       redditImageAssetBriefId: this.redditImageAssetBriefId(),
       redditImageUploadPendingName: this.redditImageUploadPendingName(),
       redditImageUploadPendingBriefId: this.redditImageUploadPendingBriefId(),
+      // A failed upload stays until the operator removes or replaces it, across tab switches too:
+      // dropping it on remount would lift the block and let Create go out without the image.
+      redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
+      redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
       redditVideoGoal: this.redditVideoGoal(),
     });
   }
