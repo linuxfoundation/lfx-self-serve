@@ -131,6 +131,15 @@ describe('VotesDashboardComponent personal summary', () => {
     table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
   }
 
+  it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
+    await management(lens);
+    expect(table.showParticipationProgress()).toBe(true);
+  });
+
+  it('keeps the raw response count in the Me lens', () => {
+    expect(table.showParticipationProgress()).toBe(false);
+  });
+
   it.each<Lens>(['project', 'foundation'])('shows %s totals for the entire Group scope, independent of search/status/page', async (lens) => {
     const service = TestBed.inject(VoteService);
     await management(lens);

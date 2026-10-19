@@ -7,7 +7,7 @@ import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
+import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus } from './poll.utils';
@@ -30,6 +30,7 @@ import type {
   VoteFormValue,
   VoteParticipationStats,
   VoteResultsResponse,
+  VoteRowParticipation,
 } from '../interfaces/poll.interface';
 
 /** Active votes with a deadline strictly after now and within the rolling seven-day window. */
@@ -152,11 +153,17 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
   };
 }
 
+/** Rounds participation against a positive electorate, capping incomplete counts at 99% and complete/excess counts at 100%. */
+function computeParticipationPercent(responses: number, invited: number): number {
+  return Math.min(responses < invited ? 99 : 100, Math.round((responses / invited) * 100));
+}
+
 /**
  * Computes participation stats for the results drawer from the results API payload
  * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes them from
  * per-choice tallies, so `abstainedVoters` is a subset of `totalResponses`; `abstainedRate` is their share of all
  * responses cast — the same `num_votes_cast` base upstream uses for per-choice percentages, so the two always agree.
+ * Participation uses the same completion-aware rounding as the table: incomplete counts cap at 99%, complete/excess counts at 100%.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @returns VoteParticipationStats for the participation card and abstain row
  */
@@ -168,10 +175,71 @@ export function computeVoteParticipationStats(results: VoteResultsResponse | nul
   const eligibleVoters = results.num_recipients || 0;
   const totalResponses = results.num_votes_cast || 0;
   const abstainedVoters = results.num_abstained || 0;
-  const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
+  const participationRate = eligibleVoters > 0 ? computeParticipationPercent(totalResponses, eligibleVoters) : 0;
   const abstainedRate = totalResponses > 0 ? Math.round((abstainedVoters / totalResponses) * 100) : 0;
 
   return { eligibleVoters, totalResponses, participationRate, abstainedVoters, abstainedRate };
+}
+
+/** A count is usable only when upstream sent a real non-negative number — strings/null/NaN are never coerced to 0. */
+function isParticipationCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/**
+ * Computes the votes-table participation summary for one vote row
+ * @description The denominator is the invited electorate (`total_voting_request_invitations`), not current group
+ * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` in the results drawer.
+ * Drafts never show counts; missing counts degrade to UNAVAILABLE/COUNT_ONLY instead of a false zero; a zero electorate
+ * never yields a percent. Use the same completion-aware rounding as the results drawer: incomplete counts cap at 99%,
+ * complete/excess counts at 100%.
+ * @param vote - Vote list row from the query-service index or per-vote REST
+ * @returns VoteRowParticipation for the Responses cell
+ */
+export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
+  const status = normalizePollStatus(vote.status);
+  const empty = { responses: null, invited: null, percent: null, secondaryLabel: null, ariaLabel: null };
+
+  if (status === PollStatus.DISABLED) {
+    return { ...empty, state: VoteRowParticipationState.NOT_OPEN, label: 'Not open yet' };
+  }
+
+  const responses = vote.num_response_received;
+  if (!isParticipationCount(responses)) {
+    return { ...empty, state: VoteRowParticipationState.UNAVAILABLE, label: 'Unavailable' };
+  }
+
+  const invited = vote.total_voting_request_invitations;
+  if (!isParticipationCount(invited)) {
+    return {
+      ...empty,
+      state: VoteRowParticipationState.COUNT_ONLY,
+      responses,
+      label: `${responses} responded`,
+      secondaryLabel: 'Total unavailable',
+    };
+  }
+
+  if (invited === 0) {
+    return {
+      ...empty,
+      state: VoteRowParticipationState.NO_ELECTORATE,
+      responses,
+      invited,
+      label: 'No one invited',
+    };
+  }
+
+  const percent = computeParticipationPercent(responses, invited);
+  return {
+    state: VoteRowParticipationState.PROGRESS,
+    responses,
+    invited,
+    percent,
+    label: `${responses} of ${invited} responded · ${percent}%`,
+    secondaryLabel: null,
+    ariaLabel: status === PollStatus.ACTIVE ? `Participation: ${responses} of ${invited} responded, ${percent}%` : null,
+  };
 }
 
 /**

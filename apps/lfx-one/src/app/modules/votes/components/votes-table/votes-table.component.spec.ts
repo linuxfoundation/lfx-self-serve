@@ -436,3 +436,115 @@ describe('VotesTableComponent — row More menu', () => {
     expect(copyLink.mock.calls[0][0]).toMatch(/\/votes\/ended$/);
   });
 });
+
+describe('VotesTableComponent — participation progress', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  const ROWS = [
+    vote('active', { num_response_received: 8, total_voting_request_invitations: 12 }),
+    vote('ended', { status: PollStatus.ENDED, num_response_received: 8, total_voting_request_invitations: 12 }),
+    vote('draft', { status: PollStatus.DISABLED, num_response_received: 0, total_voting_request_invitations: 0 }),
+    vote('empty', { num_response_received: 0, total_voting_request_invitations: 0 }),
+    vote('no-total', { num_response_received: 8 }),
+    vote('no-responses', { total_voting_request_invitations: 12 }),
+    vote('zero', { num_response_received: 0, total_voting_request_invitations: 12 }),
+  ];
+  const el = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const text = (testId: string): string => el(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [provideRouter([]), provideNoopAnimations(), { provide: VoteService, useValue: {} }, { provide: MessageService, useValue: {} }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', ROWS);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function render(showParticipationProgress = true): Promise<void> {
+    if (showParticipationProgress) fixture.componentRef.setInput('showParticipationProgress', true);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('summarises an active vote with an accessible progress bar', async () => {
+    await render();
+
+    expect(text('votes-participation-label-active')).toBe('8 of 12 responded · 67%');
+    const bar = el('votes-participation-bar-active')!;
+    expect(bar.getAttribute('role')).toBe('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('67');
+    expect(bar.getAttribute('aria-valuemin')).toBe('0');
+    expect(bar.getAttribute('aria-valuemax')).toBe('100');
+    expect(bar.getAttribute('aria-label')).toBe('Participation: 8 of 12 responded, 67%');
+  });
+
+  it('uses visible participation summaries without prohibited names on generic spans', async () => {
+    await render();
+
+    const summaries = fixture.nativeElement.querySelectorAll('[data-testid^="votes-participation-"] span[aria-label]');
+    expect(summaries.length).toBe(0);
+  });
+
+  it('keeps the participation summary for an ended vote without a progress bar', async () => {
+    await render();
+
+    expect(text('votes-participation-label-ended')).toBe('8 of 12 responded · 67%');
+    expect(el('votes-participation-bar-ended')).toBeNull();
+  });
+
+  it('shows a draft as not open, without counts or a bar', async () => {
+    await render();
+
+    expect(text('votes-participation-draft')).toBe('Not open yet');
+    expect(el('votes-participation-bar-draft')).toBeNull();
+  });
+
+  it('shows a zero-person electorate without a percent or a bar', async () => {
+    await render();
+
+    expect(text('votes-participation-empty')).toBe('No one invited');
+    expect(text('votes-participation-empty')).not.toMatch(/%/);
+    expect(el('votes-participation-bar-empty')).toBeNull();
+  });
+
+  it('shows the response count alone when the invited total is missing', async () => {
+    await render();
+
+    expect(text('votes-participation-label-no-total')).toBe('8 responded');
+    expect(text('votes-participation-secondary-no-total')).toBe('Total unavailable');
+    expect(el('votes-participation-bar-no-total')).toBeNull();
+  });
+
+  it('shows missing responses as unavailable, without a bar', async () => {
+    await render();
+
+    expect(text('votes-participation-no-responses')).toBe('Unavailable');
+    expect(el('votes-participation-bar-no-responses')).toBeNull();
+  });
+
+  it('shows a confirmed zero as 0% with a bar, distinct from unavailable', async () => {
+    await render();
+
+    expect(text('votes-participation-label-zero')).toBe('0 of 12 responded · 0%');
+    expect(el('votes-participation-bar-zero')?.getAttribute('aria-valuenow')).toBe('0');
+  });
+
+  it('keeps the raw response count when progress is not enabled', async () => {
+    await render(false);
+
+    expect(text('votes-responses-active')).toBe('8');
+    expect(el('votes-participation-active')).toBeNull();
+  });
+
+  it('never words participation as quorum, approval, or an outcome', async () => {
+    await render();
+
+    const cells = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="votes-participation-"]') as NodeListOf<HTMLElement>);
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(`${cell.textContent} ${cell.getAttribute('aria-label') ?? ''}`).not.toMatch(/quorum|approv|winn|passed/i);
+    }
+  });
+});

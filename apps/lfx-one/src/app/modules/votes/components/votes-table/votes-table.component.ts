@@ -15,8 +15,10 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
+import { VoteRowParticipationState } from '@lfx-one/shared/enums';
 import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteStatusCounts, VoteTableRow } from '@lfx-one/shared/interfaces';
 import {
+  computeVoteRowParticipation,
   getEntityCommands,
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
@@ -76,6 +78,7 @@ export class VotesTableComponent {
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
+  protected readonly VoteRowParticipationState = VoteRowParticipationState;
 
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
@@ -94,6 +97,8 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
+  // Management contexts (project/foundation lens, committee tab) show "N of M responded" progress; the Me lens keeps the raw count.
+  public readonly showParticipationProgress = input<boolean>(false);
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
@@ -365,6 +370,7 @@ export class VotesTableComponent {
     return {
       ...vote,
       endedEarlyTooltip,
+      participation: computeVoteRowParticipation(vote),
       editCommands,
       editQueryParams,
     };
