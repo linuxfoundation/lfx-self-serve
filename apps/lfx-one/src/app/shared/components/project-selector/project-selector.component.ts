@@ -115,7 +115,7 @@ export class ProjectSelectorComponent {
   /** The navbar trigger's accessible name — its `aria-label` hides the visible role pill, so the role is named here too. */
   protected readonly navbarTriggerLabel: Signal<string> = computed(() => {
     const role = this.selectedRoleLabel();
-    return role ? `Switch from ${this.displayName()}, role: ${role}` : `Switch from ${this.displayName()}`;
+    return role ? `Switch from ${this.displayName()}, Role: ${role}` : `Switch from ${this.displayName()}`;
   });
   /** Glyph and ink of the navbar context card's role pill. */
   protected readonly navbarRoleStyle: Signal<NavbarRoleStyle> = computed(() => {

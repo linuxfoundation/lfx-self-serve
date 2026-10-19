@@ -138,18 +138,18 @@ export class SidebarNavService {
    */
   private readonly marketingProbeGenerations = new Map<string, number>();
   /**
-   * The latest `retryMenuLookups()` run still in flight, with the menu scope (lens + selected foundation /
-   * project) it started on. Only that run's own finalizer clears it, so an older run settling late can't
-   * end a newer one's pending state.
+   * `retryMenuLookups()` runs still in flight, by the menu scope (lens + selected foundation / project)
+   * each started on → that run's id. Only a run's own finalizer clears its entry, so runs for several
+   * scopes can overlap and an older run settling late can't end a newer one.
    */
-  private readonly activeRetry = signal<{ id: number; scope: string } | null>(null);
+  private readonly activeRetries = signal<ReadonlyMap<string, number>>(new Map());
   private retryRunId = 0;
   /**
    * True while a `retryMenuLookups()` run started on the scope still on screen is in flight, so its error
    * card can stay up with a busy Retry. Scoped: after a context switch the new scope's menu is neither held
    * pending by nor blocked from retrying behind a retry it didn't start.
    */
-  public readonly menuRetryPending: Signal<boolean> = computed(() => this.activeRetry()?.scope === this.menuScopeKey());
+  public readonly menuRetryPending: Signal<boolean> = computed(() => this.activeRetries().has(this.menuScopeKey()));
 
   /**
    * True when a lookup that shapes the menu failed instead of answering — an empty menu then means
@@ -695,11 +695,14 @@ export class SidebarNavService {
     const slug = this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
     // While the probe for the scope on screen is still in flight, `slug` names the previous scope, whose
-    // own grant must not show under the new one — only a ROOT grant, which covers every scope, still does.
+    // own grant must not show under the new one. What still counts: a ROOT grant (it covers every scope)
+    // and a grant already confirmed for the scope on screen on an earlier visit (A → B → A).
     const hasCurrentScopeGrant = (relation: 'isMarketingAuditor' | 'isCampaignManager'): boolean => {
       if (!this.isMarketingOpsFgaEnabled()) return false;
-      if (slug === this.marketingScopeSlug()) return this.hasMarketingGrant(slug, relation);
-      return this.personaService.grantsByScope().get(null)?.[relation] ?? false;
+      const scopeOnScreen = this.marketingScopeSlug();
+      if (slug === scopeOnScreen) return this.hasMarketingGrant(slug, relation);
+      const grants = this.personaService.grantsByScope();
+      return !!(grants.get(null)?.[relation] || (scopeOnScreen && grants.get(scopeOnScreen)?.[relation]));
     };
 
     const canSeeMarketingImpact = this.personaService.canViewExecutiveDashboards() || hasCurrentScopeGrant('isMarketingAuditor');
@@ -971,8 +974,9 @@ export class SidebarNavService {
   public retryMenuLookups(): void {
     // One retry per scope at a time; a retry still running for another scope doesn't block this one.
     if (this.menuRetryPending()) return;
-    const run = { id: ++this.retryRunId, scope: this.menuScopeKey() };
-    this.activeRetry.set(run);
+    const scope = this.menuScopeKey();
+    const runId = ++this.retryRunId;
+    this.activeRetries.update((runs) => new Map(runs).set(scope, runId));
     const slug = this.marketingScopeSlug();
     const generation = slug ? this.startMarketingProbe(slug) : 0;
     // The lookups re-run together and the menu stays pending until all settle, so none can resolve
@@ -982,7 +986,16 @@ export class SidebarNavService {
       slug ? this.personaService.refreshEnrichedPersonas(false, slug) : of(null),
       this.writerGrantsService.lookupFailed() ? this.writerGrantsService.retrySummary() : of(null),
     ])
-      .pipe(finalize(() => this.activeRetry.update((active) => (active?.id === run.id ? null : active))))
+      .pipe(
+        finalize(() =>
+          this.activeRetries.update((runs) => {
+            if (runs.get(scope) !== runId) return runs;
+            const next = new Map(runs);
+            next.delete(scope);
+            return next;
+          })
+        )
+      )
       .subscribe(([, scoped]) => {
         if (slug) this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(scoped));
       });

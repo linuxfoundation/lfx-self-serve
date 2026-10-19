@@ -1095,6 +1095,49 @@ describe('SidebarNavService', () => {
       expect(service.menuRetryPending()).toBe(false);
     });
 
+    it('keeps a grant already confirmed for the scope on screen while its probe re-runs (A → B → A)', () => {
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([['cncf', { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+
+      // Back to cncf with its probe in flight: the cached cncf grant still counts.
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => new Subject<unknown>());
+      selectedFoundation.set({ slug: 'cncf' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(true);
+    });
+
+    it('keeps a retry pending for its own scope after another scope starts and finishes one', () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const cncfRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => cncfRetry);
+      service.retryMenuLookups();
+
+      selectedFoundation.set({ slug: 'aaif' });
+      refreshEnrichedPersonas = vi.fn(() => of({}));
+      service.retryMenuLookups();
+
+      // Back on cncf: its run is still in flight, so it reads pending and a second click doesn't stack.
+      selectedFoundation.set({ slug: 'cncf' });
+      expect(service.menuRetryPending()).toBe(true);
+      refreshEnrichedPersonas = vi.fn(() => of({}));
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).not.toHaveBeenCalled();
+      cncfRetry.next({});
+      cncfRetry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
     it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {
       refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
         slug === 'cncf' ? of(null) : of({ error: null })
