@@ -15,6 +15,7 @@ import {
   MKTG_LEGACY_REVISION_ID_PREFIX,
   MKTG_REVISION_GENERATED_LABEL,
   MKTG_REVISION_KEY_SUFFIX,
+  MKTG_REVISION_NAME_UNAVAILABLE_LABEL,
   MKTG_REVISION_SEQUENCE_DIGITS,
   MKTG_REVISION_UNKNOWN_AUTHOR_LABEL,
 } from '../constants/mktg-document-store.constants';
@@ -112,10 +113,10 @@ export function parseMktgLegacyRevisionId(id: string): string | null {
   return MKTG_ARTIFACT_SHA256_REGEX.test(sha) ? sha : null;
 }
 
-/** One attribution policy for the row and history bar; only an absent record is historical. */
+/** One attribution policy for the row and history bar, including unavailable directory names. */
 export function describeMktgRevisionAuthor(author: MktgRevisionAuthor | null | undefined): string {
   if (!author) return MKTG_REVISION_UNKNOWN_AUTHOR_LABEL;
-  return author.name || author.username;
+  return author.name || MKTG_REVISION_NAME_UNAVAILABLE_LABEL;
 }
 
 /** "How it was made" for one revision, as the Revisions table shows it. */

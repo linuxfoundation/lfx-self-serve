@@ -75,7 +75,13 @@ export class MktgArtifactService {
    * omitted (WARN says which reason). A storage failure is retried by the
    * next poll.
    */
-  public async persist(req: Request, spec: MktgArtifactSpec, envelope: MktgArtifactEnvelope, projectUid?: string): Promise<MktgArtifactPersistReceipt | null> {
+  public async persist(
+    req: Request,
+    spec: MktgArtifactSpec,
+    envelope: MktgArtifactEnvelope,
+    projectUid?: string,
+    options: { revisionManaged?: boolean } = {}
+  ): Promise<MktgArtifactPersistReceipt | null> {
     const operation = this.persistOperation(spec);
     const partition = await this.resolveWritablePartition(req, spec, projectUid);
     if (!partition) {
@@ -116,7 +122,7 @@ export class MktgArtifactService {
         documentBytes,
         MKTG_ARTIFACT_CONTENT_TYPE,
         'private',
-        { version: String(envelope.version), 'intake-mode': envelope.intake.mode },
+        { version: String(envelope.version), 'intake-mode': envelope.intake.mode, ...(options.revisionManaged && { 'revision-managed': 'true' }) },
         // The bytes are immutable, but their metadata is not content: when a
         // later draft of the run reproduces this document verbatim, the stored
         // labels still describe the draft that wrote it first, and — because

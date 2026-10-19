@@ -114,6 +114,16 @@ describe('MktgDocumentsController', () => {
     expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
   });
 
+  it('distinguishes an absent document from an absent revision', async () => {
+    storeMocks.getRevision.mockResolvedValue(null);
+    storeMocks.getDocument.mockResolvedValue(null);
+    await controller.getRevision(buildReq({ agentKey: 'brand-kit', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT }), buildRes(), next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'MKTG_DOCUMENT_NOT_FOUND', statusCode: 404 }));
+    storeMocks.getDocument.mockResolvedValue({ revisions: [] });
+    await controller.getRevision(buildReq({ agentKey: 'brand-kit', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT }), buildRes(), next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'NOT_FOUND', statusCode: 404 }));
+  });
+
   it('serves one revision by id', async () => {
     const revision = { revision: { number: 2 }, markdown: '# Doc' };
     storeMocks.getRevision.mockResolvedValue(revision);
@@ -125,8 +135,8 @@ describe('MktgDocumentsController', () => {
     expect(res.json).toHaveBeenCalledWith(revision);
   });
 
-  it('rejects a malformed revision id', async () => {
-    await controller.getRevision(buildReq({ agentKey: 'brand-kit', documentId: 'living', revisionId: 'latest' }, { project: PROJECT }), buildRes(), next);
+  it.each(['latest', `000000-${'a'.repeat(64)}`])('rejects invalid revision id %s', async (revisionId) => {
+    await controller.getRevision(buildReq({ agentKey: 'brand-kit', documentId: 'living', revisionId }, { project: PROJECT }), buildRes(), next);
 
     expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     expect(storeMocks.getRevision).not.toHaveBeenCalled();
