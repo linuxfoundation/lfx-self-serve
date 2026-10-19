@@ -97,5 +97,4 @@ export const MEMBER_360_RANKING_COLUMNS = [
   ['Action Owner', 'action_owner'],
   ['Priority', 'priority'],
 ] as const;
-export const MEMBER_360_INTRO =
-  "Scores every member's engagement across events, speaking, ambassadors, committees, content and marketing, finds the gaps and recommends one next action per member. The data comes from LFX; you add anything LFX does not know.";
+export const MEMBER_360_INTRO = 'Choose a window and add any trackers you have; it reads LFX, searches the web and ranks every member with one next action.';

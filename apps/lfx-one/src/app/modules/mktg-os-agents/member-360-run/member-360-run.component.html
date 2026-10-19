@@ -1,21 +1,30 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6 p-4 sm:p-8" data-testid="member-360-run-page">
-  <header class="flex flex-wrap items-center gap-4 border-b border-gray-200 bg-white p-4">
-    <a routerLink=".." queryParamsHandling="preserve" class="font-semibold text-blue-600" data-testid="member-360-back">← Marketing OS</a
-    ><span class="text-gray-400">/</span><b>Member 360</b> <span class="grow"></span
-    ><span class="text-sm text-gray-500" data-testid="member-360-last-run"
-      >{{ context.activeContext()?.name }}
-      @if (latest(); as last) {
-        · last run {{ latestPeriod() }}, {{ last.generated_at | date: 'd MMM' : 'UTC' }}
-      }
-    </span>
-  </header>
-  <!-- Exact 820px form width and 26px title from the approved board. -->
-  <main class="mx-auto flex w-full max-w-[820px] flex-col gap-5">
-    <h1 class="text-[26px] font-bold">Member 360</h1>
-    <p class="text-gray-700">{{ intro }}</p>
+<!-- Run.dc.html uses exact pixel spacing because this app's rem base is 14px. The app shell supplies the global header. -->
+<div class="flex flex-col gap-[20px] bg-white px-4 pb-[32px] pt-[24px] text-gray-900 sm:px-[32px]" data-testid="member-360-run-page">
+  <nav aria-label="Breadcrumb" class="text-[14px] text-gray-500" data-testid="member-360-breadcrumb">
+    <ol class="flex flex-wrap items-center gap-2">
+      <li data-testid="member-360-breadcrumb-kit">
+        <a routerLink=".." queryParamsHandling="preserve" class="text-blue-600" data-testid="member-360-back">{{ context.activeContext()?.name }} kit</a>
+      </li>
+      <li aria-hidden="true">›</li>
+      <!-- The family page will wire this crumb when its independent layer lands. -->
+      <li>Member &amp; sponsor kit</li>
+      <li aria-hidden="true">›</li>
+      <li aria-current="page">Member 360</li>
+    </ol>
+  </nav>
+  <main class="flex w-full min-w-0 flex-col gap-[20px]">
+    <header class="flex flex-col gap-[6px]">
+      <h1 class="text-[30px] font-bold">Member 360</h1>
+      <p class="text-[15px] text-gray-500">{{ intro }}</p>
+      <span class="text-sm text-gray-500" data-testid="member-360-last-run">
+        @if (latest(); as last) {
+          Last run {{ latestPeriod() }}, {{ last.generated_at | date: 'd MMM' : 'UTC' }}
+        }
+      </span>
+    </header>
     @if (!context.activeContextUid()) {
       <p role="status">Select a project to run Member 360.</p>
     } @else if (!context.activeProject()) {
@@ -24,7 +33,11 @@
       <lfx-message severity="warn" text="You need write access to this project to run Member 360." data-testid="member-360-no-access" />
     } @else {
       <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
-        <section class="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white p-6">
+        <section
+          class="flex flex-col gap-[14px] rounded-[10px] border border-gray-200 bg-white px-[20px] py-[18px]"
+          aria-labelledby="member-360-sources-title"
+          data-testid="member-360-intake">
+          <h2 id="member-360-sources-title" class="text-[16px] font-bold">Sources</h2>
           <div class="flex flex-col gap-1">
             <b>Project</b>
             <div class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3" data-testid="member-360-project">
@@ -32,8 +45,8 @@
               ><span class="text-sm text-gray-500">fixed to the project you are in; the agent refuses any other</span>
             </div>
           </div>
-          <!-- Stack through 1280px so the full default Window label fits at laptop width. -->
-          <div class="grid gap-4 min-[1281px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <!-- The board's two-column intake stacks on mobile; long selected labels wrap rather than clip. -->
+          <div class="grid gap-x-[24px] gap-y-[12px] md:grid-cols-2">
             <div class="flex min-w-0 flex-col gap-1">
               <label for="member-360-window-input" class="font-semibold">Window</label
               ><lfx-select
@@ -52,7 +65,7 @@
                 control="compare"
                 [options]="compareOptions()"
                 [loading]="historyLoading()"
-                styleClass="w-full"
+                styleClass="w-full [&_.p-select-label]:whitespace-normal"
                 inputId="member-360-compare-input"
                 ariaLabel="Compare with"
                 data-testid="member-360-compare" />
@@ -114,25 +127,25 @@
               without them.
             </p>
           </div>
+          @if (error()) {
+            <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
+          }
+          @if (historyError()) {
+            <lfx-message severity="error" [text]="historyError()" data-testid="member-360-history-error" />
+            <lfx-button label="Retry history" [text]="true" (onClick)="retryHistory()" data-testid="member-360-retry-history" />
+          }
+          <div class="flex flex-wrap items-center gap-3">
+            <lfx-button
+              type="submit"
+              [label]="submitting() ? 'Starting run…' : 'Run Member 360'"
+              [loading]="submitting()"
+              [disabled]="submitting() || uploading() || historyLoading() || (form.controls.compare.value && !!historyError())"
+              data-testid="member-360-run" />
+            <span class="text-sm text-gray-500"
+              >About 5 to 10 minutes for 12 members. The result is stored as a new run with its workbook; nothing is overwritten.</span
+            >
+          </div>
         </section>
-        @if (error()) {
-          <lfx-message severity="error" [text]="error()" data-testid="member-360-error" />
-        }
-        @if (historyError()) {
-          <lfx-message severity="error" [text]="historyError()" data-testid="member-360-history-error" />
-          <lfx-button label="Retry history" [text]="true" (onClick)="retryHistory()" data-testid="member-360-retry-history" />
-        }
-        <div class="flex flex-wrap items-center gap-3">
-          <lfx-button
-            type="submit"
-            [label]="submitting() ? 'Starting run…' : 'Run Member 360'"
-            [loading]="submitting()"
-            [disabled]="submitting() || uploading() || historyLoading() || (form.controls.compare.value && !!historyError())"
-            data-testid="member-360-run" />
-          <span class="text-sm text-gray-500"
-            >About 5 to 10 minutes for 12 members. The result is stored as a new run with its workbook; nothing is overwritten.</span
-          >
-        </div>
       </form>
       <section class="flex flex-col gap-2" data-testid="member-360-run-history">
         <h2 class="font-semibold">Run history</h2>

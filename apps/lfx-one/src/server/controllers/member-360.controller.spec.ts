@@ -25,6 +25,15 @@ describe('Member 360 HTTP boundary', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     expect(mocks.start).not.toHaveBeenCalled();
   });
+  it('returns the document id supplied by the service without a second derivation', async () => {
+    mocks.start.mockResolvedValue({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' });
+    const res = { json: vi.fn() };
+    const next = vi.fn();
+    await new Member360Controller().generate({ body: { project: 'sample-project' } } as Request, res as unknown as Response, next);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1', documentId: 'run-0123456789abcdef01234567' }));
+    expect(mocks.start).toHaveBeenCalledWith(expect.anything(), { project: 'sample-project' });
+    expect(next).not.toHaveBeenCalled();
+  });
   it('does not accept an ordinary chat token or another project token', async () => {
     for (const scope of ['session-1', 'member-360:other-project:session-1']) {
       const next = vi.fn();

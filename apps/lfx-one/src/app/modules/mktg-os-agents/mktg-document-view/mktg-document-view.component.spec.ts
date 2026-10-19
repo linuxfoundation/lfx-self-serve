@@ -5,7 +5,6 @@ import { DATE_PIPE_DEFAULT_OPTIONS } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Title } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -20,10 +19,16 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
-import { Member360Service } from '@services/member-360.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
+
+// Typed document fixtures and providers share one seam with sibling agents.
+import { Title } from '@angular/platform-browser';
+import { Member360Result } from '@lfx-one/shared/interfaces';
+import { Member360Service } from '@services/member-360.service';
+import { member360Fixture } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
+import { SYNTHETIC_ORG_NAME } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
 
 describe('MktgDocumentViewComponent', () => {
   const PROJECT: ProjectContext = { uid: 'proj-1', name: 'TestOrbit', slug: 'testorbit' };
@@ -64,7 +69,11 @@ describe('MktgDocumentViewComponent', () => {
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
-  const run = { isPending: vi.fn(() => false), waitForStored: vi.fn(() => of({ status: 'ready', stored: true })) };
+  const run = {
+    isPending: vi.fn(() => false),
+    pendingStartedAt: vi.fn(() => Date.parse('2026-10-19T10:00:00.000Z')),
+    waitForStored: vi.fn<Member360Service['waitForStored']>(() => of({ status: 'ready', stored: true })),
+  };
   let store: {
     listDocuments: ReturnType<typeof vi.fn>;
     getDocument: ReturnType<typeof vi.fn>;
@@ -252,11 +261,61 @@ describe('MktgDocumentViewComponent', () => {
     }).compileComponents();
   });
 
-  it('opens the latest revision when no revision is asked for', async () => {
+  it('keeps loading while project context is unresolved', async () => {
+    activeContext.set(null);
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-loading')).not.toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    activeContext.set(PROJECT);
+    await settle();
+    expect(store.getDocument).toHaveBeenCalled();
+  });
+
+  it('keeps the document generating until the server confirms persistence', async () => {
+    const completion = new Subject<Member360Result>();
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(completion);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-run-activity-title')?.textContent?.trim()).toBe('Working on Member 360');
+    expect(query('mktg-run-activity-starting')?.textContent).toContain('Starting the agent');
+    expect(query('mktg-run-activity-phase-questions')).toBeNull();
+    const onActivity = run.waitForStored.mock.calls.at(-1)?.[2];
+    onActivity?.([{ id: 'step-1', kind: 'lfx', label: 'Checking LFX', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' }]);
+    await settle();
+    expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
+    expect(store.getDocument).not.toHaveBeenCalled();
+    completion.next({ status: 'ready', stored: true });
+    await settle();
+    expect(store.getDocument).toHaveBeenCalled();
+  });
+
+  it('keeps a questions turn open with the feed instead of an error or stored result', async () => {
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(of({ status: 'needs_input' }));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('member-360-needs-input')?.textContent).toContain('this version of the page cannot answer yet; the run stays open');
+    expect(query('mktg-run-activity-title')).not.toBeNull();
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+  });
+  it('renders Member 360 as the structured type of this document, not a second viewer', async () => {
+    const member360 = member360Fixture();
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360 }));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('member-360-result')).not.toBeNull();
+    expect(query('member-360-ranking')?.textContent).toContain(SYNTHETIC_ORG_NAME);
+    expect(query('mktg-document-view-document')).toBeNull();
+  });
+
+  it('does not replace a prose document title with the typed document title', async () => {
     TestBed.inject(Title).setTitle('Baseline document · LFX');
     await render('/documents/brand-kit/living');
-
     expect(TestBed.inject(Title).getTitle()).toBe('Baseline document · LFX');
+  });
+
+  it('opens the latest revision when no revision is asked for', async () => {
+    await render('/documents/brand-kit/living');
+
     expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living');
     expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', LATEST.id);
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Brand Kit');

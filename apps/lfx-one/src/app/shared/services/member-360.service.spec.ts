@@ -26,13 +26,13 @@ describe('Member360Service workbook transport', () => {
     vi.useRealTimers();
     sessionStorage.clear();
   });
-  function startPending() {
+  function startPending(onActivity?: Parameters<Member360Service['waitForStored']>[2]) {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
     api.generate({ project: 'sample-project' }).subscribe();
     http
       .expectOne('/api/mktg-agents/member-360/generate')
       .flush({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' });
-    return api.waitForStored('sample-project', 'run-0123456789abcdef01234567');
+    return api.waitForStored('sample-project', 'run-0123456789abcdef01234567', onActivity);
   }
   it('does not cancel or overlap a slow result request', () => {
     let stored = false;
@@ -60,7 +60,39 @@ describe('Member360Service workbook transport', () => {
     http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
     expect(stored).toBe(true);
   });
-  it('fails fast on denied result access', () => {
+  it('delivers activity without releasing the storage gate, retaining the feed across a failed poll', () => {
+    const onActivity = vi.fn();
+    const stored = vi.fn();
+    startPending(onActivity).subscribe(stored);
+    expect(api.pendingStartedAt('sample-project', 'run-0123456789abcdef01234567')).toBeTypeOf('number');
+    expect(api.pendingStartedAt('other-project', 'run-0123456789abcdef01234567')).toBeNull();
+    const activity = [{ id: 'step-1', kind: 'lfx', label: 'Checking LFX', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' }];
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'pending', activity });
+    expect(onActivity).toHaveBeenCalledWith(activity);
+    expect(stored).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({}, { status: 503, statusText: 'Temporary failure' });
+    expect(onActivity).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: false });
+    expect(stored).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
+    expect(stored).toHaveBeenCalledTimes(1);
+    expect(api.pendingStartedAt('sample-project', 'run-0123456789abcdef01234567')).toBeNull();
+  });
+  it('stops polling on needs_input without forgetting the open run', () => {
+    const received = vi.fn();
+    startPending().subscribe(received);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
+    expect(received).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs_input' }));
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it.each([400, 403])('fails fast on a terminal %s result error', (status) => {
     let denied = false;
     startPending().subscribe({
       error: () => {
@@ -68,7 +100,7 @@ describe('Member360Service workbook transport', () => {
       },
     });
     vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
-    http.expectOne('/api/mktg-agents/member-360/result').flush({}, { status: 403, statusText: 'Denied' });
+    http.expectOne('/api/mktg-agents/member-360/result').flush({}, { status, statusText: 'Invalid or denied' });
     expect(denied).toBe(true);
     vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
     http.expectNone('/api/mktg-agents/member-360/result');

@@ -20,8 +20,10 @@ import {
   renderMember360FormMessage,
   createMember360Redactor,
   redactMember360Tabs,
+  findMember360Questions,
 } from '@lfx-one/shared/server';
 import { extractMktgToolResults } from '@lfx-one/shared/utils/mktg-session-event.utils';
+import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
@@ -61,7 +63,8 @@ export class Member360Service {
   public async result(req: Request, sessionId: string, projectUid: string): Promise<Member360Result> {
     const project = await this.resolveProject(req, projectUid);
     let best: Member360Envelope | null = null;
-    for (const payload of (await this.guild.getRawEventPayloads(req, sessionId)).flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL))) {
+    const payloads = await this.guild.getRawEventPayloads(req, sessionId);
+    for (const payload of payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL))) {
       for (const candidate of extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID)) {
         const parsed = envelopeSchema.safeParse(candidate);
         if (!parsed.success) {
@@ -85,7 +88,10 @@ export class Member360Service {
         if (!best || envelope.version >= best.version) best = parsed.data;
       }
     }
-    if (!best) return { status: 'pending' };
+    if (!best) {
+      const questionsText = findMember360Questions(payloads);
+      return { status: questionsText ? 'needs_input' : 'pending', activity: buildMktgRunActivity(payloads) };
+    }
     const type = findMktgDocumentType('member-360');
     if (!type)
       throw new MicroserviceError('Member 360 document type is not configured.', 503, 'MEMBER_360_UNAVAILABLE', {

@@ -46,11 +46,14 @@ import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-vi
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
+
+// Typed document integration: keep the imports together for sibling agents.
 import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import { MktgDocumentListItem } from '@lfx-one/shared/interfaces';
+import { MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360Service } from '@services/member-360.service';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
+import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -81,6 +84,7 @@ import { Member360ResultComponent } from '../components/member-360-result/member
     MktgFrameworkViewComponent,
     TooltipModule,
     Member360ResultComponent,
+    MktgRunActivityComponent,
   ],
   templateUrl: './mktg-document-view.component.html',
 })
@@ -102,6 +106,9 @@ export class MktgDocumentViewComponent {
   // === Signals ===
   protected readonly loading = signal(true);
   protected readonly generating = signal(false);
+  protected readonly needsInput = signal(false);
+  protected readonly runActivity = signal<MktgRunActivity[]>([]);
+  protected readonly runStartedAt = signal(0);
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
   protected readonly historyError = signal('');
   protected readonly reload = signal(0);
@@ -124,11 +131,10 @@ export class MktgDocumentViewComponent {
   // === Computed ===
   protected readonly writePending = computed(() => this.approvingId() !== null || this.restoringId() !== null);
   protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
-  protected readonly title: Signal<string> = this.initTitle();
   protected readonly generatingLabel = computed(
-    () =>
-      `Generating ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.itemLabel ?? 'the document'}… This run will appear here when it is stored.`
+    () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
+  protected readonly title: Signal<string> = this.initTitle();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -296,15 +302,25 @@ export class MktgDocumentViewComponent {
             this.approvalAnnouncement.set('');
             this.runHistory.set([]);
             this.historyError.set('');
+            this.runActivity.set([]);
+            this.needsInput.set(false);
           }),
           switchMap((request) => {
             if (!request.project || !request.agentKey || !request.documentId || (request.agentKey === 'member-360' && !request.user)) {
               this.generating.set(false);
               return EMPTY;
             }
-            const pending = request.agentKey === 'member-360' && this.member360.isPending(request.project, request.documentId);
-            this.generating.set(pending);
-            const ready$: Observable<unknown> = pending ? this.member360.waitForStored(request.project, request.documentId) : of(null);
+            const typedPending = request.agentKey === 'member-360' && this.member360.isPending(request.project, request.documentId);
+            this.generating.set(typedPending);
+            this.runStartedAt.set(typedPending ? (this.member360.pendingStartedAt(request.project, request.documentId) ?? Date.now()) : 0);
+            const ready$: Observable<unknown> = typedPending
+              ? this.member360
+                  .waitForStored(request.project, request.documentId, (activity) => this.runActivity.set(activity))
+                  .pipe(
+                    tap((result) => this.needsInput.set(result.status === 'needs_input')),
+                    filter((result) => result.status !== 'needs_input')
+                  )
+              : of(null);
             // Without `?revision=`, open current, which may not be newest.
             const revision$ = defer(() =>
               request.revisionId
@@ -337,7 +353,7 @@ export class MktgDocumentViewComponent {
               }),
               catchError((error: HttpErrorResponse) => {
                 this.errorText.set(
-                  pending
+                  typedPending
                     ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
                     : this.loadErrorText(error.status, error.error?.code)
                 );

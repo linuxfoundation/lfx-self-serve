@@ -68,13 +68,20 @@ describe('Member360RunComponent', () => {
     expect(fixture.componentInstance.form.controls.window.value).toBe('12');
     expect(fixture.nativeElement.textContent).toContain('No Member 360 runs yet.');
     expect(button().disabled).toBe(false);
+    const breadcrumb = fixture.nativeElement.querySelector('[data-testid="member-360-breadcrumb"]');
+    expect(breadcrumb.textContent).toMatch(/Sample Foundation kit.*Member & sponsor kit.*Member 360/s);
+    expect(breadcrumb.querySelectorAll('li:not([aria-hidden])')).toHaveLength(3);
+    expect(breadcrumb.querySelector('a')?.getAttribute('data-testid')).toBe('member-360-back');
+    const intake = fixture.nativeElement.querySelector('[data-testid="member-360-intake"]');
+    expect(intake.querySelector('[data-testid="member-360-run"]')).not.toBeNull();
+    expect(intake.textContent).toContain('Sources this run will use');
   });
   it('names the comparison run and displays its real stored date', async () => {
     documents.listDocuments.mockReturnValue(
       of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
     );
     await render();
-    expect(fixture.nativeElement.querySelector('[data-testid="member-360-last-run"]').textContent).toContain('last run Q3 2026, 1 Oct');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-last-run"]').textContent).toContain('Last run Q3 2026, 1 Oct');
     expect(fixture.nativeElement.querySelector('[data-testid="member-360-compare"]').textContent).toContain('Previous run: Q3 2026 (1 Oct)');
   });
   it('keeps duplicate filenames distinct and preserves focus after removing the middle file', async () => {

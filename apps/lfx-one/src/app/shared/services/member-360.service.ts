@@ -5,7 +5,14 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
 import { MEMBER_360_API, MKTG_RUN_POLL, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
-import { Member360GenerateRequest, Member360PendingRun, Member360Result, Member360Session, Member360Tracker } from '@lfx-one/shared/interfaces';
+import {
+  Member360GenerateRequest,
+  Member360PendingRun,
+  Member360Result,
+  Member360Session,
+  Member360Tracker,
+  MktgRunActivity,
+} from '@lfx-one/shared/interfaces';
 import { catchError, exhaustMap, filter, Observable, of, take, tap, throwError, timeout, timer } from 'rxjs';
 
 import { UserService } from './user.service';
@@ -60,7 +67,11 @@ export class Member360Service {
     return !!this.readPending(project, documentId);
   }
 
-  public waitForStored(project: string, documentId: string): Observable<Member360Result> {
+  public pendingStartedAt(project: string, documentId: string): number | null {
+    return this.readPending(project, documentId)?.startedAt ?? null;
+  }
+
+  public waitForStored(project: string, documentId: string, onActivity?: (activity: MktgRunActivity[]) => void): Observable<Member360Result> {
     const pending = this.readPending(project, documentId);
     if (!pending) throw new Error('No pending run for this user and project');
     return timer(MKTG_RUN_POLL.initialDelayMs, MKTG_RUN_POLL.intervalMs).pipe(
@@ -75,10 +86,17 @@ export class Member360Service {
             })
           )
       ),
-      filter((result) => result.status === 'ready' && result.stored === true),
+      // Report progress without releasing the document's persistence gate. A transient
+      // poll failure has no activity, so it must not erase the last successful feed.
+      tap((result) => {
+        if (result.activity) onActivity?.(result.activity);
+      }),
+      filter((result) => result.status === 'needs_input' || (result.status === 'ready' && result.stored === true)),
       take(1),
       timeout(MKTG_RUN_POLL.timeoutMs),
-      tap(() => this.forget(project, documentId))
+      tap((result) => {
+        if (result.status === 'ready') this.forget(project, documentId);
+      })
     );
   }
 
