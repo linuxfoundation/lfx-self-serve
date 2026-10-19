@@ -7,6 +7,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import {
@@ -1332,6 +1333,8 @@ describe('MeetingJoinComponent', () => {
       });
 
       it('shows the real confirmation on an emailed page load and removes the viewer once they confirm', async () => {
+        // The real dialog is rendered, and PrimeNG's dialog template needs an animation renderer.
+        TestBed.configureTestingModule({ providers: [provideNoopAnimations()] });
         queryParamMap$.next(convertToParamMap({ action: 'leave' }));
         const invitedMeeting = buildMeeting({ organizer: false, invited: true });
         // The live refetch behind the seed must agree with it, or the page would see an un-invited viewer.
