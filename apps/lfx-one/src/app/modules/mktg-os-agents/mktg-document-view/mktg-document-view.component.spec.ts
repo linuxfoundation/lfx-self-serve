@@ -256,6 +256,31 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-document')).toBeNull();
   });
 
+  it('can repair a missing current target from the surviving revision without inventing a date or back link', async () => {
+    const survivor = { ...OLDER, createdAt: null };
+    const current = { revisionId: `000003-${'3'.repeat(64)}`, changedAt: '2026-10-19T11:00:00.000Z', changedBy: { name: 'The selector' } };
+    const survivingDetail = { ...detail, revisions: [survivor], current };
+    store.getRevision.mockReturnValue(of({ ...survivingDetail, revision: survivor, markdown: '# Surviving revision' }));
+    store.restoreRevision.mockReturnValue(
+      of({
+        ...survivingDetail,
+        current: { ...current, revisionId: survivor.id },
+        revisions: [{ ...survivor, latest: true }],
+        revision: { ...survivor, latest: true },
+      })
+    );
+    await render(`/documents/brand-kit/living?revision=${survivor.id}`);
+    expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe("You're viewing v1 · no name (stored before names were recorded)");
+    expect(query('mktg-document-view-history-bar-back')).toBeNull();
+    query('mktg-document-view-history-bar-make-current')?.click();
+    await settle();
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id);
+    expect(query('mktg-document-view-history-bar')).toBeNull();
+    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
+    expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
+  });
+
   it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps the Documents back link in its %s host', async (host) => {
     await render(`${host}/documents/brand-kit/living`);
     expect(query('mktg-document-view-back-link')?.getAttribute('href')).toBe(`${host}/documents?type=brand-kit`);
