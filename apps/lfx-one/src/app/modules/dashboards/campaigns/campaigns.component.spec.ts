@@ -2306,6 +2306,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestCopyError: WritableSignal<string>;
     canGenerateAbTestCopy: Signal<boolean>;
     selectedEmailStage: Signal<string>;
+    selectedEmailSegment: Signal<string | undefined>;
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
     emailHeroImageUrl: Signal<string>;
@@ -2319,8 +2320,8 @@ describe('CampaignsComponent — email delivery channel', () => {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
         programType: { setValue(v: CampaignProgramType): void };
-        emailType: { disabled: boolean };
-        emailSegment: { disabled: boolean };
+        emailType: { disabled: boolean; value: string };
+        emailSegment: { disabled: boolean; setValue(v: string): void };
       };
     };
     emailAudienceWriteInFlight: WritableSignal<boolean>;
@@ -5176,6 +5177,50 @@ describe('CampaignsComponent — email delivery channel', () => {
       // an exact-arity matcher, and the selector defaults to "All audiences" -- so a default
       // generate must travel with no segment, exactly as it did before the field existed.
       expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event', 'urgency-fomo', undefined);
+    });
+
+    it('defaults the Survey & Report dropdown to Survey Promo -- the control, not just the planner', () => {
+      internals().selectorForm.controls.deliveryType.setValue('survey');
+      fixture.detectChanges();
+
+      // The dropdown renders the CONTROL. The signal alone fed the planner and left the dropdown
+      // showing the email surface's id, which names no survey option, so it read as unselected.
+      expect(internals().selectorForm.controls.emailType.value).toBe('survey-promo');
+      expect(internals().selectedEmailTypeId()).toBe('survey-promo');
+      expect(internals().selectedEmailStage()).toBe('Survey Promo');
+    });
+
+    it('puts the email default back on the dropdown when returning from Survey & Report', () => {
+      internals().selectorForm.controls.deliveryType.setValue('survey');
+      fixture.detectChanges();
+      selectEmail();
+
+      expect(internals().selectorForm.controls.emailType.value).toBe(internals().selectedEmailTypeId());
+      expect(internals().selectedEmailStage()).not.toBe('Survey Promo');
+    });
+
+    it('does not offer the audience segment on Survey & Report, and sends none from it', async () => {
+      selectEmail();
+      // Chosen on the email surface first: hiding the picker must also stop this riding along.
+      internals().selectorForm.controls.emailSegment.setValue('alumni');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-segment-picker"]'), 'email keeps the picker').not.toBeNull();
+      expect(internals().selectedEmailSegment()).toBe('alumni');
+
+      internals().selectorForm.controls.deliveryType.setValue('survey');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="campaigns-email-segment-picker"]'), 'survey hides the picker').toBeNull();
+      expect(internals().selectedEmailSegment()).toBeUndefined();
+
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } }) as never);
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-9');
+
+      await internals().onGenerateEmailCopy();
+
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-9', 'Survey Promo', 'urgency-fomo', undefined);
     });
 
     it('ranks templates matching the selected type first, without removing any', () => {

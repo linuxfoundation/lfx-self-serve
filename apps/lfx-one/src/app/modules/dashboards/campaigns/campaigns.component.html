@@ -202,24 +202,31 @@
             to generation and not a property of the brief: the same brief generates copy for every
             segment. Both pickers that feed `generateEmailCopy` therefore sit together, above the
             planner, and the operator sees what the next generate will ask for in one place.
+
+            Not on the survey surface: the four segments are event personas (session-track reader,
+            business-case reader, past attendee, first-time attendee) and the copy they add talks
+            about "the event" and "a past edition". `selectedEmailSegment` is undefined there, so a
+            hidden picker cannot still be steering the copy.
           -->
-          <div class="flex flex-col gap-2" data-testid="campaigns-email-segment-picker">
-            <label for="email-segment" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience segment</label>
-            <lfx-select
-              [form]="selectorForm"
-              control="emailSegment"
-              inputId="email-segment"
-              [options]="emailSegments"
-              optionLabel="label"
-              optionValue="id"
-              size="small"
-              ariaLabel="Audience segment"
-              dataTest="campaigns-email-segment-select" />
-            <p class="text-xs text-gray-500">
-              Narrows the <em>framing</em> only — which benefits lead and what the call to action assumes the reader already knows. It does not change the
-              stage, the brief or the recipient list; leave it on <em>All audiences</em> for generic copy.
-            </p>
-          </div>
+          @if (!isSurvey()) {
+            <div class="flex flex-col gap-2" data-testid="campaigns-email-segment-picker">
+              <label for="email-segment" class="font-mono text-xs uppercase tracking-wide text-gray-400">Audience segment</label>
+              <lfx-select
+                [form]="selectorForm"
+                control="emailSegment"
+                inputId="email-segment"
+                [options]="emailSegments"
+                optionLabel="label"
+                optionValue="id"
+                size="small"
+                ariaLabel="Audience segment"
+                dataTest="campaigns-email-segment-select" />
+              <p class="text-xs text-gray-500">
+                Narrows the <em>framing</em> only — which benefits lead and what the call to action assumes the reader already knows. It does not change the
+                stage, the brief or the recipient list; leave it on <em>All audiences</em> for generic copy.
+              </p>
+            </div>
+          }
 
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"

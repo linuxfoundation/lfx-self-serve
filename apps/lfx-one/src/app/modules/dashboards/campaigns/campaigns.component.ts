@@ -1339,9 +1339,14 @@ export class CampaignsComponent {
    * Narrowed by LOOKUP against the shared list rather than cast, so an id that is no longer a
    * member (a segment retired from `CAMPAIGN_EMAIL_SEGMENTS` while one was selected) degrades to
    * generic copy instead of travelling upstream as a value the service does not know.
+   *
+   * Always `undefined` on the survey surface. The picker is not shown there -- the segment blocks
+   * are written for events (sessions, past editions, "has attended before") and describe nothing
+   * about a survey's reader -- so a segment chosen earlier on the email surface must not ride
+   * along with a survey generate. The raw id is kept, so returning to email shows the choice again.
    */
   protected readonly selectedEmailSegment = computed<CampaignEmailSegment | undefined>(() =>
-    CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
+    this.isSurvey() ? undefined : CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
   );
 
   /**
@@ -2481,10 +2486,19 @@ export class CampaignsComponent {
       // the other. Left alone, `selectedEmailStage` resolves to undefined and the brief lookup
       // addresses no row -- the planner then looks permanently empty with no error to explain it.
       // Reset to the surface's own default, which is what a fresh selection on it would show.
+      //
+      // The CONTROL is reset with the signal, not just the signal: the dropdown renders the
+      // `emailType` control, and the signal only feeds the planner. Resetting one alone left the
+      // dropdown showing the previous surface's id -- which names no option in this surface's list,
+      // so it read as unselected while the planner quietly worked on the default. `emitEvent: false`
+      // because the signal is already set; the control's own stream would only re-enter
+      // `onSelectEmailType` to find nothing to do.
       if (value === 'survey') {
         this.selectedEmailTypeId.set(DEFAULT_CAMPAIGN_SURVEY_TYPE_ID);
+        this.selectorForm.controls.emailType.setValue(DEFAULT_CAMPAIGN_SURVEY_TYPE_ID, { emitEvent: false });
       } else if (value === 'email') {
         this.selectedEmailTypeId.set(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID);
+        this.selectorForm.controls.emailType.setValue(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID, { emitEvent: false });
       }
 
       // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
