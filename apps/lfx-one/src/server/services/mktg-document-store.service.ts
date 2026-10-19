@@ -350,13 +350,26 @@ export class MktgDocumentStoreService {
   }
 
   /** Dependent agents consume current, never a newer but noncurrent revision. */
-  public async readLatest(req: Request, spec: MktgArtifactSpec, project: string, options: { withSidecar?: boolean } = {}): Promise<MktgArtifactStoredResponse | null> {
+  public async readLatest(
+    req: Request,
+    spec: MktgArtifactSpec,
+    project: string,
+    options: { withSidecar?: boolean } = {}
+  ): Promise<MktgArtifactStoredResponse | null> {
     const withSidecar = options.withSidecar === true;
     const type = findMktgDocumentType(spec.agentKey);
     if (!type || !MKTG_ARTIFACT_PARTITION_REGEX.test(project)) return withSidecar ? null : this.artifactService.readLatest(req, spec, project);
     try {
       const detail = withSidecar
-        ? await this.readDocument(req, project, type, MKTG_LIVING_DOCUMENT_ID, await this.readCurrent(req, project, type, MKTG_LIVING_DOCUMENT_ID), MKTG_DOCUMENT_READ_CONCURRENCY, false)
+        ? await this.readDocument(
+            req,
+            project,
+            type,
+            MKTG_LIVING_DOCUMENT_ID,
+            await this.readCurrent(req, project, type, MKTG_LIVING_DOCUMENT_ID),
+            MKTG_DOCUMENT_READ_CONCURRENCY,
+            false
+          )
         : await this.getDocument(req, project, type, MKTG_LIVING_DOCUMENT_ID);
       const summary = detail?.revisions.find((revision) => revision.latest);
       if (!detail || !summary) return null;
@@ -368,9 +381,10 @@ export class MktgDocumentStoreService {
         format: view.revision.format,
         storedAt: view.revision.createdAt ?? undefined,
         receipt: {
-          s3_key: view.revision.format === 'json'
-            ? `${buildMktgDocumentPrefix(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID)}${view.revision.id}.json`
-            : buildMktgArtifactObjectKey(spec, project, view.revision.contentSha256),
+          s3_key:
+            view.revision.format === 'json'
+              ? `${buildMktgDocumentPrefix(project, type.agentKey, MKTG_LIVING_DOCUMENT_ID)}${view.revision.id}.json`
+              : buildMktgArtifactObjectKey(spec, project, view.revision.contentSha256),
           content_sha256: view.revision.contentSha256,
           project,
           version: view.revision.draftVersion ?? MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
@@ -379,22 +393,46 @@ export class MktgDocumentStoreService {
       };
     } catch (error) {
       if (withSidecar) {
-        logger.warning(req, 'mktg_document_store_read_latest', 'Current revision read failed — rethrowing for the caller to handle', { project, agent: type.agentKey, err: error });
+        logger.warning(req, 'mktg_document_store_read_latest', 'Current revision read failed — rethrowing for the caller to handle', {
+          project,
+          agent: type.agentKey,
+          err: error,
+        });
         throw error;
       }
-      logger.warning(req, 'mktg_document_store_read_latest', 'Current document could not be read — serving no stored document', { project, agent: type.agentKey, err: error });
+      logger.warning(req, 'mktg_document_store_read_latest', 'Current document could not be read — serving no stored document', {
+        project,
+        agent: type.agentKey,
+        err: error,
+      });
       return null;
     }
   }
 
   /** Export selectors retain their public shape, loading a matching stored body; default is current. */
-  public async readExportRevision(req: Request, project: string, type: MktgDocumentType, documentId: string,
-    selector: { revisionId?: string; contentSha256?: string }): Promise<{ revision: MktgStoredRevision; summary: MktgRevisionSummary } | null> {
-    const detail = await this.readDocument(req, project, type, documentId, await this.readCurrent(req, project, type, documentId), MKTG_DOCUMENT_READ_CONCURRENCY, false);
+  public async readExportRevision(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    selector: { revisionId?: string; contentSha256?: string }
+  ): Promise<{ revision: MktgStoredRevision; summary: MktgRevisionSummary } | null> {
+    const detail = await this.readDocument(
+      req,
+      project,
+      type,
+      documentId,
+      await this.readCurrent(req, project, type, documentId),
+      MKTG_DOCUMENT_READ_CONCURRENCY,
+      false
+    );
     if (!detail) return null;
     const legacySha = selector.revisionId ? parseMktgLegacyRevisionId(selector.revisionId) : null;
     let candidates = detail.revisions;
-    if (selector.revisionId) candidates = candidates.filter((entry) => entry.id === selector.revisionId || (legacySha && entry.origin === 'legacy' && entry.contentSha256 === legacySha));
+    if (selector.revisionId)
+      candidates = candidates.filter(
+        (entry) => entry.id === selector.revisionId || (legacySha && entry.origin === 'legacy' && entry.contentSha256 === legacySha)
+      );
     else if (selector.contentSha256) candidates = candidates.filter((entry) => entry.contentSha256 === selector.contentSha256);
     else candidates = candidates.filter((entry) => entry.latest);
     for (const summary of candidates) {
@@ -405,8 +443,21 @@ export class MktgDocumentStoreService {
   }
 
   /** Explicit newest-identity lookup for export comparison; never returns a pre-revision artifact. */
-  public async readNewestRevisionRef(req: Request, project: string, type: MktgDocumentType, documentId: string): Promise<{ id: string; number: number; contentSha256: string } | null> {
-    const detail = await this.readDocument(req, project, type, documentId, await this.readCurrent(req, project, type, documentId), MKTG_DOCUMENT_READ_CONCURRENCY, false);
+  public async readNewestRevisionRef(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string
+  ): Promise<{ id: string; number: number; contentSha256: string } | null> {
+    const detail = await this.readDocument(
+      req,
+      project,
+      type,
+      documentId,
+      await this.readCurrent(req, project, type, documentId),
+      MKTG_DOCUMENT_READ_CONCURRENCY,
+      false
+    );
     if (!detail) return null;
     for (const summary of detail.revisions) {
       const revision = await this.loadSummaryRevision(req, detail, summary);
@@ -426,7 +477,9 @@ export class MktgDocumentStoreService {
     try {
       const content: unknown = JSON.parse(text);
       if (content !== null && typeof content === 'object' && !Array.isArray(content)) return { ...(sidecar ?? {}), content };
-    } catch { /* Preserve the stored sidecar when content cannot be decoded. */ }
+    } catch {
+      /* Preserve the stored sidecar when content cannot be decoded. */
+    }
     return sidecar;
   }
 
@@ -440,7 +493,10 @@ export class MktgDocumentStoreService {
     readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY,
     allowLegacy = true
   ): Promise<MktgDocumentDetailResponse | null> {
-    const entries = await this.listRevisions(req, project, type, documentId, snapshot, readConcurrency);
+    let eligibleCount = 0;
+    const entries = await this.listRevisions(req, project, type, documentId, snapshot, readConcurrency, true, () => {
+      eligibleCount++;
+    });
     if (entries.length) {
       const summaries: MktgRevisionSummary[] = [];
       // Directory lookups share the metadata/body read bound, including serial project listings.
@@ -463,8 +519,17 @@ export class MktgDocumentStoreService {
       });
       return { project, type, documentId, revisions: summaries.reverse(), current: await this.currentSelection(req, snapshot.record) };
     }
-    // A committed pointer with no readable entries is not a pre-revision document.
-    if (snapshot.record || !allowLegacy) return null;
+    // Unreadable revision history must never serve an older pre-revision copy.
+    if (snapshot.record) return null;
+    if (eligibleCount > 0) {
+      logger.warning(req, 'mktg_document_store_read_document', 'No stored revision could be read — serving no stored document', {
+        project,
+        agent: type.agentKey,
+        documentId,
+      });
+      return null;
+    }
+    if (!allowLegacy) return null;
     const legacy = documentId === MKTG_LIVING_DOCUMENT_ID ? await this.findLegacyDocument(req, type, project) : null;
     return legacy ? { project, type, documentId, revisions: [this.legacySummary(legacy)], current: null } : null;
   }
@@ -560,7 +625,8 @@ export class MktgDocumentStoreService {
     documentId: string,
     snapshot: MktgDocumentCurrentSnapshot,
     readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY,
-    loadHistoricalBodies = true
+    loadHistoricalBodies = true,
+    onEligibleKey?: () => void
   ): Promise<MktgListedRevision[]> {
     const prefix = buildMktgDocumentProjectPrefix(project);
     const objects = await this.objectStore.listObjects(req, 'marketing-os-artifacts', buildMktgDocumentPrefix(project, type.agentKey, documentId));
@@ -573,6 +639,7 @@ export class MktgDocumentStoreService {
           if (snapshot.record && !snapshot.record.revisionIds.includes(parsed.id)) return null;
           const metadata = await this.objectStore.headObject(req, 'marketing-os-artifacts', object.key);
           if (!metadata || (!snapshot.record && metadata['managed'] === 'true')) return null;
+          onEligibleKey?.();
           const entry = { ...parsed, ...object, metadata };
           if (loadHistoricalBodies && !metadata['content-sha']) {
             const stored = await this.loadRevision(req, entry, project);
@@ -755,7 +822,14 @@ export class MktgDocumentStoreService {
 
   private jsonSource<T extends object>(envelope: MktgArtifactJsonEnvelope<T>): MktgRevisionContentSource {
     const { content, ...sidecar } = envelope as MktgArtifactJsonEnvelope<T> & Record<string, unknown>;
-    return { text: JSON.stringify(content), contentSha256: envelope.content_sha256, format: 'json', sidecar, version: envelope.version, intakeMode: envelope.intake.mode };
+    return {
+      text: JSON.stringify(content),
+      contentSha256: envelope.content_sha256,
+      format: 'json',
+      sidecar,
+      version: envelope.version,
+      intakeMode: envelope.intake.mode,
+    };
   }
 
   /** Structured assets have no Markdown review-status line. */

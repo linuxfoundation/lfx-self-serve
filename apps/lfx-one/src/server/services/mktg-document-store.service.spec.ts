@@ -121,7 +121,13 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import type { MktgArtifactEnvelope, MktgArtifactJsonEnvelope, MktgDocumentType, MktgRevisionRecord, MktgRevisionRecordFields } from '@lfx-one/shared/interfaces';
+import type {
+  MktgArtifactEnvelope,
+  MktgArtifactJsonEnvelope,
+  MktgDocumentType,
+  MktgRevisionRecord,
+  MktgRevisionRecordFields,
+} from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
@@ -364,8 +370,12 @@ describe('MktgDocumentStoreService', () => {
       const pointer = JSON.parse(store.objects.get(`documents/${PROJECT}/foundation-message/living/current.json`)?.body ?? '{}');
       expect(pointer.revisionId).toBe(initial?.revisions[0].id);
       expect(pointer.revisionIds).toEqual([initial?.revisions[0].id]);
+      expect(pointer.changedBy).toBe('auth0|not-the-lfid');
+      expect(store.objects.get(revisionKeys()[0])?.metadata['author-id']).toBe('auth0|not-the-lfid');
+      expect(JSON.stringify(initial)).not.toContain('auth0|');
       await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second.'), PROJECT, 'session-2');
       expect(revisionKeys()).toHaveLength(2);
+      expect(storedRecord(revisionKeys()[1]).basedOnId).toBe(initial?.revisions[0].id);
 
       const detail = await service.getDocument(req, PROJECT, FRAMEWORK, 'living');
       const restored = await service.restoreRevision(req, PROJECT, FRAMEWORK, 'living', detail?.revisions[1].id as string);
@@ -376,6 +386,35 @@ describe('MktgDocumentStoreService', () => {
       await expect(service.readLatest(req, FRAMEWORK_SPEC, PROJECT)).resolves.toMatchObject({
         documentMarkdown: JSON.stringify(jsonEnvelope('First.').content),
       });
+      await expect(service.readLatest(req, FRAMEWORK_SPEC, PROJECT, { withSidecar: true })).resolves.toMatchObject({
+        documentMarkdown: JSON.stringify(jsonEnvelope('First.').content),
+        revisionNumber: 1,
+        sidecar: { content: jsonEnvelope('First.').content, report: { gaps: ['No member count.'] } },
+      });
+    });
+
+    it('does not expose legacy Markdown when an eligible historical JSON revision is unreadable without a pointer', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Current JSON'), PROJECT, 'json');
+      const key = revisionKeys()[0];
+      const object = store.objects.get(key);
+      if (!object) throw new Error('Expected the JSON fixture');
+      object.metadata = { origin: 'generated', sequence: '1' };
+      object.body = 'corrupted historical JSON revision';
+      store.objects.delete(`documents/${PROJECT}/foundation-message/living/current.json`);
+      const markdown = '# Stale legacy framework';
+      store.objects.set(`foundation-message/${PROJECT}/${sha(markdown)}.md`, {
+        body: markdown,
+        metadata: { version: '1', 'intake-mode': 'form' },
+        lastModified: new Date(0),
+      });
+      await expect(service.readLatest(req, FRAMEWORK_SPEC, PROJECT)).resolves.toBeNull();
+      await expect(service.getDocument(req, PROJECT, FRAMEWORK, 'living')).resolves.toBeNull();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_document_store_read_document',
+        'No stored revision could be read — serving no stored document',
+        expect.any(Object)
+      );
     });
 
     it('records nothing without the writer grant, and drops the receipt when the revision cannot be written', async () => {
@@ -809,7 +848,7 @@ describe('MktgDocumentStoreService', () => {
       expect(latest?.summary.number).toBe(2);
     });
 
-    it('takes the newest revision holding the content when it is stored twice, as a restore does', async () => {
+    it('exports the existing selected content after Make current without creating a copy', async () => {
       const first = jsonEnvelope('First');
       await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
       await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
@@ -818,7 +857,8 @@ describe('MktgDocumentStoreService', () => {
 
       const bySha = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { contentSha256: first.content_sha256 });
 
-      expect(bySha?.summary).toMatchObject({ number: 3, origin: 'restored', latest: true });
+      expect(bySha?.summary).toMatchObject({ number: 1, origin: 'generated', latest: true });
+      expect(revisionKeys()).toHaveLength(2);
     });
 
     it('answers null for content it does not hold and for a document with no stored revision', async () => {
@@ -843,7 +883,8 @@ describe('MktgDocumentStoreService', () => {
 
       expect(newest).toMatchObject({ number: 3, contentSha256: second.content_sha256 });
       expect(newest?.id).toBe(revisionKeys()[2].split('/').pop()?.replace('.json', ''));
-      expect(getObject).toHaveBeenCalledTimes(1);
+      expect(getObject).toHaveBeenCalledTimes(2); // Current pointer plus one revision body.
+      expect(getObject.mock.calls.filter(([, , key]) => /\/[0-9]{6}-[a-f0-9]{64}\.json$/.test(key))).toHaveLength(1);
       getObject.mockRestore();
     });
 
@@ -944,7 +985,7 @@ describe('MktgDocumentStoreService', () => {
         expect(storedRecord(revisionKeys()[0]).bundle.sidecar).not.toHaveProperty('content');
       });
 
-      it('numbers the revision as Documents does — every fresh run is draft 1, and a revision failing its checks is not counted', async () => {
+      it('numbers the revision as the metadata-backed Documents listing without reading unrelated bodies', async () => {
         await service.persistGeneration(req, SPEC, envelope(draft('First'), 1), PROJECT, 'session-1');
         await service.persistGeneration(req, SPEC, envelope(draft('Broken'), 1), PROJECT, 'session-2');
         await service.persistGeneration(req, SPEC, envelope(draft('Second'), 1), PROJECT, 'session-3');
@@ -958,8 +999,8 @@ describe('MktgDocumentStoreService', () => {
 
         expect(latest?.documentMarkdown).toBe(draft('Third'));
         expect(latest?.receipt.version).toBe(1);
-        expect(latest?.revisionNumber).toBe(3);
-        expect(detail?.revisions.find((revision) => revision.latest)?.number).toBe(3);
+        expect(latest?.revisionNumber).toBe(4);
+        expect(detail?.revisions.find((revision) => revision.latest)?.number).toBe(4);
         // The plain read names no revision: the marketplace's dependency check reads only the newest.
         expect((await service.readLatest(req, SPEC, PROJECT))?.revisionNumber).toBeUndefined();
       });
