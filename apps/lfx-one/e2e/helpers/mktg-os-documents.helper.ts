@@ -37,6 +37,7 @@ export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): Mk
     intakeMode: 'form',
     status: '',
     contentSha256: String(number).repeat(64),
+    format: 'markdown',
     commentCount: 0,
     latest: number === currentNumber,
     author: null,

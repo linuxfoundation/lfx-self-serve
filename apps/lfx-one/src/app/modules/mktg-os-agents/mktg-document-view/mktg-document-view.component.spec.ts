@@ -181,7 +181,7 @@ describe('MktgDocumentViewComponent', () => {
     store.getRevision.mockImplementation((project: string, _agent: string, _document: string, id: string) => {
       const selected = revisions.find((entry) => entry.id === id);
       if (!selected) return throwError(() => new HttpErrorResponse({ status: 404 }));
-      return of({ ...history, project, revision: selected, markdown: `# Revision ${selected.number}\n` });
+      return of({ ...history, project, revision: selected, markdown: `# Revision ${selected.number}\n`, sidecar: null });
     });
     return history;
   }
