@@ -28,6 +28,12 @@ const loggerMocks = vi.hoisted(() => ({
   info: vi.fn(),
 }));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
+const directoryMocks = vi.hoisted(() => ({ getUserInfo: vi.fn() }));
+vi.mock('./user.service', () => ({
+  UserService: class {
+    public getUserInfo = directoryMocks.getUserInfo;
+  },
+}));
 
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
@@ -82,12 +88,29 @@ vi.mock('./object-store.service', () => ({
       store.objects.set(key, { body: body.toString('utf8'), metadata: metadata ?? {}, lastModified: new Date(store.clock) });
       return true;
     }
+    public async headObject(_req: unknown, _purpose: string, key: string): Promise<Record<string, string> | null> {
+      return store.objects.get(key)?.metadata ?? null;
+    }
+    public async putConditionalObject(
+      _req: unknown,
+      _purpose: string,
+      key: string,
+      input: { body: Buffer; metadata?: Record<string, string>; ifMatch?: string; ifNoneMatch?: string }
+    ): Promise<boolean> {
+      const previous = store.objects.get(key);
+      if ((input.ifNoneMatch && previous) || (input.ifMatch && (!previous || input.ifMatch !== String(previous.lastModified.getTime())))) {
+        return false;
+      }
+      store.clock += 1000;
+      store.objects.set(key, { body: input.body.toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date(store.clock) });
+      return true;
+    }
     public async listObjects(_req: unknown, _purpose: string, prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
       return [...store.objects.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
     }
-    public async getObject(_req: unknown, _purpose: string, key: string): Promise<{ body: string; metadata: Record<string, string> } | null> {
+    public async getObject(_req: unknown, _purpose: string, key: string): Promise<{ body: string; metadata: Record<string, string>; etag: string } | null> {
       const object = store.objects.get(key);
-      return object ? { body: object.body, metadata: object.metadata } : null;
+      return object ? { body: object.body, metadata: object.metadata, etag: String(object.lastModified.getTime()) } : null;
     }
     public async putPublicImage(_req: unknown, key: string, buffer: Buffer): Promise<{ url: string | null }> {
       if (store.failPublicPut) {
@@ -109,7 +132,10 @@ import { ConflictError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgSlidesExportService } from './mktg-slides-export.service';
 
-const req = { path: '/api/mktg-agents/slides-export/start' } as unknown as Request;
+const req = {
+  path: '/api/mktg-agents/slides-export/start',
+  oidc: { user: { sub: 'auth0|synthetic-export-writer' } },
+} as unknown as Request;
 const PROJECT = 'proj-uid-1';
 const DECK_ID = '1AbCdEfGhIjKlMnOpQrStUvWxYz';
 const BRAND_KIT = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'brand-kit') as MktgDocumentType;
@@ -138,7 +164,7 @@ async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?:
     kit.chapters.logo.placeholder = options.placeholder;
   }
   const markdown = `# ${kit.projectName} Brand Kit\n`;
-  await documentStore.persistGeneration(
+  const receipt = await documentStore.persistGeneration(
     req,
     MKTG_ARTIFACT_SPECS['brand-kit'],
     {
@@ -161,19 +187,21 @@ async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?:
     PROJECT,
     `kit-session-${store.clock}`
   );
+  expect(receipt).toMatchObject({ project: PROJECT, content_sha256: sha(markdown) });
 }
 
 /** Store a Messaging Framework revision; returns its content hash. */
 async function seedFramework(documentStore: MktgDocumentStoreService, tagline = 'Search, open.'): Promise<string> {
   const content = { mf: { tagline }, icp: [], mh: { umbrella: 'Open search.', pillars: [] }, nums: [] };
   const contentSha = sha(JSON.stringify(content));
-  await documentStore.persistJsonGeneration(
+  const receipt = await documentStore.persistJsonGeneration(
     req,
     MKTG_ARTIFACT_SPECS['foundation-message'],
     { contract: 'messaging-framework-output/v1', content, content_sha256: contentSha, version: 1, mode: 'draft', intake: { mode: 'form' } } as never,
     PROJECT,
     `framework-session-${tagline}`
   );
+  expect(receipt).toMatchObject({ project: PROJECT, content_sha256: contentSha });
   return contentSha;
 }
 
@@ -234,6 +262,7 @@ describe('MktgSlidesExportService', () => {
     store.clock = 0;
     store.failPublicPut = false;
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The writer' } });
     guildMocks.createSession.mockResolvedValue('session-1');
     guildMocks.getRawEventPayloads.mockResolvedValue([]);
     service = new MktgSlidesExportService();

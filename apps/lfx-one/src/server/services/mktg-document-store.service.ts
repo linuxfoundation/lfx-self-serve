@@ -65,7 +65,7 @@ import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { ObjectStoreService } from './object-store.service';
-import { UserService } from './user.service';
+import type { UserService } from './user.service';
 
 /**
  * Immutable revision bundles, mutable current pointer. The pointer is also the
@@ -79,7 +79,7 @@ export class MktgDocumentStoreService {
   private readonly objectStore = new ObjectStoreService();
   private readonly artifactService = new MktgArtifactService();
   private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
-  private userService?: UserService;
+  private userService?: Promise<UserService>;
 
   /** Persist the compatibility artifact, then publish its revision before returning a receipt. */
   public async persistGeneration(
@@ -862,8 +862,13 @@ export class MktgDocumentStoreService {
     if (!author) {
       author = (async () => {
         try {
-          this.userService ??= new UserService();
-          const response = await this.userService.getUserInfo(req, userId);
+          this.userService ??= import('./user.service')
+            .then(({ UserService }) => new UserService())
+            .catch((error: unknown) => {
+              this.userService = undefined;
+              throw error;
+            });
+          const response = await (await this.userService).getUserInfo(req, userId);
           if (!response.success) {
             logger.warning(req, 'mktg_document_store_author', 'Author lookup failed — showing no name');
             return { name: null };
