@@ -526,6 +526,8 @@ export class MktgAgentRunService {
       ...(answered && { questions: answered.questions, answers: answered.answers }),
       // The Brand Kit's revision is a JSON kit: stored with the version so the kit view renders it back without a poll.
       ...(result.brandKit && { brandKit: result.brandKit }),
+      // What the server stored for this version: an export names its revision by it.
+      ...(result.persistence?.content_sha256 && { contentSha256: result.persistence.content_sha256 }),
       createdAt: new Date().toISOString(),
     };
     const run: MktgStoredAgentRun = {

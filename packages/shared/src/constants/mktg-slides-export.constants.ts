@@ -1,0 +1,139 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Export to Google Slides (slides-export-output/v1): the Guild agent
+// linux-foundation~slides-export copies the LF 2025 Slides template into a
+// Drive folder (or refreshes a deck it made before), applies the kit's brand
+// to its layouts and fills it from an asset as LFX One stores it. Transcribed
+// from marketing-os-agents agents/slides-export (src/form.ts, src/envelope.ts;
+// docs/contracts/slides-export-output.md is the contract of record). The
+// rendered intake's marker lines are load-bearing: the agent parses them back.
+
+import type { MktgSlidesExportAgentKey } from '../interfaces/mktg-slides-export.interface';
+
+/** The BFF routes of the export. */
+export const MKTG_SLIDES_EXPORT_API_PATH = '/api/mktg-agents/slides-export';
+
+/** The exporter's Guild agent name; the workspace owner completes it (`linux-foundation~slides-export`). */
+export const MKTG_SLIDES_EXPORT_GUILD_HANDLE = 'slides-export';
+
+/** The agent identifier the envelope must carry. */
+export const MKTG_SLIDES_EXPORT_AGENT_IDENTIFIER = 'linux-foundation~slides-export';
+
+export const MKTG_SLIDES_EXPORT_CONTRACT_ID = 'slides-export-output/v1';
+
+export const MKTG_SLIDES_EXPORT_KIND = 'slides-export';
+
+export const MKTG_SLIDES_EXPORT_MODES = ['create', 'update'] as const;
+
+/** The asset members the exporter reads, in the deck's order. */
+export const MKTG_SLIDES_EXPORT_ASSET_KINDS = ['framework', 'kit', 'boilerplates', 'faq'] as const;
+
+export const MKTG_SLIDES_EXPORT_SLIDE_KINDS = ['title', 'statement', 'section', 'bullets', 'text', 'two-columns', 'table', 'closing'] as const;
+
+/** The documents LFX One exports today: the Messaging Framework and the Brand Kit. */
+export const MKTG_SLIDES_EXPORT_AGENT_KEYS = ['foundation-message', 'brand-kit'] as const;
+
+/**
+ * Where a new deck is created. LFX One stores no per-project Drive folder
+ * yet, so every export goes to the Marketing OS folder (the one that holds
+ * the LF 2025 template) until a project's own folder is stored.
+ */
+export const MKTG_SLIDES_EXPORT_FOLDER_ID = '1rH6qCSXSb_GEQ5-N1-IEosGjy2y8GcoH';
+
+/** A Drive file id, as the agent's form takes it. */
+export const MKTG_SLIDES_EXPORT_DRIVE_ID_REGEX = /^[A-Za-z0-9_-]{10,}$/;
+
+/** A deck link as the agent writes it (`deckLink`), found in an error that names the deck. */
+export const MKTG_SLIDES_EXPORT_DECK_LINK_REGEX = /https:\/\/docs\.google\.com\/presentation\/d\/[A-Za-z0-9_-]{10,}\/edit/;
+
+/** The Slides API fetches a logo from a URL of at most this many characters. */
+export const MKTG_SLIDES_EXPORT_MAX_LOGO_URL_CHARS = 2000;
+
+/** The rendered intake's marker lines (agents/slides-export/src/form.ts). */
+export const MKTG_SLIDES_EXPORT_INTAKE_HEADER = 'BATCH INTAKE SUBMISSION (Slides export)';
+export const MKTG_SLIDES_EXPORT_DECK_NONE = 'none (create a new deck from the LF 2025 template)';
+export const MKTG_SLIDES_EXPORT_ASSETS_OPEN = '--- ASSETS (JSON) ---';
+export const MKTG_SLIDES_EXPORT_ASSETS_CLOSE = '--- END ASSETS ---';
+
+/** A new deck's title names what it holds, per asset. */
+export const MKTG_SLIDES_EXPORT_DECK_TITLE_LABELS: Record<MktgSlidesExportAgentKey, string> = {
+  'foundation-message': 'Messaging framework',
+  'brand-kit': 'Brand kit',
+};
+
+/** What the export is called on screen, per asset. */
+export const MKTG_SLIDES_EXPORT_ASSET_LABELS: Record<MktgSlidesExportAgentKey, string> = {
+  'foundation-message': 'messaging framework',
+  'brand-kit': 'brand kit',
+};
+
+/** The export record a deck is kept with: one immutable object per export, newest last. */
+export const MKTG_SLIDES_EXPORT_RECORD_SCHEMA = 'mktg-slides-export/v1';
+
+/** Export records live beside the document store, in the same private bucket, under their own prefix. */
+export const MKTG_SLIDES_EXPORT_KEY_PREFIX = 'slides-exports';
+
+/** Digits of the export time (epoch ms) that leads a record's key, so the newest record sorts last. */
+export const MKTG_SLIDES_EXPORT_KEY_TIME_DIGITS = 15;
+
+/**
+ * The project logo as the browser drew it from the kit's SVG: a PNG, since
+ * the Slides API takes PNG, JPEG or GIF only. It is published under this
+ * prefix of the public image bucket, content-addressed per project.
+ */
+export const MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX = 'mktg-slides-logos';
+export const MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE = 'image/png';
+/** Largest PNG accepted, in bytes (the drawn logo is far smaller). */
+export const MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES = 1_048_576;
+/** The eight bytes every PNG starts with. */
+export const MKTG_SLIDES_EXPORT_PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
+/** Longest side of the drawn logo and of an accepted PNG, in pixels. */
+export const MKTG_SLIDES_EXPORT_LOGO_MAX_SIDE_PX = 1600;
+/** Longest side the browser draws the logo at. */
+export const MKTG_SLIDES_EXPORT_LOGO_DRAW_SIDE_PX = 1200;
+
+/** How long the browser waits for the logo to load before exporting without it. */
+export const MKTG_SLIDES_EXPORT_LOGO_LOAD_MS = 5000;
+
+/**
+ * A runtime error is a failed export only once it has settled: a session can
+ * recover from one (a dropped connection retried), so an error counts when
+ * nothing came after it beyond the run's own teardown and it is this old.
+ */
+export const MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS = 30_000;
+/** Events this soon after an error are the run's teardown, not a recovery. */
+export const MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS = 5_000;
+
+/** How the browser polls an export: every few seconds, for as long as a slow Drive copy can take. */
+export const MKTG_SLIDES_EXPORT_POLL = { intervalMs: 4000, maxAttempts: 120 } as const;
+
+/** Why the deck carries no project logo, as the result says it. */
+export const MKTG_SLIDES_EXPORT_LOGO_NOTES = {
+  'no-logo': 'The kit has no SVG logo to place, so the deck keeps the template’s logo.',
+  'not-drawn': 'The logo could not be drawn as an image, so the deck keeps the template’s logo.',
+  'not-public':
+    'The logo was not applied: this environment has no public address Google can fetch it from. The deck still takes the kit’s colours and typeface.',
+  'not-published': 'The logo was not applied: it could not be published for Google to fetch. The deck still takes the kit’s colours and typeface.',
+  'not-placed': 'The logo was not applied: Google Slides did not place it. The deck still takes the kit’s colours and typeface.',
+} as const;
+
+/** The plain messages a failed export shows; never the agent's own text. */
+export const MKTG_SLIDES_EXPORT_FAILURE_MESSAGES = {
+  intake: 'The exporter could not read this export, so nothing was created. Try again; if it happens again, open the latest revision and export from there.',
+  'not-a-deck':
+    'The deck from the last export is no longer a Google Slides presentation (it may have been moved, deleted or converted). Create a new deck instead.',
+  partial: 'Google Slides stopped partway through the export, so the deck may be incomplete. Try again.',
+  google: 'Google Drive or Slides refused the export. Try again in a moment.',
+  unknown: 'The export failed. Try again in a moment.',
+  timeout: 'The export is taking longer than expected. It may still finish: check Google Drive, or try again.',
+  start: 'The export could not be started. Try again in a moment.',
+} as const;
+
+/** Why a start was refused, by the BFF's error code, in plain words. */
+export const MKTG_SLIDES_EXPORT_START_MESSAGES: Record<string, string> = {
+  NO_DECK_TO_UPDATE: 'There is no earlier deck to update. Create a new deck instead.',
+  NOTHING_TO_EXPORT: 'This revision holds nothing that exports to Google Slides.',
+  REVISION_NOT_STORED: 'This version is not stored yet, so it cannot be exported. Try again in a moment, or export it from Documents.',
+  FORBIDDEN: 'You need write access to this project to export its documents.',
+};

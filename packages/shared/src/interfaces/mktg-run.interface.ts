@@ -1058,6 +1058,12 @@ export interface MktgRunVersion {
   answers?: MktgRunAnswer[];
   /** The Brand Kit this version is, for the Brand Kit agent: what the kit view renders (the document is its Markdown rendering). */
   brandKit?: BrandKitRevision;
+  /**
+   * SHA-256 of the content the server stored for this version (its
+   * persistence receipt), which names the stored revision an export of this
+   * version reads; absent when the result carried no receipt.
+   */
+  contentSha256?: string;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }

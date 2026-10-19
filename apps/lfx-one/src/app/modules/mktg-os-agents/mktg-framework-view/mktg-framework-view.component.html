@@ -24,7 +24,7 @@
     }
     @if (ready()) {
       <div class="grow"></div>
-      <!-- What you can do with the framework, as on the Brand Kit's web view: print it as one document, or (a later item, inert until it ships) export it to Google Slides. -->
+      <!-- What you can do with the framework, as on the Brand Kit's web view: print it as one document, or export it to Google Slides (the panel below the header shows the export). -->
       <div class="flex flex-wrap items-center gap-2" data-testid="mktg-framework-view-actions">
         <lfx-button
           label="Download PDF"
@@ -39,13 +39,17 @@
           icon="fa-light fa-presentation-screen"
           [outlined]="true"
           size="small"
-          [disabled]="true"
-          badge="coming soon"
-          ariaLabel="Export to Google Slides — coming soon"
-          data-testid="mktg-framework-view-export-slides" />
+          [loading]="slidesExport.busy()"
+          [disabled]="!exportTarget() || slidesExport.busy()"
+          ariaLabel="Export the messaging framework to Google Slides"
+          data-testid="mktg-framework-view-export-slides"
+          (onClick)="slidesExport.onExport()" />
       </div>
     }
   </div>
+
+  <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
+  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [logoSvg]="logoSvg()" data-testid="mktg-framework-view-slides-export" />
 
   <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs" (keydown)="onTabKeydown($event)">

@@ -4,9 +4,11 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
-import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState } from '@lfx-one/shared/interfaces';
+import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
+import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
@@ -16,7 +18,7 @@ import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
   selector: 'lfx-test-framework-host',
   imports: [MktgFrameworkViewComponent],
   template: `
-    <lfx-mktg-framework-view projectName="TestOrbit" [asset]="asset()" [state]="state()" [version]="version()" [kit]="kit()">
+    <lfx-mktg-framework-view projectName="TestOrbit" [asset]="asset()" [state]="state()" [version]="version()" [kit]="kit()" [exportTarget]="exportTarget()">
       <p data-testid="projected">The feed goes here</p>
     </lfx-mktg-framework-view>
   `,
@@ -26,6 +28,7 @@ class HostComponent {
   public readonly state = signal<MktgFrameworkViewState>('generating');
   public readonly version = signal<number | null>(null);
   public readonly kit = signal<BrandKitRevision | null>(null);
+  public readonly exportTarget = signal<MktgSlidesExportTarget | null>(null);
 }
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -127,6 +130,7 @@ describe('MktgFrameworkViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
   let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
@@ -137,7 +141,19 @@ describe('MktgFrameworkViewComponent', () => {
 
   beforeEach(async () => {
     printer = { print: vi.fn(() => Promise.resolve()), clear: vi.fn() };
-    await TestBed.configureTestingModule({ imports: [HostComponent], providers: [{ provide: MktgPrintService, useValue: printer }] }).compileComponents();
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
+      poll: vi.fn(() => NEVER),
+      drawLogoPng: vi.fn(() => Promise.resolve(undefined)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [HostComponent],
+      providers: [
+        { provide: MktgPrintService, useValue: printer },
+        { provide: MktgSlidesExportService, useValue: slidesExport },
+      ],
+    }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;
     await fixture.whenStable();
@@ -304,12 +320,33 @@ describe('MktgFrameworkViewComponent', () => {
     expect(print?.textContent).not.toContain('Check the member count.');
     expect(print?.textContent).not.toContain('Check the dates.');
 
+    // Export to Google Slides waits for the page to name a stored revision.
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
     query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
     expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, null);
 
     fixture.destroy();
     expect(printer.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+  });
+
+  it('exports the stored framework to Google Slides with the project kit’s logo, the panel under the header showing the progress', async () => {
+    const target: MktgSlidesExportTarget = { project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', contentSha256: 'a'.repeat(64) };
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.kit.set(kit);
+    host.exportTarget.set(target);
+    await fixture.whenStable();
+
+    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
+    query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+
+    expect(slidesExport.drawLogoPng).toHaveBeenCalledWith(kit.chapters.logo.files.primary?.svg);
+    expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
+    expect(query('mktg-slides-export-running')?.textContent).toContain('Exporting the messaging framework');
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
   });
 
   it('sets the print in the project’s Brand Kit when there is one: its colours, its typeface (waited for before the dialog), its logo', async () => {

@@ -407,6 +407,36 @@ describe('MktgDocumentStoreService', () => {
     });
   });
 
+  describe('readExportRevision — the revision an export names', () => {
+    it('finds a revision by its id, by the hash of its content, or the latest, with the latest beside it', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
+      const second = jsonEnvelope('Second');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, second, PROJECT, 'session-2');
+      const [firstKey] = revisionKeys();
+      const firstId = firstKey.split('/').pop()?.replace('.json', '') ?? '';
+
+      const byId = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { revisionId: firstId });
+      expect(byId?.summary).toMatchObject({ id: firstId, number: 1, latest: false });
+      expect(byId?.latest).toMatchObject({ number: 2, contentSha256: second.content_sha256 });
+
+      const bySha = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { contentSha256: second.content_sha256 });
+      expect(bySha?.summary).toMatchObject({ number: 2, latest: true });
+      expect(JSON.parse(bySha?.revision.record.bundle.markdown ?? '{}')).toMatchObject({ mf: { tagline: 'Second' } });
+
+      const latest = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', {});
+      expect(latest?.summary.number).toBe(2);
+    });
+
+    it('answers null for content it does not hold and for a document with no stored revision', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Only'), PROJECT, 'session-1');
+
+      expect(await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { contentSha256: 'f'.repeat(64) })).toBeNull();
+      // A pre-revision document is Markdown alone: nothing to export.
+      seedLegacy('# Brand Kit\n');
+      expect(await service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).toBeNull();
+    });
+  });
+
   describe('one-off runs', () => {
     it('stores every run as its own document with a single revision that is never updated', async () => {
       await service.recordGeneration(req, LINKEDIN, PROJECT, envelope('# Post A\n'), 'session-a');

@@ -6,7 +6,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
+import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { NEVER, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BrandKitWebViewComponent } from './brand-kit-web-view.component';
@@ -25,6 +27,7 @@ const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8
 describe('BrandKitWebViewComponent', () => {
   let fixture: ComponentFixture<BrandKitWebViewComponent>;
   let print: ReturnType<typeof vi.spyOn>;
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
@@ -37,9 +40,15 @@ describe('BrandKitWebViewComponent', () => {
   };
 
   const configure = async (platformId: 'browser' | 'server', kit: BrandKitRevision = brandKitTestRevision()): Promise<void> => {
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
+      poll: vi.fn(() => NEVER),
+      drawLogoPng: vi.fn(() => Promise.resolve('UE5H')),
+    };
     await TestBed.configureTestingModule({
       imports: [BrandKitWebViewComponent],
-      providers: [provideNoopAnimations(), { provide: PLATFORM_ID, useValue: platformId }],
+      providers: [provideNoopAnimations(), { provide: PLATFORM_ID, useValue: platformId }, { provide: MktgSlidesExportService, useValue: slidesExport }],
     }).compileComponents();
     fixture = TestBed.createComponent(BrandKitWebViewComponent);
     fixture.componentRef.setInput('kit', kit);
@@ -60,12 +69,29 @@ describe('BrandKitWebViewComponent', () => {
   describe('in the browser', () => {
     beforeEach(async () => configure('browser'));
 
+    it('exports the stored kit to Google Slides with its logo drawn for the deck, the panel showing the progress', async () => {
+      const target = { project: 'proj-1', agentKey: 'brand-kit' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+      fixture.componentRef.setInput('exportTarget', target);
+      await fixture.whenStable();
+      expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(false);
+
+      button('brand-kit-web-view-export-slides')?.click();
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+
+      expect(slidesExport.drawLogoPng).toHaveBeenCalledWith(brandKitTestRevision().chapters.logo.files.primary?.svg);
+      expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create', logoPng: 'UE5H' });
+      expect(query('mktg-slides-export-running')).not.toBeNull();
+      expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
+      expect(query('brand-kit-web-view-footer')?.textContent).toContain('Export to Google Slides builds the kit as a deck');
+    });
+
     it('heads the page as the framework view does: the title, the kit’s version, the mode, and the actions', async () => {
       expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
       expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe('Draft');
       expect(button('brand-kit-web-view-download-pdf')?.disabled).toBe(false);
-      // The slideshow is the Google Slides export: visible, inert until it ships.
+      // Export to Google Slides waits for the page to name a stored revision.
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
 
       fixture.componentRef.setInput('version', 3);

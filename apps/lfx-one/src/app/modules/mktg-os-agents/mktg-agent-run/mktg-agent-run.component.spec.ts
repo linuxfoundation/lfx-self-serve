@@ -37,6 +37,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
+import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectService } from '@services/project.service';
@@ -126,6 +127,7 @@ describe('MktgAgentRunComponent', () => {
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let rememberAnswers: ReturnType<typeof vi.fn>;
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
   let readFile: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
@@ -174,6 +176,12 @@ describe('MktgAgentRunComponent', () => {
       of(Object.fromEntries(agentIds.map((agentId) => [agentId, dependencyDocs[`${projectUid}:${agentId}`] ?? null])))
     );
     resolveBrandKit = vi.fn(() => of(null));
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
+      poll: vi.fn(() => NEVER),
+      drawLogoPng: vi.fn(() => Promise.resolve(undefined)),
+    };
 
     await TestBed.configureTestingModule({
       imports: [MktgAgentRunComponent],
@@ -190,6 +198,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
+        { provide: MktgSlidesExportService, useValue: slidesExport },
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
         {
           provide: MktgAnswerMemoryService,
@@ -1070,8 +1079,9 @@ describe('MktgAgentRunComponent', () => {
       expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
       expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
       expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
-      // The slideshow is the later Google Slides export: shown, inert.
-      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      // Export to Google Slides reads the project's stored kit (the version carries no stored hash here: the latest revision).
+      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
+      expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
       // A kit is revised from edited inputs, never from a feedback box.
       expect(query('mktg-agent-run-regenerate-button')).toBeNull();
       expect(query('mktg-agent-run-new-run')).not.toBeNull();
@@ -1851,17 +1861,30 @@ describe('MktgAgentRunComponent', () => {
       expect(component['intakeForm'].controls['project_name'].value).toBe('TestOrbit');
     });
 
-    it('prints the framework in the project’s Brand Kit: Download PDF in the framework’s header, the kit read for the print, no inert button left on the page', async () => {
+    it('prints the framework in the project’s Brand Kit and exports the version on screen: Download PDF and Export to Google Slides in the framework’s header', async () => {
       resolveBrandKit.mockReturnValue(of(brandKitTestRevision()));
-      storedRuns = { 'proj-1:foundation-setup': assetRun([{ version: 1, document: '', asset: ASSET, createdAt: '2026-10-17T00:00:00.000Z' }]) };
+      storedRuns = {
+        'proj-1:foundation-setup': assetRun([{ version: 1, document: '', asset: ASSET, contentSha256: 'c'.repeat(64), createdAt: '2026-10-17T00:00:00.000Z' }]),
+      };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fixture.detectChanges();
 
       expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
       expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
-      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
       expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+      // The export names this version's stored revision by the hash of its content.
+      query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+      expect(slidesExport.start).toHaveBeenCalledWith({
+        project: 'proj-1',
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        contentSha256: 'c'.repeat(64),
+        mode: 'create',
+      });
       expect(query('mktg-agent-run-download-pdf')).toBeNull();
       expect(query('mktg-agent-run-export-slides')).toBeNull();
     });

@@ -76,7 +76,8 @@
                   [asset]="currentFrameworkAsset()"
                   [state]="frameworkState()"
                   [version]="assetVersion()"
-                  [kit]="printKit()" />
+                  [kit]="printKit()"
+                  [exportTarget]="slidesExportTarget()" />
               }
             } @else {
               <div data-testid="mktg-agent-run-live">
@@ -481,7 +482,7 @@
                 @if (currentBrandKit(); as brandKit) {
                   <!-- The Brand Kit's revision is the kit itself, shown as an app page with its own header and actions (hand test, 18 Oct); the 16-page book is its print rendering. -->
                   <div data-testid="mktg-agent-run-brand-kit">
-                    <lfx-brand-kit-web-view [kit]="brandKit" [version]="currentVersion()?.version ?? null" />
+                    <lfx-brand-kit-web-view [kit]="brandKit" [version]="currentVersion()?.version ?? null" [exportTarget]="slidesExportTarget()" />
                   </div>
                   <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
                   @if (askedRows().length > 0) {

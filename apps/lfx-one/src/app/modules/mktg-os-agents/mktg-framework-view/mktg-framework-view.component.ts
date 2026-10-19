@@ -24,6 +24,7 @@ import {
   MktgFrameworkAsset,
   MktgFrameworkViewState,
   MktgFrameworkViewTab,
+  MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessagePrintView,
@@ -37,6 +38,7 @@ import {
 import { MktgPrintService } from '@services/mktg-print.service';
 
 import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framework-print.component';
+import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 
 // The Messaging Framework asset view (design: Agent run, Asset view): the
 // framework's own page inside the mktg-os-agents module, with one tab per
@@ -48,12 +50,15 @@ import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framew
 // here. Once the framework exists the header carries what you can do with
 // it: Download PDF prints the framework as one document in the project's
 // brand (lfx-mktg-framework-print, held here in a print-only wrapper and
-// never shown on screen), and Export to Google Slides — a later item — shows
-// disabled, as on the Brand Kit's web view. Presentational: the run page and
-// the Documents area feed it the framework and the project's Brand Kit.
+// never shown on screen), and Export to Google Slides builds the framework
+// as a deck from the stored revision the page names (lfx-mktg-slides-export,
+// the panel under the header: progress, the deck, the last export), in the
+// project's brand when it has a kit. Presentational: the run page and the
+// Documents area feed it the framework, the project's Brand Kit and the
+// revision to export.
 @Component({
   selector: 'lfx-mktg-framework-view',
-  imports: [NgClass, ButtonComponent, MarkdownRendererComponent, MktgFrameworkPrintComponent],
+  imports: [NgClass, ButtonComponent, MarkdownRendererComponent, MktgFrameworkPrintComponent, MktgSlidesExportComponent],
   templateUrl: './mktg-framework-view.component.html',
 })
 export class MktgFrameworkViewComponent {
@@ -75,6 +80,8 @@ export class MktgFrameworkViewComponent {
   public readonly note = input('');
   /** The project's stored Brand Kit, which the print is set in; null for the LF look. */
   public readonly kit = input<BrandKitRevision | null>(null);
+  /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
+  public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
 
   // === Signals ===
   protected readonly selectedTab = signal<FoundationMessageViewTab>('framework');
@@ -129,6 +136,8 @@ export class MktgFrameworkViewComponent {
     return content ? buildFoundationMessagePrintView(content, this.projectName(), this.version(), this.kit()) : null;
   });
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
+  /** The kit's primary logo, which the deck carries in place of the template's. */
+  protected readonly logoSvg = computed(() => this.kit()?.chapters.logo.files.primary?.svg ?? null);
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>
     (this.report()?.notes ?? '')

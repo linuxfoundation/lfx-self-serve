@@ -6,6 +6,7 @@ import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
+import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
 
 /**
@@ -30,6 +31,7 @@ function handleDocumentFileParseError(err: unknown, req: Request, _res: Response
 const router = Router();
 const mktgAgentsController = new MktgAgentsController();
 const mktgDocumentsController = new MktgDocumentsController();
+const mktgSlidesExportController = new MktgSlidesExportController();
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
@@ -95,5 +97,14 @@ router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, 
 
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - make an older revision the latest, as a new revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
+
+// POST /api/mktg-agents/slides-export/start - export a stored Messaging Framework or Brand Kit revision to Google Slides (a new deck, or the last export's deck refreshed in place)
+router.post('/slides-export/start', (req, res, next) => mktgSlidesExportController.start(req, res, next));
+
+// POST /api/mktg-agents/slides-export/result - poll an export (owner-token in body); a ready deck is kept with the revision it was made from
+router.post('/slides-export/result', (req, res, next) => mktgSlidesExportController.result(req, res, next));
+
+// GET /api/mktg-agents/slides-export/last?project=<uid>&agentKey=&documentId= - the document's last export and its latest revision
+router.get('/slides-export/last', (req, res, next) => mktgSlidesExportController.last(req, res, next));
 
 export default router;

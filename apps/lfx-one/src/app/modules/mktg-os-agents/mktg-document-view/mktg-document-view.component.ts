@@ -15,8 +15,15 @@ import {
   MktgRevisionResponse,
   MktgRevisionRow,
   MktgRevisionSummary,
+  MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
-import { boilerplatesAssetOfRevision, describeMktgRevision, foundationMessageAssetOfRevision, readBrandKitRevision } from '@lfx-one/shared/utils';
+import {
+  boilerplatesAssetOfRevision,
+  describeMktgRevision,
+  foundationMessageAssetOfRevision,
+  isMktgSlidesExportAgentKey,
+  readBrandKitRevision,
+} from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -121,6 +128,16 @@ export class MktgDocumentViewComponent {
   protected readonly revisionNote = computed(() => (this.view()?.revision.latest ? 'latest' : ''));
   /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
   protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
+  /** The revision on screen as Export to Google Slides reads it: a framework or a kit revision of the active project; null otherwise. */
+  protected readonly exportTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
+    const view = this.view();
+    const project = this.projectContext.activeContextUid();
+    const agentKey = view?.type.agentKey;
+    if (!view || !project || !isMktgSlidesExportAgentKey(agentKey) || (this.asset() === null && this.brandKit() === null)) {
+      return null;
+    }
+    return { project, agentKey, documentId: view.documentId, revisionId: view.revision.id };
+  });
 
   private readonly request$ = toObservable(
     computed(() => ({ project: this.projectContext.activeContextUid(), ...this.params(), revisionId: this.revisionParam() }))

@@ -520,6 +520,17 @@ describe('MktgAgentRunService', () => {
       expect(events[2]).toEqual({ type: 'persisted' });
     });
 
+    it('keeps the hash of what the server stored with the version, which names the revision an export reads', async () => {
+      resultResponses = [READY_WITH_RECEIPT];
+      const events: MktgGenerateProgress[] = [];
+      service.generate(generateRequest()).subscribe((event) => events.push(event));
+
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+
+      const document = events.find((event) => event.type === 'document');
+      expect(document?.type === 'document' ? document.run.versions.at(-1)?.contentSha256 : undefined).toBe('abc');
+    });
+
     it('bounds the retry — a permanently receipt-less result never polls beyond the shared budget', async () => {
       // The bucket-unconfigured / over-the-size-cap case: no poll will ever
       // produce a receipt, so only the budget can end the loop.

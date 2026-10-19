@@ -19,6 +19,7 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
+  MKTG_LIVING_DOCUMENT_ID,
   MKTG_README_SKIP_NOTES,
   MKTG_RUN_STAGES,
 } from '@lfx-one/shared/constants';
@@ -52,11 +53,12 @@ import {
   MktgRunPhase,
   MktgRunQuestionsPending,
   MktgRunVersion,
+  MktgSlidesExportTarget,
   MktgStoredAgentRun,
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentStatus, mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
+import { findMktgDocumentStatus, isMktgSlidesExportAgentKey, mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -356,6 +358,22 @@ export class MktgAgentRunComponent {
   protected readonly assetVersion = computed(() => (this.phase() === 'result' ? (this.currentVersion()?.version ?? null) : null));
   /** The Brand Kit of the version on screen, when the agent's revision is a kit rather than a document. */
   protected readonly currentBrandKit: Signal<BrandKitRevision | null> = computed(() => this.currentVersion()?.brandKit ?? null);
+  /**
+   * The stored revision Export to Google Slides reads for the version on
+   * screen: the agent's living document, the revision named by the hash of
+   * what the server stored for this version (the latest revision when the
+   * version carries none). Null outside the result and for an agent whose
+   * document does not export.
+   */
+  protected readonly slidesExportTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
+    const agentKey = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey;
+    const project = this.projectContext.activeContextUid();
+    const version = this.currentVersion();
+    if (this.phase() !== 'result' || !version || !project || !isMktgSlidesExportAgentKey(agentKey)) {
+      return null;
+    }
+    return { project, agentKey, documentId: MKTG_LIVING_DOCUMENT_ID, ...(version.contentSha256 && { contentSha256: version.contentSha256 }) };
+  });
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
   /** Whether each `url-list` field can take another row (under its `maxItems`). */

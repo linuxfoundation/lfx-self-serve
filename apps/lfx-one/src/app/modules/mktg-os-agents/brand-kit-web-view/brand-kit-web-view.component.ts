@@ -5,10 +5,18 @@ import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { BRAND_KIT_MODE_LABELS, BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, BRAND_KIT_WEB_VIEW_TABS } from '@lfx-one/shared/constants';
-import { BrandKitBookView, BrandKitChapterSummary, BrandKitRevision, BrandKitWebViewTab, BrandKitWebViewTabId } from '@lfx-one/shared/interfaces';
+import {
+  BrandKitBookView,
+  BrandKitChapterSummary,
+  BrandKitRevision,
+  BrandKitWebViewTab,
+  BrandKitWebViewTabId,
+  MktgSlidesExportTarget,
+} from '@lfx-one/shared/interfaces';
 import { brandKitChapterSummaries, buildBrandKitBookView } from '@lfx-one/shared/utils';
 
 import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
+import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 
 // The Brand Kit on screen, as an app page in the Messaging Framework view's
 // look (hand test, 18 Oct: "more like a website — a proper app — not a
@@ -19,12 +27,14 @@ import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.componen
 // colours, typeface and logo grounds are used inside the samples only; the
 // chrome stays LFX One's. The 16-page book (lfx-brand-kit-view) is the kit's
 // print rendering: it sits here in a print-only wrapper, never shown on
-// screen, and Download PDF prints it. Export to Google Slides — the slideshow
-// — is a later item and shows disabled. Purely presentational: the run page
-// and the Documents area feed it.
+// screen, and Download PDF prints it. Export to Google Slides builds the kit
+// as a deck from the stored revision the page names, in the kit's colours,
+// typeface and logo (lfx-mktg-slides-export, the panel under the header).
+// Purely presentational: the run page and the Documents area feed it the kit
+// and the revision to export.
 @Component({
   selector: 'lfx-brand-kit-web-view',
-  imports: [NgClass, NgTemplateOutlet, ButtonComponent, BrandKitViewComponent],
+  imports: [NgClass, NgTemplateOutlet, ButtonComponent, BrandKitViewComponent, MktgSlidesExportComponent],
   templateUrl: './brand-kit-web-view.component.html',
 })
 export class BrandKitWebViewComponent {
@@ -40,6 +50,8 @@ export class BrandKitWebViewComponent {
   public readonly version = input<number | null>(null);
   /** A note beside the version — the revision's standing in Documents ("latest"), or nothing. */
   public readonly note = input('');
+  /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
+  public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
 
   // === Signals ===
   protected readonly selectedTab = signal<BrandKitWebViewTabId>('overview');
@@ -70,6 +82,8 @@ export class BrandKitWebViewComponent {
   );
   protected readonly tabs: Signal<BrandKitWebViewTab[]> = this.initTabs();
   protected readonly printOnlyClass = BRAND_KIT_PRINT_ONLY_CLASS;
+  /** The kit's primary logo, which the deck carries in place of the template's. */
+  protected readonly logoSvg = computed(() => this.kit().chapters.logo.files.primary?.svg ?? null);
 
   // Literal class names so Tailwind's content scan generates them (the framework view's tab classes).
   private readonly tabClasses: Record<'selected' | 'idle', string> = {

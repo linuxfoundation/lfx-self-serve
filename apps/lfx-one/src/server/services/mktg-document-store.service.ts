@@ -483,6 +483,42 @@ export class MktgDocumentStoreService {
   }
 
   /**
+   * The revision an export names, with its summary and the document's latest
+   * revision: the revision `revisionId` names, else the newest revision
+   * holding the content `contentSha256` names (a run's version, which knows
+   * the hash of what it stored, not the revision id), else the latest. Stored
+   * revisions only: a pre-revision document is Markdown alone, with no asset
+   * to export. Null when the document has no stored revision or none
+   * matches. Throws on a storage failure.
+   */
+  public async readExportRevision(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    selector: { revisionId?: string; contentSha256?: string }
+  ): Promise<{ revision: MktgStoredRevision; summary: MktgRevisionSummary; latest: MktgRevisionSummary } | null> {
+    const revisions = await this.readRevisions(req, project, type, documentId);
+    if (revisions.length === 0) {
+      return null;
+    }
+    let found: MktgStoredRevision | undefined;
+    if (selector.revisionId) {
+      found = this.findRevision(revisions, selector.revisionId);
+    } else if (selector.contentSha256) {
+      found = [...revisions].reverse().find((revision) => revision.record.bundle.contentSha256 === selector.contentSha256);
+    } else {
+      found = revisions[revisions.length - 1];
+    }
+    if (!found) {
+      return null;
+    }
+    const summaries = this.summarize(revisions);
+    const summary = summaries.find((candidate) => candidate.id === found.id) as MktgRevisionSummary;
+    return { revision: found, summary, latest: summaries[0] };
+  }
+
+  /**
    * The stored revision an id names. A legacy id names the pre-revision
    * object, which is the materialized revision 1 with the same bytes once the
    * document has stored revisions.

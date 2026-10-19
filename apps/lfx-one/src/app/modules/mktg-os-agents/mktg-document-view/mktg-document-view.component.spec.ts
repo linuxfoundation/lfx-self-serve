@@ -11,6 +11,7 @@ import { BRAND_KIT_CONTRACT_ID, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/cons
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -56,6 +57,7 @@ describe('MktgDocumentViewComponent', () => {
     restoreRevision: ReturnType<typeof vi.fn>;
   };
   let resolveBrandKit: ReturnType<typeof vi.fn>;
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
     return harness.routeNativeElement?.querySelector(`[data-testid="${testId}"]`) ?? null;
@@ -82,6 +84,12 @@ describe('MktgDocumentViewComponent', () => {
       restoreRevision: vi.fn(() => of({ ...detail, revision: RESTORED })),
     };
     resolveBrandKit = vi.fn(() => of(null));
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of()),
+      poll: vi.fn(() => of()),
+      drawLogoPng: vi.fn(() => Promise.resolve(undefined)),
+    };
     const activeContext = signal<ProjectContext | null>(PROJECT);
 
     await TestBed.configureTestingModule({
@@ -93,6 +101,7 @@ describe('MktgDocumentViewComponent', () => {
         // The Boilerplates view says a failed copy through the app's toasts.
         MessageService,
         { provide: MktgDependencyService, useValue: { resolveBrandKit } },
+        { provide: MktgSlidesExportService, useValue: slidesExport },
       ],
     }).compileComponents();
   });
@@ -146,6 +155,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
     // Only a framework's print reads the project's kit: the kit is its own brand.
     expect(resolveBrandKit).not.toHaveBeenCalled();
+    // Export to Google Slides reads this revision of the document, and its last export is looked up.
+    expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
+    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
   });
 
   it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
@@ -228,6 +240,8 @@ describe('MktgDocumentViewComponent', () => {
     // Download PDF prints the framework in the LF look: the project has no Brand Kit.
     expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
     expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
+    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
     expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
     expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
