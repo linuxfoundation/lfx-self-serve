@@ -966,6 +966,15 @@ export class VoteManageComponent {
             }
             return of(null);
           }
+          // Switching from one clone source to another on a reused component — drop the prior
+          // source/form/step before fetching the replacement. Otherwise a replacement that fails to
+          // load or is rejected as unsupported re-enables the *previous* clone's form, which then
+          // silently submits under the previous clone's project/data despite the URL naming the new one.
+          if (this.cloneSourceVote()) {
+            this.cloneSourceVote.set(null);
+            this.form.set(this.createFormGroup());
+            this.internalStep.set(1);
+          }
           this.loading.set(true);
           // Lock the form while the source vote loads so an organizer can't type into fields a slow
           // fetch is about to overwrite with patchFormWithClonedVote.

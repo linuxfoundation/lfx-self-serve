@@ -654,6 +654,31 @@ describe('VoteManageComponent', () => {
 
       expect(fixture.componentInstance.currentStep()).toBe(2);
     });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86tt0g5, copilot): switching ?clone=X -> ?clone=Y on a reused
+    // component didn't clear X's form/cloneSourceVote before fetching Y. If Y fails to load (this test)
+    // or is rejected as unsupported, the callback just re-enabled X's form, leaving the stale clone's
+    // data in place under a URL that now names Y. Pins the fix: the switch clears state up front, so a
+    // failed replacement leaves a blank form instead of X's.
+    it('clears the previous clone source instead of re-enabling it when switching to a replacement clone that fails to load', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+
+      const REPLACEMENT_CLONE_UID = 'vote-uid-replacement';
+      fetchVote.mockReturnValue(throwError(() => new Error('not found')));
+      queryParams$.next(convertToParamMap({ clone: REPLACEMENT_CLONE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+      expect(fixture.componentInstance.currentStep()).toBe(1);
+    });
   });
 
   // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): pins the write-access-leg `startWith(undefined)` fix —
