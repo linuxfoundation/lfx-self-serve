@@ -76,6 +76,27 @@ describe('MktgPrintService', () => {
     }
   });
 
+  it('never prints for a view that went while the typeface was loading', async () => {
+    const service = configure();
+    const doc = TestBed.inject(DOCUMENT);
+    let arrive: () => void = () => undefined;
+    const face = new Promise<FontFace[]>((resolve) => {
+      arrive = () => resolve([]);
+    });
+    Object.defineProperty(doc, 'fonts', { value: { load: vi.fn(() => face) }, configurable: true });
+    try {
+      const printed = service.print(CLASS, 'Space Grotesk');
+      service.clear(CLASS);
+      arrive();
+      await printed;
+
+      expect(print).not.toHaveBeenCalled();
+      expect(document.body.classList.contains(CLASS)).toBe(false);
+    } finally {
+      delete (doc as unknown as Record<string, unknown>)['fonts'];
+    }
+  });
+
   it('does nothing on the server', async () => {
     await configure('server').print(CLASS);
 

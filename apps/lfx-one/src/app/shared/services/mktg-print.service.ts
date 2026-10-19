@@ -22,10 +22,15 @@ export class MktgPrintService {
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
 
+  /** Numbers each print request: a request whose number is no longer current after the font wait was cleared (or superseded) and never prints. */
+  private request = 0;
+
   /**
    * Prints the document the body class shows, once the given typeface (if
    * any) has loaded or the wait has run out. The class stays while the dialog
-   * is up (the preview renders from it) and goes when the print ends.
+   * is up (the preview renders from it) and goes when the print ends. A
+   * {@link clear} during the font wait cancels the print: the view that asked
+   * for it is gone.
    */
   public async print(bodyClass: string, fontFamily: string | null = null): Promise<void> {
     // SSR guard: window and the print dialog are browser-only (ssr-safety rule).
@@ -33,8 +38,12 @@ export class MktgPrintService {
     if (!isPlatformBrowser(this.platformId) || !view) {
       return;
     }
+    const request = ++this.request;
     if (fontFamily) {
       await this.loadFont(fontFamily);
+    }
+    if (request !== this.request) {
+      return;
     }
     const body = this.document.body;
     body.classList.add(bodyClass);
@@ -42,8 +51,9 @@ export class MktgPrintService {
     view.print();
   }
 
-  /** Takes the print class off the body: for a view that goes while its print dialog is still up. */
+  /** Takes the print class off the body and cancels a print still waiting for its font: for a view that goes while its print is under way. */
   public clear(bodyClass: string): void {
+    this.request++;
     this.document.body?.classList.remove(bodyClass);
   }
 
