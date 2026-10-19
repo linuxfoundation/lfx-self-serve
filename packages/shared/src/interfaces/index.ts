@@ -240,9 +240,6 @@ export * from './download-card.interface';
 // Intercom interfaces
 export * from './intercom.interface';
 
-// Osano cookie-consent (CMP) interfaces
-export * from './osano.interface';
-
 // Org involvement interfaces (cross-foundation org overview)
 export * from './org-involvement.interface';
 
