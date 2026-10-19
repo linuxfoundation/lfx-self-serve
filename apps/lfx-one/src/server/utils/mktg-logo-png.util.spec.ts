@@ -32,6 +32,17 @@ describe('isRasterizableLogoSvg', () => {
     expect(isRasterizableLogoSvg(`<!DOCTYPE svg [<!ENTITY a '<image href="/etc/logo.png"/>'>]><svg ${SVG_NS}>&a;</svg>`)).toBe(false);
     expect(isRasterizableLogoSvg(`<!DOCTYPE svg [<!ENTITY a SYSTEM "file:///etc/passwd">]><svg ${SVG_NS}>&a;</svg>`)).toBe(false);
   });
+
+  it('checks every href, so a decoy href inside another attribute cannot hide the real one', () => {
+    expect(isRasterizableLogoSvg(`<svg ${SVG_NS}><image data-x="href='#" href='/path/on/server.png' width="10" height="10"/></svg>`)).toBe(false);
+    expect(isRasterizableLogoSvg(`<svg ${SVG_NS}><image data-x='href="#' xlink:href="/path/on/server.png"/></svg>`)).toBe(false);
+    expect(isRasterizableLogoSvg(`<svg ${SVG_NS}><image href\n=\n"/path/on/server.png"/></svg>`)).toBe(false);
+  });
+
+  it('reads an entity declaration to its real end, so a ">" in its quoted value cannot hide markup after it', () => {
+    expect(isRasterizableLogoSvg(`<!DOCTYPE svg [<!ENTITY a "x>&#60;image hr&#101;f='/etc/logo.png'/&#62;">]><svg ${SVG_NS}>&a;</svg>`)).toBe(false);
+    expect(isRasterizableLogoSvg(`<!DOCTYPE svg [<!ENTITY a "never closed`)).toBe(false);
+  });
 });
 
 describe('rasterizeLogoSvg', () => {

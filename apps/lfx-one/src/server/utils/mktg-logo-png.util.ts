@@ -5,30 +5,40 @@ import { MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES, MKTG_SLIDES_EXPORT_LOGO_SIDE_PX } fr
 import { MktgLogoPngResult } from '@lfx-one/shared/interfaces';
 import { renderAsync, Resvg, ResvgRenderOptions } from '@resvg/resvg-js';
 
-/** Every `href` / `xlink:href` value as written in the source, before the XML parser resolves it. */
-const HREF_ATTRIBUTE = /\bhref\s*=\s*(["'])([\s\S]*?)\1/gi;
-/** The only references the rasterizer may follow: a fragment in the same SVG, or an image embedded as a data URL. */
-const SAFE_HREF = /^(?:#|data:image\/(?:png|jpeg|gif|webp);)/i;
-/** Entity declarations: an external one, a parameter one, or one whose text carries markup or references. */
-const ENTITY_DECLARATION = /<!ENTITY\b[^>]*>/gi;
+/**
+ * Every `href=` in the source (`xlink:href` and any other prefix included), found without consuming
+ * the value: the scan resumes right after the `=`, so a decoy `href=` written inside another
+ * attribute's value cannot swallow the real attribute that follows it.
+ */
+const HREF_ASSIGNMENT = /href\s*=/gi;
+/** What may follow `href=`: a quote, then a fragment in the same SVG or an image embedded as a data URL. */
+const SAFE_HREF_VALUE = /^\s*(["'])(?:#|data:image\/(?:png|jpeg|gif|webp);)/i;
+/** Where every entity declaration starts. */
+const ENTITY_START = /<!ENTITY/gi;
+/** One whole entity declaration, read quote by quote so a `>` inside a quoted value does not end it early. */
+const ENTITY_DECLARATION = /^<!ENTITY((?:[^>"']|"[^"]*"|'[^']*')*)>/i;
+/** An external or parameter entity, or one whose text carries markup or references. */
 const UNSAFE_ENTITY = /\b(?:SYSTEM|PUBLIC)\b|[<&%]/i;
 
 /**
  * Whether an SVG may be rasterized on this server. The rasterizer reads an
  * `<image>` / `<feImage>` href that names a local path from the server's own
- * disk, so anything but a same-document fragment or an embedded data URL is
- * refused (a raw value that does not start with one of those — an entity or
- * character reference included — is refused too), and so are entity
- * declarations that could build markup or an href the check above did not see.
+ * disk, so every `href=` in the text (in a comment or another attribute's
+ * value too) must be followed by a same-document fragment or an embedded data
+ * URL — a raw value that starts with anything else, an entity or character
+ * reference included, is refused. Entity declarations that could build markup
+ * or an href the scan does not see are refused too, and so is one that does
+ * not close.
  */
 export function isRasterizableLogoSvg(svg: string): boolean {
-  for (const declaration of svg.match(ENTITY_DECLARATION) ?? []) {
-    if (UNSAFE_ENTITY.test(declaration.slice('<!ENTITY'.length))) {
+  for (const start of svg.matchAll(ENTITY_START)) {
+    const declaration = ENTITY_DECLARATION.exec(svg.slice(start.index));
+    if (!declaration || UNSAFE_ENTITY.test(declaration[1])) {
       return false;
     }
   }
-  for (const match of svg.matchAll(HREF_ATTRIBUTE)) {
-    if (!SAFE_HREF.test(match[2])) {
+  for (const assignment of svg.matchAll(HREF_ASSIGNMENT)) {
+    if (!SAFE_HREF_VALUE.test(svg.slice(assignment.index + assignment[0].length))) {
       return false;
     }
   }
