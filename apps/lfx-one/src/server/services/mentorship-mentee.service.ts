@@ -313,7 +313,7 @@ export class MentorshipMenteeService {
 
   /**
    * Applies the signed-in user to a program term as a mentee. Upstream takes the applicant from the
-   * token, so the body carries only the role. Its 422 (the term is not taking applications), 409
+   * token, so the body carries only the role. Its 422 (an eligibility rule failed, named in the message), 409
    * (the user already has an application for the term) and 404 (the term is not in the program)
    * propagate so the page can say why. The created application carries no program or term, so it is
    * dropped and the pages re-read the applications instead.
