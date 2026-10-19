@@ -181,7 +181,7 @@ describe('ImplementationTabComponent submit gate', () => {
 
   /**
    * A durable but unapproved brief. `saved` is honest — the write landed — but campaign-service
-   * refuses a create from it (`brief.go:439`, 400 "brief must be approved before creating
+   * refuses a create from it (`BriefService.CreateCampaigns`, 400 "brief must be approved before creating
    * campaigns"), so leaving Create enabled invited the user to discover that the hard way.
    */
   it('blocks submit when the brief saved but was not approved', async () => {

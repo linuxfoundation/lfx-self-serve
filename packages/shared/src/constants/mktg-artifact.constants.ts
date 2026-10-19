@@ -85,4 +85,13 @@ export const MKTG_ARTIFACT_SPECS: Record<MktgArtifactKey, MktgArtifactSpec> = {
     maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
     logNamespace: 'icp',
   },
+  // A JSON asset (boilerplates-output/v1): stored as document-store revisions
+  // only, so nothing is ever written under this prefix; the spec names the
+  // document type and the log namespace.
+  boilerplates: {
+    agentKey: 'boilerplates',
+    keyPrefix: 'boilerplates',
+    maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
+    logNamespace: 'boilerplates',
+  },
 };

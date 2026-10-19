@@ -4,10 +4,9 @@
 // The Marketing OS document store: every stored agent output is a DOCUMENT
 // with an append-only list of REVISIONS, per project and agent. Living
 // documents (Brand Kit, Message Foundation, ICP) gain a revision each time
-// they are generated or restored; one-off runs (AEO/GEO reports, LinkedIn
+// they are generated or revised; one-off runs (AEO/GEO reports, LinkedIn
 // posts, Member 360) are documents with exactly one revision — a new run is a
-// new document. Nothing is ever deleted: restoring copies an older revision
-// into a new, latest one.
+// new document. Make current changes a separate mutable pointer, not history.
 //
 // A revision record is immutable and content-addressed by its own bytes, so it
 // carries no personal identity (no user names or usernames): a value that a
@@ -32,10 +31,36 @@ export type MktgDocumentKind = 'living' | 'run';
 /**
  * How a revision came to exist:
  * - `generated`: an agent run produced it;
- * - `restored`: a user restored an older revision, copied into a new one;
+ * - `revised`: the future comment-and-revise writer produced it;
+ * - `restored`: historical copies made before current pointers existed;
  * - `legacy`: the document was stored before revisions existed and became revision 1.
  */
-export type MktgRevisionOrigin = 'generated' | 'restored' | 'legacy';
+export type MktgRevisionOrigin = 'generated' | 'revised' | 'restored' | 'legacy';
+
+/** Attribution kept outside immutable hashed bytes so it can be anonymized. */
+export interface MktgRevisionAuthor {
+  /** Effective LFID login handle, never an Auth0 subject. */
+  username: string;
+  name: string;
+}
+
+/** Mutable commit point. Only revisions named here are committed by new writers. */
+export interface MktgDocumentCurrentRecord {
+  revisionId: string;
+  changedAt: string;
+  changedBy: MktgRevisionAuthor | null;
+  /** Existing revisions plus committed new revisions; excludes interrupted writes. */
+  revisionIds: string[];
+}
+
+/** Public selection attribution, without the internal committed-revision manifest. */
+export type MktgDocumentCurrentSelection = Pick<MktgDocumentCurrentRecord, 'revisionId' | 'changedAt' | 'changedBy'>;
+
+/** A current pointer and its opaque compare-and-swap token. */
+export interface MktgDocumentCurrentSnapshot {
+  record: MktgDocumentCurrentRecord | null;
+  etag?: string;
+}
 
 /** One document type of the store, in the order the Documents area lists them. */
 export interface MktgDocumentType {
@@ -58,16 +83,25 @@ export interface MktgDocumentType {
 }
 
 /**
- * The agent's bundle of one revision. The Markdown is the document; the
- * sidecar holds the envelope's structured fields (intake answers, inputs,
- * structure) and the brand file the brand the agent applied, when the agent
- * delivers one. Revisions migrated from the pre-revision store carry the
- * Markdown only.
+ * What a revision's content is: a Markdown document, or the JSON text of a
+ * structured asset (the Messaging Framework's `{ mf, icp, mh, nums }`).
+ */
+export type MktgRevisionFormat = 'markdown' | 'json';
+
+/**
+ * The agent's bundle of one revision. `markdown` is the content text: the
+ * Markdown document, or — for `format: 'json'` — the JSON text of the asset,
+ * exactly the bytes `contentSha256` hashes. The sidecar holds the rest of
+ * the envelope (the report, the inputs record, the intake answers, the
+ * structure) and the brand file the agent applied, when it delivers one.
+ * Revisions migrated from the pre-revision store carry the Markdown only.
  */
 export interface MktgRevisionBundle {
   markdown: string;
-  /** Lowercase hex SHA-256 of the UTF-8 Markdown bytes. */
+  /** Lowercase hex SHA-256 of the UTF-8 content bytes. */
   contentSha256: string;
+  /** Absent on records written before structured assets existed: Markdown. */
+  format?: MktgRevisionFormat;
   sidecar: Record<string, unknown> | null;
   brandFile: string | null;
 }
@@ -116,6 +150,8 @@ export interface MktgRevisionRecord {
   origin: MktgRevisionOrigin;
   /** Revision id this one was restored from (`restored` only). */
   restoredFromId: string | null;
+  /** Current revision the writer used as its base; absent on historical records. */
+  basedOnId?: string | null;
   source: MktgRevisionSource;
   bundle: MktgRevisionBundle;
   comments: MktgRevisionComment[];
@@ -132,12 +168,19 @@ export interface MktgRevisionSummary {
   origin: MktgRevisionOrigin;
   /** Number of the revision this one was restored from (`restored` only). */
   restoredFromNumber: number | null;
-  intakeMode: MktgArtifactIntakeMode;
+  /** Null when historical data did not record an intake mode. */
+  intakeMode: MktgArtifactIntakeMode | null;
   /** Review status as the document states it (`Draft — pre-filled from your documents`); empty when it states none. */
   status: string;
   contentSha256: string;
+  /** Whether the revision's content is a Markdown document or a JSON asset. */
+  format: MktgRevisionFormat;
   commentCount: number;
+  /** Current, not necessarily newest (kept for existing consumers). */
   latest: boolean;
+  author?: MktgRevisionAuthor | null;
+  draftVersion?: number;
+  basedOnNumber?: number | null;
 }
 
 /** A document in the Documents area navigation (no revision details). */
@@ -145,8 +188,10 @@ export interface MktgDocumentListItem {
   agentKey: MktgDocumentAgentKey;
   documentId: string;
   revisionCount: number;
+  /** Current revision id, not necessarily the newest revision. */
   latestRevisionId: string;
-  /** When the latest revision was stored. */
+  currentRevisionNumber?: number;
+  /** When the current revision was stored (not when it was made current). */
   updatedAt: string | null;
   /** When the first revision was stored (the run date of a one-off run). */
   createdAt: string | null;
@@ -171,12 +216,22 @@ export interface MktgDocumentDetailResponse {
   type: MktgDocumentType;
   documentId: string;
   revisions: MktgRevisionSummary[];
+  /** Absent/null for documents whose newest revision is current by default. */
+  current?: MktgDocumentCurrentSelection | null;
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
+  /** The content text: the Markdown document, or the JSON text of the asset when `revision.format` is `json`. */
   markdown: string;
+  /**
+   * The revision's sidecar — the envelope's structured fields — when the
+   * stored record has one; null for a migrated revision. The Brand Kit view
+   * renders the kit from it; the framework view reads the report and the
+   * inputs record from it.
+   */
+  sidecar: Record<string, unknown> | null;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */
@@ -185,7 +240,7 @@ export interface MktgRestoreRevisionRequest {
   revisionId: string;
 }
 
-/** Response of a restore: the document with its new latest revision. */
+/** Response of Make current (the compatibility route remains `/restore`): no new revision. */
 export interface MktgRestoreRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
 }
@@ -211,6 +266,9 @@ export interface ParsedMktgRevisionKey {
 export interface MktgListedRevision extends ParsedMktgRevisionKey {
   key: string;
   lastModified?: Date;
+  metadata?: Record<string, string>;
+  /** Historical bodies loaded only when summary metadata is incomplete. */
+  record?: MktgRevisionRecord;
 }
 
 /** A listed pre-revision artifact of a living document. */
@@ -230,8 +288,23 @@ export interface MktgLegacyDocument {
   intakeMode: MktgArtifactIntakeMode;
 }
 
+/**
+ * What one generation hands the revision writer: the content text (a Markdown
+ * document, or the JSON text of an asset), its sha, the format, the rest of
+ * the envelope as the sidecar, and the run's draft version and intake mode.
+ */
+export interface MktgRevisionContentSource {
+  text: string;
+  contentSha256: string;
+  format: MktgRevisionFormat;
+  sidecar: Record<string, unknown> | null;
+  version: number;
+  intakeMode: MktgArtifactIntakeMode;
+}
+
 /** The fields of a revision record its writer chooses; the store fills in the rest. */
-export type MktgRevisionRecordFields = Pick<MktgRevisionRecord, 'createdAt' | 'origin' | 'restoredFromId' | 'source' | 'bundle'>;
+export type MktgRevisionRecordFields = Pick<MktgRevisionRecord, 'createdAt' | 'origin' | 'restoredFromId' | 'source' | 'bundle' | 'basedOnId'> &
+  Partial<Pick<MktgRevisionRecord, 'comments' | 'deck'>>;
 
 /** An entry of the Documents area navigation (view model). */
 export interface MktgDocumentNavItem {
@@ -249,6 +322,8 @@ export interface MktgRevisionRow {
   revision: MktgRevisionSummary;
   /** "How it was made". */
   how: string;
+  /** Name, LFID fallback, or the historical no-author label. */
+  authorLabel: string;
 }
 
 /** The Documents area's selected living document (view model). */

@@ -75,11 +75,22 @@
         </ng-template>
 
         <ng-template #body let-view>
-          <tr [attr.data-testid]="'events-orgs-row-' + view.accountId">
+          <!-- The name link is the control screen readers and keyboards use; a click anywhere else on the row does the same. -->
+          <tr class="cursor-pointer" (click)="openOrganization(view)" [attr.data-testid]="'events-orgs-row-' + view.accountId">
             <td>
               <div class="flex items-center gap-2.5">
                 <lfx-avatar [label]="view.accountName" [image]="view.logoUrl" size="normal" styleClass="shrink-0" [ariaLabel]="view.accountName + ' logo'" />
-                <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-name'">{{ view.accountName }}</span>
+                <a
+                  [routerLink]="view.link.commands"
+                  [fragment]="view.link.fragment"
+                  [queryParams]="view.link.queryParams"
+                  queryParamsHandling="merge"
+                  [attr.aria-label]="view.linkLabel"
+                  (click)="$event.stopPropagation()"
+                  class="text-sm font-medium text-gray-900 hover:underline focus-visible:underline"
+                  [attr.data-testid]="'events-orgs-row-' + view.accountId + '-name'"
+                  >{{ view.accountName }}</a
+                >
               </div>
             </td>
             <td>

@@ -417,6 +417,8 @@ export interface FilterPillOption {
   label: string;
   /** Full untruncated label shown as tooltip */
   fullLabel?: string;
+  /** Accessible name override; takes precedence over `fullLabel`/`label` and never shows a tooltip */
+  ariaLabel?: string;
 }
 
 /**

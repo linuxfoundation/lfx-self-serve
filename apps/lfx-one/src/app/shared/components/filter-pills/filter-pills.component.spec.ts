@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { FilterPillOption } from '@lfx-one/shared/interfaces';
+import { Tooltip } from 'primeng/tooltip';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FilterPillsComponent } from './filter-pills.component';
@@ -75,6 +77,19 @@ describe('FilterPillsComponent', () => {
   it('prefers fullLabel for the accessible name and falls back to label', () => {
     expect(pill('kubecon').getAttribute('aria-label')).toBe('KubeCon + CloudNativeCon');
     expect(pill('all').getAttribute('aria-label')).toBe('All');
+  });
+
+  // ariaLabel names the pill for assistive technology without a tooltip — e.g. a status tab whose
+  // visible count is unavailable reads "Active, count unavailable" rather than "Active (–)".
+  it.each(['pill', 'segmented'] as const)('prefers ariaLabel for the accessible name without enabling a tooltip (%s)', async (variant) => {
+    fixture.componentRef.setInput('variant', variant);
+    fixture.componentRef.setInput('options', [...options, { id: 'active', label: 'Active (–)', ariaLabel: 'Active, count unavailable' }]);
+    await fixture.whenStable();
+
+    expect(pill('active').getAttribute('aria-label')).toBe('Active, count unavailable');
+    expect(pill('active').textContent?.trim()).toBe('Active (–)');
+    const tooltip = fixture.debugElement.query(By.css('[data-testid="filter-pill-active"]')).injector.get(Tooltip);
+    expect(tooltip.disabled).toBe(true);
   });
 
   it('renders the segmented variant as one labelled group with the same pill contract', async () => {

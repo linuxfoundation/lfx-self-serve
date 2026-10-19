@@ -7,6 +7,7 @@
 // one implementation instead of eight copies of it.
 
 import type { MKTG_ARTIFACT_INTAKE_MODES } from '../constants/mktg-artifact.constants';
+import type { MktgRevisionFormat } from './mktg-document-store.interface';
 import type { MktgRunPersistReceipt } from './mktg-run.interface';
 
 /**
@@ -18,7 +19,7 @@ import type { MktgRunPersistReceipt } from './mktg-run.interface';
  * `foundation-message`. Keying storage by the catalog id would make the
  * storage layout hostage to a marketplace-facing label.
  */
-export type MktgArtifactKey = 'brand-kit' | 'foundation-message' | 'icp';
+export type MktgArtifactKey = 'brand-kit' | 'foundation-message' | 'icp' | 'boilerplates';
 
 /**
  * How an agent's intake answers were collected. Every Marketing OS envelope
@@ -79,6 +80,26 @@ export interface MktgArtifactEnvelope {
 }
 
 /**
+ * The envelope fields the document store reads from an agent that writes a
+ * structured asset instead of a document (the Messaging Framework): the JSON
+ * content, the sha the caller already recomputed over `JSON.stringify(content)`
+ * and verified, the draft version, and how intake was collected. Such an
+ * envelope is stored as a revision only — nothing is written to the
+ * pre-revision `.md` partition. `T` is the agent's content type (e.g.
+ * `FoundationMessageContent`), so a typed envelope passes without a cast.
+ */
+export interface MktgArtifactJsonEnvelope<T extends object = Record<string, unknown>> {
+  /** The validated JSON content — serialized with `JSON.stringify` to the exact bytes persisted. */
+  content: T;
+  /** Lowercase hex SHA-256 of `JSON.stringify(content)` (UTF-8), ALREADY recomputed and verified by the caller. */
+  content_sha256: string;
+  /** Draft version within a run, starting at 1. */
+  version: number;
+  /** Intake log; only `mode` is read. */
+  intake: { mode: MktgArtifactIntakeMode };
+}
+
+/**
  * Receipt of a successful persistence write, for ANY agent. The generic
  * run-flow receipt ({@link MktgRunPersistReceipt}) plus the intake provenance
  * every Marketing OS contract records. Field names are snake_case (unlike the
@@ -103,8 +124,14 @@ export interface MktgArtifactPersistReceipt extends MktgRunPersistReceipt {
  * partition (see {@link MktgRunPersistReceipt.version}).
  */
 export interface MktgArtifactStoredResponse {
-  /** The persisted document (Markdown), integrity-checked against the content-addressed key. */
+  /**
+   * The persisted content, integrity-checked against the content-addressed
+   * key: the Markdown document, or — when {@link format} is `json` — the JSON
+   * text of the asset (the Messaging Framework), byte for byte as stored.
+   */
   documentMarkdown: string;
+  /** What {@link documentMarkdown} holds; absent means Markdown (every pre-revision object). */
+  format?: MktgRevisionFormat;
   /**
    * Receipt metadata of the returned object — the same fields minted by the
    * write path. `version` / `intake_mode` are read back from the object's
@@ -114,4 +141,20 @@ export interface MktgArtifactStoredResponse {
   receipt: MktgArtifactPersistReceipt;
   /** ISO-8601 timestamp the object was stored (S3 LastModified), when the store reports one. */
   storedAt?: string;
+  /**
+   * The revision's number in Documents (its position among the document's
+   * revisions, in write order), on a sidecar read — what names the revision
+   * a consumer attaches. Not `receipt.version`: that is the agent's draft
+   * version within its run, which restarts at 1 on every fresh run.
+   */
+  revisionNumber?: number;
+  /**
+   * The revision's sidecar JSON — the envelope's structured fields — on a
+   * sidecar read (`?sidecar=true`: the latest stored revision with it),
+   * which is what a consumer attaching the document as JSON needs. The
+   * plain latest read carries the Markdown only: a Brand Kit sidecar holds
+   * the logo artwork, and the marketplace resolves every dependency on
+   * every load.
+   */
+  sidecar?: Record<string, unknown> | null;
 }

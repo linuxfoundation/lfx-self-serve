@@ -3,7 +3,7 @@
 
 import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions';
 import type { NextFunction, Request, Response } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
@@ -22,12 +22,13 @@ import {
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
   saveBrief,
+  approveStoredBrief,
   loadBrief,
   loadBriefById,
   createCampaigns,
@@ -43,6 +44,7 @@ const {
   svcGetMicrosoftKeywords,
   listBriefCampaigns,
   getBriefMetrics,
+  getCampaignMetrics,
   svcListAudiences,
   svcGetKeywords,
   svcResolveCampaign,
@@ -61,6 +63,7 @@ const {
   logger,
 } = vi.hoisted(() => ({
   saveBrief: vi.fn(),
+  approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
   loadBriefById: vi.fn(),
   createCampaigns: vi.fn(),
@@ -76,6 +79,7 @@ const {
   svcGetMicrosoftKeywords: vi.fn(),
   listBriefCampaigns: vi.fn(),
   getBriefMetrics: vi.fn(),
+  getCampaignMetrics: vi.fn(),
   svcListAudiences: vi.fn(),
   svcGetKeywords: vi.fn(),
   svcResolveCampaign: vi.fn(),
@@ -103,6 +107,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     ...actual,
     CampaignServiceClient: class {
       public saveBrief = saveBrief;
+      public approveStoredBrief = approveStoredBrief;
       public loadBrief = loadBrief;
       public loadBriefById = loadBriefById;
       public createCampaigns = createCampaigns;
@@ -116,6 +121,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public getMicrosoftAdsKeywords = svcGetMicrosoftKeywords;
       public listBriefCampaigns = listBriefCampaigns;
       public getBriefMetrics = getBriefMetrics;
+      public getCampaignMetrics = getCampaignMetrics;
       public listAudiences = svcListAudiences;
       public getGoogleAdsKeywords = svcGetKeywords;
       public resolveGoogleAdsCampaign = svcResolveCampaign;
@@ -303,6 +309,135 @@ describe('CampaignController.persistBrief', () => {
 
     // The whole point of the feature is that the user learns the brief is not durable. Answering
     // 200 here would leave them working on a brief they believe is saved.
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+});
+
+/**
+ * The third verb beside `persistBrief` and `loadBrief`: approving a brief that is already stored.
+ *
+ * What is only decidable at this layer is that the validator arrives as a HEADER and an absent one
+ * is a supported case rather than an error, that the foundation and the brief id are refused
+ * instead of defaulted, and that a dark cutover answers a complete `CampaignBriefApproveResult`
+ * the client can branch on. Everything about the upstream call itself belongs to the service spec.
+ */
+describe('CampaignController.approveBrief', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  function buildApproveReq(
+    params: Record<string, unknown> = { briefId: 'brief-1' },
+    query: Record<string, unknown> = { project: 'tlf' },
+    headers: Record<string, string> = {}
+  ): Request {
+    return {
+      params,
+      query,
+      path: '/api/campaigns/brief/brief-1/approve',
+      get: (name: string) => headers[name],
+    } as unknown as Request;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    isServerFeatureEnabled.mockReturnValue(true);
+    approveStoredBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: 'W/"2"', approved: true });
+  });
+
+  it('answers a dark cutover with enabled:false and never calls campaign-service', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    // Every field present, and no `conflict`: nothing was refused, the cutover is simply dark,
+    // and the client branches on `enabled` alone.
+    expect(res.json).toHaveBeenCalledWith({ enabled: false, briefId: '', etag: null, approved: false });
+  });
+
+  it("approves with the caller's If-Match and returns the result unchanged", async () => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, { project: 'tlf' }, { 'If-Match': 'W/"1"' }), res, next);
+
+    expect(approveStoredBrief).toHaveBeenCalledTimes(1);
+    expect(approveStoredBrief.mock.calls[0].slice(1)).toEqual(['tlf', 'brief-1', 'W/"1"']);
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-1', etag: 'W/"2"', approved: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // The controller NORMALISES rather than decides. Absent and blank both become a null
+  // validator and are forwarded, because what to do about a missing one is the service's call:
+  // `approveStoredBrief` answers it with `conflict: 'unverified-validator'` and approves
+  // nothing. Rejecting here instead would turn that classified refusal — which the client has a
+  // message and a recovery path for — into a 400 the client cannot tell apart from a bad
+  // request, and would duplicate a decision that already has exactly one home.
+  it.each([
+    ['no If-Match header at all', {}],
+    ['a blank If-Match header', { 'If-Match': '   ' }],
+  ])('normalises %s to a null validator and forwards it for the service to classify', async (_label, headers) => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, { project: 'tlf' }, headers), res, next);
+
+    expect(approveStoredBrief).toHaveBeenCalledTimes(1);
+    expect(approveStoredBrief.mock.calls[0][3]).toBeNull();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // Same rule as `persistBrief`: a brief lives inside one foundation's project, and guessing
+  // which would approve a row in a foundation the user never chose.
+  it.each([
+    ['no project param at all', {}],
+    ['a blank project param', { project: '   ' }],
+    ['a repeated project param, which Express parses as an array', { project: ['tlf', 'cncf'] }],
+  ])('refuses %s rather than defaulting the foundation', async (_label, query) => {
+    await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, query), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'project', message: 'no foundation is selected; reload the campaigns page from the sidebar', code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+
+  it.each([
+    ['a blank brief id', { briefId: '   ' }],
+    ['a missing brief id', {}],
+  ])('refuses %s before spending a round trip', async (_label, params) => {
+    await controller.approveBrief(buildApproveReq(params), res, next);
+
+    expect(approveStoredBrief).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
+    expect(error.toResponse()['errors']).toEqual([{ field: 'briefId', message: 'brief id is required', code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+
+  // A conflict is a RESULT, not a failure: the service already classified it, and the component
+  // turns each value into its own sentence. Turning it into an error here would replace that
+  // with a generic failure the user can do nothing with.
+  it('passes a refused approval through as a result the client can explain', async () => {
+    approveStoredBrief.mockResolvedValue({ enabled: true, briefId: 'brief-1', etag: null, approved: false, conflict: 'stale-brief' });
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ enabled: true, briefId: 'brief-1', etag: null, approved: false, conflict: 'stale-brief' });
+  });
+
+  it('sends a thrown failure to the error middleware instead of answering 200', async () => {
+    const failure = new Error('campaign-service returned 500');
+    approveStoredBrief.mockRejectedValue(failure);
+
+    await controller.approveBrief(buildApproveReq(), res, next);
+
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(failure);
   });
@@ -6154,6 +6289,107 @@ describe('CampaignController.getBriefMetrics', () => {
 
     expect(res.json).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+/**
+ * The single-campaign read: gated on campaign-service briefs (it is addressed by one), both ids
+ * checked as the UUIDs upstream declares, and `window` handled exactly as the brief-wide read does.
+ */
+describe('CampaignController.getCampaignMetrics', () => {
+  const CAMPAIGN_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const METRICS = {
+    campaign_id: CAMPAIGN_ID,
+    platform_campaign_id: '123',
+    window: 'last_30_days',
+    impressions: 1840,
+    clicks: 212,
+    cost_micros: 1284000,
+    ctr: 0.1152,
+  };
+  let controller: CampaignController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isServerFeatureEnabled.mockImplementation((flag: ServerFeatureFlag) => flag === ServerFeatureFlag.CampaignServiceBriefs);
+    controller = new CampaignController();
+  });
+
+  // `clearAllMocks` keeps implementations, so the flag stub is reset here rather than leaking into later suites.
+  afterEach(() => {
+    isServerFeatureEnabled.mockReset();
+  });
+
+  function metricsReq(query: Record<string, unknown>, campaignId: unknown = CAMPAIGN_ID): Request {
+    return { query, params: { campaignId }, path: `/api/campaigns/${String(campaignId)}/metrics` } as unknown as Request;
+  }
+
+  it('reads the campaign and passes a valid window through', async () => {
+    getCampaignMetrics.mockResolvedValue({ ...METRICS, window: 'last_7_days' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID, window: 'last_7_days' }), res, next);
+
+    expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, 'last_7_days');
+    expect(res.json).toHaveBeenCalledWith({ ...METRICS, window: 'last_7_days' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  /** Omitted, so campaign-service applies its per-platform default (7 days on X Ads). */
+  it('passes undefined when no window is given, rather than a default', async () => {
+    getCampaignMetrics.mockResolvedValue(METRICS);
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), vi.fn() as unknown as NextFunction);
+
+    expect(getCampaignMetrics).toHaveBeenCalledWith(expect.anything(), 'cncf', BRIEF_ID, CAMPAIGN_ID, undefined);
+  });
+
+  /** Dark like the adoptable-brief list: with campaign-service briefs off there is no brief to address. */
+  it('answers 404 without an upstream call while campaign-service briefs are off', async () => {
+    isServerFeatureEnabled.mockReturnValue(false);
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), buildRes(), next);
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+  });
+
+  it.each([
+    ['a campaign id that is not a UUID', { project: 'cncf', briefId: BRIEF_ID }, 'c-1'],
+    ['no briefId', { project: 'cncf' }, CAMPAIGN_ID],
+    ['a briefId that is not a UUID', { project: 'cncf', briefId: 'b-1' }, CAMPAIGN_ID],
+    ['a repeated briefId param', { project: 'cncf', briefId: [BRIEF_ID, BRIEF_ID] }, CAMPAIGN_ID],
+    ['no project', { briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['a blank project', { project: '   ', briefId: BRIEF_ID }, CAMPAIGN_ID],
+    ['an unrecognised window', { project: 'cncf', briefId: BRIEF_ID, window: 'last_90_days' }, CAMPAIGN_ID],
+    ['a repeated window param', { project: 'cncf', briefId: BRIEF_ID, window: ['today', 'today'] }, CAMPAIGN_ID],
+    ['an empty window param', { project: 'cncf', briefId: BRIEF_ID, window: '' }, CAMPAIGN_ID],
+  ])('refuses a request with %s', async (_label, query, campaignId) => {
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq(query, campaignId), buildRes(), next);
+
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  /** An upstream refusal (400 unsupported platform, 409 not measurable, 503) reaches the error middleware as is. */
+  it('forwards an upstream refusal to next rather than answering with a body', async () => {
+    const refusal = new MicroserviceError("metrics reads are not supported for this campaign's platform", 400, 'BAD_REQUEST', {
+      operation: 'campaign_metrics_read',
+      service: 'campaign_service',
+    });
+    getCampaignMetrics.mockRejectedValue(refusal);
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await controller.getCampaignMetrics(metricsReq({ project: 'cncf', briefId: BRIEF_ID }), res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(refusal);
   });
 });
 

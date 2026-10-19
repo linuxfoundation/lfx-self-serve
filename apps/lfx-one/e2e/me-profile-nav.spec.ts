@@ -87,8 +87,8 @@ function skipOnMobileViewport(page: Page): void {
 }
 
 /**
- * Neutralize the Osano cookie-consent overlay. global-setup clears cookies, so the banner
- * (.osano-cm-window) reappears in each fresh context and its bottom bar intercepts pointer events on
+ * Neutralize the Transcend cookie-consent overlay. global-setup clears cookies, so the banner
+ * (#transcend-consent-manager) reappears in each fresh context and its bottom bar intercepts pointer events on
  * the popover items these tests click. Registered via addInitScript so it runs on every navigation
  * before page scripts — deterministic, unlike racing the banner's entrance animation to click Accept.
  * The dialog is irrelevant to these navigation flows, so hiding it is sufficient.
@@ -96,12 +96,12 @@ function skipOnMobileViewport(page: Page): void {
 async function suppressCookieBanner(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const hide = (): void => {
-      if (document.getElementById('e2e-hide-osano')) {
+      if (document.getElementById('e2e-hide-transcend')) {
         return;
       }
       const style = document.createElement('style');
-      style.id = 'e2e-hide-osano';
-      style.textContent = '.osano-cm-window { display: none !important; pointer-events: none !important; }';
+      style.id = 'e2e-hide-transcend';
+      style.textContent = '#transcend-consent-manager { display: none !important; pointer-events: none !important; }';
       (document.head ?? document.documentElement).appendChild(style);
     };
     if (document.readyState === 'loading') {

@@ -6,12 +6,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus } from '@lfx-one/shared';
+import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
 import { VotesTableComponent } from './votes-table.component';
 
 const NOW = Date.parse('2026-10-09T12:00:00Z');
@@ -56,6 +58,90 @@ class SummaryHostComponent {
   }
 }
 
+@Component({
+  selector: 'lfx-status-counts-test-host',
+  template: '',
+})
+class StatusCountsHostComponent {
+  public readonly votes = VOTES;
+  public readonly showCounts = signal(true);
+  public readonly counts = signal<VoteStatusCounts | null>({ all: 5, active: 3, disabled: 0, ended: 2 });
+  public readonly showDraft = signal(true);
+  public readonly status = signal<string>('all');
+  public readonly selected: string[] = [];
+}
+
+describe('VotesTableComponent — status tab counts', () => {
+  let fixture: ComponentFixture<StatusCountsHostComponent>;
+  let host: StatusCountsHostComponent;
+
+  beforeEach(async () => {
+    TestBed.overrideComponent(StatusCountsHostComponent, {
+      set: {
+        imports: [VotesTableComponent],
+        template: `<lfx-votes-table [votes]="votes" [showStatusCounts]="showCounts()" [statusCounts]="counts()"
+          [showDraftTab]="showDraft()" [(statusTab)]="status" (statusTabSelected)="selected.push($event)" />`,
+      },
+    });
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent, StatusCountsHostComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(StatusCountsHostComponent);
+    host = fixture.componentInstance;
+    await settle();
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+  function pills(): HTMLButtonElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]'));
+  }
+  const labels = (): string[] => pills().map((pill) => pill.textContent!.trim());
+  const accessibleNames = (): (string | null)[] => pills().map((pill) => pill.getAttribute('aria-label'));
+
+  it('appends each tab count to its label and keeps a confirmed zero visible', () => {
+    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Draft (0)', 'Ended (2)']);
+    expect(accessibleNames()).toEqual(labels());
+  });
+
+  it('omits the Draft tab when the view does not expose drafts', async () => {
+    host.showDraft.set(false);
+    await settle();
+    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Ended (2)']);
+  });
+
+  it('renders unavailable counts as a dash and announces them as unavailable', async () => {
+    host.counts.set(null);
+    await settle();
+    expect(labels()).toEqual(['All (–)', 'Active (–)', 'Draft (–)', 'Ended (–)']);
+    expect(accessibleNames()).toEqual(['All, count unavailable', 'Active, count unavailable', 'Draft, count unavailable', 'Ended, count unavailable']);
+  });
+
+  it('renders plain labels for consumers that do not opt in', async () => {
+    host.showCounts.set(false);
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+  });
+
+  it('still selects counted tabs by their bare status id', async () => {
+    (fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]') as HTMLButtonElement).click();
+    await settle();
+    expect(host.selected).toEqual([PollStatus.DISABLED]);
+    expect(host.status()).toBe(PollStatus.DISABLED);
+    expect(fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]').getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
 describe('VotesTableComponent — personal summary filters', () => {
   let fixture: ComponentFixture<unknown>;
   let table: VotesTableComponent;
@@ -70,7 +156,13 @@ describe('VotesTableComponent — personal summary filters', () => {
     });
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent, SummaryHostComponent],
-      providers: [provideRouter([]), provideNoopAnimations(), { provide: VoteService, useValue: {} }, { provide: MessageService, useValue: {} }],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
     }).compileComponents();
   });
   afterEach(() => fixture?.destroy());
@@ -248,11 +340,13 @@ describe('VotesTableComponent — row More menu', () => {
   let fixture: ComponentFixture<VotesTableComponent>;
   let table: VotesTableComponent;
   let copyLink: ReturnType<typeof vi.fn>;
+  let openDialog: ReturnType<typeof vi.fn>;
   const ROWS = [vote('active'), vote('ended', { status: PollStatus.ENDED }), vote('draft', { status: PollStatus.DISABLED })];
   const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
 
   beforeEach(async () => {
     copyLink = vi.fn();
+    openDialog = vi.fn();
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
@@ -261,6 +355,7 @@ describe('VotesTableComponent — row More menu', () => {
         { provide: VoteService, useValue: {} },
         { provide: MessageService, useValue: {} },
         { provide: ClipboardShareService, useValue: { copyLink } },
+        { provide: DialogService, useValue: { open: openDialog } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
@@ -303,6 +398,52 @@ describe('VotesTableComponent — row More menu', () => {
     const [url, detail] = copyLink.mock.calls[0];
     expect(url).toBe(`${window.location.origin}/votes/active`);
     expect(detail).toBe('Vote link copied to clipboard.');
+  });
+
+  it.each([false, true])('uses per-vote writer access and opens reminders even without project write access (%s) (#3769)', async (hasPMOAccess) => {
+    fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => ({ ...row, writer: true }))
+    );
+    await settle();
+
+    moreButton('active')!.click();
+    await settle();
+
+    const items = table['rowActionMenuItems']();
+    expect(items.map((item) => item.label)).toEqual(['Copy link', 'Send reminder']);
+
+    items[1].command!({});
+
+    expect(openDialog).toHaveBeenCalledWith(
+      VoteReminderDialogComponent,
+      expect.objectContaining({
+        header: 'Send vote reminder',
+        width: 'min(960px, 96vw)',
+        modal: true,
+        data: { vote: expect.objectContaining({ uid: 'active' }) },
+      })
+    );
+  });
+
+  it.each([
+    { hasPMOAccess: true, writer: false, uid: 'active' },
+    { hasPMOAccess: true, writer: undefined, uid: 'active' },
+    { hasPMOAccess: false, writer: false, uid: 'active' },
+    { hasPMOAccess: true, writer: true, uid: 'ended' },
+  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid }) => {
+    fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => ({ ...row, writer }))
+    );
+    await settle();
+
+    moreButton(uid)!.click();
+    await settle();
+
+    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(['Copy link']);
   });
 
   it('exposes menu semantics and expands only the row whose menu is open', async () => {
@@ -356,5 +497,123 @@ describe('VotesTableComponent — row More menu', () => {
     table['rowActionMenuItems']()[0].command!({});
 
     expect(copyLink.mock.calls[0][0]).toMatch(/\/votes\/ended$/);
+  });
+});
+
+describe('VotesTableComponent — participation progress', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  const ROWS = [
+    vote('active', { num_response_received: 8, total_voting_request_invitations: 12 }),
+    vote('ended', { status: PollStatus.ENDED, num_response_received: 8, total_voting_request_invitations: 12 }),
+    vote('draft', { status: PollStatus.DISABLED, num_response_received: 0, total_voting_request_invitations: 0 }),
+    vote('empty', { num_response_received: 0, total_voting_request_invitations: 0 }),
+    vote('no-total', { num_response_received: 8 }),
+    vote('no-responses', { total_voting_request_invitations: 12 }),
+    vote('zero', { num_response_received: 0, total_voting_request_invitations: 12 }),
+  ];
+  const el = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const text = (testId: string): string => el(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', ROWS);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function render(showParticipationProgress = true): Promise<void> {
+    if (showParticipationProgress) fixture.componentRef.setInput('showParticipationProgress', true);
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('summarises an active vote with an accessible progress bar', async () => {
+    await render();
+
+    expect(text('votes-participation-label-active')).toBe('8 of 12 responded · 67%');
+    const bar = el('votes-participation-bar-active')!;
+    expect(bar.getAttribute('role')).toBe('progressbar');
+    expect(bar.getAttribute('aria-valuenow')).toBe('67');
+    expect(bar.getAttribute('aria-valuemin')).toBe('0');
+    expect(bar.getAttribute('aria-valuemax')).toBe('100');
+    expect(bar.getAttribute('aria-label')).toBe('Participation: 8 of 12 responded, 67%');
+  });
+
+  it('uses visible participation summaries without prohibited names on generic spans', async () => {
+    await render();
+
+    const summaries = fixture.nativeElement.querySelectorAll('[data-testid^="votes-participation-"] span[aria-label]');
+    expect(summaries.length).toBe(0);
+  });
+
+  it('keeps the participation summary for an ended vote without a progress bar', async () => {
+    await render();
+
+    expect(text('votes-participation-label-ended')).toBe('8 of 12 responded · 67%');
+    expect(el('votes-participation-bar-ended')).toBeNull();
+  });
+
+  it('shows a draft as not open, without counts or a bar', async () => {
+    await render();
+
+    expect(text('votes-participation-draft')).toBe('Not open yet');
+    expect(el('votes-participation-bar-draft')).toBeNull();
+  });
+
+  it('shows a zero-person electorate without a percent or a bar', async () => {
+    await render();
+
+    expect(text('votes-participation-empty')).toBe('No one invited');
+    expect(text('votes-participation-empty')).not.toMatch(/%/);
+    expect(el('votes-participation-bar-empty')).toBeNull();
+  });
+
+  it('shows the response count alone when the invited total is missing', async () => {
+    await render();
+
+    expect(text('votes-participation-label-no-total')).toBe('8 responded');
+    expect(text('votes-participation-secondary-no-total')).toBe('Total unavailable');
+    expect(el('votes-participation-bar-no-total')).toBeNull();
+  });
+
+  it('shows missing responses as unavailable, without a bar', async () => {
+    await render();
+
+    expect(text('votes-participation-no-responses')).toBe('Unavailable');
+    expect(el('votes-participation-bar-no-responses')).toBeNull();
+  });
+
+  it('shows a confirmed zero as 0% with a bar, distinct from unavailable', async () => {
+    await render();
+
+    expect(text('votes-participation-label-zero')).toBe('0 of 12 responded · 0%');
+    expect(el('votes-participation-bar-zero')?.getAttribute('aria-valuenow')).toBe('0');
+  });
+
+  it('keeps the raw response count when progress is not enabled', async () => {
+    await render(false);
+
+    expect(text('votes-responses-active')).toBe('8');
+    expect(el('votes-participation-active')).toBeNull();
+  });
+
+  it('never words participation as quorum, approval, or an outcome', async () => {
+    await render();
+
+    const cells = Array.from(fixture.nativeElement.querySelectorAll('[data-testid^="votes-participation-"]') as NodeListOf<HTMLElement>);
+    expect(cells.length).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(`${cell.textContent} ${cell.getAttribute('aria-label') ?? ''}`).not.toMatch(/quorum|approv|winn|passed/i);
+    }
   });
 });

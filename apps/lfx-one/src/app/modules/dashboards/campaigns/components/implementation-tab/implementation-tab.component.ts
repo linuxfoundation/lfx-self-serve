@@ -1661,11 +1661,12 @@ export class ImplementationTabComponent implements OnInit {
     // `error` splits in two, and the brief id is what tells them apart — blocking the whole
     // status was too broad, blocking none of it was too narrow.
     //
-    //   error + a briefId  → a CONFLICT (`stale-brief`, `unverified-validator`,
-    //     `superseded-after-write`). That id is the STORED row's, which by definition is not the
-    //     brief on screen — the save was refused precisely because the two disagree. Creating
-    //     from it would launch paid campaigns off another writer's version while the user reads
-    //     their own unsaved copy. BLOCKED, and the id being present is what makes it dangerous.
+    //   error + a briefId  → the STORED row and the brief on screen are known to disagree, and
+    //     that id is the stored row's. A save conflict says so outright (`stale-brief`,
+    //     `unverified-validator`, `superseded-after-write`); so does a refused approval of a
+    //     restored brief, and so does a restore whose cached content predates a write this
+    //     session made. Creating from it would launch paid campaigns off a version the user is
+    //     not reading. BLOCKED, and the id being present is what makes it dangerous.
     //
     //   error + no briefId → the save simply FAILED. Its own banner says "You can continue
     //     setting up the campaign", and with the cutover dark the legacy create needs no brief id
@@ -1683,8 +1684,8 @@ export class ImplementationTabComponent implements OnInit {
     if (persistence.status === 'error' && persistence.briefId !== null) return false;
 
     // A durable but UNAPPROVED brief cannot create campaigns: campaign-service refuses outright —
-    // `internal/service/brief.go:439` returns 400 "brief must be approved before creating
-    // campaigns". The state is `saved` because the write genuinely landed, and its banner already
+    // campaign-service's `BriefService.CreateCampaigns` (`internal/service/brief.go`) returns 400
+    // "brief must be approved before creating campaigns". The state is `saved` because the write genuinely landed, and its banner already
     // says the brief is stored but not usable; leaving Create enabled invited the user to prove it
     // the hard way. Read from the explicit `approved` field rather than the banner prose, which
     // would break the first time the copy is edited.

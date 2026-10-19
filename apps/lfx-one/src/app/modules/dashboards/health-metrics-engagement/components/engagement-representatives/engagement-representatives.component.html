@@ -53,6 +53,7 @@
       data-testid="engagement-representatives-empty" />
   } @else {
     <lfx-table
+      [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
       [paginator]="totalRecords() > size()"

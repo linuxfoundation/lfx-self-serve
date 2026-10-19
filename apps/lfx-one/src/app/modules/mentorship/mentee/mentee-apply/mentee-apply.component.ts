@@ -13,7 +13,6 @@ import { RouteLoadingComponent } from '@components/loading/route-loading.compone
 import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS,
-  MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
   MENTORSHIP_MENTEE_APPLY_CANCEL_LABEL,
   MENTORSHIP_MENTEE_APPLY_CONFIRMATION_COUNT,
   MENTORSHIP_MENTEE_APPLY_ERROR_FALLBACK,
@@ -40,7 +39,7 @@ import {
   MentorshipMenteeProfileResponse,
   MentorshipMenteeProfileUpdateResponse,
 } from '@lfx-one/shared/interfaces';
-import { mentorshipMenteeApplyIds } from '@lfx-one/shared/utils';
+import { mentorshipMenteeApplyBlockedState, mentorshipMenteeApplyIds } from '@lfx-one/shared/utils';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, forkJoin, map, Observable, of, switchMap, throwError } from 'rxjs';
@@ -105,6 +104,8 @@ export class MenteeApplyComponent {
   protected readonly missingParams = signal(false);
   protected readonly loadError = signal<string | null>(null);
   protected readonly blockedReason = signal<MentorshipMenteeApplyBlockedReason | null>(null);
+  /** Upstream's message for a refused submit, which can name a more specific blocked state than the status alone. */
+  private readonly blockedMessage = signal<string | null>(null);
   protected readonly submitting = signal(false);
   protected readonly demographicsOpen = signal(false);
   protected readonly profileCreated = signal(this.readProfileCreated());
@@ -125,7 +126,7 @@ export class MenteeApplyComponent {
   });
   protected readonly blocked: Signal<MentorshipMenteeApplyBlockedState | null> = computed(() => {
     const reason = this.blockedReason();
-    return reason ? MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES[reason] : null;
+    return reason ? mentorshipMenteeApplyBlockedState(reason, this.blockedMessage()) : null;
   });
   /** Project and term, dropping the project (and its separator) when the program has none. */
   protected readonly subtitle = computed(() => {
@@ -157,7 +158,9 @@ export class MenteeApplyComponent {
    * Files the application once the checks are complete (or the mentee has just registered). A success
    * toasts and goes to the Overview, which re-reads the applications. A status in
    * `MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS` swaps the form for its blocked state: 422 is
-   * closed, 409 is already applied, and 400, 403 and 404 are not found. The impersonation guard's 403
+   * closed, 409 is already applied, and 400, 403 and 404 are not found; when upstream's message names
+   * a more specific rule (no mentee profile, reapply limit, ...) that rule's state is shown instead.
+   * The impersonation guard's 403
    * and any unmapped status toast instead and keep the form so the mentee can try again.
    */
   protected onSubmit(): void {
@@ -186,7 +189,8 @@ export class MenteeApplyComponent {
    * Router `state` from the register redirect, read once at construction — see `menteeApplyGuard`'s equivalent check.
    * Single-use: cleared from history immediately after read so a later reload or back/forward navigation doesn't replay it.
    * SSR has neither a navigation nor a browser `history`, so it falls back to `false`. The flag only skips the client-side
-   * checklist: upstream does not look at the mentee profile when an application is filed, and nothing server-side re-checks it.
+   * checklist; upstream still refuses an application from a user with no mentee profile, which is created by confirming the
+   * eligibility criteria at registration.
    *
    * Always reads and clears against `location.getState()` (the entry actually on top of history right now), never
    * `router.getCurrentNavigation()` — that navigation is still in flight during construction, so `router.url` has not
@@ -212,6 +216,7 @@ export class MenteeApplyComponent {
         switchMap(([, ids]) => {
           this.savedProfile.set(null);
           this.blockedReason.set(null);
+          this.blockedMessage.set(null);
           if (!ids) {
             this.hasLoaded.set(true);
             this.missingParams.set(true);
@@ -267,6 +272,7 @@ export class MenteeApplyComponent {
     if (reason && !(err.status === 403 && code === MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE)) {
       // An application already exists upstream, so the cached list is missing it.
       if (reason === 'already-applied') this.menteeService.clearMenteeCaches();
+      this.blockedMessage.set(serverAuthoredMessage(err, '') || null);
       this.blockedReason.set(reason);
       return;
     }

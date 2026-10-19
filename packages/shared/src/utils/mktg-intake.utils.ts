@@ -1,9 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BRAND_KIT_FRAMEWORK_ANSWER_KEY } from '../constants/brand-kit.constants';
 import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
-import { MktgAgentIntake } from '../interfaces';
+import { MktgAgentIntake, MktgIntakeAttachment } from '../interfaces';
+import { boilerplatesFrameworkContentOf } from './boilerplates.utils';
+import { brandKitFrameworkOfRevision } from './brand-kit.utils';
 
 /**
  * Display name of an agent's generated document: its registered intake's
@@ -18,6 +21,39 @@ import { MktgAgentIntake } from '../interfaces';
  */
 export function mktgAgentDocumentName(agentId: string): string {
   return MKTG_AGENT_INTAKES[agentId]?.documentName ?? MKTG_AGENTS.find((candidate) => candidate.id === agentId)?.name ?? agentId;
+}
+
+/**
+ * Whether a resolved `json` attachment's sidecar carries what the consuming
+ * agent reads from it — the run page's copy of the rule the agent's own
+ * BFF validator applies, so the gate and the submission agree with the
+ * server instead of earning a 400 no retry could clear:
+ *
+ * - a messaging framework the consuming agent reads whole
+ *   (`frameworkContent`, the Boilerplates) is usable only when the sidecar
+ *   carries the framework's content ({@link boilerplatesFrameworkContentOf}):
+ *   a legacy Messaging Document revision, or one restored without its
+ *   sidecar, is not;
+ * - the Brand Kit's messaging framework (`BRAND_KIT_FRAMEWORK_ANSWER_KEY`)
+ *   is usable only when a voice can be read from it
+ *   ({@link brandKitFrameworkOfRevision}): a revision whose positioning and
+ *   tagline are both still "tbd", or one restored without its sidecar,
+ *   is not;
+ * - any other `json` attachment is usable whenever it has a sidecar.
+ *
+ * False for no sidecar at all (a browser-stored run, a legacy revision).
+ */
+export function mktgJsonAttachmentUsable(attachment: MktgIntakeAttachment, sidecar: Record<string, unknown> | undefined): boolean {
+  if (!sidecar) {
+    return false;
+  }
+  if (attachment.frameworkContent) {
+    return boilerplatesFrameworkContentOf(sidecar) !== null;
+  }
+  if (attachment.answerKey === BRAND_KIT_FRAMEWORK_ANSWER_KEY) {
+    return brandKitFrameworkOfRevision(sidecar) !== null;
+  }
+  return true;
 }
 
 /**

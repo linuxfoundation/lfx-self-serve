@@ -86,6 +86,7 @@
           data-testid="members-churn-departures-error" />
       } @else {
         <lfx-table
+          [rowHover]="false"
           [value]="departureRows()"
           [loading]="departuresLoading()"
           [lazy]="true"
@@ -150,7 +151,12 @@
           <span class="text-[11px] text-gray-400">by tier, most dues lost first</span>
         </div>
 
-        <lfx-table [value]="view().tiers" [scrollable]="true" [tableStyle]="{ 'min-width': '560px' }" data-testid="members-churn-tiers-table">
+        <lfx-table
+          [rowHover]="false"
+          [value]="view().tiers"
+          [scrollable]="true"
+          [tableStyle]="{ 'min-width': '560px' }"
+          data-testid="members-churn-tiers-table">
           <ng-template #header>
             <tr>
               <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>

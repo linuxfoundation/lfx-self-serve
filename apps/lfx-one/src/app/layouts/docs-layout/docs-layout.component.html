@@ -56,6 +56,13 @@
     </div>
 
     <!-- App footer — constrained to the 1024px docs content width -->
-    <lfx-footer class="mx-auto mt-auto w-full max-w-[1024px] p-8" cookie-tracking="true"></lfx-footer>
+    <lfx-footer class="mx-auto mt-auto w-full max-w-[1024px] p-8"></lfx-footer>
+    <a
+      href="#"
+      (click)="openCookieSettings($event)"
+      class="block mx-auto w-full max-w-[1024px] px-8 pb-8 -mt-6 text-xs text-gray-700 hover:underline"
+      data-testid="docs-shell-footer-cookie-settings">
+      Cookie settings
+    </a>
   </main>
 </div>

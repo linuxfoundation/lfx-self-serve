@@ -21,13 +21,26 @@
             <span class="break-all text-sm text-gray-800">{{ row.title }}</span>
             <span class="text-xs" [ngClass]="row.statusClass">{{ row.status }}</span>
           </span>
-          <lfx-button
-            label="Remove"
-            [text]="true"
-            size="small"
-            [ariaLabel]="'Remove ' + row.title"
-            [attr.data-testid]="'mktg-intake-documents-remove-' + row.id"
-            (onClick)="onRemove(row.id)" />
+          <span class="flex shrink-0 items-center gap-2">
+            <!-- What the document is: the agent reads a press release, a deck, a plan and a document differently, and never reads a logo package. -->
+            @if (row.tagControl) {
+              <lfx-select
+                [form]="tagsForm"
+                [control]="row.tagControl"
+                [options]="tagOptions()"
+                size="small"
+                styleClass="w-40"
+                [ariaLabel]="'What ' + row.title + ' is'"
+                [dataTest]="'mktg-intake-documents-tag-' + row.id" />
+            }
+            <lfx-button
+              label="Remove"
+              [text]="true"
+              size="small"
+              [ariaLabel]="'Remove ' + row.title"
+              [attr.data-testid]="'mktg-intake-documents-remove-' + row.id"
+              (onClick)="onRemove(row.id)" />
+          </span>
         </li>
       }
     </ul>

@@ -16,6 +16,7 @@ import type {
   CampaignAudience,
   CampaignServiceEmailMetrics,
   EmailBriefCopy,
+  CampaignBriefApproveResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
   CampaignBriefPersistenceState,
@@ -61,6 +62,10 @@ describe('CampaignsComponent brief persistence', () => {
   const brief = { eventDetails: { slug: 'kubecon-eu-2026' }, selectedPlatforms: ['google-ads'] } as unknown as CampaignBriefOutput;
 
   let persistBrief: ReturnType<typeof vi.fn>;
+  // Restoring an unapproved brief approves the stored row. Mocked like `persistBrief` so every
+  // restore test keeps a stub instead of leaving a real request pending, and defaulted to a
+  // successful approval so the tests written before the approve existed still read as before.
+  let approveBrief: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<CampaignsComponent>;
 
   /** A brief for a DIFFERENT event, to prove ownership is not shared across events. */
@@ -86,11 +91,29 @@ describe('CampaignsComponent brief persistence', () => {
     // code that mishandles `undefined`. The rest form distinguishes "not passed" (length 0,
     // legacy callers -> null) from "passed as undefined" (length 1, value preserved).
     const validator = etag.length === 0 ? null : etag[0];
+    // `readAt: 0` is the value a page's FIRST lookup carries, which is what every test above
+    // means by a restore: Planning read the row before this session wrote anything to it. A
+    // restore whose read post-dates a write here goes through `restoreAt` instead, and the two
+    // must stay distinct — defaulting these to the live token would make every cached-replay
+    // test silently assert the fresh-read path.
+    restoreAt(0, b, briefId, approved, validator);
+  }
+
+  /**
+   * The same restore, with the refresh token Planning's lookup was DISPATCHED under stated
+   * explicitly — the provenance stamp the adopt branch compares against its own record.
+   */
+  function restoreAt(readAt: number, b: CampaignBriefOutput, briefId: string, approved: boolean, etag: string | null | undefined): void {
     (
       fixture.componentInstance as unknown as {
-        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null | undefined, approved: boolean): void;
+        onRestoreSavedBrief(b: CampaignBriefOutput, id: string, etag: string | null | undefined, approved: boolean, readAt: number): void;
       }
-    ).onRestoreSavedBrief(b, briefId, validator, approved);
+    ).onRestoreSavedBrief(b, briefId, etag, approved, readAt);
+  }
+
+  /** The invalidation channel to the Planning tab; protected, and bound only on the paid planner. */
+  function refreshToken(): number {
+    return (fixture.componentInstance as unknown as { savedBriefRefreshToken(): number }).savedBriefRefreshToken();
   }
 
   function state(): CampaignBriefPersistenceState {
@@ -142,6 +165,8 @@ describe('CampaignsComponent brief persistence', () => {
     }).compileComponents();
     persistBrief = vi.fn();
     vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persistBrief);
+    approveBrief = vi.fn().mockReturnValue(of({ enabled: true, briefId: '', etag: null, approved: true }));
+    vi.spyOn(TestBed.inject(CampaignService), 'approveBrief').mockImplementation(approveBrief);
     fixture = TestBed.createComponent(CampaignsComponent);
     TestBed.inject(PersonaService).currentPersona.set('executive-director');
     await fixture.whenStable();
@@ -715,6 +740,629 @@ describe('CampaignsComponent brief persistence', () => {
       // It must NOT paint `saved` over the restored brief, nor hand it `stale-a`.
       expect(state().briefId).not.toBe('stale-a');
       expect(state().status).not.toBe('saved');
+    });
+
+    /**
+     * Restoring an UNAPPROVED stored brief approves the stored row, writing nothing.
+     *
+     * The dead end these cover: campaign-service stores every brief as `draft` and resets an
+     * existing one to `draft` on every PUT, campaign creation refuses an unapproved brief, and the
+     * restore path deliberately suppresses the save that would otherwise retry the approval. So a
+     * restore used to end with Create Campaign disabled and no action anywhere in the product that
+     * could enable it.
+     */
+    describe('approving a restored brief', () => {
+      it('approves the stored row and leaves Create enabled, without re-saving it', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        // The carried validator is sent as the If-Match, so an approve cannot land on a row that
+        // moved since the restore read it.
+        expect(approveBrief).toHaveBeenCalledWith(expect.anything(), 'restored-a', 'W/"v1"');
+        // `off` because nothing was written -- the id is provenance, not progress -- and
+        // `approved` is what the Implementation tab gates Create on.
+        expect(state().status).toBe('off');
+        expect(state().briefId).toBe('restored-a');
+        expect(state().approved).toBe(true);
+        // The whole point of approving instead of re-saving: the stored bytes are untouched.
+        expect(persistBrief).not.toHaveBeenCalled();
+      });
+
+      it('re-records the validator the approval returned, so the next save is not refused', async () => {
+        // Approval bumps the row's `version` upstream, so the restore's own ETag is stale the
+        // moment it succeeds. Replaying it would 412 the next Proceed for something the user did
+        // not do.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v2"', false);
+      });
+
+      it('does not license an overwrite the user was never warned about', async () => {
+        // The restore's own read DID carry a validator, and the approval came back without one.
+        // Licensing the ETag fallback here would let the next Proceed send `etag_fallback=1`, and
+        // `replaceBrief` then PUTs with the validator it reads itself inside that save — so an
+        // editor who replaced the brief in between is overwritten with no conflict ever shown.
+        // The approve wrote nothing, but the marker licenses the next WRITE, not this request.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+
+        // The trailing `false` withholds the fallback licence: this save is refused
+        // `unverified-validator`, the banner says proceeding again replaces what is stored, and
+        // the conflict handler then promotes the record to `'overwrite'` — one warned click away,
+        // which is the whole point of refusing here.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, false);
+      });
+
+      it('carries through an overwrite permission the restore already held', async () => {
+        // The other half of the same default. This restore's read carried NO validator, which
+        // records `absence: 'overwrite'` — no validator BY CHOICE, against content the user was
+        // shown. An approval that returns no validator must not downgrade that: nothing about
+        // this request withdraws a permission the restore legitimately established.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: true }));
+        restore(brief, 'restored-a', false, null);
+        await fixture.whenStable();
+
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+
+        // The trailing `true` is the fallback licence, carried, not newly granted.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+      });
+
+      // Blank is what an unresolved foundation reads as, and the server refuses it — a brief is
+      // approved inside one project. Returning silently would leave Create disabled under the
+      // restore's own untroubled banner, which is the no-reason dead end this path replaces.
+      it('says why, rather than going quiet, when no foundation is resolved', async () => {
+        TestBed.inject(ProjectContextService).setFoundation({ uid: 'f-x', slug: '', name: 'Unresolved' } as never, false);
+        // Settled BEFORE the restore. The foundation-switch subscription resets the banner to
+        // idle asynchronously, so restoring first would let that reset land on top of the error
+        // this test is about and report `off` for the wrong reason.
+        await fixture.whenStable();
+
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(approveBrief).not.toHaveBeenCalled();
+        expect(state().status).toBe('error');
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('No foundation is selected');
+      });
+
+      it('sends no approve for a brief that is already approved', async () => {
+        restore(brief, 'restored-a', true, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(approveBrief).not.toHaveBeenCalled();
+        expect(state().approved).toBe(true);
+      });
+
+      it('leaves Create disabled with a real reason when the stored brief moved under it', async () => {
+        // A 412 the BFF maps to `stale-brief`. Saying nothing here would leave Create disabled
+        // with the banner still reporting the restore as fine -- the exact silence this fix
+        // exists to end.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict: 'stale-brief' }));
+
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('changed while you were working');
+      });
+
+      it('reports a failed approve request rather than claiming the brief is ready', async () => {
+        approveBrief.mockReturnValue(throwError(() => new Error('network down')));
+
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('could not be confirmed as approved');
+      });
+
+      /**
+       * The objective-table defect of #3565, one feature across. `approveConflictMessages` is a
+       * plain object literal, so it inherits `Object.prototype`, and `conflict` is read off a JSON
+       * response rather than produced here -- the declared union is a compile-time claim the wire
+       * does not honour. Indexed raw, each of these resolved to a truthy INHERITED member and put
+       * `[object Object]`, or a function's source, into the banner the user reads. The assertion
+       * that matters is the `unknown` sentence: an unclassifiable conflict is exactly what it
+       * describes. `Object.hasOwn` is easy to "simplify" back into a truthiness test, so the keys
+       * are pinned by name.
+       */
+      it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])(
+        'falls back to the unknown message for an inherited %s conflict',
+        async (conflict) => {
+          approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict } as CampaignBriefApproveResult));
+
+          restore(brief, 'restored-a', false, 'W/"v1"');
+          await fixture.whenStable();
+
+          expect(state().status).toBe('error');
+          expect(state().message).toBe('This saved brief could not be confirmed as approved. Reload and re-enter the event URL to try again.');
+        }
+      );
+
+      it('names the mixed rollout when the approve lands on a pod that has not cut over', async () => {
+        // `enabled: false` cannot mean a dark deployment on this path. `loadBrief` is gated on the
+        // same flag and answers a dark one with no brief id at all, so no restore would have been
+        // offered -- reaching the approve proves one pod has the flag and this answer proves
+        // another does not. Staying on the restore's `off` state (which renders nothing) would
+        // leave Create disabled with no reason, the dead end this path exists to remove.
+        approveBrief.mockReturnValue(of({ enabled: false, briefId: '', etag: null, approved: false }));
+
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().approved).toBe(false);
+        expect(state().message).toContain('still being updated');
+      });
+
+      it('drops an approval that resolves after the user restored a different brief', async () => {
+        const pending = new Subject<CampaignBriefApproveResult>();
+        approveBrief.mockReturnValue(pending);
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        approveBrief.mockReturnValue(NEVER);
+        restore(otherBrief, 'restored-b', true, 'W/"v9"');
+        await fixture.whenStable();
+
+        pending.next({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // The first brief's approval must not stamp its id over the brief now on screen.
+        expect(state().briefId).toBe('restored-b');
+      });
+
+      /**
+       * A second Restore of a row this session already approved must not replay the PRE-approval
+       * pair Planning still has cached.
+       *
+       * Planning caches its lookup and is visibility-toggled rather than destroyed, so after the
+       * approve below it still holds `etag: W/"v1"` and `approved: false`. Taking the offer
+       * verbatim would file a validator the server has already superseded — a 412 on the next
+       * save — and re-run an approval against an already-approved row. This session's own record
+       * is the newer account of that id, so it wins.
+       */
+      it('prefers its own record over a stale restore offer for the same brief id', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+        expect(state().approved).toBe(true);
+
+        // Planning hands the same row over again, still describing it as it was before the approve.
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        // No second approve: the session knows this row is approved.
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+        expect(state().approved).toBe(true);
+
+        // And the save that follows carries the POST-approval validator, not the replayed one.
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v3"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v2"', false);
+      });
+
+      /**
+       * The other half of the rule above, and the one the id guard cannot reach on its own.
+       *
+       * A matching id proves the two accounts describe the same row; it says nothing about which
+       * is NEWER. After this session approves version 2, another editor can PUT version 3 — which
+       * campaign-service writes as `draft` — and a Planning lookup dispatched after that returns
+       * the draft. Preferring the record there would skip the approval and enable Create against
+       * a row upstream refuses. The offer's `readAt` is above the record's, so it wins.
+       */
+      it('takes a restore offer that was read after its own record was written', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        // The approval bumped the token, so a lookup dispatched under the bumped value saw the
+        // row after it — here, after a third party replaced it with an unapproved version 3.
+        const afterApproval = refreshToken();
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v4"', approved: true }));
+        restoreAt(afterApproval, brief, 'restored-a', false, 'W/"v3"');
+        await fixture.whenStable();
+
+        // Approved again, against the validator the FRESH read carried — not skipped on the
+        // strength of an approval that belongs to a version that no longer exists.
+        expect(approveBrief).toHaveBeenCalledTimes(2);
+        expect(approveBrief).toHaveBeenLastCalledWith(expect.anything(), 'restored-a', 'W/"v3"');
+        expect(state().approved).toBe(true);
+      });
+
+      /**
+       * The replay in the middle is the whole point. Between a write and the re-lookup it triggers
+       * landing, the Restore button still offers the pair Planning read BEFORE the write — and the
+       * record rightly outranks it. What must not happen is the record taking the live token as its
+       * own date on the way back into the map: that is strictly above its real one, and it would
+       * disqualify the very lookup the bump went out to trigger.
+       */
+      it('does not re-date its own record when a stale offer is replayed before the fresh read lands', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        const afterApproval = refreshToken();
+
+        // The pre-approval pair, replayed while the re-lookup is still in flight. The record wins.
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        // Now the re-lookup answers, carrying an unapproved version a third party wrote. It was
+        // dispatched after the approval, so it outranks the record — the replay above must not
+        // have moved the record's date up to meet it.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v4"', approved: true }));
+        restoreAt(afterApproval, brief, 'restored-a', false, 'W/"v3"');
+        await fixture.whenStable();
+
+        expect(approveBrief).toHaveBeenCalledTimes(2);
+        expect(approveBrief).toHaveBeenLastCalledWith(expect.anything(), 'restored-a', 'W/"v3"');
+      });
+
+      /**
+       * A save that replaced the stored brief and could not re-approve it leaves the row a draft
+       * and files `approved: false`; the cached offer still says `true`, because it was read
+       * before that save. Taking the offer's word there skips the approval and enables Create
+       * against a draft campaign-service refuses.
+       *
+       * Two guards shut that door, and the OUTER one answers first. The content stamp this save
+       * files sits above every offer read before it, so the replay below is refused as superseded
+       * before `record.approved ?? approved` is ever consulted — no approval is carried, Create
+       * stays disabled, and the bump re-reads the row. The `??` precedence behind it still
+       * matters for a record whose content never moved (a restore's own, or an approval's) and is
+       * covered by the tests above; here the stale pair never gets that far.
+       */
+      it('refuses a cached offer that says approved when its own save left the row unapproved', async () => {
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v3"', created: false, approved: false }));
+        proceed();
+        await fixture.whenStable();
+        expect(state().approved).toBe(false);
+        const afterSave = refreshToken();
+
+        // The offer Planning holds, carrying the approval state from before that save.
+        approveBrief.mockClear();
+        restore(brief, 'restored-a', true, 'W/"v3"');
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().message).toContain('Create Campaign stays disabled');
+        expect(state().approved).toBe(false);
+        // Nothing was approved on the strength of the offer, and the row is being re-read.
+        expect(approveBrief).not.toHaveBeenCalled();
+        expect(refreshToken()).toBe(afterSave + 1);
+      });
+
+      /**
+       * A restore hands the Implement tab the OFFER's content while the metadata comes from
+       * whichever account won. Once this session has saved over the row, those two describe
+       * different versions: the screen shows what Planning cached, and the id, validator and
+       * approval all describe what is stored. Create builds from the stored row, so carrying the
+       * approval through would create a campaign from a brief the user never saw.
+       */
+      it('refuses to pair a cached brief with metadata from a version saved over it', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(state().approved).toBe(true);
+
+        // A save REPLACES the content. Everything this session knows now describes that version.
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v3"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+        const afterSave = refreshToken();
+
+        // Planning's re-read has not landed, so Restore still offers the pre-save content.
+        approveBrief.mockClear();
+        restore(brief, 'restored-a', true, 'W/"v1"');
+        await fixture.whenStable();
+
+        // Opened, because it is the only copy of that content anyone has -- but not create-ready,
+        // and with the id kept so the next save still replaces the row instead of creating a second.
+        expect(state().status).toBe('error');
+        expect(state().approved).toBe(false);
+        expect(state().briefId).toBe('restored-a');
+        // No approval either: approving would succeed and flip Create back on against the mismatch.
+        expect(approveBrief).not.toHaveBeenCalled();
+        // The remedy is the re-read, which makes the next Restore offer a pair whose halves agree.
+        expect(refreshToken()).toBe(afterSave + 1);
+      });
+
+      /**
+       * The session's record is keyed by `(project, event, delivery, stage)`, but what it describes
+       * is one ROW. A different brief id under that same key is a different row, and nothing this
+       * session learned about the previous occupant — its validator or its approval state — may be
+       * carried onto it. The offer is then the only account there is.
+       */
+      it('does not carry a previous row approval onto a different brief id', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        // A different row arrives under the same key, offered as unapproved.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-b', etag: 'W/"b2"', approved: true }));
+        restore(brief, 'restored-b', false, 'W/"b1"');
+        await fixture.whenStable();
+
+        // It is approved on its own merits rather than inheriting `restored-a`'s approval...
+        expect(approveBrief).toHaveBeenCalledTimes(2);
+        expect(approveBrief).toHaveBeenLastCalledWith(expect.anything(), 'restored-b', 'W/"b1"');
+
+        // ...and the save that follows carries ITS validator, not the previous row's.
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-b', etag: 'W/"b3"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-b', 'W/"b2"', false);
+      });
+
+      /**
+       * A refused approval must leave a way forward. The save path promotes `stale-brief` to
+       * `absence: 'overwrite'` for exactly this reason — the user has now BEEN WARNED — and this
+       * path did not, so every retry re-sent the validator the server had just rejected and was
+       * refused identically, while the banner said to try again. A reload was the only exit.
+       */
+      it('licenses the next save after an approval was refused', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict: 'stale-brief' }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(state().status).toBe('error');
+
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: '"2"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+
+        // No validator, and `allowFallback` true: the rejected ETag is not replayed, and the
+        // server may use the one it reads itself.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
+      });
+
+      /**
+       * ...and ONLY after a conflict the user was actually shown. A 5xx, a timeout or a reset
+       * comes back `approved: false` with no `conflict` at all, because the approval may in fact
+       * have landed, and the banner says only that it could not be confirmed. Granting the
+       * overwrite licence there would let the next Proceed replace an editor nobody was warned
+       * about — the silent overwrite the carried validator exists to prevent.
+       */
+      it('does not license an overwrite when the approval outcome is indeterminate', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(state().status).toBe('error');
+
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+
+        // The validator the user was shown, and no fallback licence: a save that lands on a row
+        // someone else moved is refused rather than overwriting it.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v1"', false);
+      });
+
+      /**
+       * And it has to invalidate Planning's cache as well, for the reason the save path's conflict
+       * branch does: the refusal says the stored row MOVED, so the offer still on screen describes
+       * the row this approval lost to, and the next Restore would replay it.
+       */
+      it('re-reads the planning lookup when an approval is refused', async () => {
+        const before = refreshToken();
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: false, conflict: 'stale-brief' }));
+
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(refreshToken()).toBe(before + 1);
+      });
+
+      /**
+       * An approve is NOT on the save queue — queueing it behind an unrelated save is what the
+       * queue's own docblock argues against — so a concurrent save for the same row could read
+       * `knownBriefIds` before the approval filed its new validator and send the stale one.
+       */
+      it('waits for a pending approval of the same row before reading its validator', async () => {
+        const pending = new Subject<CampaignBriefApproveResult>();
+        approveBrief.mockReturnValue(pending);
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: '"9"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+
+        // Still blocked on the approval, so nothing has been sent with the pre-approval validator.
+        expect(persistBrief).not.toHaveBeenCalled();
+
+        pending.next({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v2"', false);
+      });
+
+      /** A save for a DIFFERENT event must not queue behind an approval it has nothing to do with. */
+      it('does not hold a save of another event behind a pending approval', async () => {
+        approveBrief.mockReturnValue(NEVER);
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-other', etag: '"1"', created: true, approved: true }));
+        proceed(otherBrief);
+        await fixture.whenStable();
+
+        expect(persistBrief).toHaveBeenCalledTimes(1);
+      });
+
+      /**
+       * And the approval has to tell Planning its cache is stale, or the second Restore above is
+       * served from the pre-approval answer in the first place.
+       */
+      it('invalidates the planning lookup after approving a restored brief', async () => {
+        const before = refreshToken();
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(refreshToken()).toBe(before + 1);
+      });
+
+      /**
+       * #3801 through a second door. A `stale-brief` conflict means another writer's PUT landed,
+       * and campaign-service's replace resets the row to `status='draft', approved_by=NULL` — so
+       * the `approved: true` this session recorded is a claim about a row that no longer exists.
+       * Carrying it through the conflict promotion made the next restore hand
+       * `onProceedToImplementation` an approval it never verified, which skipped the approve
+       * entirely and enabled Create Campaign against a draft.
+       */
+      it('does not carry a stale approval through a conflict, so Create is not enabled against a draft', async () => {
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true }));
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        expect(state().approved).toBe(true);
+
+        const before = refreshToken();
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, created: false, approved: false, conflict: 'stale-brief' }));
+        proceed();
+        await fixture.whenStable();
+        expect(state().status).toBe('error');
+        // Planning's cached offer describes the row that LOST, so dropping the flag alone would
+        // only fall back on an answer that is stale in the same way and by the same event.
+        expect(refreshToken()).toBe(before + 1);
+
+        // The next restore must ask the server again rather than replay what this session knew.
+        //
+        // Stamped with the token the bump above produced, because that is what this offer IS: the
+        // answer to the re-read the conflict triggered, carrying a validator (`v3`) no earlier
+        // lookup could have seen. A first-lookup stamp would describe a cached replay of the row
+        // as it was before the conflict -- which the adopt branch rightly refuses to pair with
+        // this session's metadata, and which is covered by its own test above.
+        approveBrief.mockClear();
+        approveBrief.mockReturnValue(NEVER);
+        restoreAt(refreshToken(), brief, 'restored-a', false, 'W/"v3"');
+        await fixture.whenStable();
+
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+        expect(state().approved).toBe(false);
+      });
+
+      /**
+       * The equality case, which every test above masks by approving first.
+       *
+       * An approve bumps the token, so a restore that triggers one leaves the record's date below
+       * the live value and any later write stamps strictly above the cached offer. Restoring an
+       * ALREADY-APPROVED brief fires no approve and no bump — so the save that follows takes the
+       * very same token Planning's cached offer was dispatched under. With the content stamp
+       * defaulted to that token the guard compares `T < T`, waves the replay through, and pairs
+       * the bytes Planning read BEFORE the save with this write's ETag and approval: Create stays
+       * enabled against a brief the screen never showed. The stamp lands one above for exactly
+       * this sequence.
+       */
+      it('refuses a replay of the offer read before a save, when the restore before it approved nothing', async () => {
+        // Already approved, so no approve POST and no bump: the record is filed at the page's
+        // first-lookup token, and the token is still that value when the save below reads it.
+        restore(brief, 'restored-a', true, 'W/"v1"');
+        await fixture.whenStable();
+        expect(approveBrief).not.toHaveBeenCalled();
+        const beforeSave = refreshToken();
+
+        persistBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', created: false, approved: true }));
+        proceed();
+        await fixture.whenStable();
+        expect(state().status).toBe('saved');
+        expect(refreshToken()).toBe(beforeSave + 1);
+
+        // The replay: the pair Planning cached before that save, offered again while the re-read
+        // the bump triggered is still in flight. Same id, same first-lookup stamp, stale bytes.
+        restoreAt(beforeSave, brief, 'restored-a', true, 'W/"v1"');
+        await fixture.whenStable();
+
+        expect(state().status).toBe('error');
+        expect(state().message).toContain('Create Campaign stays disabled');
+        expect(state().approved).toBe(false);
+        // And no approve was fired on the way: a superseded restore approves nothing.
+        expect(approveBrief).not.toHaveBeenCalled();
+      });
+
+      /**
+       * Planning is visibility-toggled rather than destroyed, so until the approval resolves and
+       * bumps the refresh token it still offers the PRE-approval pair — and a second Restore hands
+       * the same id and the same validator over again. `approveBriefQuery` is version-gated, so a
+       * second POST cannot succeed once the first has moved the version: the user was left with
+       * "could not be approved" for a row that was, in fact, approved.
+       */
+      it('shares one approve request when a brief is restored twice before it resolves', async () => {
+        const pending = new Subject<CampaignBriefApproveResult>();
+        approveBrief.mockReturnValue(pending);
+
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+        restore(brief, 'restored-a', false, 'W/"v1"');
+        await fixture.whenStable();
+
+        // One POST, not two. The second caller joined the first request instead of racing it.
+        expect(approveBrief).toHaveBeenCalledTimes(1);
+
+        pending.next({ enabled: true, briefId: 'restored-a', etag: 'W/"v2"', approved: true });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await fixture.whenStable();
+
+        // The caller the user is actually looking at applies the answer under its own snapshots.
+        expect(state().status).toBe('off');
+        expect(state().approved).toBe(true);
+
+        // And the validator the approval returned is the one the next save carries.
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v2"', false);
+      });
+    });
+
+    /**
+     * The other half of the dead end: Planning looked the row up, found nothing, and cached that.
+     * The save then CREATED the row and told the user to go restore it — against a component that
+     * would never look again, because its key had not changed. The bump is what makes the banner's
+     * instruction performable.
+     */
+    it('invalidates the planning lookup after a save whose approval did not land', async () => {
+      const before = refreshToken();
+      persistBrief.mockReturnValue(of({ enabled: true, briefId: 'b-1', etag: '"1"', created: true, approved: false }));
+      proceed();
+      await fixture.whenStable();
+
+      expect(refreshToken()).toBe(before + 1);
+      // And the message no longer names an action that could not be performed: `onUrlInput` emits
+      // nothing for an unchanged url, so "re-enter the event URL" was never followed by a lookup.
+      //
+      // It names New Brief for the same class of reason. Proceeding leaves Planning on its
+      // `review` step, and the restore offer renders only under `@if (step() === 'input')`, so
+      // "go back and restore" alone pointed at a button that is not on the screen the user lands
+      // on. `reset()` — the New Brief button — returns to the input step and keeps the offer.
+      expect(state().message).toContain('Go back to Planning, select New Brief, then restore the saved brief');
+      expect(state().message).not.toContain('re-enter the event URL');
     });
 
     it('reports a saved brief whose approval did not land as saved-but-unapproved', async () => {
