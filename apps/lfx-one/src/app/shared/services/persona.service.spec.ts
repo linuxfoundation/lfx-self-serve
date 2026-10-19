@@ -99,6 +99,28 @@ describe('PersonaService — grant probe recency ordering', () => {
     expect(service.marketingGrantSlug()).toBe('foundation-b');
   });
 
+  it('keeps marketingGrantSlug on the newer foundation when an older probe applies only the relation the newer one left unverified (#3824)', () => {
+    let aResponse: PersonaApiResponse | null = null;
+    service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (aResponse = response));
+    service.refreshEnrichedPersonas(true, 'foundation-b').subscribe();
+
+    // B answers first: auditor granted, campaign check failed — only the marketing relation applies.
+    http
+      .expectOne((req) => req.url.includes('project=foundation-b'))
+      .flush(mockResponse({ isMarketingAuditor: true, marketingGrantCheckFailed: true, campaignManagerUnverified: true }));
+    // A answers second with a campaign grant: its relation's own mark is still open, so it applies.
+    http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true }));
+
+    expect(service.isCampaignManager()).toBe(true);
+    expect(service.marketingGrantSlug()).toBe('foundation-b');
+
+    // A's guard force-applying its own response doesn't repoint the slug at the older foundation either.
+    service.confirmActiveGrant(aResponse!, 'foundation-a');
+
+    expect(service.marketingGrantSlug()).toBe('foundation-b');
+    expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+  });
+
   it('does not let a later-issued probe that never itself writes (errors out) block an earlier, still-in-flight probe from applying its legitimate response (Cursor Bugbot finding, PR #1835: "Global probe gate drops grant slug")', () => {
     // foundation-a's probe is issued first; a second, unrelated probe (e.g. a background
     // sidebar-nav pre-check for foundation-b) is issued after it but errors before resolving.

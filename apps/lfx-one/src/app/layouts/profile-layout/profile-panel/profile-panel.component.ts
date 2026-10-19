@@ -14,7 +14,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output, signal } f
  * optimistic-update logic — handles the actual edit flow.
  *
  * The host is `block 2xl:h-full` so at 2xl and up the inner `aside`'s `h-full`/`overflow-y-auto`
- * resolves against the fixed rail's height (mirrors lfx-sidebar's `:host { height: 100% }`);
+ * resolves against the fixed rail's height (mirrors lfx-navbar's `:host { height: 100% }`);
  * below 2xl the height chain is unused since the card renders inline instead of in a fixed rail.
  *
  * Rows render only when their value is present. About me (from the profile bio) and GitHub

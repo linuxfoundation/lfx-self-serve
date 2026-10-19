@@ -2,16 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, afterRenderEffect, Component, computed, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Router, RouterModule } from '@angular/router';
+import { RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
 import { CreateArtifactDialogComponent } from '@components/create-artifact-dialog/create-artifact-dialog.component';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
-import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { environment } from '@environments/environment';
 import {
   CREATABLE_ARTIFACTS,
@@ -41,10 +40,7 @@ import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
-import { LensService } from '@services/lens.service';
-import { PersonaService } from '@services/persona.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
-import { UserService } from '@services/user.service';
 import { LogoutLinkDirective } from '@shared/directives/logout-link.directive';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
@@ -54,14 +50,16 @@ import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { filter } from 'rxjs';
 
+import { NavMenuBase } from './nav-menu-base.directive';
+
 /**
  * The redesigned LFX navbar (sidebar v2): the 48px lens rail and the 300px nav panel merged into one
  * floating 280px panel — brand row (LF apps menu, Create), lens tabs, context card, lens menu and a
  * footer with the account menu, impersonation, What's New and Documentation.
  *
- * Menu building, active-route highlighting, context switching and the SSR hydration gate are
- * inherited unchanged from {@link SidebarComponent}; this component only re-renders them in the
- * navbar markup and folds in the rail actions that used to live in the former lens-switcher rail.
+ * Menu building, active-route highlighting, context switching and the SSR hydration gate come from
+ * {@link NavMenuBase}; this component renders them in the navbar markup and folds in the rail actions
+ * that used to live in the former lens-switcher rail.
  *
  * Styles are unencapsulated (`lfxn-` prefixed) because the context card is also rendered by the
  * project/org selectors' `navbar` variant, inside their own host elements.
@@ -87,16 +85,11 @@ import { filter } from 'rxjs';
   styleUrl: './navbar.component.scss',
   host: { class: 'lfxn-host' },
 })
-export class NavbarComponent extends SidebarComponent {
-  private readonly navbarRouter = inject(Router);
-  private readonly navbarLensService = inject(LensService);
-  private readonly navbarPersonaService = inject(PersonaService);
-  private readonly navbarUserService = inject(UserService);
+export class NavbarComponent extends NavMenuBase {
   private readonly dialogService = inject(DialogService);
   private readonly changelogService = inject(ChangelogService);
   private readonly sidebarNavService = inject(SidebarNavService);
   private readonly appService = inject(AppService);
-  private readonly navbarHost = inject<ElementRef<HTMLElement>>(ElementRef);
   protected readonly createPermissionService = inject(CreatePermissionService);
 
   /** Whether the host layout shifts the navbar down to clear the impersonation banner (main layout only). */
@@ -117,6 +110,11 @@ export class NavbarComponent extends SidebarComponent {
   /** Where the active pill sits; null until measured in the browser (the active tab paints its own pill until then). */
   protected readonly tabIndicator = signal<NavbarTabIndicator | null>(null);
 
+  protected readonly user = this.userService.user;
+  protected readonly userInitials = this.userService.userInitials;
+  // Hide the role marks when the user is a root-writer — executive-director is spoofed, not naturally detected.
+  protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
+
   /**
    * The avatar URL that last failed to load. Google profile photos are served with
    * `referrerpolicy="no-referrer"` (they reject requests carrying the page as referrer); if one
@@ -124,15 +122,15 @@ export class NavbarComponent extends SidebarComponent {
    */
   private readonly failedPhotoUrl = signal<string | null>(null);
   protected readonly photoUrl: Signal<string> = computed(() => {
-    const url = this.avatarUrl();
+    const url = this.userService.effectiveAvatarUrl();
     return url && url !== this.failedPhotoUrl() ? url : '';
   });
 
   // ── Lens tabs ────────────────────────────────────────────────────────────────────────────────
   protected readonly lensTabs: Signal<LensOption[]> = computed(() =>
-    this.navbarLensService.displayLenses().map((lens) => ({ ...lens, ...NAVBAR_LENS_OVERRIDES[lens.id] }))
+    this.lensService.displayLenses().map((lens) => ({ ...lens, ...NAVBAR_LENS_OVERRIDES[lens.id] }))
   );
-  protected readonly activeLensId = this.navbarLensService.displayActiveLens;
+  protected readonly activeLensId = this.lensService.displayActiveLens;
   // A lone tab carries no choice — only render the switcher when the persona can reach more than one lens.
   protected readonly showLensTabs: Signal<boolean> = computed(() => this.lensTabs().length > 1);
 
@@ -184,14 +182,28 @@ export class NavbarComponent extends SidebarComponent {
   /** The empty menu comes from a failed lookup, not a confirmed denial: the card offers a retry instead. */
   protected readonly menuLookupFailed: Signal<boolean> = computed(() => this.sidebarNavService.menuLookupFailed());
 
+  /**
+   * A lookup that shapes the menu failed, but the menu still has items (e.g. an unconfirmed marketing grant
+   * is the only thing missing): the empty-state card never shows, so an inline row offers the retry instead.
+   */
+  protected readonly showPartialLookupFailed: Signal<boolean> = computed(
+    () =>
+      this.showNoAccessState() === null &&
+      (this.menuLookupFailed() || this.retryingLookups()) &&
+      (this.itemsWithTestIds().length > 0 || this.footerMenuItems().length > 0)
+  );
+
+  /** The inline retry row as the live region announces it: only once the visible panel shows it. */
+  protected readonly announcedPartialLookupFailed: Signal<boolean> = computed(() => this.menuStateReady() && this.showPartialLookupFailed());
+
   protected readonly noAccessGhostItems = NAVBAR_NO_ACCESS_GHOST_ITEMS;
 
   // ── Me card ──────────────────────────────────────────────────────────────────────────────────
   protected readonly roleMarks: Signal<NavbarRoleMark[]> = this.initRoleMarks();
 
   // ── Rail actions ─────────────────────────────────────────────────────────────────────────────
-  protected readonly canImpersonate = this.navbarUserService.canImpersonate;
-  protected readonly isImpersonating = this.navbarUserService.impersonating;
+  protected readonly canImpersonate = this.userService.canImpersonate;
+  protected readonly isImpersonating = this.userService.impersonating;
   protected readonly unseenChangelogCount = this.changelogService.unseenChangelogCount;
   protected readonly changelogDrawerVisible = signal(false);
   protected readonly changelogAriaLabel = computed(() => {
@@ -254,7 +266,7 @@ export class NavbarComponent extends SidebarComponent {
   protected openRoleProject(mark: NavbarRoleMark, chip: NavTooltipItem): void {
     const project = mark.projects.find((candidate) => candidate.slug === chip.key);
     if (!project?.lens) return;
-    this.navbarRouter.navigate([`/${project.lens}`, 'overview'], { queryParams: { project: project.slug } });
+    this.router.navigate([`/${project.lens}`, 'overview'], { queryParams: { project: project.slug } });
   }
 
   protected onPhotoError(url: string): void {
@@ -262,7 +274,7 @@ export class NavbarComponent extends SidebarComponent {
   }
 
   protected switchLens(lens: Lens): void {
-    this.navbarLensService.switchLens(lens);
+    this.lensService.switchLens(lens);
   }
 
   protected toggleBrandMenu(event: Event): void {
@@ -279,14 +291,14 @@ export class NavbarComponent extends SidebarComponent {
 
   protected navigateToProfile(): void {
     this.userMenu()?.hide();
-    this.navbarLensService.setLens('me');
-    this.navbarRouter.navigate(['/profile']);
+    this.lensService.setLens('me');
+    this.router.navigate(['/profile']);
   }
 
   protected navigateToProfileSettings(): void {
     this.userMenu()?.hide();
-    this.navbarLensService.setLens('me');
-    this.navbarRouter.navigate(['/profile/settings']);
+    this.lensService.setLens('me');
+    this.router.navigate(['/profile/settings']);
   }
 
   protected openImpersonationDialog(): void {
@@ -353,26 +365,26 @@ export class NavbarComponent extends SidebarComponent {
       }
       if (group) measure(group);
     });
-    inject(DestroyRef).onDestroy(() => observer?.disconnect());
+    this.destroyRef.onDestroy(() => observer?.disconnect());
   }
 
   private initRoleMarks(): Signal<NavbarRoleMark[]> {
     return computed(() => {
       // Hidden for root-writers — executive-director is spoofed for them, not naturally detected.
       if (!this.showPersonaBadge()) return [];
-      const personaProjects = this.navbarPersonaService.personaProjects();
+      const personaProjects = this.personaService.personaProjects();
       // Detection defaults every project to `isFoundation: false`; only a tier enrichment actually
       // resolved counts. Before enrichment, or for a project the metadata batch missed, the role's own
       // scope decides instead.
       const foundationByUid = new Map(
-        this.navbarPersonaService
+        this.personaService
           .detectedProjects()
           .filter((project) => project.tierResolved)
           .map((project) => [project.projectUid, project.isFoundation])
       );
       const priority = new Map(PERSONA_PRIORITY.map((persona, index) => [persona, index]));
-      const allowed = new Set(this.navbarLensService.availableLenses().map((option) => option.id));
-      return [...this.navbarPersonaService.allPersonas()]
+      const allowed = new Set(this.lensService.availableLenses().map((option) => option.id));
+      return [...this.personaService.allPersonas()]
         .sort((a, b) => (priority.get(a) ?? Number.MAX_SAFE_INTEGER) - (priority.get(b) ?? Number.MAX_SAFE_INTEGER))
         .slice(0, 3)
         .map((persona) => {
@@ -415,7 +427,7 @@ export class NavbarComponent extends SidebarComponent {
         this.brandMenu()?.hide();
         this.createMenu()?.hide();
         this.userMenu()?.hide();
-        NavTooltipDirective.hideWithin(this.navbarHost.nativeElement);
+        NavTooltipDirective.hideWithin(this.elementRef.nativeElement);
       });
   }
 

@@ -448,7 +448,7 @@ export class SidebarNavService {
   // this same slug to look up grantsByScope for the active scope.
   // For project-lens-only marketing users, `selectedFoundation` is never populated because
   // foundation rows that the sidebar shows under the project lens are stored in `selectedProject`
-  // (sidebar.component.ts:188-200). Fall back to selectedProject so the scoped probe fires as soon
+  // (NavMenuBase.onItemSelected). Fall back to selectedProject so the scoped probe fires as soon
   // as they pick any context, bootstrapping their first-session foundation grant.
   // Always re-probes on a selectedProject change — a scope switch from a confirmed project A to an
   // unprobed project B must not leave the sidebar showing A's (possibly no-longer-relevant) grant for

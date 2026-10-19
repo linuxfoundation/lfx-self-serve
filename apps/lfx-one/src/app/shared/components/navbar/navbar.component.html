@@ -157,8 +157,8 @@
 
       <!--
         Lens menu. Gated on hydrated() so the concrete menu is withheld until the browser commits its
-        first render — server + first client render both show the skeleton (see SidebarComponent).
-        Track by the inherited per-destination `trackKey`, as the classic sidebar does.
+        first render — server + first client render both show the skeleton (see NavMenuBase).
+        Track by the inherited per-destination `trackKey`.
       -->
       <!-- lfxScrollShadow tracks the scroll edges; the fade classes mask items as they scroll under the header/footer. -->
       <!-- Persistent live region: the no-access message is swapped in here rather than mounting a new status node. -->
@@ -171,6 +171,12 @@
             Couldn't load this {{ kind }}'s tools.
           } @else {
             No access to this {{ kind }}'s tools.
+          }
+        } @else if (announcedPartialLookupFailed()) {
+          @if (retryingLookups()) {
+            Retrying…
+          } @else {
+            Some tools couldn't load.
           }
         }
       </div>
@@ -238,6 +244,24 @@
                   }
                 }
               </div>
+            </div>
+          }
+
+          @if (showPartialLookupFailed()) {
+            <!-- Part of the menu is missing because a lookup failed (not denied): a non-blocking retry under the items that did load. -->
+            <div class="lfxn__lookup-notice" data-testid="navbar-partial-lookup-failed">
+              <i class="fa-light fa-triangle-exclamation lfxn__lookup-notice-icon" aria-hidden="true"></i>
+              <span class="lfxn__lookup-notice-text">Some tools couldn't load</span>
+              <button
+                type="button"
+                class="lfxn__empty-action lfxn__lookup-notice-action"
+                [disabled]="retryingLookups()"
+                [attr.aria-busy]="retryingLookups() || null"
+                (click)="retryMenu()"
+                data-testid="navbar-partial-lookup-retry">
+                <i class="fa-light fa-arrow-rotate-right" [class.fa-spin]="retryingLookups()" aria-hidden="true"></i>
+                <span>{{ retryingLookups() ? 'Retrying…' : 'Retry' }}</span>
+              </button>
             </div>
           }
 

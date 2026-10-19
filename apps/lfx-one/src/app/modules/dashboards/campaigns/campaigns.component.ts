@@ -611,7 +611,7 @@ export class CampaignsComponent {
    *
    * A foundation switch does NOT re-create this component. The sidebar navigates only on a lens
    * change, off an entity page, or off the Project lens landing/checklist pages
-   * (`sidebar.component.ts` `contextSwitchTarget`), and `/foundation/campaigns` is none of those —
+   * (`nav-menu-base.directive.ts` `contextSwitchTarget`), and `/foundation/campaigns` is none of those —
    * it is a two-segment route in the foundation lens, so picking another foundation runs
    * `setFoundation`, which moves the `?project=` param with `Location.replaceState` and nothing
    * else. The page stays mounted and `activeContext()`

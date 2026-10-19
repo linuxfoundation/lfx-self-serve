@@ -128,6 +128,13 @@ export class PersonaService {
   // from an older probe as stale (Copilot finding, PR #3783).
   private readonly latestAppliedGrantProbeId: Record<'marketing' | 'campaign', number> = { marketing: 0, campaign: 0 };
   /**
+   * Last probeId that wrote {@link marketingGrantSlug}. The slug is one scalar covering both relations,
+   * so the per-relation marks above can't guard it: an older probe that applies only the relation a
+   * newer probe left untouched would still pass its own relation's gate and repoint the slug at an
+   * older foundation (#3824).
+   */
+  private latestAppliedGrantSlugProbeId = 0;
+  /**
    * Last probeId that actually **applied** (wrote the signals for) a given scope (`projectSlug`, or
    * `undefined` for root) — used only by {@link confirmActiveGrant} to tell a genuine cross-scope
    * race (safe to override) apart from a same-scope race (not safe to override).
@@ -237,7 +244,7 @@ export class PersonaService {
             ((response.isMarketingAuditor && probeId >= this.latestAppliedGrantProbeId.marketing) ||
               (response.isCampaignManager && probeId >= this.latestAppliedGrantProbeId.campaign))
           ) {
-            this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
+            this.writeGrantSlug(response, projectSlug, probeId);
           }
         }
       })
@@ -294,7 +301,7 @@ export class PersonaService {
     if (apply.marketing) this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
     if (apply.campaign) this.isCampaignManager.set(response.isCampaignManager ?? false);
     if (projectSlug && ((apply.marketing && response.isMarketingAuditor) || (apply.campaign && response.isCampaignManager))) {
-      this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
+      this.writeGrantSlug(response, projectSlug, probeId);
     }
     // Also write to per-scope map — same rationale as the write in applyPersonaResponse.
     // After this point the component reads from the map (not the global signals), so a later
@@ -339,6 +346,21 @@ export class PersonaService {
       return null;
     }
     return projectSlug;
+  }
+
+  /**
+   * Points {@link marketingGrantSlug} at this probe's foundation unless a newer probe already wrote it,
+   * then advances the slug's own mark. A response with no recorded probe (`probeId` undefined) always
+   * writes, as it does for the grant signals.
+   */
+  private writeGrantSlug(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug: string,
+    probeId: number | undefined
+  ): void {
+    if (probeId !== undefined && probeId < this.latestAppliedGrantSlugProbeId) return;
+    this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
+    if (probeId !== undefined) this.latestAppliedGrantSlugProbeId = probeId;
   }
 
   private scopeRecencyKey(relation: 'marketing' | 'campaign', projectSlug?: string): string {

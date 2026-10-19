@@ -9,7 +9,6 @@ import type { IsActiveMatchOptions } from '@angular/router';
 import { LensItem, User } from '@lfx-one/shared/interfaces';
 import type { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
@@ -18,10 +17,13 @@ import { UserService } from '@services/user.service';
 import { EMPTY } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SidebarComponent } from './sidebar.component';
+import { NavMenuBase } from './nav-menu-base.directive';
 
-const sidebarServiceStubs = (setProject = vi.fn()): Provider[] => [
-  { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+/** The smallest component the abstract base can be instantiated through; protected members are reached by narrow casts. */
+@Component({ selector: 'lfx-nav-menu-test-host', template: '' })
+class NavMenuTestHostComponent extends NavMenuBase {}
+
+const navMenuServiceStubs = (setProject = vi.fn()): Provider[] => [
   {
     provide: LensService,
     useValue: { activeLens: signal('project'), isHybridPersona: signal(false), availableLenses: signal([{ id: 'project' }]), setLens: vi.fn() },
@@ -47,27 +49,26 @@ const sidebarServiceStubs = (setProject = vi.fn()): Provider[] => [
  * a formation-stage project lands on its checklist, anything else on the dashboard. A same-lens
  * selector switch normally keeps the page and only rewrites `?project=` via `Location.replaceState`,
  * which never re-runs guards — so on the two pages that decision owns, the switch must re-enter
- * the lens through a real navigation. Class-level, like the suite above: the template is overridden
+ * the lens through a real navigation. Class-level, through the test host: its template is
  * empty and `onItemSelected` is reached through a narrow cast.
  */
-describe('SidebarComponent — same-lens project switch re-enters the lens landing page (#2754)', () => {
+describe('NavMenuBase — same-lens project switch re-enters the lens landing page (#2754)', () => {
   const navigate = vi.fn();
   const setProject = vi.fn();
   const betaItem: LensItem = { uid: 'uid-beta', slug: 'beta', name: 'Beta', logoUrl: null, isFoundation: false, formationSubStage: null };
 
-  const selectItem = (c: SidebarComponent, item: LensItem): void => (c as unknown as { onItemSelected: (i: LensItem) => void }).onItemSelected(item);
+  const selectItem = (c: NavMenuTestHostComponent, item: LensItem): void => (c as unknown as { onItemSelected: (i: LensItem) => void }).onItemSelected(item);
 
-  const createSidebar = async (url: string): Promise<SidebarComponent> => {
+  const createNavMenu = async (url: string): Promise<NavMenuTestHostComponent> => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [SidebarComponent],
+      imports: [NavMenuTestHostComponent],
       providers: [
         { provide: Router, useValue: { url, events: EMPTY, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
-        ...sidebarServiceStubs(setProject),
+        ...navMenuServiceStubs(setProject),
       ],
     });
-    TestBed.overrideComponent(SidebarComponent, { set: { template: '', imports: [], providers: [] } });
-    const fixture = TestBed.createComponent(SidebarComponent);
+    const fixture = TestBed.createComponent(NavMenuTestHostComponent);
     fixture.componentRef.setInput('items', []);
     await fixture.whenStable();
     return fixture.componentInstance;
@@ -81,9 +82,9 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
   it.each(['/project/overview?project=alpha', '/project/formation?project=alpha', '/project/overview#activity'])(
     'navigates to the overview with the new slug when switching projects on %s',
     async (url) => {
-      const sidebar = await createSidebar(url);
+      const navMenu = await createNavMenu(url);
 
-      selectItem(sidebar, betaItem);
+      selectItem(navMenu, betaItem);
 
       expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), false);
       expect(navigate).toHaveBeenCalledWith(['/project', 'overview'], { queryParams: { project: 'beta' } });
@@ -91,16 +92,16 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
   );
 
   it('keeps the current page on a same-lens switch elsewhere in the lens, as before', async () => {
-    const sidebar = await createSidebar('/project/meetings?project=alpha');
+    const navMenu = await createNavMenu('/project/meetings?project=alpha');
 
-    selectItem(sidebar, betaItem);
+    selectItem(navMenu, betaItem);
 
     expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), true);
     expect(navigate).not.toHaveBeenCalled();
   });
 });
 
-describe('SidebarComponent — link-active options (#3358)', () => {
+describe('NavMenuBase — link-active options (#3358)', () => {
   @Component({ selector: 'lfx-blank-page', template: '' })
   class BlankPageStubComponent {}
 
@@ -117,17 +118,16 @@ describe('SidebarComponent — link-active options (#3358)', () => {
   ];
 
   let router: Router;
-  let component: SidebarComponent;
-  let decorated: ReturnType<SidebarComponent['itemsWithTestIds']>;
+  let component: NavMenuTestHostComponent;
+  let decorated: ReturnType<NavMenuTestHostComponent['itemsWithTestIds']>;
 
   beforeEach(async () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [SidebarComponent],
-      providers: [provideRouter([{ path: '**', component: BlankPageStubComponent }]), ...sidebarServiceStubs()],
+      imports: [NavMenuTestHostComponent],
+      providers: [provideRouter([{ path: '**', component: BlankPageStubComponent }]), ...navMenuServiceStubs()],
     });
-    TestBed.overrideComponent(SidebarComponent, { set: { template: '', imports: [], providers: [] } });
-    const fixture = TestBed.createComponent(SidebarComponent);
+    const fixture = TestBed.createComponent(NavMenuTestHostComponent);
     fixture.componentRef.setInput('items', items);
     await fixture.whenStable();
     router = TestBed.inject(Router);

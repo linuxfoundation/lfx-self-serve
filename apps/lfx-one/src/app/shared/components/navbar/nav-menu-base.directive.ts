@@ -1,39 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, model, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, computed, DestroyRef, Directive, ElementRef, inject, input, model, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { NavigationEnd, Router, RouterModule } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
 import type { IsActiveMatchOptions } from '@angular/router';
-import { AvatarComponent } from '@components/avatar/avatar.component';
-import { BadgeComponent } from '@components/badge/badge.component';
-import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
-import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
-import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES, MY_CLAS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
-import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs, lensItemToProjectContext, orgLensDestinationKey, toTitleCase } from '@lfx-one/shared/utils';
+import { FORMATION_CHECKLIST_PATH, LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
+import { LensItem, NavLens, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { lensItemToProjectContext, orgLensDestinationKey } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { GwEmbedWarmupService } from '@services/gw-embed-warmup.service';
 import { LensService } from '@services/lens.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
-import { Popover, PopoverModule } from 'primeng/popover';
-import { SkeletonModule } from 'primeng/skeleton';
-import { TooltipModule } from 'primeng/tooltip';
 import { filter, map } from 'rxjs';
-
-const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
-  'executive-director': 'fa-light fa-briefcase',
-  'board-member': 'fa-light fa-building-columns',
-  maintainer: 'fa-light fa-code',
-  contributor: 'fa-light fa-code',
-};
 
 /** `SidebarMenuItem` as rendered: derived test id, external-link flag and `@for` track key filled in at every level. */
 type DecoratedSidebarMenuItem = Omit<SidebarMenuItem, 'items'> & {
@@ -44,44 +27,29 @@ type DecoratedSidebarMenuItem = Omit<SidebarMenuItem, 'items'> & {
   items?: DecoratedSidebarMenuItem[];
 };
 
-@Component({
-  selector: 'lfx-sidebar',
-  imports: [
-    NgClass,
-    NgTemplateOutlet,
-    RouterModule,
-    AvatarComponent,
-    BadgeComponent,
-    LensTabsComponent,
-    OrgSelectorComponent,
-    ProjectSelectorComponent,
-    PopoverModule,
-    SkeletonModule,
-    TooltipModule,
-  ],
-  templateUrl: './sidebar.component.html',
-  styleUrl: './sidebar.component.scss',
-})
-export class SidebarComponent {
+/**
+ * The lens menu's behaviour, kept apart from the navbar's markup: item decoration (test ids, track keys,
+ * active-route matching), group expansion, the SSR hydration gate and project / foundation context
+ * switching. Abstract and selector-less; {@link NavbarComponent} is the one component that renders it.
+ */
+@Directive()
+export abstract class NavMenuBase {
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly personaService = inject(PersonaService);
-  private readonly lensService = inject(LensService);
+  protected readonly personaService = inject(PersonaService);
+  protected readonly lensService = inject(LensService);
   private readonly navigationService = inject(NavigationService);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
+  protected readonly router = inject(Router);
+  protected readonly userService = inject(UserService);
   private readonly accountContextService = inject(AccountContextService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly gwEmbedWarmup = inject(GwEmbedWarmupService);
-  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly destroyRef = inject(DestroyRef);
+  protected readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
+  protected readonly destroyRef = inject(DestroyRef);
 
   private static readonly exactPathMatch: IsActiveMatchOptions = { paths: 'exact', queryParams: 'ignored', matrixParams: 'ignored', fragment: 'ignored' };
-  private static readonly subpathMatch: IsActiveMatchOptions = { ...SidebarComponent.exactPathMatch, paths: 'subset' };
+  private static readonly subpathMatch: IsActiveMatchOptions = { ...NavMenuBase.exactPathMatch, paths: 'subset' };
 
   public readonly items = input.required<SidebarMenuItem[]>();
   public readonly footerItems = input<SidebarMenuItem[]>([]);
-  public readonly collapsed = input<boolean>(false);
-  public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
   /** Parent lens hint for the org-selector slot; ANDed with the grants/seeds gate to produce `effectiveShowOrgSelector` (spec 020 D-005). */
   public readonly showOrgSelector = input<boolean>(false);
@@ -117,20 +85,6 @@ export class SidebarComponent {
   // (skeleton→skeleton reconciles cleanly), then the real menu is inserted as a post-hydration update.
   protected readonly hydrated = signal(false);
 
-  protected readonly user = this.userService.user;
-  protected readonly userInitials = this.userService.userInitials;
-  protected readonly avatarUrl = this.userService.effectiveAvatarUrl;
-  protected readonly personaLabels: Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> = this.initPersonaLabels();
-  // Hide the persona badge when the user is a root-writer — executive-director is spoofed, not naturally detected.
-  protected readonly showPersonaBadge: Signal<boolean> = computed(() => !this.personaService.isRootWriter());
-
-  // Profile & Account tabs for the me-lens card overflow (⋯) dropdown → /profile/<route>.
-  // Computed (not static) so the read-only "CLAs" tab appears here whenever `my-clas-enabled`
-  // is on, keeping this menu in sync with the profile-layout subtab strip (both use buildProfileTabs).
-  private readonly myClasEnabled = this.featureFlagService.getBooleanFlag(MY_CLAS_ENABLED_FLAG, false);
-  protected readonly profileTabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
-  protected readonly profileMenu = viewChild<Popover>('profileMenu');
-
   protected readonly itemsWithTestIds = computed(() => this.items().map((item) => this.decorate(item)));
 
   protected readonly footerItemsWithTestIds = computed(() => this.footerItems().map((item) => this.decorate(item)));
@@ -161,7 +115,7 @@ export class SidebarComponent {
     const { itemsRef, overrides } = this.expandedGroupOverrides();
     const effectiveOverrides = itemsRef === items ? overrides : {};
     const states: Record<string, boolean> = {};
-    // Group expansion is keyed by item.label — group labels must be unique within a single sidebar items tree.
+    // Group expansion is keyed by item.label — group labels must be unique within a single menu items tree.
     const scanForGroups = (candidates: SidebarMenuItem[]) => {
       for (const item of candidates) {
         if (item.isGroup) {
@@ -192,17 +146,6 @@ export class SidebarComponent {
     const prev = this.expandedGroupOverrides();
     const baseOverrides = prev.itemsRef === items ? prev.overrides : {};
     this.expandedGroupOverrides.set({ itemsRef: items, overrides: { ...baseOverrides, [label]: !current } });
-  }
-
-  // Toggle the me-lens card overflow popover. stopPropagation keeps the click from
-  // reaching document-level outside-click handlers, not the (sibling) stretched link.
-  protected toggleProfileMenu(event: Event): void {
-    event.stopPropagation();
-    this.profileMenu()?.toggle(event);
-  }
-
-  protected closeProfileMenu(): void {
-    this.profileMenu()?.hide();
   }
 
   protected onItemSelected(item: LensItem): void {
@@ -283,30 +226,6 @@ export class SidebarComponent {
     });
   }
 
-  private initPersonaLabels(): Signal<{ label: string; icon: string; names: string[]; ariaLabel: string }[]> {
-    return computed(() => {
-      const personaProjects = this.personaService.personaProjects();
-      const toTag = (p: PersonaType) => {
-        const option = PERSONA_OPTIONS.find((o) => o.value === p);
-        const label = option?.label ?? toTitleCase(p);
-        const icon = PERSONA_ICONS[p] ?? 'fa-light fa-user';
-        const names = (personaProjects[p] ?? []).map((proj) => proj.projectName).filter((n): n is string => !!n);
-        const ariaLabel = names.length ? `Role: ${label} (${names.join(', ')})` : `Role: ${label}`;
-        return { label, icon, names, ariaLabel };
-      };
-
-      if (this.activeLens() === 'me') {
-        const priorityMap = new Map(PERSONA_PRIORITY.map((p, i) => [p, i]));
-        const sorted = [...this.personaService.allPersonas()].sort(
-          (a, b) => (priorityMap.get(a) ?? Number.MAX_SAFE_INTEGER) - (priorityMap.get(b) ?? Number.MAX_SAFE_INTEGER)
-        );
-        return sorted.slice(0, 3).map(toTag);
-      }
-
-      return [toTag(this.personaService.currentPersona())];
-    });
-  }
-
   private initAliasHighlightedKeys(): Signal<Readonly<Record<string, boolean>>> {
     return computed(() => {
       this.navigatedUrl();
@@ -331,7 +250,7 @@ export class SidebarComponent {
       testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
       trackKey: this.trackKey(item),
       external: item.url ? this.isExternalUrl(item.url) : undefined,
-      activeMatchOptions: item.activeOnSubpaths ? SidebarComponent.subpathMatch : SidebarComponent.exactPathMatch,
+      activeMatchOptions: item.activeOnSubpaths ? NavMenuBase.subpathMatch : NavMenuBase.exactPathMatch,
       items: item.items?.map((childItem) => this.decorate(childItem)),
     };
   }

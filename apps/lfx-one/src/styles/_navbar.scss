@@ -966,6 +966,43 @@
     }
   }
 
+  // A lookup failed but the menu still has items: one dashed row under them with an inline Retry.
+  .lfxn__lookup-notice {
+    align-self: stretch;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 1px dashed theme('colors.white / 14%');
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 16px;
+    color: theme('colors.gray.400');
+  }
+
+  .lfxn__lookup-notice-icon {
+    width: 15px;
+    flex-shrink: 0;
+    text-align: center;
+    color: theme('colors.amber.400');
+  }
+
+  .lfxn__lookup-notice-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lfxn__lookup-notice-action {
+    flex-shrink: 0;
+    margin-top: 0;
+    margin-left: auto;
+    padding: 2px 8px;
+  }
+
   // Tucked ~2 rows up under the card, so the first rows read as continuing behind it.
   .lfxn__ghost {
     margin-top: -58px;

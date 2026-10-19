@@ -3,10 +3,20 @@
 
 import { computed, signal } from '@angular/core';
 import type { Signal, WritableSignal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, Router } from '@angular/router';
 import { ALL_LENSES, NAVBAR_ROLE_STYLES } from '@lfx-one/shared/constants';
-import type { Lens, LensOption, NavbarMenuBlock, NavbarRoleMark, PersonaProject, PersonaType, SidebarMenuItem, User } from '@lfx-one/shared/interfaces';
+import type {
+  Lens,
+  LensOption,
+  NavbarMenuBlock,
+  NavbarRoleMark,
+  NavbarTabIndicator,
+  PersonaProject,
+  PersonaType,
+  SidebarMenuItem,
+  User,
+} from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
@@ -21,7 +31,7 @@ import { UserService } from '@services/user.service';
 import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { DialogService } from 'primeng/dynamicdialog';
 import { EMPTY } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { NavbarComponent } from './navbar.component';
 
@@ -37,13 +47,16 @@ interface NavbarView {
   retryingLookups: Signal<boolean>;
   menuStateReady: Signal<boolean>;
   announcedNoAccessState: Signal<'foundation' | 'project' | null>;
+  showPartialLookupFailed: Signal<boolean>;
+  announcedPartialLookupFailed: Signal<boolean>;
+  tabIndicator: Signal<NavbarTabIndicator | null>;
   hydrated: WritableSignal<boolean>;
   retryMenu(): void;
 }
 
 const retryMenuLookups = vi.fn();
 
-const createNavbar = async (
+const createNavbarFixture = async (
   items: SidebarMenuItem[],
   personas: PersonaType[] = [],
   personaProjects: Partial<Record<PersonaType, PersonaProject[]>> = {},
@@ -56,6 +69,7 @@ const createNavbar = async (
     mobile = false,
     url = '/',
     retrying = false,
+    template = '',
   }: {
     lens?: Lens;
     itemsPending?: boolean;
@@ -65,8 +79,9 @@ const createNavbar = async (
     mobile?: boolean;
     url?: string;
     retrying?: boolean;
+    template?: string;
   } = {}
-): Promise<NavbarView> => {
+): Promise<ComponentFixture<NavbarComponent>> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [NavbarComponent],
@@ -117,13 +132,16 @@ const createNavbar = async (
       { provide: CreatePermissionService, useValue: { canShowCreateButton: signal(false), creatableTypes: signal([]) } },
     ],
   });
-  TestBed.overrideComponent(NavbarComponent, { set: { template: '', imports: [], providers: [] } });
+  TestBed.overrideComponent(NavbarComponent, { set: { template, imports: [], providers: [] } });
   const fixture = TestBed.createComponent(NavbarComponent);
   fixture.componentRef.setInput('items', items);
   fixture.componentRef.setInput('mobile', mobile);
   await fixture.whenStable();
-  return fixture.componentInstance as unknown as NavbarView;
+  return fixture;
 };
+
+const createNavbar = async (...args: Parameters<typeof createNavbarFixture>): Promise<NavbarView> =>
+  (await createNavbarFixture(...args)).componentInstance as unknown as NavbarView;
 
 describe('NavbarComponent', () => {
   it('groups top-level runs and sections into spaced blocks, ruling off a dividerBefore run', async () => {
@@ -282,5 +300,90 @@ describe('NavbarComponent', () => {
     retryMenuLookups.mockClear();
     failed.retryMenu();
     expect(retryMenuLookups).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers an inline retry when a lookup failed but the menu still has items (#3824)', async () => {
+    const items: SidebarMenuItem[] = [{ label: 'Dashboard', routerLink: '/foundation/overview' }];
+    const partial = await createNavbar(items, [], {}, { lens: 'foundation', lookupFailed: true });
+    partial.hydrated.set(true);
+
+    expect(partial.showNoAccessState()).toBeNull();
+    expect(partial.showPartialLookupFailed()).toBe(true);
+    expect(partial.announcedPartialLookupFailed()).toBe(true);
+
+    retryMenuLookups.mockClear();
+    partial.retryMenu();
+    expect(retryMenuLookups).toHaveBeenCalledTimes(1);
+
+    // The row stays up, busy, while that retry runs.
+    expect((await createNavbar(items, [], {}, { lens: 'foundation', itemsPending: true, retrying: true })).showPartialLookupFailed()).toBe(true);
+  });
+
+  it('leaves the inline retry to the error card when the menu is empty, and hides it when nothing failed', async () => {
+    const empty = await createNavbar([], [], {}, { lens: 'foundation', lookupFailed: true });
+    expect(empty.showNoAccessState()).toBe('foundation');
+    expect(empty.showPartialLookupFailed()).toBe(false);
+
+    const healthy = await createNavbar([{ label: 'Dashboard', routerLink: '/foundation/overview' }], [], {}, { lens: 'foundation' });
+    expect(healthy.showPartialLookupFailed()).toBe(false);
+
+    // Not announced before the visible panel shows the row.
+    const unhydrated = await createNavbar([{ label: 'Dashboard', routerLink: '/foundation/overview' }], [], {}, { lens: 'foundation', lookupFailed: true });
+    unhydrated.hydrated.set(false);
+    expect(unhydrated.showPartialLookupFailed()).toBe(true);
+    expect(unhydrated.announcedPartialLookupFailed()).toBe(false);
+  });
+
+  describe('lens-tab pill (#3825)', () => {
+    /** A ResizeObserver stand-in: records what it observes and lets a test fire its callback. */
+    class FakeResizeObserver {
+      public static readonly instances: FakeResizeObserver[] = [];
+      public readonly observe = vi.fn();
+      public readonly disconnect = vi.fn();
+
+      public constructor(public readonly callback: () => void) {
+        FakeResizeObserver.instances.push(this);
+      }
+    }
+
+    // Only the measured markup: the tab group and its active tab.
+    const tabsTemplate =
+      '<div #lensTabGroup><button type="button" class="lfxn__tab">Home</button><button type="button" class="lfxn__tab is-active">Project</button></div>';
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      FakeResizeObserver.instances.length = 0;
+    });
+
+    it('re-measures the active tab when the group resizes, and stops observing on destroy', async () => {
+      vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+      const fixture = await createNavbarFixture([], [], {}, { lens: 'project', template: tabsTemplate });
+      const navbar = fixture.componentInstance as unknown as NavbarView;
+      const group = fixture.nativeElement.querySelector('div') as HTMLElement;
+      const active = group.querySelector('.is-active') as HTMLElement;
+
+      // jsdom lays nothing out: an unmeasurable (0px) tab leaves the pill to the active tab's own styling.
+      expect(navbar.tabIndicator()).toBeNull();
+      expect(FakeResizeObserver.instances).toHaveLength(1);
+      const [observer] = FakeResizeObserver.instances;
+      expect(observer.observe).toHaveBeenCalledWith(group);
+
+      // The group gets laid out (e.g. the mobile drawer opens): the resize callback places the pill.
+      Object.defineProperty(active, 'offsetLeft', { configurable: true, value: 12 });
+      Object.defineProperty(active, 'offsetWidth', { configurable: true, value: 64 });
+      observer.callback();
+      expect(navbar.tabIndicator()).toEqual({ left: 12, width: 64 });
+
+      fixture.destroy();
+      expect(observer.disconnect).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the pill unplaced where ResizeObserver is unavailable', async () => {
+      vi.stubGlobal('ResizeObserver', undefined);
+      const fixture = await createNavbarFixture([], [], {}, { lens: 'project', template: tabsTemplate });
+
+      expect((fixture.componentInstance as unknown as NavbarView).tabIndicator()).toBeNull();
+      expect(() => fixture.destroy()).not.toThrow();
+    });
   });
 });
