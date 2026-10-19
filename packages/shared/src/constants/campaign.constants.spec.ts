@@ -478,7 +478,12 @@ describe('CAMPAIGN_SURVEY_TYPES', () => {
 
   it('maps every type to a stage campaign-service enumerates', () => {
     // The survey surface's own vocabulary. Upstream refuses a stage outside it with a 400.
-    const upstream = new Set(['Survey Promo', 'Report Promo']);
+    //
+    // Spelled out BY HAND rather than derived from `CAMPAIGN_SURVEY_STAGES`: this is the copy of
+    // campaign-service's `emailstage.SurveyNames()` that an added stage has to be checked against,
+    // and deriving it from the constant under test would make the assertion true by construction
+    // while the server went on refusing the new value.
+    const upstream = new Set(['Survey Promo', 'Survey Reminder', 'Survey Closing', 'Report Promo']);
     for (const t of CAMPAIGN_SURVEY_TYPES) {
       expect(upstream.has(t.stage), `${t.id} -> ${t.stage}`).toBe(true);
     }

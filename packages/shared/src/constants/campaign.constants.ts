@@ -2902,14 +2902,20 @@ export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Re
  * the column's own pair CHECK), so `(email, 'Survey Promo')` and `(survey, 'Final Countdown')` are
  * both refused — pooling the two lists here would offer the operator a pair the server rejects.
  */
-export const CAMPAIGN_SURVEY_STAGES = ['Survey Promo', 'Report Promo'] as const;
+export const CAMPAIGN_SURVEY_STAGES = ['Survey Promo', 'Survey Reminder', 'Survey Closing', 'Report Promo'] as const;
 
 /**
- * What the operator picks on the survey surface: the kind of asset being promoted.
+ * What the operator picks on the survey surface: which SEND of which asset this is.
  *
  * The counterpart of `CAMPAIGN_EMAIL_TYPES`, and deliberately the same shape, so the stage picker
  * renders from either list without a second code path. `keywords` rank clone templates the same
  * way they do for email.
+ *
+ * A survey's promotion is a SERIES — an opening send, a reminder while it is still in field, and a
+ * closing push — so three of the four entries promote the same instrument at different points.
+ * Each is its own brief with its own audience and its own draft, exactly as the six event stages
+ * are. Report promotion has no series: a published report does not close, so there is no reminder
+ * or closing send to write.
  */
 export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
   {
@@ -2917,6 +2923,18 @@ export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
     label: 'Survey Promotion',
     stage: 'Survey Promo',
     keywords: ['survey', 'participate', 'research', 'questionnaire'],
+  },
+  {
+    id: 'survey-reminder',
+    label: 'Survey Reminder',
+    stage: 'Survey Reminder',
+    keywords: ['survey', 'reminder', 'still open', 'research', 'participate'],
+  },
+  {
+    id: 'survey-closing',
+    label: 'Survey Closing',
+    stage: 'Survey Closing',
+    keywords: ['survey', 'closing', 'last chance', 'deadline', 'final'],
   },
   {
     id: 'report-promo',
