@@ -438,7 +438,9 @@
     width: 12px;
     height: 14px;
     margin-left: 8px;
-    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14' viewBox='0 0 12 14' fill='none' stroke='%23CAD5E2' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5l3-3 3 3M3 9l3 3 3-3'/%3E%3C/svg%3E")
+    // The SVG is only the shape (a mask); its colour is the token behind it, so no hex lives in the data URI.
+    background-color: theme('colors.gray.300');
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='14' viewBox='0 0 12 14' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5l3-3 3 3M3 9l3 3 3-3'/%3E%3C/svg%3E")
       center / 12px 14px no-repeat;
   }
 
