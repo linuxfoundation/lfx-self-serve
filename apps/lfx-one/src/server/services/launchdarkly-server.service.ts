@@ -39,7 +39,8 @@ import type { LDClient } from '@launchdarkly/node-server-sdk';
 export class LaunchDarklyServerService {
   private static instance: LaunchDarklyServerService | null = null;
   private client: LDClient | null = null;
-  private initAttempted = false;
+  /** The first connection wait, shared by every evaluation that arrives before it settles; resolves `null` on timeout. */
+  private firstConnection: Promise<LDClient | null> | null = null;
   private closed = false;
   private missingKeyLogged = false;
 
@@ -108,19 +109,20 @@ export class LaunchDarklyServerService {
 
     this.client ??= init(sdkKey);
 
-    // Only the first evaluation waits for the connection. While LaunchDarkly stays unreachable the SDK
-    // keeps retrying, and waiting again would add the full timeout to every later request.
+    // Only the first connection is waited for, and every evaluation that arrives meanwhile shares that
+    // one wait (the page fires several requests at once). While LaunchDarkly stays unreachable the SDK
+    // keeps retrying; the settled `null` answers at once, so later requests never add the timeout.
     if (this.client.initialized()) {
       return this.client;
     }
-    if (this.initAttempted) {
-      return null;
-    }
-    this.initAttempted = true;
+    this.firstConnection ??= this.waitForFirstConnection(this.client, req);
+    return this.firstConnection;
+  }
 
+  private async waitForFirstConnection(client: LDClient, req: Request): Promise<LDClient | null> {
     try {
-      await this.client.waitForInitialization({ timeout: LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS });
-      return this.client;
+      await client.waitForInitialization({ timeout: LAUNCHDARKLY_SERVER_INIT_TIMEOUT_SECONDS });
+      return client;
     } catch (error) {
       // The SDK keeps connecting in the background; once it reports ready, later requests use it.
       logger.warning(req, 'evaluate_server_flag', 'LaunchDarkly not ready; using flag default', {

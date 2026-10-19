@@ -306,6 +306,10 @@ export * from './person-detail-drawer.interface';
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
 
+// Project Lens — Participating Organizations (#2091)
+export * from './project-participating-orgs.interface';
+export * from './project-participating-orgs.internal.interface';
+
 // Org Events interfaces
 export * from './org-events.interface';
 

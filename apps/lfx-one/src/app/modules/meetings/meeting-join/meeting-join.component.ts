@@ -905,7 +905,8 @@ export class MeetingJoinComponent implements OnInit {
               this.pastMeetingFullAccess.set(res.full_access);
             }),
             map((res: PublicPastMeetingResponse) => ({
-              meeting: res.meeting,
+              // Preserve the legacy join-page view model without claiming a complete PastMeeting at the HTTP boundary.
+              meeting: res.meeting as Meeting,
               project: res.project,
             })),
             catchError((error) => {
@@ -936,7 +937,8 @@ export class MeetingJoinComponent implements OnInit {
                     this.pastMeetingFullAccess.set(res.full_access);
                   }),
                   map((res: PublicPastMeetingResponse) => ({
-                    meeting: res.meeting,
+                    // Preserve the legacy join-page view model without claiming a complete PastMeeting at the HTTP boundary.
+                    meeting: res.meeting as Meeting,
                     project: res.project,
                   })),
                   catchError((fallbackError) => {
