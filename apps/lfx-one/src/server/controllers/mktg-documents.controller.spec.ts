@@ -4,6 +4,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
+const runMocks = vi.hoisted(() => ({ reconcile: vi.fn(), retry: vi.fn() }));
+vi.mock('../services/mktg-document-run.service', () => ({
+  MktgDocumentRunService: class {
+    public reconcile = runMocks.reconcile;
+    public retry = runMocks.retry;
+  },
+}));
 const storeMocks = vi.hoisted(() => ({
   listDocuments: vi.fn(),
   getDocument: vi.fn(),
@@ -63,6 +70,8 @@ describe('MktgDocumentsController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+    runMocks.reconcile.mockResolvedValue([]);
+    runMocks.retry.mockResolvedValue(undefined);
     controller = new MktgDocumentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
   });
@@ -76,7 +85,18 @@ describe('MktgDocumentsController', () => {
 
     expect(projectMocks.getProjectById).toHaveBeenCalledWith(expect.anything(), PROJECT, true);
     expect(storeMocks.listDocuments).toHaveBeenCalledWith(expect.anything(), 'resolved-uid');
-    expect(res.json).toHaveBeenCalledWith({ project: 'resolved-uid', groups: [] });
+    expect(res.json).toHaveBeenCalledWith({ project: 'resolved-uid', groups: [], runs: [] });
+    expect(runMocks.reconcile).toHaveBeenCalledWith(expect.anything(), 'resolved-uid', undefined, undefined, false);
+  });
+
+  it.each(['listDocuments', 'getDocument', 'getRevision'] as const)('%s passes the explicit timer-poll mode after authorization', async (method) => {
+    storeMocks.listDocuments.mockResolvedValue({ project: PROJECT, groups: [] });
+    storeMocks.getDocument.mockResolvedValue({ revisions: [] });
+    storeMocks.getRevision.mockResolvedValue({ revision: { number: 1 } });
+    const req = buildReq({ agentKey: 'brand-kit', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT, poll: '1' });
+    await controller[method](req, buildRes(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(runMocks.reconcile.mock.calls[0][4]).toBe(true);
   });
 
   it('refuses a caller without the project writer grant', async () => {
@@ -86,6 +106,7 @@ describe('MktgDocumentsController', () => {
 
     expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
     expect(storeMocks.listDocuments).not.toHaveBeenCalled();
+    expect(runMocks.reconcile).not.toHaveBeenCalled();
   });
 
   it.each(['', '../other', 'a/b', 'proj?x=1'])('rejects the project uid %j before any upstream lookup', async (project) => {
@@ -106,6 +127,32 @@ describe('MktgDocumentsController', () => {
     expect(storeMocks.getDocument).not.toHaveBeenCalled();
   });
 
+  it('returns first-run progress with empty revisions to a fresh writer-authorized browser', async () => {
+    const run = { project: PROJECT, agentKey: 'brand-kit', documentId: 'living', runId: 'a'.repeat(64), state: 'writing', startedAt: '2026-10-15T12:00:00Z' };
+    runMocks.reconcile.mockResolvedValue([run]);
+    storeMocks.getDocument.mockResolvedValue(null);
+    const res = buildRes();
+    await controller.getDocument(buildReq({ agentKey: 'brand-kit', documentId: 'living' }, { project: PROJECT }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ project: PROJECT, revisions: [], runs: [run] }));
+  });
+
+  it('authorizes and scopes explicit retries without a browser session capability', async () => {
+    const res = buildRes();
+    storeMocks.getDocument.mockResolvedValue(null);
+    await controller.retryRun(buildReq({ agentKey: 'brand-kit', documentId: 'living', runId: 'a'.repeat(64) }, {}, { project: PROJECT }), res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(runMocks.retry).toHaveBeenCalledWith(expect.anything(), PROJECT, 'brand-kit', 'living', 'a'.repeat(64));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ project: PROJECT, revisions: [], runs: [] }));
+  });
+
+  it('never retries for a non-writer', async () => {
+    projectMocks.getProjectById.mockResolvedValueOnce({ uid: PROJECT, writer: false });
+    await controller.retryRun(buildReq({ agentKey: 'brand-kit', documentId: 'living', runId: 'a'.repeat(64) }, {}, { project: PROJECT }), buildRes(), next);
+    expect(runMocks.retry).not.toHaveBeenCalled();
+    expect(runMocks.reconcile).not.toHaveBeenCalled();
+  });
+
   it('answers 404 for a document with nothing stored', async () => {
     storeMocks.getDocument.mockResolvedValue(null);
 
@@ -122,7 +169,7 @@ describe('MktgDocumentsController', () => {
     await controller.getRevision(buildReq({ agentKey: 'brand-kit', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT }), res, next);
 
     expect(storeMocks.getRevision).toHaveBeenCalledWith(expect.anything(), PROJECT, expect.objectContaining({ agentKey: 'brand-kit' }), 'living', REVISION_ID);
-    expect(res.json).toHaveBeenCalledWith(revision);
+    expect(res.json).toHaveBeenCalledWith({ ...revision, runs: [] });
   });
 
   it('rejects a malformed revision id', async () => {

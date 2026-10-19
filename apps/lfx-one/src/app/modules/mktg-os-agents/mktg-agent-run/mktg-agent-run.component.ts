@@ -1075,6 +1075,11 @@ export class MktgAgentRunComponent {
       this.dependencyService.notifyDocumentsChanged(projectUid);
       return;
     }
+    if (progress.type === 'failed') {
+      this.errorText.set(progress.failureText || 'The agent finished without producing a document. Your answers are kept — try again.');
+      this.phase.set(this.versions().length > 0 ? 'result' : 'form');
+      return;
+    }
     this.stage.set(2);
     this.completeRun(progress.run);
   }

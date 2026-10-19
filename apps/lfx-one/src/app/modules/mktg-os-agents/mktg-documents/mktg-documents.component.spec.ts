@@ -10,6 +10,7 @@ import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentType, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -84,6 +85,7 @@ describe('MktgDocumentsComponent', () => {
         provideRouter([{ path: '**', children: [] }]),
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
+        { provide: UserService, useValue: { user: signal({ sub: 'synthetic-viewer' }) } },
         { provide: MktgDocumentStoreService, useValue: store },
       ],
     }).compileComponents();

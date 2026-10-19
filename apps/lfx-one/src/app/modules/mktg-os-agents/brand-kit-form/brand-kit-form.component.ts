@@ -150,7 +150,7 @@ export class BrandKitFormComponent implements OnDestroy {
     const epoch = ++this.pollEpoch;
 
     this.brandKitService
-      .generate(answers)
+      .generate(answers, this.runProjectUid)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {

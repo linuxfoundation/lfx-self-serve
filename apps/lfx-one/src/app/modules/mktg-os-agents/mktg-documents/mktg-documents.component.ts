@@ -7,7 +7,7 @@ import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MessageComponent } from '@components/message/message.component';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentGroup,
@@ -21,7 +21,8 @@ import {
 import { describeMktgRevision } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
+import { UserService } from '@services/user.service';
+import { catchError, distinctUntilChanged, EMPTY, expand, map, of, switchMap, tap, timer } from 'rxjs';
 
 // The Marketing OS Documents area (design of record: "Document store", Main
 // board): living documents in run order with their revision state, the
@@ -40,6 +41,7 @@ export class MktgDocumentsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
+  private readonly userService = inject(UserService);
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -54,10 +56,10 @@ export class MktgDocumentsComponent {
   protected readonly restoringId = signal<string | null>(null);
   protected readonly notice = signal('');
   private readonly reloads = signal(0);
-  // The project whose list is shown. A read for another project must not leave
-  // this one's documents and badges on screen under the new project's name; a
-  // restore-triggered reload of the same project keeps them visible meanwhile.
-  private listedProject = '';
+  // The project/effective-subject scope whose list is shown. Scope changes
+  // clear old documents; a restore-triggered reload of the same scope keeps
+  // them visible while the replacement list is read.
+  private listedScope = '';
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
@@ -78,14 +80,24 @@ export class MktgDocumentsComponent {
     return detail ? detail.revisions.map((revision) => ({ revision, how: describeMktgRevision(revision, detail.type) })) : [];
   });
   protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions[0] ?? null);
+  protected readonly runs = computed(() =>
+    (this.documents()?.runs ?? []).map((run) => ({
+      ...run,
+      label: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === run.agentKey)?.itemLabel ?? 'Document',
+    }))
+  );
+  protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
 
   // Requests, as observables of their inputs (toObservable needs the injection context).
-  private readonly listRequest$ = toObservable(computed(() => ({ project: this.projectContext.activeContextUid(), reload: this.reloads() })));
+  private readonly listRequest$ = toObservable(
+    computed(() => ({ project: this.projectContext.activeContextUid(), userSub: this.userService.user()?.sub, reload: this.reloads() }))
+  );
   private readonly detailRequest$ = toObservable(
     computed(() => {
       const living = this.selectedLiving();
       return {
         project: this.projectContext.activeContextUid(),
+        userSub: this.userService.user()?.sub,
         agentKey: living?.type.agentKey ?? '',
         documentId: living?.document?.documentId ?? '',
         latestRevisionId: living?.document?.latestRevisionId ?? '',
@@ -97,19 +109,27 @@ export class MktgDocumentsComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.listRequest$
         .pipe(
-          filter((request) => !!request.project),
           tap((request) => {
             this.errorText.set('');
             this.listFailed.set(false);
-            if (request.project !== this.listedProject) {
-              this.listedProject = request.project;
+            const scope = JSON.stringify([request.project, request.userSub]);
+            if (scope !== this.listedScope) {
+              this.listedScope = scope;
               this.loading.set(true);
               this.documents.set(null);
               this.notice.set('');
             }
           }),
-          switchMap((request) =>
-            this.documentStore.listDocuments(request.project).pipe(
+          switchMap((request) => {
+            if (!request.project || !request.userSub) {
+              return EMPTY;
+            }
+            return this.documentStore.listDocuments(request.project).pipe(
+              expand((documents) =>
+                documents.runs?.some((run) => run.state !== 'failed')
+                  ? timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => this.documentStore.listDocuments(request.project, true)))
+                  : EMPTY
+              ),
               catchError((error: HttpErrorResponse) => {
                 this.listFailed.set(true);
                 this.errorText.set(
@@ -119,8 +139,8 @@ export class MktgDocumentsComponent {
                 );
                 return of(null);
               })
-            )
-          ),
+            );
+          }),
           takeUntilDestroyed()
         )
         .subscribe((documents) => {
@@ -212,6 +232,10 @@ export class MktgDocumentsComponent {
 
   // === Private helpers ===
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {
+    const active = this.documents()?.runs?.find((run) => run.agentKey === type.agentKey && run.state !== 'failed');
+    if (active) {
+      return { badge: active.state === 'storing' ? 'Storing' : 'Writing', badgeClass: 'text-blue-600' };
+    }
     if (type.kind === 'run') {
       if (documentCount === 0) {
         return { badge: 'No runs yet', badgeClass: 'text-gray-500' };

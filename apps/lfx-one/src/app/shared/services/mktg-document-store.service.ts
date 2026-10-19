@@ -10,6 +10,7 @@ import {
   MktgRestoreRevisionRequest,
   MktgRestoreRevisionResponse,
   MktgRevisionResponse,
+  MktgRetryDocumentRunRequest,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, take, throwError } from 'rxjs';
 
@@ -28,24 +29,24 @@ export class MktgDocumentStoreService {
   private readonly http = inject(HttpClient);
 
   /** Every document of the project, grouped by type in the Documents area's order. */
-  public listDocuments(projectUid: string): Observable<MktgDocumentsResponse> {
+  public listDocuments(projectUid: string, poll = false): Observable<MktgDocumentsResponse> {
     return this.http
-      .get<MktgDocumentsResponse>(MKTG_DOCUMENTS_API_PATH, { params: this.projectParams(projectUid) })
+      .get<MktgDocumentsResponse>(MKTG_DOCUMENTS_API_PATH, { params: this.projectParams(projectUid, poll) })
       .pipe(catchError((error) => this.logAndRethrow('Failed to load Marketing OS documents', error)));
   }
 
   /** One document and its revisions, newest first. */
-  public getDocument(projectUid: string, agentKey: string, documentId: string): Observable<MktgDocumentDetailResponse> {
+  public getDocument(projectUid: string, agentKey: string, documentId: string, poll = false): Observable<MktgDocumentDetailResponse> {
     return this.http
-      .get<MktgDocumentDetailResponse>(this.documentPath(agentKey, documentId), { params: this.projectParams(projectUid) })
+      .get<MktgDocumentDetailResponse>(this.documentPath(agentKey, documentId), { params: this.projectParams(projectUid, poll) })
       .pipe(catchError((error) => this.logAndRethrow('Failed to load a Marketing OS document', error)));
   }
 
   /** One revision of a document, with its Markdown. */
-  public getRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRevisionResponse> {
+  public getRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string, poll = false): Observable<MktgRevisionResponse> {
     return this.http
       .get<MktgRevisionResponse>(`${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}`, {
-        params: this.projectParams(projectUid),
+        params: this.projectParams(projectUid, poll),
       })
       .pipe(catchError((error) => this.logAndRethrow('Failed to load a Marketing OS document revision', error)));
   }
@@ -54,6 +55,12 @@ export class MktgDocumentStoreService {
   public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
     const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
     return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));
+  }
+
+  /** Explicitly check an existing server run again; no new generation is submitted. */
+  public retryRun(projectUid: string, agentKey: string, documentId: string, runId: string): Observable<MktgDocumentDetailResponse> {
+    const body: MktgRetryDocumentRunRequest = { project: projectUid };
+    return this.http.post<MktgDocumentDetailResponse>(`${this.documentPath(agentKey, documentId)}/runs/${encodeURIComponent(runId)}/retry`, body).pipe(take(1));
   }
 
   private logAndRethrow(message: string, error: unknown): Observable<never> {
@@ -65,7 +72,8 @@ export class MktgDocumentStoreService {
     return `${MKTG_DOCUMENTS_API_PATH}/${encodeURIComponent(agentKey)}/${encodeURIComponent(documentId)}`;
   }
 
-  private projectParams(projectUid: string): HttpParams {
-    return new HttpParams().set('project', projectUid);
+  private projectParams(projectUid: string, poll = false): HttpParams {
+    const params = new HttpParams().set('project', projectUid);
+    return poll ? params.set('poll', '1') : params;
   }
 }

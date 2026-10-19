@@ -400,8 +400,8 @@ export interface MktgRunEndpoints {
  * answers against the agent's own intake schema.
  */
 export interface MktgRunGenerateBody {
-  /** Optional during the additive contracts layer; the transport layer will require the project uid. */
-  project?: string;
+  /** Selected project uid, resolved and writer-authorized by the BFF before starting a durable run. */
+  project: string;
   /** Answers keyed by intake field key; conditional/optional keys may be absent per the agent's own contract. */
   answers: Record<string, string>;
   /**
@@ -787,6 +787,8 @@ export interface MktgAgentIntake {
 
 /** One generated document version for an agent run. */
 export interface MktgRunVersion {
+  /** Private source identity for idempotent resume; absent on legacy browser records. */
+  source?: { sessionId: string; draftVersion: number };
   /** 1-based version number; regeneration produces v+1. */
   version: number;
   /** The generated document (Markdown) returned by the agent. */
@@ -917,6 +919,7 @@ export interface MktgRunQuestionsPending {
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }
+  | { type: 'failed'; failureText: string }
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'document'; run: MktgStoredAgentRun; location?: MktgDocumentLocation }

@@ -36,7 +36,21 @@ describe('MktgDocumentStoreService', () => {
     const request = http.expectOne((candidate) => candidate.url === '/api/mktg-agents/documents');
     expect(request.request.method).toBe('GET');
     expect(request.request.params.get('project')).toBe('proj-1');
+    expect(request.request.params.has('poll')).toBe(false);
     request.flush({ project: 'proj-1', groups: [] });
+  });
+
+  it('flags all timer read paths without limiting initial/navigation discovery', () => {
+    service.listDocuments('proj-1', true).subscribe();
+    service.getDocument('proj-1', 'brand-kit', 'living', true).subscribe();
+    service.getRevision('proj-1', 'brand-kit', 'living', REVISION_ID, true).subscribe();
+    const requests = http.match((request) => request.params.get('poll') === '1');
+    expect(requests).toHaveLength(3);
+    for (const request of requests) {
+      expect(request.request.method).toBe('GET');
+      expect(request.request.params.get('project')).toBe('proj-1');
+      request.flush({});
+    }
   });
 
   it('reads one document and one revision under the document’s path', () => {
@@ -58,6 +72,14 @@ describe('MktgDocumentStoreService', () => {
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({ project: 'proj-1', revisionId: REVISION_ID });
     request.flush({});
+  });
+
+  it('retries a server-recorded run with project scope and no browser session token', () => {
+    service.retryRun('proj-1', 'brand-kit', 'living', 'a'.repeat(64)).subscribe();
+    const request = http.expectOne(`/api/mktg-agents/documents/brand-kit/living/runs/${'a'.repeat(64)}/retry`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ project: 'proj-1' });
+    request.flush({ project: 'proj-1', revisions: [], runs: [] });
   });
 
   it('logs and rethrows a failed read, so it never reads as "no documents yet"', () => {

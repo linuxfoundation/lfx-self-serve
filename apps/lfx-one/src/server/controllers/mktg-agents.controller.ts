@@ -9,6 +9,8 @@ import {
   FOUNDATION_MESSAGE_READ_REASONS,
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_RUN_QUESTIONS_ID_REGEX,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitGenerateRequest,
@@ -53,6 +55,7 @@ import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
 import { MktgSourceTextService } from '../services/mktg-source-text.service';
 import { ProjectService } from '../services/project.service';
+import { MktgDocumentRunService } from '../services/mktg-document-run.service';
 import { getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
@@ -63,6 +66,7 @@ export class MktgAgentsController {
   private readonly icpService = new IcpService();
   private readonly mktgSourceTextService = new MktgSourceTextService();
   private readonly projectService = new ProjectService();
+  private readonly documentRuns = new MktgDocumentRunService();
 
   /**
    * POST /api/mktg-agents/chat
@@ -70,7 +74,7 @@ export class MktgAgentsController {
    * With sessionId → verify the owner token, post a follow-up, return `{ success: true }`.
    */
   public async chat(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { agentId, message, sessionId, ownerToken } = req.body as MktgChatRequest;
+    const { agentId, message, sessionId, ownerToken, project, priorVersion } = req.body as MktgChatRequest;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       next(
@@ -130,13 +134,25 @@ export class MktgAgentsController {
       return;
     }
 
+    if (project !== undefined && priorVersion !== undefined && (!Number.isInteger(priorVersion) || priorVersion < 0)) {
+      next(ServiceValidationError.forField('priorVersion', 'priorVersion must be a nonnegative integer.'));
+      return;
+    }
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     const startTime = logger.startOperation(req, 'mktg_agents_chat', { agent_id: trimmedAgentId, has_session: !!validSessionId });
 
     try {
+      const projectUid = project === undefined ? undefined : await this.documentRuns.resolveProject(req, project);
+      const documentType = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === agent.id);
+      if (projectUid && !documentType) {
+        throw ServiceValidationError.forField('agentId', 'This agent has no document type.');
+      }
       if (!validSessionId) {
         // New session: bind it to the creator via an opaque owner token.
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
+        if (projectUid && documentType) {
+          await this.documentRuns.start(req, projectUid, documentType.agentKey, newSessionId, priorVersion ?? 0);
+        }
         logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: true });
         const response: MktgChatResponse = { sessionId: newSessionId, ownerToken: createSessionOwnerToken(userId, newSessionId) };
         res.json(response);
@@ -153,6 +169,9 @@ export class MktgAgentsController {
       }
 
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
+      if (projectUid && documentType) {
+        await this.documentRuns.start(req, projectUid, documentType.agentKey, validSessionId, priorVersion ?? 0);
+      }
       logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: false });
       const response: MktgChatResponse = { success: true };
       res.json(response);
@@ -229,7 +248,7 @@ export class MktgAgentsController {
    */
   public async generateBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { answers } = (req.body ?? {}) as Partial<BrandKitGenerateRequest>;
+    const { answers, project } = (req.body ?? {}) as Partial<BrandKitGenerateRequest>;
 
     const answersResult = validateBrandKitIntakeAnswers(answers);
     if (!answersResult.valid) {
@@ -271,9 +290,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_generate', {});
 
     try {
+      const projectUid = await this.documentRuns.resolveProject(req, project);
       // Safe: validateBrandKitIntakeAnswers guaranteed a complete string record.
       const trimmedAnswers = Object.fromEntries(Object.entries(answers as Record<string, string>).map(([key, value]) => [key, value.trim()]));
       const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, agent.guildAgentHandle);
+      await this.documentRuns.start(req, projectUid, 'brand-kit', sessionId);
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
       const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
       res.json(response);
@@ -295,7 +316,7 @@ export class MktgAgentsController {
    */
   public async brandKitResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<BrandKitResultRequest>;
+    const { sessionId, ownerToken, project, readme } = (req.body ?? {}) as Partial<BrandKitResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -345,7 +366,14 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
-      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid);
+      const result: BrandKitResultResponse = await this.brandKitService.getResult(
+        req,
+        validSessionId,
+        validProjectUid,
+        readme,
+        this.resultMinimumVersion(req.body?.priorVersion)
+      );
+      await this.documentRuns.recordResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -486,6 +514,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_generate', { documents: submitted.length });
 
     try {
+      const projectUid = await this.documentRuns.resolveProject(req, project);
       // Safe: validateFoundationMessageIntakeAnswers guaranteed a string record.
       const trimmedAnswers = Object.fromEntries(
         Object.entries(answers as Record<string, string>)
@@ -499,6 +528,7 @@ export class MktgAgentsController {
         trimmedProject || undefined,
         agent.guildAgentHandle
       );
+      await this.documentRuns.start(req, projectUid, 'foundation-message', sessionId, 0);
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
       const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
       res.json(response);
@@ -512,18 +542,22 @@ export class MktgAgentsController {
    * Sends the requester's answers to the session's questions turn — one per
    * question, each accepted, edited or written from scratch; no skip, no TBD,
    * no empty — as the answers turn on the SAME session. Only the session's
-   * creator may answer (owner-token proof, like every session write). The
-   * run page polls the result again afterwards.
+   * creator may answer (owner-token proof, like every session write). After
+   * the answers are accepted, the document view takes over the result poll.
    */
   public async foundationMessageAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, answers } = (req.body ?? {}) as Partial<FoundationMessageAnswersRequest>;
+    const { sessionId, ownerToken, answers, project, questionsId } = (req.body ?? {}) as Partial<FoundationMessageAnswersRequest>;
     const fail = (field: string, message: string): void =>
       next(ServiceValidationError.forField(field, message, { operation: 'foundation_message_answers', service: 'mktg_agents_controller', path: req.path }));
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
       fail('sessionId', 'sessionId is required and must be a non-empty string');
+      return;
+    }
+    if (questionsId !== undefined && (typeof questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(questionsId))) {
+      fail('questionsId', 'questionsId must identify a questions block.');
       return;
     }
     const answersResult = validateFoundationMessageAnswers(answers);
@@ -569,7 +603,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
 
     try {
+      const projectUid = project === undefined ? undefined : await this.documentRuns.resolveProject(req, project);
       await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      if (projectUid) {
+        await this.documentRuns.resumeAfterQuestions(req, projectUid, validSessionId, questionsId);
+      }
       logger.success(req, 'foundation_message_answers', startTime, { answers: validAnswers.length });
       const response: FoundationMessageAnswersResponse = { success: true };
       res.json(response);
@@ -637,7 +675,7 @@ export class MktgAgentsController {
    */
   public async foundationMessageResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<FoundationMessageResultRequest>;
+    const { sessionId, ownerToken, project, readme } = (req.body ?? {}) as Partial<FoundationMessageResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -687,7 +725,14 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
-      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
+      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(
+        req,
+        validSessionId,
+        validProjectUid,
+        readme,
+        this.resultMinimumVersion(req.body?.priorVersion)
+      );
+      await this.documentRuns.recordResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -707,7 +752,7 @@ export class MktgAgentsController {
    */
   public async generateIcp(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { answers, feedback, priorVersion } = (req.body ?? {}) as Partial<IcpGenerateRequest>;
+    const { answers, feedback, priorVersion, project } = (req.body ?? {}) as Partial<IcpGenerateRequest>;
 
     const answersResult = validateIcpIntakeAnswers(answers);
     if (!answersResult.valid) {
@@ -786,6 +831,7 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_generate', { has_feedback: !!feedback, prior_version: priorVersion ?? 0 });
 
     try {
+      const projectUid = await this.documentRuns.resolveProject(req, project);
       // Safe: validateIcpIntakeAnswers guaranteed a string record. Blank
       // optionals are dropped here so the agent takes its documented
       // "not provided" branch instead of reading an empty answer as substance.
@@ -795,6 +841,7 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
+      await this.documentRuns.start(req, projectUid, 'icp', sessionId, priorVersion ?? 0, readme);
       logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
       // The README outcome rides the response so the run shell can label a
       // document generated WITHOUT a README instead of leaving a thin document
@@ -820,7 +867,7 @@ export class MktgAgentsController {
    */
   public async icpResult(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<IcpResultRequest>;
+    const { sessionId, ownerToken, project, readme } = (req.body ?? {}) as Partial<IcpResultRequest>;
 
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     if (!validSessionId) {
@@ -869,7 +916,14 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_result', {});
 
     try {
-      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      const result: IcpResultResponse = await this.icpService.getResult(
+        req,
+        validSessionId,
+        validProjectUid,
+        readme,
+        this.resultMinimumVersion(req.body?.priorVersion)
+      );
+      await this.documentRuns.recordResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -946,6 +1000,17 @@ export class MktgAgentsController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** A version gate selects a draft; it confers no access to a session or project. */
+  private resultMinimumVersion(value: unknown): number {
+    if (value === undefined) {
+      return 0;
+    }
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+      throw ServiceValidationError.forField('priorVersion', 'priorVersion must be a non-negative safe integer.');
+    }
+    return value;
   }
 
   /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */

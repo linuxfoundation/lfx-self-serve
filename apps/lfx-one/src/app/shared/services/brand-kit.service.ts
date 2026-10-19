@@ -25,8 +25,8 @@ export class BrandKitService {
   private readonly http = inject(HttpClient);
 
   /** Start a one-shot form-mode generation from the 7 intake answers. */
-  public generate(answers: Record<string, string>): Observable<BrandKitGenerateResponse> {
-    const body: BrandKitGenerateRequest = { answers };
+  public generate(answers: Record<string, string>, projectUid: string): Observable<BrandKitGenerateResponse> {
+    const body: BrandKitGenerateRequest = { answers, project: projectUid };
     return this.http.post<BrandKitGenerateResponse>('/api/mktg-agents/brand-kit/generate', body);
   }
 

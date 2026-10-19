@@ -7,10 +7,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // into this app's vitest config with Angular-free resolution, so shared runtime
 // collaborators are mocked — the catalog constants are re-exported from their
 // real (Angular-free) source module so the routing lookups stay real.
+const runMocks = vi.hoisted(() => ({ resolveProject: vi.fn(), start: vi.fn(), recordResult: vi.fn(), resumeAfterQuestions: vi.fn() }));
+const guildMocks = vi.hoisted(() => ({ createSession: vi.fn(), sendFollowUp: vi.fn() }));
+vi.mock('../services/mktg-document-run.service', () => ({
+  MktgDocumentRunService: class {
+    public resolveProject = runMocks.resolveProject;
+    public start = runMocks.start;
+    public recordResult = runMocks.recordResult;
+    public resumeAfterQuestions = runMocks.resumeAfterQuestions;
+  },
+}));
 const projectMocks = vi.hoisted(() => ({
   getProjectById: vi.fn(),
 }));
 const brandKitMocks = vi.hoisted(() => ({
+  startGeneration: vi.fn(),
   getStoredBrandKit: vi.fn(),
   getResult: vi.fn(),
 }));
@@ -23,9 +34,9 @@ const validatorMocks = vi.hoisted(() => ({
   validateIcpIntakeAnswers: vi.fn((): { valid: boolean; errors: string[] } => ({ valid: true, errors: [] })),
 }));
 const foundationMessageMocks = vi.hoisted(() => ({
+  startGeneration: vi.fn(),
   getStoredFoundationMessage: vi.fn(),
   getResult: vi.fn(),
-  startGeneration: vi.fn(),
   sendAnswers: vi.fn(),
 }));
 const sourceTextMocks = vi.hoisted(() => ({
@@ -53,7 +64,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const brandKit = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
   const artifact = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
-  return { ...agents, ...brandKit, ...artifact, ...foundationMessage };
+  const documents = await vi.importActual('../../../../../packages/shared/src/constants/mktg-document-store.constants');
+  const run = await vi.importActual('../../../../../packages/shared/src/constants/mktg-run.constants');
+  return { ...agents, ...brandKit, ...artifact, ...foundationMessage, ...documents, ...run };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -67,19 +80,23 @@ vi.mock('../services/mktg-source-text.service', () => ({
   },
 }));
 vi.mock('../services/guild.service', () => ({
-  GuildService: class {},
+  GuildService: class {
+    public createSession = guildMocks.createSession;
+    public sendFollowUp = guildMocks.sendFollowUp;
+  },
 }));
 vi.mock('../services/brand-kit.service', () => ({
   BrandKitService: class {
+    public startGeneration = brandKitMocks.startGeneration;
     public getStoredBrandKit = brandKitMocks.getStoredBrandKit;
     public getResult = brandKitMocks.getResult;
   },
 }));
 vi.mock('../services/foundation-message.service', () => ({
   FoundationMessageService: class {
+    public startGeneration = foundationMessageMocks.startGeneration;
     public getStoredFoundationMessage = foundationMessageMocks.getStoredFoundationMessage;
     public getResult = foundationMessageMocks.getResult;
-    public startGeneration = foundationMessageMocks.startGeneration;
     public sendAnswers = foundationMessageMocks.sendAnswers;
   },
 }));
@@ -102,7 +119,7 @@ vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
@@ -155,9 +172,130 @@ describe('MktgAgentsController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     validatorMocks.validateIcpIntakeAnswers.mockReturnValue({ valid: true, errors: [] });
+    validatorMocks.validateBrandKitIntakeAnswers.mockReturnValue({ valid: true, errors: [] });
+    runMocks.resolveProject.mockResolvedValue('tracked-project');
+    runMocks.start.mockResolvedValue(undefined);
+    runMocks.recordResult.mockResolvedValue(undefined);
+    runMocks.resumeAfterQuestions.mockResolvedValue(undefined);
+    brandKitMocks.startGeneration.mockResolvedValue('new-session');
+    foundationMessageMocks.startGeneration.mockResolvedValue('new-session');
+    icpMocks.startGeneration.mockResolvedValue({ sessionId: 'new-session', readme: { fetched: true } });
     tokenMocks.verifySessionOwnerToken.mockReturnValue(true);
     controller = new MktgAgentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  it.each([
+    ['generateBrandKit', brandKitMocks, 'brand-kit'],
+    ['generateFoundationMessage', foundationMessageMocks, 'foundation-message'],
+    ['generateIcp', icpMocks, 'icp'],
+  ] as const)('%s records the server-created session before acknowledging generation', async (method, flow, agentKey) => {
+    const req = buildResultReq({ project: 'supplied-project', answers: { project_name: 'Synthetic Orbit' } });
+    const res = buildRes();
+    await controller[method](req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(runMocks.resolveProject).toHaveBeenCalledWith(req, 'supplied-project');
+    expect(runMocks.resolveProject.mock.invocationCallOrder[0]).toBeLessThan(flow.startGeneration.mock.invocationCallOrder[0]);
+    expect(runMocks.start).toHaveBeenCalledWith(
+      req,
+      'tracked-project',
+      agentKey,
+      'new-session',
+      ...(agentKey === 'brand-kit' ? [] : [0]),
+      ...(agentKey === 'icp' ? [{ fetched: true }] : [])
+    );
+    expect(runMocks.start.mock.invocationCallOrder[0]).toBeLessThan(res.json.mock.invocationCallOrder[0]);
+  });
+
+  it.each([
+    ['brandKitResult', brandKitMocks],
+    ['foundationMessageResult', foundationMessageMocks],
+    ['icpResult', icpMocks],
+  ] as const)('%s forwards a validated prior-version gate so an older envelope cannot hide a terminal rejection', async (method, flow) => {
+    flow.getResult.mockResolvedValue({ status: 'failed', failureText: 'Rejected.' });
+    const req = buildResultReq({ sessionId: 'session-1', ownerToken: 'synthetic-token', project: 'proj-1', priorVersion: 2 });
+    await controller[method](req, buildRes(), next);
+    expect(flow.getResult).toHaveBeenCalledWith(req, 'session-1', 'proj-1', undefined, 2);
+    expect(next).not.toHaveBeenCalled();
+    flow.getResult.mockClear();
+    await controller[method](buildResultReq({ sessionId: 'session-1', ownerToken: 'synthetic-token', priorVersion: -1 }), buildRes(), next);
+    expect(flow.getResult).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('never starts Guild work when project writer authorization fails', async () => {
+    runMocks.resolveProject.mockRejectedValueOnce(new AuthorizationError('Denied'));
+    await controller.generateBrandKit(buildResultReq({ project: 'denied', answers: {} }), buildRes(), next);
+    expect(brandKitMocks.startGeneration).not.toHaveBeenCalled();
+    expect(runMocks.start).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+  });
+
+  it.each(['generateBrandKit', 'generateFoundationMessage', 'generateIcp'] as const)(
+    '%s starts no Guild work if tracking storage preflight fails',
+    async (method) => {
+      runMocks.resolveProject.mockRejectedValueOnce(new MicroserviceError('Storage unavailable', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE'));
+      await controller[method](buildResultReq({ project: 'supplied-project', answers: { project_name: 'Synthetic Orbit' } }), buildRes(), next);
+      expect(brandKitMocks.startGeneration).not.toHaveBeenCalled();
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+      expect(icpMocks.startGeneration).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 503 }));
+    }
+  );
+
+  it('does not acknowledge a run whose durable start could not be recorded', async () => {
+    const failure = new Error('Synthetic store unavailable');
+    runMocks.start.mockRejectedValueOnce(failure);
+    const res = buildRes();
+    await controller.generateBrandKit(buildResultReq({ project: 'supplied-project', answers: {} }), res, next);
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(failure);
+  });
+
+  it('records an owner-verified, project-scoped intake follow-up on the same session', async () => {
+    await controller.chat(
+      buildResultReq({
+        agentId: 'brand-kit',
+        sessionId: 'session-1',
+        ownerToken: 'synthetic-token',
+        message: 'Synthetic intake',
+        project: 'supplied-project',
+        priorVersion: 1,
+      }),
+      buildRes(),
+      next
+    );
+    expect(next).not.toHaveBeenCalled();
+    expect(guildMocks.sendFollowUp).toHaveBeenCalled();
+    expect(runMocks.start).toHaveBeenCalledWith(expect.anything(), 'tracked-project', 'brand-kit', 'session-1', 1);
+  });
+
+  it.each([
+    ['brandKitResult', brandKitMocks],
+    ['foundationMessageResult', foundationMessageMocks],
+    ['icpResult', icpMocks],
+  ] as const)('%s passes the explicit README outcome from the HTTP boundary', async (method, service) => {
+    service.getResult.mockResolvedValue({ status: 'pending' });
+    const readme = { fetched: false, skipReason: 'no-readme' };
+    const req = buildResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-uid-1', readme });
+    await controller[method](req, buildRes(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(service.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', readme, 0);
+  });
+
+  it.each([
+    ['brandKitResult', brandKitMocks],
+    ['foundationMessageResult', foundationMessageMocks],
+    ['icpResult', icpMocks],
+  ] as const)('%s forwards validated project scope and preserves the terminal reply', async (method, service) => {
+    const result = { status: 'failed', failureText: 'Synthetic rejection.' };
+    service.getResult.mockResolvedValue(result);
+    const req = buildResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: ' proj-uid-1 ' });
+    const res = buildRes();
+    await controller[method](req, res, next);
+    expect(runMocks.recordResult).toHaveBeenCalledWith(req, 'sess-1', result, 'proj-uid-1');
+    expect(res.json).toHaveBeenCalledWith(result);
+    expect(next).not.toHaveBeenCalled();
   });
 
   describe('storedBrandKit (GET /api/mktg-agents/brand-kit/stored)', () => {
@@ -265,7 +403,7 @@ describe('MktgAgentsController', () => {
       await controller.brandKitResult(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', undefined, 0);
     });
 
     it('treats a non-string / blank project as no scope rather than coercing it into a partition', async () => {
@@ -274,7 +412,7 @@ describe('MktgAgentsController', () => {
 
       await controller.brandKitResult(req, buildRes(), next);
 
-      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+      expect(brandKitMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined, undefined, 0);
     });
 
     it('never reaches the service when the owner token does not verify', async () => {
@@ -394,7 +532,7 @@ describe('MktgAgentsController', () => {
       await controller.icpResult(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', undefined, 0);
     });
 
     it('treats a non-string project as no scope rather than coercing it into a partition', async () => {
@@ -403,7 +541,7 @@ describe('MktgAgentsController', () => {
 
       await controller.icpResult(req, buildRes(), next);
 
-      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+      expect(icpMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined, undefined, 0);
     });
 
     it('never reaches the service when the owner token does not verify', async () => {
@@ -514,6 +652,23 @@ describe('MktgAgentsController', () => {
       expect(res.json).toHaveBeenCalledWith({ success: true });
     });
 
+    it('renews the scoped run budget after answers reach Guild and before acknowledging them', async () => {
+      const req = answersReq({ sessionId: 'sess-1', ownerToken: 'token-1', answers, project: 'proj-1', questionsId: 'abc12345' });
+      const res = buildRes();
+      await controller.foundationMessageAnswers(req, res, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(runMocks.resolveProject).toHaveBeenCalledWith(req, 'proj-1');
+      expect(runMocks.resumeAfterQuestions).toHaveBeenCalledWith(req, 'tracked-project', 'sess-1', 'abc12345');
+      expect(foundationMessageMocks.sendAnswers.mock.invocationCallOrder[0]).toBeLessThan(runMocks.resumeAfterQuestions.mock.invocationCallOrder[0]);
+      expect(runMocks.resumeAfterQuestions.mock.invocationCallOrder[0]).toBeLessThan(res.json.mock.invocationCallOrder[0]);
+    });
+
+    it('refuses a malformed questions id before contacting Guild', async () => {
+      await controller.foundationMessageAnswers(answersReq({ sessionId: 'sess-1', ownerToken: 'token-1', answers, questionsId: '../other' }), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+    });
+
     it('refuses a skip, a TBD or an empty answer, and a missing session id', async () => {
       await controller.foundationMessageAnswers(
         answersReq({ sessionId: 'sess-1', ownerToken: 'token-1', answers: [{ key: 'audiences', text: 'TBD', origin: 'edited' }] }),
@@ -589,7 +744,7 @@ describe('MktgAgentsController', () => {
       await controller.foundationMessageResult(req, buildRes(), next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1');
+      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', 'proj-uid-1', undefined, 0);
     });
 
     it('treats a non-string / blank project as no scope rather than coercing it into a partition', async () => {
@@ -598,7 +753,7 @@ describe('MktgAgentsController', () => {
 
       await controller.foundationMessageResult(req, buildRes(), next);
 
-      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined);
+      expect(foundationMessageMocks.getResult).toHaveBeenCalledWith(req, 'sess-1', undefined, undefined, 0);
     });
 
     // The three guards below are the write path's authn/authz boundary. They

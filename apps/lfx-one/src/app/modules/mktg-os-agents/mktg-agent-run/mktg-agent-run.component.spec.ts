@@ -153,6 +153,20 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
+  it.each([false, true])('retains a legacy result after typed failure only when a draft exists: %s', async (hasDraft) => {
+    await configure();
+    if (hasDraft) {
+      storedRuns[PROJECT_1.uid] = storedRun(PROJECT_1.uid, '# Synthetic prior draft', {});
+    }
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    component['onProgress']({ type: 'failed', failureText: 'Synthetic rejection.' }, PROJECT_1.uid);
+    await fixture.whenStable();
+    expect(component['phase']()).toBe(hasDraft ? 'result' : 'form');
+    expect(component['errorText']()).toBe('Synthetic rejection.');
+    expect(query('mktg-agent-run-result') !== null).toBe(hasDraft);
+  });
+
   describe('LFX prefill — applied (fromLfx) vs available (lfxMissing)', () => {
     beforeEach(async () => configure());
 

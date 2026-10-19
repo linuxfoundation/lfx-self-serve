@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_DOCUMENT_ID_REGEX, MKTG_REVISION_ID_REGEX } from '@lfx-one/shared/constants';
-import { MktgDocumentType, MktgRestoreRevisionRequest, MktgRestoreRevisionResponse } from '@lfx-one/shared/interfaces';
+import { MktgDocumentType, MktgRestoreRevisionRequest, MktgRestoreRevisionResponse, MktgRetryDocumentRunRequest } from '@lfx-one/shared/interfaces';
 import { findMktgDocumentType } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -10,6 +10,7 @@ import { AuthorizationError, ResourceNotFoundError, ServiceValidationError } fro
 import { logger } from '../services/logger.service';
 import { MktgDocumentStoreService } from '../services/mktg-document-store.service';
 import { ProjectService } from '../services/project.service';
+import { MktgDocumentRunService } from '../services/mktg-document-run.service';
 
 /**
  * The Marketing OS Documents area: every stored agent output of a project as
@@ -25,6 +26,7 @@ import { ProjectService } from '../services/project.service';
 export class MktgDocumentsController {
   private readonly documentStore = new MktgDocumentStoreService();
   private readonly projectService = new ProjectService();
+  private readonly documentRuns = new MktgDocumentRunService();
 
   /** GET /api/mktg-agents/documents?project=<uid> — the project's documents, grouped by type. */
   public async listDocuments(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -38,9 +40,10 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, {});
     try {
       const project = await this.resolveWritableProject(req, projectUid, operation);
+      const runs = await this.documentRuns.reconcile(req, project, undefined, undefined, req.query['poll'] === '1');
       const documents = await this.documentStore.listDocuments(req, project);
       logger.success(req, operation, startTime, { project, groups: documents.groups.length });
-      res.json(documents);
+      res.json({ ...documents, runs });
     } catch (error) {
       next(error);
     }
@@ -58,12 +61,13 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, req.query['poll'] === '1');
       const detail = await this.documentStore.getDocument(req, project, params.type, params.documentId);
-      if (!detail) {
+      if (!detail && runs.length === 0) {
         throw new ResourceNotFoundError('Marketing OS document', params.documentId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
-      logger.success(req, operation, startTime, { project, revisions: detail.revisions.length });
-      res.json(detail);
+      logger.success(req, operation, startTime, { project, revisions: detail?.revisions.length ?? 0 });
+      res.json({ ...(detail ?? { project, type: params.type, documentId: params.documentId, revisions: [] }), runs });
     } catch (error) {
       next(error);
     }
@@ -86,12 +90,13 @@ export class MktgDocumentsController {
     const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId, req.query['poll'] === '1');
       const revision = await this.documentStore.getRevision(req, project, params.type, params.documentId, revisionId);
       if (!revision) {
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
       logger.success(req, operation, startTime, { project, revision: revision.revision.number });
-      res.json(revision);
+      res.json({ ...revision, runs });
     } catch (error) {
       next(error);
     }
@@ -125,6 +130,28 @@ export class MktgDocumentsController {
       const response: MktgRestoreRevisionResponse = { ...restored.detail, revision: restored.revision };
       logger.success(req, operation, startTime, { project, revision: restored.revision.number });
       res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** Explicitly resume only this stored run; no Guild generation endpoint is invoked. */
+  public async retryRun(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_run_retry';
+    const body = (req.body ?? {}) as Partial<MktgRetryDocumentRunRequest>;
+    const params = this.readDocumentParams(req, body.project, operation);
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      await this.documentRuns.retry(req, project, params.type.agentKey, params.documentId, String(req.params['runId'] ?? ''));
+      const runs = await this.documentRuns.reconcile(req, project, params.type.agentKey, params.documentId);
+      const detail = await this.documentStore.getDocument(req, project, params.type, params.documentId);
+      logger.success(req, operation, startTime, { project });
+      res.json({ ...(detail ?? { project, type: params.type, documentId: params.documentId, revisions: [] }), runs });
     } catch (error) {
       next(error);
     }
