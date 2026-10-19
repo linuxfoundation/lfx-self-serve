@@ -212,7 +212,13 @@ export class MktgSlidesExportService {
     return { status: 'pending' };
   }
 
-  /** The document's last export and its latest stored revision. */
+  /**
+   * The document's last export and its latest stored revision, which the
+   * panel compares by hash to say the deck is out of date. Read from the
+   * revision listing and the newest revision's body alone: every page view
+   * and version switch asks, and Export waits for the answer. Start and the
+   * result poll read every revision, where the exact one matters.
+   */
   public async getLast(
     req: Request,
     project: string,
@@ -220,11 +226,11 @@ export class MktgSlidesExportService {
     agentKey: MktgSlidesExportAgentKey,
     documentId: string
   ): Promise<MktgSlidesExportLastResponse> {
-    const [last, found] = await Promise.all([
+    const [last, latestRevision] = await Promise.all([
       this.readLastExport(req, project, agentKey, documentId),
-      this.documentStore.readExportRevision(req, project, type, documentId, {}),
+      this.documentStore.readNewestRevisionRef(req, project, type, documentId),
     ]);
-    return { last, latestRevision: found ? this.revisionRef(found.latest) : null };
+    return { last, latestRevision };
   }
 
   /**

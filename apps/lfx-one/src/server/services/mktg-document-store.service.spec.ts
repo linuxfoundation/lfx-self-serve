@@ -86,6 +86,7 @@ import type { MktgArtifactEnvelope, MktgArtifactJsonEnvelope, MktgDocumentType, 
 import type { Request } from 'express';
 
 import { MktgDocumentStoreService } from './mktg-document-store.service';
+import { ObjectStoreService } from './object-store.service';
 
 const req = { path: '/api/mktg-agents/documents' } as unknown as Request;
 const PROJECT = 'proj-uid-1';
@@ -408,23 +409,40 @@ describe('MktgDocumentStoreService', () => {
   });
 
   describe('readExportRevision — the revision an export names', () => {
-    it('finds a revision by its id, by the hash of its content, or the latest, with the latest beside it', async () => {
-      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
+    it('finds an older revision by its id or by the hash of its content, never the latest in its place', async () => {
+      const first = jsonEnvelope('First');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
       const second = jsonEnvelope('Second');
       await service.persistJsonGeneration(req, FRAMEWORK_SPEC, second, PROJECT, 'session-2');
       const [firstKey] = revisionKeys();
       const firstId = firstKey.split('/').pop()?.replace('.json', '') ?? '';
 
       const byId = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { revisionId: firstId });
-      expect(byId?.summary).toMatchObject({ id: firstId, number: 1, latest: false });
-      expect(byId?.latest).toMatchObject({ number: 2, contentSha256: second.content_sha256 });
+      expect(byId?.summary).toMatchObject({ id: firstId, number: 1, latest: false, contentSha256: first.content_sha256 });
+      expect(JSON.parse(byId?.revision.record.bundle.markdown ?? '{}')).toMatchObject({ mf: { tagline: 'First' } });
 
-      const bySha = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { contentSha256: second.content_sha256 });
-      expect(bySha?.summary).toMatchObject({ number: 2, latest: true });
-      expect(JSON.parse(bySha?.revision.record.bundle.markdown ?? '{}')).toMatchObject({ mf: { tagline: 'Second' } });
+      const byOlderSha = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { contentSha256: first.content_sha256 });
+      expect(byOlderSha?.summary).toMatchObject({ id: firstId, number: 1, latest: false });
+      expect(JSON.parse(byOlderSha?.revision.record.bundle.markdown ?? '{}')).toMatchObject({ mf: { tagline: 'First' } });
+
+      const byNewerSha = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { contentSha256: second.content_sha256 });
+      expect(byNewerSha?.summary).toMatchObject({ number: 2, latest: true });
+      expect(JSON.parse(byNewerSha?.revision.record.bundle.markdown ?? '{}')).toMatchObject({ mf: { tagline: 'Second' } });
 
       const latest = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', {});
       expect(latest?.summary.number).toBe(2);
+    });
+
+    it('takes the newest revision holding the content when it is stored twice, as a restore does', async () => {
+      const first = jsonEnvelope('First');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
+      const [firstKey] = revisionKeys();
+      await service.restoreRevision(req, PROJECT, FRAMEWORK, 'living', firstKey.split('/').pop()?.replace('.json', '') ?? '');
+
+      const bySha = await service.readExportRevision(req, PROJECT, FRAMEWORK, 'living', { contentSha256: first.content_sha256 });
+
+      expect(bySha?.summary).toMatchObject({ number: 3, origin: 'restored', latest: true });
     });
 
     it('answers null for content it does not hold and for a document with no stored revision', async () => {
@@ -434,6 +452,35 @@ describe('MktgDocumentStoreService', () => {
       // A pre-revision document is Markdown alone: nothing to export.
       seedLegacy('# Brand Kit\n');
       expect(await service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).toBeNull();
+    });
+  });
+
+  describe('readNewestRevisionRef — the last-export lookup’s latest revision', () => {
+    it('reads the listing and the newest revision’s body alone', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First'), PROJECT, 'session-1');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
+      const second = jsonEnvelope('Third');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, second, PROJECT, 'session-3');
+      const getObject = vi.spyOn(ObjectStoreService.prototype, 'getObject');
+
+      const newest = await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living');
+
+      expect(newest).toMatchObject({ number: 3, contentSha256: second.content_sha256 });
+      expect(newest?.id).toBe(revisionKeys()[2].split('/').pop()?.replace('.json', ''));
+      expect(getObject).toHaveBeenCalledTimes(1);
+      getObject.mockRestore();
+    });
+
+    it('walks back past a newest revision that fails its integrity checks, and is null with nothing stored', async () => {
+      expect(await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living')).toBeNull();
+      const first = jsonEnvelope('First');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, first, PROJECT, 'session-1');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second'), PROJECT, 'session-2');
+      const tamperedKey = revisionKeys()[1];
+      const tampered = store.objects.get(tamperedKey);
+      store.objects.set(tamperedKey, { ...(tampered as { body: string; metadata: Record<string, string>; lastModified: Date }), body: '{"tampered":true}' });
+
+      expect(await service.readNewestRevisionRef(req, PROJECT, FRAMEWORK, 'living')).toMatchObject({ number: 1, contentSha256: first.content_sha256 });
     });
   });
 
