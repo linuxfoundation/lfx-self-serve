@@ -72,3 +72,9 @@ export interface NavbarGhostItem {
   /** Font Awesome icon class. */
   icon: string;
 }
+
+/** Position of the lens tabs' sliding active pill, in px relative to the tab group. */
+export interface NavbarTabIndicator {
+  left: number;
+  width: number;
+}

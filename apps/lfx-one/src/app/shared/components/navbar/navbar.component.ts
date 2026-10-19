@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { afterNextRender, Component, computed, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { afterNextRender, afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
 import { Router, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
@@ -31,6 +31,7 @@ import {
   NavbarBrandApp,
   NavbarMenuBlock,
   NavbarRoleMark,
+  NavbarTabIndicator,
   NavTooltipItem,
   SidebarMenuItem,
 } from '@lfx-one/shared/interfaces';
@@ -107,6 +108,10 @@ export class NavbarComponent extends SidebarComponent {
   protected readonly userMenuOpen = signal(false);
   /** Scroll-edge state of the menu body — drives the top/bottom fade masks. */
   protected readonly menuScroll = viewChild(ScrollShadowDirective);
+  /** The lens tab group, measured to place the sliding active pill. */
+  private readonly lensTabsEl = viewChild<ElementRef<HTMLElement>>('lensTabGroup');
+  /** Where the active pill sits; null until measured in the browser (the active tab paints its own pill until then). */
+  protected readonly tabIndicator = signal<NavbarTabIndicator | null>(null);
 
   /**
    * The avatar URL that last failed to load. Google profile photos are served with
@@ -217,6 +222,7 @@ export class NavbarComponent extends SidebarComponent {
         this.changelogService.loadUnseenCount();
       }
     });
+    this.initTabIndicator();
   }
 
   /** Jump from a role chip to that project's or foundation's overview (the deep-link route the lens guards resolve). */
@@ -294,6 +300,34 @@ export class NavbarComponent extends SidebarComponent {
 
   protected openChangelogDrawer(): void {
     this.changelogDrawerVisible.set(true);
+  }
+
+  /**
+   * Keeps the sliding pill under the active lens tab: re-measured after every render that changes the
+   * active lens or the tab set, and whenever the group resizes (the mobile drawer's copy is measured
+   * as 0px wide until the drawer opens). Browser-only — render hooks never run during SSR.
+   */
+  private initTabIndicator(): void {
+    let observed: HTMLElement | null = null;
+    let observer: ResizeObserver | null = null;
+    const measure = (group: HTMLElement): void => {
+      const active = group.querySelector<HTMLElement>('.lfxn__tab.is-active');
+      this.tabIndicator.set(active && active.offsetWidth > 0 ? { left: active.offsetLeft, width: active.offsetWidth } : null);
+    };
+
+    afterRenderEffect(() => {
+      this.activeLensId();
+      this.lensTabs();
+      const group = this.lensTabsEl()?.nativeElement ?? null;
+      if (group !== observed) {
+        observer?.disconnect();
+        observed = group;
+        observer = group && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measure(group)) : null;
+        if (group) observer?.observe(group);
+      }
+      if (group) measure(group);
+    });
+    inject(DestroyRef).onDestroy(() => observer?.disconnect());
   }
 
   private initRoleMarks(): Signal<NavbarRoleMark[]> {

@@ -48,7 +48,15 @@
 
         <!-- Lens tabs — role="group" + aria-pressed: these navigate to a lens, there is no tabpanel. -->
         @if (showLensTabs()) {
-          <div class="lfxn__tabs" role="group" aria-label="Switch lens" data-testid="lens-tabs">
+          <div #lensTabGroup class="lfxn__tabs" [class.has-indicator]="!!tabIndicator()" role="group" aria-label="Switch lens" data-testid="lens-tabs">
+            <!-- One white pill that slides to the active tab; until it is measured the active tab paints its own. -->
+            @if (tabIndicator(); as indicator) {
+              <span
+                class="lfxn__tab-indicator"
+                [style.transform]="'translateX(' + indicator.left + 'px)'"
+                [style.width.px]="indicator.width"
+                aria-hidden="true"></span>
+            }
             @for (lens of lensTabs(); track lens.id; let i = $index) {
               @let isActive = activeLensId() === lens.id;
               @if (i > 0 && !isActive && activeLensId() !== lensTabs()[i - 1].id) {
