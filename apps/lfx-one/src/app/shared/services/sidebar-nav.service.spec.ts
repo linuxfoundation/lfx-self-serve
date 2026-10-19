@@ -65,6 +65,8 @@ describe('SidebarNavService', () => {
   const marketingOpsEnabled = signal(false);
   const authenticated = signal(false);
   const writerGrantsResolved = signal(true);
+  const writerLookupFailed = signal(false);
+  let retrySummary = vi.fn((): Observable<void> => of(undefined));
   let refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
@@ -105,6 +107,8 @@ describe('SidebarNavService', () => {
     marketingOpsEnabled.set(false);
     authenticated.set(false);
     writerGrantsResolved.set(true);
+    writerLookupFailed.set(false);
+    retrySummary = vi.fn((): Observable<void> => of(undefined));
     refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
     TestBed.configureTestingModule({
@@ -159,7 +163,15 @@ describe('SidebarNavService', () => {
           },
         },
         { provide: UserService, useValue: { authenticated } },
-        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false), summaryResolved: writerGrantsResolved } },
+        {
+          provide: WriterGrantsService,
+          useValue: {
+            hasWriterFoundation: signal(false),
+            summaryResolved: writerGrantsResolved,
+            lookupFailed: writerLookupFailed,
+            retrySummary: (...args: []) => retrySummary(...args),
+          },
+        },
         {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
@@ -840,6 +852,28 @@ describe('SidebarNavService', () => {
       expect(service.sidebarItemsPending()).toBe(false);
     });
 
+    it('reports a failed writer lookup on the foundation lens, and retry reruns it before settling', () => {
+      writerLookupFailed.set(true);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.menuLookupFailed()).toBe(true);
+      activeLens.set('me');
+      expect(service.menuLookupFailed()).toBe(false);
+      activeLens.set('foundation');
+
+      const summary = new Subject<void>();
+      retrySummary = vi.fn(() => summary);
+      service.retryMenuLookups();
+      expect(retrySummary).toHaveBeenCalledTimes(1);
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      writerLookupFailed.set(false);
+      summary.next();
+      summary.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
     it('waits for the foundation-lens auditor probe until it settles', () => {
       const probe = new Subject<unknown>();
       refreshEnrichedPersonas = vi.fn(() => probe);
@@ -951,6 +985,41 @@ describe('SidebarNavService', () => {
       retryCncf.next(null);
       retryCncf.complete();
       expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? of(null) : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf: its scoped probe succeeds at once, the root refresh stays pending.
+      const root = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => {
+        if (!slug) return root;
+        return of({ error: null });
+      });
+      service.retryMenuLookups();
+
+      // cncf → aaif → cncf: the newer automatic cncf probe fails.
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? of(null) : of({ error: null })
+      );
+      selectedFoundation.set({ slug: 'cncf' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // The older retry settles last — its success must not clear the newer failure.
+      root.next({});
+      root.complete();
+      expect(service.menuLookupFailed()).toBe(true);
     });
 
     it("keeps a late successful retry for a previous scope from clearing the selected scope's failure", () => {

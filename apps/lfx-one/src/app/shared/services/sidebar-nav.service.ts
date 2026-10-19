@@ -131,6 +131,12 @@ export class SidebarNavService {
    * scope, never the one now selected.
    */
   private readonly marketingProbeFailedSlugs = signal<ReadonlySet<string>>(new Set());
+  /**
+   * Latest marketing probe started per scope (automatic or retry). An outcome only lands while its probe
+   * is still the latest for its scope, so an older retry finishing late can't overwrite a newer result
+   * for the same scope (A → B → A while A's retry is still running).
+   */
+  private readonly marketingProbeGenerations = new Map<string, number>();
   /** In flight while a `retryMenuLookups()` persona refresh runs. */
   private readonly retryPending = signal(false);
 
@@ -139,7 +145,11 @@ export class SidebarNavService {
    * "couldn't check", not "no access". Retry with `retryMenuLookups()`.
    */
   public readonly menuLookupFailed: Signal<boolean> = computed(
-    () => this.personaService.personaLookupFailed() || this.marketingProbeFailedSlugs().has(this.marketingScopeSlug())
+    () =>
+      this.personaService.personaLookupFailed() ||
+      this.marketingProbeFailedSlugs().has(this.marketingScopeSlug()) ||
+      // A foundation writer grant can be what unlocks the foundation menu (see sidebarItemsPending).
+      (this.activeLens() === 'foundation' && this.writerGrantsService.lookupFailed())
   );
 
   /**
@@ -455,8 +465,9 @@ export class SidebarNavService {
         if (!slug) {
           return of('');
         }
+        const generation = this.startMarketingProbe(slug);
         return this.personaService.refreshEnrichedPersonas(false, slug).pipe(
-          tap((response) => this.recordMarketingProbe(slug, !response || !!response.error)),
+          tap((response) => this.recordMarketingProbe(slug, generation, !response || !!response.error)),
           map(() => slug)
         );
       })
@@ -938,24 +949,37 @@ export class SidebarNavService {
 
   /**
    * Re-runs the lookups that shape the menu after one failed: a forced persona refresh (root grants,
-   * auditor / root-writer) and the scoped marketing probe. The menu stays pending until both settle,
-   * then shows the menu, the no-access state, or the error again.
+   * auditor / root-writer), the scoped marketing probe and, when it failed, the writer-grant summary.
+   * The menu stays pending until all settle, then shows the menu, the no-access state, or the error again.
    */
   public retryMenuLookups(): void {
     if (this.retryPending()) return;
     this.retryPending.set(true);
     const slug = this.marketingScopeSlug();
-    // Both lookups re-run together and the menu stays pending until both settle, so neither can
-    // resolve the menu (or clear the error) while the other is still in flight.
-    forkJoin([this.personaService.refreshEnrichedPersonas(true), slug ? this.personaService.refreshEnrichedPersonas(false, slug) : of(null)])
+    const generation = slug ? this.startMarketingProbe(slug) : 0;
+    // The lookups re-run together and the menu stays pending until all settle, so none can resolve
+    // the menu (or clear the error) while another is still in flight.
+    forkJoin([
+      this.personaService.refreshEnrichedPersonas(true),
+      slug ? this.personaService.refreshEnrichedPersonas(false, slug) : of(null),
+      this.writerGrantsService.lookupFailed() ? this.writerGrantsService.retrySummary() : of(null),
+    ])
       .pipe(finalize(() => this.retryPending.set(false)))
       .subscribe(([, scoped]) => {
-        if (slug) this.recordMarketingProbe(slug, !scoped || !!scoped.error);
+        if (slug) this.recordMarketingProbe(slug, generation, !scoped || !!scoped.error);
       });
   }
 
-  /** Records one scope's marketing-probe outcome without touching any other scope's. */
-  private recordMarketingProbe(slug: string, failed: boolean): void {
+  /** Marks a new marketing probe for `slug` as the latest, returning its generation. */
+  private startMarketingProbe(slug: string): number {
+    const generation = (this.marketingProbeGenerations.get(slug) ?? 0) + 1;
+    this.marketingProbeGenerations.set(slug, generation);
+    return generation;
+  }
+
+  /** Records one scope's marketing-probe outcome — only while it is that scope's latest probe, never touching another scope's. */
+  private recordMarketingProbe(slug: string, generation: number, failed: boolean): void {
+    if (this.marketingProbeGenerations.get(slug) !== generation) return;
     this.marketingProbeFailedSlugs.update((slugs) => {
       if (slugs.has(slug) === failed) return slugs;
       const next = new Set(slugs);

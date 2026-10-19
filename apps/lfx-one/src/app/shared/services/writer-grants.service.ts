@@ -8,7 +8,7 @@ import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { finalize, map } from 'rxjs';
+import { finalize, map, Observable } from 'rxjs';
 
 /**
  * Whether the user holds a `writer` grant on a foundation-level and/or non-foundation project —
@@ -72,6 +72,15 @@ export class WriterGrantsService {
    */
   public readonly summaryResolved: Signal<boolean> = this.summaryResolvedInternal.asReadonly();
 
+  private readonly lookupFailedInternal: WritableSignal<boolean> = signal(false);
+
+  /**
+   * True when the latest fast-path lookup failed (error or timeout) instead of answering. The grants
+   * stay as they were, but a consumer that would read "no writer grant" as "no access" should offer a
+   * retry ({@link retrySummary}) instead. Cleared by the next answer.
+   */
+  public readonly lookupFailed: Signal<boolean> = this.lookupFailedInternal.asReadonly();
+
   public constructor() {
     // Runs browser-only, once the first render is committed — see the class doc for why both
     // calls live here rather than at construction.
@@ -96,8 +105,25 @@ export class WriterGrantsService {
           }),
           takeUntilDestroyed(this.destroyRef)
         )
-        .subscribe((summary) => this.widen(summary));
+        .subscribe((summary) => this.applySummary(summary));
     });
+  }
+
+  /**
+   * Re-runs the fast-path lookup after it failed, recording whether it answered. Emits once settled,
+   * so a caller can hold its pending state until then.
+   */
+  public retrySummary(): Observable<void> {
+    return this.projectService.getWriterSummary().pipe(
+      map((summary) => this.applySummary(summary)),
+      takeUntilDestroyed(this.destroyRef)
+    );
+  }
+
+  /** Records a fast-path outcome: `null` is a failed lookup, anything else an answer to widen with. */
+  private applySummary(summary: WriterSummary | null): void {
+    this.lookupFailedInternal.set(summary === null);
+    if (summary) this.widen(summary);
   }
 
   /** OR-merge — only ever widens, never narrows, so the fast path and deferred sweep can land in any order. */

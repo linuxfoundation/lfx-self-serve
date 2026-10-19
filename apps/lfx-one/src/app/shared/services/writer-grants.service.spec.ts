@@ -96,4 +96,22 @@ describe('WriterGrantsService', () => {
       expect(service.summaryResolved()).toBe(true);
     });
   });
+
+  describe('lookupFailed', () => {
+    it('flags a failed fast path apart from "no grants", and retrySummary clears it with the answer', () => {
+      getWriterSummary.mockReturnValue(of(null));
+      userService.authenticated.set(true);
+      const service = TestBed.inject(WriterGrantsService);
+
+      TestBed.inject(ApplicationRef).tick();
+      expect(service.summaryResolved()).toBe(true);
+      expect(service.lookupFailed()).toBe(true);
+
+      getWriterSummary.mockReturnValue(of({ hasWriterFoundation: true, hasWriterProject: false } as WriterSummary));
+      service.retrySummary().subscribe();
+
+      expect(service.lookupFailed()).toBe(false);
+      expect(service.hasWriterFoundation()).toBe(true);
+    });
+  });
 });
