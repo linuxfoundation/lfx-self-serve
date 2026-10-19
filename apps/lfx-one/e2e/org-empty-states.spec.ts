@@ -531,7 +531,8 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // One organization and no catalogue: the navbar card is static — it names the org and offers no switch.
       await expect(trigger).toContainText(ORG_A_NAME);
       await expect(trigger).toHaveAttribute('aria-disabled', 'true');
-      await trigger.click();
+      // dispatchEvent, not click(): Playwright treats aria-disabled as disabled and would wait forever.
+      await trigger.dispatchEvent('click');
       await expect(page.locator('#org-selector-listbox')).toHaveCount(0);
       // The removed affordance: no LF-team catalogue search input.
       await expect(page.getByTestId('org-search-input')).toHaveCount(0);

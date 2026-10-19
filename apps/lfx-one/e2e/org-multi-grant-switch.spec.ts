@@ -383,7 +383,8 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
     // which opens no panel.
     await expect(trigger).toContainText(ORG_A_NAME);
     await expect(trigger).toHaveAttribute('aria-disabled', 'true');
-    await trigger.click();
+    // dispatchEvent, not click(): Playwright treats aria-disabled as disabled and would wait forever.
+    await trigger.dispatchEvent('click');
     await expect(page.locator('#org-selector-listbox')).toHaveCount(0);
 
     // No revocation-recovery toast is expected. If PrimeNG toasts exist in the DOM, none of them should

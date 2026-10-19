@@ -36,7 +36,7 @@ const createNavbar = async (
   items: SidebarMenuItem[],
   personas: PersonaType[] = [],
   personaProjects: Partial<Record<PersonaType, PersonaProject[]>> = {},
-  { lens = 'me', itemsPending = false, enriched = true }: { lens?: Lens; itemsPending?: boolean; enriched?: boolean } = {}
+  { lens = 'me', itemsPending = false, tierResolved = true }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -72,8 +72,7 @@ const createNavbar = async (
         useValue: {
           isRootWriter: signal(false),
           personaProjects: signal(personaProjects),
-          detectedProjects: signal([{ projectUid: 'uid-k8s', isFoundation: false }]),
-          enrichedPersonasLoaded: signal(enriched),
+          detectedProjects: signal([{ projectUid: 'uid-k8s', isFoundation: false, tierResolved }]),
           allPersonas: signal(personas),
           currentPersona: signal('contributor'),
         },
@@ -144,10 +143,10 @@ describe('NavbarComponent', () => {
     ]);
   });
 
-  it('ignores the raw (unenriched) tier and falls back to the role’s scope until enrichment lands', async () => {
+  it('trusts only an enrichment-resolved tier, falling back to the role’s scope before enrichment or on a batch miss', async () => {
     const projects = { 'board-member': [{ projectUid: 'uid-k8s', projectSlug: 'kubernetes', projectName: 'Kubernetes' }] };
 
-    const [unenriched] = (await createNavbar([], ['board-member'], projects, { enriched: false })).roleMarks();
+    const [unenriched] = (await createNavbar([], ['board-member'], projects, { tierResolved: false })).roleMarks();
     const [enriched] = (await createNavbar([], ['board-member'], projects)).roleMarks();
 
     expect(unenriched.projects[0].isFoundation).toBe(true);

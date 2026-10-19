@@ -36,6 +36,12 @@ export interface EnrichedPersonaProject {
   projectName: string | null;
   parentProjectUid: string | null;
   isFoundation: boolean;
+  /**
+   * True once enrichment merged this project's record, so `isFoundation` reflects its real tier.
+   * Absent on raw detection and on entries the metadata batch missed, where `isFoundation` is just
+   * the detection default (`false`) and must not be read as "not a foundation".
+   */
+  tierResolved?: boolean;
   logoUrl: string | null;
   description: string | null;
   detections: PersonaDetection[];
