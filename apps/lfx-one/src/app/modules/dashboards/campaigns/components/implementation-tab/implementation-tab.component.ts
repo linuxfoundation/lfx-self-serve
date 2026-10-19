@@ -1745,10 +1745,9 @@ export class ImplementationTabComponent implements OnInit {
     // dedicated input answers "is a save running" for every save, first or not.
     if (this.briefSaveInFlight()) return false;
     // A create sent mid-upload would go out with the pasted URL (or no image) instead of the file
-    // the operator just chose, and the upload would then land for a create already sent. Only
-    // while the upload control is shown: its status and Remove live there, and without it the
-    // uploaded image is not sent anyway (`redditImageField`), so a resumed upload must not leave
-    // Create disabled with nothing on screen saying why or offering a way out.
+    // the operator just chose, and the upload would then land for a create already sent. Held here
+    // while the upload control is shown, where its status and Remove live; while it is hidden,
+    // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove.
     if (this.showRedditSection() && this.redditAssetUploadAvailable() && this.redditImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
@@ -2901,7 +2900,11 @@ export class ImplementationTabComponent implements OnInit {
             'The uploaded Reddit image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
         };
       }
-      if (this.redditAssetUploadAvailable() || !this.redditImageAssetForThisBrief()) return null;
+      // An upload still in flight counts as the image too: resumed after a tab switch it has no
+      // asset id yet, and while the upload control is hidden (support unknown, unconfirmed or off)
+      // this block is the only place its state shows and the only way to remove it.
+      const hasImage = this.redditImageAssetForThisBrief() || this.redditImageUploadStatus() === 'uploading';
+      if (this.redditAssetUploadAvailable() || !hasImage) return null;
       if (this.redditCreativeEnabled() === false || this.redditAssetUploadEnabled() === false) {
         return {
           kind: 'unsupported',

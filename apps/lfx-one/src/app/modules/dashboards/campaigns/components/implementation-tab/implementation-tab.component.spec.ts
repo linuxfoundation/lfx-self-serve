@@ -7765,9 +7765,14 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(submit(second.fixture)['imageAssetId']).toBe(ASSET_ID);
   });
 
-  // Once the upload control is gone (the capability withdrawn mid-upload), the upload has no
-  // status and no Remove on screen, and its image would not be sent, so it must not hold Create.
-  it('does not let an upload in flight block Create once the upload control is hidden', async () => {
+  // Once the upload control is hidden mid-upload, the upload must still hold Create, visibly and
+  // with a way out: unanswered, unconfirmed and switched-off support all hide the control, and a
+  // resumed upload has no asset id yet, so without this the campaign went out without the image.
+  it.each([
+    ['still being checked', null, 'pending', 'pending'],
+    ['unconfirmed', null, 'unknown', 'failed'],
+    ['switched off', false, 'ready', 'unsupported'],
+  ] as const)('holds Create with a visible Remove for an upload in flight while support is %s', async (_label, upload, read, kind) => {
     uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
     const f = (await mount(true)).fixture;
     choose(f, png());
@@ -7776,13 +7781,44 @@ describe('ImplementationTabComponent reddit image upload', () => {
     c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
     c.campaignForm.controls['endDate'].setValue('2026-09-30');
-    expect(c.canSubmit()).toBe(false);
 
-    f.componentRef.setInput('redditAssetUploadEnabled', false);
+    f.componentRef.setInput('biddingCapabilityRead', read);
+    f.componentRef.setInput('redditAssetUploadEnabled', upload);
     f.detectChanges();
 
     expect(fileInput(f)).toBeNull();
+    const block = f.nativeElement.querySelector(`[data-testid="implementation-reddit-image-asset-block-${kind}"]`) as HTMLElement | null;
+    expect(block).not.toBeNull();
+    expect(c.canSubmit()).toBe(false);
+
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-remove"] button') as HTMLButtonElement).click();
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('idle');
     expect(c.canSubmit()).toBe(true);
+  });
+
+  it('holds Create for an upload resumed after a tab switch while support is still being checked', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+    f.componentRef.setInput('biddingCapabilityRead', 'pending');
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('uploading');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-pending"]')).not.toBeNull();
+    expect(c.canSubmit()).toBe(false);
   });
 
   it('says the upload was interrupted when there is nothing left to resume', async () => {
