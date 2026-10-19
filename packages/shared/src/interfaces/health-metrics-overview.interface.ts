@@ -72,12 +72,6 @@ export interface HealthMetricsOverviewTrainingLinkSpec {
   queryParams: Readonly<HealthMetricsTrainingQueryParams>;
 }
 
-/** One entry of `HEALTH_METRICS_OVERVIEW_TILE_LINKS`: the in-app target a tile opens and the link's text. */
-export interface HealthMetricsOverviewTileLinkSpec {
-  linkTarget: HealthMetricsOverviewLinkTarget;
-  label: string;
-}
-
 /** An in-app Overview link into a Level 2 tab, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
 export interface HealthMetricsOverviewFindingRoute {
   commands: readonly string[];
@@ -284,10 +278,8 @@ export interface HealthMetricsOverviewTileViewModel {
   showStatus?: boolean;
   /** Second line under the stat label — see {@link HealthMetricsAreaState.statDetail}. */
   statDetail?: HealthMetricsAreaStateDetail;
-  /** Set for each area in `HEALTH_METRICS_OVERVIEW_TILE_LINKS` while it carries a figure — the tile links into its Level 2 tab. */
-  route?: HealthMetricsOverviewFindingRoute;
-  /** The tile link's text, set with {@link route}. */
-  routeLabel?: string;
+  /** The top of the area's Level 2 tab; the whole tile links there. Unset for `code`, which has no tab. */
+  tabRoute?: readonly string[];
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */
@@ -309,6 +301,8 @@ export interface HealthMetricsOverviewFindingViewModel {
   /** Set for every in-app tab finding (`eng.*`, `evt.*`, `mem.*`, `non.*`, `trn.*`), which links into its Level 2 tab. */
   linkRoute?: HealthMetricsOverviewFindingRoute;
   linkIsExternal: boolean;
+  /** The top of the area's Level 2 tab, linked from the area eyebrow. Unset for `code`, which has no tab. */
+  areaTabRoute?: readonly string[];
   visual?: HealthMetricsFindingVisual;
 }
 
