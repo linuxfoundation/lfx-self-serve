@@ -43,7 +43,7 @@
         <h4 class="text-sm font-medium text-gray-900">By year</h4>
         <span class="text-xs text-gray-500" data-testid="events-registrations-growth-count-label">{{ countLabel() }}</span>
       </div>
-      <lfx-table [value]="view().rows" data-testid="events-registrations-growth-table">
+      <lfx-table [rowHover]="false" [value]="view().rows" data-testid="events-registrations-growth-table">
         <ng-template #header>
           <tr>
             <th scope="col"><span class="text-xs font-medium text-gray-500">Year</span></th>

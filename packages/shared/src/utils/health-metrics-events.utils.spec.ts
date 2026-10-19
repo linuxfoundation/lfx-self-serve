@@ -933,6 +933,32 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
       proposalsLabel: '12',
       speakersLabel: '4',
       eventsLabel: '3',
+      link: {
+        commands: ['/foundation/health-metrics', 'members'],
+        fragment: 'list',
+        queryParams: { memSearch: 'Acme Motors', memTier: null, memNps: null, memPage: null },
+      },
+      linkLabel: 'Open Acme Motors in Members',
+    });
+  });
+
+  it('opens a non-member in Non-Members company participation, searched by name with its filters cleared', () => {
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false }));
+
+    expect(row.link).toEqual({
+      commands: ['/foundation/health-metrics', 'non-members'],
+      fragment: 'orgs',
+      queryParams: { nonSearch: 'Acme Motors', nonFit: null, nonPage: null },
+    });
+    expect(row.linkLabel).toBe('Open Acme Motors in Non-Members');
+  });
+
+  it('caps the search it opens with at the target search box length', () => {
+    const name = 'A'.repeat(140);
+
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ accountName: name })).link.queryParams).toMatchObject({ memSearch: 'A'.repeat(100) });
+    expect(buildHealthMetricsEventsOrganizationRowView(organization({ accountName: name, isMember: false })).link.queryParams).toMatchObject({
+      nonSearch: 'A'.repeat(100),
     });
   });
 

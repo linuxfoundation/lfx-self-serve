@@ -132,7 +132,7 @@
       @if (view().proposals.length === 0) {
         <p class="text-sm text-gray-500" data-testid="events-speakers-proposals-empty">No proposal in the selected period.</p>
       } @else {
-        <lfx-table [value]="view().proposals" data-testid="events-speakers-table">
+        <lfx-table [rowHover]="false" [value]="view().proposals" data-testid="events-speakers-table">
           <ng-template #header>
             <tr>
               <th scope="col"><span class="text-xs font-medium text-gray-500">Speaker</span></th>
