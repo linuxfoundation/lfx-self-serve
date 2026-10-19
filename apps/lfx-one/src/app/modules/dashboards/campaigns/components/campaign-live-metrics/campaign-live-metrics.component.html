@@ -1,0 +1,90 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" [attr.data-testid]="'optimization-campaign-live-' + campaignId()">
+  <div class="flex flex-wrap items-center gap-2">
+    <!--
+      Withheld when the row is not addressable (no project or brief yet) and once the platform is
+      known to have no metrics read, where a retry would only be refused again. The accessible name
+      CONTAINS the visible text (label-in-name) and adds the campaign.
+    -->
+    @if (canRead() && state().status !== 'unsupported') {
+      <button
+        type="button"
+        (click)="load()"
+        [disabled]="state().status === 'loading'"
+        [attr.aria-busy]="state().status === 'loading' ? 'true' : null"
+        [attr.aria-label]="buttonLabel() + ' for ' + campaignName()"
+        class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        [attr.data-testid]="'optimization-campaign-live-load-' + campaignId()">
+        @if (state().status === 'loading') {
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        }
+        {{ buttonLabel() }}
+      </button>
+    }
+    <!--
+      Always rendered, with only its content changing, so the polite region exists before the text
+      it announces. Not `role="alert"`: a refused read is reported, not fired at the user.
+    -->
+    <span class="text-xs" role="status" aria-live="polite">
+      @switch (state().status) {
+        @case ('loading') {
+          <span class="text-gray-500" [attr.data-testid]="'optimization-campaign-live-loading-' + campaignId()">Reading live counters from the platform…</span>
+        }
+        @case ('unsupported') {
+          <span class="text-gray-500" [attr.data-testid]="'optimization-campaign-live-unsupported-' + campaignId()">{{ state().message }}</span>
+        }
+        @case ('error') {
+          <span class="text-red-600" [attr.data-testid]="'optimization-campaign-live-error-' + campaignId()">{{ state().message }}</span>
+        }
+        @default {
+          @if (briefReason(); as reason) {
+            <span class="text-gray-500" [attr.data-testid]="'optimization-campaign-live-brief-reason-' + campaignId()">No live counters: {{ reason }}</span>
+          }
+        }
+      }
+    </span>
+  </div>
+
+  @if (state().status === 'ready' && state().counters; as counters) {
+    <dl class="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4" [attr.data-testid]="'optimization-campaign-live-counters-' + campaignId()">
+      <div class="flex flex-col">
+        <!-- The email channel mirrors OPENS to date into this counter. -->
+        <dt class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-live-impressions-label-' + campaignId()">
+          {{ counters.isEmail ? 'Opens' : 'Impressions' }}
+        </dt>
+        <dd class="text-sm font-medium text-gray-900" [attr.data-testid]="'optimization-campaign-live-impressions-' + campaignId()">
+          {{ counters.impressions | number }}
+        </dd>
+      </div>
+      <div class="flex flex-col">
+        <dt class="text-xs text-gray-500">Clicks</dt>
+        <dd class="text-sm font-medium text-gray-900" [attr.data-testid]="'optimization-campaign-live-clicks-' + campaignId()">
+          {{ counters.clicks | number }}
+        </dd>
+      </div>
+      <!--
+        No currency symbol; the label names the currency: USD on LinkedIn, the ad account's own
+        (which the read does not name) elsewhere. Omitted on the email channel, which bills nothing per send.
+      -->
+      @if (counters.cost !== null) {
+        <div class="flex flex-col">
+          <dt class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-live-cost-label-' + campaignId()">{{ counters.costLabel }}</dt>
+          <dd class="text-sm font-medium text-gray-900" [attr.data-testid]="'optimization-campaign-live-cost-' + campaignId()">{{ counters.cost }}</dd>
+        </div>
+      }
+      <div class="flex flex-col">
+        <dt class="text-xs text-gray-500">CTR</dt>
+        <dd class="text-sm font-medium text-gray-900" [attr.data-testid]="'optimization-campaign-live-ctr-' + campaignId()">{{ counters.ctrPct | adsPct }}</dd>
+      </div>
+    </dl>
+    <p class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-live-window-' + campaignId()">
+      @if (counters.isEmail) {
+        Opens and clicks to date for the emails sent over {{ counters.windowLabel }}. Nothing is saved.
+      } @else {
+        Live from the platform over {{ counters.windowLabel }}. Nothing is saved.
+      }
+    </p>
+  }
+</div>

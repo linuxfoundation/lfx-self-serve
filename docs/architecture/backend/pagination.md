@@ -124,6 +124,10 @@ existing behavior. Recognized indexed statuses are canonicalized in returned row
 status-dependent actions agree with the normalized predicates; unrecognized values are
 preserved.
 
+Returned vote-list rows are batch-decorated with effective `vote#writer` access, including committee-derived grants. Only the returned slice is checked; failed access checks default to `writer: false`. The reminder menu uses this per-row field, not the active project's writer flag. The reminder API independently enforces a strict writer check before reading voter identities.
+
+Reminder recipient reads validate the current poll's active status and deadline, then drain `vote_response` rows matching either `vote_uid` or legacy `poll_id` with `failOnPartial: true`. Rows must match the canonical parent, still be awaiting an uncast response, and not be removed; recipient UIDs are deduplicated before the identity-only projection. A send repeats this check and rejects the entire selection if any recipient is no longer eligible. `409 VOTE_REMINDER_INACTIVE` identifies an inactive poll; `409 VOTE_REMINDER_SELECTION_STALE` means no reminders were queued and the selection must be reloaded. The index is eventually consistent, so this recheck is not an atomic exclusion of ballots submitted concurrently with queuing.
+
 Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
 votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;
 list pagination takes a fresh snapshot, so counts can legitimately differ at a deadline.
