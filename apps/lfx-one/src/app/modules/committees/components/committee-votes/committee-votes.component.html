@@ -6,6 +6,7 @@
     <lfx-votes-table
       [votes]="votes()"
       [hasPMOAccess]="canEdit()"
+      [showParticipationProgress]="true"
       [loading]="votesLoading()"
       [totalRecords]="votes().length"
       [editQueryParamsFallback]="editVoteQueryParams()"

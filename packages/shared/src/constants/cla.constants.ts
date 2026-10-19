@@ -870,7 +870,7 @@ export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
   marksSuffix:
     " as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against.",
   reacknowledge: (contributor: string): string => `If ${contributor} still matches the approval list, they can acknowledge again themselves`,
-  noAutoReadd: ". Auto ECLA won't re-add them.",
+  noAutoReadd: ". Auto Acknowledge won't re-add them.",
   removeEntries: ' Remove the matching entries below to prevent this.',
   matchedBy: (count: number): string => ` was approved by ${count > 1 ? 'entries' : 'an entry'} added specifically for them.`,
   alsoRemove: (contributor: string, count: number): string =>

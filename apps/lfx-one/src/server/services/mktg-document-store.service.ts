@@ -15,6 +15,7 @@ import {
 import {
   MktgArtifactEnvelope,
   MktgArtifactIntakeMode,
+  MktgArtifactJsonEnvelope,
   MktgArtifactPersistReceipt,
   MktgArtifactSpec,
   MktgArtifactStoredResponse,
@@ -27,6 +28,9 @@ import {
   MktgLegacyDocument,
   MktgLegacyListing,
   MktgListedRevision,
+  MktgRevisionBundle,
+  MktgRevisionContentSource,
+  MktgRevisionFormat,
   MktgRevisionRecord,
   MktgRevisionRecordFields,
   MktgRevisionResponse,
@@ -101,7 +105,49 @@ export class MktgDocumentStoreService {
     sessionId: string
   ): Promise<MktgArtifactPersistReceipt | null> {
     const receipt = await this.artifactService.persist(req, spec, envelope, projectUid);
-    return receipt ? this.recordPersisted(req, spec.agentKey, receipt, envelope, sessionId) : null;
+    return receipt ? this.recordPersisted(req, spec.agentKey, receipt, this.markdownSource(envelope), sessionId) : null;
+  }
+
+  /**
+   * Persist a validated STRUCTURED envelope (an agent whose output is JSON,
+   * the Messaging Framework) as a new revision of its document — the JSON
+   * text of its content as the revision's content, the rest of the envelope
+   * as the sidecar. Nothing is written to the pre-revision `.md` partition:
+   * the revision IS the stored copy, so the receipt names the revision's key.
+   * The same write boundary as the artifact layer's (the SERVER-resolved,
+   * writer-checked project) decides whether anything is written at all; every
+   * refusal and storage failure degrades to null at WARN, like the artifact
+   * write, and the next poll retries.
+   */
+  public async persistJsonGeneration<T extends object>(
+    req: Request,
+    spec: MktgArtifactSpec,
+    envelope: MktgArtifactJsonEnvelope<T>,
+    projectUid: string | undefined,
+    sessionId: string
+  ): Promise<MktgArtifactPersistReceipt | null> {
+    const partition = await this.artifactService.resolveWritablePartition(req, spec, projectUid);
+    const type = findMktgDocumentType(spec.agentKey);
+    if (!partition || !type) {
+      return null;
+    }
+    try {
+      const revision = await this.recordGeneration(req, type, partition, this.jsonSource(envelope), sessionId);
+      return {
+        s3_key: revision.key,
+        content_sha256: envelope.content_sha256,
+        project: partition,
+        version: envelope.version,
+        intake_mode: envelope.intake.mode,
+      };
+    } catch (error) {
+      logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the asset without a receipt; retried on next poll', {
+        agent: type.agentKey,
+        project: partition,
+        err: error,
+      });
+      return null;
+    }
   }
 
   /**
@@ -117,7 +163,7 @@ export class MktgDocumentStoreService {
     req: Request,
     agentKey: MktgDocumentAgentKey,
     receipt: T,
-    envelope: MktgArtifactEnvelope,
+    source: MktgArtifactEnvelope | MktgRevisionContentSource,
     sessionId: string
   ): Promise<T | null> {
     const type = findMktgDocumentType(agentKey);
@@ -126,7 +172,7 @@ export class MktgDocumentStoreService {
     }
 
     try {
-      await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
+      await this.recordGeneration(req, type, receipt.project, source, sessionId);
       return receipt;
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
@@ -149,9 +195,10 @@ export class MktgDocumentStoreService {
     req: Request,
     type: MktgDocumentType,
     project: string,
-    envelope: MktgArtifactEnvelope,
+    envelope: MktgArtifactEnvelope | MktgRevisionContentSource,
     sessionId: string
   ): Promise<MktgStoredRevision> {
+    const source = 'document_markdown' in envelope ? this.markdownSource(envelope) : envelope;
     const documentId = type.kind === 'run' ? this.runDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const revisions = await this.readRevisions(req, project, type, documentId);
 
@@ -160,7 +207,7 @@ export class MktgDocumentStoreService {
     const existing =
       type.kind === 'run'
         ? revisions[0]
-        : revisions.find((revision) => revision.record.source.sessionId === sessionId && revision.record.bundle.contentSha256 === envelope.content_sha256);
+        : revisions.find((revision) => revision.record.source.sessionId === sessionId && revision.record.bundle.contentSha256 === source.contentSha256);
     if (existing) {
       logger.debug(req, 'mktg_document_store_record', 'Generation already recorded — no new revision', { agent: type.agentKey, revision: existing.id });
       return existing;
@@ -169,19 +216,18 @@ export class MktgDocumentStoreService {
     if (revisions.length === 0 && type.kind === 'living') {
       // The legacy object this very generation just wrote is excluded: only a
       // document stored BEFORE this one can be the pre-revision revision 1.
-      const legacy = await this.readLegacyDocument(req, type, project, envelope.content_sha256);
+      const legacy = await this.readLegacyDocument(req, type, project, source.contentSha256);
       if (legacy) {
         revisions.push(await this.writeRevision(req, project, type, documentId, 1, this.legacyRecordFields(legacy)));
       }
     }
 
-    const { document_markdown: markdown, ...sidecar } = envelope as MktgArtifactEnvelope & Record<string, unknown>;
     const revision = await this.writeRevision(req, project, type, documentId, this.nextSequence(revisions), {
       createdAt: new Date().toISOString(),
       origin: 'generated',
       restoredFromId: null,
-      source: { sessionId, draftVersion: envelope.version, intakeMode: envelope.intake.mode },
-      bundle: { markdown, contentSha256: envelope.content_sha256, sidecar, brandFile: null },
+      source: { sessionId, draftVersion: source.version, intakeMode: source.intakeMode },
+      bundle: { markdown: source.text, contentSha256: source.contentSha256, format: source.format, sidecar: source.sidecar, brandFile: null },
     });
 
     logger.info(req, 'mktg_document_store_record', 'Stored a new document revision', {
@@ -274,7 +320,13 @@ export class MktgDocumentStoreService {
       }
       const summaries = this.summarize(revisions);
       const revision = summaries.find((summary) => summary.id === found.id) as MktgRevisionSummary;
-      return { ...this.detail(project, type, documentId, summaries), revision, markdown: found.record.bundle.markdown };
+      return {
+        ...this.detail(project, type, documentId, summaries),
+        revision,
+        markdown: found.record.bundle.markdown,
+        // The rest of the envelope: the framework view reads the report and inputs from it, the Brand Kit view renders the kit from it.
+        sidecar: found.record.bundle.sidecar ?? null,
+      };
     }
 
     // No stored revisions: only a living document's pre-revision object can answer.
@@ -284,7 +336,7 @@ export class MktgDocumentStoreService {
       return null;
     }
     const revision = this.legacySummary(legacy);
-    return { ...this.detail(project, type, documentId, [revision]), revision, markdown: legacy.markdown };
+    return { ...this.detail(project, type, documentId, [revision]), revision, markdown: legacy.markdown, sidecar: null };
   }
 
   /**
@@ -339,42 +391,155 @@ export class MktgDocumentStoreService {
   /**
    * The project's latest document for an agent that dependent agents read:
    * the latest revision when the document has any, else the pre-revision
-   * read path exactly as before. Degrades to null like that path.
+   * read path exactly as before — only when the listing succeeded and found
+   * no revisions. A failed lookup, or revisions none of which load, degrade
+   * to null rather than to the older pre-revision copy.
+   *
+   * `withSidecar`: the same latest revision — the newest one that passes its
+   * integrity checks (a restore is itself the newest revision) — WITH its
+   * sidecar JSON and the date it was stored, which is what
+   * a consumer attaching the document as JSON takes (the Brand Kit's
+   * messaging framework). The latest revision regardless of its review
+   * status: LFX One has no Approve action yet, so an approved-only read
+   * could never answer (product decision, 17 Oct 2026 — Approve is a later
+   * item, and this is where the read narrows to the approved revision when
+   * it lands).
+   * Null when the agent has no document type or the project is not a valid
+   * partition (nothing is listed), or when the listing succeeded and no
+   * revision loads (a revision that fails its integrity checks is skipped
+   * like everywhere else); the pre-revision document carries no sidecar, so
+   * there is no fallback to it. A storage failure on this path is rethrown, never read as "no
+   * revision": the consumer gates a run on the answer, so it must render a
+   * failure state, not an absence.
    */
-  public async readLatest(req: Request, spec: MktgArtifactSpec, project: string): Promise<MktgArtifactStoredResponse | null> {
+  public async readLatest(
+    req: Request,
+    spec: MktgArtifactSpec,
+    project: string,
+    options: { withSidecar?: boolean } = {}
+  ): Promise<MktgArtifactStoredResponse | null> {
+    const withSidecar = options.withSidecar === true;
     const type = findMktgDocumentType(spec.agentKey);
     if (!type || !MKTG_ARTIFACT_PARTITION_REGEX.test(project)) {
-      return this.artifactService.readLatest(req, spec, project);
+      return withSidecar ? null : this.artifactService.readLatest(req, spec, project);
     }
 
+    // The pre-revision copy is served only when a lookup that succeeded found
+    // no revisions. A failed lookup, or revisions none of which can be read,
+    // serve nothing: the pre-revision copy is older than every revision (a
+    // JSON generation never updates it), and a dependent agent prefers the
+    // server's answer over the browser's current asset, so serving it would
+    // hand that agent obsolete content.
+    let listed: MktgListedRevision[];
     try {
-      const listed = await this.listRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
+      if (withSidecar) {
+        // Every revision is read, so the one attached is named by its number
+        // in Documents: the count of the revisions that pass their integrity
+        // checks up to it, exactly as the Revisions table numbers them.
+        const revisions = await this.readRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
+        const latest = revisions[revisions.length - 1];
+        return latest
+          ? { ...this.latestResponse(spec, project, latest), revisionNumber: revisions.length, sidecar: this.envelopeSidecar(latest.record.bundle) }
+          : null;
+      }
+      listed = await this.listRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
       for (const entry of [...listed].reverse()) {
         const revision = await this.loadRevision(req, entry);
         if (revision) {
-          const { bundle, source, createdAt } = revision.record;
-          return {
-            documentMarkdown: bundle.markdown,
-            receipt: {
-              s3_key: buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
-              content_sha256: bundle.contentSha256,
-              project,
-              version: source.draftVersion,
-              intake_mode: source.intakeMode,
-            },
-            storedAt: createdAt,
-          };
+          return this.latestResponse(spec, project, revision);
         }
       }
     } catch (error) {
-      logger.warning(req, 'mktg_document_store_read_latest', 'Revision read failed — falling back to the pre-revision document', {
+      if (withSidecar) {
+        // The consumer gates a run on this answer, so a storage failure is a
+        // failure (the controller answers 5xx), never "no revision"; the
+        // centralized error handler logs the ERROR.
+        logger.warning(req, 'mktg_document_store_read_latest', 'Latest revision read failed — rethrowing for the caller to handle', {
+          agent: type.agentKey,
+          project,
+          with_sidecar: true,
+          err: error,
+        });
+        throw error;
+      }
+      logger.warning(req, 'mktg_document_store_read_latest', 'Revision read failed — serving no stored document', {
         agent: type.agentKey,
         project,
         err: error,
       });
+      return null;
     }
 
+    if (listed.length > 0) {
+      logger.warning(req, 'mktg_document_store_read_latest', 'No stored revision could be read — serving no stored document', {
+        agent: type.agentKey,
+        project,
+        revisions: listed.length,
+      });
+      return null;
+    }
+    // Reached only by the plain read: the sidecar read returned in the try.
     return this.artifactService.readLatest(req, spec, project);
+  }
+
+  /**
+   * The revision an export names, with its summary: the revision
+   * `revisionId` names, else the newest revision holding the content
+   * `contentSha256` names (a run's version, which knows the hash of what it
+   * stored, not the revision id), else the latest. Stored revisions only: a
+   * pre-revision document is Markdown alone, with no asset to export. Null
+   * when the document has no stored revision or none matches. Throws on a
+   * storage failure.
+   */
+  public async readExportRevision(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    selector: { revisionId?: string; contentSha256?: string }
+  ): Promise<{ revision: MktgStoredRevision; summary: MktgRevisionSummary } | null> {
+    const revisions = await this.readRevisions(req, project, type, documentId);
+    if (revisions.length === 0) {
+      return null;
+    }
+    let found: MktgStoredRevision | undefined;
+    if (selector.revisionId) {
+      found = this.findRevision(revisions, selector.revisionId);
+    } else if (selector.contentSha256) {
+      found = [...revisions].reverse().find((revision) => revision.record.bundle.contentSha256 === selector.contentSha256);
+    } else {
+      found = revisions[revisions.length - 1];
+    }
+    if (!found) {
+      return null;
+    }
+    const summary = this.summarize(revisions).find((candidate) => candidate.id === found.id) as MktgRevisionSummary;
+    return { revision: found, summary };
+  }
+
+  /**
+   * The document's newest stored revision that passes its integrity checks,
+   * read from the listing and that one revision's body alone (walking back
+   * past one that fails), for a caller that needs only its identity: the
+   * last-export lookup, which compares hashes. `number` is the revision's
+   * place in the listing — the Revisions table's number unless an earlier
+   * revision fails its checks, which this read does not open. Null when the
+   * document has no stored revision. Throws on a storage failure.
+   */
+  public async readNewestRevisionRef(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string
+  ): Promise<{ id: string; number: number; contentSha256: string } | null> {
+    const listed = await this.listRevisions(req, project, type, documentId);
+    for (let index = listed.length - 1; index >= 0; index--) {
+      const revision = await this.loadRevision(req, listed[index]);
+      if (revision) {
+        return { id: revision.id, number: index + 1, contentSha256: revision.record.bundle.contentSha256 };
+      }
+    }
+    return null;
   }
 
   /**
@@ -499,6 +664,25 @@ export class MktgDocumentStoreService {
     return { id: buildMktgRevisionId(sequence, sha), key, record };
   }
 
+  /** A stored revision as the latest read serves it: its Markdown, the receipt rebuilt from its record, and its date. */
+  private latestResponse(spec: MktgArtifactSpec, project: string, revision: MktgStoredRevision): MktgArtifactStoredResponse {
+    const { bundle, source, createdAt } = revision.record;
+    // A Markdown revision has a pre-revision twin at the artifact key; a
+    // JSON revision is stored nowhere else, so its own key is the receipt's.
+    return {
+      documentMarkdown: bundle.markdown,
+      format: bundle.format ?? 'markdown',
+      receipt: {
+        s3_key: bundle.format === 'json' ? revision.key : buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
+        content_sha256: bundle.contentSha256,
+        project,
+        version: source.draftVersion,
+        intake_mode: source.intakeMode,
+      },
+      storedAt: createdAt,
+    };
+  }
+
   /** Summaries for the Revisions table, newest first, numbered by write order. */
   private summarize(revisions: MktgStoredRevision[]): MktgRevisionSummary[] {
     const numberById = new Map(revisions.map((revision, index) => [revision.id, index + 1]));
@@ -512,8 +696,10 @@ export class MktgDocumentStoreService {
           origin: record.origin,
           restoredFromNumber: record.restoredFromId ? (numberById.get(record.restoredFromId) ?? null) : null,
           intakeMode: this.intakeMode(record.source.intakeMode),
-          status: findMktgDocumentStatus(record.bundle.markdown),
+          // A JSON asset states no review label in its text.
+          status: record.bundle.format === 'json' ? '' : findMktgDocumentStatus(record.bundle.markdown),
           contentSha256: record.bundle.contentSha256,
+          format: this.format(record.bundle.format),
           commentCount: Array.isArray(record.comments) ? record.comments.length : 0,
           latest: index === revisions.length - 1,
         };
@@ -531,6 +717,7 @@ export class MktgDocumentStoreService {
       intakeMode: legacy.intakeMode,
       status: findMktgDocumentStatus(legacy.markdown),
       contentSha256: legacy.sha,
+      format: 'markdown',
       commentCount: 0,
       latest: true,
     };
@@ -597,6 +784,56 @@ export class MktgDocumentStoreService {
       };
     }
     return null;
+  }
+
+  /** A Markdown envelope as the revision writer takes it: the document as the content, the rest as the sidecar. */
+  private markdownSource(envelope: MktgArtifactEnvelope): MktgRevisionContentSource {
+    const { document_markdown: markdown, ...sidecar } = envelope as MktgArtifactEnvelope & Record<string, unknown>;
+    return { text: markdown, contentSha256: envelope.content_sha256, format: 'markdown', sidecar, version: envelope.version, intakeMode: envelope.intake.mode };
+  }
+
+  /**
+   * A structured envelope as the revision writer takes it: the content's
+   * JSON text (the bytes its sha was verified over) as the content, the rest
+   * of the envelope as the sidecar.
+   */
+  private jsonSource<T extends object>(envelope: MktgArtifactJsonEnvelope<T>): MktgRevisionContentSource {
+    const { content, ...sidecar } = envelope as MktgArtifactJsonEnvelope<T> & Record<string, unknown>;
+    return {
+      text: JSON.stringify(content),
+      contentSha256: envelope.content_sha256,
+      format: 'json',
+      sidecar,
+      version: envelope.version,
+      intakeMode: envelope.intake.mode,
+    };
+  }
+
+  /**
+   * The sidecar a consumer attaching the revision as JSON takes: for a
+   * Markdown revision the stored sidecar (the envelope's structured fields);
+   * for a JSON revision the envelope it was stored from — the sidecar with
+   * the content (the revision's JSON text) back under `content`, the shape
+   * the Brand Kit's framework reader unwraps. A JSON revision whose text
+   * does not parse to an object keeps its stored sidecar alone.
+   */
+  private envelopeSidecar(bundle: MktgRevisionBundle): Record<string, unknown> | null {
+    if (bundle.format !== 'json') {
+      return bundle.sidecar ?? null;
+    }
+    try {
+      const content: unknown = JSON.parse(bundle.markdown);
+      if (content !== null && typeof content === 'object' && !Array.isArray(content)) {
+        return { ...(bundle.sidecar ?? {}), content };
+      }
+    } catch {
+      // Not JSON: the stored sidecar alone, which the consumer's gate reads as no voice.
+    }
+    return bundle.sidecar ?? null;
+  }
+
+  private format(value: unknown): MktgRevisionFormat {
+    return value === 'json' ? 'json' : 'markdown';
   }
 
   private nextSequence(revisions: MktgStoredRevision[]): number {

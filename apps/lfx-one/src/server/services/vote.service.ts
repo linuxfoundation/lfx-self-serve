@@ -17,6 +17,7 @@ import {
   IndexedVote,
   IndexedVoteResponse,
   MyVoteResponse,
+  MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
@@ -25,10 +26,18 @@ import {
   Vote,
   VoteListResponse,
   VoteReminderRecipient,
+  VoteStatusCounts,
   VoteSummary,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { compareVotesByRecency, computeIsFoundation, isVoteClosingSoon, normalizePollStatus, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import {
+  compareVotesByRecency,
+  computeIsFoundation,
+  countVotesByStatus,
+  isVoteClosingSoon,
+  normalizePollStatus,
+  sortCommentResponsesByRecency,
+} from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -165,8 +174,8 @@ export class VoteService {
    * Client `page_size`/`page_token`/`order` never go upstream: `page_token` is the BFF's own opaque
    * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
    * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
-   * drained set upstream, except `filters=status:active`: that predicate runs locally with the
-   * same status normalization as the summary. Ordering holds across pagination and filters.
+   * drained set upstream, except a recognized `status:<PollStatus>` filter: that predicate runs
+   * locally with the same status normalization as the summary and the status-tab counts (#3687). Ordering holds across pagination and filters.
    * Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
    * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
    * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
@@ -235,6 +244,17 @@ export class VoteService {
   }
 
   /**
+   * Per-status totals for the votes table's status tabs (#3687) over the complete management scope,
+   * narrowed by the same `name` search and Group filter the list sends. One drain replaces a count
+   * request per tab, and bucketing with `countVotesByStatus` keeps each count equal to its tab's
+   * normalized list total. No project enrichment: only `status` is read.
+   */
+  public async getVoteStatusCounts(req: Request, parent: string, name?: string, group?: string): Promise<VoteStatusCounts> {
+    const votes = await this.fetchScopedIndexedVotes(req, { parent, ...(name && { name }), ...(group && { filters: [`committee_name:${group}`] }) });
+    return countVotesByStatus(votes);
+  }
+
+  /**
    * Fetches a single upstream cursor page of votes, forwarding the caller's params verbatim — the
    * pre-GH-1558 `getVotes` behavior, kept for internal consumers only (not mounted on any route).
    * Committee-activity's vote leg needs the query-service's `sort=updated_desc` truncation order and
@@ -285,8 +305,9 @@ export class VoteService {
       query_params: Object.keys(query),
     });
 
-    // The summary accepts legacy mixed-case active statuses; an exact upstream count would miss them.
-    if (this.hasActiveStatusFilter(query)) {
+    // Status filters accept legacy mixed-case statuses (as the summary and status-tab counts do);
+    // an exact upstream count would miss them.
+    if (this.getRecognizedStatusFilter(query)) {
       // Count is scope-wide even if a caller supplies list pagination parameters.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { page_size: _pageSize, page_token: _pageToken, ...scope } = query;
@@ -655,9 +676,14 @@ export class VoteService {
    * Fetches votes the current user has been invited to.
    * Queries vote_response records by user_email and username using filters_or.
    */
-  public async getMyVotes(req: Request): Promise<Vote[]> {
-    // Single identity-resolved vote_response row source (GH #2985) — same query Pending Actions reads.
-    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy);
+  public async getMyVotes(req: Request): Promise<MyVotesResponse> {
+    let complete = true;
+    // Keep usable rows after a later-page failure, but never present them as exact counts.
+    const responses = await fetchCurrentUserVoteResponses(req, this.microserviceProxy, {
+      onPartial: () => {
+        complete = false;
+      },
+    });
 
     // Parent-vote keying mirrors fetchPendingVotes via the shared getParentVoteId rule (GH #2985):
     // `vote_uid` with its v1 alias `poll_id` as fallback. Without the fallback a poll_id-only
@@ -672,7 +698,7 @@ export class VoteService {
     const voteUids = [...new Set(responses.map(getParentVoteId).filter((uid): uid is string => !!uid))];
 
     if (voteUids.length === 0) {
-      return [];
+      return { votes: [], complete };
     }
 
     logger.debug(req, 'get_my_votes', 'Found user vote responses', {
@@ -686,13 +712,20 @@ export class VoteService {
       voteUids.map(async (uid): Promise<Vote | null> => {
         try {
           const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(uid)}`, 'GET');
-          if (!vote) return vote;
+          if (!vote) {
+            complete = false;
+            return null;
+          }
           const decorated: Vote = {
             ...vote,
             response_status: respondedVoteUids.has(uid) ? VoteResponseStatus.RESPONDED : VoteResponseStatus.AWAITING_RESPONSE,
           };
           return decorated;
         } catch (error) {
+          // Stale invitations for deleted or inaccessible votes do not belong to the readable feed.
+          // Only explicit upstream 403/404 responses establish that; other failures still hide exact counts.
+          const notVisible = error instanceof MicroserviceError && (error.statusCode === 403 || error.statusCode === 404);
+          if (!notVisible) complete = false;
           logger.warning(req, 'get_my_votes', 'Failed to fetch vote details, skipping', {
             vote_uid: uid,
             error: error instanceof Error ? error.message : 'Unknown error',
@@ -706,7 +739,7 @@ export class VoteService {
     // comparator the project/committee list reads apply, so Me lens agrees with every other surface.
     const sorted = votes.filter((v): v is Vote => v !== null).sort(compareVotesByRecency);
 
-    return this.enrichWithProjectMetadata(req, sorted);
+    return { votes: await this.enrichWithProjectMetadata(req, sorted), complete };
   }
 
   /** POST /vote_responses requires the pre-allocated invitation row's UID — a fresh UUID returns 404 upstream. */
@@ -882,21 +915,30 @@ export class VoteService {
     });
   }
 
-  private hasActiveStatusFilter(query: Record<string, unknown>): boolean {
-    const filters = query['filters'];
-    const active = `status:${PollStatus.ACTIVE}`;
-    return filters === active || (Array.isArray(filters) && filters.includes(active));
+  /** The first `status:<x>` filter clause whose value normalizes to a known `PollStatus`, or null. */
+  private getRecognizedStatusFilter(query: Record<string, unknown>): PollStatus | null {
+    const rawFilters = query['filters'];
+    const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
+    for (const clause of filters) {
+      const status = this.parseStatusFilterClause(clause);
+      if (status) return status;
+    }
+    return null;
+  }
+
+  private parseStatusFilterClause(clause: unknown): PollStatus | undefined {
+    return typeof clause === 'string' && clause.startsWith('status:') ? normalizePollStatus(clause.slice('status:'.length)) : undefined;
   }
 
   /** Offset pages and totals must reject incomplete scans rather than silently undercount. */
   private async fetchScopedIndexedVotes(req: Request, upstreamParams: Record<string, unknown>): Promise<Vote[]> {
-    const activeOnly = this.hasActiveStatusFilter(upstreamParams);
+    const status = this.getRecognizedStatusFilter(upstreamParams);
     const params = { ...upstreamParams };
-    if (activeOnly) {
-      // Preserve every other upstream filter, but do not discard mixed-case active rows before normalization.
+    if (status) {
+      // Preserve every other upstream filter, but do not discard mixed-case rows before normalization.
       const rawFilters = params['filters'];
       const filters = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
-      const remaining = filters.filter((clause) => clause !== `status:${PollStatus.ACTIVE}`);
+      const remaining = filters.filter((clause) => this.parseStatusFilterClause(clause) !== status);
       if (remaining.length) params['filters'] = remaining;
       else delete params['filters'];
     }
@@ -912,7 +954,7 @@ export class VoteService {
       { failOnPartial: true }
     );
     const votes = drained.map((vote) => this.normalizeIndexedVote(req, vote));
-    return activeOnly ? votes.filter((vote) => normalizePollStatus(vote.status) === PollStatus.ACTIVE) : votes;
+    return status ? votes.filter((vote) => normalizePollStatus(vote.status) === status) : votes;
   }
 
   /**

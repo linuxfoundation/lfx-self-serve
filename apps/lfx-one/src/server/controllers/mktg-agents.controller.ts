@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  BOILERPLATES_FRAMEWORK_ANSWER_KEY,
+  BRAND_KIT_FRAMEWORK_ANSWER_KEY,
   FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
@@ -11,8 +13,17 @@ import {
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
 import {
+  BoilerplatesAnswersRequest,
+  BoilerplatesAnswersResponse,
+  BoilerplatesGenerateRequest,
+  BoilerplatesGenerateResponse,
+  BoilerplatesResultRequest,
+  BoilerplatesResultResponse,
+  BrandKitAnswersRequest,
+  BrandKitAnswersResponse,
   BrandKitGenerateRequest,
   BrandKitGenerateResponse,
+  BrandKitLogoFile,
   BrandKitResultRequest,
   BrandKitResultResponse,
   BrandKitStoredResponse,
@@ -37,7 +48,11 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   countFoundationMessageWords,
+  validateBoilerplatesAnswers,
+  validateBoilerplatesIntakeAnswers,
+  validateBrandKitAnswers,
   validateBrandKitIntakeAnswers,
+  validateBrandKitLogoFiles,
   validateFoundationMessageAnswers,
   validateFoundationMessageDocuments,
   validateFoundationMessageIntakeAnswers,
@@ -46,6 +61,7 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { BoilerplatesService } from '../services/boilerplates.service';
 import { BrandKitService } from '../services/brand-kit.service';
 import { FoundationMessageService } from '../services/foundation-message.service';
 import { GuildService } from '../services/guild.service';
@@ -58,6 +74,7 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 
 export class MktgAgentsController {
   private readonly guildService = new GuildService();
+  private readonly boilerplatesService = new BoilerplatesService();
   private readonly brandKitService = new BrandKitService();
   private readonly foundationMessageService = new FoundationMessageService();
   private readonly icpService = new IcpService();
@@ -223,23 +240,46 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/brand-kit/generate
-   * Starts a one-shot form-mode Brand Kit generation from the one-page
-   * intake form (all 7 answers, dec-brand-kit-intake-form). Returns the
-   * session id + creator-binding owner token for polling the result.
+   * Starts a Brand Kit draft from the intake form: the project name, the
+   * website and the brand page as URLs (the agent reads them itself), the
+   * notes, the project's messaging framework (required — the latest
+   * stored revision's JSON, serialized, at most
+   * `BRAND_KIT_MAX_FRAMEWORK_CHARS` characters, carrying the umbrella message
+   * or brand line the Voice chapter comes from), the LFX project uid, and
+   * the uploaded logo files — an SVG as its text, a PNG or a ZIP as its
+   * base64 bytes, a link as the URL the agent fetches. Every submission is a
+   * fresh draft — the agent's draft form
+   * carries no prior version or feedback, so a body with either is refused
+   * rather than silently ignored. Returns the session id + creator-binding
+   * owner token for polling the result.
    */
   public async generateBrandKit(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { answers } = (req.body ?? {}) as Partial<BrandKitGenerateRequest>;
+    const { answers, logoFiles, feedback, priorVersion, project } = (req.body ?? {}) as Partial<BrandKitGenerateRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'brand_kit_generate', service: 'mktg_agents_controller', path: req.path }));
 
     const answersResult = validateBrandKitIntakeAnswers(answers);
     if (!answersResult.valid) {
-      next(
-        ServiceValidationError.forField('answers', answersResult.errors.join('; '), {
-          operation: 'brand_kit_generate',
-          service: 'mktg_agents_controller',
-          path: req.path,
-        })
-      );
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+    const logoFilesResult = validateBrandKitLogoFiles(logoFiles);
+    if (!logoFilesResult.valid) {
+      fail('logoFiles', logoFilesResult.errors.join('; '));
+      return;
+    }
+    if (feedback !== undefined || priorVersion !== undefined) {
+      fail('feedback', 'The Brand Kit is revised by commenting on it in Documents; a generate takes no feedback or prior version.');
+      return;
+    }
+    // The project uid goes to the agent as data (its LFX lookups), never as
+    // the storage partition — that is the result endpoint's, resolved
+    // server-side. Shape-gated all the same so a crafted value never rides
+    // the form.
+    const trimmedProject = typeof project === 'string' ? project.trim() : '';
+    if (project !== undefined && (typeof project !== 'string' || !trimmedProject || !MKTG_ARTIFACT_PARTITION_REGEX.test(trimmedProject))) {
+      fail('project', 'project must be a single-segment project uid when provided');
       return;
     }
 
@@ -257,10 +297,64 @@ export class MktgAgentsController {
 
     // Routing handle comes from the shared catalog only — never the client.
     const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'brand-kit');
-    if (!agent || agent.status !== 'active') {
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The Brand Kit agent is not available.');
+      return;
+    }
+
+    // Safe: validateBrandKitLogoFiles guaranteed the shape. Names are trimmed; contents pass through verbatim.
+    const files: BrandKitLogoFile[] = ((logoFiles ?? []) as BrandKitLogoFile[]).map((file) => ({ ...file, name: file.name.trim() }));
+    // The messaging framework rides the answers (validated above as a JSON object): its size is worth a log line, never its contents.
+    const frameworkChars = ((answers as Record<string, string>)[BRAND_KIT_FRAMEWORK_ANSWER_KEY] ?? '').length;
+    const startTime = logger.startOperation(req, 'brand_kit_generate', { logo_files: files.length, framework_chars: frameworkChars });
+
+    try {
+      // Safe: validateBrandKitIntakeAnswers guaranteed a string record. Blank
+      // optionals are dropped so the renderer takes its "none" branch.
+      const trimmedAnswers = Object.fromEntries(
+        Object.entries(answers as Record<string, string>)
+          .map(([key, value]) => [key, value.trim()])
+          .filter(([, value]) => value !== '')
+      );
+      const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, files, trimmedProject || undefined, agent.guildAgentHandle);
+      logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
+      const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/brand-kit/answers
+   * Sends the requester's answers to the session's questions turn — one per
+   * question asked, each accepted, edited or written from scratch; no skip,
+   * no TBD, no empty — as the answers turn on the SAME session. Only the
+   * session's creator may answer (owner-token proof, like every session
+   * write). The run page polls the result again afterwards.
+   */
+  public async brandKitAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, answers } = (req.body ?? {}) as Partial<BrandKitAnswersRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'brand_kit_answers', service: 'mktg_agents_controller', path: req.path }));
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      fail('sessionId', 'sessionId is required and must be a non-empty string');
+      return;
+    }
+    const answersResult = validateBrandKitAnswers(answers);
+    if (!answersResult.valid) {
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
       next(
-        ServiceValidationError.forField('agentId', 'The Brand Kit agent is not available.', {
-          operation: 'brand_kit_generate',
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'brand_kit_answers',
           service: 'mktg_agents_controller',
           path: req.path,
         })
@@ -268,14 +362,33 @@ export class MktgAgentsController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'brand_kit_generate', {});
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to post to this session.', {
+          operation: 'brand_kit_answers',
+          service: 'mktg_agents_controller',
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'brand-kit');
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The Brand Kit agent is not available.');
+      return;
+    }
+
+    // Safe: validateBrandKitAnswers guaranteed the shape.
+    const validAnswers = (answers as MktgRunAnswer[]).map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+    const startTime = logger.startOperation(req, 'brand_kit_answers', { answers: validAnswers.length });
 
     try {
-      // Safe: validateBrandKitIntakeAnswers guaranteed a complete string record.
-      const trimmedAnswers = Object.fromEntries(Object.entries(answers as Record<string, string>).map(([key, value]) => [key, value.trim()]));
-      const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, agent.guildAgentHandle);
-      logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
-      const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      await this.brandKitService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      logger.success(req, 'brand_kit_answers', startTime, { answers: validAnswers.length });
+      const response: BrandKitAnswersResponse = { success: true };
       res.json(response);
     } catch (error) {
       next(error);
@@ -354,10 +467,15 @@ export class MktgAgentsController {
   }
 
   /**
-   * GET /api/mktg-agents/brand-kit/stored?project=<uid>
+   * GET /api/mktg-agents/brand-kit/stored?project=<uid>[&sidecar=true]
    * Returns the project's LATEST server-persisted Brand Kit document with its
    * receipt metadata (the dec-agent-dependency-gating read path), or 404 when
    * nothing is stored for the project.
+   * With `sidecar=true`, the same latest revision with its envelope JSON (the
+   * stored sidecar: the kit's tokens, chapters and logo files) and date, as
+   * the Messaging Framework's read offers — what another asset's print
+   * (Download PDF) sets itself in: the kit's colours, typeface and logo; 404
+   * when the document has no revision.
    *
    * AUTHZ — this is the read boundary for the persisted partition: the caller
    * must hold writer entitlement on the requested project (the
@@ -385,7 +503,8 @@ export class MktgAgentsController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'brand_kit_stored', {});
+    const withSidecar = req.query['sidecar'] === 'true';
+    const startTime = logger.startOperation(req, 'brand_kit_stored', { with_sidecar: withSidecar });
 
     try {
       // Entitlement gate: resolve the project by uid WITH the caller's access
@@ -403,7 +522,7 @@ export class MktgAgentsController {
         return;
       }
 
-      const stored: BrandKitStoredResponse | null = await this.brandKitService.getStoredBrandKit(req, project.uid);
+      const stored: BrandKitStoredResponse | null = await this.brandKitService.getStoredBrandKit(req, project.uid, withSidecar);
       if (!stored) {
         next(
           new ResourceNotFoundError('Stored Brand Kit', project.uid, {
@@ -424,14 +543,19 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/generate
-   * Starts a one-shot Messaging Document generation from the intake form: the
-   * project name, the four sources and any other links as URLs (the agent
-   * fetches and researches them itself), the LFX project uid, and the
-   * optional existing documents — an uploaded file as the text the BFF read
-   * from it, a link as its URL. Every submission is a fresh generate — the
-   * agent's generate form carries no prior version or feedback, so a body
-   * with either is refused rather than silently ignored. Returns the session
-   * id + creator-binding owner token for polling the result.
+   * Starts a Messaging Framework draft from the intake form: the project name
+   * and description, the website, the repository and the page fields as URLs
+   * (the agent fetches and researches them itself), the LFX project uid, and
+   * the optional documents — an uploaded file as the text the BFF read from
+   * it, a link as its URL, each tagged with what it is. The website is the
+   * one required source — a real http(s) page, never blank or "none", as
+   * `validateFoundationMessageIntakeAnswers` holds it — and every other
+   * source is optional: a link or a document alone is refused with a 400,
+   * matching the guided form's own rule. Every submission is a fresh
+   * draft — a redraft from comments and a check of a hand-edited version are
+   * later work, so a body with feedback or a prior version is refused rather
+   * than silently ignored. Returns the session id + creator-binding owner
+   * token for polling the result.
    */
   public async generateFoundationMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
@@ -450,7 +574,7 @@ export class MktgAgentsController {
       return;
     }
     if (feedback !== undefined || priorVersion !== undefined) {
-      fail('feedback', 'The Messaging Document is revised by commenting on it in Documents; a generate takes no feedback or prior version.');
+      fail('feedback', 'A generate is always a fresh draft of the Messaging Framework; it takes no feedback or prior version.');
       return;
     }
     // The project uid goes to the agent as data (its LFX lookups), never as
@@ -478,7 +602,7 @@ export class MktgAgentsController {
     // Routing handle comes from the shared catalog only — never the client.
     const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
     if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
-      fail('agentId', 'The Messaging Document agent is not available.');
+      fail('agentId', 'The Messaging Framework agent is not available.');
       return;
     }
 
@@ -560,7 +684,7 @@ export class MktgAgentsController {
     // Routing handle comes from the shared catalog only — never the client.
     const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
     if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
-      fail('agentId', 'The Messaging Document agent is not available.');
+      fail('agentId', 'The Messaging Framework agent is not available.');
       return;
     }
 
@@ -580,8 +704,8 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/documents/file
-   * Reads one uploaded existing document (PDF, Word .docx, Markdown or text;
-   * raw `application/octet-stream` body, at most 20 MB) to text and returns
+   * Reads one uploaded document (PDF, Word .docx, PowerPoint .pptx, Markdown
+   * or text; raw `application/octet-stream` body, at most 20 MB) to text and returns
    * it, so the form can show what was read and submit the text with the run.
    * The file name travels URI-encoded in the `X-File-Name` header — never the
    * URL, which the request logger writes — and is logged by extension only.
@@ -625,9 +749,9 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/result
-   * Polls a generation session for the validated Messaging Document (and its
-   * word-count-locked copy primitives). Only the session's creator may
-   * read the result (owner-token proof).
+   * Polls a generation session for the validated Messaging Framework — the
+   * run's asset, or the agent's questions while it waits for answers. Only
+   * the session's creator may read the result (owner-token proof).
    *
    * `project` (the run's LFX project uid) scopes the persistence write that
    * rides a ready result: the service resolves it server-side and requires
@@ -689,6 +813,232 @@ export class MktgAgentsController {
     try {
       const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/boilerplates/generate
+   * Starts a Boilerplates draft from the intake form: the project name, the
+   * website as a URL (the agent reads it, and its host is the domain the
+   * 100-word version ends on), the notes, the project's messaging framework
+   * (required — the latest stored revision's JSON, serialized, at most
+   * `BOILERPLATES_MAX_FRAMEWORK_CHARS` characters, carrying the framework's
+   * content, which the boilerplates' positioning and proof come from) and the
+   * LFX project uid. Every submission is a fresh draft — comments per length
+   * (a redraft) and a check of a hand edit are later work, so a body with
+   * feedback, a prior version, documents or logo files is refused rather
+   * than silently ignored. Returns the session id + creator-binding owner
+   * token for polling the result.
+   */
+  public async generateBoilerplates(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { answers, documents, logoFiles, feedback, priorVersion, project } = (req.body ?? {}) as Partial<BoilerplatesGenerateRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'boilerplates_generate', service: 'mktg_agents_controller', path: req.path }));
+
+    const answersResult = validateBoilerplatesIntakeAnswers(answers);
+    if (!answersResult.valid) {
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+    if (feedback !== undefined || priorVersion !== undefined) {
+      fail('feedback', 'A generate is always a fresh draft of the Boilerplates; it takes no feedback or prior version.');
+      return;
+    }
+    if (documents !== undefined || logoFiles !== undefined) {
+      fail('documents', 'The Boilerplates read their sources themselves; a generate takes no documents or logo files.');
+      return;
+    }
+    // The project uid goes to the agent as data (its LFX lookups), never as
+    // the storage partition — that is the result endpoint's, resolved
+    // server-side. Shape-gated all the same so a crafted value never rides
+    // the form.
+    const trimmedProject = typeof project === 'string' ? project.trim() : '';
+    if (project !== undefined && (typeof project !== 'string' || !trimmedProject || !MKTG_ARTIFACT_PARTITION_REGEX.test(trimmedProject))) {
+      fail('project', 'project must be a single-segment project uid when provided');
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'boilerplates_generate',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'boilerplates');
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The Boilerplates agent is not available.');
+      return;
+    }
+
+    // The messaging framework rides the answers (validated above as a framework's JSON): its size is worth a log line, never its contents.
+    const frameworkChars = ((answers as Record<string, string>)[BOILERPLATES_FRAMEWORK_ANSWER_KEY] ?? '').length;
+    const startTime = logger.startOperation(req, 'boilerplates_generate', { framework_chars: frameworkChars });
+
+    try {
+      // Safe: validateBoilerplatesIntakeAnswers guaranteed a string record.
+      // Blank optionals are dropped so the renderer takes its "none" branch.
+      const trimmedAnswers = Object.fromEntries(
+        Object.entries(answers as Record<string, string>)
+          .map(([key, value]) => [key, value.trim()])
+          .filter(([, value]) => value !== '')
+      );
+      const sessionId = await this.boilerplatesService.startGeneration(req, trimmedAnswers, trimmedProject || undefined, agent.guildAgentHandle);
+      logger.success(req, 'boilerplates_generate', startTime, { session_created: true });
+      const response: BoilerplatesGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/boilerplates/answers
+   * Sends the requester's answers to the session's questions turn — one per
+   * question, each accepted, edited or written from scratch; no skip, no TBD,
+   * no empty — as the answers turn on the SAME session. Only the session's
+   * creator may answer (owner-token proof, like every session write). The
+   * run page polls the result again afterwards.
+   */
+  public async boilerplatesAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, answers } = (req.body ?? {}) as Partial<BoilerplatesAnswersRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'boilerplates_answers', service: 'mktg_agents_controller', path: req.path }));
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      fail('sessionId', 'sessionId is required and must be a non-empty string');
+      return;
+    }
+    const answersResult = validateBoilerplatesAnswers(answers);
+    if (!answersResult.valid) {
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'boilerplates_answers',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to post to this session.', {
+          operation: 'boilerplates_answers',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'boilerplates');
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The Boilerplates agent is not available.');
+      return;
+    }
+
+    // Safe: validateBoilerplatesAnswers guaranteed the shape.
+    const validAnswers = (answers as MktgRunAnswer[]).map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+    const startTime = logger.startOperation(req, 'boilerplates_answers', { answers: validAnswers.length });
+
+    try {
+      await this.boilerplatesService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      logger.success(req, 'boilerplates_answers', startTime, { answers: validAnswers.length });
+      const response: BoilerplatesAnswersResponse = { success: true };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/boilerplates/result
+   * Polls a generation session for the validated Boilerplates — the run's
+   * asset, the agent's questions while it waits for answers, or its one
+   * plain reply when it ended the run without the boilerplates. Only the
+   * session's creator may read the result (owner-token proof).
+   *
+   * `project` (the run's LFX project uid) scopes the persistence write that
+   * rides a ready result: the document store resolves it server-side and
+   * requires the caller's writer grant before anything enters that
+   * project's storage partition. It is passed through untrusted — the
+   * partition is the RESOLVED project's uid, never this raw value.
+   */
+  public async boilerplatesResult(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<BoilerplatesResultRequest>;
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      next(
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
+          operation: 'boilerplates_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'boilerplates_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'boilerplates_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate the run scope like every other body field; an absent one means
+    // "no project to persist into", never "persist wherever the agent said".
+    // Its SHAPE gate lives with the resolution itself in the shared
+    // MktgArtifactService, so it degrades like every other persistence
+    // refusal: the caller still gets the boilerplates.
+    const validProjectUid = typeof project === 'string' && project.trim() ? project.trim() : undefined;
+
+    const startTime = logger.startOperation(req, 'boilerplates_result', {});
+
+    try {
+      const result: BoilerplatesResultResponse = await this.boilerplatesService.getResult(req, validSessionId, validProjectUid);
+      logger.success(req, 'boilerplates_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
       next(error);
@@ -878,12 +1228,18 @@ export class MktgAgentsController {
   }
 
   /**
-   * GET /api/mktg-agents/foundation-message/stored?project=<uid>
-   * Returns the project's LATEST stored Messaging Document (the latest
-   * revision of its foundation-message document) with its receipt metadata
-   * (the dec-agent-dependency-gating read path), or 404 when nothing is stored
-   * for the project. This is what lets a sibling agent — or the same user in a
-   * different browser — reach a Messaging Document it did not generate.
+   * GET /api/mktg-agents/foundation-message/stored?project=<uid>[&sidecar=true]
+   * Returns the project's LATEST stored Messaging Framework (the latest
+   * revision of its foundation-message document, as the JSON text of its
+   * content) with its receipt metadata (the dec-agent-dependency-gating read
+   * path), or 404 when nothing is stored for the project. This is what lets
+   * a sibling agent — or the same user in a different browser — reach a
+   * framework it did not generate.
+   * With `sidecar=true`, the same latest revision with its envelope JSON (the
+   * stored sidecar, the framework back under `content`) and date (the Brand
+   * Kit's messaging framework — the latest regardless of its review status,
+   * since LFX One has no Approve action yet); 404 when the document has no
+   * revision.
    *
    * AUTHZ — the same read boundary as `storedBrandKit`, deliberately
    * identical: the caller must hold writer entitlement on the requested
@@ -911,7 +1267,8 @@ export class MktgAgentsController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'foundation_message_stored', {});
+    const withSidecar = req.query['sidecar'] === 'true';
+    const startTime = logger.startOperation(req, 'foundation_message_stored', { with_sidecar: withSidecar });
 
     try {
       // Entitlement gate: resolve the project by uid WITH the caller's access
@@ -920,7 +1277,7 @@ export class MktgAgentsController {
       const project = await this.projectService.getProjectById(req, projectUid, true);
       if (!project.writer) {
         next(
-          new AuthorizationError('You do not have permission to read this project’s Messaging Document.', {
+          new AuthorizationError('You do not have permission to read this project’s Messaging Framework.', {
             operation: 'foundation_message_stored',
             service: 'mktg_agents_controller',
             path: req.path,
@@ -929,10 +1286,10 @@ export class MktgAgentsController {
         return;
       }
 
-      const stored: FoundationMessageStoredResponse | null = await this.foundationMessageService.getStoredFoundationMessage(req, project.uid);
+      const stored: FoundationMessageStoredResponse | null = await this.foundationMessageService.getStoredFoundationMessage(req, project.uid, withSidecar);
       if (!stored) {
         next(
-          new ResourceNotFoundError('Stored Messaging Document', project.uid, {
+          new ResourceNotFoundError('Stored Messaging Framework', project.uid, {
             operation: 'foundation_message_stored',
             service: 'mktg_agents_controller',
             path: req.path,

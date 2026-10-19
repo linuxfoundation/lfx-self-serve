@@ -198,6 +198,14 @@ describe('GuildService.createSession — explicit agent_id routing', () => {
     expect(body['agent_input']).toEqual({ type: 'text', text: '@foundation-message hello there' });
   });
 
+  it('puts the @handle mention on a line of its own when asked, so a coded agent finds its intake header line intact', async () => {
+    await service.createSession(req, { message: 'BATCH INTAKE SUBMISSION (Slides export)\nPROJECT NAME: X', handle: 'slides-export', mentionOnOwnLine: true });
+
+    const body = sentBody();
+    expect(body['agent_id']).toBe('owner~slides-export');
+    expect(body['agent_input']).toEqual({ type: 'text', text: '@slides-export\nBATCH INTAKE SUBMISSION (Slides export)\nPROJECT NAME: X' });
+  });
+
   it('drops the agent_id field (only) when GUILD_EXPLICIT_AGENT_ID=false', async () => {
     vi.stubEnv('GUILD_EXPLICIT_AGENT_ID', 'false');
 

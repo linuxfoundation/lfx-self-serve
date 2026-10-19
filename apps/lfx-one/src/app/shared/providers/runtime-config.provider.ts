@@ -19,6 +19,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   gwSupabaseAnonKey: '',
   gwEmbedUrl: '',
   gwHostSession: false,
+  gwEmbedStylesheetKey: '',
 };
 
 /**

@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest';
 import { CAMPAIGN_MONITOR_ACT_PLATFORMS, isValidCampaignRefId } from './campaign-optimize.constants';
 
 describe('CAMPAIGN_MONITOR_ACT_PLATFORMS', () => {
-  it('offers row actions on LinkedIn, Reddit, Meta and Microsoft Ads only', () => {
-    expect([...CAMPAIGN_MONITOR_ACT_PLATFORMS].sort()).toEqual(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']);
+  it('offers row actions on LinkedIn, Reddit, Meta, Microsoft Ads and X only', () => {
+    expect([...CAMPAIGN_MONITOR_ACT_PLATFORMS].sort()).toEqual(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads']);
   });
 
-  it('does not offer them on X, whose toggle and budget levers are not offered yet', () => {
-    expect(CAMPAIGN_MONITOR_ACT_PLATFORMS.has('twitter-ads' as never)).toBe(false);
+  it('does not offer them on Google Ads, which is not an act platform', () => {
+    expect(CAMPAIGN_MONITOR_ACT_PLATFORMS.has('google-ads' as never)).toBe(false);
   });
 });
 

@@ -4,7 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ERROR_CODES, MAX_PLAIN_TEXT_BODY_LENGTH } from '@lfx-one/shared/constants';
 import { firstValueFrom, Observable, throwError } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   committeeJoinErrorMessage,
@@ -14,6 +14,7 @@ import {
   isBffValidationError,
   isTransientHttpError,
   readBlobErrorCode,
+  retryPropagationLag,
   retryTransientHttpError,
   serverAuthoredMessage,
 } from './http-error.utils';
@@ -394,6 +395,98 @@ describe('retryTransientHttpError', () => {
     const boom = new Error('boom');
 
     await expect(firstValueFrom(throwError(() => boom).pipe(retryTransientHttpError(2)))).rejects.toBe(boom);
+  });
+});
+
+// #501: a meeting just created by this user can 403/404 for a few seconds while the ITX index /
+// FGA organizer tuple it reads from catches up with the write — MeetingService.getMeetingDetail
+// (shared by the edit-page load and the writerGuard probe that runs before it) retries exactly
+// that case before treating it as a genuine, final denial.
+describe('retryPropagationLag', () => {
+  // Fake timers: PROPAGATION_LAG_RETRY_DELAYS_MS schedules real 1s/2s delays, which would
+  // otherwise add ~9s of real wall-clock wait across this suite and risk Vitest's 5s default
+  // per-test timeout.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function countingSource(error: unknown): CountingSource {
+    let attempts = 0;
+    return {
+      attempts: () => attempts,
+      run: () =>
+        new Observable<never>((subscriber) => {
+          attempts += 1;
+          subscriber.error(error);
+        }),
+    };
+  }
+
+  /** Errors with `status` for `failuresBeforeSuccess` subscriptions, then emits `value`. */
+  function flakySource(status: number, failuresBeforeSuccess: number, value: string) {
+    let attempts = 0;
+    return {
+      attempts: () => attempts,
+      run: () =>
+        new Observable<string>((subscriber) => {
+          attempts += 1;
+          if (attempts <= failuresBeforeSuccess) {
+            subscriber.error(httpError(status));
+            return;
+          }
+          subscriber.next(value);
+          subscriber.complete();
+        }),
+    };
+  }
+
+  it('re-subscribes a 403 with backoff, then gives up once the schedule is exhausted', async () => {
+    const source = countingSource(httpError(403));
+
+    // `.rejects` attaches its handler synchronously, before the timers below resolve the
+    // rejection — asserting on a separately-awaited promise would otherwise let the rejection
+    // go briefly unhandled and fail the run.
+    const assertion = expect(firstValueFrom(source.run().pipe(retryPropagationLag()))).rejects.toBeInstanceOf(HttpErrorResponse);
+    await vi.advanceTimersByTimeAsync(1000 + 2000);
+    await assertion;
+
+    // PROPAGATION_LAG_RETRY_DELAYS_MS has 2 entries, so 1 initial attempt + 2 retries = 3.
+    expect(source.attempts()).toBe(3);
+  });
+
+  it('re-subscribes a 404 with backoff, then gives up once the schedule is exhausted', async () => {
+    const source = countingSource(httpError(404));
+
+    const assertion = expect(firstValueFrom(source.run().pipe(retryPropagationLag()))).rejects.toBeInstanceOf(HttpErrorResponse);
+    await vi.advanceTimersByTimeAsync(1000 + 2000);
+    await assertion;
+    expect(source.attempts()).toBe(3);
+  });
+
+  it('succeeds on a later attempt without ever surfacing the earlier 403/404', async () => {
+    const source = flakySource(403, 1, 'the-meeting');
+
+    const result = firstValueFrom(source.run().pipe(retryPropagationLag()));
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toBe('the-meeting');
+    expect(source.attempts()).toBe(2);
+  });
+
+  it('re-throws a non-propagation-lag failure without a second attempt', async () => {
+    const source = countingSource(httpError(500));
+
+    await expect(firstValueFrom(source.run().pipe(retryPropagationLag()))).rejects.toBeInstanceOf(HttpErrorResponse);
+    expect(source.attempts()).toBe(1);
+  });
+
+  it('passes a non-HTTP error straight through', async () => {
+    const boom = new Error('boom');
+
+    await expect(firstValueFrom(throwError(() => boom).pipe(retryPropagationLag()))).rejects.toBe(boom);
   });
 });
 

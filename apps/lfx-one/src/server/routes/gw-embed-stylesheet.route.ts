@@ -8,6 +8,8 @@ const router = Router();
 const controller = new GwEmbedStylesheetController();
 
 // One hashed file name per request; the controller rejects anything that does not look like one.
+// The keyed form is content-addressed and served as immutable; see the controller.
 router.get('/:name', (req, res, next) => controller.serve(req, res, next));
+router.get('/:key/:name', (req, res, next) => controller.serve(req, res, next));
 
 export default router;

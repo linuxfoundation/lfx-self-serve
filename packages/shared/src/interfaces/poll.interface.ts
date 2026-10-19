@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '../enums/poll.enum';
+import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
 import type { CommitteeReference } from './committee.interface';
 
@@ -11,6 +11,19 @@ export interface VoteSummary {
   closing_soon: number;
   /** RFC3339 snapshot used to evaluate the closing window. */
   as_of: string;
+}
+
+/**
+ * Per-status vote totals for the votes table's status tabs (#3687).
+ * @description Buckets use the normalized poll status. `all` counts every vote in the matching
+ * collection, including rows whose status is unrecognized after normalization, so it equals the
+ * All-tab list total; unrecognized rows fall into no per-status bucket.
+ */
+export interface VoteStatusCounts {
+  all: number;
+  active: number;
+  disabled: number;
+  ended: number;
 }
 
 /** Closing-filtered lists carry their authoritative pre-pagination count. */
@@ -254,12 +267,45 @@ export interface Vote {
   response_status?: VoteResponseStatus;
 }
 
+/** Personal feed retains usable votes even when enumeration or required detail reads are incomplete. */
+export interface MyVotesResponse {
+  votes: Vote[];
+  /** Only true when all invitation pages and referenced vote details loaded successfully. */
+  complete: boolean;
+}
+
+/** Legacy arrays have unknown completeness and must not be presented as exact totals. */
+export type MyVotesApiResponse = MyVotesResponse | Vote[];
+
 /** Optional personal-feed filter shared by the summary and client-side table. */
 export type MyVotesQuickFilter = 'closing-soon' | 'needs-vote';
+
+/**
+ * Participation summary for one votes-table row
+ * @description Derived from the row's indexed `num_response_received` / `total_voting_request_invitations`; counts are
+ * null when the state carries none, and `percent` is set only for `PROGRESS` (clamped to 0-100)
+ */
+export interface VoteRowParticipation {
+  state: VoteRowParticipationState;
+  /** Responses received (abstentions included), or null when not shown */
+  responses: number | null;
+  /** Invited electorate, or null when not shown */
+  invited: number | null;
+  /** Rounded response rate (0-100) for PROGRESS summaries; capped at 99 until responses reach the invited total. */
+  percent: number | null;
+  /** Visible summary text */
+  label: string;
+  /** Muted follow-up text (e.g. "Total unavailable"), or null */
+  secondaryLabel: string | null;
+  /** Screen-reader summary for an active PROGRESS bar, otherwise null. */
+  ariaLabel: string | null;
+}
 
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
 export interface VoteTableRow extends Vote {
   endedEarlyTooltip: string | null;
+  /** Participation summary for the Responses cell in management contexts. */
+  participation: VoteRowParticipation;
   /** Canonical edit-link commands derived from the row's own project tier (`/foundation/...` vs `/project/...`); flat `/votes/:uid/edit` fallback when the tier is unknown (lensRedirectGuard resolves it). */
   editCommands: string[];
   /** Per-row edit-link query params — `project` from the row's own project_slug, `committee_uid` from its committee. A table-level record can't express per-row projects (dashboard rows span projects). */

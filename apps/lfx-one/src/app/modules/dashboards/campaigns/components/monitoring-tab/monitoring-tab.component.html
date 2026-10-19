@@ -956,8 +956,8 @@
 
   <!-- An ad platform's KPI strip and campaign table (LinkedIn, Reddit, Meta, Microsoft Ads, X), from its
        precomputed AccountMonitorPanelView: "Couldn't read" rows are dashed, "Unknown" pacing and "Not
-       measured" conversions are grey. LinkedIn adds its creatives column; LinkedIn, Reddit, Meta and
-       Microsoft Ads (`actPlatform`) add the row actions, X does not. -->
+       measured" conversions are grey. LinkedIn adds its creatives column; every panel given an
+       `actPlatform` adds the row actions. -->
   <ng-template #accountPanel let-view let-panel="panel" let-note="note" let-actPlatform="actPlatform">
     @if (view.kpis; as kpis) {
       <!-- KPI Strip -->

@@ -90,9 +90,9 @@ export interface PersonaApiResponse extends PersonaDetections {
    */
   isMarketingAuditorRootGrant: boolean;
   /**
-   * True only when {@link isCampaignManager} is backed by the cascading ROOT `marketing_ops` grant.
-   * ROOT `global_marketing_ops` does not cascade, so it leaves this `false` even when it satisfied an
-   * unscoped {@link isCampaignManager}.
+   * Always `false`: this no longer reads the cascading ROOT `marketing_ops` grant it used to report,
+   * whose ROOT tuple is removed before this ships, and ROOT `global_marketing_ops` does not cascade.
+   * Kept so the frontend contract is unchanged.
    */
   isCampaignManagerRootGrant: boolean;
 }
@@ -117,8 +117,7 @@ export interface PersonaApiResponseCacheEntry {
   expiresAt: number;
 }
 
-/** The caller's ROOT `marketing_ops` and `global_marketing_ops` grants, read in one batched check. */
+/** The caller's ROOT `global_marketing_ops` grant. */
 export interface RootMarketingOpsGrants {
-  marketingOps: boolean;
   globalMarketingOps: boolean;
 }

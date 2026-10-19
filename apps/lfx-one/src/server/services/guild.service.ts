@@ -92,8 +92,13 @@ export class GuildService {
    * ride a typed payload, so `agent_id` is the ONLY routing and dropping it
    * would silently create an unrouted session. For the same reason a
    * structured input without a handle is rejected outright.
+   *
+   * `mentionOnOwnLine` puts the `@handle` prefix on a line of its own instead
+   * of before the message's first line: for a coded agent that parses its
+   * intake by an exact header line (the Slides exporter), a mention on that
+   * line would make it refuse the intake. Mention routing reads it the same.
    */
-  public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string }): Promise<string> {
+  public async createSession(req: Request, params: { message?: string; agentInput?: object; handle?: string; mentionOnOwnLine?: boolean }): Promise<string> {
     this.assertConfigured('guild_create_session');
 
     if (params.agentInput === undefined && params.message === undefined) {
@@ -112,7 +117,10 @@ export class GuildService {
       });
     }
 
-    const agentInput: object = params.agentInput ?? { type: 'text', text: this.applyRouting(params.message ?? '', params.handle) };
+    const agentInput: object = params.agentInput ?? {
+      type: 'text',
+      text: this.applyRouting(params.message ?? '', params.handle, params.mentionOnOwnLine ? '\n' : ' '),
+    };
     const path = `/api/workspaces/${encodeURIComponent(this.owner)}/${encodeURIComponent(this.workspace)}/sessions`;
 
     const body: Record<string, unknown> = {
@@ -305,14 +313,16 @@ export class GuildService {
    * Prepend the `@handle` routing prefix when targeting a specific agent.
    * Any client-supplied leading `@mention` is stripped first so routing is
    * driven only by the catalog handle, never by text the user typed.
+   * `separator` joins the mention to the message: a space, or a line break
+   * to keep it off the message's first line.
    */
-  private applyRouting(message: string, handle?: string): string {
+  private applyRouting(message: string, handle?: string, separator = ' '): string {
     const cleaned = message.replace(MENTION_PREFIX_RE, '').trim();
     if (!handle) {
       return cleaned;
     }
-    // Avoid a trailing space when the message was a mention only (cleaned empty).
-    return cleaned ? `@${handle} ${cleaned}` : `@${handle}`;
+    // Avoid a trailing separator when the message was a mention only (cleaned empty).
+    return cleaned ? `@${handle}${separator}${cleaned}` : `@${handle}`;
   }
 
   /**

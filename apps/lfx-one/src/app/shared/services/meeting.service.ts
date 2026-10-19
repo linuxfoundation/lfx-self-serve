@@ -11,6 +11,7 @@ import {
   MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
+  RECENTLY_CREATED_MEETING_WINDOW_MS,
 } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
@@ -58,9 +59,9 @@ import {
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
 import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
-import { catchError, concatMap, from, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
+import { catchError, concatMap, from, identity, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
 
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, retryPropagationLag } from '@shared/utils/http-error.utils';
 
 @Injectable({
   providedIn: 'root',
@@ -80,6 +81,11 @@ export class MeetingService {
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
   private readonly meetingDetailCache = new Map<string, { observable: Observable<Meeting>; cachedAt: number }>();
+  /**
+   * Meeting ids this client created within `RECENTLY_CREATED_MEETING_WINDOW_MS`, keyed to the
+   * create timestamp — see `getMeetingDetail` for why only these ids get `retryPropagationLag`.
+   */
+  private readonly recentlyCreatedMeetingIds = new Map<string, number>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -240,6 +246,16 @@ export class MeetingService {
    * the new `request$` rather than invalidating — callers already subscribed to the prior
    * `shareReplay(1)` observable continue to completion with the old payload, so racing
    * `skipCache` callers can still observe a stale result.
+   *
+   * `retryPropagationLag` sits closest to the source, ahead of the cache-eviction `tap` and the
+   * logging `catchError`, so a transient 403/404 right after a create (#501) is retried silently
+   * and only a terminal failure reaches those. Both the writerGuard's `meetings` probe and this
+   * page's edit-mode load go through this one method, so retrying here fixes the race for both.
+   *
+   * The retry only applies when `id` is in `recentlyCreatedMeetingIds` within
+   * `RECENTLY_CREATED_MEETING_WINDOW_MS` of `createMeeting` succeeding for it — every other read
+   * (an unrelated meeting, or this same id once the window has passed) fails on the first 403/404
+   * exactly as before, so a genuine permission loss or deleted meeting still surfaces immediately.
    */
   public getMeetingDetail(id: string, options?: { skipCache?: boolean }): Observable<Meeting> {
     const cached = this.meetingDetailCache.get(id);
@@ -249,7 +265,10 @@ export class MeetingService {
     if (cached) {
       this.meetingDetailCache.delete(id);
     }
+    const createdAt = this.recentlyCreatedMeetingIds.get(id);
+    const isRecentlyCreated = createdAt !== undefined && Date.now() - createdAt < RECENTLY_CREATED_MEETING_WINDOW_MS;
     const request$ = this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
+      isRecentlyCreated ? retryPropagationLag() : identity,
       tap({ error: () => this.meetingDetailCache.delete(id) }),
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
@@ -338,6 +357,10 @@ export class MeetingService {
   public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {
     return this.http.post<Meeting>('/api/meetings', meeting).pipe(
       take(1),
+      tap((created) => {
+        this.pruneExpiredRecentlyCreatedMeetingIds();
+        this.recentlyCreatedMeetingIds.set(created.id, Date.now());
+      }),
       catchError((error) => {
         console.error('Failed to create meeting:', error);
         return throwError(() => error);
@@ -845,6 +868,16 @@ export class MeetingService {
     for (const [key, entry] of this.meetingDetailCache) {
       if (now - entry.cachedAt >= MEETING_DETAIL_CACHE_TTL_MS) {
         this.meetingDetailCache.delete(key);
+      }
+    }
+  }
+
+  // Opportunistic sweep on insert, mirroring pruneExpiredMeetingDetailCache above.
+  private pruneExpiredRecentlyCreatedMeetingIds(): void {
+    const now = Date.now();
+    for (const [key, createdAt] of this.recentlyCreatedMeetingIds) {
+      if (now - createdAt >= RECENTLY_CREATED_MEETING_WINDOW_MS) {
+        this.recentlyCreatedMeetingIds.delete(key);
       }
     }
   }
