@@ -1031,6 +1031,43 @@ describe('SidebarNavService', () => {
       expect(showsCampaigns()).toBe(false);
     });
 
+    it("keeps showing a ROOT marketing grant while the new scope's probe is in flight", () => {
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([[null, { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      expect(showsCampaigns()).toBe(true);
+
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => new Subject<unknown>());
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(true);
+    });
+
+    it('reports a running retry only for the scope it started on', () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const retry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => retry);
+      service.retryMenuLookups();
+      expect(service.menuRetryPending()).toBe(true);
+
+      selectedFoundation.set({ slug: 'aaif' });
+      expect(service.menuRetryPending()).toBe(false);
+
+      selectedFoundation.set({ slug: 'cncf' });
+      expect(service.menuRetryPending()).toBe(true);
+      retry.next({});
+      retry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
     it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {
       refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
         slug === 'cncf' ? of(null) : of({ error: null })

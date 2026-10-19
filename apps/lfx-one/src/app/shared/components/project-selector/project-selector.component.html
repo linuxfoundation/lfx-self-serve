@@ -9,7 +9,7 @@
     class="lfxn__context lfxn__context--switchable"
     (click)="togglePanel($event, popover)"
     [attr.aria-expanded]="isPanelOpen()"
-    [attr.aria-label]="'Switch from ' + displayName()"
+    [attr.aria-label]="navbarTriggerLabel()"
     data-testid="project-selector">
     <span class="lfxn__context-body">
       <span class="lfxn__tile lfxn__tile--logo">

@@ -139,8 +139,14 @@ export class SidebarNavService {
   private readonly marketingProbeGenerations = new Map<string, number>();
   /** In flight while a `retryMenuLookups()` persona refresh runs. */
   private readonly retryPending = signal(false);
-  /** True while a `retryMenuLookups()` run is in flight, so the error card can stay up with a busy Retry. */
-  public readonly menuRetryPending: Signal<boolean> = this.retryPending.asReadonly();
+  /** The menu scope (lens + selected foundation / project) a `retryMenuLookups()` run started on. */
+  private readonly retryScope = signal<string | null>(null);
+  /**
+   * True while a `retryMenuLookups()` run started on the scope still on screen is in flight, so its error
+   * card can stay up with a busy Retry. Scoped: after a context switch the new scope's empty menu shows
+   * its own state, never a retry it didn't start.
+   */
+  public readonly menuRetryPending: Signal<boolean> = computed(() => this.retryPending() && this.retryScope() === this.menuScopeKey());
 
   /**
    * True when a lookup that shapes the menu failed instead of answering — an empty menu then means
@@ -685,10 +691,13 @@ export class SidebarNavService {
   private readonly marketingSectionItem = computed((): SidebarMenuItem | null => {
     const slug = this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
-    // A grant counts only once the probe has caught up with the scope on screen: while it is still in
-    // flight, `slug` names the previous scope, whose grant must not show under the new one.
-    const hasCurrentScopeGrant = (relation: 'isMarketingAuditor' | 'isCampaignManager'): boolean =>
-      this.isMarketingOpsFgaEnabled() && slug === this.marketingScopeSlug() && this.hasMarketingGrant(slug, relation);
+    // While the probe for the scope on screen is still in flight, `slug` names the previous scope, whose
+    // own grant must not show under the new one — only a ROOT grant, which covers every scope, still does.
+    const hasCurrentScopeGrant = (relation: 'isMarketingAuditor' | 'isCampaignManager'): boolean => {
+      if (!this.isMarketingOpsFgaEnabled()) return false;
+      if (slug === this.marketingScopeSlug()) return this.hasMarketingGrant(slug, relation);
+      return this.personaService.grantsByScope().get(null)?.[relation] ?? false;
+    };
 
     const canSeeMarketingImpact = this.personaService.canViewExecutiveDashboards() || hasCurrentScopeGrant('isMarketingAuditor');
     if (canSeeMarketingImpact) {
@@ -959,6 +968,7 @@ export class SidebarNavService {
   public retryMenuLookups(): void {
     if (this.retryPending()) return;
     this.retryPending.set(true);
+    this.retryScope.set(this.menuScopeKey());
     const slug = this.marketingScopeSlug();
     const generation = slug ? this.startMarketingProbe(slug) : 0;
     // The lookups re-run together and the menu stays pending until all settle, so none can resolve
@@ -980,6 +990,13 @@ export class SidebarNavService {
    */
   private marketingProbeFailed(response: PersonaApiResponse | null): boolean {
     return !response || !!response.error || !!response.marketingGrantCheckFailed;
+  }
+
+  /** Identifies the menu on screen: the active lens plus the selected foundation and project. */
+  private menuScopeKey(): string {
+    const foundation = this.projectContextService.selectedFoundation()?.slug ?? '';
+    const project = this.projectContextService.selectedProject()?.slug ?? '';
+    return `${this.activeLens()}|${foundation}|${project}`;
   }
 
   /** Marks a new marketing probe for `slug` as the latest, returning its generation. */

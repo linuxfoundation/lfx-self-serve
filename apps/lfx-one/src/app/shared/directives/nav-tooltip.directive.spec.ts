@@ -114,6 +114,24 @@ describe('NavTooltipDirective', () => {
     expect(tooltips()).toHaveLength(0);
   });
 
+  it('keeps an interactive card open when the pointer leaves a trigger that holds keyboard focus', () => {
+    host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
+    TestBed.tick();
+    const matches = vi.spyOn(first, 'matches').mockImplementation((selector: string) => selector === ':focus-visible');
+    first.dispatchEvent(new FocusEvent('focusin'));
+    vi.advanceTimersByTime(0);
+    expect(tooltips()).toHaveLength(1);
+
+    first.dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS);
+    expect(tooltips()).toHaveLength(1);
+
+    // ArrowDown still reaches the chips.
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('nav-tooltip-chip-k8s');
+    matches.mockRestore();
+  });
+
   it('holds an interactive card open while the pointer crosses into it', () => {
     host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
     TestBed.tick();
