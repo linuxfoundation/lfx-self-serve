@@ -9,6 +9,7 @@ import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.c
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { LensService } from '@services/lens.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
+import { TranscendService } from '@services/transcend.service';
 import { filter, map, startWith } from 'rxjs';
 
 import { DocsSidebarNavComponent } from '../../modules/docs/components/docs-sidebar-nav/docs-sidebar-nav.component';
@@ -52,6 +53,7 @@ export class DocsLayoutComponent {
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly sidebarNavService = inject(SidebarNavService);
+  private readonly transcendService = inject(TranscendService);
 
   protected readonly isAuthenticated = computed(() => this.userService.authenticated());
 
@@ -68,6 +70,12 @@ export class DocsLayoutComponent {
    * `initialValue` literal that would otherwise be dead code.
    */
   protected readonly signInHref = this.initSignInHref();
+
+  /** Opens the Transcend consent manager from the footer's "Cookie settings" link. */
+  public openCookieSettings(event: Event): void {
+    event.preventDefault();
+    this.transcendService.showPreferences();
+  }
 
   private initSignInHref() {
     return toSignal(
