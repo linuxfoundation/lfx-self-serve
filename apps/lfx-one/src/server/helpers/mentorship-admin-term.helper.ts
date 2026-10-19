@@ -3,7 +3,7 @@
 
 import { MENTORSHIP_TERM_NAME_MAX } from '@lfx-one/shared/constants';
 import { MentorshipAdminTermInput } from '@lfx-one/shared/interfaces';
-import { isMentorshipIsoDate } from '@lfx-one/shared/utils/mentorship.utils';
+import { isMentorshipIsoDate, lastDayOfMentorshipMonth } from '@lfx-one/shared/utils';
 
 import { ServiceValidationError } from '../errors';
 
@@ -17,10 +17,11 @@ const parseIsoDate = (value: unknown, field: string, operation: string): string 
 
 /**
  * Validates the body of a term create or edit: a name of 1 to `MENTORSHIP_TERM_NAME_MAX` characters once trimmed and four
- * ISO dates in upstream's order (application start <= application end < start <= end). The application window runs from
- * the start of its first UTC day to the end of its last, so it may open and close on one date, and the term runs from the
- * start of its start date to the end of its end month, so it may start and end in one month. Upstream checks the same
- * order on the timestamps the BFF sends; failing here keeps the bad request off the wire. The name is never logged.
+ * ISO dates in order: application start <= application end, application start < start <= end, and application end no
+ * later than the end month. The application window runs from the start of its first UTC day to the end of its last, so it
+ * may open and close on one date, and it may run into the term but must open before it. The term runs from the start of
+ * its start date to the end of its end month, so it may start and end in one month. Upstream checks the window's end on
+ * the timestamps the BFF sends; failing here keeps the bad request off the wire. The name is never logged.
  */
 export const parseMentorshipAdminTermInput = (body: unknown, operation: string): MentorshipAdminTermInput => {
   const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
@@ -39,11 +40,14 @@ export const parseMentorshipAdminTermInput = (body: unknown, operation: string):
   if (applicationEndDate < applicationStartDate) {
     throw ServiceValidationError.forField('applicationEndDate', 'applicationEndDate must be on or after applicationStartDate.', { operation });
   }
-  if (startDate <= applicationEndDate) {
-    throw ServiceValidationError.forField('startDate', 'startDate must be after applicationEndDate.', { operation });
+  if (applicationStartDate >= startDate) {
+    throw ServiceValidationError.forField('applicationStartDate', 'applicationStartDate must be before startDate.', { operation });
   }
   if (endDate < startDate) {
     throw ServiceValidationError.forField('endDate', 'endDate must be on or after startDate.', { operation });
+  }
+  if (applicationEndDate > lastDayOfMentorshipMonth(endDate)) {
+    throw ServiceValidationError.forField('applicationEndDate', 'applicationEndDate must be on or before the last day of the endDate month.', { operation });
   }
 
   return { name, startDate, endDate, applicationStartDate, applicationEndDate };

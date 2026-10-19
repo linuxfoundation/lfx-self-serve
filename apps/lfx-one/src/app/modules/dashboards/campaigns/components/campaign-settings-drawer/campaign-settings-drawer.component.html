@@ -1,0 +1,110 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="campaign-settings-drawer">
+  <ng-template #header>
+    <div class="flex min-w-0 flex-col gap-1">
+      <h2 class="m-0 text-lg font-semibold text-gray-900" data-testid="campaign-settings-drawer-title">Live settings</h2>
+      @if (campaign(); as c) {
+        <p class="m-0 break-words text-sm text-gray-500" data-testid="campaign-settings-drawer-campaign">{{ c.campaign_name }} · {{ platformLabel() }}</p>
+      }
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-4" data-testid="campaign-settings-drawer-body">
+    <p class="text-sm text-gray-500">
+      What LFX One asked {{ platformLabel() }} for, beside what {{ platformLabel() }} holds now. Read live each time this opens; nothing is changed or saved.
+    </p>
+
+    @switch (state().status) {
+      @case ('loading') {
+        <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="campaign-settings-drawer-loading">
+          <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+          Reading the live settings from {{ platformLabel() }}…
+        </p>
+      }
+      @case ('error') {
+        <div class="flex flex-col items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-4" role="alert" data-testid="campaign-settings-drawer-error">
+          <p class="text-sm text-red-800">{{ state().message }}</p>
+          <lfx-button label="Try again" size="small" severity="secondary" [outlined]="true" (onClick)="retry()" data-testid="campaign-settings-drawer-retry" />
+        </div>
+      }
+      @case ('ready') {
+        @if (state().drift; as drift) {
+          <div class="flex flex-col gap-1" data-testid="campaign-settings-drawer-summary">
+            <p class="text-sm font-medium text-gray-900">
+              <span [class.text-amber-700]="drift.divergedCount > 0" data-testid="campaign-settings-drawer-diverged-count"
+                >{{ drift.divergedCount }} differ</span
+              >
+              · <span data-testid="campaign-settings-drawer-match-count">{{ drift.matchCount }} match</span> ·
+              <span data-testid="campaign-settings-drawer-unknown-count">{{ drift.unknownCount }} not compared</span>
+            </p>
+            @if (drift.readAt) {
+              <p class="text-xs text-gray-500" data-testid="campaign-settings-drawer-read-at">
+                Read from {{ platformLabel() }} {{ drift.readAt | date: 'medium' }}
+              </p>
+            }
+            <p class="text-xs text-gray-500">{{ unknownCountNote }}</p>
+          </div>
+
+          @if (drift.rows.length === 0) {
+            <p class="text-sm text-gray-500" data-testid="campaign-settings-drawer-empty">{{ platformLabel() }} returned no settings to compare.</p>
+          } @else {
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
+              <table class="w-full text-left text-sm" data-testid="campaign-settings-drawer-table">
+                <caption class="sr-only">
+                  Intended and live settings for this campaign
+                </caption>
+                <thead>
+                  <tr class="border-b border-gray-200 bg-gray-50">
+                    <th scope="col" class="px-3 py-2 text-xs font-medium text-gray-500">Setting</th>
+                    <th scope="col" class="px-3 py-2 text-xs font-medium text-gray-500">Intended (LFX One)</th>
+                    <th scope="col" class="px-3 py-2 text-xs font-medium text-gray-500">Live ({{ platformLabel() }})</th>
+                    <th scope="col" class="px-3 py-2 text-xs font-medium text-gray-500">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of drift.rows; track row.field) {
+                    <tr
+                      class="border-b border-gray-100 align-top last:border-0"
+                      [class.bg-amber-50]="row.comparison === 'diverged'"
+                      [attr.data-testid]="'campaign-settings-row-' + row.field">
+                      <th scope="row" class="px-3 py-2 text-xs font-medium text-gray-900">{{ row.label }}</th>
+                      <td class="break-words px-3 py-2 text-xs" [attr.data-testid]="'campaign-settings-intended-' + row.field">
+                        @if (row.intended !== null) {
+                          <span class="text-gray-900">{{ row.intended }}</span>
+                        } @else {
+                          <span class="italic text-gray-500">Not recorded</span>
+                        }
+                      </td>
+                      <td class="break-words px-3 py-2 text-xs" [attr.data-testid]="'campaign-settings-live-' + row.field">
+                        @if (row.live !== null) {
+                          <span class="text-gray-900">{{ row.live }}</span>
+                        } @else {
+                          <span class="italic text-gray-500">Not reported</span>
+                        }
+                      </td>
+                      <td class="px-3 py-2">
+                        <div class="flex flex-col gap-1">
+                          <lfx-tag [value]="row.verdictLabel" [severity]="row.verdictSeverity" [attr.data-testid]="'campaign-settings-verdict-' + row.field" />
+                          @if (row.note) {
+                            <span class="text-xs text-gray-500" [attr.data-testid]="'campaign-settings-note-' + row.field">{{ row.note }}</span>
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        }
+      }
+    }
+  </div>
+</p-drawer>

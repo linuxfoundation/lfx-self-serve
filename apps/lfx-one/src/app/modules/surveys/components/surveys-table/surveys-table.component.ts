@@ -21,6 +21,7 @@ import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { ScheduledSendAriaLabelPipe, ScheduledSendTooltipPipe } from '@pipes/scheduled-send-tooltip.pipe';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { SurveyStatusSeverityPipe } from '@pipes/survey-status-severity.pipe';
+import { resolveSurveyCommitteeCandidates } from '@shared/utils/write-access.util';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -76,8 +77,7 @@ export class SurveysTableComponent {
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
   public readonly isMeLens = input<boolean>(false);
-  // Viewed-committee override (committee tab): rows stamp committees[0] by default, but a
-  // committee writer's guard fallback must probe the committee they're actually viewing (GH-1569).
+  // Prefer the viewed associated committee when building canonical edit links.
   public readonly committeeUid = input<string>('');
 
   // === Outputs ===
@@ -293,13 +293,13 @@ export class SurveysTableComponent {
   // === Private Helpers ===
   // Mirrors meeting-card's per-row params: the row's own project slug + committee scope, so the
   // edit page opens in the survey's project context even from a context-less list (GH-1569).
-  // Without a viewed-committee override (global list) the scope resolves to the primary committee,
-  // so a writer of a non-primary committee is fail-closed denied from the list and edits via their
-  // committee tab instead — iterating committees[] per row is follow-up work (GH-2190).
+  // Without a viewed-committee override, the primary committee is only the first probe candidate.
+  // writerGuard and the edit page check every associated committee, admitting non-primary writers
+  // from the global list too.
   private buildEditQueryParams(survey: Survey): Record<string, string> {
     const params: Record<string, string> = {};
     if (survey.project_slug) params['project'] = survey.project_slug;
-    const committeeUid = this.committeeUid() || survey.committees?.[0]?.committee_uid;
+    const committeeUid = resolveSurveyCommitteeCandidates(survey.committees, this.committeeUid()).find((uid) => uid.trim().length > 0);
     if (committeeUid) params['committee_uid'] = committeeUid;
     return params;
   }

@@ -678,6 +678,10 @@ export class AnalyticsController {
 
 The warehouse contract is supplied by [dbt prerequisite #3330](https://github.com/linuxfoundation/lfx-self-serve/issues/3330), implemented in `lf-dbt`. Deploy and refresh it before deploying the consumer: both `OCG_UPCOMING_MEETUPS` and `OCG_PAST_MEETUPS` in the configured `MEETUPS_SNOWFLAKE_SCHEMA` (default `ANALYTICS.PLATINUM_LFX_ONE`) must expose populated `COMMUNITY_SLUG` values matching canonical source names. Verify column metadata, canonical completeness and non-personal source-address comparisons before rollout. Missing, null or whitespace-only canonical values use the existing malformed-row behavior: warn and drop the row without a display-name fallback, while retaining the warehouse total count. Upstream completeness checks are required to keep this an exceptional data-quality path.
 
+### Project Lens Participating Organizations
+
+`ProjectParticipatingOrgsService` reads `PROJECT_PARTICIPATING_ORGS` and `PROJECT_PARTICIPATING_ORGS_SUMMARY` in `resolveLfxOnePlatinumSchema()` (lf-dbt `project_lens` models) for `GET /api/projects/:slug/participating-orgs{,/summary,/export,/org-lens-links}`. `requireProjectParticipatingOrgsAccess` gates every route in order: the `project-lens-participating-orgs` LaunchDarkly flag, evaluated per user and failing closed (off → 404), slug format (400), slug → project uid over NATS (an unknown slug or a `{"error":"not_found"}` reply → 404; a NATS timeout or any other lookup error → 503, except that `getProjectIdBySlug` reports NATS no-responders as not-found, so that one outage answers 404), strict FGA `project#viewer` (false → 403, authorizer failure → 503). The reads stay keyed by `project_slug`: the warehouse carries Salesforce project ids rather than v2 uids, so the slug is the key both sides share. The list returns the page, filtered total and foundation slug in one totals-`LEFT JOIN`-page query; sort keys map to allowlisted expressions (tier ranks members only; `commits_change` / `contributors_change` are columns modeled in lf-dbt, NULL for All Time or a zero baseline, never computed in the BFF; names sort and display trimmed), every key `NULLS LAST` both ways, and ties break on `commits DESC, participant_key ASC`. Summary and list pages carry no per-caller data, so they are shared-cached in Valkey per project under `project-participating-orgs-sf:v1` for an hour (`withProjectParticipatingOrgsCache`, keyed on every query dimension after clamping); the gate still runs on every request. Org Lens links are per caller and resolved separately: `/org-lens-links?accountIds=` takes the shown page's member account ids (canonical, at most one max page) and answers the subset `filterConfirmedReadableAccountIds` confirms (`Cache-Control: private, no-store`); an authorizer failure answers no links, so member names show the no-access hint instead of the list failing. The page asks for it only in the browser, after the rows render, so this page's own reads never hold server rendering on the caller's grant roster. The CSV export reads one row past `PROJECT_PARTICIPATING_ORGS_EXPORT_MAX_ROWS` to set `X-Export-Truncated: true`, and answers 204 when nothing matches.
+
 ### Example with Dynamic Retrieval Filters
 
 Application services own retrieval concerns, not metric definitions. Columns such as `event_count` and `total_value` must already be defined and tested in an `lf-dbt` model. Embedded SQL may add parameterized filters, sorting, and pagination without recalculating those values. See the canonical [Snowflake SQL review rule](../../reviews/shared-and-sql-checklist.md#10-no-business-logic-in-embedded-snowflake-sql-should-fix) for the narrow display-scope roll-up exception.
@@ -903,9 +907,10 @@ Solution:
 ```
 
 This is a request fault, not a Snowflake outage, so it does not count toward the circuit breaker; like a full pool
-queue, it only frees the HALF_OPEN probe slot. Every other compilation error still counts — including "does not
-exist or not authorized", which can mean a revoked GRANT — unless the caller passed `expectMissingObject` (or
-`expectInvalidIdentifier`). `SnowflakeService` then records a success, so that caller must alert on the error itself.
+queue, it only frees the HALF_OPEN probe slot. Unrecognized value-conversion errors have the same exemption (see §7).
+Every other compilation error still counts — including "does not exist or not authorized", which can mean a revoked
+GRANT — unless the caller passed `expectMissingObject` (or `expectInvalidIdentifier`). `SnowflakeService` then records
+a success, so that caller must alert on the error itself.
 A dashboard reading one view does both through `executeSnowflakeViewRead` (`helpers/snowflake-view-read.helper.ts`),
 which logs the missing object under its own operation key and swaps in the widget's `clientMessage`.
 
@@ -926,6 +931,27 @@ Solution:
 `SnowflakeService.execute` rejects such a statement before `checkCircuit`, so it never reaches Snowflake, never takes
 the HALF_OPEN probe slot, and never counts toward the circuit breaker — an oversized request cannot open the pod-wide
 breaker for every other Snowflake-backed route.
+
+#### 7. Unrecognized Date/Timestamp/Numeric Value
+
+```text
+Error: Snowflake query execution failed: Date 'x' is not recognized
+Cause: A malformed bind cannot be converted to the column's Date/Time/Timestamp/Numeric/Boolean type
+Solution:
+  1. Validate optional date filters at the HTTP layer with getValidatedIsoDateQueryParam (helpers/validation.helper.ts)
+     before invoking the events service; malformed dates receive a field-specific 400
+```
+
+Both `GET /api/events` and `GET /api/events/travel-fund-events` validate `startDateFrom` / `startDateTo` before querying.
+Accepted strings are `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ss(.sss)?Z`, with no fraction or exactly three fractional digits;
+UTC calendar checks also reject impossible dates/times. Valid strings are passed to the existing binds unchanged.
+
+For conversion errors that still reach Snowflake, `isValueConversionError` matches the typed "is not recognized"
+message family or confirmed numeric conversion code `100038`. It does not exempt other compilation or authorization
+errors. The query still rejects with the existing 500 `SNOWFLAKE_QUERY_ERROR` and generic client message, logged once
+by `apiErrorHandler`; the span is marked erroneous with `snowflake.value_conversion`. Failure count and circuit state
+stay untouched, and the HALF_OPEN probe slot is released so another query can probe recovery. Dirty table values can
+produce the same conversion error and are also exempted: a data fault is not evidence of a Snowflake outage.
 
 ## 🎯 Best Practices
 

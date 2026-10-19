@@ -182,7 +182,14 @@ import {
   WebActivitiesSummaryResponse,
   WebActivityDomainDetail,
 } from '@lfx-one/shared/interfaces';
-import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
+import type {
+  AccessCheckRequest,
+  ApiRequestOptions,
+  MoMDirection,
+  PaidProjectPerformance,
+  ResolvedPeriodRange,
+  WriterSummary,
+} from '@lfx-one/shared/interfaces';
 import {
   computeIsFoundation,
   formatCurrency,
@@ -285,6 +292,19 @@ function buildFoundationFilter(foundationSlug: string): { filter: string; filter
     filterAnd: isUmbrella ? '' : 'AND FOUNDATION_SLUG = ?',
     params: isUmbrella ? [] : [foundationSlug],
   };
+}
+
+/** The `error` code of a slug→uid JSON error reply (`{"error":"not_found",…}`); `unparseable` for any other JSON body. */
+function parseSlugLookupError(reply: string): string {
+  try {
+    const parsed: unknown = JSON.parse(reply);
+    if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof parsed.error === 'string') {
+      return parsed.error;
+    }
+  } catch {
+    // Not JSON after all; reported as unparseable below.
+  }
+  return 'unparseable';
 }
 
 /**
@@ -669,7 +689,7 @@ export class ProjectService {
    *
    * Returns a map keyed by `uid` for O(1) lookup by the caller.
    */
-  public async getProjectsByIds(req: Request, uids: string[] | Set<string>): Promise<Map<string, Project>> {
+  public async getProjectsByIds(req: Request, uids: string[] | Set<string>, options?: ApiRequestOptions): Promise<Map<string, Project>> {
     const idArray = Array.from(new Set(uids)).filter(Boolean);
     if (idArray.length === 0) return new Map();
 
@@ -679,7 +699,7 @@ export class ProjectService {
       batches.push(idArray.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
     }
 
-    const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch)));
+    const batchResults = await Promise.all(batches.map((batch) => this.fetchProjectBatchByIds(req, batch, options)));
 
     // ROOT is an administrative pseudo-project — never surface it even if a caller accidentally passes its UID.
     const byUid = new Map<string, Project>();
@@ -4073,10 +4093,13 @@ export class ProjectService {
     try {
       const response = await this.natsService.request(NatsSubjects.PROJECT_SLUG_TO_UID, codec.encode(slug), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
-      const uid = codec.decode(response.data);
+      const reply = codec.decode(response.data).trim();
 
-      // Check if we got a valid project ID
-      if (!uid || uid.trim() === '') {
+      // The responder answers a miss (unknown slug, or a project hidden from it) with a JSON error body
+      // such as {"error":"not_found","message":"project not found"} rather than an empty reply.
+      // Anything else in that shape is a real failure, never a uid.
+      const replyError = reply.startsWith('{') ? parseSlugLookupError(reply) : null;
+      if (!reply || replyError === 'not_found') {
         logger.debug(req, 'get_project_id_by_slug', 'Project slug not found via NATS', { slug });
         return {
           uid: '',
@@ -4084,9 +4107,12 @@ export class ProjectService {
           exists: false,
         };
       }
+      if (replyError !== null) {
+        throw new Error(`Project slug lookup failed: ${replyError}`);
+      }
 
       return {
-        uid: uid.trim(),
+        uid: reply,
         slug,
         exists: true,
       };
@@ -7565,7 +7591,8 @@ export class ProjectService {
    */
   public async enrichWithProjectData<T extends { project_uid: string }>(
     req: Request,
-    items: T[]
+    items: T[],
+    options?: ApiRequestOptions
   ): Promise<(T & { project_name: string; project_slug: string; is_foundation?: boolean; parent_project_uid: string })[]> {
     const projectUids = [...new Set(items.map((item) => item.project_uid).filter(Boolean))];
 
@@ -7574,7 +7601,7 @@ export class ProjectService {
       unique_projects: projectUids.length,
     });
 
-    const projectMap = await this.getProjectsByIds(req, projectUids);
+    const projectMap = await this.getProjectsByIds(req, projectUids, options);
 
     logger.debug(req, 'enrich_with_project_data', 'Project enrichment complete', {
       resolved: projectMap.size,
@@ -8778,21 +8805,30 @@ export class ProjectService {
    * Fetches one bounded UID batch and preserves the existing fail-soft behavior.
    * Only fully successful paginated responses are checked for omitted UIDs.
    */
-  private async fetchProjectBatchByIds(req: Request, batch: string[]): Promise<Project[]> {
+  private async fetchProjectBatchByIds(req: Request, batch: string[], options?: ApiRequestOptions): Promise<Project[]> {
     try {
       const projects = await fetchAllQueryResources<Project>(
         req,
         (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'project',
-            filters_or: batch.map((uid) => `uid:${uid}`),
-            // One call per batch. Without a page_size, the query service's default of 50
-            // (docs/architecture/backend/pagination.md) splits a 100-uid batch into two sequential
-            // calls; and page_size must exceed the batch, because query-service emits a page_token
-            // whenever hits == page_size, which would cost a second, empty call on a full batch.
-            page_size: String(batch.length + 1),
-            ...(pageToken && { page_token: pageToken }),
-          }),
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources',
+            'GET',
+            {
+              type: 'project',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              // One call per batch. Without a page_size, the query service's default of 50
+              // (docs/architecture/backend/pagination.md) splits a 100-uid batch into two sequential
+              // calls; and page_size must exceed the batch, because query-service emits a page_token
+              // whenever hits == page_size, which would cost a second, empty call on a full batch.
+              page_size: String(batch.length + 1),
+              ...(pageToken && { page_token: pageToken }),
+            },
+            undefined,
+            undefined,
+            options
+          ),
         { failOnPartial: true }
       );
       this.warnOnMissingProjectUids(req, batch, projects);

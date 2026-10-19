@@ -21,6 +21,7 @@ import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
+import { OrgClaOnlyOrgsService } from '../services/org-cla-only-orgs.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
@@ -32,12 +33,14 @@ export class OrgIdentityController {
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly orgLensAddressesService: OrgLensAddressesService;
   private readonly orgSlugResolver: OrgSlugResolverService;
+  private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.orgLensAddressesService = new OrgLensAddressesService();
-    this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy);
+    this.claOnlyOrgs = new OrgClaOnlyOrgsService();
+    this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy, this.claOnlyOrgs);
   }
 
   /** `GET /api/orgs/me/role-grants` — caller's writer/auditor uid sets (contracts/bff-org-role-grants.md). */
@@ -56,11 +59,14 @@ export class OrgIdentityController {
 
       // Spec 053: the viewer's explicit Retry asks for a recompute — skip the cache read, still write.
       const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
-      const result: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
+      const grants: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
+      const result: RoleGrantsResponse = { ...grants, ...(await this.claOnlyOrgs.getRoleGrantClaManagerOrgs(req, grants)) };
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
         auditor_count: result.auditors.length,
+        cla_manager_org_count: result.claManagerOrgs?.length ?? 0,
+        cla_manager_lookup: result.claManagerLookup,
         lookup_outcome: result.lookupOutcome,
         staff_check: result.staffCheck,
       });
@@ -101,7 +107,13 @@ export class OrgIdentityController {
 
       const cache = resolution.cache;
       if (resolution.outcome === 'hit') {
-        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'hit', cache, uid: resolution.org.uid });
+        logger.success(req, 'resolve_org_segment', startTime, {
+          segment_kind: segmentKind,
+          outcome: 'hit',
+          cache,
+          uid: resolution.org.uid,
+          cla_only: resolution.org.claOnly === true,
+        });
         res.json(resolution.org);
         return;
       }

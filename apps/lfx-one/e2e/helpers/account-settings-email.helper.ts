@@ -32,7 +32,6 @@ export const DELETE_BLOCKED_BY_INVITE_TITLE = 'This email is set for meeting inv
 export const DELETE_BLOCKED_BY_SAVE_TITLE = 'Updating the meeting-invitation email. Wait for it to finish before deleting an address.';
 
 export const MENU_USE_FOR_INVITES = 'Use for Meeting Invitations';
-export const MENU_RESET_TO_PRIMARY = 'Reset to Default (Primary Email)';
 export const MENU_MAKE_PRIMARY = 'Make Primary';
 export const MENU_DELETE = 'Delete';
 
@@ -58,6 +57,8 @@ export interface EmailMockOptions {
   putBehavior?: PutBehavior;
   /** Artificial delay on GET /emails, used to observe the loading state. */
   emailsDelayMs?: number;
+  /** Fail GET /emails/meeting-invite with a 503, as the BFF does when the lookup itself fails. */
+  inviteGetFails?: boolean;
 }
 
 export interface EmailMocks {
@@ -105,6 +106,7 @@ export async function installEmailMocks(page: Page, options: EmailMockOptions = 
   let invite: InviteState = options.initialInvite ?? NO_INVITE_OVERRIDE;
   const putBehavior: PutBehavior = options.putBehavior ?? { kind: 'success' };
   const emailsDelayMs = options.emailsDelayMs ?? 0;
+  const inviteGetFails = options.inviteGetFails ?? false;
 
   const recordedPutBodies: { email: string }[] = [];
   let inviteGets = 0;
@@ -125,6 +127,13 @@ export async function installEmailMocks(page: Page, options: EmailMockOptions = 
     if (pathname.endsWith('/api/profile/emails/meeting-invite')) {
       if (method === 'GET') {
         inviteGets += 1;
+        if (inviteGetFails) {
+          return route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify(errorBody({ status: 503, message: 'Meeting invitation email settings are temporarily unavailable.' })),
+          });
+        }
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(invite) });
       }
 

@@ -3,11 +3,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants, getClaManagerOrgs } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   resolveSegment: vi.fn(),
   getRoleGrants: vi.fn(),
+  getClaManagerOrgs: vi.fn(),
 }));
 
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -26,6 +27,11 @@ vi.mock('../services/org-lens-addresses.service', () => ({ OrgLensAddressesServi
 vi.mock('../services/org-slug-resolver.service', () => ({
   OrgSlugResolverService: class {
     public resolveSegment = resolveSegment;
+  },
+}));
+vi.mock('../services/org-cla-only-orgs.service', () => ({
+  OrgClaOnlyOrgsService: class {
+    public getRoleGrantClaManagerOrgs = getClaManagerOrgs;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -262,6 +268,7 @@ describe('OrgIdentityController.getRoleGrants', () => {
 
   beforeEach(() => {
     getRoleGrants.mockResolvedValue(grants);
+    getClaManagerOrgs.mockResolvedValue({ claManagerOrgs: [], claManagerLookup: 'ok' });
   });
 
   // Spec 053: the viewer's Retry asks for a recompute past the BFF cache; nothing else does.
@@ -289,6 +296,30 @@ describe('OrgIdentityController.getRoleGrants', () => {
     await controller.getRoleGrants(request(), okRes, vi.fn());
     expect(okRes.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(okRes.setHeader).not.toHaveBeenCalledWith(ORG_ROLE_GRANTS_CORRELATION_HEADER, expect.anything());
-    expect(okRes.json).toHaveBeenCalledWith(grants);
+    expect(okRes.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'ok' });
+  });
+
+  describe('CLA-only organizations', () => {
+    const COMPANY_A = '001A000000AAAAAAAA';
+
+    it('adds the CLA-only organizations the service answers for the computed grants', async () => {
+      getClaManagerOrgs.mockResolvedValueOnce({ claManagerOrgs: [COMPANY_A], claManagerLookup: 'ok' });
+      const res = buildRes();
+      const req = request();
+
+      await new OrgIdentityController().getRoleGrants(req, res, vi.fn());
+
+      expect(getClaManagerOrgs).toHaveBeenCalledWith(req, grants);
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [COMPANY_A], claManagerLookup: 'ok' });
+    });
+
+    it('passes a failed scopes lookup through to the browser instead of an empty "manages nothing"', async () => {
+      getClaManagerOrgs.mockResolvedValueOnce({ claManagerOrgs: [], claManagerLookup: 'failed' });
+      const res = buildRes();
+
+      await new OrgIdentityController().getRoleGrants(request(), res, vi.fn());
+
+      expect(res.json).toHaveBeenCalledWith({ ...grants, claManagerOrgs: [], claManagerLookup: 'failed' });
+    });
   });
 });

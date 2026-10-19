@@ -54,7 +54,14 @@ vi.mock('./logger.service', () => ({
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID } from '../../../e2e/fixtures/mock-data/synthetic-org.mock';
-import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, buildOrgCacheKey, buildPerUserOrgKey, ValkeyService } from './valkey.service';
+import {
+  buildAuthStateCacheKey,
+  buildGatewazeHostSessionKeyPrefix,
+  buildMeetingInviteLockCacheKey,
+  buildOrgCacheKey,
+  buildPerUserOrgKey,
+  ValkeyService,
+} from './valkey.service';
 
 import { logger } from './logger.service';
 
@@ -264,6 +271,20 @@ describe('buildAuthStateCacheKey (#1938)', () => {
 
   it('fails closed (returns null) for a nonce containing a wildcard', () => {
     expect(buildAuthStateCacheKey('abc*def')).toBeNull();
+  });
+});
+
+describe('buildGatewazeHostSessionKeyPrefix (#2738)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('is the app prefix, the optional deployment namespace and gatewaze:v1, ending in a separator', () => {
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', '');
+    expect(buildGatewazeHostSessionKeyPrefix()).toBe('lfx-ui:gatewaze:v1:');
+
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', 'ui-pr-42');
+    expect(buildGatewazeHostSessionKeyPrefix()).toBe('lfx-ui:ui-pr-42:gatewaze:v1:');
   });
 });
 

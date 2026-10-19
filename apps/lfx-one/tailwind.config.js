@@ -67,6 +67,7 @@ import {
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
+  MONITOR_PLATFORM_BUTTON_COLORS,
   ORG_MEETINGS_KPI_ICON_CLASS,
 } from '@lfx-one/shared/src/constants/index.ts';
 import PrimeUI from 'tailwindcss-primeui';
@@ -102,6 +103,10 @@ export default {
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Monitor tab platform buttons: the selected label's text colour (`textClass`) comes from
+    // MONITOR_PLATFORM_BUTTON_COLORS in @lfx-one/shared (outside `content`) and is applied at runtime.
+    // The background is an inline style, so it needs no class.
+    ...Object.values(MONITOR_PLATFORM_BUTTON_COLORS).map((colors) => colors.textClass),
     // Mentee tasks tab — status dropdown/badge tints selected at runtime from MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.
     ...Object.values(MENTORSHIP_MENTEE_TASK_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentee overview and My Tasks: application status and past-outcome badges come
@@ -259,6 +264,10 @@ export default {
         md: '0px 1px 2px -1px rgba(0, 0, 0, 0.10), 0px 1px 3px 0px rgba(0, 0, 0, 0.10)',
       },
       keyframes: {
+        'step-in': {
+          '0%': { opacity: '0', transform: 'translateY(4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
         'fade-in-up': {
           '0%': {
             opacity: '0',
@@ -272,6 +281,8 @@ export default {
       },
       animation: {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
+        // A new row or card settling in (Marketing OS run feed and questions stepper); used behind `motion-safe:`.
+        'step-in': 'step-in 180ms ease-out both',
       },
       fontWeight: {
         normal: 400,

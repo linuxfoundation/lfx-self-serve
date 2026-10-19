@@ -17,7 +17,13 @@ import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
-import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError } from '../helpers/snowflake-error.helper';
+import {
+  isInvalidIdentifierError,
+  isInvalidRowCountError,
+  isMissingObjectError,
+  isPoolQueueFullError,
+  isValueConversionError,
+} from '../helpers/snowflake-error.helper';
 import { tracer } from '../server-tracer';
 import { LockManager } from '../utils/lock-manager';
 import { logger } from './logger.service';
@@ -227,6 +233,7 @@ export class SnowflakeService {
             const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
             const poolQueueFull = isPoolQueueFullError(error);
             const invalidRowCount = isInvalidRowCountError(error);
+            const valueConversion = isValueConversionError(error);
 
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
@@ -252,14 +259,14 @@ export class SnowflakeService {
               });
               span.setAttribute('snowflake.pool_queue_full', true);
               this.releaseProbe();
-            } else if (invalidRowCount) {
-              // Out-of-range LIMIT/OFFSET is a request fault, not a Snowflake outage, so it must not count
-              // toward the breaker. Rethrown as a 500, logged once by apiErrorHandler.
+            } else if (invalidRowCount || valueConversion) {
+              // Out-of-range LIMIT/OFFSET and unrecognized values are request/data faults, not Snowflake
+              // outages. Leave the breaker untouched; the rethrown 500 is logged once by apiErrorHandler.
               span.setStatus({
                 code: SpanStatusCode.ERROR,
                 message: error instanceof Error ? error.message : String(error),
               });
-              span.setAttribute('snowflake.invalid_row_count', true);
+              span.setAttribute(invalidRowCount ? 'snowflake.invalid_row_count' : 'snowflake.value_conversion', true);
               this.releaseProbe();
             } else {
               span.setStatus({
@@ -592,8 +599,8 @@ export class SnowflakeService {
   }
 
   /**
-   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it, or
-   * the request carried an out-of-range row count. Leaves the failure count and circuit state untouched,
+   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it,
+   * or it carried an out-of-range row count/unrecognized value. Leaves failure count and state untouched,
    * but frees the HALF_OPEN probe slot so the next caller can probe.
    * @private
    */

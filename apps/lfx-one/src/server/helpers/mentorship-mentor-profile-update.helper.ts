@@ -13,15 +13,17 @@ const fail = (field: string, message: string, operation: string): never => {
   throw ServiceValidationError.forField(field, message, { operation });
 };
 
-/** Keeps the first of each case-insensitive repeat, as the skills picker does, so a repeat is never stored. */
+/** Trims each skill, drops blanks, and keeps the first of each case-insensitive repeat, as the skills picker does, so a blank or a repeat is never stored. */
 const withoutDuplicateSkills = (skills: string[]): string[] => {
   const seen = new Set<string>();
-  return skills.filter((skill) => {
-    const key = skill.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return skills
+    .map((skill) => skill.trim())
+    .filter((skill) => {
+      const key = skill.toLowerCase();
+      if (!skill || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 };
 
 /**

@@ -113,6 +113,21 @@ describe('RsvpButtonGroupComponent — confirmed occurrence responses', () => {
     read.flush(rsvp);
   }
 
+  it.each([undefined, 'yes'])('falls back to the submitted answer when the acknowledgement returns response_type %s', async (returned) => {
+    const single = { ...MEETING, recurrence: null, occurrences: [] } as Meeting;
+    const fixture = await mount(single);
+    http.expectOne((request) => request.url === `/api/meetings/${MEETING.id}/rsvp/me`).flush(null);
+    const changed = vi.fn();
+    fixture.componentInstance.rsvpChanged.subscribe(changed);
+
+    fixture.componentInstance.handleRsvpClick('accepted');
+    http.expectOne(`/api/meetings/${MEETING.id}/rsvp`).flush({ ...response('accepted', 'all'), response_type: returned });
+
+    expect(fixture.componentInstance.selectedResponse()).toBe('accepted');
+    expect(changed).toHaveBeenCalledWith(expect.objectContaining({ response_type: 'accepted' }));
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Response saved: Going' }));
+  });
+
   describe.each([false, true])('Change response shortcut (compact=%s)', (compact) => {
     it.each([
       ['accepted', 'yes'],

@@ -7,6 +7,7 @@ import { OrgLensContractorProbe, OrgLensContractorVerdict, OrgLensEmptyStateName
 import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
@@ -17,9 +18,11 @@ import { PersonaService } from './persona.service';
  * Mirrors the server gate (`org-lens-read-access.helper.ts`): a resolved entry is authoritative, and an
  * incomplete roll-up must not veto an organization that is present. So the order is
  *
- *   1. caller holds the selected organization (or is in a company-wide team) → render the page (`null`)
+ *   1. caller holds the selected organization (or is in a company-wide team, or reaches it only as its
+ *      CLA Manager — M3)                                       → render the page (`null`)
  *   2. lookup failed outright (roster never loaded)             → `could-not-load`
- *   3. lookup partial AND caller holds nothing loaded           → `could-not-load`
+ *   3. lookup partial (or the M3 CLA-manager lookup failed)
+ *      AND caller holds nothing loaded                          → `could-not-load`
  *   4. staff check failed                                       → `staff-check-failed`
  *   5. LF contractor refused what is in front of them           → `contractor-no-grant` (#2961)
  *   6. caller holds nothing                                     → `no-organization`
@@ -47,6 +50,7 @@ export class OrgLensEmptyStateService {
   private readonly roleGrants = inject(OrgRoleGrantsService);
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
+  private readonly claOnlyAccess = inject(OrgClaOnlyAccessService);
 
   /**
    * Generation of the list fetch the last `retry()` started, or `null` before any. `orgNavigation.loading`
@@ -62,7 +66,7 @@ export class OrgLensEmptyStateService {
    * the page must ask the server whether it is readable. `null` for everyone else.
    */
   private readonly contractorProbeUid: Signal<string | null> = computed(() => {
-    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld()) {
+    if (!this.roleGrants.loaded() || !this.roleGrants.isContractor() || this.selectedHeld() || this.selectedClaOnly()) {
       return null;
     }
     return this.accountContext.selectedAccount().uid || null;
@@ -117,6 +121,13 @@ export class OrgLensEmptyStateService {
     );
   });
 
+  /**
+   * M3 — the selected organization is reached as its CLA Manager. The lens-wide read gate (and so the
+   * contractor probe) refuses it by design; the CLA routes admit it, and `orgClaOnlyPageGuard` keeps
+   * every other page of it on EasyCLA, so the page renders.
+   */
+  private readonly selectedClaOnly: Signal<boolean> = computed(() => this.claOnlyAccess.isClaOnly(this.accountContext.selectedAccount().uid));
+
   /** FR-010 — the list is a lower bound but the page still renders: show the switcher notice, not a page state. */
   public readonly listIncomplete: Signal<boolean> = computed(() => this.settled() && this.roleGrants.lookupOutcome() === 'partial' && this.selectedHeld());
 
@@ -125,7 +136,7 @@ export class OrgLensEmptyStateService {
     if (!this.settled()) {
       return null;
     }
-    if (this.selectedHeld()) {
+    if (this.selectedHeld() || this.selectedClaOnly()) {
       return null;
     }
     const holdsAnything = this.accountContext.hasOrgSelectorAccess();
@@ -182,7 +193,9 @@ export class OrgLensEmptyStateService {
    */
   public classifyLookup(holdsAnything: boolean): OrgLensLookupBlocker | null {
     const outcome = this.roleGrants.lookupOutcome();
-    if (outcome === 'failed' || (outcome === 'partial' && !holdsAnything)) {
+    // M3 — a failed `cla-manager` scopes read leaves a caller with no grant unclassified, like a partial roster.
+    const lowerBound = outcome === 'partial' || this.claOnlyAccess.lookupFailed();
+    if (outcome === 'failed' || (lowerBound && !holdsAnything)) {
       return 'could-not-load';
     }
     if (this.roleGrants.staffCheck() === 'failed') {

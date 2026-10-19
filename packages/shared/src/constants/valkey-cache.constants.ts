@@ -57,6 +57,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
 
+  /** Domain + schema-version segment for Gatewaze host-session records (#2738): the encrypted GoTrue session keyed by an HMAC of the LFX session id, plus the `@gatewaze/host-session` store's locks, sign-out markers and sign-out channel. A separate record rather than a field on `req.appSession`, for the same blind-overwrite reason as `AUTH_STATE_NAMESPACE`, and because GoTrue rotates refresh tokens. */
+  GATEWAZE_HOST_SESSION_NAMESPACE: 'gatewaze:v1',
+
   /** Domain + schema-version segment for Flow C's (profile Auth0 Management API) CSRF state nonce, keyed by the nonce itself rather than by user or session — see #1938. Kept out of `req.appSession` because express-openid-connect blind-overwrites the whole session on every response; a concurrent request finishing after `/auth/start` silently drops the nonce it wrote. */
   AUTH_STATE_NAMESPACE: 'auth-state:v1',
 
@@ -122,6 +125,9 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-foundation Snowflake-backed Social Listening cache (filter options + analytics; shared across callers, since the data is foundation-scoped rather than per-user). `v2`: tag options folded to lowercase, author options guarded + newly cached, mentions-count resource added — stale `v1` entries must never be served as the new shapes. */
   SOCIAL_LISTENING_NAMESPACE: 'social-listening-sf:v2',
 
+  /** Domain + schema-version segment for the per-project Project Lens → Participating Organizations cache (summary + list pages; shared across callers, since the rows carry no per-caller data — Org Lens links are resolved per caller, uncached). */
+  PROJECT_PARTICIPATING_ORGS_NAMESPACE: 'project-participating-orgs-sf:v1',
+
   /** Default freshness window for membership entries (carried over from the prior 30_000 ms memo). */
   ORG_MEMBERSHIP_TTL_SECONDS: 30,
 
@@ -159,8 +165,14 @@ export const VALKEY_CACHE = {
   /** Freshness window for the per-brief-revision weekly-brief action-items cache — one brief window's worth (7 days), matching the brief's own weekly cadence. */
   WEEKLY_BRIEF_ACTION_ITEMS_TTL_SECONDS: 7 * 24 * 60 * 60,
 
-  /** Freshness window for the Social Listening filter-option and analytics caches (30 minutes). The `platinum_social_listening_feed` dbt model rebuilds hourly, so a half-hour TTL can never serve a value that predates the last rebuild by more than one cycle. */
+  /** Freshness window for Social Listening filter-option and mentions-tags caches (30 minutes); the feed model rebuilds hourly. */
   SOCIAL_LISTENING_TTL_SECONDS: 1800,
+
+  /** Governed Social Listening analytics cache (5 minutes); source models refresh hourly. */
+  SOCIAL_LISTENING_ANALYTICS_TTL_SECONDS: 300,
+
+  /** Freshness window for the Participating Organizations cache (1 hour, matching Org Lens); the source models rebuild daily. */
+  PROJECT_PARTICIPATING_ORGS_TTL_SECONDS: 3600,
 
   /** Fallback session TTL when express-openid-connect doesn't supply a per-session expiry (matches its `session.absoluteDuration` default of 7 days). Normally the store derives the actual TTL from the session's own `cookie.maxAge` instead. */
   SESSION_FALLBACK_TTL_SECONDS: 7 * 24 * 60 * 60,

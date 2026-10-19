@@ -13,6 +13,7 @@ import { OrgLensClaService } from './org-lens-cla.service';
 describe('OrgLensClaService.checkPermission', () => {
   const ORG = '0014100000Te2ovAAB';
   const PROJECT = 'a09410000182dD2AAI';
+  const FOUNDATION = 'a09410000182dFOUND';
 
   let service: OrgLensClaService;
   let http: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn> };
@@ -46,6 +47,25 @@ describe('OrgLensClaService.checkPermission', () => {
 
     await expect(firstValueFrom(service.checkPermission(ORG, 'approval-list-update', PROJECT))).resolves.toBe(false);
     expect(consoleError).toHaveBeenCalledWith('Organization Lens CLA permission check failed', error);
+  });
+
+  it('includes the foundation sfid in the body when one is supplied', async () => {
+    await firstValueFrom(service.checkPermission(ORG, 'approval-list-update', PROJECT, FOUNDATION));
+
+    expect(http.post).toHaveBeenCalledWith(`/api/orgs/${ORG}/lens/cla-groups/permissions/checks`, {
+      action: 'approval-list-update',
+      projectSfid: PROJECT,
+      foundationSfid: FOUNDATION,
+    });
+  });
+
+  it('omits the foundation key when the id is empty or missing — the BFF reads a present key as the second pair', async () => {
+    await firstValueFrom(service.checkPermission(ORG, 'approval-list-update', PROJECT, ''));
+    await firstValueFrom(service.checkPermission(ORG, 'approval-list-update', PROJECT));
+
+    for (const [, body] of http.post.mock.calls) {
+      expect(body).not.toHaveProperty('foundationSfid');
+    }
   });
 });
 

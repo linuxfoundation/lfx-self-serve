@@ -72,6 +72,12 @@ Express 4 ignores the promise a handler returns, so on its own it never routes a
 
 Controllers still validate request shape and use `try`/`next(error)`. The bridge is a backstop, not a substitute: a handler that relies on it returns a 500 where it should have returned a 400. Remove the bridge when the server moves to Express 5, which forwards rejections natively. `resolveLayerPrototype` throws at startup if the Express 4 `Layer` API it patches is gone.
 
+#### JSON Parser Failures
+
+The strict `express.json()` parser rejects primitive JSON bodies and malformed JSON before route validation. `apiErrorHandler` converts parser errors with `type: 'entity.parse.failed'` and `status: 400` into a `ServiceValidationError` for the `body` field, preserving a structured 400 response and WARN logging. Neither the parser's original message nor its submitted body is retained in the response or log. Unrecognized errors still receive the generic 500 response; arbitrary `status` properties do not override that fallback.
+
+The parser runs before `pino-http`, so these errors have no `req.log`. The handler uses `LoggerService`'s infrastructure mode when the request logger is absent, retaining path, method, and error metadata without changing middleware order. Requests that reached `pino-http` keep request-scoped logging and operation deduplication.
+
 ### 3. Logging Integration Architecture
 
 #### Dual Logger Pattern

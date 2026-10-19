@@ -11,6 +11,7 @@ import {
   MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
+  RECENTLY_CREATED_MEETING_WINDOW_MS,
 } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
@@ -27,6 +28,7 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
+  MeetingCalendarScope,
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -57,9 +59,9 @@ import {
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
 import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
-import { catchError, concatMap, from, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
+import { catchError, concatMap, from, identity, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
 
-import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, retryPropagationLag } from '@shared/utils/http-error.utils';
 
 @Injectable({
   providedIn: 'root',
@@ -79,6 +81,11 @@ export class MeetingService {
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
   private readonly meetingDetailCache = new Map<string, { observable: Observable<Meeting>; cachedAt: number }>();
+  /**
+   * Meeting ids this client created within `RECENTLY_CREATED_MEETING_WINDOW_MS`, keyed to the
+   * create timestamp — see `getMeetingDetail` for why only these ids get `retryPropagationLag`.
+   */
+  private readonly recentlyCreatedMeetingIds = new Map<string, number>();
 
   public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
     return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
@@ -202,9 +209,14 @@ export class MeetingService {
     uid: string,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
+    filters?: string[],
+    includeViewerAttendance = false
   ): Observable<PaginatedResponse<PastMeeting>> {
     let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', PAST_MEETING_SORT.NAME_DESC);
+    // Opt-in: the server scans the viewer's attendance history per request, so only the visible list asks for it.
+    if (includeViewerAttendance) {
+      params = params.set('include_viewer_attendance', 'true');
+    }
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }
@@ -234,6 +246,16 @@ export class MeetingService {
    * the new `request$` rather than invalidating — callers already subscribed to the prior
    * `shareReplay(1)` observable continue to completion with the old payload, so racing
    * `skipCache` callers can still observe a stale result.
+   *
+   * `retryPropagationLag` sits closest to the source, ahead of the cache-eviction `tap` and the
+   * logging `catchError`, so a transient 403/404 right after a create (#501) is retried silently
+   * and only a terminal failure reaches those. Both the writerGuard's `meetings` probe and this
+   * page's edit-mode load go through this one method, so retrying here fixes the race for both.
+   *
+   * The retry only applies when `id` is in `recentlyCreatedMeetingIds` within
+   * `RECENTLY_CREATED_MEETING_WINDOW_MS` of `createMeeting` succeeding for it — every other read
+   * (an unrelated meeting, or this same id once the window has passed) fails on the first 403/404
+   * exactly as before, so a genuine permission loss or deleted meeting still surfaces immediately.
    */
   public getMeetingDetail(id: string, options?: { skipCache?: boolean }): Observable<Meeting> {
     const cached = this.meetingDetailCache.get(id);
@@ -243,7 +265,10 @@ export class MeetingService {
     if (cached) {
       this.meetingDetailCache.delete(id);
     }
+    const createdAt = this.recentlyCreatedMeetingIds.get(id);
+    const isRecentlyCreated = createdAt !== undefined && Date.now() - createdAt < RECENTLY_CREATED_MEETING_WINDOW_MS;
     const request$ = this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
+      isRecentlyCreated ? retryPropagationLag() : identity,
       tap({ error: () => this.meetingDetailCache.delete(id) }),
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
@@ -315,9 +340,27 @@ export class MeetingService {
     );
   }
 
+  /**
+   * Builds the "Download .ics" URL for a meeting (GH-3505). Returns a plain URL (no HTTP call
+   * here) — the browser downloads the file natively via an anchor/`window.open` target, and the
+   * server resolves authorization and the join link itself.
+   */
+  public getMeetingCalendarIcsUrl(meetingId: string, options: { scope: MeetingCalendarScope; occurrenceId?: string }): string {
+    let params = new HttpParams().set('scope', options.scope);
+    if (options.occurrenceId) {
+      params = params.set('occurrenceId', options.occurrenceId);
+    }
+
+    return `/api/meetings/${encodeURIComponent(meetingId)}/calendar.ics?${params.toString()}`;
+  }
+
   public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {
     return this.http.post<Meeting>('/api/meetings', meeting).pipe(
       take(1),
+      tap((created) => {
+        this.pruneExpiredRecentlyCreatedMeetingIds();
+        this.recentlyCreatedMeetingIds.set(created.id, Date.now());
+      }),
       catchError((error) => {
         console.error('Failed to create meeting:', error);
         return throwError(() => error);
@@ -825,6 +868,16 @@ export class MeetingService {
     for (const [key, entry] of this.meetingDetailCache) {
       if (now - entry.cachedAt >= MEETING_DETAIL_CACHE_TTL_MS) {
         this.meetingDetailCache.delete(key);
+      }
+    }
+  }
+
+  // Opportunistic sweep on insert, mirroring pruneExpiredMeetingDetailCache above.
+  private pruneExpiredRecentlyCreatedMeetingIds(): void {
+    const now = Date.now();
+    for (const [key, createdAt] of this.recentlyCreatedMeetingIds) {
+      if (now - createdAt >= RECENTLY_CREATED_MEETING_WINDOW_MS) {
+        this.recentlyCreatedMeetingIds.delete(key);
       }
     }
   }

@@ -4,7 +4,7 @@
 import type { AbstractControl, ValidationErrors } from '@angular/forms';
 import { describe, expect, it } from 'vitest';
 
-import { MAX_NEGATIVE_KEYWORDS_PER_REQUEST } from '../constants/campaign.constants';
+import { MAX_NEGATIVE_KEYWORDS_PER_REQUEST, MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST } from '../constants/campaign.constants';
 import { campaignNegativeKeywordsValidator } from './campaign-negative-keywords.validator';
 
 const control = (value: unknown): AbstractControl => ({ value }) as AbstractControl;
@@ -25,6 +25,21 @@ describe('campaignNegativeKeywordsValidator', () => {
     expect(validate(lines(MAX_NEGATIVE_KEYWORDS_PER_REQUEST + 1))).toEqual({
       negativeKeywordsTooMany: { max: MAX_NEGATIVE_KEYWORDS_PER_REQUEST, count: MAX_NEGATIVE_KEYWORDS_PER_REQUEST + 1 },
     });
+  });
+
+  // X takes 20 per request. The cap is read through a getter on every validation, because the
+  // editor learns its campaign's platform only after building its form.
+  it('applies a per-platform cap, read when it validates', () => {
+    let max = MAX_NEGATIVE_KEYWORDS_PER_REQUEST;
+    const validator = campaignNegativeKeywordsValidator(() => max);
+    const twentyOne = control(lines(MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST + 1));
+
+    expect(validator(twentyOne)).toBeNull();
+    max = MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST;
+    expect(validator(twentyOne)).toEqual({
+      negativeKeywordsTooMany: { max: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST, count: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST + 1 },
+    });
+    expect(campaignNegativeKeywordsValidator(MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST)(control(lines(MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST)))).toBeNull();
   });
 
   // The whole batch is held back: sending the good lines alone would silently drop the bad ones.

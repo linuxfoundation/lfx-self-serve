@@ -71,7 +71,7 @@ async function fillRegistrationForm(page: Page): Promise<void> {
   await expect(editor).toBeVisible({ timeout: MENTOR_PAGE_LOAD_TIMEOUT });
   await editor.fill('Test introduction from Test User 1.');
 
-  await page.locator('[data-test="mentorship-mentor-skill"]').click();
+  await page.getByTestId('mentorship-mentor-skill').locator('input').fill('Kubernetes');
   await page.getByRole('option', { name: 'Kubernetes', exact: true }).click();
   await page.getByTestId('mentorship-mentor-add-skill').click();
   await expect(page.getByTestId('mentorship-mentor-skill-list')).toContainText('Kubernetes');

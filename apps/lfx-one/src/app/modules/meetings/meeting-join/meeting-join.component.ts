@@ -72,6 +72,7 @@ import {
   User,
 } from '@lfx-one/shared';
 import {
+  getMeetingSelfRemovalMessage,
   getUserTimezone,
   isHostKeyVisible,
   isMeetingAttendeeListShared,
@@ -119,6 +120,7 @@ import {
   timer,
 } from 'rxjs';
 
+import { AddToCalendarComponent } from '../components/add-to-calendar/add-to-calendar.component';
 import { CancelOccurrenceConfirmationComponent } from '../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
 import { HostKeyPanelComponent } from '../components/host-key-panel/host-key-panel.component';
@@ -134,6 +136,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     DatePipe,
     NgClass,
     ReactiveFormsModule,
+    AddToCalendarComponent,
     ButtonComponent,
     CardComponent,
     TagComponent,
@@ -507,8 +510,7 @@ export class MeetingJoinComponent implements OnInit {
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
     this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
-    // A committee-sourced registration follows committee membership, so it cannot be removed from here.
-    this.canLeaveMeeting = computed(() => this.effectivelyInvited() && !this.meeting()?.invited_via_committee);
+    this.canLeaveMeeting = computed(() => this.effectivelyInvited());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canRespondAsOrganizer = this.initializeCanRespondAsOrganizer();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -760,7 +762,7 @@ export class MeetingJoinComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting()?.invited_via_committee, organizer: this.meeting()?.organizer }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -903,7 +905,8 @@ export class MeetingJoinComponent implements OnInit {
               this.pastMeetingFullAccess.set(res.full_access);
             }),
             map((res: PublicPastMeetingResponse) => ({
-              meeting: res.meeting,
+              // Preserve the legacy join-page view model without claiming a complete PastMeeting at the HTTP boundary.
+              meeting: res.meeting as Meeting,
               project: res.project,
             })),
             catchError((error) => {
@@ -934,7 +937,8 @@ export class MeetingJoinComponent implements OnInit {
                     this.pastMeetingFullAccess.set(res.full_access);
                   }),
                   map((res: PublicPastMeetingResponse) => ({
-                    meeting: res.meeting,
+                    // Preserve the legacy join-page view model without claiming a complete PastMeeting at the HTTP boundary.
+                    meeting: res.meeting as Meeting,
                     project: res.project,
                   })),
                   catchError((fallbackError) => {

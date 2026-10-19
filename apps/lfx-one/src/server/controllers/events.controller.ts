@@ -7,7 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
-import { parseOffsetPagination } from '../helpers/validation.helper';
+import { getValidatedIsoDateQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
 import { VisaLetterService } from '../services/visa-letter.service';
@@ -71,8 +71,8 @@ export class EventsController {
       const status = rawMyEventStatus && VALID_MY_EVENT_STATUS_VALUES.has(rawMyEventStatus) ? rawMyEventStatus : undefined;
       const sortField = req.query['sortField'] ? String(req.query['sortField']) : undefined;
       const registeredOnly = req.query['registeredOnly'] === 'true';
-      const startDateFrom = req.query['startDateFrom'] ? String(req.query['startDateFrom']) : undefined;
-      const startDateTo = req.query['startDateTo'] ? String(req.query['startDateTo']) : undefined;
+      const startDateFrom = getValidatedIsoDateQueryParam(req, 'startDateFrom', 'get_my_events');
+      const startDateTo = getValidatedIsoDateQueryParam(req, 'startDateTo', 'get_my_events');
       const country = req.query['country'] ? String(req.query['country']) : undefined;
       const isVisaRequestAccepted = req.query['isVisaRequestAccepted'] === 'true' ? true : undefined;
 
@@ -239,6 +239,7 @@ export class EventsController {
    * Get upcoming events accepting travel fund applications (the same list for every user)
    * Query params: eventId (string), searchQuery (string), startDateFrom (ISO), startDateTo (ISO), country (string),
    *               pageSize (number), offset (number)
+   * Invalid date filters return 400 before querying events.
    */
   public async getTravelFundEvents(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_travel_fund_events', {
@@ -253,12 +254,14 @@ export class EventsController {
       }
 
       const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
+      const startDateFrom = getValidatedIsoDateQueryParam(req, 'startDateFrom', 'get_travel_fund_events');
+      const startDateTo = getValidatedIsoDateQueryParam(req, 'startDateTo', 'get_travel_fund_events');
 
       const response = await this.eventsService.getTravelFundEvents(req, {
         eventId: req.query['eventId'] ? String(req.query['eventId']) : undefined,
         searchQuery: req.query['searchQuery'] ? String(req.query['searchQuery']).trim() : undefined,
-        startDateFrom: req.query['startDateFrom'] ? String(req.query['startDateFrom']) : undefined,
-        startDateTo: req.query['startDateTo'] ? String(req.query['startDateTo']) : undefined,
+        startDateFrom,
+        startDateTo,
         country: req.query['country'] ? String(req.query['country']) : undefined,
         pageSize,
         offset,

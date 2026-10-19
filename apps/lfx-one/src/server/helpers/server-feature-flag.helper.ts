@@ -188,6 +188,28 @@ export enum ServerFeatureFlag {
   CampaignServiceGoogleChannels = 'LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS',
 
   /**
+   * Gates the per-platform Bidding control in the create flow (#3299): Automatic or Manual with a
+   * max CPC bid, sent as `bidding` on `linkedInConfig`, `metaConfig`, `microsoftConfig` and
+   * `redditConfig`. Not Google Ads, which has its own bidding plan.
+   *
+   * A CAPABILITY flag, like `CampaignServiceDemandGen`: it says the DEPLOYED campaign-service
+   * understands `bidding` (linuxfoundation/lfx-v2-campaign-service#332). An older one drops the
+   * unknown key — Go's decoder ignores it — and creates every campaign on automatic bidding, so a
+   * Manual choice would be silently lost and the job would report success. Turn it on only once
+   * #332 is deployed in the target environment.
+   *
+   * Only meaningful while the create cutover is on (`cutoverOwnsCreate`): the legacy creator does
+   * not read `bidding` either, which is why the capability the client sees
+   * (`CampaignListResult.biddingEnabled`) needs both. With it off the control is hidden and the
+   * create route refuses a request that carries `bidding` rather than dropping it.
+   *
+   * Turning it back off strands nothing: campaigns already created keep the bidding they were
+   * created with, and new creates are automatic again. OFF by default. Same accepted values as the
+   * flags above.
+   */
+  CampaignServiceBidding = 'LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING',
+
+  /**
    * Serve `PATCH /api/campaigns/:campaignId/status` from lfx-v2-campaign-service instead of the
    * per-platform SDK calls in `campaign-proxy.service.ts`. OFF keeps the current behaviour
    * byte-for-byte.
@@ -209,11 +231,11 @@ export enum ServerFeatureFlag {
    *
    * Two SETS live here and conflating them invites deleting a guard that is doing its job:
    * campaign-service implements a toggle dispatcher for every paid platform upstream, but what
-   * this flag exposes is only the non-disabled entries of `CAMPAIGN_PLATFORMS` — a platform can be
-   * dispatchable upstream and simply not offered by this app (X is, today). Deliberately not
-   * stated as a count: the roster changes whenever a `disabled` flag flips — LFXV2-3312 enabled
-   * Microsoft — and a number here goes stale silently. See
-   * `CAMPAIGN_SERVICE_STATUS_PLATFORMS` for why the narrowing is deliberate.
+   * this flag exposes is the shared `TOGGLEABLE_CAMPAIGN_PLATFORMS` (create-enabled plus
+   * adoptable platforms) — a platform can be dispatchable upstream and not reachable here.
+   * Deliberately not stated as a count: the roster changes as platforms are enabled or become
+   * adoptable, and a number here goes stale silently. See `CAMPAIGN_SERVICE_STATUS_PLATFORMS`
+   * for why the narrowing is deliberate.
    *
    * MISROUTING IS IMPOSSIBLE HERE, unlike `CampaignServiceJobs`, and the reason is worth stating
    * because that flag's hazard looks identical. Routing depends on the campaign id's SHAPE as
@@ -313,6 +335,25 @@ export enum ServerFeatureFlag {
   CampaignServiceKeywordActions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS',
 
   /**
+   * Serves the Optimize-tab read not yet verified against a published campaign-service endpoint:
+   * `GET /api/campaigns/linkedin/campaign-ref`. OFF answers 404, as if the route did not exist, so no
+   * deployment calls an upstream route that campaign-service does not serve. LinkedIn's campaign-ref
+   * was published after it was gated here and its wire type is still to be re-checked before the
+   * flag is turned on.
+   *
+   * Not a cutover flag: there is no legacy arm. It gates ONLY this route. The other
+   * campaign-service-only Optimize routes (Meta/X/Microsoft/LinkedIn/Reddit audience,
+   * Meta/Reddit/X/Microsoft campaign-ref, the Reddit keyword read, campaign settings, Meta ad sets, keyword
+   * targeting, adopt) are ungated, following the precedent of the Microsoft keyword read and the
+   * budget/bid levers: their upstream endpoints exist, and campaign-service answers 400 itself where
+   * a platform's metrics are switched off.
+   *
+   * Turn it on only once campaign-service serves it in the target environment. Turning it back off
+   * strands nothing: it is a read. Same accepted values as the flags above.
+   */
+  CampaignServiceOptimizeReads = 'LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS',
+
+  /**
    * Routes the HubSpot campaign UTM lookup and create through campaign-service instead of this
    * BFF's own HubSpot calls.
    *
@@ -361,6 +402,45 @@ export enum ServerFeatureFlag {
   CampaignServiceHubSpotUtm = 'LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM',
 
   /**
+   * Serves the account monitors from campaign-service's `account-monitor` endpoints (#2519):
+   * `/api/campaigns/linkedin/monitor`, `/meta/monitor` and `/reddit/monitor` switch backend, and the campaign-service-only
+   * `/microsoft/monitor`, `/twitter/monitor` and `/hubspot/monitor` answer at all (a 404 while OFF —
+   * they have no legacy path to fall back to). Google (`/monitor`) is NOT gated by this flag.
+   *
+   * IT CHANGES WHOSE CREDENTIAL READS THE ACCOUNT. The legacy LinkedIn/Meta/Reddit paths read the LF ad
+   * account with this app's own environment credentials. Campaign-service resolves the PROJECT'S
+   * OWN connection only — never the LF system fallback — and refuses an account that connection
+   * is not bound to. So on, the Monitor tab's account pickers are filled from those connections
+   * (`/api/campaigns/monitor/connections`) instead of the configured allowlists, and the monitor
+   * routes check the account id's SHAPE rather than allowlist membership. A project with no
+   * connection of its own for a platform, or whose connection has no account bound, sees that
+   * stated in the panel rather than an error. Verify the foundations that use these tabs have
+   * connections before turning this on.
+   *
+   * IT ALSO CHANGES THE NUMBERS, deliberately: campaign-service fixed the rule-engine bugs the
+   * legacy LinkedIn and Reddit paths still have (#3018-#3022): MED items now sort between HIGH
+   * and LOW on LinkedIn (#3018), and Reddit totals become the sum
+   * of the rows, Reddit conversions become "not measured" instead of a fabricated 0 (still rendered
+   * as 0 — see `conversionsMeasured`), and the always-firing "not converting" item disappears.
+   * LinkedIn loses its creative breakdown and the "no ad creatives" item: campaign-service does not
+   * read LinkedIn creative analytics.
+   *
+   * A MIXED ROLLOUT IS SAFE. The flag is read per pod, and the tab's account picker
+   * (`/monitor/connections`) and its monitor read are separate, load-balanced requests, so during a
+   * rolling change the read can land on a pod whose flag differs from the one that chose the account.
+   * A read whose account came from the connection path carries `accountSource=connection`; a pod
+   * with the flag OFF refuses it with a 409 `MONITOR_CUTOVER_MISMATCH` ("The monitor is switching
+   * data sources; refresh in a moment.") instead of serving it from the legacy path — which would
+   * show LinkedIn's default account under the picked one's name, or refuse Reddit's or Meta's — and
+   * the tab's Retry re-checks the data source. An unmarked (legacy-picker) read reaching a pod with
+   * the flag ON is served as before; allowlist ids pass the shape check.
+   *
+   * Reads only, no persisted state and no id space of their own, so flipping it back strands
+   * nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMonitor = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the
@@ -403,34 +483,60 @@ export enum ServerFeatureFlag {
   MarketingOpsFga = 'LFX_MARKETING_OPS_FGA_ENABLED',
 
   /**
-   * Gates `/api/gw/*` (`gw-proxy.route.ts`), the BFF proxy in front of the embedded Gatewaze
-   * admin pilot (`GwModuleOutletComponent`, mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`). OFF answers every request under
-   * the prefix with an identical neutral 404 `not_found`, whether or not the caller is
-   * authenticated — the point is that an unauthenticated probe cannot distinguish "flag off"
-   * from "no such route" from "not authenticated".
+   * The master kill switch for the embedded Gatewaze admin pilot (`GwModuleOutletComponent`,
+   * mounted under every prefix in `GW_EMBED_ROUTE_PREFIXES`) on the server. OFF answers every
+   * `/api/gatewaze/*` request (`gatewaze.route.ts`) with an identical neutral 404 `not_found`,
+   * whether or not the caller is authenticated — the point is that an unauthenticated probe cannot
+   * distinguish "flag off" from "no such route" from "not authenticated". The embed needs this AND
+   * `GatewazeHostSession`; see that flag for why the two stay separate.
    *
    * Deliberately paired with, and independent of, the client-side `gatewaze-embed-enabled`
    * OpenFeature flag (`gatewaze-embed-enabled.guard.ts`). The Web SDK never runs server-side, so
    * the client flag hides the route and nav but leaves the BFF reachable by direct call — this
-   * flag is what makes the dark launch a real kill switch. Both must be on for the pilot to work.
+   * flag is what makes the dark launch a real kill switch.
    *
    * This is a boolean, all-or-nothing gate — it carries no cohort of its own. Tenant scoping is
    * a separate control, and it is **client-side only**: `GW_EMBED_ALLOWED_PROJECT_SLUGS` plus
    * `gwEmbedTenantGuard` keep the embed out of the wrong foundation's chrome, which is a
    * UI-correctness concern rather than a rollout cohort. It deliberately is not a flag.
    *
-   * Do not read that allowlist as a boundary on this proxy. It runs in the browser; anyone who can
-   * reach `/api/gw/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant on
-   * ANY foundation or project by design, because a proxied request names a Gatewaze path rather
+   * Do not read that allowlist as a boundary on the BFF. It runs in the browser; anyone who can
+   * reach `/api/gatewaze/*` bypasses it entirely, and `requireGwEmbedAccess` admits a writer grant
+   * on ANY foundation or project by design, because a proxied request names a Gatewaze path rather
    * than an LFX project. What actually bounds the data is `requireGwEmbedAccess` for reachability
-   * plus the upstream's own Supabase auth and RLS for authorization — the embed authenticates the
-   * caller's own bearer, so LFX confers no data access it did not already have.
+   * plus the upstream's own Supabase auth and RLS for authorization — the Gatewaze session is the
+   * caller's own, so LFX confers no data access it did not already have.
    *
    * OFF by default. No overlap hazard during a rolling update: every route this gates is
-   * stateless and read/write-through to the upstream Gatewaze service, so a request either
-   * reaches a flag-on pod and proxies, or a flag-off pod and 404s — never a partial write.
+   * read/write-through to the upstream Gatewaze service, so a request either reaches a flag-on pod
+   * and proxies, or a flag-off pod and 404s — never a partial write.
    */
   GatewazeEmbedEnabled = 'LFX_GATEWAZE_EMBED_ENABLED',
+
+  /**
+   * Gatewaze host-session mode (#2738): LFX One gets the Gatewaze (GoTrue) session server-to-server
+   * with GoTrue's `id_token` grant and keeps it in Valkey, so the browser never holds a Gatewaze
+   * token. It is the embed's only mode: with it off, `/api/gatewaze` answers the uniform 404 and the
+   * outlet shows its not-configured panel.
+   *
+   * Requires `GatewazeEmbedEnabled`, the session store (`SESSION_STORE_ENABLED` with `VALKEY_URL`),
+   * `GW_SUPABASE_URL`, a publishable `GW_SUPABASE_ANON_KEY` and `PCC_AUTH0_SECRET`.
+   * `resolveGatewazeHostSessionConfig` (`gatewaze-session.service.ts`) checks them all together; with
+   * any missing, host-session mode is off however this flag is set.
+   *
+   * Kept separate from `GatewazeEmbedEnabled` rather than folded into it plus config presence. Folding
+   * it would turn the embed on in any environment that already has the embed flag and the Supabase
+   * config but has never run host-session mode, and it would take away the switch that turns off
+   * only the server-held sessions. Two flags cost one extra env var.
+   *
+   * Rolling-update overlap is harmless. A page served by a flag-on pod whose calls land on a
+   * flag-off pod gets the uniform 404, which the embed reads as `unavailable` and retries. Nothing
+   * is half-written: a stored session is only ever read by a flag-on pod, and it expires on its own
+   * TTL if the flag goes off.
+   *
+   * OFF by default.
+   */
+  GatewazeHostSession = 'LFX_GATEWAZE_HOST_SESSION',
 
   /**
    * Mint the EasyCLA corporate-signing `return_url` as `/org/{orgUid}/easycla/{claGroupId}?signed=1`

@@ -33,6 +33,9 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     createMeetingRsvp: vi.fn(),
     updateOccurrence: vi.fn(),
     cancelOccurrence: vi.fn(),
+    getMeetingJoinUrl: vi.fn(),
+    getMeetingRegistrantsByUsername: vi.fn(),
+    getMeetingRegistrantsByEmail: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -84,6 +87,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
   codePointLength: (await import('../../../../../packages/shared/src/utils/string.utils')).codePointLength,
   isMeetingAttendeeListShared: (await import('../../../../../packages/shared/src/utils/meeting-attendee-lock.utils')).isMeetingAttendeeListShared,
+  isSameOccurrenceId: (await import('../../../../../packages/shared/src/utils/rsvp-calculator.util')).isSameOccurrenceId,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
@@ -97,7 +101,12 @@ vi.mock('../helpers/committee-v1-mapping.helper', () => ({
   resolveCommitteeV2UidsToV1Ids: resolveCommitteeV2UidsToV1IdsMock,
   resolveCommitteeV2UidMappings: resolveCommitteeV2UidMappingsMock,
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail: vi.fn(() => 'user@example.com'), getUsernameFromAuth: vi.fn(async () => null) }));
+vi.mock('../utils/auth-helper', () => ({
+  getEffectiveEmail: vi.fn(() => 'user@example.com'),
+  getEffectiveUsername: vi.fn(() => null),
+  getUsernameFromAuth: vi.fn(async () => null),
+}));
+vi.mock('../helpers/ics.helper', () => ({ buildMeetingCalendarEvents: vi.fn(() => ['VEVENT']), buildVCalendar: vi.fn(() => 'ICS_CONTENT') }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 
 vi.mock('../services/meeting.service', () => ({ MeetingService: vi.fn(() => meetingSvc) }));
@@ -176,10 +185,11 @@ const { MeetingController } = await import('./meeting.controller');
 // The stubbed logger, imported after the mock is registered, so the metadata assertions read the same
 // object the controller writes to.
 const { logger } = await import('../services/logger.service');
-const { getEffectiveEmail, getUsernameFromAuth } = await import('../utils/auth-helper');
+const { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth } = await import('../utils/auth-helper');
+const { buildMeetingCalendarEvents, buildVCalendar } = await import('../helpers/ics.helper');
 
 function buildRes(): Response {
-  const res = { status: vi.fn(() => res), json: vi.fn(() => res), send: vi.fn(() => res) } as unknown as Response;
+  const res = { status: vi.fn(() => res), json: vi.fn(() => res), send: vi.fn(() => res), setHeader: vi.fn(() => res) } as unknown as Response;
   return res;
 }
 
@@ -1267,6 +1277,90 @@ describe('MeetingController', () => {
       await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration: 30 }), buildRes(), next);
 
       expect(next).toHaveBeenCalledWith(upstream);
+    });
+  });
+
+  describe('getMeetingCalendarIcs', () => {
+    const fieldsIn = (error: unknown): string[] => ((error as FakeValidationError).validationErrors ?? []).map((e) => e.field);
+
+    function buildIcsReq(query: Record<string, string> = {}): Request {
+      return buildReq({ params: { uid: MEETING_ID }, query, path: `/meetings/${MEETING_ID}/calendar.ics` });
+    }
+
+    beforeEach(() => {
+      meetingSvc.getMeetingJoinUrl.mockResolvedValue({ link: 'https://zoom.us/j/123' });
+    });
+
+    it('sets the response headers and sends the generated ICS for a non-recurring meeting', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Weekly Sync', restricted: false, recurrence: null });
+      const res = buildRes();
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), res, next);
+
+      expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(expect.anything(), MEETING_ID, undefined);
+      expect(buildMeetingCalendarEvents).toHaveBeenCalledWith(expect.objectContaining({ id: MEETING_ID }), {
+        scope: 'occurrence',
+        occurrenceId: undefined,
+        joinUrl: 'https://zoom.us/j/123',
+      });
+      expect(buildVCalendar).toHaveBeenCalledWith(['VEVENT'], '-//LFX//Meeting Calendar//EN', 'Weekly Sync');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/calendar; charset=utf-8');
+      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', `attachment; filename="meeting-${MEETING_ID}.ics"`);
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+      expect(res.send).toHaveBeenCalledWith('ICS_CONTENT');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('degrades to no join link when resolving it fails', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Weekly Sync', restricted: false, recurrence: null });
+      meetingSvc.getMeetingJoinUrl.mockRejectedValue(new Error('upstream down'));
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(buildMeetingCalendarEvents).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ joinUrl: undefined }));
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('400s a recurring meeting request missing a valid occurrenceId instead of falling back to the series start', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({
+        id: MEETING_ID,
+        title: 'Weekly Sync',
+        restricted: false,
+        recurrence: { type: 1 },
+        occurrences: [{ occurrence_id: '111', status: 'active' }],
+      });
+
+      await controller.getMeetingCalendarIcs(buildIcsReq({ occurrenceId: 'stale-999' }), buildRes(), next);
+
+      expect(fieldsIn(vi.mocked(next).mock.calls[0][0])).toEqual(['occurrenceId']);
+      expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+      expect(buildMeetingCalendarEvents).not.toHaveBeenCalled();
+    });
+
+    it('resolves a registrant-specific join link for a restricted meeting the caller is registered on', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(getEffectiveUsername).mockReturnValueOnce('alice');
+      meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([{ email: 'alice@example.com' }]);
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(meetingSvc.getMeetingRegistrantsByUsername).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'alice');
+      expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'alice@example.com');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('omits the join link for a restricted meeting when the caller is not a registrant — never falls back to a bare getMeetingJoinUrl call', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(getEffectiveUsername).mockReturnValueOnce('mallory');
+      meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([]);
+      vi.mocked(getEffectiveEmail).mockReturnValueOnce('mallory@example.com');
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+      expect(buildMeetingCalendarEvents).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ joinUrl: undefined }));
+      expect(next).not.toHaveBeenCalled();
     });
   });
 

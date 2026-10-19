@@ -30,6 +30,8 @@ import {
   ORG_CLA_DESIGNEE_START_COPY,
   ORG_CLA_DETAIL_TABS,
   ORG_CLA_DOWNLOAD_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_HEADING_STATUS,
   ORG_CLA_LOCKED_TAB_COPY,
@@ -51,6 +53,7 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaPairFoundationSfid,
   orgClaPairProjectSfid,
   orgClaPreviewGroup,
   orgClaReviewCopyFilename,
@@ -95,6 +98,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
@@ -134,6 +138,7 @@ function designeeRefusalCopy(error: unknown): string {
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OpenIntercomDirective,
     OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
@@ -199,6 +204,8 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly reviewCopyDownloading = signal(false);
   protected readonly fetchError = signal(false);
+  protected readonly easyclaRoleMissing = signal(false);
+  protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
   private readonly claLoadingState = signal(false);
   private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
   /**
@@ -555,7 +562,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly autoEclaDisabled = computed(() => !this.autoEclaWritable() || this.autoEclaPending());
 
   /** Carries the locked sentence whenever it shows, so the reason is not sighted-only. */
-  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto ECLA — ${this.autoEclaLockedHint}` : 'Auto ECLA'));
+  protected readonly autoEclaAriaLabel = computed(() => (this.autoEclaLocked() ? `Auto Acknowledge — ${this.autoEclaLockedHint}` : 'Auto Acknowledge'));
 
   /**
    * The current toggle value the template binds to.
@@ -574,6 +581,8 @@ export class OrgEasyclaDetailComponent {
   protected readonly autoEclaPending = computed(() => this.initAutoEclaPending());
 
   private readonly autoEclaProjectSfid = computed(() => this.initAutoEclaProjectSfid());
+
+  private readonly autoEclaFoundationSfid = computed(() => this.initAutoEclaFoundationSfid());
 
   private readonly autoEclaPermissionPair = computed(() => this.initAutoEclaPermissionPair());
 
@@ -781,8 +790,8 @@ export class OrgEasyclaDetailComponent {
         }),
         switchMap((pair) => {
           if (!pair) return of(false);
-          const [orgUid, projectSfid] = pair.split('::');
-          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid);
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid, foundationSfid || undefined);
         }),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -980,8 +989,8 @@ export class OrgEasyclaDetailComponent {
    * is restored to the value shown before the click, which the producer did not change, and the
    * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
-   * `serverAuthoredMessage`. The toast summary names the value that failed to save
-   * ("Couldn't turn Auto ECLA off"). The request is not cancelled when the manager
+   * `serverAuthoredMessage`. The toast summary names the value that failed to save.
+   * The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
@@ -1021,7 +1030,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'success',
-          summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
+          summary: written ? 'Auto Acknowledge turned on.' : 'Auto Acknowledge turned off.',
         });
       },
       error: (error: HttpErrorResponse) => {
@@ -1029,7 +1038,7 @@ export class OrgEasyclaDetailComponent {
         if (!this.autoEclaStillHere(target)) return;
         this.messageService.add({
           severity: 'error',
-          summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
+          summary: next ? "Couldn't turn Auto Acknowledge on" : "Couldn't turn Auto Acknowledge off",
           detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
         });
       },
@@ -1587,12 +1596,18 @@ export class OrgEasyclaDetailComponent {
     return group ? (orgClaPairProjectSfid(group) ?? '') : '';
   }
 
+  private initAutoEclaFoundationSfid(): string {
+    const group = this.claGroup();
+    return group ? (orgClaPairFoundationSfid(group) ?? '') : '';
+  }
+
   private initAutoEclaPermissionPair(): string {
     const group = this.claGroup();
     if (!group?.signed || this.showingPreview()) return '';
     const orgUid = this.selectedOrgUid();
     const projectSfid = this.autoEclaProjectSfid();
-    return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+    const foundationSfid = this.autoEclaFoundationSfid();
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   private initDesigneePair(): string | null {
@@ -1742,6 +1757,7 @@ export class OrgEasyclaDetailComponent {
       tap(() => {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
+        this.easyclaRoleMissing.set(false);
         this.autoEclaWrites.forgetSettled();
         this.selfRemovals.forgetAll();
         this.listReloaded$.next();
@@ -1752,6 +1768,7 @@ export class OrgEasyclaDetailComponent {
           catchError((error: HttpErrorResponse) => {
             console.error('Failed to load organization CLA groups:', error.status, error.message);
             this.fetchError.set(true);
+            this.easyclaRoleMissing.set(error.status === 403 && error.error?.code === ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE);
             this.claLoadingState.set(false);
             return of(null);
           })
@@ -1986,6 +2003,7 @@ export class OrgEasyclaDetailComponent {
           if (!list) return;
           this.retriedList$.next(list);
           this.fetchError.set(false);
+          this.easyclaRoleMissing.set(false);
         }),
         map(() => this.listedGroupForAddress()),
         takeUntil(tripEnded$),

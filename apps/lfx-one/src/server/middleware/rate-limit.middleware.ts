@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NEWSLETTER_INVITE_COUNTED_LOCALS_KEY, NEWSLETTER_INVITE_RATE_LIMIT_MAX, NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS } from '@lfx-one/shared/constants';
+import {
+  EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
+  EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
+  EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
+  NEWSLETTER_INVITE_COUNTED_LOCALS_KEY,
+  NEWSLETTER_INVITE_RATE_LIMIT_MAX,
+  NEWSLETTER_INVITE_RATE_LIMIT_WINDOW_MS,
+} from '@lfx-one/shared/constants';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
@@ -113,6 +120,45 @@ export const newsletterInviteRateLimiter = rateLimit({
   skipFailedRequests: true,
   requestWasSuccessful: (_req, res) => res.statusCode < 400 || res.locals[NEWSLETTER_INVITE_COUNTED_LOCALS_KEY] === true,
   keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
+ * Limits email verification sends per authenticated user, with a /56 IP fallback.
+ * Every outcome consumes budget so linked state cannot be inferred from a later 429.
+ * The default MemoryStore is per pod: the effective ceiling is `limit × pods`, not
+ * an exact cluster-wide cap.
+ */
+export const emailSendCodeUserRateLimiter = rateLimit({
+  windowMs: EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
+  max: EMAIL_SEND_CODE_USER_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many verification code requests. Please try again later.', code: 'RATE_LIMITED' },
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
+ * Limits sends to one normalized address across users, counting every outcome.
+ * The default MemoryStore is per pod, so the effective ceiling is `limit × pods`.
+ * A malicious user can consume another address's budget until the one-hour window
+ * resets; that bounded delivery delay is the accepted per-target throttling trade-off.
+ * Missing or non-string addresses fall back to the user key (then /56 IP).
+ */
+export const emailSendCodeTargetRateLimiter = rateLimit({
+  windowMs: EMAIL_SEND_CODE_RATE_LIMIT_WINDOW_MS,
+  max: EMAIL_SEND_CODE_TARGET_RATE_LIMIT_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  statusCode: 429,
+  message: { error: 'Too many verification code requests. Please try again later.', code: 'RATE_LIMITED' },
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    if (typeof email === 'string') {
+      return `email-target:${email.trim().toLowerCase()}`;
+    }
+    return req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? '');
+  },
 });
 
 /**

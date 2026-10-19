@@ -8,6 +8,14 @@ import type { GroupsIOMailingList } from './mailing-list.interface';
 import type { MeetingAttachment } from './meeting-attachment.interface';
 import type { UserSearchResult } from './search.interface';
 
+/** Outcome of checking committee-scoped write access in candidate order. */
+export interface CommitteeWriterProbeResult {
+  /** At least one probed committee admitted the user. */
+  writer: boolean;
+  /** No committee admitted the user and at least one probe failed transiently. */
+  transientFailure: boolean;
+}
+
 /** Pre-computed link target for the "Mailing list associated" Channels entry on My Groups rows/cards. */
 export interface CommitteeMailingListLink {
   /** Router commands: the single list's detail page, or the group's page when several lists are associated. */

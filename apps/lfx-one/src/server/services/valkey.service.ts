@@ -592,6 +592,15 @@ function keyPrefix(): string {
   return ns ? `${VALKEY_CACHE.APP_PREFIX}:${ns}` : VALKEY_CACHE.APP_PREFIX;
 }
 
+/**
+ * Key prefix for the Gatewaze host-session store (#2738): `lfx-ui[:<namespace>]:gatewaze:v1:`. The
+ * `@gatewaze/host-session` store appends its own `session:` / `refresh-lock:` / `create-lock:` /
+ * `signed-out:` segments and an HMAC-derived id, and publishes sign-outs on `<prefix>logout`.
+ */
+export function buildGatewazeHostSessionKeyPrefix(): string {
+  return `${keyPrefix()}:${VALKEY_CACHE.GATEWAZE_HOST_SESSION_NAMESPACE}:`;
+}
+
 /** Session-store cache key for an opaque session id; null (fail-closed) when the id isn't filter-safe, so it can't corrupt the `:`-delimited key. */
 export function buildSessionCacheKey(sessionId: string): string | null {
   if (!isFilterSafeIdentifier(sessionId)) return null;
@@ -716,6 +725,32 @@ export function withSocialListeningCache<T>(
   accept?: (value: unknown) => boolean
 ): Promise<T> {
   return valkeyService.withCache(buildSocialListeningCacheKey(foundationSlug, resource, discriminator), ttlSeconds, fetcher, accept);
+}
+
+/**
+ * Per-project Participating Organizations cache key (#2091): the query's discriminator is sha256-hashed
+ * so a search value can't corrupt the key; null (fail-closed → direct fetch) for an unsafe slug.
+ */
+function buildProjectParticipatingOrgsCacheKey(projectSlug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
+  if (!isFilterSafeIdentifier(projectSlug)) return null;
+  const digest = createHash('sha256').update(JSON.stringify(discriminator)).digest('hex').slice(0, 16);
+  return `${keyPrefix()}:${VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_NAMESPACE}:${projectSlug}:${resource}:${digest}`;
+}
+
+/** Read-through helper for the per-project Participating Organizations namespace; a null key (unsafe slug) fetches directly. */
+export function withProjectParticipatingOrgsCache<T>(
+  projectSlug: string,
+  resource: string,
+  discriminator: readonly (string | number)[],
+  fetcher: () => Promise<T>,
+  accept: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(
+    buildProjectParticipatingOrgsCacheKey(projectSlug, resource, discriminator),
+    VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_TTL_SECONDS,
+    fetcher,
+    accept
+  );
 }
 
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */

@@ -1,0 +1,105 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form class="flex flex-col gap-4" [formGroup]="form" (ngSubmit)="submit()" data-testid="campaign-adopt-dialog">
+  <p class="text-sm text-gray-500" data-testid="campaign-adopt-dialog-subject">
+    {{ data.campaignName }} · {{ platformLabel }} campaign {{ data.platformCampaignId }}
+  </p>
+  <p class="text-sm text-gray-700">{{ explainer }}</p>
+
+  @switch (briefs().status) {
+    @case ('loading') {
+      <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="campaign-adopt-dialog-briefs-loading">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading approved briefs…
+      </p>
+    }
+    @case ('error') {
+      <div class="flex flex-col items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3" role="alert" data-testid="campaign-adopt-dialog-briefs-error">
+        <p class="text-sm text-red-800">{{ briefs().message }}</p>
+        <lfx-button
+          label="Try again"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="retryBriefs()"
+          data-testid="campaign-adopt-dialog-briefs-retry" />
+      </div>
+    }
+    @case ('ready') {
+      @if (briefOptions().length === 0) {
+        <p class="text-sm text-gray-500" data-testid="campaign-adopt-dialog-briefs-empty">{{ emptyMessage }}</p>
+      } @else {
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-medium text-gray-700" for="campaign-adopt-brief">Approved brief</label>
+          <lfx-select
+            [form]="form"
+            control="briefId"
+            inputId="campaign-adopt-brief"
+            [options]="briefOptions()"
+            placeholder="Choose the brief this campaign belongs to"
+            styleClass="w-full"
+            data-testid="campaign-adopt-dialog-brief" />
+          <p class="text-xs text-gray-500">Only approved paid-marketing briefs are listed. A brief holds one live campaign per platform.</p>
+        </div>
+      }
+    }
+  }
+
+  @if (submitting()) {
+    <p class="flex items-center gap-2 text-sm text-gray-500" role="status" data-testid="campaign-adopt-dialog-pending">
+      <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+      {{ pendingMessage }}
+    </p>
+  }
+
+  @if (failure(); as f) {
+    @if (f.state === 'unconfirmed') {
+      <div
+        class="flex flex-col items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3"
+        role="alert"
+        data-testid="campaign-adopt-dialog-unconfirmed">
+        <p class="text-sm font-semibold text-amber-900">{{ f.title }}</p>
+        <p class="text-sm text-amber-800">{{ f.message }}</p>
+        @if (f.detail) {
+          <p class="text-xs text-amber-800" data-testid="campaign-adopt-dialog-unconfirmed-detail">{{ f.detail }}</p>
+        }
+        <lfx-button
+          label="Check whether it was adopted"
+          size="small"
+          severity="secondary"
+          [outlined]="true"
+          [loading]="checking()"
+          [disabled]="checking()"
+          (onClick)="verify()"
+          data-testid="campaign-adopt-dialog-verify" />
+      </div>
+    } @else {
+      <div class="flex flex-col gap-1 rounded-lg border border-red-200 bg-red-50 p-3" role="alert" data-testid="campaign-adopt-dialog-error">
+        <p class="text-sm font-semibold text-red-800" data-testid="campaign-adopt-dialog-error-title">{{ f.title }}</p>
+        <p class="text-sm text-red-800" data-testid="campaign-adopt-dialog-error-message">{{ f.message }}</p>
+        @if (f.detail) {
+          <p class="text-xs text-red-700" data-testid="campaign-adopt-dialog-error-detail">{{ f.detail }}</p>
+        }
+      </div>
+    }
+  }
+
+  <div class="flex justify-end gap-2">
+    <lfx-button
+      label="Cancel"
+      size="small"
+      severity="secondary"
+      [text]="true"
+      [disabled]="submitting()"
+      (onClick)="cancel()"
+      data-testid="campaign-adopt-dialog-cancel" />
+    <lfx-button
+      type="submit"
+      label="Adopt campaign"
+      size="small"
+      [disabled]="!canSubmit() || briefOptions().length === 0"
+      [loading]="submitting()"
+      data-testid="campaign-adopt-dialog-submit" />
+  </div>
+</form>

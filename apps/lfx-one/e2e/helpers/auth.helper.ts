@@ -9,7 +9,7 @@ export interface AuthCredentials {
 }
 
 export function skipWhenAuthMissing(): void {
-  if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
+  if (!process.env['TEST_USERNAME'] || !process.env['TEST_PASSWORD']) {
     test.skip(true, 'TEST_USERNAME and TEST_PASSWORD are required');
   }
 }
@@ -107,8 +107,8 @@ export class AuthHelper {
 
 // Test credentials - these should be stored in environment variables
 export const TEST_CREDENTIALS: AuthCredentials = {
-  username: process.env.TEST_USERNAME || '',
-  password: process.env.TEST_PASSWORD || '',
+  username: process.env['TEST_USERNAME'] || '',
+  password: process.env['TEST_PASSWORD'] || '',
 };
 
 // Generated with [Claude Code](https://claude.ai/code)

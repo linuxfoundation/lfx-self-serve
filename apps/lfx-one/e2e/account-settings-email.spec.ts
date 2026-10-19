@@ -5,7 +5,7 @@
  * Account Settings — email management, content spec (#1852).
  *
  * Drives the Email Settings section of /profile/settings through the meeting-invitation
- * preference workflow: choosing an alternate address, resetting to the primary via the
+ * preference workflow: choosing an alternate address, switching back to the primary via the
  * sentinel, the delete guard, the cross-row in-flight lock, and the 400-only validation
  * banner. The email API surface is mocked (see helpers/account-settings-email.helper.ts)
  * so the spec doesn't depend on a seeded backend test user.
@@ -28,7 +28,6 @@ import {
   MEETING_INVITE_PRIMARY_SENTINEL,
   MENU_DELETE,
   MENU_MAKE_PRIMARY,
-  MENU_RESET_TO_PRIMARY,
   MENU_USE_FOR_INVITES,
   menuItem,
   openEmailSettings,
@@ -71,21 +70,21 @@ test.describe('Account Settings — Email Management', () => {
       expect(mocks.inviteGetCount()).toBeGreaterThan(initialInviteGets);
     });
 
-    test('resets to the primary address via the sentinel', async ({ page }) => {
+    test('switches back to the primary address via the sentinel', async ({ page }) => {
       const mocks = await openEmailSettings(page, { initialInvite: { email_id: 'email-id-alt', email: ALTERNATE_EMAIL } });
 
       await expect(emailRow(page, ALTERNATE_EMAIL).getByTestId(INVITE_BADGE)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       const initialInviteGets = mocks.inviteGetCount();
 
       await openRowMenu(page, PRIMARY_EMAIL);
-      await menuItem(page, MENU_RESET_TO_PRIMARY).click();
+      await menuItem(page, MENU_USE_FOR_INVITES).click();
 
-      // The post-write refetch unmounts the whole card, badges included, so a bare count-0 would
-      // also pass mid-load. Settle on rendered rows after a completed refetch before asserting.
+      // The post-write refetch unmounts the whole card, badges included, so settle on rendered rows
+      // after a completed refetch before asserting where the badge landed.
       await expect.poll(() => mocks.inviteGetCount(), { timeout: ELEMENT_TIMEOUT }).toBeGreaterThan(initialInviteGets);
       await expect(page.getByTestId('email-settings-loading')).toHaveCount(0, { timeout: ELEMENT_TIMEOUT });
-      await expect(emailRow(page, ALTERNATE_EMAIL)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
-      await expect(page.locator(`[data-testid="${INVITE_BADGE}"]`)).toHaveCount(0);
+      await expect(emailRow(page, PRIMARY_EMAIL).getByTestId(INVITE_BADGE)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+      await expect(emailRow(page, ALTERNATE_EMAIL).getByTestId(INVITE_BADGE)).toHaveCount(0);
       expect(mocks.putBodies()).toEqual([{ email: MEETING_INVITE_PRIMARY_SENTINEL }]);
     });
 
@@ -94,15 +93,22 @@ test.describe('Account Settings — Email Management', () => {
 
       await openRowMenu(page, ALTERNATE_EMAIL);
       await expect(menuItem(page, MENU_USE_FOR_INVITES)).toHaveCount(0);
-      await expect(menuItem(page, MENU_RESET_TO_PRIMARY)).toHaveCount(0);
       // The row still offers its unrelated actions, so the absence above isn't an empty menu.
       await expect(menuItem(page, MENU_MAKE_PRIMARY)).toBeVisible();
     });
 
-    test('offers no reset action while the primary address is already in effect', async ({ page }) => {
+    test('badges the primary row and offers it no invite action while no override is set', async ({ page }) => {
       await openEmailSettings(page);
 
+      await expect(emailRow(page, PRIMARY_EMAIL).getByTestId(INVITE_BADGE)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       // With no override the primary row has no actions at all, so no kebab renders for it.
+      await expect(page.getByTestId(`email-menu-${PRIMARY_EMAIL}`)).toHaveCount(0);
+    });
+
+    test('badges the primary row when the override is pinned to the primary address', async ({ page }) => {
+      await openEmailSettings(page, { initialInvite: { email_id: 'email-id-primary', email: PRIMARY_EMAIL } });
+
+      await expect(emailRow(page, PRIMARY_EMAIL).getByTestId(INVITE_BADGE)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       await expect(page.getByTestId(`email-menu-${PRIMARY_EMAIL}`)).toHaveCount(0);
     });
   });

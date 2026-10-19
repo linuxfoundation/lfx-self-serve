@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // A deep import: the utils barrel reaches Angular, which specs that load the logger do not compile.
-import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
+import { redactLoggedUrl } from '@lfx-one/shared/utils/credential-redaction.utils';
 import { trace } from '@opentelemetry/api';
 import { IncomingMessage, ServerResponse } from 'node:http';
 

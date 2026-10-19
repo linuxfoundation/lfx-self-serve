@@ -28,6 +28,7 @@ const {
   isImpersonating,
   enrichWithProjectData,
   getEffectiveEmail,
+  getEffectiveUsername,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
@@ -47,6 +48,7 @@ const {
   // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
   enrichWithProjectData: vi.fn((_req: unknown, items: unknown[]) => Promise.resolve(items)),
   getEffectiveEmail: vi.fn<() => string | null>(() => 'user@example.com'),
+  getEffectiveUsername: vi.fn<() => string | null>(() => 'synthetic-reviewer'),
 }));
 
 vi.mock('@lfx-one/shared/enums', () => ({
@@ -99,7 +101,13 @@ vi.mock('../helpers/query-service.helper', async () => {
     fetchAllQueryResources: vi.fn(actual.fetchAllQueryResources),
   };
 });
-vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn(), isImpersonating, getEffectiveEmail }));
+vi.mock('../utils/auth-helper', () => ({
+  resolveAuditUserDisplayName,
+  getUsernameFromAuth: vi.fn(),
+  isImpersonating,
+  getEffectiveEmail,
+  getEffectiveUsername,
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -1415,9 +1423,17 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     resources: applications.map((data) => ({ type: 'committee_application', id: `committee_application:${data.uid}`, data })),
     page_token: pageToken,
   });
+  const reviewer = { username: 'synthetic-reviewer', email: 'reviewer@example.com', name: 'Reviewer' };
+  const otherWriter = { username: 'other-writer', email: 'other@example.com', name: 'Other' };
+  // Groups whose own roster omits the caller — they only reach writer access through inheritance.
+  const inheritedOnly = new Set<string>();
+  const rosterFor = (uid: string) => ({ writers: inheritedOnly.has(uid) ? [otherWriter] : [reviewer] });
+  const isLiveRead = (call: unknown[]) => String(call[2]).includes('/applications/');
   const prime = (applications: CommitteeJoinApplication[]) => {
     checkAccessStrict.mockResolvedValue(new Map(applications.map((app) => [`${app.committee_uid}#writer`, true])));
     proxyRequest.mockImplementation((_req: Request, _service: string, path: string, _method: string, params?: Record<string, unknown>) => {
+      const settings = path.match(/^\/committees\/([^/]+)\/settings$/);
+      if (settings) return Promise.resolve(rosterFor(settings[1]));
       if (params?.['type'] === 'committee_application') return Promise.resolve(applicationPage(applications));
       if (params?.['type'] === 'committee') {
         return Promise.resolve(pageOf([...new Set(applications.map((app) => app.committee_uid))].map((uid) => ({ uid, name: `Group ${uid}` }))));
@@ -1428,17 +1444,21 @@ describe('CommitteeService.getManagedPendingApplications', () => {
 
   beforeEach(async () => {
     proxyRequest.mockReset();
+    inheritedOnly.clear();
+    getEffectiveUsername.mockReturnValue('synthetic-reviewer');
+    getEffectiveEmail.mockReturnValue('reviewer@example.com');
     checkAccessStrict.mockReset().mockResolvedValue(new Map());
     const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
     vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
     service = new CommitteeService();
   });
 
-  it('includes effective direct/inherited writers, excludes applicant/auditor access, and deduplicates composite addresses', async () => {
+  it('includes direct roster writers, excludes inherited/applicant/auditor access, and deduplicates composite addresses', async () => {
     const direct = application('direct');
     const inherited = application('inherited'); // Same application UID in another committee remains distinct.
     const sibling = application('direct', 'sibling');
     prime([direct, direct, sibling, inherited, application('applicant'), application('auditor')]);
+    inheritedOnly.add('inherited');
     checkAccessStrict.mockResolvedValue(
       new Map([
         ['direct#writer', true],
@@ -1451,15 +1471,87 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     expect(await service.getManagedPendingApplications(req)).toEqual([
       { ...direct, committee_name: 'Group direct' },
       { ...sibling, committee_name: 'Group direct' },
-      { ...inherited, committee_name: 'Group inherited' },
     ]);
-    const liveCalls = proxyRequest.mock.calls.filter((call) => call[2] !== '/query/resources');
-    expect(liveCalls.map((call) => call.slice(0, 4))).toEqual([
+    // The roster is read only for groups that already passed the writer access check, and no live read is spent on an inherited-only group.
+    const settingsPaths = proxyRequest.mock.calls.filter((call) => String(call[2]).endsWith('/settings')).map((call) => call[2]);
+    expect(settingsPaths).toEqual(['/committees/direct/settings', '/committees/inherited/settings']);
+    expect(proxyRequest.mock.calls.filter(isLiveRead).map((call) => call.slice(0, 4))).toEqual([
       [req, 'LFX_V2_SERVICE', '/committees/direct/applications/request', 'GET'],
       [req, 'LFX_V2_SERVICE', '/committees/direct/applications/sibling', 'GET'],
-      [req, 'LFX_V2_SERVICE', '/committees/inherited/applications/request', 'GET'],
     ]);
-    expect(proxyRequest.mock.calls.at(-1)?.[4]).toMatchObject({ type: 'committee', filters_or: ['uid:direct', 'uid:inherited'] });
+    expect(proxyRequest.mock.calls.at(-1)?.[4]).toMatchObject({ type: 'committee', filters_or: ['uid:direct'] });
+  });
+
+  describe('direct roster match', () => {
+    const rosterOf = (writers: unknown[]) => {
+      const base = proxyRequest.getMockImplementation()!;
+      proxyRequest.mockImplementation((...args: Parameters<typeof base>) =>
+        String(args[2]).endsWith('/settings') ? Promise.resolve({ writers }) : base(...args)
+      );
+    };
+
+    it('matches the caller by email, case-insensitively, when the roster entry has no username', async () => {
+      const app = application('manager');
+      prime([app]);
+      rosterOf([{ username: '', email: 'Reviewer@Example.com', name: 'Reviewer' }]);
+      expect((await service.getManagedPendingApplications(req)).map((a) => a.committee_uid)).toEqual(['manager']);
+    });
+
+    it('matches the caller by username when the emails differ', async () => {
+      prime([application('manager')]);
+      rosterOf([{ username: 'Synthetic-Reviewer', email: 'elsewhere@example.com', name: 'Reviewer' }]);
+      expect(await service.getManagedPendingApplications(req)).toHaveLength(1);
+    });
+
+    it.each([
+      ['an empty roster', []],
+      ['a roster with only other writers', [{ username: 'other-writer', email: 'other@example.com', name: 'Other' }]],
+    ])('excludes the group for %s', async (_label, writers) => {
+      prime([application('manager')]);
+      rosterOf(writers);
+      expect(await service.getManagedPendingApplications(req)).toEqual([]);
+      expect(proxyRequest.mock.calls.filter(isLiveRead)).toEqual([]);
+    });
+
+    it('treats a settings response with no writers field as an empty roster', async () => {
+      prime([application('manager')]);
+      const base = proxyRequest.getMockImplementation()!;
+      proxyRequest.mockImplementation((...args: Parameters<typeof base>) => (String(args[2]).endsWith('/settings') ? Promise.resolve({}) : base(...args)));
+      expect(await service.getManagedPendingApplications(req)).toEqual([]);
+    });
+
+    it('shows nothing, without reading any roster, when the caller has no username or email', async () => {
+      prime([application('manager')]);
+      getEffectiveUsername.mockReturnValue(null);
+      getEffectiveEmail.mockReturnValue(null);
+      expect(await service.getManagedPendingApplications(req)).toEqual([]);
+      expect(proxyRequest.mock.calls.some((call) => String(call[2]).endsWith('/settings'))).toBe(false);
+    });
+
+    it.each([403, 404])('drops a group whose roster read returns %s while keeping the others', async (statusCode) => {
+      const apps = [application('forbidden'), application('healthy')];
+      prime(apps);
+      const base = proxyRequest.getMockImplementation()!;
+      proxyRequest.mockImplementation((...args: Parameters<typeof base>) =>
+        args[2] === '/committees/forbidden/settings' ? Promise.reject(Object.assign(new Error('no access'), { statusCode })) : base(...args)
+      );
+      expect((await service.getManagedPendingApplications(req)).map((a) => a.committee_uid)).toEqual(['healthy']);
+    });
+
+    it('propagates any other roster failure instead of showing a group on a guess', async () => {
+      prime([application('manager')]);
+      const error = Object.assign(new Error('settings unavailable'), { statusCode: 500 });
+      const base = proxyRequest.getMockImplementation()!;
+      proxyRequest.mockImplementation((...args: Parameters<typeof base>) => (String(args[2]).endsWith('/settings') ? Promise.reject(error) : base(...args)));
+      await expect(service.getManagedPendingApplications(req)).rejects.toBe(error);
+    });
+
+    it('forwards the discovery deadline to the roster read', async () => {
+      prime([application('manager')]);
+      await service.getManagedPendingApplications(req);
+      const call = proxyRequest.mock.calls.find((c) => String(c[2]).endsWith('/settings'))!;
+      expect(call[7]).toEqual({ deadlineAt: expect.any(Number) });
+    });
   });
 
   it.each([{ applications: [] }, { applications: [application('not-managed')] }])(
@@ -1501,27 +1593,41 @@ describe('CommitteeService.getManagedPendingApplications', () => {
   it.each(['approved', 'rejected'] as const)('omits indexed pending applications whose live status is %s', async (status) => {
     const app = application('manager');
     prime([app]);
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockResolvedValueOnce({ ...app, status });
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockResolvedValueOnce({ ...app, status });
     expect(await service.getManagedPendingApplications(req)).toEqual([]);
-    expect(proxyRequest).toHaveBeenCalledTimes(2); // No metadata fetch for stale candidates.
+    expect(proxyRequest).toHaveBeenCalledTimes(3); // Discovery, roster and live read; no metadata fetch for stale candidates.
+    expect(proxyRequest.mock.calls.filter(isLiveRead)).toHaveLength(1);
   });
 
   it('allows a rejected application reinstated as pending under the same UID on the next feed', async () => {
     const app = application('manager');
     prime([app]);
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockResolvedValueOnce({ ...app, status: 'rejected' });
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockResolvedValueOnce({ ...app, status: 'rejected' });
     expect(await service.getManagedPendingApplications(req)).toEqual([]);
     const renewed = { ...app, applicant_name: 'Renewed applicant', updated_at: '2026-10-08T00:00:00Z' };
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockResolvedValueOnce(renewed);
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockResolvedValueOnce(renewed);
     expect(await service.getManagedPendingApplications(req)).toEqual([{ ...renewed, committee_name: 'Group manager' }]);
   });
 
   it.each([{ uid: 'other-request' }, { committee_uid: 'other-group' }])('omits a live response with mismatched identity: %j', async (mismatch) => {
     const app = application('manager');
     prime([app]);
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockResolvedValueOnce({ ...app, ...mismatch });
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockResolvedValueOnce({ ...app, ...mismatch });
     expect(await service.getManagedPendingApplications(req)).toEqual([]);
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest.mock.calls.filter(isLiveRead)).toHaveLength(1);
   });
 
   it.each(['statusCode', 'status'])('omits live 403/404 using %s but retains healthy applications', async (statusField) => {
@@ -1529,6 +1635,9 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     prime(apps);
     proxyRequest
       .mockResolvedValueOnce(applicationPage(apps))
+      .mockResolvedValueOnce(rosterFor('revoked'))
+      .mockResolvedValueOnce(rosterFor('removed'))
+      .mockResolvedValueOnce(rosterFor('healthy'))
       .mockRejectedValueOnce(Object.assign(new Error('forbidden'), { [statusField]: 403 }))
       .mockRejectedValueOnce(Object.assign(new Error('missing'), { [statusField]: 404 }))
       .mockResolvedValueOnce(apps[2]);
@@ -1536,13 +1645,87 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     expect(proxyRequest.mock.calls.at(-1)?.[4]).toMatchObject({ filters_or: ['uid:healthy'] });
   });
 
+  describe('reviewer context enrichment', () => {
+    const withGroupDetails = () => {
+      const base = proxyRequest.getMockImplementation()!;
+      proxyRequest.mockImplementation((...args: Parameters<typeof base>) =>
+        args[4]?.['type'] === 'committee'
+          ? Promise.resolve(pageOf([{ uid: 'manager', name: 'Group manager', category: 'Technical Steering Committee' }]))
+          : base(...args)
+      );
+    };
+
+    it('adds the project name, slug, tier and the group category', async () => {
+      const app = application('manager');
+      prime([app]);
+      withGroupDetails();
+      enrichWithProjectData.mockImplementationOnce((_req: unknown, items: unknown[]) =>
+        Promise.resolve(
+          (items as { uid: string }[]).map((item) => ({ ...item, project_name: 'Project Alpha', project_slug: 'project-alpha', is_foundation: false }))
+        )
+      );
+
+      const result = await service.getManagedPendingApplications(req);
+      // The discovery deadline must reach the project lookup so a slow upstream stops, not just stops being awaited.
+      expect(enrichWithProjectData).toHaveBeenCalledWith(req, expect.any(Array), { deadlineAt: expect.any(Number) });
+      expect(result).toEqual([
+        {
+          ...app,
+          committee_name: 'Group manager',
+          project_name: 'Project Alpha',
+          project_slug: 'project-alpha',
+          is_foundation: false,
+          committee_category: 'Technical Steering Committee',
+        },
+      ]);
+    });
+
+    it('treats an empty project name from a failed per-project lookup as absent', async () => {
+      prime([application('manager')]);
+      enrichWithProjectData.mockImplementationOnce((_req: unknown, items: unknown[]) =>
+        Promise.resolve((items as { uid: string }[]).map((item) => ({ ...item, project_name: '' })))
+      );
+
+      const [row] = await service.getManagedPendingApplications(req);
+      expect(row.project_name).toBeUndefined();
+    });
+
+    it('still returns the request, without a project name, when project enrichment fails', async () => {
+      const app = application('manager');
+      prime([app]);
+      enrichWithProjectData.mockRejectedValueOnce(new Error('project lookup down'));
+
+      expect(await service.getManagedPendingApplications(req)).toEqual([{ ...app, committee_name: 'Group manager' }]);
+    });
+
+    it('returns the request without a project name when enrichment outlasts the discovery budget', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const app = application('manager');
+        prime([app]);
+        enrichWithProjectData.mockImplementationOnce(() => new Promise(() => undefined));
+
+        const result = service.getManagedPendingApplications(req);
+        await vi.runAllTimersAsync();
+
+        expect(await result).toEqual([{ ...app, committee_name: 'Group manager' }]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it.each(['statusCode', 'status'])('propagates live 500 using %s instead of returning stale indexed data', async (statusField) => {
     const app = application('manager');
     prime([app]);
     const error = Object.assign(new Error('live unavailable'), { [statusField]: 500 });
-    proxyRequest.mockResolvedValueOnce(applicationPage([app])).mockRejectedValueOnce(error);
+    proxyRequest
+      .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
+      .mockRejectedValueOnce(error);
     await expect(service.getManagedPendingApplications(req)).rejects.toBe(error);
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest.mock.calls.filter(isLiveRead)).toHaveLength(1);
   });
 
   it('propagates permission failures before any live reads', async () => {
@@ -1558,12 +1741,14 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     prime([app]);
     proxyRequest
       .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
       .mockResolvedValueOnce(app)
       .mockResolvedValueOnce(pageOf([]));
     expect(await service.getManagedPendingApplications(req)).toEqual([{ ...app, committee_name: 'manager' }]);
     const error = new Error('names unavailable');
     proxyRequest
       .mockResolvedValueOnce(applicationPage([app]))
+      .mockResolvedValueOnce(rosterFor('manager'))
       .mockResolvedValueOnce(app)
       .mockRejectedValueOnce(error);
     await expect(service.getManagedPendingApplications(req)).rejects.toBe(error);
@@ -1585,6 +1770,7 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     proxyRequest.mockImplementation((_req: Request, _service: string, path: string, _method: string, params?: Record<string, unknown>) => {
       if (params?.['type'] === 'committee_application') return Promise.resolve(applicationPage(apps));
       if (params?.['type'] === 'committee') return Promise.resolve(pageOf([{ uid: 'manager', name: 'Managed group' }]));
+      if (path.endsWith('/settings')) return Promise.resolve(rosterFor('manager'));
       const app = apps.find((candidate) => path.endsWith(`/applications/${candidate.uid}`))!;
       active++;
       maximumActive = Math.max(maximumActive, active);
@@ -1636,12 +1822,13 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
     proxyRequest.mockImplementation((_req: Request, _service: string, path: string, _method: string, params?: Record<string, unknown>) => {
       if (params?.['type'] === 'committee_application') return Promise.resolve(applicationPage(apps));
+      if (path.endsWith('/settings')) return Promise.resolve(rosterFor('manager'));
       now = 1000 + PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS + 1;
       return Promise.resolve(apps.find((app) => path.endsWith(`/applications/${app.uid}`)));
     });
     try {
       await expect(service.getManagedPendingApplications(req)).rejects.toThrow('Batch deadline exceeded');
-      expect(proxyRequest.mock.calls.filter((call) => call[2] !== '/query/resources')).toHaveLength(10);
+      expect(proxyRequest.mock.calls.filter(isLiveRead)).toHaveLength(10);
       expect(proxyRequest.mock.calls.some((call) => call[4]?.['type'] === 'committee')).toBe(false);
     } finally {
       clock.mockRestore();

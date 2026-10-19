@@ -25,21 +25,6 @@ export interface PatServiceCreateResponse {
   token: PatServiceToken;
 }
 
-/** One entry of `GET /b2b_orgs/member-tiers/{username}` from `lfx-v2-member-service`. */
-export interface MemberOrgTier {
-  b2b_org_uid: string;
-  company_name?: string;
-  tier?: string;
-  tier_name?: string;
-  tier_uid?: string;
-  membership_uid?: string;
-  project_uid?: string;
-  project_slug?: string;
-  status?: string;
-  start_date?: string;
-  end_date?: string;
-}
-
 /** Insights API token as exposed by the BFF to the UI. */
 export interface InsightsToken {
   uid: string;
@@ -55,20 +40,10 @@ export interface CreateInsightsTokenResponse {
   secret: string;
 }
 
-export interface InsightsTokenEligibleOrg {
-  uid: string;
-  /** Omitted when member-service has no company name for the org; the UI does not show a name then. */
-  name?: string;
-}
-
-/**
- * Whether the caller may create Insights tokens: they must be a Key Contact of at least one org, or be
- * targeted by the `insights-public-api-token-access` flag (then `orgs` is empty).
- */
+/** Whether the caller may use Insights tokens: the `insights-public-api-token-access` flag is on for them. */
 export interface InsightsTokenEligibility {
   canCreate: boolean;
-  orgs: InsightsTokenEligibleOrg[];
-  /** True when the Key Contact check could not complete (upstream error). `canCreate` is then false (fail closed), but the user may still be eligible. */
+  /** True when the eligibility request itself failed in the browser. `canCreate` is then false (fail closed), but the user may still be eligible. */
   checkFailed: boolean;
 }
 

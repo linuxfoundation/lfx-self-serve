@@ -17,7 +17,7 @@ import { logger } from '../services/logger.service';
 export class InsightsTokensController {
   private readonly insightsTokensService = new InsightsTokensService();
 
-  /** GET /api/profile/insights-tokens — Key Contacts only; the service re-checks eligibility first. */
+  /** GET /api/profile/insights-tokens — flag-enabled users only; the service re-checks eligibility first. */
   public async listTokens(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'list_insights_tokens');
 
@@ -31,7 +31,7 @@ export class InsightsTokensController {
     }
   }
 
-  /** GET /api/profile/insights-tokens/eligibility — never errors; fails closed to `canCreate: false` (with `checkFailed` on upstream errors). */
+  /** GET /api/profile/insights-tokens/eligibility — never errors; fails closed to `canCreate: false`. */
   public async getEligibility(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_insights_token_eligibility');
 
@@ -40,7 +40,6 @@ export class InsightsTokensController {
       logger.success(req, 'get_insights_token_eligibility', startTime, {
         can_create: eligibility.canCreate,
         check_failed: eligibility.checkFailed,
-        org_count: eligibility.orgs.length,
       });
       res.set('Cache-Control', 'no-store');
       res.json(eligibility);
@@ -50,8 +49,8 @@ export class InsightsTokensController {
   }
 
   /**
-   * POST /api/profile/insights-tokens — validates the name; the service re-checks Key Contact
-   * eligibility before asking the PAT service to issue the token.
+   * POST /api/profile/insights-tokens — validates the name; the service re-checks the access flag
+   * before asking the PAT service to issue the token.
    */
   public async createToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'create_insights_token');
@@ -83,7 +82,7 @@ export class InsightsTokensController {
     }
   }
 
-  /** DELETE /api/profile/insights-tokens/:uid — Key Contacts only; the service re-checks eligibility first. */
+  /** DELETE /api/profile/insights-tokens/:uid — flag-enabled users only; the service re-checks eligibility first. */
   public async revokeToken(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'revoke_insights_token');
     const uid = req.params['uid'];

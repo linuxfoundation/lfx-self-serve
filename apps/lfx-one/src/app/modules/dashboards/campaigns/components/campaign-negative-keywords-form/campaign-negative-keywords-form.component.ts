@@ -1,29 +1,42 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS, MAX_NEGATIVE_KEYWORDS_PER_REQUEST } from '@lfx-one/shared/constants';
+import { CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES } from '@lfx-one/shared/constants';
 import type {
   CampaignNegativeKeywordMatchType,
+  CampaignNegativeKeywordMatchTypeOption,
   CampaignNegativeKeywordOutcomeRow,
+  CampaignNegativeKeywordPlatformRules,
   CampaignNegativeKeywordsBatchOutcome,
   CampaignNegativeKeywordsRequestState,
+  NegativeKeywordCampaignPlatform,
   NegativeKeywordInputProblem,
+  NegativeKeywordsRevisionState,
 } from '@lfx-one/shared/interfaces';
 import { parseNegativeKeywordInput } from '@lfx-one/shared/utils';
 import { campaignNegativeKeywordsValidator } from '@lfx-one/shared/validators';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
+import { CampaignService } from '@services/campaign.service';
 import { campaignNegativeKeywordsKey, summarizeNegativeKeywordOutcomes } from '@shared/utils/campaign-negative-keywords.utils';
 import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedInvalidSignal } from '@shared/utils/form-control-signals.util';
-import { filter, take } from 'rxjs';
+import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 /**
- * Adds campaign-level negative keywords to one Microsoft Advertising campaign from the Optimize tab.
+ * Adds negative keywords to one Microsoft Advertising, Reddit or X campaign from the Optimize tab.
+ *
+ * What it offers follows the campaign's platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`):
+ * Microsoft Exact or Phrase, X Exact, Phrase or Broad (20 per request), Reddit Broad only. A Reddit
+ * request must carry the `revision` of the ad group's targeting, so for Reddit the editor reads the
+ * campaign's keyword targeting first, and again whenever a request for the campaign settles (the
+ * write changes the fingerprint, and a 409 means it changed under us). While one is still in flight
+ * (an editor reopened mid-request) it does not read at all: a revision read then would go stale the
+ * moment the request lands. Nothing is sent until that read has answered.
  *
  * Unlike the budget and bid editors this one takes no ETag: the lever persists nothing on the
  * campaign row, so there is no validator to share with the row's other writes.
@@ -45,29 +58,40 @@ import { filter, take } from 'rxjs';
 })
 export class CampaignNegativeKeywordsFormComponent {
   private readonly negativeKeywordsService = inject(CampaignNegativeKeywordsService);
+  private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly projectSlug = input.required<string>();
   public readonly briefId = input.required<string>();
   public readonly campaignId = input.required<string>();
   public readonly campaignName = input.required<string>();
+  /** The campaign's ad platform. Decides the match types, the cap, the wording and whether a revision is read and sent. */
+  public readonly platform = input<NegativeKeywordCampaignPlatform>('microsoft-ads');
 
   public readonly cancelEdit = output<void>();
 
+  // Before the form: its validator reads the cap on construction.
+  protected readonly rules: Signal<CampaignNegativeKeywordPlatformRules> = computed(() => CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[this.platform()]);
+  protected readonly maxKeywords: Signal<number> = computed(() => this.rules().maxKeywords);
+  protected readonly matchTypeOptions: Signal<readonly CampaignNegativeKeywordMatchTypeOption[]> = computed(() => this.rules().matchTypes);
+
   public readonly form = new FormGroup({
-    keywords: new FormControl<string>('', { nonNullable: true, validators: [campaignNegativeKeywordsValidator()] }),
-    // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic.
+    keywords: new FormControl<string>('', { nonNullable: true, validators: [campaignNegativeKeywordsValidator(() => this.maxKeywords())] }),
+    // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic
+    // where the platform offers it; Reddit offers Broad only (see `initPlatformDefaults`).
     matchType: new FormControl<CampaignNegativeKeywordMatchType>('Exact', { nonNullable: true, validators: [Validators.required] }),
   });
 
-  protected readonly matchTypeOptions = CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS;
-  protected readonly maxKeywords = MAX_NEGATIVE_KEYWORDS_PER_REQUEST;
+  /** Bumped by Retry to read the Reddit revision again. A settled request re-reads on its own. */
+  private readonly revisionReload = signal(0);
 
   /** This campaign's latest request, which outlives this form. `null` before the first one. */
   private readonly request: Signal<CampaignNegativeKeywordsRequestState | null> = computed(
     () => this.negativeKeywordsService.requests()[campaignNegativeKeywordsKey(this.projectSlug(), this.briefId(), this.campaignId())] ?? null
   );
   protected readonly pending: Signal<boolean> = computed(() => this.request()?.pending ?? false);
+  /** Bumped by every settled request of this campaign: the targeting the revision fingerprints may have changed. */
+  private readonly settleCount: Signal<number> = computed(() => this.request()?.settleCount ?? 0);
   /** Per-keyword outcomes of the last request, in the order the keywords were SENT. */
   protected readonly outcomeRows: Signal<CampaignNegativeKeywordOutcomeRow[]> = computed(() => this.request()?.outcomeRows ?? []);
   /** The last request's outcome when it produced no per-keyword results at all. */
@@ -119,13 +143,27 @@ export class CampaignNegativeKeywordsFormComponent {
   protected readonly outcomeSummary: Signal<string> = this.initOutcomeSummary();
   protected readonly pendingAnnouncement = computed(() => (this.pending() ? `Adding negative keywords to ${this.campaignName()}` : ''));
   protected readonly submitLabel = computed(() => `Add negative keywords to ${this.campaignName()}`);
+  /** Reddit's revision, read from the campaign's keyword targeting; `idle` on the other platforms. */
+  protected readonly revisionState: Signal<NegativeKeywordsRevisionState> = this.initRevisionState();
+  /** Whether a request can be sent now: never while one is in flight, nor on Reddit before its revision is read. */
+  protected readonly canSubmit: Signal<boolean> = computed(() => {
+    if (this.pending()) {
+      return false;
+    }
+    return !this.rules().requiresRevision || this.revisionState().status === 'ready';
+  });
 
   public constructor() {
+    this.initPlatformDefaults();
     this.initRestoreUnsettledInput();
   }
 
+  protected retryRevision(): void {
+    this.revisionReload.update((n) => n + 1);
+  }
+
   protected submit(): void {
-    if (this.pending()) {
+    if (!this.canSubmit()) {
       return;
     }
     this.form.markAllAsTouched();
@@ -135,6 +173,7 @@ export class CampaignNegativeKeywordsFormComponent {
     const { keywords: text, matchType } = this.form.getRawValue();
     // The SAME list the outcomes are zipped onto: parsed once, sent as-is, rendered by index.
     const keywords = parseNegativeKeywordInput(text).keywords;
+    const revision = this.revisionState().revision;
 
     this.negativeKeywordsService.submit(
       {
@@ -142,8 +181,11 @@ export class CampaignNegativeKeywordsFormComponent {
         briefId: this.briefId(),
         campaignId: this.campaignId(),
         campaignName: this.campaignName(),
+        platform: this.platform(),
         keywords,
         matchType,
+        // The service sends it to Reddit only; on any other platform it is dropped there.
+        ...(revision !== null && { revision }),
       },
       // Every keyword added or already present: nothing left to resend. A form destroyed meanwhile
       // has no input to clear.
@@ -190,7 +232,69 @@ export class CampaignNegativeKeywordsFormComponent {
 
   /** "2 added, 1 already present, 1 not confirmed" — counts of keywords only, in outcome order. */
   private initOutcomeSummary(): Signal<string> {
-    return computed(() => summarizeNegativeKeywordOutcomes(this.outcomeRows()));
+    return computed(() => summarizeNegativeKeywordOutcomes(this.outcomeRows(), this.platform()));
+  }
+
+  /**
+   * Keeps the match type one the platform takes (Reddit: Broad only) and re-checks the keyword cap,
+   * which differs by platform. A match type restored from an earlier request is kept when valid.
+   */
+  private initPlatformDefaults(): void {
+    toObservable(this.rules)
+      .pipe(takeUntilDestroyed())
+      .subscribe((rules) => {
+        const matchType = this.form.controls.matchType;
+        if (!rules.matchTypes.some((option) => option.value === matchType.value)) {
+          matchType.setValue(rules.defaultMatchType);
+        }
+        this.form.controls.keywords.updateValueAndValidity();
+      });
+  }
+
+  /**
+   * Reddit's revision, from `get-keyword-targeting`. Only the revision is used: the read lists the
+   * ad group's POSITIVE keywords, not its excluded ones. A read that answers without a revision is
+   * an error here, since Reddit refuses an add without one. Read errors are not retried
+   * automatically; the operator retries.
+   *
+   * Keyed on the campaign's shared request: nothing is read while one is in flight (shown as
+   * loading), and every settled request (`settleCount`) reads again, so an editor reopened while an
+   * earlier add ran can never hold a revision from before it.
+   */
+  private initRevisionState(): Signal<NegativeKeywordsRevisionState> {
+    const idle: NegativeKeywordsRevisionState = { status: 'idle', revision: null };
+    const request = computed(() => ({
+      requiresRevision: this.rules().requiresRevision,
+      projectSlug: this.projectSlug(),
+      briefId: this.briefId(),
+      campaignId: this.campaignId(),
+      reload: this.revisionReload(),
+      pending: this.pending(),
+      settleCount: this.settleCount(),
+    }));
+    return toSignal(
+      toObservable(request).pipe(
+        switchMap(({ requiresRevision, projectSlug, briefId, campaignId, pending }) => {
+          if (!requiresRevision) {
+            return of(idle);
+          }
+          if (pending) {
+            return of<NegativeKeywordsRevisionState>({ status: 'loading', revision: null });
+          }
+          return this.campaignService.getKeywordTargeting(projectSlug, briefId, campaignId).pipe(
+            map(
+              (targeting): NegativeKeywordsRevisionState =>
+                typeof targeting?.revision === 'string' && targeting.revision !== ''
+                  ? { status: 'ready', revision: targeting.revision }
+                  : { status: 'error', revision: null }
+            ),
+            catchError(() => of<NegativeKeywordsRevisionState>({ status: 'error', revision: null })),
+            startWith<NegativeKeywordsRevisionState>({ status: 'loading', revision: null })
+          );
+        })
+      ),
+      { initialValue: idle }
+    );
   }
 
   private initKeywordsError(): Signal<string> {
@@ -199,8 +303,8 @@ export class CampaignNegativeKeywordsFormComponent {
         return 'Enter at least one keyword, one per line.';
       }
       const count = this.keywordCount();
-      if (this.keywordsTouched() && count > this.maxKeywords) {
-        return `Enter at most ${this.maxKeywords} keywords per request (${count} entered).`;
+      if (this.keywordsTouched() && count > this.maxKeywords()) {
+        return `Enter at most ${this.maxKeywords()} keywords per request (${count} entered).`;
       }
       return '';
     });

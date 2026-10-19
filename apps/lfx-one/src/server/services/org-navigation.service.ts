@@ -16,16 +16,19 @@ import { Request } from 'express';
 import { getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { claOnlyEntryApplies, OrgClaOnlyOrgsService } from './org-cla-only-orgs.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 /** Spec 022 — server-side org-selector data source. Renders the access-aware list per `01-my-orgs-by-access.ipynb` (data-model.md D-001…D-005). Typeahead filters the resolved set in-process: the set is direct grants (≤ ORG_ROLE_GRANTS_HARD_CAP) plus their cascading children (≤ ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP per direct parent), so it is finite but not strictly ≤500 — in practice it stays small enough for in-memory filter/sort. */
 export class OrgNavigationService {
   private readonly orgRoleGrants: OrgRoleGrantsService;
   private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly claOnlyOrgs: OrgClaOnlyOrgsService;
 
   public constructor() {
     this.orgRoleGrants = new OrgRoleGrantsService();
     this.microserviceProxy = new MicroserviceProxyService();
+    this.claOnlyOrgs = new OrgClaOnlyOrgsService();
   }
 
   public async getOrgItems(req: Request, params: GetOrgItemsParams): Promise<OrgItemsResponse> {
@@ -51,6 +54,10 @@ export class OrgNavigationService {
     }
 
     const access = await this.orgRoleGrants.getAccessAwareOrgs(req, username);
+
+    if (claOnlyEntryApplies(access.isStaff, access.resolved.size, !access.upstreamFailed && !access.degraded && access.staffCheck !== 'failed')) {
+      return this.getClaOnlyItems(req, access.upstreamFailed, params, selectedUid);
+    }
 
     // A staff caller typically has nothing assigned, so "nothing resolved" can no longer
     // stand in for "nothing to return": the catalogue is still reachable by name.
@@ -101,6 +108,40 @@ export class OrgNavigationService {
       // No count is claimed for the catalogue — the caller sees what it has loaded so far.
       total: catalogueTerm ? null : assignedItems.length,
     };
+  }
+
+  /**
+   * The selector for a caller Org Lens resolved nothing for: the companies they manage CLAs for, if
+   * any. Complete on page one like the assigned rows. A failed scopes or company lookup is reported
+   * as `upstream_failed` alongside whatever rows did resolve, so an outage is not shown as "no
+   * organizations".
+   */
+  private async getClaOnlyItems(req: Request, accessFailed: boolean, params: GetOrgItemsParams, selectedUid: string | undefined): Promise<OrgItemsResponse> {
+    const { pageToken, name } = params;
+    if (pageToken) {
+      return { items: [], next_page_token: null, upstream_failed: accessFailed, total: 0 };
+    }
+
+    const { orgs, failed } = await this.claOnlyOrgs.listOrgs(req);
+    const items = orgs.map(
+      (org): OrgItem => ({
+        uid: org.uid,
+        accountId: org.uid,
+        name: org.name,
+        logoUrl: null,
+        primaryDomain: null,
+        parentName: null,
+        status: null,
+        slug: null,
+        isAssigned: true,
+        claOnly: true,
+      })
+    );
+    const shown = this.applySelectedUidPin(this.applySort(this.applySearch(items, name), name), items, selectedUid, pageToken);
+
+    logger.debug(req, 'build_org_items', 'Built CLA-only org items', { item_count: shown.length, cla_only_count: items.length, cla_only_failed: failed });
+
+    return { items: shown, next_page_token: null, upstream_failed: accessFailed || failed, total: shown.length };
   }
 
   /**

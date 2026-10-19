@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, Signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { DashboardQuickLink } from '@lfx-one/shared/interfaces';
 import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -26,7 +26,7 @@ export class DashboardQuicklinksComponent {
    * defaulted to `false` so a slow or unreachable provider leaves the pre-v2 link in place rather
    * than a dropdown into a composer this user isn't targeted for. See `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
   /**
    * Whether the create dropdown is showing, for the trigger's `aria-expanded`.

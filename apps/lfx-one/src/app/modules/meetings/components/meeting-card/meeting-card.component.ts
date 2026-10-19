@@ -62,6 +62,7 @@ import {
   MeetingRescheduleOccurrenceResult,
   RecurringMeetingEditScopeResult,
   MEETING_TYPE_CONFIGS,
+  MEETING_V2_ENABLED_DEFAULT,
   MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
@@ -72,7 +73,13 @@ import {
   resolveOccurrenceRecurrence,
   TagSeverity,
 } from '@lfx-one/shared';
-import { isMeetingAttendeeListShared, isMeetingInviteResponsesEnabled, isSameOccurrenceId, retainConfirmedRsvp } from '@lfx-one/shared/utils';
+import {
+  getMeetingSelfRemovalMessage,
+  isMeetingAttendeeListShared,
+  isMeetingInviteResponsesEnabled,
+  isSameOccurrenceId,
+  retainConfirmedRsvp,
+} from '@lfx-one/shared/utils';
 import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -235,8 +242,25 @@ export class MeetingCardComponent implements OnInit {
   public readonly isRegisteredAttendee: Signal<boolean> = computed(
     () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
   );
-  // A committee-sourced registration follows committee membership, so it cannot be removed from here.
-  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee() && !this.meeting().invited_via_committee);
+  public readonly userAttended: Signal<boolean> = computed(() => {
+    // Read the input, not the local `meeting` signal: that one is only seeded while it has no id, so a
+    // refreshed input for the same card would leave this stale. `user_attended` has no optimistic updates.
+    const meeting = this.meetingInput();
+    return this.pastMeeting() && 'user_attended' in meeting && meeting.user_attended === true;
+  });
+  // An organizer's invitation is a registrant row like anyone else's, but organizer access does not depend on it, so
+  // an organizer may have none. `my_registrant_ids` is the authoritative list where the feed provides it; otherwise
+  // `invited` comes from the registrant lookup. It is read from the input, not the local snapshot, which is only
+  // seeded once, so a feed refresh that adds or drops the viewer's registration is picked up.
+  private readonly hasOwnRegistration: Signal<boolean> = computed(() => {
+    const registrantIds = this.meetingInput().my_registrant_ids;
+    return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
+  });
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => {
+    const meeting = this.meeting();
+    if (!this.authenticated() || !this.effectivelyInvited() || this.pastMeeting()) return false;
+    return !meeting.organizer || this.hasOwnRegistration();
+  });
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -267,7 +291,7 @@ export class MeetingCardComponent implements OnInit {
    * full-page editor rather than a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
   // The two signals below are the flag-off edit target. They carry the same URL and query params
   // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with
@@ -514,7 +538,7 @@ export class MeetingCardComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting().invited_via_committee, organizer: this.meeting().organizer }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',

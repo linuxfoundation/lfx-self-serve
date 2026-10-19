@@ -26,6 +26,10 @@ const otlpEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 // Pages whose `?token=` is a signed credential. Mirrors isInviteLandingPath and
 // isMentorshipMentorInvitePath in packages/shared/src/utils/url.utils.ts; this bootstrap imports no app code.
 const CREDENTIAL_URL_PATHS = new Set(['/invite', '/invite/error', '/mentorship/mentor/invites']);
+// The Gatewaze host-session proxies, whose `token` (a Storage signed URL) and `access_token` are
+// credentials. Mirrors GW_HOST_SESSION_PROXY_API_MOUNT and GW_HOST_SESSION_PROXY_CREDENTIAL_QUERY_PARAMS.
+const GATEWAZE_PROXY_MOUNT = '/api/gatewaze';
+const GATEWAZE_PROXY_CREDENTIAL_PARAMS = ['token', 'access_token', 'refresh_token', 'code'];
 // Upstream path that carries the mentor invite token as a segment.
 export const MENTOR_INVITE_UPSTREAM_PATH = '/mentorship/v1/mentor-invites/';
 // Upstream mentor candidate search, whose `?search=` can be a full email address. Mirrors the path the BFF builds in
@@ -45,6 +49,15 @@ export function redactCredentialUrl(rawUrl) {
       url.searchParams.set('token', 'redacted');
       redacted = true;
     }
+    const lowerPath = path.toLowerCase();
+    if (lowerPath === GATEWAZE_PROXY_MOUNT || lowerPath.startsWith(`${GATEWAZE_PROXY_MOUNT}/`)) {
+      for (const key of GATEWAZE_PROXY_CREDENTIAL_PARAMS) {
+        if (url.searchParams.has(key)) {
+          url.searchParams.set(key, 'redacted');
+          redacted = true;
+        }
+      }
+    }
     const returnTo = url.searchParams.get('returnTo');
     if (returnTo) {
       const redactedReturnTo = redactCredentialUrl(returnTo);
@@ -55,7 +68,7 @@ export function redactCredentialUrl(rawUrl) {
     }
     return redacted ? `${url.pathname}${url.search}` : rawUrl;
   } catch {
-    return rawUrl.includes('token') ? rawUrl.split('?')[0] : rawUrl;
+    return rawUrl.includes('token') || rawUrl.toLowerCase().includes(GATEWAZE_PROXY_MOUNT) ? rawUrl.split('?')[0] : rawUrl;
   }
 }
 

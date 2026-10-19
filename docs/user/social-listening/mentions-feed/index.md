@@ -5,7 +5,7 @@ display_order: 1
 audience: [executive-director]
 product_area: Social Listening
 tags: [social listening, mentions, feed, filters, search, bookmarks, read state]
-last_updated: 2026-08-31
+last_updated: 2026-10-13
 intercom_collection: Social Listening
 ---
 
@@ -64,9 +64,13 @@ Select anywhere on a card to open the original post in a new tab — this also m
 
 Above the list, **Mark all as read** and **Mark all as unread** apply to **every mention in the foundation** — not just the ones matching your current filters, search, or period. **Mark all as read** marks everything up to the foundation's newest mention as read, and **Mark all as unread** clears the read state for the whole foundation, including mentions your current scope hides. The **Data as of** timestamp next to them shows when the underlying data was last refreshed.
 
+Individual read and unread choices are retained when you open **Unread only** or load another batch. A large retained read history does not require **Mark all as read** to reopen or page through the Unread feed.
+
 ## Load more mentions
 
 The feed loads mentions in batches. Select **Load more mentions** at the bottom to reveal the next batch, and the counter above the list ("20 of 312", for example) shows your position.
+
+In **Unread only**, subsequent batches continue to honor your individual read choices and the foundation-wide mark-all cutoff.
 
 The feed renders at most 500 mentions at once. When you reach that limit a notice appears — "Showing the first 500 mentions" — and you can narrow the filters or shorten the period to see different mentions.
 

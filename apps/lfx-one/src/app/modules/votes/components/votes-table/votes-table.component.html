@@ -79,7 +79,7 @@
       } @else {
         <lfx-table
           [value]="displayedVotes()"
-          [paginator]="displayedVotes().length > 0"
+          [paginator]="displayedVotes().length > 0 && !paginationLoading()"
           [rows]="rowsPerPage()"
           [first]="first()"
           [totalRecords]="totalRecords()"
@@ -254,6 +254,20 @@
                       </lfx-button>
                     }
                   }
+                  @if (vote.status !== PollStatus.DISABLED) {
+                    <lfx-button
+                      icon="fa-light fa-ellipsis-vertical"
+                      [text]="true"
+                      [rounded]="true"
+                      size="small"
+                      severity="secondary"
+                      ariaLabel="More actions"
+                      ariaHaspopup="menu"
+                      [ariaExpanded]="rowActionMenuOpen() && rowActionMenuVoteUid() === vote.uid"
+                      [attr.data-testid]="'votes-more-' + vote.uid"
+                      (onClick)="toggleRowActionMenu($event, vote, rowActionMenu)">
+                    </lfx-button>
+                  }
                 </div>
               </td>
             </tr>
@@ -272,5 +286,15 @@
     </div>
   }
 </lfx-card>
+
+<!-- One shared row "More" menu; toggleRowActionMenu rebuilds its items for the clicked row. -->
+<lfx-menu
+  #rowActionMenu
+  [model]="rowActionMenuItems()"
+  [popup]="true"
+  appendTo="body"
+  (onShow)="rowActionMenuOpen.set(true)"
+  (onHide)="rowActionMenuOpen.set(false)"
+  data-testid="votes-row-action-menu"></lfx-menu>
 
 <p-confirmDialog></p-confirmDialog>

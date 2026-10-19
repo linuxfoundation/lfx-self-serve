@@ -64,6 +64,19 @@ vi.mock('./project.service', () => ({
     public getProjectById = projectMocks.getProjectById;
   },
 }));
+// The document store records revisions on top of the agent's own write and
+// has its own spec (mktg-document-store.service.spec.ts). Here it passes
+// through, so this spec keeps asserting the agent's persistence, plus the
+// session id the store keys revisions by.
+const documentStoreMocks = vi.hoisted(() => ({ recordedSessions: [] as string[] }));
+vi.mock('./mktg-document-store.service', () => ({
+  MktgDocumentStoreService: class {
+    public recordPersisted = async <T>(_req: unknown, _agentKey: string, receipt: T, _envelope: unknown, sessionId: string): Promise<T> => {
+      documentStoreMocks.recordedSessions.push(sessionId);
+      return receipt;
+    };
+  },
+}));
 vi.mock('./logger.service', () => ({
   logger: loggerMocks,
 }));
@@ -144,6 +157,7 @@ describe('IcpService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    documentStoreMocks.recordedSessions.length = 0;
     delete process.env['GUILD_STRUCTURED_AGENT_INPUT'];
     readmeMocks.fetchReadme.mockResolvedValue({ readme: '# TestOrbit', outcome: { fetched: true, source: 'repository' } });
     objectStoreMocks.putContentAddressedObject.mockResolvedValue(true);
@@ -241,6 +255,8 @@ describe('IcpService', () => {
       expect(purpose).toBe('marketing-os-artifacts');
       expect(key).toBe(`icp/${PROJECT_UID}/${envelope['content_sha256'] as string}.md`);
       expect(contentType).toBe('text/markdown; charset=utf-8');
+      // Recorded as a revision of the project's ICP document, keyed by the run's session.
+      expect(documentStoreMocks.recordedSessions).toEqual(['session-1']);
     });
 
     it('discards a candidate whose content_sha256 does not match the document bytes', async () => {

@@ -2,23 +2,23 @@
 
 How a React application is mounted inside the Angular app without an iframe, and what the host owes it.
 
-The server half — the `/api/gw/*` proxy, its authorization and header policy — is documented separately in [Gatewaze Embed Proxy](../backend/gw-proxy.md).
+The server half — the `/api/gatewaze` session routes and proxies, their authorization and header policy — is documented separately in [Gatewaze Host Session](../backend/gw-host-session.md).
 
 ## Files
 
-| File                                                       | Role                                                   |
-| ---------------------------------------------------------- | ------------------------------------------------------ |
-| `src/app/modules/gw/gw-module-outlet/`                     | The outlet component, template and spec                |
-| `src/app/modules/gw/gw.routes.ts`                          | Route definitions for both mounts                      |
-| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`    | `CanMatch` flag gate                                   |
-| `src/app/shared/guards/gw-embed-tenant.guard.ts`           | `CanActivate` tenant allowlist gate                    |
-| `packages/shared/src/constants/gw-embed.constants.ts`      | Mount prefixes, enabled modules/features, storage keys |
-| `packages/shared/src/utils/gw-embed.utils.ts`              | Route-prefix resolution and the tenant allowlist test  |
-| `packages/shared/src/utils/auth-fragment.utils.ts`         | Redacting the auth fragment before it reaches RUM      |
-| `packages/shared/src/interfaces/gw-embed.interface.ts`     | The `GwHostContext` mount contract                     |
-| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                       |
-| `src/server/services/gw-embed-stylesheet.service.ts`       | Fetches, scopes, themes and caches the stylesheet      |
-| `src/server/controllers/gw-embed-stylesheet.controller.ts` | HTTP boundary for it (`GW_EMBED_STYLESHEET_ROUTE`)     |
+| File                                                       | Role                                                        |
+| ---------------------------------------------------------- | ----------------------------------------------------------- |
+| `src/app/modules/gw/gw-module-outlet/`                     | The outlet component, template and spec                     |
+| `src/app/modules/gw/gw.routes.ts`                          | Route definitions for both mounts                           |
+| `src/app/shared/guards/gatewaze-embed-enabled.guard.ts`    | `CanMatch` flag gate                                        |
+| `src/app/shared/guards/gw-embed-tenant.guard.ts`           | `CanActivate` tenant allowlist gate                         |
+| `packages/shared/src/constants/gw-embed.constants.ts`      | Mount prefixes, enabled modules/features, host-session URLs |
+| `packages/shared/src/utils/gw-embed.utils.ts`              | Route-prefix resolution and the tenant allowlist test       |
+| `packages/shared/src/interfaces/gw-embed.interface.ts`     | The `GwHostContext` mount contract                          |
+| `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`        | Stylesheet containment transform                            |
+| `src/server/services/gw-embed-stylesheet.service.ts`       | Fetches, scopes, themes and caches the stylesheet           |
+| `src/server/controllers/gw-embed-stylesheet.controller.ts` | HTTP boundary for it (`GW_EMBED_STYLESHEET_ROUTE`)          |
+| `src/app/shared/services/gw-embed-warmup.service.ts`       | Session warm-up and connection hints before the embed loads |
 
 ## Why embed rather than port
 
@@ -30,7 +30,7 @@ The cost is that two frameworks share one document. Most of what follows is abou
 
 The embed is reachable from two lenses, so `GW_EMBED_ROUTE_PREFIXES` declares both `/foundation/gw` and `/project/gw`, and each is a `**` wildcard route. One component serves both: it resolves its own basename from `window.location.pathname` via `resolveGwEmbedRoutePrefix()` and passes it to the embed as `GwHostContext.basename`, so the embed's router builds links under whichever prefix the user arrived on.
 
-Prefix matching is anchored on a segment boundary everywhere it happens (`pathname === prefix || pathname.startsWith(prefix + '/')`). A bare `startsWith` would match a future `/project/gwidgets` and resolve it to the wrong basename. The server anchors its `/api/gw` mount test the same way.
+Prefix matching is anchored on a segment boundary everywhere it happens (`pathname === prefix || pathname.startsWith(prefix + '/')`). A bare `startsWith` would match a future `/project/gwidgets` and resolve it to the wrong basename. The server anchors its `/api/gatewaze` mount test the same way.
 
 ## Mounting is client-only
 
@@ -40,7 +40,16 @@ The outlet follows the same SSR-safe lazy-mount shape as `rich-editor.component.
 - `@gatewaze/admin-embed` is a **dynamic `import()`** inside that guard, never a static top-level import, so nothing of the embed is pulled into the SSR graph.
 - Teardown on `DestroyRef.onDestroy` calls the handle's `unmount()`. Calling it before the handle's `ready` promise resolves cancels the mount.
 
-A skeleton shows from the first browser render until the embed mounts or fails, because the bundle is large and the container would otherwise sit empty.
+A skeleton shows from the first browser render until the embed has painted or failed, because the bundle is large and the container would otherwise sit empty. The loader's `ready` resolves once the bundle is mounted, which is before React has drawn anything, so the outlet does not stop there. It keeps `#gw-embed-root` at `visibility: hidden` (not `display: none`, so it still lays out) and watches it with a `ResizeObserver` and a `MutationObserver` until it has height and holds visible content, capped at `GW_EMBED_FIRST_PAINT_TIMEOUT_MS`. Visible content is non-whitespace text, or an element matching `GW_EMBED_PAINTED_CONTENT_SELECTOR` such as the embed's `role="status"` spinner. A child with height is not enough, because the embed renders Radix's root `Theme` first and that wrapper has `min-height: 100vh` before the route below it draws anything. The wait also ends when the error panel goes up. The swap runs a synchronous change detection in the microtasks after the observer callback, so the skeleton and the embed change places in the same frame. The skeleton sits above the mount points, so a hidden root that already takes up space never pushes it down.
+
+`@gatewaze/admin-embed` 1.2.0 adds a `first-paint` capability with a `handle.rendered` promise. When the dependency moves to it, the outlet awaits that and keeps the observer as the fallback (`waitForFirstPaint`).
+
+### Starting the slow parts early
+
+`GwEmbedWarmupService` starts two things before the embed asks for them:
+
+- **The session.** The first `/api/gatewaze/session/me` of an LFX session mints a Gatewaze session on the server, which takes about a second or more, and the embed only sends it after the manifest and bundle have loaded. The outlet sends the same request (`credentials: 'include'`, the anon key as `apikey`) as soon as it starts mounting, and the sidebar sends it when the pointer or focus reaches a Newsletters link that opens the embed. It goes once per page session and its answer is never read. The session store takes a create lock per session, and a second caller polls until the first one has stored its session, so the embed's own request reads the warmed session rather than minting again.
+- **The connection.** `preconnect` adds `<link rel="preconnect" crossorigin>` and `dns-prefetch` for the `GW_EMBED_URL` origin. The outlet calls it during SSR too, so a page rendered on an embed route carries the hint in its HTML. `crossorigin` matters: the loader's manifest fetch and module import are CORS requests without credentials, which use a separate connection.
 
 ## Where the admin comes from
 
@@ -49,11 +58,11 @@ A skeleton shows from the first browser render until the embed mounts or fails, 
 Two consequences:
 
 - Admin changes reach this page on the next load. Gatewaze ships them by deploying its own image; no LFX release is involved.
-- The loader is only bumped when its host contract changes. A bundle built for a different contract is refused with `gw_embed_contract_mismatch` rather than mounted, which is the signal that the dependency needs a bump.
+- The loader is bumped when its host contract changes, or to use a capability the loader checks for. A bundle built for a different contract is refused with `gw_embed_contract_mismatch` rather than mounted, which is the signal that the dependency needs a bump. The `host-session` capability is the second case: it needed loader 1.1.0 with the contract still at 1.
 
 The bundle is served by the same deployment as the API this host proxies to and the database behind it, so the embed can never run ahead of its own backend.
 
-The template carries three mutually exclusive states — loading, sign-in-required, mount-error — rather than a single generic failure.
+The template carries two mutually exclusive states, loading and the error panel, and the error panel always says which failure it is rather than showing a single generic message.
 
 ## Two routers in one document
 
@@ -61,17 +70,23 @@ This is the part most likely to surprise someone.
 
 The embed navigates internally with its **own** `pushState`. Angular never observes those calls, so the Angular Router's idea of the current URL diverges from the address bar as soon as the user moves around inside the embed.
 
-The host syncs in one direction only: on `NavigationEnd`, if the new URL is inside this mount's prefix, it re-dispatches a `popstate` event, which is the only thing the embed's router listens to. A durable `lastSyncedUrl` comparison guards it.
+The host syncs in one direction only: on `NavigationEnd`, if the new URL is inside this mount's prefix and the navigation was started by a `routerLink` or `router.navigate` (Angular's `'imperative'` trigger, recorded from the matching `NavigationStart`), it re-dispatches a `popstate` event, which is the only thing the embed's router listens to.
 
-The guard must be durable, not a synchronous re-entrancy flag. Angular wraps its own `popstate` handling in a `setTimeout` (`router2.mjs`, "added in #12160"), so a flag set and cleared around `dispatchEvent` is already cleared when Angular's handler runs. Combined with `onSameUrlNavigation: 'reload'` that produced an unbounded loop: `NavigationEnd → dispatch → same-URL navigation → NavigationEnd`. With the default `'ignore'`, the re-entry is answered with `NavigationSkipped` instead, and the URL comparison is sufficient.
+It dispatches on every such navigation, even to a URL the embed was told about before. The host cannot see the embed's own `pushState` calls, so it cannot know what the embed is showing; remembering the last synced URL went stale as soon as the user moved inside the embed. Angular itself does run a host link back to that URL, because it compares its target against the address bar, which the embed has moved. So the sidebar's Newsletters link followed from inside an edition fires `NavigationEnd` and redraws the list.
 
-**Known limitation.** Because Angular's URL does not track the embed's `pushState`, a host link whose target equals Angular's _stale_ current URL is skipped entirely — no `NavigationEnd`, nothing to sync. In practice: the sidebar's Newsletters link clicked from inside an edition does nothing. Moving between two different embed URLs works. Fixing it properly means mirroring the embed's navigations into the Angular Router; tracked on #2262.
+Navigations triggered by `popstate` are skipped. A real Back or Forward already reached the embed's router through the same event. The synthetic `popstate` the host dispatches can only start `popstate`-triggered navigations in Angular (which Angular runs from a `setTimeout`, `router2.mjs` "added in #12160"), so the skip is also what stops the host from answering its own dispatch. An earlier version guarded this with a flag set around `dispatchEvent`; the `setTimeout` meant the flag was already cleared, and with `onSameUrlNavigation: 'reload'` that looped `NavigationEnd → dispatch → same-URL navigation → NavigationEnd` without end.
 
 ## Style containment
 
 The embed ships one large stylesheet. Loaded as-is it would restyle the host.
 
-The loader lets the host swap the stylesheet URL it fetches (`GwEmbedSource.resolveStylesheetUrl`). The outlet points it at `GW_EMBED_STYLESHEET_ROUTE` with the hashed file name, and `gw-embed-stylesheet.service.ts` fetches that file from `GW_EMBED_URL`, runs `scripts/lib/contain-gw-embed-css.mjs` over it, appends the theme layer and caches the result by name (the name is content-hashed on the Gatewaze side, so the server cache never goes stale). Browsers get a short `max-age` with `stale-while-revalidate` and an `ETag` rather than an immutable year: the body is LFX output under an upstream-hashed name, so a theme or transform fix must reach users without a URL change. The route is anonymous, so it brakes itself: failed names are remembered for a minute, only a few upstream fetches run at once, the upstream must answer `text/css` within the size cap, and a body with no rules is refused. The transform therefore runs once per Gatewaze release per pod, not in every browser, and no CSS parser ships to the client. It:
+The loader lets the host swap the stylesheet URL it fetches (`GwEmbedSource.resolveStylesheetUrl`). The outlet points it at `GW_EMBED_STYLESHEET_ROUTE` with the hashed file name, and `gw-embed-stylesheet.service.ts` fetches that file from `GW_EMBED_URL`, runs `scripts/lib/contain-gw-embed-css.mjs` over it, appends the theme layer and caches the result by name (the name is content-hashed on the Gatewaze side, so the server cache never goes stale). The body is LFX output under an upstream-hashed name, so the name alone does not address it. `RuntimeConfig.gwEmbedStylesheetKey` covers LFX's share: a hash of the theme layer and `GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT` (the transform file's SHA-256, kept honest by a spec). The outlet requests `<route>/<key>/<name>`, which names exactly one body and is served `public, max-age=604800, immutable`. A week rather than a year, because the fetched upstream body is not checked against the hash in its name: the Gatewaze embed build names it with Rollup's `[hash]`, an xxhash this server has no implementation of, so checking it is not cheap. A bad body served under a valid name would be pinned for that week. A key that is not the serving pod's own, which happens while a rollout overlaps two releases, gets the current body as `no-store`. Without a key the outlet falls back to `<route>/<name>`, which keeps the short `max-age` with `stale-while-revalidate` and an `ETag`. The body is compressed once per name with gzip and Brotli and sent in whichever encoding the client accepts, so the app-wide compression middleware never re-gzips it per request. Errors are `no-store`.
+
+To recover from a bad pinned body before the week is out, change the URL or clear the copies: a Gatewaze release gives the file a new name; an LFX release that changes the theme layer or bumps `GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT` gives it a new key; or purge `/public/api/gw-embed-stylesheet/*` in Cloudflare. A purge clears the edge only; browsers that already hold the body keep it until the week ends, which is what the shorter lifetime bounds. Restarting the pods clears the server's in-memory copy.
+
+Cloudflare sits in front of the app and caches `.css` paths by extension. It raises a `max-age` below the zone's Browser Cache TTL (4 hours) to `max-age=14400`, and stamps the same on error responses that carry no `Cache-Control`. That is why the unkeyed form was seen at 14400 rather than 300, and why errors from this route are marked `no-store`. A week is above the zone TTL, so the keyed form passes through unchanged.
+
+The route is anonymous, so it brakes itself: failed names are remembered for a minute, only a few upstream fetches run at once, the upstream must answer `text/css` within the size cap, and a body with no rules is refused. The transform therefore runs once per Gatewaze release per pod, not in every browser, and no CSS parser ships to the client. It:
 
 - scopes every selector under the embed containers,
 - remaps root-element rules (`:root`/`html`/`body`) onto the embed containers so their declarations survive,
@@ -88,35 +103,43 @@ The rem rebase is the one worth stating precisely, because the obvious reading o
 
 The LFX theme layer (`src/styles/gw-embed-theme.css`) is appended **after** the contained CSS, so its token overrides win on source order without `!important`. The build copies it beside the server bundle (see the `build` script and the Dockerfile), and `scripts/check-gw-embed-palette.spec.mjs` keeps its hard-coded colours bound to `lfxColors`.
 
-## Sign-in
+## Session
 
-The embed has its own session, established through LFID. The host drives the round trip:
+The embed runs only in host-session mode. LFX One holds the Gatewaze session on the server, keyed off the LFX session cookie (see [Gatewaze Host Session](../backend/gw-host-session.md)). The browser holds no Gatewaze token, so nothing is stored in `localStorage` and nothing arrives on the URL.
 
-1. `startSignIn()` sends the user to `GW_LFID_START_URL` with a return URL carrying a single-use nonce (`crypto.randomUUID()`, held in `sessionStorage`).
-2. On return, `adoptAuthFragment()` reads the token fragment, **requires the nonce back**, checks the returned account's email against the LFX user, clamps `expires_in`, and writes the session under an isolated storage key.
-3. `clearAuthFragment()` removes the fragment, preserving `history.state`.
+`RuntimeConfig.gwHostSession` says whether the mode is on and fully configured. The server computes it with the same check its `/api/gatewaze` routes use, so the outlet and the routes cannot disagree. While it is false the outlet does not mount the embed and shows its not-configured panel, because every `/api/gatewaze` call would answer the uniform 404.
 
-The nonce is the control that fails closed. Without it, anyone who could get the user to open a crafted link could hand them a Supabase session — the session-fixation hole this replaced.
+The outlet passes this context to the loader:
 
-Two rules about that fragment, both learned the hard way:
+| Field                | Value                                                                                                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session`            | `{ mode: 'host', meUrl: '/api/gatewaze/session/me', logoutUrl: '/api/gatewaze/session/logout' }`                                                                    |
+| `supabase.url`       | `<page origin>/api/gatewaze/supabase`, the LFX proxy for REST, Storage and Functions (`gatewaze-proxy.controller.ts`) and Realtime (`gatewaze-realtime.service.ts`) |
+| `supabase.publicUrl` | `GW_SUPABASE_URL`, so saved public storage URLs point at Supabase and not at LFX                                                                                    |
+| `supabase.anonKey`   | The publishable key                                                                                                                                                 |
+| `apiBaseUrl`         | `/api/gatewaze`. The embed calls `${apiBaseUrl}/api/...`, which lands on the `/api/gatewaze/api` proxy                                                              |
 
-- **Never put `window.location.href` into a URL handed onward.** Both `startSignIn`'s return URL and the embed context's `signIn.returnUrl` strip the hash, because a fragment on a query parameter survives into a third party's access logs.
-- **Clearing sooner does not solve the app-init capture, and does solve the mid-flight one.** These are two different windows and they need different fixes.
+It never passes the embed's `signIn` or `storageKeySuffix` fields. With them set, an embed would keep its own session in `localStorage`.
 
-  Datadog RUM reads `window.location.href` at app init, _before_ the outlet runs at all. No amount of clearing inside `adoptAuthFragment` can beat that, which is why it is handled by redacting in RUM's `beforeSend` (`redactAuthFragment`). The same hook also redacts the invite-accept `token` query param (`redactInviteToken`) so `/invite?token=…` does not leak that credential into `view.url`, and the meeting passcode (`?password=` / `?passcode=`, on any path; `redactMeetingPassword`) from every modifiable RUM URL field — view, referrer, resource, error resource, LCP and long-task script URLs — plus error messages and stacks.
+Other rules:
 
-  The second window is inside `adoptAuthFragment` itself, and it was real. The fragment used to be cleared on each exit path _after_ the identity lookup, leaving live tokens in the address bar for the whole round trip — up to `GW_EMBED_ADOPTION_TIMEOUT_MS`. Anything reading the page URL during it captures a credential, and `AppComponent` boots Intercom, which records the current URL when its asynchronously loaded widget processes the boot call. So the fragment is now cleared as soon as the nonce is consumed and before the first `await`; everything the function still needs was already read off the hash string, and `URLSearchParams` holds a copy rather than a live view.
+- The outlet never starts a sign-in. When a proxied call reports the session expired, the embed reloads the page, at most twice in 30 seconds, and LFX's own auth guard handles a dead LFX session from there. A 401 from `/session/me`, or a session still lost after those reloads, sends the embed to `/login`, and the outlet shows the error panel there.
+- `supabase.publicUrl` must be https, or http on `localhost`, `127.0.0.1` or `*.localhost`. The server allows a plain http `GW_SUPABASE_URL` outside production, but the embed refuses any other http host with `gw_ctx_supabase.publicUrl_invalid`, and the outlet shows the error panel. A local stack must use a `*.localhost` name (e.g. `http://supabase.aaif.localhost`) or https.
+- The loader refuses to mount a bundle whose manifest does not list the `host-session` capability, and reports `gw_embed_capability_missing`. A bundle older than the mode would ignore `session` and keep its own token in `localStorage`. The outlet treats that error as terminal whatever its `recoverable` flag says, shows the error panel and logs it with `console.error`. Only a newer Gatewaze deployment fixes it.
+
+This mode needs `@gatewaze/admin-embed` 1.1.0 or later.
 
 ## Enablement
 
-**Four** gates, all of which must pass:
+**Five** gates, all of which must pass:
 
-| Gate                             | Kind                                                                                     |
-| -------------------------------- | ---------------------------------------------------------------------------------------- |
-| `GW_EMBED_ALLOWED_PROJECT_SLUGS` | Hard-coded tenant allowlist — currently `agentic-ai-foundation` only                     |
-| `gatewaze-embed-enabled`         | Client flag (`CanMatch`)                                                                 |
-| `LFX_GATEWAZE_EMBED_ENABLED`     | Server env                                                                               |
-| `GW_EMBED_URL`                   | Server env; where the loader fetches the admin from. Empty = the outlet refuses to mount |
+| Gate                             | Kind                                                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `GW_EMBED_ALLOWED_PROJECT_SLUGS` | Hard-coded tenant allowlist — currently `agentic-ai-foundation` only                                                        |
+| `gatewaze-embed-enabled`         | Client flag (`CanMatch`)                                                                                                    |
+| `LFX_GATEWAZE_EMBED_ENABLED`     | Server env                                                                                                                  |
+| `LFX_GATEWAZE_HOST_SESSION`      | Server env, plus the host-session config it needs (see [Gatewaze Host Session](../backend/gw-host-session.md#feature-flag)) |
+| `GW_EMBED_URL`                   | Server env; where the loader fetches the admin from. Empty = the outlet refuses to mount                                    |
 
 The tenant allowlist is a **data-isolation control, not a rollout convenience**. Gatewaze has no multi-foundation scoping yet — one deployment serves one tenant's content — so opening the embed from another foundation would render _that_ foundation's chrome around AAIF's newsletters. Wrong data under the wrong brand, not an empty state.
 
@@ -136,10 +159,11 @@ That second version was wrong in both directions at once: it admitted a non-allo
 
 The flag gates below are the rollout half:
 
-| Gate                                               | Effect                                                              |
-| -------------------------------------------------- | ------------------------------------------------------------------- |
-| `gatewaze-embed-enabled` (client flag, `CanMatch`) | Route does not match; chunk never fetched; excluded from preloading |
-| `LFX_GATEWAZE_EMBED_ENABLED` (server env)          | `/api/gw/*` answers a uniform 404                                   |
+| Gate                                               | Effect                                                                             |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `gatewaze-embed-enabled` (client flag, `CanMatch`) | Route does not match; chunk never fetched; excluded from preloading                |
+| `LFX_GATEWAZE_EMBED_ENABLED` (server env)          | `/api/gatewaze/*` answers a uniform 404                                            |
+| `LFX_GATEWAZE_HOST_SESSION` (server env)           | `/api/gatewaze/*` answers a uniform 404; the outlet shows its not-configured panel |
 
 Routes additionally run `newsletterAccessGuard` (ED or project writer) and `projectQueryParamGuard`.
 
@@ -147,6 +171,6 @@ Module and feature enablement is passed at runtime through `GwHostContext.enable
 
 ## Related
 
-- [Gatewaze Embed Proxy](../backend/gw-proxy.md) — the `/api/gw/*` server half
+- [Gatewaze Host Session](../backend/gw-host-session.md) — the `/api/gatewaze` server half
 - [Feature Flags](./feature-flags.md) — OpenFeature wiring the `CanMatch` guard reads
 - [Persona × Lens Content Matrix](./persona-content-matrix.md) — which personas see the sidebar entries

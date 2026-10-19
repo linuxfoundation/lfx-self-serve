@@ -4,20 +4,18 @@
 /**
  * Shared setup for the LFX Insights API tokens e2e specs (IN-1233): synthetic fixtures, BFF route
  * stubs, and the `insights-public-api` flag override. Stubbing keeps the suites independent of the
- * PAT service, the member-service tier endpoint, and the test user's Key Contact status.
+ * PAT service and of the test user's `insights-public-api-token-access` targeting.
  */
 
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, INSIGHTS_PUBLIC_API_FLAG } from '@lfx-one/shared/constants';
 import { CreateInsightsTokenResponse, InsightsToken, InsightsTokenEligibility } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 
-import { SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
-
 export const DATA_LOAD_TIMEOUT = 30_000;
 
-export const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, orgs: [{ uid: 'org-1', name: SYNTHETIC_ORG_NAME }], checkFailed: false };
-export const NOT_KEY_CONTACT: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: false };
-export const CHECK_FAILED: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: true };
+export const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, checkFailed: false };
+export const NOT_ENABLED: InsightsTokenEligibility = { canCreate: false, checkFailed: false };
+export const CHECK_FAILED: InsightsTokenEligibility = { canCreate: false, checkFailed: true };
 
 export const EXISTING_TOKENS: InsightsToken[] = [
   {

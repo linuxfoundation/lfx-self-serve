@@ -26,6 +26,15 @@ export const WG_ENGAGEMENT_METRICS_FLAG = 'wg-engagement-metrics';
 /** Browser-only flag for the Org Lens ROI page — it gates no endpoint. */
 export const ORG_LENS_ROI_ENABLED_FLAG = 'org-lens-roi-enabled';
 /**
+ * Rollout gate for Project Lens → Participating Organizations (#2091): the `project/participating-orgs`
+ * route, its sidebar entry, and every BFF endpoint under `/api/projects/:slug/participating-orgs`.
+ * Default false; the route guard fails closed.
+ *
+ * **Server-paired** — the BFF evaluates the same key through `LaunchDarklyServerService.isFlagEnabled`
+ * and answers 404 while it is off, so the data is not reachable by a direct API call outside the rollout.
+ */
+export const PROJECT_LENS_PARTICIPATING_ORGS_FLAG = 'project-lens-participating-orgs';
+/**
  * Dark-launch gate for the M3 Organization Lens CLA module (#1982) — the EasyCLA
  * route and sidebar entry. The org-lens prefix keeps it in the lens family alongside
  * `ORG_LENS_ROI_ENABLED_FLAG`; the `m3` suffix follows the `MY_CLAS_M2_ENABLED_FLAG`
@@ -131,10 +140,10 @@ export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-ena
  * and `mentorshipEnabledGuard` rather than open, since the embed is not ready for general users.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
- * SDK and never runs server-side, so it cannot gate an Express handler. The BFF proxy
- * (`/api/gw/*`) is gated independently, server-side, by `ServerFeatureFlag.GatewazeEmbedEnabled`
- * (`server-feature-flag.helper.ts`) — an env-var kill switch that also defaults off. Both must be
- * enabled for the pilot to actually be reachable.
+ * SDK and never runs server-side, so it cannot gate an Express handler. The BFF routes
+ * (`/api/gatewaze/*`) are gated independently, server-side, by `ServerFeatureFlag.GatewazeEmbedEnabled`
+ * and `ServerFeatureFlag.GatewazeHostSession` (`server-feature-flag.helper.ts`), env-var kill
+ * switches that also default off. All three must be enabled for the pilot to actually be reachable.
  */
 export const GATEWAZE_EMBED_ENABLED_FLAG = 'gatewaze-embed-enabled';
 
@@ -206,9 +215,9 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  *
  * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
  * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new
- * surface and false is what keeps it dark. LaunchDarkly targeting (a named tester list, dev and
- * prod configured identically) is the rollout switch, never the code default — flipping this
- * constant would ship v2 to everyone.
+ * surface and false is what keeps it dark. LaunchDarkly targeting is the rollout switch, never the
+ * code default; the fallback lives in {@link MEETING_V2_ENABLED_DEFAULT}. The deep links
+ * (`/meetings/create`, `/meetings/:id/edit`) follow the flag too, through `meetingsV2Guard`.
  *
  * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
  * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
@@ -216,21 +225,26 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
 /**
+ * What {@link MEETING_V2_ENABLED_FLAG} reads as in the browser when LaunchDarkly has not answered (unready
+ * or unreachable). Every read of the flag — components and `meetingsV2Guard` — uses this one value, so
+ * moving the fallback from the pre-v2 wizard to v2 is a single-line change here.
+ */
+export const MEETING_V2_ENABLED_DEFAULT = false;
+/**
  * Dark-launch gate for the LFX Insights API Tokens group in Developer Settings (IN-1233). Default
- * false: the group stays hidden until LaunchDarkly targeting turns it on, which also keeps it dark
- * while `lfx-v2-pat-service` and the member-service tier endpoint roll out.
+ * false: the group stays hidden until LaunchDarkly targeting turns it on.
  *
  * **Visibility only** — evaluated in the browser (`FeatureFlagService.getBooleanFlag`). It grants no
  * access: widening its targeting to launch the group never widens who may use the token endpoints.
- * Access for non-Key-Contacts is `INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG`.
+ * Access is `INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG`; launch flips both.
  */
 export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';
 /**
- * Access override for LFX Insights API tokens. Default false. Evaluated on the server only
- * (`LaunchDarklyServerService`): users it targets are treated as Key Contacts by
- * `/api/profile/insights-tokens`, so they can list, create and revoke tokens without being a Key
- * Contact. Target individual users only; a fallthrough or percentage rollout removes the Key Contact
- * gate for everyone it reaches. Users also need `INSIGHTS_PUBLIC_API_FLAG` to see the group.
+ * The access gate for LFX Insights API tokens, and the only one. Default false. Evaluated on the
+ * server only (`LaunchDarklyServerService`) for `/api/profile/insights-tokens`: off means only the
+ * LFIDs it targets individually can list, create and revoke tokens; serving it on to everyone opens
+ * tokens to every LFID holder. There is no membership check behind it. Users also need
+ * `INSIGHTS_PUBLIC_API_FLAG` to see the group.
  */
 export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-access';
 

@@ -558,6 +558,23 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS:
     value:
 
+  # Offers the per-platform Bidding control in the create flow (#3299): Automatic (the default) or
+  # Manual with a max CPC bid, for LinkedIn, Meta, Microsoft Ads and Reddit. Not Google Ads, which
+  # has its own bidding plan.
+  #
+  # A CAPABILITY flag, like DEMAND_GEN: "does the DEPLOYED campaign-service understand
+  # `bidding`?" (linuxfoundation/lfx-v2-campaign-service#332). An older service drops the unknown
+  # key and creates every campaign on AUTOMATIC bidding — a Manual choice would be silently lost and
+  # the job would report success. It also needs the create pipeline (CREATE, BRIEFS, JOBS) on,
+  # because the legacy creator does not read `bidding` either.
+  #
+  # Off, the control is hidden and the create route refuses a request carrying `bidding` with a 400
+  # rather than dropping it. Turning it back off strands nothing: existing campaigns keep the bidding
+  # they were created with. Order: deploy campaign-service #332, confirm it, THEN set this. Same
+  # accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING:
+    value:
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.
@@ -605,9 +622,9 @@ environment:
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 
-  # Server-side kill switch for the /api/gw proxy. It does NOT gate the Angular routes — the
-  # client-side `gatewaze-embed-enabled` flag controls route matching and chunk loading, and both
-  # must be on for the pilot to work.
+  # Server-side kill switch for the /api/gatewaze routes. It does NOT gate the Angular routes — the
+  # client-side `gatewaze-embed-enabled` flag controls route matching and chunk loading. The pilot
+  # needs that flag, this one and LFX_GATEWAZE_HOST_SESSION below.
   #
   # Leave unset until GW_API_URL below is pointed at a real deployment. Once on, access is gated by
   # `requireGwEmbedAccess`: ED persona, root writer, or a writer grant on any foundation/project.
@@ -616,7 +633,7 @@ environment:
   LFX_GATEWAZE_EMBED_ENABLED:
     value:
 
-  # Optional per-environment tuning for the /api/gw proxy. Both fall back to their compiled
+  # Optional per-environment tuning for the /api/gatewaze proxies. Both fall back to their compiled
   # defaults when unset or invalid (60000ms; 104857600 bytes) rather than failing the request.
   GW_PROXY_TIMEOUT_MS:
     value:
@@ -624,8 +641,8 @@ environment:
   GW_PROXY_MAX_BODY_BYTES:
     value:
 
-  # Base URL of the Gatewaze admin API that /api/gw proxies to. https:// is enforced outside
-  # dev/local/test, and a trailing slash is rejected (the proxy resolves the request path against this base, and a trailing slash would skew the escape check).
+  # Origin of the Gatewaze admin API that /api/gatewaze/api proxies to. https:// is enforced
+  # outside dev/local/test, and it must be a bare origin: no path and no trailing slash.
   GW_API_URL:
     value:
 
@@ -639,10 +656,13 @@ environment:
   GW_SUPABASE_ANON_KEY:
     value:
 
-  # Where the embed's "Sign in with LFID" button sends the user. The host appends a return_url
-  # carrying a single-use nonce and adopts the returned session only if that nonce comes back.
-  GW_LFID_START_URL:
+  # Gatewaze host-session mode (#2738), the embed's only mode: LFX One gets the Gatewaze session
+  # server-side with GoTrue's id_token grant and keeps it in Valkey, so the browser holds no
+  # Gatewaze token. Off by default; with it off the embed shows a "not configured" panel. Also needs LFX_GATEWAZE_EMBED_ENABLED, SESSION_STORE_ENABLED with VALKEY_URL, the
+  # GW_SUPABASE_* pair above and PCC_AUTH0_SECRET. See docs/architecture/backend/gw-host-session.md.
+  LFX_GATEWAZE_HOST_SESSION:
     value:
+
   # Where the Gatewaze deployment serves the embeddable admin, e.g.
   # https://admin.example.org/embed (no trailing slash). @gatewaze/admin-embed is a loader that
   # reads <url>/manifest.json and imports the current admin bundle from there, so admin changes
@@ -839,6 +859,25 @@ environment:
   # which surfaces as "HubSpot lookup failed" — indistinguishable from a real HubSpot outage.
   # Verify the endpoints respond in the target environment before flipping this on.
   LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM:
+    value: "false"
+
+  # Serves the account monitors from campaign-service's account-monitor endpoints (#2519):
+  # /api/campaigns/linkedin/monitor, /meta/monitor and /reddit/monitor switch backend, and the
+  # campaign-service-only /microsoft/monitor, /twitter/monitor and /hubspot/monitor answer at all
+  # (404 while off). Google (/monitor) is not affected.
+  #
+  # Campaign-service reads with the PROJECT'S OWN connection, never the LF system fallback, so with
+  # this on the Monitor tab's account pickers offer each project's connection's account rather than
+  # the configured allowlists; a project with no connection (or no account bound) sees that stated
+  # in the panel. The numbers also change on purpose -- campaign-service fixed the ported LinkedIn
+  # and Reddit rule-engine bugs (#3018-#3022) -- and LinkedIn loses its creative breakdown (not read
+  # by campaign-service).
+  #
+  # A mixed rollout (some pods on, some off) is safe: a monitor read whose account came from an "on"
+  # pod is marked, and an "off" pod refuses it with a retryable 409 MONITOR_CUTOVER_MISMATCH rather
+  # than serving a different account; the tab's Retry re-checks which source to use.
+  # Reads only, so turning it back off strands nothing.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR:
     value: "false"
 
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
+import { ACCESS_CHECK_BATCH_SIZE, SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS, SURVEY_LINK_ALLOWLIST } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
 import { CreateSurveyRequest, MySurveyResponse, QueryServiceResponse, Survey, SurveyResponseRecord, SurveyResponsesPage } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
@@ -13,6 +13,7 @@ import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { validateAndSanitizeUrl } from '../helpers/url-validation';
 import { getEffectiveName, getEffectiveUsername, resolveUserIdentity } from '../utils/auth-helper';
+import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -25,11 +26,13 @@ export class SurveyService {
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
+  private accessCheckService: AccessCheckService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService();
     this.projectService = new ProjectService();
+    this.accessCheckService = new AccessCheckService();
   }
 
   /**
@@ -64,20 +67,53 @@ export class SurveyService {
       this.fetchRespondedSurveyUidsForUser(req),
     ]);
 
+    // Effective committee writer checks retain inherited grants. Keep one bounded batch
+    // in flight, and use the caller's request identity with the lenient fail-closed API.
+    const accessDeadlineAt = Date.now() + SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS;
+    const accessRequestOptions = { deadlineAt: accessDeadlineAt };
+    const committeeUids = [
+      ...new Set(
+        surveys
+          .filter((survey) => getSurveyDisplayStatus(survey) === SurveyStatus.DRAFT)
+          .flatMap((survey) => survey.committees?.map((committee) => committee.committee_uid) ?? [])
+          .filter((uid) => uid?.trim())
+      ),
+    ];
+    const writableCommitteeUids = new Set<string>();
+    for (let start = 0; start < committeeUids.length; start += ACCESS_CHECK_BATCH_SIZE) {
+      if (Date.now() >= accessDeadlineAt) break;
+      const batch = committeeUids.slice(start, start + ACCESS_CHECK_BATCH_SIZE);
+      const access = await this.accessCheckService.checkAccess(
+        req,
+        batch.map((id) => ({ resource: 'committee', id, access: 'writer' })),
+        accessRequestOptions
+      );
+      for (const id of batch) {
+        if (access.get(`${id}#writer`) === true) writableCommitteeUids.add(id);
+      }
+    }
+    // Overwrite any indexed flag: grants are per caller, not survey metadata.
+    const surveysWithAccess = surveys.map((survey) => ({
+      ...survey,
+      committee_writer:
+        getSurveyDisplayStatus(survey) === SurveyStatus.DRAFT &&
+        (survey.committees?.some((committee) => writableCommitteeUids.has(committee.committee_uid)) ?? false),
+    }));
+
     // Count the responded UIDs that intersect with this result set so the log
     // metric is meaningful — respondedSurveyUids covers all of the user's
     // responses (across committees/projects) and would otherwise be > final_count.
     let respondedInResult = 0;
     const enriched =
       respondedSurveyUids.size > 0
-        ? surveys.map((s) => {
+        ? surveysWithAccess.map((s) => {
             if (s.uid && respondedSurveyUids.has(s.uid)) {
               respondedInResult++;
               return { ...s, response_status: 'responded' };
             }
             return s;
           })
-        : surveys;
+        : surveysWithAccess;
 
     logger.debug(req, 'get_surveys', 'Completed survey fetch', {
       final_count: enriched.length,

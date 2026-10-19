@@ -154,22 +154,72 @@ export const GW_EMBED_STYLESHEET_FAILURE_CACHE_MAX_ENTRIES = 64;
 export const GW_EMBED_STYLESHEET_MAX_IN_FLIGHT = 2;
 
 /**
- * Browser/CDN caching for the scoped stylesheet. The body is LFX output (containment transform
- * plus theme layer) under an upstream-hashed name, so it is not immutable: a theme or transform
- * fix must reach users without a URL change. Short max-age with stale-while-revalidate and an
- * ETag keeps page loads fast while bounding staleness to minutes.
+ * Browser/CDN caching for the scoped stylesheet requested WITHOUT the server's key (the fallback
+ * form, `<route>/<name>`). The body is LFX output (containment transform plus theme layer) under an
+ * upstream-hashed name, so that URL is not content-addressed: a theme or transform fix must reach
+ * users without a URL change. Short max-age with stale-while-revalidate and an ETag bound the
+ * staleness. Cloudflare in front of the app raises a max-age below the zone's Browser Cache TTL
+ * (4 hours) to that TTL, so in practice this form can be stale for up to 4 hours.
  */
 export const GW_EMBED_STYLESHEET_MAX_AGE_S = 300;
 export const GW_EMBED_STYLESHEET_STALE_WHILE_REVALIDATE_S = 7 * 24 * 60 * 60;
 
 /**
- * What the embed resolves an empty `apiBaseUrl` to — the same-origin BFF proxy mount.
+ * Browser/CDN lifetime of the content-addressed form, `<route>/<key>/<name>`: the name carries the
+ * upstream content hash and the key carries LFX's own share (theme layer and transform), so the URL
+ * names exactly one body and is served `immutable`. Only when the key matches this server's own.
  *
- * Duplicated from the embed's own `mount()` rather than left implicit, because the host has to
- * pre-seed the runtime-config global before the chunk evaluates and must use the identical value,
- * or the pre-seed and `mount()`'s own write would disagree for the window between them.
+ * A week, not a year. The upstream body is not checked against the hash in its name (the embed
+ * build names it with Rollup's `[hash]`, an xxhash this server does not implement), so a bad body Gatewaze served under a valid
+ * name would be pinned for this long. A week still spans many visits, and both Gatewaze releases
+ * (a new name) and LFX releases that touch the theme or transform (a new key) change the URL long
+ * before it runs out. Recovery before then is in `docs/architecture/frontend/gw-embed.md`.
  */
-export const GW_EMBED_DEFAULT_API_BASE_URL = '/api/gw';
+export const GW_EMBED_STYLESHEET_IMMUTABLE_MAX_AGE_S = 7 * 24 * 60 * 60;
+
+/**
+ * What the server's stylesheet key looks like (`getGwEmbedStylesheetKey`): base64url, fixed
+ * length. Anything else in the key segment is a 404.
+ */
+export const GW_EMBED_STYLESHEET_KEY_PATTERN = /^[A-Za-z0-9_-]{16}$/;
+
+/**
+ * The containment transform's fingerprint: the SHA-256 (hex) of
+ * `apps/lfx-one/scripts/lib/contain-gw-embed-css.mjs`. It feeds the stylesheet key, so a transform
+ * change gives the scoped stylesheet a new URL instead of leaving browsers on the immutable old one.
+ * A spec (`gw-embed.helper.spec.ts`) fails when the file changes without this being updated, and
+ * prints the new value.
+ *
+ * A `postcss` upgrade does not rotate the key; if one changes the output, update this value by hand.
+ */
+export const GW_EMBED_STYLESHEET_TRANSFORM_FINGERPRINT = '7a789f6bbb63afd0d5d2abacc2a0c2c03551724421ebb0ae8c2fc4acde62d498';
+
+/**
+ * Longest the outlet keeps its skeleton up after the loader reports the embed mounted, waiting for
+ * the embed's first paint, in ms. After this the embed is shown whatever it holds, so a render that
+ * never produces height cannot strand the skeleton.
+ */
+export const GW_EMBED_FIRST_PAINT_TIMEOUT_MS = 10_000;
+
+/**
+ * Where LFX One serves host-session mode (`gatewaze.route.ts`, mounted in `server.ts`). The
+ * Supabase and API proxy mounts under it are `GW_HOST_SESSION_PROXY_SUPABASE_MOUNT` and
+ * `GW_HOST_SESSION_PROXY_API_MOUNT` (`gw-host-session-proxy.constants.ts`).
+ */
+export const GW_EMBED_HOST_SESSION_MOUNT = '/api/gatewaze';
+
+/** `GwHostContext.session.meUrl`: who the Gatewaze session belongs to, or why there is none. */
+export const GW_EMBED_HOST_SESSION_ME_URL = `${GW_EMBED_HOST_SESSION_MOUNT}/session/me`;
+
+/** `GwHostContext.session.logoutUrl`: ends the Gatewaze session and leaves the LFX one alone. */
+export const GW_EMBED_HOST_SESSION_LOGOUT_URL = `${GW_EMBED_HOST_SESSION_MOUNT}/session/logout`;
+
+/**
+ * The loader's `onFatal` code for a hosted bundle whose manifest does not advertise the
+ * `host-session` capability. The loader refuses to mount it, because a bundle that predates the
+ * mode would ignore `session` and keep its own session in `localStorage`.
+ */
+export const GW_EMBED_CAPABILITY_MISSING_CODE = 'gw_embed_capability_missing';
 
 /**
  * Route prefixes the embed can be mounted under, and the value handed to the embed as
@@ -192,58 +242,14 @@ export const GW_EMBED_PROJECT_ROUTE_PREFIX = GW_EMBED_ROUTE_PREFIXES[1];
  * Path (relative to the prefix) the embed navigates to when it has no authenticated user.
  *
  * The embed compiles in module routes only and has no `/login` among them, so its `FeatureGuard`'s
- * `<Navigate to="/login">` always falls through to the catch-all and comes back to the host.
+ * `<Navigate to="/login">` always falls through to the catch-all and comes back to the host. The
+ * host holds the Gatewaze session, so the outlet answers it with an error panel rather than a
+ * sign-in flow.
  */
 export const GW_EMBED_LOGIN_PATH = '/login';
 
-/**
- * Where to send the user after signing in, relative to the prefix.
- *
- * Sign-in cannot return to wherever the user happened to be, because that is usually
- * `GW_EMBED_LOGIN_PATH` — the embed sent them there precisely because they were unauthenticated,
- * and it is a path the embed has no route for. Returning there lands them back on a dead end with a
- * freshly minted session they can't use, so sign-in returns to a real module route instead.
- */
+/** The embed's landing page, relative to the prefix. The sidebar's Newsletters links point here. */
 export const GW_EMBED_LANDING_PATH = '/newsletters';
-
-/**
- * Query-param name carrying the tenant slug on embed routes. The route guards read the same
- * literal (`?project=`); this constant makes the contract explicit where the embed WRITES the
- * param — the sign-in return and recovery-reload URLs must carry it, or the guards fall back to
- * a context service that has not rehydrated on a full page load and bounce the navigation
- * (GH-3286).
- */
-export const GW_EMBED_PROJECT_QUERY_PARAM = 'project';
-
-/**
- * Suffix passed as `GwHostContext.storageKeySuffix`, isolating the embedded session from a
- * standalone Gatewaze admin session on the same origin.
- *
- * Passed explicitly rather than left to the embed's default so the host can derive the exact
- * storage key below; the embed's default would work equally well but leaves the host guessing.
- */
-export const GW_EMBED_STORAGE_KEY_SUFFIX = 'lfx_embed';
-
-/**
- * Prefix the embed's `configureEmbedSupabase` puts in front of `GW_EMBED_STORAGE_KEY_SUFFIX` when
- * it builds the supabase-js `storageKey`.
- *
- * **This couples the host to an internal detail of the embed.** It exists because the host has to
- * write the session itself (see the outlet's URL bootstrap): the embed's own `detectSessionInUrl`
- * never runs early enough, since its router's catch-all sits outside the auth boundary and hands
- * navigation back to the host before the Supabase client is ever constructed. If the embed changes
- * this prefix, the host silently writes to a key nothing reads — so this belongs in the embed's
- * public contract, and the workaround should be deleted once that lands.
- */
-export const GW_EMBED_STORAGE_KEY_PREFIX = 'gatewaze-admin-auth-token-';
-
-/**
- * How long before the outlet will retry reloading onto a real route to recover a stored session.
- *
- * Bounds the recovery in the outlet's `navigateHost` handler: one reload, then fall through to the
- * sign-in prompt, so a session the embed rejects for some other reason cannot reload forever.
- */
-export const GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS = 30_000;
 
 /**
  * Sidebar destination for the Foundation Lens Newsletters entry, when the embed is on for this
@@ -260,6 +266,21 @@ export const GW_EMBED_FOUNDATION_NEWSLETTERS_LINK = `${GW_EMBED_ROUTE_PREFIX}${G
  * constant repoints the embed entry; it does not restore the LFX page.
  */
 export const GW_EMBED_PROJECT_NEWSLETTERS_LINK = `${GW_EMBED_PROJECT_ROUTE_PREFIX}${GW_EMBED_LANDING_PATH}`;
+
+/**
+ * The sidebar destinations that open the embed. Hovering or focusing a link to one of them is the
+ * intent signal `GwEmbedWarmupService` warms the Gatewaze session on.
+ */
+export const GW_EMBED_NAV_LINK_PATHS: readonly string[] = [GW_EMBED_FOUNDATION_NEWSLETTERS_LINK, GW_EMBED_PROJECT_NEWSLETTERS_LINK];
+
+/**
+ * Elements that count as painted content in the embed even without text: a loading indicator
+ * (`role="status"`, which the embed's `PageLoadingSpinner` carries, or `aria-busy`) or media. Used
+ * with any non-whitespace text by the outlet's first-paint check, which must not count the embed's
+ * empty provider wrappers. Radix's root `Theme` is one of those and has `min-height: 100vh`, so a
+ * child-and-height test passes before anything is drawn.
+ */
+export const GW_EMBED_PAINTED_CONTENT_SELECTOR = '[role="status"], [aria-busy="true"], img, svg, canvas, video';
 
 /**
  * Maps the embed's notification levels onto PrimeNG toast severities and the summary line LFX
@@ -280,52 +301,7 @@ export const GW_EMBED_NOTIFICATION_SEVERITY = {
 export const GW_EMBED_NOTIFICATION_DEFAULT_LIFE_MS = 5000;
 
 /**
- * sessionStorage key holding the single-use nonce that binds an LFID sign-in to this browser.
- *
- * Minted in `startSignIn`, required back before any token from the returned URL fragment is
- * adopted — see `GwModuleOutletComponent.consumeSignInState`.
- */
-export const GW_EMBED_SIGNIN_STATE_KEY = 'lfx-gw-embed-signin-state';
-
-/** Query parameter the sign-in nonce travels on: out via `return_url`, back on the LFID return. */
-export const GW_EMBED_SIGNIN_STATE_PARAM = 'gw_state';
-
-/** sessionStorage key for the one-shot claim on reloading to recover a session. */
-export const GW_EMBED_SESSION_RECOVERY_KEY = 'lfx-gw-embed-session-recovery';
-
-/**
- * Marks that an automatic sign-in has already been started in this tab.
- *
- * The embed asks the host to open `/login` on EVERY unauthenticated render, so starting the LFID
- * round trip automatically needs a "we already tried" record or a failure to establish a session
- * becomes an endless redirect through the identity provider. One attempt per tab; after that the
- * user gets the manual panel, which cannot loop.
- *
- * `sessionStorage`, not `localStorage`: the guard should last as long as the tab and no longer, so
- * a genuinely new visit is free to try again.
- */
-export const GW_EMBED_AUTO_SIGNIN_KEY = 'lfx-gw-embed-auto-signin-attempted';
-
-/**
- * How many times a tab may start LFID automatically before falling back to the manual panel.
- *
- * Not one. A single attempt makes any transient failure permanent for the life of the tab — a
- * cancelled sign-in, a blip, a misconfiguration fixed a minute later — and a reload does not clear
- * it, because the record is per-tab. The user is then stuck clicking a button that says their LFX
- * session lacks access, which is both wrong and unexplained.
- *
- * Two recovers from one bad attempt without becoming a loop: the failure mode this guards against
- * is unbounded cycling through the identity provider, and a hard ceiling of two redirects is not
- * that. Beyond it the manual panel takes over permanently for the tab, which cannot loop and gives
- * the user something to act on.
- */
-export const GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS = 2;
-
-/** Session lifetime assumed when the LFID fragment carries no usable `expires_in`, in seconds. */
-export const GW_EMBED_DEFAULT_SESSION_TTL_S = 3600;
-
-/**
- * How long one caller's writer summary is reused across proxied `/api/gw/*` calls, in ms.
+ * How long one caller's writer summary is reused across proxied `/api/gatewaze/*` calls, in ms.
  *
  * Matched to `PERSONAS_CACHE_TTL_MS` deliberately: the two lookups gate the same decision on the
  * same route, so a shorter window here would just reintroduce the paginated grant sweep this
@@ -344,7 +320,7 @@ export const SUPABASE_SERVICE_ROLE = 'service_role';
 export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
 
 /**
- * Cap on how long a rejected `/api/gw/*` request is drained before answering, in ms.
+ * Cap on how long a rejected `/api/gatewaze/*` proxy request is drained before answering, in ms.
  *
  * The single definition for the whole route: the pre-stream rejections (404 / 403 / fail-closed
  * 5xx) and the controller's 413 drain protocol — which is where the technique came from — both
@@ -358,17 +334,7 @@ export const SUPABASE_SECRET_KEY_PREFIX = 'sb_secret_';
 export const GW_DRAIN_TIMEOUT_MS = 5_000;
 
 /**
- * Cap on the Supabase `/auth/v1/user` lookup during fragment adoption, in ms.
- *
- * Everything that clears the auth fragment runs after that call returns, so without a bound a hung
- * gateway leaves live access and refresh tokens in the address bar indefinitely and the outlet
- * stuck on its skeleton. Ten seconds is generous for a single identity lookup and still short
- * enough that a user sees the sign-in panel rather than an apparently frozen page.
- */
-export const GW_EMBED_ADOPTION_TIMEOUT_MS = 10_000;
-
-/**
- * Default ceiling on a proxied `/api/gw` request body, in bytes.
+ * Default ceiling on a proxied `/api/gatewaze` request body, in bytes.
  *
  * Overridable per environment via `GW_PROXY_MAX_BODY_BYTES`. Well above the body parsers' 15MB
  * because `host-media` uploads legitimately pass through this route; the point is a bound, not a
@@ -377,10 +343,12 @@ export const GW_EMBED_ADOPTION_TIMEOUT_MS = 10_000;
 export const GW_PROXY_DEFAULT_MAX_BODY_BYTES = 100 * 1024 * 1024;
 
 /**
- * Default cap on a proxied `/api/gw` upstream request, in ms.
+ * Default idle bound on the upstream socket of a proxied `/api/gatewaze` request, in ms.
  *
- * Overridable per environment via `GW_PROXY_TIMEOUT_MS`. Generous because the upstream owns
- * long-running work such as media processing, and the caller sees a 408 rather than a hung socket.
+ * Overridable per environment via `GW_PROXY_TIMEOUT_MS`. It limits how long the socket may sit with
+ * no data moving, not the total length of the request, so a slow upload or a long download that
+ * keeps moving is not cut off. A hung upstream is, and the caller sees a 408 rather than a hung
+ * socket if no response has started.
  */
 export const GW_PROXY_DEFAULT_TIMEOUT_MS = 60_000;
 

@@ -40,6 +40,10 @@ The helpers directory contains files organized by responsibility:
 | `validation.helper.ts`                       | TypeScript type guard validators for request parameters, plus query-param parsers: `getStringQueryParam`, and `clampInteger` / `parseOffsetPagination` for the interpolated `LIMIT`/`OFFSET` of Snowflake reads                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `vote-response.helper.ts`                    | `fetchCurrentUserVoteResponses` — shared email/username identity-scoped reads with ownership rechecks and pagination for My Votes, Pending Actions, and post-cast confirmation. Confirmation filters by the submitted response UID and requires that exact row to be `responded`; index failures still warn and proceed after an accepted ballot. `getParentVoteId` shares `vote_uid` / legacy `poll_id` parent keying across participation views.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
+### Social Listening Read Parameters
+
+`social-listening-params.helper.ts` validates the JSON bodies for Social Listening feed and count reads before values reach Snowflake. Feed `page_token` values are capped at 4,096 characters before base64url decoding, and decoded cursor keys share the 200-character mention-ID input ceiling. Oversized tokens or keys return a structured 400 validation error for `page_token`. Valid keys remain opaque and unchanged, including whitespace and punctuation; timestamp validation and null-timestamp pagination are preserved.
+
 ## Common Patterns
 
 ### Request Parameter for Logging
@@ -223,6 +227,14 @@ All validators:
 - Create a `ServiceValidationError` with field-specific context
 - Call `next(error)` for Express error handling
 - Return `false` to signal invalid input
+
+`getValidatedIsoDateQueryParam(req, name, operation)` validates optional date filters used by both events handlers.
+It accepts `YYYY-MM-DD` and UTC timestamps (`YYYY-MM-DDTHH:mm:ssZ`, optionally with exactly three fractional digits),
+checks calendar/time validity by UTC round-trip, and returns the accepted string unchanged for the SQL bind.
+Absent, empty, and non-string query values return `undefined`, matching `getStringQueryParam` semantics. Invalid
+strings throw a field-specific `ServiceValidationError` (400); controllers catch it and pass it to `next(error)`
+before invoking the events service. The helper does not log. See [Snowflake conversion-error handling](./snowflake-integration.md#7-unrecognized-datetimestampnumeric-value)
+for the circuit-breaker defense in depth.
 
 ## Guidelines
 

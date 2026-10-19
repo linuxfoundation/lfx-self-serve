@@ -38,16 +38,38 @@ export class VoteController {
     });
 
     try {
-      const { data: votes, page_token } = await this.voteService.getVotes(req, req.query as Record<string, any>);
+      const { data: votes, page_token, total_records } = await this.voteService.getVotes(req, req.query);
 
       logger.success(req, 'get_votes', startTime, {
         vote_count: votes.length,
         has_more_pages: !!page_token,
       });
 
-      res.json({ data: votes, page_token });
+      res.json({ data: votes, page_token, ...(total_records !== undefined && { total_records }) });
     } catch (error) {
       next(error);
+    }
+  }
+
+  /** GET /votes/summary — only project parent and optional committee name affect totals. */
+  public async getVotesSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_votes_summary');
+    try {
+      const context = { operation: 'get_votes_summary', service: 'vote_controller' };
+      const unsupported = Object.keys(req.query).find((key) => key !== 'parent' && key !== 'group');
+      if (unsupported) throw ServiceValidationError.forField(unsupported, 'Unsupported summary parameter', context);
+      const { parent, group } = req.query;
+      if (typeof parent !== 'string' || !/^project:[^\s:]+$/.test(parent)) {
+        throw ServiceValidationError.forField('parent', 'Expected one nonempty project:<uid> parent', context);
+      }
+      if (group !== undefined && (typeof group !== 'string' || !group.trim())) {
+        throw ServiceValidationError.forField('group', 'Expected one nonempty group name', context);
+      }
+      const summary = await this.voteService.getVotesSummary(req, parent, group?.trim());
+      logger.success(req, 'get_votes_summary', startTime, { active_votes: summary.active_votes, closing_soon: summary.closing_soon });
+      res.json(summary);
+    } catch (error) {
+      return next(error);
     }
   }
 

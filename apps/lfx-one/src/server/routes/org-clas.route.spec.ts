@@ -82,6 +82,14 @@ vi.mock('../services/org-role-grants.service', () => ({
     public getAccessAwareOrgs = getAccessAwareOrgs;
   },
 }));
+// The CLA gate's second question: the caller's own `cla-manager` companies. Default "manages
+// nothing", so every pre-existing ungranted case still answers 403.
+const getClaManagerCompanySfids = vi.fn();
+vi.mock('../services/org-cla-manager-scopes.service', () => ({
+  OrgClaManagerScopesService: class {
+    public getCompanySfids = getClaManagerCompanySfids;
+  },
+}));
 // `isImpersonating` is a spy rather than a literal so the write route's guard can be driven from
 // a test. `blockDuringImpersonation` reads it, and it is the only input that guard has.
 const isImpersonating = vi.fn(() => false);
@@ -195,6 +203,63 @@ beforeEach(() => {
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
+  getClaManagerCompanySfids.mockResolvedValue(new Set());
+});
+
+describe('org-clas router — CLA Manager without an Org Lens grant', () => {
+  beforeEach(() => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    getClaManagerCompanySfids.mockResolvedValue(new Set([UNGRANTED]));
+  });
+
+  it('admits the list for the company their cla-manager scope names', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups`);
+
+    expect(res.status).toBe(200);
+    expect(listClaGroups).toHaveBeenCalled();
+  });
+
+  it('admits an approval-list write, leaving the action to EasyCLA', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/approval-list`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ add: [{ kind: 'domain', value: 'example.com' }], remove: [] }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(updateApprovalList).toHaveBeenCalled();
+  });
+
+  it('refuses that write while impersonating, before the scopes are asked', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/approval-list`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ add: [{ kind: 'domain', value: 'example.com' }], remove: [] }),
+    });
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    expect(updateApprovalList).not.toHaveBeenCalled();
+    expect(getClaManagerCompanySfids).not.toHaveBeenCalled();
+  });
+
+  it('refuses a company their scopes do not name', async () => {
+    getClaManagerCompanySfids.mockResolvedValue(new Set(['0014100000GammaAAA']));
+
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups`);
+
+    expect(res.status).toBe(403);
+    expect(listClaGroups).not.toHaveBeenCalled();
+  });
+
+  it('does not widen the lens routes this router does not own', async () => {
+    await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/memberships`);
+
+    expect(genericLensGuard).toHaveBeenCalled();
+    expect(getClaManagerCompanySfids).not.toHaveBeenCalled();
+  });
 });
 
 describe('org-clas router', () => {

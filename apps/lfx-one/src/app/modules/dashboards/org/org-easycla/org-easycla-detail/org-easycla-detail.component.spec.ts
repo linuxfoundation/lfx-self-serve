@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, signal } from '@angular/core';
+import { computed, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -23,8 +23,10 @@ import {
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
 } from '@lfx-one/shared/constants';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { IntercomService } from '@services/intercom.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -54,6 +56,13 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
 const GROUP_ID = '7c1a9000-0000-4000-8000-000000000001';
 const ELSEWHERE_GROUP_ID = '7c1a9000-0000-4000-8000-000000000002';
 const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
+
+function roleMissingError(): HttpErrorResponse {
+  return new HttpErrorResponse({
+    status: 403,
+    error: { error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' },
+  });
+}
 
 describe('OrgEasyclaDetailComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
@@ -2185,6 +2194,47 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-not-found-state')).toBeNull();
   });
 
+  it('surfaces a missing EasyCLA role instead of a list failure or a missing agreement', async () => {
+    getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+
+    const fixture = await render();
+    const state = byTestId(fixture, 'org-easycla-detail-role-missing-state');
+
+    expect(state).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
+    expect(byTestId(fixture, 'org-easycla-detail-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+    );
+    expect(state?.textContent).not.toContain('Refresh');
+    expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-not-found-state')).toBeNull();
+  });
+
+  it('opens the Intercom messenger from the contact support link', async () => {
+    getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+
+    const fixture = await render();
+    TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+    const openMessenger = vi.spyOn(TestBed.inject(IntercomService), 'openMessenger').mockImplementation(() => undefined);
+    const link = byTestId(fixture, 'org-easycla-detail-role-missing-contact-support') as HTMLButtonElement | null;
+
+    expect(link?.tagName).toBe('BUTTON');
+    expect(link?.getAttribute('type')).toBe('button');
+    expect(link?.textContent?.trim()).toBe('contact support');
+    link?.click();
+
+    expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function));
+  });
+
+  it('keeps the list failure for a 403 without the missing-role code', async () => {
+    getClaGroups.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Forbidden', code: 'FORBIDDEN' } })));
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-error-state')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')).toBeNull();
+  });
+
   it('downloads in-page after resolving the url, and does not resolve it on first paint', async () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
     const openSpy = vi.spyOn(window, 'open');
@@ -3000,6 +3050,23 @@ describe('OrgEasyclaDetailComponent', () => {
       }
     });
 
+    it('clears a missing-role refusal once a retry recovers the list', async () => {
+      vi.useFakeTimers();
+      try {
+        getClaGroups.mockReturnValueOnce(throwError(() => roleMissingError()));
+        getClaGroups.mockReturnValue(of({ orgUid: NAMED.uid, claGroups: [] }));
+        const { fixture } = await renderReturn({ claGroups: [] });
+
+        await vi.advanceTimersByTimeAsync(30_000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-role-missing-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-detail-signature-pending-state')).not.toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     /**
      * Bounded, because past about half a minute the likelier explanations are ones no amount of
      * waiting fixes. What the exhausted wait must not do is leave the address, or say the
@@ -3670,10 +3737,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     addMessage.mockReset();
   });
 
-  it('asks ACS for the auto-ecla-update grant with the pair project SFID', async () => {
+  it('asks ACS for the auto-ecla-update grant with the pair project SFID (no foundation on this row)', async () => {
     await render();
 
-    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT);
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT, undefined);
+  });
+
+  it('carries the foundation pair alongside the project pair when the CLA Group has a distinct foundation SFID', async () => {
+    const FOUNDATION = 'a09410000182dFOUND';
+    await render(row({ foundationSfid: FOUNDATION }));
+
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT, FOUNDATION);
   });
 
   it('renders the toggle enabled and unexplained for a CLA manager ACS allows', async () => {
@@ -3876,7 +3950,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
     expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-locked-hint')).toBeNull();
-    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto Acknowledge');
   });
 
   it('explains the disabled toggle to a viewer off the roster while the ACS answer is still pending', async () => {
@@ -3891,14 +3965,14 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   it('names the reason in the switch accessible name, so the sentence is not sighted-only', async () => {
     const fixture = await render(row({ viewerIsClaManager: false }));
 
-    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA — Only CLA Managers can change this setting.');
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto Acknowledge — Only CLA Managers can change this setting.');
   });
 
   it('leaves the accessible name unqualified for a viewer who can move the switch', async () => {
     const fixture = await render();
 
     expect(autoEclaSwitch(fixture)?.disabled).toBe(false);
-    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto ECLA');
+    expect(autoEclaSwitch(fixture)?.getAttribute('aria-label')).toBe('Auto Acknowledge');
   });
 
   it.each([
@@ -4006,17 +4080,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(component.autoEclaValue()).toBe(true);
   });
 
-  it('labels the switch Auto ECLA and links to the docs', async () => {
+  it('labels the switch Auto Acknowledge and links to the docs', async () => {
     const fixture = await render(row({ autoCreateEcla: true }));
 
     const label = fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]') as HTMLLabelElement;
-    expect(label.textContent?.trim()).toBe('Auto ECLA');
+    expect(label.textContent?.trim()).toBe('Auto Acknowledge');
     const targets = fixture.nativeElement.querySelectorAll('#org-easycla-detail-auto-ecla-toggle');
     expect(targets.length).toBe(1);
     expect((targets[0] as HTMLElement).tagName).toBe('INPUT');
     const link = byTestId(fixture, 'org-easycla-detail-auto-ecla-learn-more') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/docs');
-    expect(link.textContent?.trim()).toBe('Learn more about Auto ECLA →');
+    expect(link.getAttribute('href')).toBe('/docs/organization/easycla#what-does-auto-acknowledge-do');
+    expect(link.textContent?.trim()).toBe('Learn more about Auto Acknowledge →');
   });
 
   it('describes what on and off mean for people on the approval list', async () => {
@@ -4042,7 +4116,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
     fixture.detectChanges();
 
-    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned on.' });
+  });
+
+  it('confirms a written off with its own success toast', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: false }));
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    fixture.detectChanges();
+
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned off.' });
   });
 
   it('keeps the requested value when a successful write comes back without the echo', async () => {
@@ -4053,7 +4137,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     fixture.detectChanges();
 
     expect((fixture.componentInstance as unknown as { autoEclaValue: () => boolean }).autoEclaValue()).toBe(true);
-    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto Acknowledge turned on.' });
   });
 
   it('does not confirm a write that finished after the manager left the agreement', async () => {
@@ -4097,7 +4181,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   it('rolls back and toasts with the server sentence when the roster refusal carries only a message', async () => {
     const error = new HttpErrorResponse({
       status: 403,
-      error: { message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' },
+      error: { message: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting' },
     });
     setAutoCreateEcla.mockReturnValue(throwError(() => error));
     const fixture = await render(row({ autoCreateEcla: false }));
@@ -4112,7 +4196,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'error',
-        detail: 'Only a CLA manager named on this CLA can change its Auto ECLA setting',
+        detail: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting',
       })
     );
   });
@@ -4129,7 +4213,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(addMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         severity: 'error',
-        summary: "Couldn't turn Auto ECLA on",
+        summary: "Couldn't turn Auto Acknowledge on",
         detail: 'Please try again in a moment.',
       })
     );

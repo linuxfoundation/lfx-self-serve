@@ -3,10 +3,10 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE, MICROSOFT_KEYWORDS_WINDOWS } from '@lfx-one/shared/constants';
+import { LIVE_REGION_MOUNT_DELAY_MS, MICROSOFT_KEYWORDS_WINDOWS, MICROSOFT_KEYWORD_PREVIOUS_UNCONFIRMED_NOTE } from '@lfx-one/shared/constants';
 import { MicrosoftKeywordActionRequest, MicrosoftKeywordMetrics, MicrosoftKeywordMetricsResponse } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MicrosoftKeywordsTableComponent } from './microsoft-keywords-table.component';
@@ -131,6 +131,48 @@ describe('MicrosoftKeywordsTableComponent', () => {
     expect(q('microsoft-keyword-conversions-microsoft-ads:111-222')!.textContent).toContain('Not measured');
     expect(q('microsoft-keyword-conversions-microsoft-ads:9-8')!.textContent!.trim()).toBe('3');
     expect(q('microsoft-keywords-total-conversions')!.textContent).toContain('Not measured');
+  });
+
+  // A status region inserted pre-filled is not reliably announced, so one persistent region, empty
+  // when first mounted, carries the loading text — and the SAME element announces the next read.
+  it('announces each read in flight through one persistent, initially empty live region', async () => {
+    const first = new Subject<MicrosoftKeywordMetricsResponse>();
+    getMicrosoftKeywords = vi.fn().mockReturnValue(first);
+    await TestBed.configureTestingModule({
+      imports: [MicrosoftKeywordsTableComponent],
+      providers: [{ provide: CampaignService, useValue: { getMicrosoftKeywords } }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(MicrosoftKeywordsTableComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.detectChanges();
+    const region = q('microsoft-keywords-live')!;
+    expect(region.getAttribute('role')).toBe('status');
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    expect(q('microsoft-keywords-loading')!.getAttribute('role')).toBeNull();
+    // Empty on the render that mounts it: the loading text arrives as a CHANGE, which is announced.
+    expect(region.textContent!.trim()).toBe('');
+
+    await new Promise((resolve) => setTimeout(resolve, LIVE_REGION_MOUNT_DELAY_MS + 20));
+    fixture.detectChanges();
+    expect(region.textContent!.trim()).toBe('Loading Microsoft keyword metrics');
+
+    first.next(report());
+    first.complete();
+    fixture.detectChanges();
+    expect(q('microsoft-keywords-live')).toBe(region);
+    expect(region.textContent!.trim()).toBe('');
+
+    getMicrosoftKeywords.mockReturnValue(NEVER);
+    q('microsoft-keywords-window-this_month')!.click();
+    fixture.detectChanges();
+    expect(q('microsoft-keywords-live')).toBe(region);
+    expect(region.textContent!.trim()).toBe('Loading Microsoft keyword metrics');
+  });
+
+  it('announces a failed read as an alert', async () => {
+    await render(Object.assign(new Error('boom'), { status: 503 }));
+
+    expect(q('microsoft-keywords-error')!.getAttribute('role')).toBe('alert');
   });
 
   it('shows an unreachable read as a calm, retryable message — not a red error box', async () => {

@@ -5,6 +5,7 @@ import { Meeting } from '@lfx-one/shared';
 import {
   ERROR_CODES,
   MEETING_PASSWORD_HEADER,
+  PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
   PUBLIC_REGISTRATION_FIELD_LABELS,
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH,
   PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
@@ -15,7 +16,9 @@ import {
   CreateMeetingRegistrantRequest,
   MeetingOccurrenceSummary,
   MeetingRegistrant,
+  PastMeeting,
   Project,
+  PublicAnonymousPastMeeting,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
@@ -313,8 +316,9 @@ export class PublicMeetingController {
       // created_by/owner from the live v1_meeting index (webhook-created past meetings lack a human
       // created_by, and v1_past_meeting never carries owner); for anonymous callers, skip that query
       // and strip all three identity fields (created_by is present as zoom.webhooks).
+      const hasUserSession = isAuthenticated && originalToken !== undefined;
       let enrichedMeeting = meeting;
-      if (isAuthenticated && originalToken !== undefined) {
+      if (hasUserSession) {
         [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
       } else {
         delete (meeting as Partial<Meeting>).organizers;
@@ -322,32 +326,37 @@ export class PublicMeetingController {
         delete (meeting as Partial<Meeting>).owner;
       }
 
-      // For non-full-access users, return only the fields needed for the basic UI.
-      // created_by/owner are included (authenticated callers only, per the strip above) so the
-      // basic view can still show the organizer name.
-      const meetingResponse = fullAccess
-        ? enrichedMeeting
-        : {
-            id: enrichedMeeting.id,
-            title: enrichedMeeting.title,
-            visibility: enrichedMeeting.visibility,
-            meeting_type: enrichedMeeting.meeting_type,
-            restricted: enrichedMeeting.restricted,
-            start_time: enrichedMeeting.start_time,
-            scheduled_start_time: enrichedMeeting.scheduled_start_time,
-            scheduled_end_time: enrichedMeeting.scheduled_end_time,
-            duration: enrichedMeeting.duration,
-            recurrence: enrichedMeeting.recurrence,
-            recording_enabled: enrichedMeeting.recording_enabled,
-            transcript_enabled: enrichedMeeting.transcript_enabled,
-            youtube_upload_enabled: enrichedMeeting.youtube_upload_enabled,
-            show_meeting_attendees: enrichedMeeting.show_meeting_attendees,
-            ai_summary_enabled: enrichedMeeting.ai_summary_enabled,
-            project_uid: enrichedMeeting.project_uid,
-            meeting_id: enrichedMeeting.meeting_id,
-            created_by: enrichedMeeting.created_by,
-            owner: enrichedMeeting.owner,
-          };
+      // Authenticated full-access callers keep the whole detail; anonymous full-access callers
+      // get the allowlist. Non-full-access callers keep the basic UI projection, including
+      // created_by/owner only for authenticated callers per the strip above.
+      let meetingResponse: Partial<PastMeeting>;
+      if (fullAccess && hasUserSession) {
+        meetingResponse = enrichedMeeting;
+      } else if (fullAccess) {
+        meetingResponse = this.toAnonymousPastMeetingResponse(enrichedMeeting);
+      } else {
+        meetingResponse = {
+          id: enrichedMeeting.id,
+          title: enrichedMeeting.title,
+          visibility: enrichedMeeting.visibility,
+          meeting_type: enrichedMeeting.meeting_type,
+          restricted: enrichedMeeting.restricted,
+          start_time: enrichedMeeting.start_time,
+          scheduled_start_time: enrichedMeeting.scheduled_start_time,
+          scheduled_end_time: enrichedMeeting.scheduled_end_time,
+          duration: enrichedMeeting.duration,
+          recurrence: enrichedMeeting.recurrence,
+          recording_enabled: enrichedMeeting.recording_enabled,
+          transcript_enabled: enrichedMeeting.transcript_enabled,
+          youtube_upload_enabled: enrichedMeeting.youtube_upload_enabled,
+          show_meeting_attendees: enrichedMeeting.show_meeting_attendees,
+          ai_summary_enabled: enrichedMeeting.ai_summary_enabled,
+          project_uid: enrichedMeeting.project_uid,
+          meeting_id: enrichedMeeting.meeting_id,
+          created_by: enrichedMeeting.created_by,
+          owner: enrichedMeeting.owner,
+        };
+      }
 
       res.json({
         meeting: meetingResponse,
@@ -812,6 +821,14 @@ export class PublicMeetingController {
     return Object.fromEntries(
       PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS.filter((field) => registrant[field] !== undefined).map((field) => [field, registrant[field]])
     );
+  }
+
+  /**
+   * Project anonymous full-access past-meeting detail through an allowlist rather than
+   * a denylist, so new upstream identity or credential fields cannot pass through by default.
+   */
+  private toAnonymousPastMeetingResponse(meeting: PastMeeting): PublicAnonymousPastMeeting {
+    return Object.fromEntries(PUBLIC_ANONYMOUS_PAST_MEETING_KEYS.filter((field) => meeting[field] !== undefined).map((field) => [field, meeting[field]]));
   }
 
   /**

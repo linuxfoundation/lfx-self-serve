@@ -4,6 +4,7 @@
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
 import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../constants/public-past-meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
 import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
@@ -358,8 +359,8 @@ export interface Meeting {
   invited: boolean;
   /**
    * The viewer is invited to the meeting through a committee (response only).
-   * @description True when any of the viewer's registrations for this meeting was added from a committee. Such a
-   * registration is managed by committee membership, so the viewer cannot remove themselves from the meeting.
+   * @description True when any of the viewer's registrations for this meeting was added from a committee. It only
+   * words the Remove Yourself confirmation, which tells the viewer the committee will not invite them again.
    * Unset when the viewer is not invited.
    */
   invited_via_committee?: boolean;
@@ -1021,7 +1022,7 @@ export interface PastMeeting extends Meeting {
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
   sessions: MeetingSession[];
-  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings only */
+  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings and /api/past-meetings when a signed-in user is present */
   user_attended?: boolean;
 }
 
@@ -1871,13 +1872,19 @@ export type PublicMeetingProject = {
 };
 
 /**
+ * Anonymous full-access past-meeting detail, projected through `PUBLIC_ANONYMOUS_PAST_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousPastMeeting = Partial<Pick<PastMeeting, (typeof PUBLIC_ANONYMOUS_PAST_MEETING_KEYS)[number]>>;
+
+/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
  * via the existing authenticated endpoints
  */
 export interface PublicPastMeetingResponse {
-  meeting: PastMeeting;
+  meeting: PastMeeting | PublicAnonymousPastMeeting;
   project: PublicMeetingProject;
   full_access: boolean;
 }
@@ -2273,3 +2280,24 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
+
+/** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
+export interface CalendarLinkEvent {
+  title: string;
+  /** ISO start time. */
+  startIso: string;
+  durationMinutes: number;
+  description?: string;
+  joinUrl?: string;
+}
+
+/** Which occurrence(s) an "Add to calendar" download/deep-link covers (GH-3505). */
+export type MeetingCalendarScope = 'occurrence' | 'series';
+
+/** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
+export interface VEventExtras {
+  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
+  description?: string;
+  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
+  joinUrl?: string;
+}

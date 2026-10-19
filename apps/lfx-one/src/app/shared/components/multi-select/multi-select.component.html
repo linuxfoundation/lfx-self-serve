@@ -28,6 +28,13 @@
     (onFilter)="filterChange.emit($event.filter ?? '')"
     (onPanelShow)="onPanelShow()"
     class="w-full">
+    <!-- placeholderOnly: the trigger never lists the selection, it stays a "pick more" box; the consumer
+         renders what is selected elsewhere (e.g. as removable chips below the field) -->
+    @if (placeholderOnly()) {
+      <ng-template #selecteditems>
+        <span class="text-gray-400">{{ placeholder() }}</span>
+      </ng-template>
+    }
     @if (panelStatus(); as status) {
       <!-- Footer renders regardless of whether the option list is empty, so a selected option matching the filter can't hide the status. -->
       <ng-template #footer>

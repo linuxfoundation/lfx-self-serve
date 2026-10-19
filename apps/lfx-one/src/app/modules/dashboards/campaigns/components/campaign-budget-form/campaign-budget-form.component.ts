@@ -48,6 +48,14 @@ export class CampaignBudgetFormComponent implements OnInit {
    * operator still has to press Save.
    */
   public readonly initialBudget = input<number | null>(null);
+  /**
+   * The campaign's platform takes a DAILY budget only (X — `DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS`).
+   *
+   * The pacing radio then offers Daily alone, pre-selected: upstream refuses any `lifetime` request
+   * for these platforms with 409, so offering it would only offer a refusal. A campaign known to be
+   * lifetime-budgeted never reaches this form — the parent withholds the editor with its reason.
+   */
+  public readonly dailyOnly = input(false);
   /** A budget change for this row is in flight. */
   public readonly pending = input(false);
   /** Why submitting is not possible right now, or `''` — see `CampaignRow.budgetBlockedReason`. */
@@ -63,7 +71,9 @@ export class CampaignBudgetFormComponent implements OnInit {
     budgetType: new FormControl<CampaignBudgetType | null>(null, [Validators.required]),
   });
 
-  protected readonly budgetTypeOptions = CAMPAIGN_BUDGET_TYPE_OPTIONS;
+  protected readonly budgetTypeOptions = computed(() =>
+    this.dailyOnly() ? CAMPAIGN_BUDGET_TYPE_OPTIONS.filter((option) => option.value === 'daily') : CAMPAIGN_BUDGET_TYPE_OPTIONS
+  );
   /** The BFF's own unconfirmed sentence already says what to do, so it is not repeated beneath itself. */
   protected readonly unconfirmedFallback = CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED;
 
@@ -78,6 +88,7 @@ export class CampaignBudgetFormComponent implements OnInit {
       typeError: `campaign-budget-type-error-${id}`,
       typeName: `campaign-budget-type-${id}`,
       outcome: `campaign-budget-outcome-${id}`,
+      blocked: `campaign-budget-blocked-${id}`,
     };
   });
 
@@ -118,7 +129,8 @@ export class CampaignBudgetFormComponent implements OnInit {
   public ngOnInit(): void {
     // Inputs are not readable in a field initializer, so the known pacing and amount are applied
     // here. The editor is created fresh each time it opens, so this runs once per opening.
-    const known = this.knownBudgetType();
+    // A daily-only platform has exactly one pacing upstream accepts, so it is not a guess.
+    const known = this.dailyOnly() ? 'daily' : this.knownBudgetType();
     if (known !== null) {
       this.form.controls.budgetType.setValue(known);
     }
@@ -137,6 +149,10 @@ export class CampaignBudgetFormComponent implements OnInit {
     // Re-checked as types rather than trusting `form.valid` alone, so the emitted value is the
     // number as typed and a pacing that is actually one of the two the endpoint accepts.
     if (this.form.invalid || typeof budget !== 'number' || budgetType === null) {
+      return;
+    }
+    // Never a lifetime change on a daily-only platform, whatever the control was set to.
+    if (this.dailyOnly() && budgetType !== 'daily') {
       return;
     }
     this.submitBudget.emit({ budget, budgetType });
@@ -170,6 +186,9 @@ export class CampaignBudgetFormComponent implements OnInit {
       }
       if (this.outcome() !== null) {
         describedBy.push(ids.outcome);
+      }
+      if (this.visibleBlockedReason() !== '') {
+        describedBy.push(ids.blocked);
       }
       return describedBy.join(' ');
     });

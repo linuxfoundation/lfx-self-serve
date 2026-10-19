@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-3.5" data-testid="mktg-intake-documents">
+  <div class="flex flex-wrap items-baseline justify-between gap-3">
+    <h2 class="text-base font-semibold text-gray-900">
+      {{ config().title }}
+      <span class="ml-1 text-sm font-normal text-gray-500">optional</span>
+    </h2>
+    <span class="text-xs text-gray-500">{{ config().hint }}</span>
+  </div>
+
+  @if (rows().length > 0) {
+    <ul class="flex flex-col gap-2" data-testid="mktg-intake-documents-list">
+      @for (row of rows(); track row.id) {
+        <li
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-1.5"
+          [attr.data-testid]="'mktg-intake-documents-item-' + row.id">
+          <span class="flex min-w-0 flex-wrap items-center gap-2.5">
+            <span class="rounded border border-gray-200 px-1.5 font-mono text-xs text-gray-500">{{ row.badge }}</span>
+            <span class="break-all text-sm text-gray-800">{{ row.title }}</span>
+            <span class="text-xs" [ngClass]="row.statusClass">{{ row.status }}</span>
+          </span>
+          <lfx-button
+            label="Remove"
+            [text]="true"
+            size="small"
+            [ariaLabel]="'Remove ' + row.title"
+            [attr.data-testid]="'mktg-intake-documents-remove-' + row.id"
+            (onClick)="onRemove(row.id)" />
+        </li>
+      }
+    </ul>
+  }
+
+  <div class="flex flex-wrap items-end gap-2.5" [formGroup]="linkForm">
+    <div class="flex min-w-72 flex-1 flex-col gap-1">
+      <label class="text-xs text-gray-500" for="mktg-intake-documents-link">Add a link</label>
+      <lfx-input-text
+        id="mktg-intake-documents-link"
+        [form]="linkForm"
+        control="url"
+        type="url"
+        placeholder="https://…"
+        dataTest="mktg-intake-documents-link-input"
+        (keydown.enter)="$event.preventDefault(); onAddLink()" />
+    </div>
+    <lfx-button
+      label="Add link"
+      icon="fa-light fa-link"
+      [outlined]="true"
+      [disabled]="atLimit()"
+      data-testid="mktg-intake-documents-add-link"
+      (onClick)="onAddLink()" />
+    <!-- Basic mode, auto + customUpload: choosing files hands them straight to onFilesSelected; nothing is posted by the uploader itself. -->
+    <lfx-file-upload
+      mode="basic"
+      [auto]="true"
+      [customUpload]="true"
+      [multiple]="true"
+      [accept]="acceptAttribute()"
+      [disabled]="atLimit()"
+      chooseLabel="Upload files"
+      chooseStyleClass="p-button-outlined"
+      dataTest="mktg-intake-documents-upload"
+      (onSelect)="onFilesSelected($event)">
+      <ng-template #chooseicon>
+        <i class="fa-light fa-arrow-up-from-bracket" aria-hidden="true"></i>
+      </ng-template>
+    </lfx-file-upload>
+  </div>
+
+  @if (pending() > 0) {
+    <span class="text-xs text-gray-500" role="status" data-testid="mktg-intake-documents-pending">Reading {{ pending() }} document(s)…</span>
+  }
+  @if (errorText()) {
+    <span class="flex items-start gap-1.5 text-xs text-red-600" role="alert" data-testid="mktg-intake-documents-error">
+      <i class="fa-light fa-circle-exclamation mt-0.5 shrink-0" aria-hidden="true"></i>
+      <span>{{ errorText() }}</span>
+    </span>
+  }
+
+  <p class="max-w-prose text-xs text-gray-500">{{ config().footnote }}</p>
+</section>

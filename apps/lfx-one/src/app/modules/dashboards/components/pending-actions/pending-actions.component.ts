@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterLink, UrlTree } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RejectApplicationDialogComponent } from '@app/modules/committees/components/reject-application-dialog/reject-application-dialog.component';
+import { JoinRequestSummaryComponent } from '@app/modules/dashboards/components/join-request-summary/join-request-summary.component';
 import { PendingActionsDrawerComponent } from '@app/modules/dashboards/components/pending-actions-drawer/pending-actions-drawer.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { VoteBallotInlineComponent } from '@app/modules/votes/components/vote-ballot-inline/vote-ballot-inline.component';
@@ -27,7 +28,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
-import { buildFormationPendingActionView, getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { buildFormationPendingActionView, getEntityCommands, invitationRequiresOrganization, isReviewableJoinApplication } from '@lfx-one/shared/utils';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -56,6 +57,7 @@ const INVITE_UNDO_TOAST_KEY = 'pending-actions-undo';
     RsvpButtonGroupComponent,
     VoteBallotInlineComponent,
     PendingActionsDrawerComponent,
+    JoinRequestSummaryComponent,
     SkeletonModule,
     ToastModule,
     RouterLink,
@@ -255,7 +257,7 @@ export class PendingActionsComponent {
     this.confirmationService.confirm({
       key: this.applicationConfirmKey,
       header: 'Approve Application',
-      message: `Approve ${applicant}'s request to join ${item.badge}?`,
+      message: `Approve ${applicant}'s request to join ${item.badge}${item.applicationProjectName ? ` in the ${item.applicationProjectName} project` : ''}?`,
       acceptLabel: 'Approve',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-success p-button-sm',
@@ -275,7 +277,7 @@ export class PendingActionsComponent {
       width: '480px',
       modal: true,
       closable: true,
-      data: { applicantEmail: item.applicationApplicantEmail },
+      data: { applicantEmail: item.applicationApplicantEmail, groupName: item.badge, projectName: item.applicationProjectName },
     });
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((notes: string | null | undefined) => {
       if (notes !== undefined) this.saveApplicationReview(item, false, notes?.trim() || undefined);
@@ -376,7 +378,10 @@ export class PendingActionsComponent {
   }
 
   protected handleDismiss(item: DecoratedPendingAction): void {
-    if (item.type === 'JoinApplication') return;
+    if (item.type === 'JoinApplication') {
+      this.dismissApplication(item);
+      return;
+    }
     this.hiddenActionsService.dismissAction(item);
     // skipHide: the permanent dismiss cookie already hides the row; a 24h hideAction cookie would be redundant.
     this.startCompletion(item, { withSkeleton: true, skipHide: true });
@@ -642,7 +647,7 @@ export class PendingActionsComponent {
       this.swappingRowKeys().forEach((k) => pinned.add(k));
       const formationEnabled = this.formationFlagEnabled();
       return this.pendingActions().filter((item) => {
-        if (item.type === 'JoinApplication') return !resolvedApplications.has(this.getRowKey(item));
+        if (item.type === 'JoinApplication') return !resolvedApplications.has(this.getRowKey(item)) && !this.hiddenActionsService.isActionHidden(item);
         if (item.type === 'FormationItem' && !formationEnabled) {
           return false;
         }
@@ -702,6 +707,7 @@ export class PendingActionsComponent {
           isVoteInlineExpanded,
           voteUsesDrawer: voteUsesDrawerVal,
           isInvitation,
+          isReviewableApplication: item.type === 'JoinApplication' && isReviewableJoinApplication(item),
           // Formation rows (#2732): link, status chip and due label — shared with the "View all" drawer.
           ...buildFormationPendingActionView(item),
           acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
@@ -713,13 +719,23 @@ export class PendingActionsComponent {
     });
   }
 
+  // Dismissing only hides the request from this user's list: it stays pending for other reviewers and on the group's applications tab.
+  private dismissApplication(item: PendingActionItem): void {
+    if (!isReviewableJoinApplication(item)) return;
+    this.hiddenActionsService.dismissAction(item);
+    this.hiddenActionsVersion.update((v) => v + 1);
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Request Dismissed',
+      detail: `The request from ${item.applicationApplicantEmail} is hidden from your pending actions. It is still pending for other reviewers.`,
+    });
+  }
+
   private canReviewApplication(item: PendingActionItem): boolean {
     const key = this.getRowKey(item);
     return (
       item.type === 'JoinApplication' &&
-      !!item.committeeUid &&
-      !!item.applicationUid &&
-      !!item.applicationApplicantEmail &&
+      isReviewableJoinApplication(item) &&
       !this.processingApplicationKey() &&
       !this.resolvedApplicationKeys().has(key) &&
       this.pendingActions().some((current) => current.type === 'JoinApplication' && this.getRowKey(current) === key)

@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -30,7 +30,7 @@ export class CancelOccurrenceConfirmationComponent {
   public readonly occurrence: MeetingOccurrence = this.config.data.occurrence;
   public readonly isCanceling = signal(false);
   /** Meeting v2 styling (compact details card, icon-only warning, taller reason field). Flag off keeps the pre-v2 look. */
-  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = inject(FeatureFlagService).getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   public readonly noteMaxLength = MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH;
   public readonly form = new FormGroup({
     note: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH, { trim: true })] }),

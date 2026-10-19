@@ -1,0 +1,162 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section
+  class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3"
+  [attr.aria-label]="'Keyword targeting of ' + campaignName()"
+  [attr.data-testid]="'optimization-campaign-targeting-panel-' + campaignId()">
+  <!-- Removing is announced here: the Remove button goes native-disabled and leaves the focus order. -->
+  <div class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ removingAnnouncement() }}</div>
+
+  <div class="flex flex-col gap-0.5">
+    <h5 class="text-xs font-semibold text-gray-900">Keyword targeting on {{ platformLabel() }}</h5>
+    <p class="text-xs text-gray-500">
+      The keywords this campaign's {{ isX() ? 'line item' : 'ad group' }} targets, read live from {{ platformLabel() }}. A keyword here can't be paused, only
+      removed.
+    </p>
+  </div>
+
+  @switch (readState().status) {
+    @case ('loading') {
+      <p class="flex items-center gap-1.5 text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-targeting-loading-' + campaignId()">
+        <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+        Loading keyword targeting...
+      </p>
+    }
+    @case ('error') {
+      <div
+        class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-white p-2"
+        [attr.data-testid]="'optimization-campaign-targeting-error-' + campaignId()">
+        <p class="text-xs text-gray-600">{{ readState().message }}</p>
+        <lfx-button
+          label="Retry"
+          icon="fa-light fa-rotate-right"
+          size="small"
+          severity="secondary"
+          [text]="true"
+          (onClick)="reloadTargeting()"
+          [attr.data-testid]="'optimization-campaign-targeting-retry-' + campaignId()" />
+      </div>
+    }
+    @case ('loaded') {
+      @if (items().length === 0) {
+        <p class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-targeting-empty-' + campaignId()">
+          No keywords target this campaign.
+          @if (isX()) {
+            Campaigns created here start with no keyword targeting on X; keywords exist only where they were added in X Ads Manager.
+          }
+        </p>
+      } @else {
+        <fieldset class="flex flex-col gap-1" [disabled]="removing()">
+          <legend class="mb-1 text-xs font-medium text-gray-700">Select keywords to remove (at most {{ maxRemovals }} at a time)</legend>
+          <ul class="flex flex-col gap-1">
+            @for (item of items(); track item.key) {
+              <li class="flex items-center gap-2 text-xs" [attr.data-testid]="'optimization-campaign-targeting-item-' + item.key">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 shrink-0 rounded border-gray-300"
+                  [id]="'campaign-targeting-' + campaignId() + '-' + $index"
+                  [checked]="selected().has(item.key)"
+                  [disabled]="item.removalItem === null"
+                  (change)="toggle(item)"
+                  [attr.data-testid]="'optimization-campaign-targeting-select-' + item.key" />
+                <label class="flex flex-wrap items-baseline gap-x-2" [for]="'campaign-targeting-' + campaignId() + '-' + $index">
+                  <span class="font-medium text-gray-900">{{ item.keyword }}</span>
+                  @if (item.matchLabel) {
+                    <span class="text-gray-500">{{ item.matchLabel }}</span>
+                  }
+                  @if (item.removalItem === null) {
+                    <span class="text-gray-500">Can't be removed here: X did not name its criterion.</span>
+                  }
+                </label>
+              </li>
+            }
+          </ul>
+        </fieldset>
+        @if (blockedReason(); as reason) {
+          <p class="text-xs text-amber-700" [attr.data-testid]="'optimization-campaign-targeting-blocked-' + campaignId()">{{ reason }}</p>
+        }
+      }
+    }
+  }
+
+  <!--
+    A removal that produced no per-keyword results. UNCONFIRMED names the keywords it covers: any of
+    them may already be gone, and the list above has been read again to show which.
+  -->
+  @if (batchOutcome(); as outcome) {
+    @if (outcome.state === 'unconfirmed') {
+      <div
+        class="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-2"
+        [attr.data-testid]="'optimization-campaign-targeting-unconfirmed-' + campaignId()">
+        <p class="text-xs font-semibold text-amber-900">
+          <i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i>
+          Not confirmed: these keywords may or may not have been removed
+        </p>
+        <p class="text-xs text-amber-800">{{ outcome.message }}</p>
+        <p class="text-xs text-amber-800">Sent: {{ batchKeywordsText() }}</p>
+      </div>
+    } @else {
+      <p class="text-xs text-red-600" [attr.data-testid]="'optimization-campaign-targeting-failed-' + campaignId()">{{ outcome.message }}</p>
+    }
+  }
+
+  <!-- Per-keyword outcomes, in the order the keywords were SENT: never re-sorted or filtered. -->
+  @if (outcomeRows().length > 0) {
+    <div class="flex flex-col gap-1" [attr.data-testid]="'optimization-campaign-targeting-results-' + campaignId()">
+      <p class="text-xs font-medium text-gray-700">{{ outcomeSummary() }}</p>
+      <ol class="flex flex-col gap-1">
+        @for (row of outcomeRows(); track row.index) {
+          <li class="flex flex-wrap items-baseline gap-x-2 text-xs" [attr.data-testid]="'optimization-campaign-targeting-result-' + row.index">
+            <span class="font-medium text-gray-900">{{ row.keyword }}</span>
+            @switch (row.outcome) {
+              @case ('APPLIED') {
+                <span class="font-medium text-emerald-700" [attr.data-outcome]="row.outcome">{{ row.label }}</span>
+              }
+              @case ('FAILED') {
+                <span class="font-medium text-red-600" [attr.data-outcome]="row.outcome">{{ row.label }}</span>
+              }
+              @default {
+                <span class="font-medium text-amber-700" [attr.data-outcome]="row.outcome">{{ row.label }}</span>
+              }
+            }
+            @if (row.detail) {
+              <span class="text-gray-600">{{ row.detail }}</span>
+            }
+          </li>
+        }
+      </ol>
+    </div>
+  }
+
+  <div class="flex flex-wrap items-center gap-2">
+    <lfx-button
+      label="Remove selected"
+      size="small"
+      severity="danger"
+      [ariaLabel]="'Remove the selected keywords from ' + campaignName()"
+      [disabled]="!canRemove()"
+      [loading]="removing()"
+      (onClick)="confirmRemove()"
+      [attr.data-testid]="'optimization-campaign-targeting-remove-' + campaignId()" />
+    <lfx-button
+      label="Reload"
+      icon="fa-light fa-rotate-right"
+      size="small"
+      severity="secondary"
+      [text]="true"
+      [disabled]="removing()"
+      (onClick)="reloadTargeting()"
+      [attr.data-testid]="'optimization-campaign-targeting-reload-' + campaignId()" />
+    <lfx-button
+      label="Close"
+      size="small"
+      severity="secondary"
+      [text]="true"
+      [disabled]="removing()"
+      (onClick)="close()"
+      [attr.data-testid]="'optimization-campaign-targeting-close-' + campaignId()" />
+  </div>
+
+  <p-confirmDialog [key]="confirmKey()" />
+</section>

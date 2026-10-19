@@ -281,9 +281,9 @@ async function fillDetailsAccess(page: Page): Promise<void> {
 /**
  * Fills Date & Schedule.
  *
- * Only three controls are empty in create mode — duration, platform and early-join all arrive
- * defaulted — but `timezone` starts as `''` and is required, so it has to be picked even though
- * the UI reads as though it has a value.
+ * Only the date and time start empty in create mode — duration, platform and early-join arrive
+ * defaulted, and `timezone` is preselected from the browser's zone. It is still picked explicitly
+ * (UTC) so the run doesn't depend on the host machine's timezone.
  */
 async function fillDateSchedule(page: Page): Promise<void> {
   await page.locator('#composer-start-date').fill(FUTURE_DATE);
@@ -305,12 +305,11 @@ async function fillDateSchedule(page: Page): Promise<void> {
  * Separated from {@link openGuestsSection} so a spec can assert the rail's cold state — Guests
  * unreachable behind an empty Details & access — which walking to Guests necessarily destroys.
  *
- * Goes through the rail's Create flow rather than `/meetings/create`: while
- * `MEETING_V2_ENABLED_FLAG` gates v2, that URL is pointed at the pre-v2 wizard unconditionally
- * (see the comment in `meetings.routes.ts` for why a lazy route cannot read the flag), so it can
- * no longer reach the composer at all. The rail is the cheapest entry point that can — it renders
- * unconditionally, needs no project lens, and its target picker is stubbed above, so this still
- * runs without a real project or committee being involved.
+ * Goes through the rail's Create flow rather than `/meetings/create`. That URL does reach the
+ * composer when the flag is on (`meetingsV2Guard`), but only after a full SSR navigation and a
+ * LaunchDarkly round trip. The rail is cheaper: it renders unconditionally, needs no project lens,
+ * and its target picker is stubbed above, so this still runs without a real project or committee
+ * being involved.
  */
 export async function openComposerCreate(page: Page): Promise<void> {
   await stubComposerBackend(page);

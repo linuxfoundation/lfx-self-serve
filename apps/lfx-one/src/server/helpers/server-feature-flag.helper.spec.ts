@@ -39,3 +39,26 @@ describe('isServerFeatureEnabled', () => {
     expect(isServerFeatureEnabled(FLAG)).toBe(true);
   });
 });
+
+describe('ServerFeatureFlag.GatewazeHostSession (#2738)', () => {
+  const HOST_SESSION = ServerFeatureFlag.GatewazeHostSession;
+
+  afterEach(() => {
+    delete process.env[HOST_SESSION];
+  });
+
+  it('reads LFX_GATEWAZE_HOST_SESSION and is OFF by default', () => {
+    expect(HOST_SESSION).toBe('LFX_GATEWAZE_HOST_SESSION');
+    expect(isServerFeatureEnabled(HOST_SESSION)).toBe(false);
+  });
+
+  it.each(['true', 'on'])('is ON for %j', (raw) => {
+    process.env[HOST_SESSION] = raw;
+    expect(isServerFeatureEnabled(HOST_SESSION)).toBe(true);
+  });
+
+  it.each(['false', 'flase', ''])('stays OFF for %j', (raw) => {
+    process.env[HOST_SESSION] = raw;
+    expect(isServerFeatureEnabled(HOST_SESSION)).toBe(false);
+  });
+});

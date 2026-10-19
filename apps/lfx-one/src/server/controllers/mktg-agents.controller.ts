@@ -1,13 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX } from '@lfx-one/shared/constants';
+import {
+  FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
+  FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
+  FOUNDATION_MESSAGE_FILE_NAME_HEADER,
+  FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE,
+  FOUNDATION_MESSAGE_READ_REASONS,
+  MKTG_AGENTS,
+  MKTG_ARTIFACT_PARTITION_REGEX,
+} from '@lfx-one/shared/constants';
 import {
   BrandKitGenerateRequest,
   BrandKitGenerateResponse,
   BrandKitResultRequest,
   BrandKitResultResponse,
   BrandKitStoredResponse,
+  FoundationMessageAnswersRequest,
+  FoundationMessageAnswersResponse,
   FoundationMessageGenerateRequest,
   FoundationMessageGenerateResponse,
   FoundationMessageResultRequest,
@@ -19,10 +29,20 @@ import {
   IcpResultResponse,
   MktgChatRequest,
   MktgChatResponse,
+  MktgDocumentExtractResponse,
   MktgHistoryRequest,
   MktgHistoryResponse,
+  MktgReadText,
+  MktgRunAnswer,
 } from '@lfx-one/shared/interfaces';
-import { validateBrandKitIntakeAnswers, validateFoundationMessageIntakeAnswers, validateIcpIntakeAnswers } from '@lfx-one/shared/utils';
+import {
+  countFoundationMessageWords,
+  validateBrandKitIntakeAnswers,
+  validateFoundationMessageAnswers,
+  validateFoundationMessageDocuments,
+  validateFoundationMessageIntakeAnswers,
+  validateIcpIntakeAnswers,
+} from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -31,8 +51,9 @@ import { FoundationMessageService } from '../services/foundation-message.service
 import { GuildService } from '../services/guild.service';
 import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
+import { MktgSourceTextService } from '../services/mktg-source-text.service';
 import { ProjectService } from '../services/project.service';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
 export class MktgAgentsController {
@@ -40,6 +61,7 @@ export class MktgAgentsController {
   private readonly brandKitService = new BrandKitService();
   private readonly foundationMessageService = new FoundationMessageService();
   private readonly icpService = new IcpService();
+  private readonly mktgSourceTextService = new MktgSourceTextService();
   private readonly projectService = new ProjectService();
 
   /**
@@ -402,48 +424,42 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/generate
-   * Starts a one-shot form-mode Message Foundation generation from the
-   * batch intake form. The answers are validated against the agent's
-   * conditional form contract (discovery answers required exactly when no
-   * Brand Kit markdown is provided); regenerations arrive as a full resubmit
-   * with `feedback` + `priorVersion` and run on a fresh session. Returns the
-   * session id + creator-binding owner token for polling the result.
+   * Starts a one-shot Messaging Document generation from the intake form: the
+   * project name, the four sources and any other links as URLs (the agent
+   * fetches and researches them itself), the LFX project uid, and the
+   * optional existing documents — an uploaded file as the text the BFF read
+   * from it, a link as its URL. Every submission is a fresh generate — the
+   * agent's generate form carries no prior version or feedback, so a body
+   * with either is refused rather than silently ignored. Returns the session
+   * id + creator-binding owner token for polling the result.
    */
   public async generateFoundationMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { answers, feedback, priorVersion } = (req.body ?? {}) as Partial<FoundationMessageGenerateRequest>;
+    const { answers, documents, feedback, priorVersion, project } = (req.body ?? {}) as Partial<FoundationMessageGenerateRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'foundation_message_generate', service: 'mktg_agents_controller', path: req.path }));
 
     const answersResult = validateFoundationMessageIntakeAnswers(answers);
     if (!answersResult.valid) {
-      next(
-        ServiceValidationError.forField('answers', answersResult.errors.join('; '), {
-          operation: 'foundation_message_generate',
-          service: 'mktg_agents_controller',
-          path: req.path,
-        })
-      );
+      fail('answers', answersResult.errors.join('; '));
       return;
     }
-
-    // Type-gate the regeneration fields — never rely on downstream coercion.
-    if (feedback !== undefined && typeof feedback !== 'string') {
-      next(
-        ServiceValidationError.forField('feedback', 'feedback must be a string when provided', {
-          operation: 'foundation_message_generate',
-          service: 'mktg_agents_controller',
-          path: req.path,
-        })
-      );
+    const documentsResult = validateFoundationMessageDocuments(documents);
+    if (!documentsResult.valid) {
+      fail('documents', documentsResult.errors.join('; '));
       return;
     }
-    if (priorVersion !== undefined && (typeof priorVersion !== 'number' || !Number.isInteger(priorVersion) || priorVersion < 1)) {
-      next(
-        ServiceValidationError.forField('priorVersion', 'priorVersion must be an integer >= 1 when provided', {
-          operation: 'foundation_message_generate',
-          service: 'mktg_agents_controller',
-          path: req.path,
-        })
-      );
+    if (feedback !== undefined || priorVersion !== undefined) {
+      fail('feedback', 'The Messaging Document is revised by commenting on it in Documents; a generate takes no feedback or prior version.');
+      return;
+    }
+    // The project uid goes to the agent as data (its LFX lookups), never as
+    // the storage partition — that is the result endpoint's, resolved
+    // server-side. Shape-gated all the same so a crafted value never rides
+    // the form.
+    const trimmedProject = typeof project === 'string' ? project.trim() : '';
+    if (project !== undefined && (typeof project !== 'string' || !trimmedProject || !MKTG_ARTIFACT_PARTITION_REGEX.test(trimmedProject))) {
+      fail('project', 'project must be a single-segment project uid when provided');
       return;
     }
 
@@ -461,18 +477,13 @@ export class MktgAgentsController {
 
     // Routing handle comes from the shared catalog only — never the client.
     const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
-    if (!agent || agent.status !== 'active') {
-      next(
-        ServiceValidationError.forField('agentId', 'The Message Foundation agent is not available.', {
-          operation: 'foundation_message_generate',
-          service: 'mktg_agents_controller',
-          path: req.path,
-        })
-      );
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The Messaging Document agent is not available.');
       return;
     }
 
-    const startTime = logger.startOperation(req, 'foundation_message_generate', { has_feedback: !!feedback, prior_version: priorVersion ?? 0 });
+    const submitted = documents ?? [];
+    const startTime = logger.startOperation(req, 'foundation_message_generate', { documents: submitted.length });
 
     try {
       // Safe: validateFoundationMessageIntakeAnswers guaranteed a string record.
@@ -481,17 +492,131 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const { sessionId, readme } = await this.foundationMessageService.startGeneration(
+      const sessionId = await this.foundationMessageService.startGeneration(
         req,
         trimmedAnswers,
-        { feedback, priorVersion },
+        submitted,
+        trimmedProject || undefined,
         agent.guildAgentHandle
       );
-      logger.success(req, 'foundation_message_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
-      // The README outcome rides the response so the run shell can label a
-      // document generated WITHOUT a README instead of leaving a thin
-      // document unexplained.
-      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme };
+      logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
+      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/foundation-message/answers
+   * Sends the requester's answers to the session's questions turn — one per
+   * question, each accepted, edited or written from scratch; no skip, no TBD,
+   * no empty — as the answers turn on the SAME session. Only the session's
+   * creator may answer (owner-token proof, like every session write). The
+   * run page polls the result again afterwards.
+   */
+  public async foundationMessageAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, answers } = (req.body ?? {}) as Partial<FoundationMessageAnswersRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'foundation_message_answers', service: 'mktg_agents_controller', path: req.path }));
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      fail('sessionId', 'sessionId is required and must be a non-empty string');
+      return;
+    }
+    const answersResult = validateFoundationMessageAnswers(answers);
+    if (!answersResult.valid) {
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', {
+          operation: 'foundation_message_answers',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to post to this session.', {
+          operation: 'foundation_message_answers',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'foundation-setup');
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The Messaging Document agent is not available.');
+      return;
+    }
+
+    // Safe: validateFoundationMessageAnswers guaranteed the shape.
+    const validAnswers = (answers as MktgRunAnswer[]).map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+    const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
+
+    try {
+      await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      logger.success(req, 'foundation_message_answers', startTime, { answers: validAnswers.length });
+      const response: FoundationMessageAnswersResponse = { success: true };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/foundation-message/documents/file
+   * Reads one uploaded existing document (PDF, Word .docx, Markdown or text;
+   * raw `application/octet-stream` body, at most 20 MB) to text and returns
+   * it, so the form can show what was read and submit the text with the run.
+   * The file name travels URI-encoded in the `X-File-Name` header — never the
+   * URL, which the request logger writes — and is logged by extension only.
+   * Nothing is stored. A document given as a link is never read here: it
+   * goes to the agent as its URL.
+   */
+  public async readFoundationMessageFile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'foundation_message_read_file';
+    const startTime = logger.startOperation(req, operation);
+    try {
+      // The username, not the sub: the read gate keys its per-user slots on it, so the two checks agree.
+      if (!getEffectiveUsername(req)) {
+        throw new AuthenticationError('Could not identify the requesting user.', { operation, service: 'mktg_agents_controller', path: req.path });
+      }
+      const fileName = this.readUploadFileName(req);
+      if (!fileName) {
+        throw ServiceValidationError.forField('fileName', `The ${FOUNDATION_MESSAGE_FILE_NAME_HEADER} header must carry the URI-encoded file name`, {
+          operation,
+        });
+      }
+      // `express.raw` skips a body whose type is not the one it reads, so a wrong type arrives here with no bytes.
+      const file: unknown = req.body;
+      if (!Buffer.isBuffer(file) || file.byteLength === 0) {
+        throw ServiceValidationError.forField('file', `The file must be a non-empty ${FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE} body.`, { operation });
+      }
+
+      const read = await this.mktgSourceTextService.readFile(req, fileName, file, FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS);
+      const response = this.extractResponse(fileName, read);
+      // The reason a file was not read rides the log with the operation's duration, so a read limit that bites can be seen and tuned.
+      logger.success(req, operation, startTime, {
+        extension: fileName.slice(fileName.lastIndexOf('.')),
+        size_bytes: file.byteLength,
+        read: response.read,
+        ...(read.reason && { reason: read.reason }),
+      });
       res.json(response);
     } catch (error) {
       next(error);
@@ -500,8 +625,8 @@ export class MktgAgentsController {
 
   /**
    * POST /api/mktg-agents/foundation-message/result
-   * Polls a generation session for the validated Message Foundation document
-   * (and its word-count-locked derivatives). Only the session's creator may
+   * Polls a generation session for the validated Messaging Document (and its
+   * word-count-locked copy primitives). Only the session's creator may
    * read the result (owner-token proof).
    *
    * `project` (the run's LFX project uid) scopes the persistence write that
@@ -754,12 +879,11 @@ export class MktgAgentsController {
 
   /**
    * GET /api/mktg-agents/foundation-message/stored?project=<uid>
-   * Returns the project's LATEST server-persisted Message Foundation document
-   * with its receipt metadata (the dec-agent-dependency-gating read path), or
-   * 404 when nothing is stored for the project. This is what lets a dependent
-   * agent — or the same user in a different browser — reach a Message
-   * Foundation it did not generate; before it existed the document lived only
-   * in the generating browser's TTL-bounded stored run.
+   * Returns the project's LATEST stored Messaging Document (the latest
+   * revision of its foundation-message document) with its receipt metadata
+   * (the dec-agent-dependency-gating read path), or 404 when nothing is stored
+   * for the project. This is what lets a sibling agent — or the same user in a
+   * different browser — reach a Messaging Document it did not generate.
    *
    * AUTHZ — the same read boundary as `storedBrandKit`, deliberately
    * identical: the caller must hold writer entitlement on the requested
@@ -796,7 +920,7 @@ export class MktgAgentsController {
       const project = await this.projectService.getProjectById(req, projectUid, true);
       if (!project.writer) {
         next(
-          new AuthorizationError('You do not have permission to read this project’s Message Foundation.', {
+          new AuthorizationError('You do not have permission to read this project’s Messaging Document.', {
             operation: 'foundation_message_stored',
             service: 'mktg_agents_controller',
             path: req.path,
@@ -808,7 +932,7 @@ export class MktgAgentsController {
       const stored: FoundationMessageStoredResponse | null = await this.foundationMessageService.getStoredFoundationMessage(req, project.uid);
       if (!stored) {
         next(
-          new ResourceNotFoundError('Stored Message Foundation', project.uid, {
+          new ResourceNotFoundError('Stored Messaging Document', project.uid, {
             operation: 'foundation_message_stored',
             service: 'mktg_agents_controller',
             path: req.path,
@@ -821,6 +945,35 @@ export class MktgAgentsController {
       res.json(stored);
     } catch (error) {
       next(error);
+    }
+  }
+
+  /** What reading an uploaded file produced, as the form shows it, with the text the run submits back. */
+  private extractResponse(title: string, read: MktgReadText): MktgDocumentExtractResponse {
+    const oneLine = title
+      .replace(/[\r\n]+/g, ' ')
+      .trim()
+      .slice(0, FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS);
+    if (read.text === null) {
+      return { title: oneLine, read: false, words: 0, truncated: false, reason: FOUNDATION_MESSAGE_READ_REASONS[read.reason ?? 'no-text'] };
+    }
+    return { title: oneLine, read: true, words: countFoundationMessageWords(read.text), truncated: read.truncated, text: read.text };
+  }
+
+  /** The upload's file name from its URI-encoded header: one line, no control characters, or '' when missing or undecodable. */
+  private readUploadFileName(req: Request): string {
+    const raw = req.headers[FOUNDATION_MESSAGE_FILE_NAME_HEADER.toLowerCase()];
+    try {
+      const decoded = typeof raw === 'string' ? decodeURIComponent(raw) : '';
+      return (
+        decoded
+          // eslint-disable-next-line no-control-regex -- the point is to strip control characters
+          .replace(/[\u0000-\u001f\u007f]/g, ' ')
+          .trim()
+          .slice(0, FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS)
+      );
+    } catch {
+      return '';
     }
   }
 

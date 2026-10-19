@@ -2,16 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
+import { DecimalPipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, pairwise, startWith, switchMap, tap } from 'rxjs';
 
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
+  AUDIENCE_BUILD_MODES,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
+  AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
   AUDIENCE_SIGNAL_INFO,
   AUDIENCE_SIGNAL_ORDER,
   AUDIENCE_UNION_EXACT_CAP,
@@ -26,6 +29,8 @@ import type {
   AudienceComposeMasterResult,
   AudienceComposedList,
   AudienceComposeUnattachedEvent,
+  AudienceBuildMode,
+  AudienceCustomPreset,
   AudienceDiscoveredEvent,
   AudienceDiscoveredList,
   AudienceDiscoveryProgress,
@@ -44,6 +49,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 import { AudienceCardGridComponent } from '../audience-card-grid/audience-card-grid.component';
+import { AudienceCustomBuilderComponent } from '../audience-custom-builder/audience-custom-builder.component';
 import { AudienceLastSentComponent } from '../audience-last-sent/audience-last-sent.component';
 import { AudienceMissingSignalsComponent } from '../audience-missing-signals/audience-missing-signals.component';
 import { AudienceQaPanelComponent } from '../audience-qa-panel/audience-qa-panel.component';
@@ -64,8 +70,10 @@ import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/a
 @Component({
   selector: 'lfx-audience-builder-tab',
   imports: [
+    DecimalPipe,
     ReactiveFormsModule,
     AudienceCardGridComponent,
+    AudienceCustomBuilderComponent,
     AudienceSuppressionGridComponent,
     AudienceLastSentComponent,
     AudienceMissingSignalsComponent,
@@ -209,6 +217,11 @@ export class AudienceBuilderTabComponent {
 
   // === Forms ===
   protected readonly eventUrlControl = new FormControl('', { nonNullable: true });
+  /** Optional master list name; blank keeps the derived one. */
+  protected readonly masterNameControl = new FormControl('', { nonNullable: true });
+  /** "Or use an existing list" — the same typeahead as step 5, available in every mode. */
+  protected readonly existingSearchControl = new FormControl('', { nonNullable: true });
+  protected readonly modeOptions = AUDIENCE_BUILD_MODES;
 
   // === Constants ===
   protected readonly unionExactCap = AUDIENCE_UNION_EXACT_CAP;
@@ -219,8 +232,38 @@ export class AudienceBuilderTabComponent {
   protected readonly progressMessage = signal<string | null>(null);
   protected readonly inspected = signal<number | null>(null);
   protected readonly identity = signal<AudienceDiscoveredEvent | null>(null);
+  /** The custom builder's current preset, set by a missing-signal "Create list". */
+  protected readonly customPreset = signal<AudienceCustomPreset | null>(null);
+  /** True while the custom builder is creating a list: a preset would reset it mid-create. */
+  protected readonly customCreating = signal(false);
+  /** Bumped by every run reset so the custom builder starts over with it. */
+  protected readonly customResetKey = signal(0);
+  /**
+   * The legacy builder's three ways to set the audience. Event Audience first, as in legacy: plan
+   * one from the event page. Custom: describe it. Reuse or Discover: find the lists that exist.
+   */
+  protected readonly mode = signal<AudienceBuildMode>('event');
+  /** Whether the Exclude / Review steps apply: a discovery ran, or a list was chosen any other way. */
+  protected readonly showSelection = computed(() => this.hasDiscovered() || this.inclusion().size > 0);
+  private readonly existingQuery = toSignal(this.existingSearchControl.valueChanges, { initialValue: '' });
+  /** Results are shown under the existing-list box only while it holds a query. */
+  protected readonly existingSearchActive = computed(() => this.existingQuery().trim().length > 0);
   protected readonly discoveredLists = signal<readonly AudienceDiscoveredList[]>([]);
   protected readonly missingSignals = signal<readonly AudienceSignal[]>([]);
+  /** Lists discovery found but did not offer for inclusion (suppressions, masters, test lists). */
+  protected readonly hiddenCount = signal(0);
+  /** The event an Event Audience was planned from, for QA when discovery has not run. */
+  protected readonly plannedEvent = signal<AudienceDiscoveredEvent | null>(null);
+  /**
+   * The event QA checks "this edition's registrants" against, with its year: edition names carry
+   * one, and QA cannot run that check on a name without it. Discovery first, then an event plan.
+   */
+  protected readonly qaEventName = computed(() => {
+    const event = this.identity() ?? this.plannedEvent();
+    return event ? withEventYear(event.eventName, event.eventDates) : '';
+  });
+  /** Capabilities have answered; until then the tab is locked but says it is checking. */
+  protected readonly capabilitiesKnown = computed(() => this.capabilities() !== null || this.capabilitiesFailed());
   protected readonly hasDiscovered = signal(false);
   /** The URL the current discovery ran for, so an edited field is compared by what it discovered. */
   private readonly discoveredEventUrl = signal('');
@@ -281,7 +324,18 @@ export class AudienceBuilderTabComponent {
    * generation guard cannot separate them and a slow first reply would overwrite a fast second.
    */
   private searchSeq = 0;
+  private existingSearchSeq = 0;
+  /** The brand|event the no-discovery suppression rows were loaded for; '' is portfolio-wide. */
+  private suppressionScope = '';
+  /**
+   * Every suppression row key loaded in this run. A rescope pre-ticks only rows NOT in here, so a
+   * row the operator unticked stays unticked -- even when a failed reload cleared the rows between.
+   */
+  private readonly loadedSuppressionKeys = new Set<string>();
+  /** Bumped per preset so choosing the same signal twice re-applies it. */
+  private customPresetVersion = 0;
   private previewSeq = 0;
+  private suppressionCountSeq = 0;
   /**
    * Whether a compose has been ATTEMPTED for this run, regardless of how it ended.
    *
@@ -308,6 +362,9 @@ export class AudienceBuilderTabComponent {
   // === State: manual search ===
   protected readonly searching = signal(false);
   protected readonly searchResults = signal<readonly AudienceListSearchResult[]>([]);
+  /** The "use an existing list" box's own results: sharing Fill gaps' state showed one box the other's query. */
+  protected readonly existingSearching = signal(false);
+  protected readonly existingSearchResults = signal<readonly AudienceListSearchResult[]>([]);
 
   // === State: selection (id -> display name) ===
   private readonly inclusion = signal<ReadonlyMap<string, string>>(new Map());
@@ -336,6 +393,10 @@ export class AudienceBuilderTabComponent {
   // === State: preview & compose ===
   protected readonly previewing = signal(false);
   protected readonly previewCount = signal<AudiencePreviewCount | null>(null);
+  /** The exact suppression count, tagged with the exclusion selection it was computed for. */
+  protected readonly suppressionCountResult = signal<{ key: string; count: AudiencePreviewCount } | null>(null);
+  protected readonly suppressionCounting = signal(false);
+  protected readonly suppressionCountError = signal<string | null>(null);
   protected readonly previewError = signal<string | null>(null);
   protected readonly composing = signal(false);
   protected readonly composeResult = signal<AudienceComposeMasterResult | null>(null);
@@ -546,6 +607,12 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly suppressionMissing = computed(() => this.suppressionListIds().size === 0);
 
+  /** The suppression count, only while it still describes the ticked exclusions. */
+  protected readonly suppressionCount = computed(() => {
+    const result = this.suppressionCountResult();
+    return result && result.key === [...this.excludeIds()].sort().join(',') ? result.count : null;
+  });
+
   /**
    * The exclusions actually sent: ticked suppression rows plus lists marked Exclude, minus inclusion.
    *
@@ -620,7 +687,9 @@ export class AudienceBuilderTabComponent {
       !this.stagingInFlight() &&
       !this.composing() &&
       !this.composeOnWire() &&
-      !this.attachInFlight()
+      !this.attachInFlight() &&
+      // A custom create still landing would add its list after the attach recorded the selection.
+      !this.customCreating()
   );
 
   /**
@@ -688,6 +757,12 @@ export class AudienceBuilderTabComponent {
     }
     return composedForThisBrief && composed ? composed.master.listId : (attached?.master.listId ?? null);
   });
+
+  /**
+   * The suppression lists the send applies, for QA: what was recorded once the audience is
+   * attached, otherwise what Exclude currently ticks.
+   */
+  protected readonly qaSendSuppressionIds = computed<readonly string[]>(() => (this.attachedListId() ? this.attachedExclusions() : this.excludeIds()));
 
   /**
    * The exclusions behind the current attachment, so a prior send can be matched on its FULL
@@ -1010,6 +1085,9 @@ export class AudienceBuilderTabComponent {
       // Likewise a compose a reset abandoned is still being created upstream.
       !this.attachInFlight() &&
       !this.composeOnWire() &&
+      // A custom create still landing would add its list after compose snapshotted the selection,
+      // and composeAttempted would then stop the operator correcting it.
+      !this.customCreating() &&
       // Not while the parent is staging a send against this brief's audience.
       !this.stagingInFlight() &&
       !this.suppressionFailed() &&
@@ -1029,6 +1107,15 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
+    this.existingSearchControl.valueChanges
+      .pipe(
+        map((value) => value.trim()),
+        debounceTime(AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS),
+        distinctUntilChanged(),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((query) => this.onExistingSearch(query));
+
     // The last NON-empty event key (see `eventKey`); used by the reset below. Declared here
     // because a project switch must clear it too: carried over, project A's last event made a
     // brief for project B's event read as a CHANGE, wiping work the operator started by hand in B.
@@ -1124,6 +1211,14 @@ export class AudienceBuilderTabComponent {
         lastEventKey = nextKey;
         lastAdvertisedUrl = advertised;
         const differentEvent = this.isDifferentEvent(previousKey, nextKey, previousUrl, advertised);
+        // Work started without discovery (a created, reused or searched list; a planned event; a
+        // create in flight) belongs to its event as much as discovered lists do.
+        const handWork = this.inclusion().size > 0 || this.exclusion().size > 0 || this.plannedEvent() !== null || this.customCreating();
+        if (handWork && differentEvent) {
+          this.resetForNewContext(this.projectSlug());
+          this.eventUrlControl.reset(advertised, { emitEvent: false });
+          return;
+        }
         if (!(this.hasDiscovered() || this.discovering())) {
           // No discovery yet, but a TYPED URL is work too: the seed below never overwrites a dirty
           // field, so a URL typed for event B survived into event C's brief and the next discovery
@@ -1179,8 +1274,8 @@ export class AudienceBuilderTabComponent {
     const eventUrl = this.eventUrlControl.value.trim();
     // Not while an attach is on the wire, either. Discovery resets the run, which discards that
     // attach's reply -- so its outcome, success or error, would never be shown for the brief it was
-    // recorded against.
-    if (this.degraded() || this.discovering() || this.attachInFlight() || eventUrl.length === 0) {
+    // recorded against. Likewise a custom create: the reset would discard even its success.
+    if (this.degraded() || this.discovering() || this.attachInFlight() || this.customCreating() || eventUrl.length === 0) {
       return;
     }
     // Refused HERE rather than re-locking after the reset. `composeAttempted` is the
@@ -1400,6 +1495,152 @@ export class AudienceBuilderTabComponent {
     this.add(list.listId, list.name);
   }
 
+  // === Protected Methods: custom audiences ===
+  /** The event an event audience was planned from, so QA judges against it. */
+  protected onEventPlanned(event: AudienceDiscoveredEvent): void {
+    this.plannedEvent.set(event);
+    if (this.inclusion().size > 0) {
+      this.ensureSuppressionLoaded();
+    }
+  }
+
+  /** A list the custom builder created joins Include like any hand-added list. */
+  protected onCustomCreated(list: AudienceComposedList): void {
+    this.add(list.listId, list.name);
+    this.ensureSuppressionLoaded();
+  }
+
+  /** An existing list the builder suggested and the operator chose to reuse. */
+  protected onCustomReuse(list: AudienceListSearchResult): void {
+    this.add(list.listId, list.name);
+    this.ensureSuppressionLoaded();
+  }
+
+  /**
+   * The legacy "Event Audience": a regional-expansion audience the model plans from the event page
+   * itself (the service reads it), so no discovery is needed first. It is drafted into the custom
+   * builder, so the same review, property checks, preview and confirmation apply.
+   */
+  protected onGenerateEventPlan(): void {
+    const url = this.eventUrlControl.value.trim();
+    if (url === '' || this.degraded() || this.selectionLocked() || this.customCreating()) return;
+    this.mode.set('event');
+    this.customPreset.set({
+      version: ++this.customPresetVersion,
+      eventUrl: url,
+      request:
+        'Regional expansion audience for this event: mailable contacts in its host city and country, contacts who registered for any event held there, ' +
+        "education enrollees there limited to the brand's own courses, and visitors of the event page.",
+    });
+  }
+
+  protected onSetMode(mode: AudienceBuildMode): void {
+    this.mode.set(mode);
+    // The Event and Reuse panels both bind eventUrlControl, and a user-originated edit in one never
+    // writes back to the other (Reactive Forms skips the view that made the change, and the hidden
+    // panel stays mounted). Re-writing the value from the model updates every bound input, so the
+    // panel being shown cannot display a stale URL while Discover submits the newer one.
+    this.eventUrlControl.setValue(this.eventUrlControl.value, { emitEvent: false });
+  }
+
+  /** "Or use an existing list": the list joins Include in any mode, ready to attach or compose. */
+  protected onUseExistingList(list: AudienceListSearchResult): void {
+    this.add(list.listId, list.name);
+    this.ensureSuppressionLoaded();
+  }
+
+  protected onSelectAllDiscovered(lists: AudienceListRef[]): void {
+    if (this.selectionLocked()) return;
+    for (const list of lists) {
+      this.add(list.listId, list.name);
+    }
+  }
+
+  protected onClearDiscovered(listIds: string[]): void {
+    if (this.selectionLocked()) return;
+    const next = new Map(this.inclusion());
+    for (const id of listIds) {
+      next.delete(id);
+    }
+    this.inclusion.set(next);
+    this.invalidatePreview();
+  }
+
+  /** The exact number of distinct contacts the ticked exclusions remove. Read-only. */
+  protected onCountSuppression(): void {
+    const listIds = this.excludeIds();
+    if (this.degraded() || this.suppressionCounting() || listIds.length === 0) {
+      return;
+    }
+    const key = [...listIds].sort().join(',');
+    const seq = ++this.suppressionCountSeq;
+    this.suppressionCounting.set(true);
+    this.suppressionCountError.set(null);
+    this.campaignService
+      .previewAudienceCount(this.projectSlug(), { listIds })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (count) => {
+          if (seq !== this.suppressionCountSeq) return;
+          this.suppressionCountResult.set({ key, count });
+          this.suppressionCounting.set(false);
+        },
+        error: (httpErr: HttpErrorResponse) => {
+          if (seq !== this.suppressionCountSeq) return;
+          this.suppressionCountError.set(serverAuthoredMessage(httpErr, 'Failed to count the suppression lists'));
+          this.suppressionCounting.set(false);
+        },
+      });
+  }
+
+  /**
+   * Opens the custom builder for a missing signal. Speakers and registrants are deterministic
+   * presets the operator still reviews (the event name must be the exact registration name);
+   * the opt-in signals go through the model, whose property names the service then verifies.
+   * Nothing is created until the operator previews and confirms in the builder.
+   */
+  protected onCreateForSignal(signal: AudienceSignal): void {
+    if (this.customCreating()) return;
+    // The builder lives in the Custom view; switching there is what makes the preset visible.
+    this.mode.set('custom');
+    const eventName = this.identity()?.eventName ?? '';
+    const editionName = withEventYear(eventName, this.identity()?.eventDates ?? []);
+    const brand = this.identity()?.brandShort ?? '';
+    const version = ++this.customPresetVersion;
+    switch (signal) {
+      // Edition names carry their year, and these filters match the name exactly.
+      case 'event_speakers':
+        this.customPreset.set({ version, criteria: { label: eventName, speakers: { scope: 'current', eventNames: editionName ? [editionName] : [] } } });
+        return;
+      case 'event_registration':
+        this.customPreset.set({ version, criteria: { label: eventName, registeredFor: editionName ? [editionName] : [] } });
+        return;
+      case 'project_opt_in':
+        this.customPreset.set({
+          version,
+          request: `Contacts opted in to ${brand || 'this project'}'s project emails, as a single inclusion list for ${eventName}`,
+        });
+        return;
+      case 'lf_newsletter_opt_in':
+        this.customPreset.set({ version, request: `Contacts opted in to the Linux Foundation newsletter, as a single inclusion list for ${eventName}` });
+        return;
+      case 'page_view': {
+        const url = this.eventUrlControl.value
+          .trim()
+          .replace(/^https?:\/\//, '')
+          .replace(/\/+$/, '');
+        this.customPreset.set({ version, criteria: { label: eventName, pageViewUrls: url ? [url] : [] } });
+        return;
+      }
+      case 'education_enrollment':
+        this.customPreset.set({
+          version,
+          request: `Contacts enrolled in ${brand || 'this brand'}'s education courses related to ${eventName}, as a single inclusion list with no location restriction`,
+        });
+        return;
+    }
+  }
+
   protected onRemoveInclusion(listId: string): void {
     const next = new Map(this.inclusion());
     next.delete(listId);
@@ -1440,6 +1681,33 @@ export class AudienceBuilderTabComponent {
           // A failed typeahead is not worth a banner — the operator's next keystroke retries it.
           this.searchResults.set([]);
           this.searching.set(false);
+        },
+      });
+  }
+
+  /** The "use an existing list" typeahead; guarded like `onSearch`, on its own state. */
+  protected onExistingSearch(query: string): void {
+    const seq = ++this.existingSearchSeq;
+    if (query.length === 0) {
+      this.existingSearchResults.set([]);
+      this.existingSearching.set(false);
+      return;
+    }
+    this.existingSearching.set(true);
+    const run = this.runGeneration;
+    this.campaignService
+      .searchAudienceLists(this.projectSlug(), query)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (results) => {
+          if (run !== this.runGeneration || seq !== this.existingSearchSeq) return;
+          this.existingSearchResults.set(results);
+          this.existingSearching.set(false);
+        },
+        error: () => {
+          if (run !== this.runGeneration || seq !== this.existingSearchSeq) return;
+          this.existingSearchResults.set([]);
+          this.existingSearching.set(false);
         },
       });
   }
@@ -1523,6 +1791,8 @@ export class AudienceBuilderTabComponent {
         brandShort: event?.brandShort,
         eventName: event?.eventName,
         eventDates: event?.eventDates,
+        // The operator's own name wins over the derived `<YYQN> - <Brand> - <Event> - Master`.
+        name: this.masterNameControl.value.trim() || undefined,
         // Read at DISPATCH, not in the reply arm. The reply arm runs after a network round trip,
         // by which point the parent may have moved to another brief -- and the attach upstream was
         // made against whatever was sent here, so this is the only value that describes what
@@ -1672,6 +1942,7 @@ export class AudienceBuilderTabComponent {
         const result = event.data as AudienceDiscoveryResult;
         this.discoveredLists.set(result.lists);
         this.missingSignals.set(result.missingSignals);
+        this.hiddenCount.set(result.hidden ?? 0);
         this.hasDiscovered.set(true);
         this.loadReuseAndSuppression();
         break;
@@ -1760,8 +2031,53 @@ export class AudienceBuilderTabComponent {
     // (suppression is loaded above, before the identity guard)
   }
 
+  /**
+   * A list chosen without discovery still needs the suppression rows every send must keep. They are
+   * the portfolio-wide ones here; a later discovery reloads them with the brand and event rows.
+   */
+  private ensureSuppressionLoaded(): void {
+    if (this.hasDiscovered() || this.suppressionLoading()) {
+      return;
+    }
+    // A planned event names its brand and event, which add the brand opt-out and event rows the
+    // portfolio-wide set lacks. Reloaded when that scope arrives after the generic rows.
+    const event = this.plannedEvent();
+    const brand = event?.brandShort ?? '';
+    const name = event?.eventName ?? '';
+    const scope = this.plannedSuppressionScope();
+    // Skipped only when the last load of this scope SUCCEEDED: a failed one must be retried by the
+    // next trigger, or compose and attach stay blocked after the endpoint recovers.
+    if (this.suppressionSeeded() && scope === this.suppressionScope && !this.suppressionFailed()) {
+      return;
+    }
+    // Once a load has seeded (even an empty one), a rescope keeps the operator's ticks and
+    // pre-ticks only the rows it adds.
+    const previousKeys = this.suppressionSeeded() ? new Set(this.loadedSuppressionKeys) : null;
+    this.suppressionScope = scope;
+    this.loadSuppression(brand, name, previousKeys);
+  }
+
+  /** The scope the no-discovery suppression rows should have: the planned event's, else portfolio-wide. */
+  private plannedSuppressionScope(): string {
+    const event = this.plannedEvent();
+    return event ? `${event.brandShort ?? ''}|${event.eventName ?? ''}` : '';
+  }
+
+  /**
+   * A planned event can arrive while the portfolio-wide load is on the wire, when
+   * `ensureSuppressionLoaded` returns early; once that load settles, load the wanted scope.
+   * Only on a scope change, never to retry a failure, so a failing endpoint cannot loop.
+   */
+  private reconcileSuppressionScope(): void {
+    // Runs after a SUCCESSFUL load only, so an empty result still rescopes: no rows from the generic
+    // scope says nothing about the brand and event rows.
+    if (!this.hasDiscovered() && this.plannedSuppressionScope() !== this.suppressionScope) {
+      this.ensureSuppressionLoaded();
+    }
+  }
+
   /** Fetches the suppression lists. Safe with empty scope: the hygiene rows are portfolio-wide. */
-  private loadSuppression(brandShort: string, eventName: string): void {
+  private loadSuppression(brandShort: string, eventName: string, previousKeys: ReadonlySet<string> | null = null): void {
     this.suppressionLoading.set(true);
     const run = this.runGeneration;
     this.campaignService
@@ -1773,9 +2089,16 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.suppressionLists.set(lists);
+          lists.forEach((l) => this.loadedSuppressionKeys.add(l.key));
           this.suppressionFailed.set(false);
           this.suppressionLoading.set(false);
-          this.seedSuppression(lists);
+          if (previousKeys) {
+            // A rescope: keep every tick the operator made, and pre-tick only the rows it added.
+            this.seedSuppressionRows(lists.filter((l) => !previousKeys.has(l.key)));
+          } else {
+            this.seedSuppression(lists);
+          }
+          this.reconcileSuppressionScope();
         },
         error: () => {
           if (run !== this.runGeneration) {
@@ -1800,6 +2123,10 @@ export class AudienceBuilderTabComponent {
     if (this.suppressionSeeded()) {
       return;
     }
+    this.seedSuppressionRows(lists);
+  }
+
+  private seedSuppressionRows(lists: readonly AudienceSuppressionList[]): void {
     const next = new Map(this.suppression());
     lists.filter((list) => list.listId !== '' && !this.inclusion().has(list.listId)).forEach((list) => next.set(list.key, list.listId));
     this.suppression.set(next);
@@ -2079,6 +2406,7 @@ export class AudienceBuilderTabComponent {
     this.identity.set(null);
     this.discoveredLists.set([]);
     this.missingSignals.set([]);
+    this.hiddenCount.set(0);
     this.lastSentEmails.set([]);
     this.existingMasterLists.set([]);
     this.composedMasterLists.set([]);
@@ -2107,6 +2435,21 @@ export class AudienceBuilderTabComponent {
     this.attachResult.set(null);
     this.attachError.set(null);
     this.copiedSuppressionNames.set(new Map());
+    // The custom builder and its planned event belong to the old context too: list ids are
+    // portal-scoped, and QA must not judge the next event against the previous one.
+    this.plannedEvent.set(null);
+    this.customResetKey.update((k) => k + 1);
+    // The suppression count and the existing-list search are portal-scoped too: list ids repeat
+    // across portals, so a late or completed result from the old project could read as current.
+    this.suppressionCountSeq += 1;
+    this.suppressionCountResult.set(null);
+    this.suppressionCounting.set(false);
+    this.suppressionCountError.set(null);
+    this.existingSearchSeq += 1;
+    this.existingSearchResults.set([]);
+    this.existingSearching.set(false);
+    this.suppressionScope = '';
+    this.loadedSuppressionKeys.clear();
     this.invalidatePreview();
   }
 
@@ -2123,4 +2466,14 @@ export class AudienceBuilderTabComponent {
     this.previewError.set(null);
     this.previewing.set(false);
   }
+}
+
+/** Appends the year of the event's first date to a name that has none ("… Japan" → "… Japan 2026"). */
+function withEventYear(name: string, dates: readonly string[]): string {
+  const trimmed = name.trim();
+  if (trimmed === '' || /\b(19|20)\d{2}\b/.test(trimmed)) {
+    return trimmed;
+  }
+  const year = dates.map((d) => /\b(19|20)\d{2}\b/.exec(d)?.[0]).find(Boolean);
+  return year ? `${trimmed} ${year}` : trimmed;
 }

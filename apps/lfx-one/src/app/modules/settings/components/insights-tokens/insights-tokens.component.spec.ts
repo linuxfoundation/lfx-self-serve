@@ -17,7 +17,7 @@ import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dia
 import { InsightsTokensComponent } from './insights-tokens.component';
 
 const TOKEN: InsightsToken = { uid: 't-1', name: 'ci-pipeline', lookupId: 'Ab3kZ9QmT2xL', createdAt: '2026-09-01T00:00:00Z', lastUsedAt: null };
-const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme' }], checkFailed: false };
+const ELIGIBLE: InsightsTokenEligibility = { canCreate: true, checkFailed: false };
 
 describe('InsightsTokensComponent', () => {
   let service: {
@@ -89,8 +89,8 @@ describe('InsightsTokensComponent', () => {
     expect(component['canCreate']()).toBe(true);
   });
 
-  it('never lists tokens for a non-Key-Contact, matching the server gate', () => {
-    service.getEligibility.mockReturnValue(of({ canCreate: false, orgs: [], checkFailed: false }));
+  it('never lists tokens for a user the access flag is off for, matching the server gate', () => {
+    service.getEligibility.mockReturnValue(of({ canCreate: false, checkFailed: false }));
     create();
 
     expect(service.getTokens).not.toHaveBeenCalled();
@@ -99,8 +99,8 @@ describe('InsightsTokensComponent', () => {
     expect(component['loading']()).toBe(false);
   });
 
-  it('distinguishes a failed eligibility check from a non-Key-Contact', () => {
-    service.getEligibility.mockReturnValue(of({ canCreate: false, orgs: [], checkFailed: true }));
+  it('distinguishes a failed eligibility check from a user without access', () => {
+    service.getEligibility.mockReturnValue(of({ canCreate: false, checkFailed: true }));
     create();
 
     expect(component['canCreate']()).toBe(false);

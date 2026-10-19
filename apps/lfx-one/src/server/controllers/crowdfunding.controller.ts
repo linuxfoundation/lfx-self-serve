@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import {
   ALLOWED_LOGO_MIME_TYPES,
+  CROWDFUNDING_ATTRIBUTION_TYPES,
   CROWDFUNDING_INITIATIVE_STATUSES,
   ORG_ACCOUNT_ID_PATTERN,
   SPONSORSHIP_DONATION_MODES,
@@ -14,11 +15,13 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   CreateAnnouncementInput,
+  CrowdfundingAttributionType,
   InitiativesScope,
   CrowdfundingInitiativeStatus,
   SponsorshipDonationMode,
   SponsorshipTierName,
   UpdateAnnouncementInput,
+  UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { isUuid, stripHtml } from '@lfx-one/shared/utils';
@@ -57,6 +60,35 @@ const parseInitiativesScope = (query: Request['query'], operation: string): Init
     return { kind: 'organizations', uid: orgUid };
   }
   return undefined;
+};
+
+/**
+ * Body of PUT /initiatives/:id/attribution. `entityUid` is interpolated into the CF gateway's FGA check, which only
+ * admits canonical ids, so it must be an 18-char b2b_org SFID for an organization or a UUID (sent lowercase) for a
+ * project, and absent for personal.
+ */
+const parseAttributionInput = (body: Record<string, unknown>, operation: string): UpdateInitiativeAttributionInput => {
+  const type = body['type'];
+  if (typeof type !== 'string' || !CROWDFUNDING_ATTRIBUTION_TYPES.includes(type as CrowdfundingAttributionType)) {
+    throw ServiceValidationError.forField('type', `type must be one of: ${CROWDFUNDING_ATTRIBUTION_TYPES.join(', ')}`, { operation });
+  }
+  const entityUid = body['entityUid'];
+  if (type === 'personal') {
+    if (entityUid != null && entityUid !== '') {
+      throw ServiceValidationError.forField('entityUid', 'entityUid must be empty for personal attribution', { operation });
+    }
+    return { type };
+  }
+  if (type === 'organization') {
+    if (typeof entityUid !== 'string' || !ORG_ACCOUNT_ID_PATTERN.test(entityUid)) {
+      throw ServiceValidationError.forField('entityUid', 'entityUid must be an organization account id', { operation });
+    }
+    return { type, entityUid };
+  }
+  if (typeof entityUid !== 'string' || !isUuid(entityUid)) {
+    throw ServiceValidationError.forField('entityUid', 'entityUid must be a project UUID', { operation });
+  }
+  return { type: 'project', entityUid: entityUid.toLowerCase() };
 };
 
 export class CrowdfundingController {
@@ -365,6 +397,50 @@ export class CrowdfundingController {
       const initiative = await this.crowdfundingService.updateInitiative(req, id, input);
 
       logger.success(req, 'update_initiative', startTime, { id });
+      res.json(initiative);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/crowdfunding/attribution-options — organizations and projects the caller may attribute an initiative to. */
+  public async getAttributionOptions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_attribution_options');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+      if (!username) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_attribution_options' });
+      }
+
+      const options = await this.crowdfundingService.getAttributionOptions(req, username);
+
+      logger.success(req, 'get_attribution_options', startTime, { organizations: options.organizations.length, projects: options.projects.length });
+      res.json(options);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** PUT /api/crowdfunding/initiatives/:id/attribution — change who an initiative is attributed to (creator only, while submitted). */
+  public async updateInitiativeAttribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_initiative_attribution');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+      if (!username) {
+        throw new AuthenticationError('User authentication required', { operation: 'update_initiative_attribution' });
+      }
+
+      const id = (req.params['id'] ?? '').trim();
+      if (!isUuid(id)) {
+        throw ServiceValidationError.forField('id', 'Initiative id must be a UUID', { operation: 'update_initiative_attribution' });
+      }
+      const input = parseAttributionInput((req.body ?? {}) as Record<string, unknown>, 'update_initiative_attribution');
+
+      const initiative = await this.crowdfundingService.updateInitiativeAttribution(req, username, id, input);
+
+      logger.success(req, 'update_initiative_attribution', startTime, { id, attribution_type: input.type });
       res.json(initiative);
     } catch (error) {
       next(error);

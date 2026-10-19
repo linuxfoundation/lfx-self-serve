@@ -497,6 +497,103 @@ export function getTimezoneByValue(value: string): TimezoneOption | undefined {
 }
 
 /**
+ * The browser's own timezone, as one of the {@link TIMEZONES} picker options.
+ * @description Read from `Intl`, which reports the operating system's zone setting (pass `reportedZone` to
+ * supply it instead, e.g. in tests). Matched in three passes, most exact first:
+ * 1. the zone itself;
+ * 2. the same zone under another name — engines may report a legacy alias (`Asia/Calcutta` for
+ *    `Asia/Kolkata`), so both sides are compared in the engine's canonical form;
+ * 3. a listed zone that keeps the same wall-clock time all year (Lisbon → London). Offsets are compared
+ *    daily across the current year and on both sides of each of the reported zone's clock changes, located
+ *    to the minute, so a zone whose DST starts or ends on a different day or hour does not match — a
+ *    single "current offset" check would pair zones that drift apart for part of the year.
+ * Returns `null` when no zone is reported or nothing matches, so a caller can leave the field empty
+ * rather than guess.
+ */
+export function detectBrowserTimezoneOption(now: Date = new Date(), reportedZone?: string): string | null {
+  try {
+    const detected = reportedZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    if (!detected) {
+      return null;
+    }
+
+    const canonical = (zone: string): string | null => {
+      try {
+        return new Intl.DateTimeFormat('en-US', { timeZone: zone }).resolvedOptions().timeZone;
+      } catch {
+        return null;
+      }
+    };
+    const detectedCanonical = canonical(detected);
+
+    const sameZone =
+      TIMEZONES.find((tz) => tz.value === detected) ?? TIMEZONES.find((tz) => detectedCanonical !== null && canonical(tz.value) === detectedCanonical);
+
+    if (sameZone) {
+      return sameZone.value;
+    }
+
+    return findSameWallClockZone(detected, now.getUTCFullYear());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pass 3 of {@link detectBrowserTimezoneOption}: the first of `candidates` whose UTC offset equals `zone`'s at
+ * every probe instant of `year` — noon UTC daily, plus one minute before and at each of `zone`'s clock changes
+ * (located to the minute). Candidates are checked lazily and drop out at their first mismatch, so the full set
+ * of probes only runs for zones that already agree on the first ones.
+ * @param candidates zone ids to try, in order; defaults to the {@link TIMEZONES} picker options.
+ * @param offsetAt UTC offset (ms) of a zone at an instant; defaults to the runtime's tzdata. Injectable so the
+ * matching can be tested against fixed transitions rather than whatever tzdata the runtime ships.
+ */
+export function findSameWallClockZone(
+  zone: string,
+  year: number,
+  candidates: readonly string[] = TIMEZONES.map((tz) => tz.value),
+  offsetAt: (zone: string, time: number) => number = (target, time) => getTimezoneOffset(target, new Date(time))
+): string | null {
+  const minute = 60 * 1000;
+  const days = Array.from({ length: 366 }, (_, index) => Date.UTC(year, 0, 1 + index, 12)).filter((time) => new Date(time).getUTCFullYear() === year);
+  const zoneOffsetAt = (time: number): number => offsetAt(zone, time);
+  const probes: number[] = [];
+  let previousOffset = zoneOffsetAt(days[0]);
+
+  if (Number.isNaN(previousOffset)) {
+    return null;
+  }
+
+  probes.push(days[0]);
+  for (let index = 1; index < days.length; index++) {
+    const offset = zoneOffsetAt(days[index]);
+    probes.push(days[index]);
+
+    if (offset !== previousOffset) {
+      // Narrow the change down to the minute, then probe just before it and at it.
+      let low = days[index - 1];
+      let high = days[index];
+      while (high - low > minute) {
+        const middle = low + Math.floor((high - low) / 2 / minute) * minute;
+        if (zoneOffsetAt(middle) === previousOffset) {
+          low = middle;
+        } else {
+          high = middle;
+        }
+      }
+      probes.push(high - minute, high);
+    }
+
+    previousOffset = offset;
+  }
+
+  const expected = probes.map(zoneOffsetAt);
+
+  return candidates.find((candidate) => probes.every((time, index) => offsetAt(candidate, time) === expected[index])) ?? null;
+}
+
+/**
  * Helper function to get user's current timezone
  */
 export function getUserTimezone(): string {

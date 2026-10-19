@@ -30,7 +30,7 @@ import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { evictOnWriteAccessLoss } from '@shared/utils/evict-on-write-access-loss.util';
-import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
+import { probeCommitteeWriters, resolveEntityWriteSlug, resolveSurveyCommitteeCandidates } from '@shared/utils/write-access.util';
 import { MessageComponent } from '@components/message/message.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
@@ -542,45 +542,35 @@ Thank you,
       )
       // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
-    // Edit mode mirrors writerGuard's surveys probe selection: the URL ?committee_uid= wins only
-    // when the survey's own committees[] contains it, else the primary committee; a committee-less
-    // survey falls back to the URL param. Hoisted: toObservable needs the injection context, so it
-    // can't be created lazily inside the switchMap below.
-    const editCommitteeUid$: Observable<string | null | undefined> = toObservable(this.survey).pipe(
+    // Edit mode mirrors writerGuard: probe every survey committee in candidate order, with
+    // a matching URL uid first. Committee-less surveys keep the URL fallback. Hoisted:
+    // toObservable needs the injection context, not a lazy switchMap callback.
+    const editCommitteeUids$: Observable<string[] | undefined> = toObservable(this.survey).pipe(
       map((survey) => {
         if (!survey) {
           return undefined;
         }
-        const url = this.committeeUidFromUrl;
-        const entityUid = url && survey.committees?.some((c) => c.committee_uid === url) ? url : survey.committees?.[0]?.committee_uid;
-        return entityUid ?? url;
+        return resolveSurveyCommitteeCandidates(survey.committees, this.committeeUidFromUrl);
       })
     );
     // Gated on the project leg resolving false: a granted project leg makes the committee fetch
-    // moot, and while it's pending this leg stays pending too. undefined stays pending; null resolves immediately.
-    const committeeUid$: Observable<string | null | undefined> = toObservable(projectAccess).pipe(
+    // moot, and while it's pending this leg stays pending too. undefined stays pending; [] resolves immediately.
+    const committeeUids$: Observable<string[] | undefined> = toObservable(projectAccess).pipe(
       filter((project): project is boolean => project !== undefined),
       distinctUntilChanged(),
       switchMap((project) => {
         if (project) {
           // Project leg granted — resolve the committee leg without firing the HTTP probe.
-          return of<string | null>(null);
+          return of<string[]>([]);
         }
-        return editSurveyId ? editCommitteeUid$ : of(this.committeeUidFromUrl);
+        return editSurveyId ? editCommitteeUids$ : of(this.committeeUidFromUrl ? [this.committeeUidFromUrl] : []);
       })
     );
     const committeeAccess = toSignal(
-      committeeUid$.pipe(
-        filter((uid): uid is string | null => uid !== undefined),
-        distinctUntilChanged(),
-        switchMap((uid) =>
-          uid
-            ? this.committeeService.fetchCommittee(uid).pipe(
-                map((committee) => committee?.writer === true),
-                catchError(() => of(false))
-              )
-            : of(false)
-        )
+      committeeUids$.pipe(
+        filter((uids): uids is string[] => uids !== undefined),
+        distinctUntilChanged((a, b) => a.join('|') === b.join('|')),
+        switchMap((uids) => probeCommitteeWriters(uids, (uid) => this.committeeService.fetchCommittee(uid)).pipe(map((result) => result.writer)))
       )
       // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );

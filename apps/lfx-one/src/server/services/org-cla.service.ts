@@ -7,6 +7,8 @@
 
 import {
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
+  ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
+  ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
@@ -420,6 +422,21 @@ function asDesigneeRefusal(error: unknown, operation: string, errorMessage: stri
   });
 }
 
+function asEasyClaRoleMissing(error: unknown): unknown {
+  if (!(error instanceof MicroserviceError) || error.statusCode !== 403 || error.transportFailure) return error;
+
+  return new MicroserviceError(
+    'Failed to fetch organization CLA groups: the viewer holds no EasyCLA role at this organization',
+    403,
+    ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
+    {
+      operation: 'org_cla_list_cla_groups',
+      service: SERVICE,
+      clientMessage: ORG_CLA_EASYCLA_ROLE_MISSING_COPY.reason,
+    }
+  );
+}
+
 export class OrgClaService {
   /**
    * Lists the organization's corporate CLAs.
@@ -438,25 +455,30 @@ export class OrgClaService {
    * only one of them is a claim about a company's legal position.
    */
   public async listClaGroups(req: Request, orgUid: string): Promise<OrgClaGroupList> {
-    const upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
-      req,
-      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
-      {
-        operation: 'org_cla_list_cla_groups',
-        service: SERVICE,
-        errorMessage: 'Failed to fetch organization CLA groups',
-        errorCode: 'UPSTREAM_ERROR',
-        // This response carries CLA managers by id and LF username. The mapper drops them, but
-        // that boundary only covers the browser: on a non-OK status or unparseable body the
-        // fetch helper logs the raw payload, which would put manager identities in application
-        // logs. Redaction closes the second path (same reason as rewards.service.ts).
-        redactResponseBody: true,
-        // The route authorizes the impersonated user, so the upstream call must run as that
-        // user too. Without this it runs as the impersonator, which is audited as the wrong
-        // identity and fails outright where only the target holds the organization scope.
-        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
-      }
-    );
+    let upstream: EasyClaCompanyClaGroupList | null;
+    try {
+      upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
+        {
+          operation: 'org_cla_list_cla_groups',
+          service: SERVICE,
+          errorMessage: 'Failed to fetch organization CLA groups',
+          errorCode: 'UPSTREAM_ERROR',
+          // This response carries CLA managers by id and LF username. The mapper drops them, but
+          // that boundary only covers the browser: on a non-OK status or unparseable body the
+          // fetch helper logs the raw payload, which would put manager identities in application
+          // logs. Redaction closes the second path (same reason as rewards.service.ts).
+          redactResponseBody: true,
+          // The route authorizes the impersonated user, so the upstream call must run as that
+          // user too. Without this it runs as the impersonator, which is audited as the wrong
+          // identity and fails outright where only the target holds the organization scope.
+          bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+        }
+      );
+    } catch (error) {
+      throw asEasyClaRoleMissing(error);
+    }
 
     // A malformed response is a failure, not an answer. `gatewayFetch` returns null on a 204,
     // and a 200 can arrive without the list the contract guarantees; both would otherwise fall
@@ -1077,7 +1099,7 @@ export class OrgClaService {
           body: { auto_create_ecla: enable },
           operation: 'org_cla_update_ecla_auto_create',
           service: SERVICE,
-          errorMessage: 'Failed to update the Auto ECLA setting',
+          errorMessage: 'Failed to update the Auto Acknowledge setting',
           errorCode: 'UPSTREAM_ERROR',
           // The refusal body is the copy the CLA manager needs to see (sanctions reason and
           // support route). Kept out of application logs; the `withoutUpstreamBody` at the throw
@@ -1803,7 +1825,7 @@ export class OrgClaService {
         entries,
         entry,
         operation,
-        'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+        'This CLA shares its company and CLA group with another agreement, so its Auto Acknowledge setting cannot be changed here yet.',
         'AMBIGUOUS_AGREEMENT_TARGET'
       );
     }

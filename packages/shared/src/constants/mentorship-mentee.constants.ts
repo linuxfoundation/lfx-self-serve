@@ -599,9 +599,7 @@ export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL = 'What areas do y
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL = 'Save Changes';
 export const MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL = 'Cancel';
 
-/** Ceilings the profile drawer validators and the BFF share. Above anything the skills picker catalogue reaches. */
-export const MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS = 100;
-export const MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH = 100;
+/** Ceiling the profile drawer validators and the BFF share for each demographic answer. */
 export const MENTORSHIP_MENTEE_DEMOGRAPHIC_VALUE_MAX_LENGTH = 100;
 
 /** Which upstream column each demographics row is stored in, in the profile update's camelCase keys. */
@@ -616,8 +614,6 @@ export const MENTORSHIP_UPSTREAM_MENTEE_SKILL_SET_KEYS = ['skills', 'improvement
 /** Top-level keys the profile update accepts. Anything else is a 400. */
 export const MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS = ['introduction', 'skillSet', 'demographics', 'socioeconomics', 'country'] as const;
 export const MENTORSHIP_MENTEE_SKILL_SET_KEYS = ['skillsHave', 'skillsWant', 'additionalNotes'] as const;
-
-export const MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE = `You can add up to ${MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS} skills of up to ${MENTORSHIP_MENTEE_PROFILE_SKILL_MAX_LENGTH} characters each.`;
 
 /** Copy per status; 403 is intentionally absent (the BFF impersonation guard authors its own message). */
 export const MENTORSHIP_MENTEE_PROFILE_SAVE_ERROR_MESSAGES: Readonly<Record<number, string>> = {

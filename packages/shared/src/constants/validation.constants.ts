@@ -36,6 +36,9 @@ export const WHOLE_NUMBER_PATTERN = /^\d+$/;
 /** Validates YYYY-MM month format with valid month ranges (01-12). Used for server-side month query parameter validation. */
 export const MONTH_FORMAT_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+/** Matches YYYY-MM-DD or a UTC ISO timestamp with optional three-digit milliseconds; calendar validity is checked separately. */
+export const ISO_DATE_OR_UTC_DATETIME_REGEX = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.\d{3})?Z)?$/;
+
 /**
  * The prefix `ServiceValidationError` puts on a validation message it built itself, rather than one a
  * caller wrote for a person to read. `forField` appends the *wire key* to it ("Validation failed for

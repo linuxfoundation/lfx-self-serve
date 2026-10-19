@@ -190,6 +190,36 @@ describe('MeetingComposerRailComponent', () => {
     });
   });
 
+  describe('create-mode stepper rendering', () => {
+    // Real template, unlike the blocks that stub it: these assert what the stepper draws for a state.
+    beforeEach(() => {
+      injectServices();
+      composer.open({ mode: 'create', projectUid: 'project-1' });
+      formService.initialize({ mode: 'create', projectUid: 'project-1' });
+
+      fixture = TestBed.createComponent(MeetingComposerRailComponent);
+      fixture.detectChanges();
+    });
+
+    it('draws a done section that was re-locked as locked, not as done', () => {
+      completeDetails();
+      composer.setSection('date-schedule');
+      completeSchedule();
+      composer.setSection('platform-features');
+      formService.form().get('title')?.setValue('');
+      fixture.detectChanges();
+
+      // `date-schedule` is complete and unreachable at once; the marker must take one look, not both.
+      const button = fixture.nativeElement.querySelector('[data-testid="meeting-composer-rail-date-schedule"]') as HTMLElement;
+      const marker = button.querySelector('.rounded-full.border-\\[1\\.5px\\]') as HTMLElement;
+      expect(row('date-schedule').complete).toBe(true);
+      expect(marker.classList.contains('border-dashed')).toBe(true);
+      expect(marker.classList.contains('bg-blue-600')).toBe(false);
+      expect(button.querySelector('.fa-check')).toBeNull();
+      expect(button.classList.contains('cursor-not-allowed')).toBe(true);
+    });
+  });
+
   describe('edit mode', () => {
     beforeEach(() => {
       stubTemplate();

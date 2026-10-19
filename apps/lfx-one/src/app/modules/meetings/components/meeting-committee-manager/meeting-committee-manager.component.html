@@ -88,21 +88,72 @@
     } @else {
       <div class="flex flex-col gap-1.5">
         <label class="text-sm font-medium text-gray-900">{{ committeeLabel.plural }}</label>
+        @if (composerLayout()) {
+          <p class="text-xs text-gray-500" data-testid="meeting-committee-options-hint">
+            Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added
+            as guests.
+          </p>
+        }
+        <!-- One picker, whatever the width. In the composer guests step at `lg` and up (groups in the side rail)
+             it stays a search-and-pick box and the picks sit below it as removable chips; elsewhere it lists the
+             picks in the field itself. Switching by a viewport signal rather than CSS keeps a single value
+             accessor on the control, so the two views can never disagree. -->
         <lfx-multi-select
           [form]="committeeForm"
           control="committees"
           [options]="committeeOptions()"
           optionLabel="name"
           optionValue="uid"
-          [placeholder]="'Select one or more ' + committeeLabel.plural.toLowerCase()"
+          [placeholder]="
+            composerLayout() ? 'Select ' + committeeLabel.singular.toLowerCase() + '(s)' : 'Select one or more ' + committeeLabel.plural.toLowerCase()
+          "
           [filter]="true"
           [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
           [showToggleAll]="true"
           class="w-full"
           appendTo="body"
+          [placeholderOnly]="showGroupChips()"
           data-testid="meeting-committee-multi-select"></lfx-multi-select>
+        <!-- Composer guests step, `lg` up only: the picked groups as removable chips under the field -->
+        @if (showGroupChips() && selectedCommitteeChips().length > 0) {
+          <ul
+            class="flex flex-wrap gap-2 pb-3 pt-1"
+            [attr.aria-label]="'Selected ' + committeeLabel.plural.toLowerCase()"
+            data-testid="meeting-committee-chips">
+            @for (chip of selectedCommitteeChips(); track chip.uid) {
+              <li
+                class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-200 bg-blue-100 py-1 pl-3 pr-1.5 text-sm font-medium text-blue-800"
+                [attr.data-testid]="'meeting-committee-chip-' + chip.uid">
+                <!-- Full name as a tooltip only when the chip actually cuts it off (measured on hover/focus). `min-w-0` lets
+                     the flex item shrink so `truncate` can take effect; focusable so keyboard users reach the tooltip. -->
+                <span
+                  class="min-w-0 truncate"
+                  role="note"
+                  tabindex="0"
+                  [attr.aria-label]="chip.name"
+                  [pTooltip]="truncatedChips().has(chip.uid) ? chip.name : ''"
+                  tooltipEvent="both"
+                  tooltipPosition="top"
+                  [showDelay]="150"
+                  tooltipStyleClass="!max-w-none [&_.p-tooltip-text]:whitespace-nowrap"
+                  (mouseenter)="onChipLabelEnter(chip.uid, $event)"
+                  (focus)="onChipLabelEnter(chip.uid, $event)"
+                  >{{ chip.name }}</span
+                >
+                <button
+                  type="button"
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-blue-800 hover:bg-blue-200"
+                  [attr.aria-label]="'Remove ' + chip.name"
+                  (click)="removeCommittee(chip.uid)"
+                  [attr.data-testid]="'meeting-committee-chip-remove-' + chip.uid">
+                  <i class="fa-solid fa-xmark text-xs" aria-hidden="true"></i>
+                </button>
+              </li>
+            }
+          </ul>
+        }
         <!-- Inside the field stack so the hint sits on the field's own gap, not the section's -->
-        @if (selectedCommitteeIds().length === 0) {
+        @if (!composerLayout() && selectedCommitteeIds().length === 0) {
           <p class="text-xs text-gray-500" data-testid="meeting-committee-options-hint">
             Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added
             as guests.
@@ -136,27 +187,76 @@
     }
 
     @if (selectedCommitteeIds().length > 0) {
-      <p class="text-xs text-gray-500">
-        <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
-        @if (filteredCommitteeMembers().length > 0) {
-          <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the invitation list.
-        }
-      </p>
+      <!-- The composer guests step lists every invitee itself, so it drops this count; quick create keeps it -->
+      @if (!groupChips()) {
+        <p class="text-xs text-gray-500">
+          <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
+          @if (filteredCommitteeMembers().length > 0) {
+            <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the invitation list.
+          }
+        </p>
+      }
 
       @if (isPublicVisibility()) {
-        <div class="flex flex-col gap-1">
-          <label for="cancel-on-committee-removal" class="block text-neutral-950 mb-2">Registration on {{ committeeLabelSingularLower }} removal</label>
-          <lfx-select
-            [form]="form()"
-            control="cancel_on_committee_removal"
-            [options]="cancelOnCommitteeRemovalOptions"
-            styleClass="w-full"
-            inputId="cancel-on-committee-removal"
-            data-testid="cancel-on-committee-removal-select"></lfx-select>
-          <p class="mt-1 text-sm text-gray-500">
-            Whether removing someone from a linked {{ committeeLabelSingularLower }} also cancels their registration on this meeting
-          </p>
-        </div>
+        @if (composerLayout()) {
+          <!-- Composer: same label treatment as Groups / Voting Status, description between label and options.
+               From `lg` up (groups in the side rail) the three choices are radios, all visible at once; below
+               `lg`, where the step stacks, a dropdown keeps the stacked form short. Only one is ever rendered,
+               switched by a viewport signal, so the control has a single value accessor. -->
+          <div class="flex flex-col gap-1.5">
+            <label
+              id="cancel-on-committee-removal-label"
+              [attr.for]="showRemovalRadios() ? null : 'cancel-on-committee-removal'"
+              class="text-sm font-medium text-gray-900">
+              Registration on {{ committeeLabelSingularLower }} removal
+            </label>
+            <p class="text-xs text-gray-500">
+              Whether removing someone from a linked {{ committeeLabelSingularLower }} also cancels their registration on this meeting
+            </p>
+            @if (!showRemovalRadios()) {
+              <lfx-select
+                [form]="form()"
+                control="cancel_on_committee_removal"
+                [options]="cancelOnCommitteeRemovalOptions"
+                styleClass="w-full"
+                inputId="cancel-on-committee-removal"
+                data-testid="cancel-on-committee-removal-select"></lfx-select>
+            } @else {
+              <div
+                class="mt-1 flex flex-col gap-2"
+                role="radiogroup"
+                aria-labelledby="cancel-on-committee-removal-label"
+                data-testid="cancel-on-committee-removal-radios">
+                @for (option of cancelOnCommitteeRemovalOptions; track option.value) {
+                  <label [for]="'cancel-on-committee-removal-' + option.value" class="flex cursor-pointer items-center gap-2 text-sm text-gray-900">
+                    <lfx-radio-button
+                      [form]="form()"
+                      control="cancel_on_committee_removal"
+                      name="cancel-on-committee-removal"
+                      [value]="option.value"
+                      [inputId]="'cancel-on-committee-removal-' + option.value"
+                      [attr.data-testid]="'cancel-on-committee-removal-' + option.value" />
+                    <span>{{ option.label }}</span>
+                  </label>
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="flex flex-col gap-1">
+            <label for="cancel-on-committee-removal" class="block text-neutral-950 mb-2">Registration on {{ committeeLabelSingularLower }} removal</label>
+            <lfx-select
+              [form]="form()"
+              control="cancel_on_committee_removal"
+              [options]="cancelOnCommitteeRemovalOptions"
+              styleClass="w-full"
+              inputId="cancel-on-committee-removal"
+              data-testid="cancel-on-committee-removal-select"></lfx-select>
+            <p class="mt-1 text-sm text-gray-500">
+              Whether removing someone from a linked {{ committeeLabelSingularLower }} also cancels their registration on this meeting
+            </p>
+          </div>
+        }
       }
     }
   }

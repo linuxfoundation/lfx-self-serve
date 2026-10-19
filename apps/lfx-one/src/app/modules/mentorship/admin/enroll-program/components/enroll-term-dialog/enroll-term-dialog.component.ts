@@ -59,6 +59,12 @@ export class EnrollTermDialogComponent {
   private readonly formSnapshot = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
 
   protected readonly nameLength = computed(() => String(this.formSnapshot().name ?? '').length);
+  // The application window may run into the term but must close by the last day of its end month.
+  protected readonly maxApplicationEndDate = computed(() => {
+    const { endMonth, endYear } = this.formSnapshot();
+    if (!endMonth || !endYear) return null;
+    return new Date(Number(endYear), Number(endMonth), 0);
+  });
   protected readonly submitLabel = computed(() => (this.data.mode === 'edit' ? 'Save Term' : 'Add Term'));
 
   public constructor() {

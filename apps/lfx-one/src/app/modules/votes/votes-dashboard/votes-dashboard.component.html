@@ -39,6 +39,21 @@
         </div>
       }
     }
+    @if (isManagementVotesLens()) {
+      <div class="mb-6" data-testid="votes-management-stats" [attr.aria-busy]="managementSummaryLoading()">
+        <lfx-stat-card-grid
+          [cards]="managementVoteStatCards()"
+          [columns]="2"
+          [loading]="managementSummaryLoading()"
+          (actionClick)="onManagementVoteStatClick($event)" />
+      </div>
+      @if (managementSummaryError()) {
+        <div class="mb-4 flex flex-wrap items-center gap-3" role="alert" data-testid="votes-management-summary-error">
+          <p>Unable to load vote summary</p>
+          <lfx-button label="Retry" icon="fa-light fa-arrow-rotate-left" (onClick)="retryManagementSummary()" data-testid="votes-management-summary-retry" />
+        </div>
+      }
+    }
 
     <!-- Dashboard-level empty state: only when there are genuinely no votes (no active filter). -->
     <!-- Keep the table mounted in every other case so its form subscription doesn't re-fire on remount. -->
@@ -58,9 +73,11 @@
         [hasPMOAccess]="!isMeLens() && canWrite()"
         [loading]="isMeLens() ? myVotesLoading() || myVotesError() : loading()"
         [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
+        [paginationLoading]="!isMeLens() && (loading() || (!managementClosingOnly() && !totalCountReady()))"
         [rowsPerPage]="rowsPerPage()"
         [first]="currentFirst()"
         [lazy]="!isMeLens()"
+        [serverFiltersActive]="!isMeLens() && hasActiveFilters()"
         [groupOptions]="groupOptions()"
         [foundationOptions]="foundationOptions()"
         [projectOptions]="projectOptions()"
@@ -71,7 +88,7 @@
         [quickFilter]="isMeLens() ? myVotesQuickFilter() : null"
         [quickFilterNowMs]="myVotesNowMs()"
         [scopeActive]="isMeLens() && (!!foundationFilter() || !!projectFilter())"
-        (statusTabSelected)="onStatusTabSelected()"
+        (statusTabSelected)="onStatusTabSelected($event)"
         (filtersReset)="onFiltersReset()"
         (foundationFilterChange)="onFoundationFilterChange($event)"
         (projectFilterChange)="onProjectFilterChange($event)"
@@ -88,12 +105,14 @@
 
 <!-- Vote Results Drawer — passes audience='voter' in Me lens so the drawer renders the
      LFXV2-1917 blind-results / submitted-confirmation / closed-results panel and skips
-     the creator stats + "As the creator..." note. Creator lens is unchanged. -->
+     the creator stats + "As the creator..." note. Creator lens is unchanged. On a vote
+     permalink (/votes/:id) the linked vote uses the permalink's audience instead, so a
+     project or committee writer sees the creator view in the Me lens (#3659). -->
 <lfx-vote-results-drawer
   [(visible)]="resultsDrawerVisible"
   [voteId]="selectedVoteId()"
   [listVote]="selectedListVote()"
-  [audience]="isMeLens() ? 'voter' : 'creator'"
+  [audience]="resultsAudience()"
   (castVoteRequested)="onCastFromResults($event)"
   data-testid="votes-results-drawer"></lfx-vote-results-drawer>
 

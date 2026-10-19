@@ -1201,7 +1201,7 @@ describe('ProjectService — Snowflake-backed marketing reads', () => {
 
 // IN-1252: getHealthMetricsDaily's v1→v2 column flip is covered above (in the daily-health-metrics
 // describe block); these three cover the other call sites the same fix touched — each used to read
-// (or remap through mapV1BandToV2) a v1 Snowflake column/shim and now reads HEALTH_SCORE_CATEGORY_V2
+// (or remap through a v1 band shim) a v1 Snowflake column and now reads HEALTH_SCORE_CATEGORY_V2
 // directly.
 describe('ProjectService — Health Score v2 categories', () => {
   let service: ProjectService;
@@ -1217,7 +1217,7 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationHealthScoreDistribution('cncf');
 
-      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through mapV1BandToV2, so a
+      // fails before fix: the v1 query read HEALTH_SCORE_CATEGORY through a v1 band shim, so a
       // genuine v2 'fair' category would have fallen through to `unscored` instead of `fair`.
       expect(result.fair).toBe(4);
       expect(result.unscored).toBe(0);
@@ -1277,8 +1277,8 @@ describe('ProjectService — Health Score v2 categories', () => {
 
       const result = await service.getFoundationProjectsDetail('cncf');
 
-      // fails before fix: normalizeHealthScoreCategory ran the v1 mapV1BandToV2 shim over this
-      // column, so a genuine v2 'fair' category could be coerced instead of passing through as-is.
+      // fails before fix: normalizeHealthScoreCategory ran a v1 band shim over this column, so a
+      // genuine v2 'fair' category could be coerced instead of passing through as-is.
       expect(result.projects[0].healthScoreCategory).toBe('fair');
       expect(execute.mock.calls[0][0]).toContain('d.HEALTH_SCORE_CATEGORY_V2');
     });
@@ -1296,7 +1296,7 @@ describe('ProjectService — Health Score v2 categories', () => {
       const result = await service.getMultiFoundationSummary(req, ['cncf']);
 
       // fails before fix: the local HealthScoreRow type read HEALTH_SCORE_CATEGORY and remapped it
-      // via mapV1BandToV2, so a v2 'fair' category wouldn't have passed straight through.
+      // through a v1 band shim, so a v2 'fair' category wouldn't have passed straight through.
       expect(result.perFoundation['cncf'].healthScores.fair).toBe(7);
       expect(result.perFoundation['cncf'].healthScores.unscored).toBe(0);
     });
@@ -1997,6 +1997,16 @@ describe('ProjectService — getProjectsByIds', () => {
     expect(warning).toHaveBeenCalledWith(req, 'get_projects_by_ids', 'Project batch response omitted requested UIDs', {
       missing_uids: ['missing'],
     });
+  });
+
+  it('passes request options (e.g. a deadline) to every upstream project query', async () => {
+    proxyRequest.mockResolvedValue(pageOf([{ uid: 'one', slug: 'one' }]));
+    const options = { deadlineAt: Date.now() + 5000 };
+
+    await service.getProjectsByIds(req, ['one'], options);
+
+    expect(proxyRequest).toHaveBeenCalledOnce();
+    expect(proxyRequest.mock.calls[0][7]).toBe(options);
   });
 
   it('does not warn when every requested UID resolves', async () => {
@@ -2950,7 +2960,16 @@ describe('ProjectService — enrichWithProjectData', () => {
     await service.enrichWithProjectData(req, [{ project_uid: 'a' }, { project_uid: 'a' }, { project_uid: 'b' }]);
 
     expect(getProjectsByIds).toHaveBeenCalledTimes(1);
-    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b']);
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a', 'b'], undefined);
+  });
+
+  it('forwards request options (e.g. a deadline) to the batched lookup', async () => {
+    const getProjectsByIds = vi.spyOn(service, 'getProjectsByIds').mockResolvedValue(new Map());
+    const options = { deadlineAt: Date.now() + 5000 };
+
+    await service.enrichWithProjectData(req, [{ project_uid: 'a' }], options);
+
+    expect(getProjectsByIds).toHaveBeenCalledWith(req, ['a'], options);
   });
 
   it('prefers freshly fetched project fields over the item payload and computes is_foundation from the fresh project', async () => {
@@ -3515,5 +3534,38 @@ describe('ProjectService — getPubliclyDiscoverableProject', () => {
     proxyRequest.mockRejectedValueOnce(err);
 
     await expect(service.getPubliclyDiscoverableProject(req, 'p1')).rejects.toBe(err);
+  });
+});
+
+describe('ProjectService — getProjectIdBySlug', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    natsRequest.mockReset();
+    service = new ProjectService();
+  });
+
+  it('resolves a uid reply', async () => {
+    natsRequest.mockResolvedValue({ data: ' 00000000-0000-4000-8000-000000000001 ' });
+
+    await expect(service.getProjectIdBySlug(req, 'synthetic-project')).resolves.toEqual({
+      uid: '00000000-0000-4000-8000-000000000001',
+      slug: 'synthetic-project',
+      exists: true,
+    });
+  });
+
+  // The responder answers an unknown or hidden slug with a JSON error body; taking it for a uid sent
+  // callers on to an access check against a garbage project id.
+  it('treats the responder not_found error body as a missing project, never as a uid', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'not_found', message: 'project not found' }) });
+
+    await expect(service.getProjectIdBySlug(req, 'hidden-project')).resolves.toEqual({ uid: '', slug: 'hidden-project', exists: false });
+  });
+
+  it('rethrows any other error body instead of reporting the project as missing', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ error: 'internal', message: 'boom' }) });
+
+    await expect(service.getProjectIdBySlug(req, 'synthetic-project')).rejects.toThrow('Project slug lookup failed: internal');
   });
 });

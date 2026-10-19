@@ -749,14 +749,17 @@
                       size="small"
                       (onClick)="selectTab('audience', 'email')"
                       data-testid="campaigns-email-audience-unattached-open-audience" />
-                    <a
-                      class="text-sm text-amber-900 underline"
-                      [href]="loose.hubspotUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      data-testid="campaigns-email-audience-unattached-link">
-                      Open {{ loose.name }} in HubSpot
-                    </a>
+                    <!-- A blank link renders href="", which opens this app, not the list. -->
+                    @if (loose.hubspotUrl) {
+                      <a
+                        class="text-sm text-amber-900 underline"
+                        [href]="loose.hubspotUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="campaigns-email-audience-unattached-link">
+                        Open {{ loose.name }} in HubSpot
+                      </a>
+                    }
                   </div>
                 }
 
@@ -1082,6 +1085,16 @@
                       >
                     }
                   </p>
+                  @if (emailStaging() === 'done' && emailStagingWarnings().length > 0) {
+                    <ul class="flex flex-col gap-1 text-sm text-amber-800" role="status" data-testid="campaigns-email-stage-warnings">
+                      @for (warning of emailStagingWarnings(); track warning) {
+                        <li class="flex items-start gap-2">
+                          <i class="fa-light fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+                          <span data-testid="campaigns-email-stage-warning">{{ warning }}</span>
+                        </li>
+                      }
+                    </ul>
+                  }
                 }
                 <!-- The stage ended without an answer, so a draft may still appear. Everything that could
                      race it stays locked until the operator says they checked. -->
@@ -1451,6 +1464,9 @@
               [googleChannelsEnabled]="briefCampaignsGoogleChannelsEnabled()"
               [googleCreativeEnabled]="briefCampaignsGoogleCreativeEnabled()"
               [redditCreativeEnabled]="briefCampaignsRedditCreativeEnabled()"
+              [biddingEnabled]="briefCampaignsBiddingEnabled()"
+              [biddingCapabilityRead]="briefCampaignsBiddingRead()"
+              (retryBiddingCapability)="retryBiddingCapability()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>

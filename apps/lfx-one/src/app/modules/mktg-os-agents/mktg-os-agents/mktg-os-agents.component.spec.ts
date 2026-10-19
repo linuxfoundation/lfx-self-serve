@@ -5,12 +5,13 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MktgDependencyDocument, MktgStoredAgentRun, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENTS } from '@lfx-one/shared/constants';
+import { MktgAgent, MktgDependencyDocument, MktgStoredAgentRun, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgOsAgentsComponent } from './mktg-os-agents.component';
 
@@ -135,40 +136,62 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     expect(loadRun.mock.calls.length).toBe(callsAfterFirstLoad);
   });
 
-  describe('dependency gating (dec-agent-dependency-gating) — the Message Foundation card follows the stored Brand Kit', () => {
+  /**
+   * No live agent depends on another today: the Messaging Document runs first
+   * and needs nothing, and Brand Guidelines — the next agent to gate, on the
+   * stored Messaging Document — is not in the catalog yet. The gate is
+   * exercised on a TEST-ONLY dependency in that same direction: the Brand Kit
+   * card requiring the project's Messaging Document.
+   */
+  describe('dependency gating (dec-agent-dependency-gating) — a gated card follows the stored document it requires', () => {
     const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
-    const mfTile = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]');
-    const requiresTag = (): HTMLElement | null => host().querySelector('[data-testid="mktg-os-agents-requires-foundation-setup"]');
+    const gatedAgent = MKTG_AGENTS.find((agent) => agent.id === 'brand-kit') as MktgAgent;
+    const mfTile = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-brand-kit"]');
+    const requiresTag = (): HTMLElement | null => host().querySelector('[data-testid="mktg-os-agents-requires-brand-kit"]');
     const kitDoc = (source: 'server' | 'browser' = 'server'): MktgDependencyDocument => ({
-      agentId: 'brand-kit',
+      agentId: 'foundation-setup',
       source,
       version: 2,
-      document: '# Kit',
+      document: '# Messaging Document',
     });
 
-    it('disables the card with a "Requires Brand Kit" tag while the active project has no stored Brand Kit', async () => {
+    beforeEach(async () => {
+      gatedAgent.dependsOn = ['foundation-setup'];
+      // The catalog's dependencies are read when the grid is created, so it is
+      // created again with the test-only one — the first grid is destroyed so
+      // only one instance resolves.
+      fixture.destroy();
+      fixture = TestBed.createComponent(MktgOsAgentsComponent);
+      await fixture.whenStable();
+    });
+
+    afterEach(() => {
+      delete gatedAgent.dependsOn;
+    });
+
+    it('disables the card with a "Requires Messaging Document" tag while the active project has none stored', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
       expect(mfTile()?.disabled).toBe(true);
-      expect(requiresTag()?.textContent).toContain('Requires Brand Kit');
-      expect(mfTile()?.getAttribute('aria-label')).toContain('requires Brand Kit');
-      // The independent Brand Kit Agent card itself stays clickable.
-      expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-brand-kit"]')?.disabled).toBe(false);
+      expect(requiresTag()?.textContent).toContain('Requires Messaging Document');
+      expect(mfTile()?.getAttribute('aria-label')).toContain('requires Messaging Document');
+      // The Messaging Document Agent card itself runs first and stays clickable.
+      expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.disabled).toBe(false);
     });
 
     it('enables the card once the dependency resolves for the active project (server-persisted kit)', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+      dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['brand-kit']);
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup']);
       expect(mfTile()?.disabled).toBe(false);
       expect(requiresTag()).toBeNull();
     });
 
     it('enables the card from the browser-stored fallback when server persistence has none', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': kitDoc('browser') };
+      dependencyDocs = { 'proj-1:foundation-setup': kitDoc('browser') };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
@@ -180,19 +203,19 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       await fixture.whenStable();
 
       // Disabled by a missing dependency: the accessible name carries the same
-      // reason as the visible "Requires Brand Kit" tag.
-      expect(mfTile()?.getAttribute('aria-label')).toBe('Message Foundation Agent (requires Brand Kit)');
+      // reason as the visible "Requires Messaging Document" tag.
+      expect(mfTile()?.getAttribute('aria-label')).toBe('Brand Kit Agent (requires Messaging Document)');
       // Disabled for having no live agent yet — never described as dependency-blocked.
       expect(host().querySelector('[data-testid="mktg-os-agents-tile-pitch-deck"]')?.getAttribute('aria-label')).toBe('Pitch Deck Agent (coming soon)');
       // Enabled cards announce the action instead.
-      expect(host().querySelector('[data-testid="mktg-os-agents-tile-brand-kit"]')?.getAttribute('aria-label')).toBe('Open Brand Kit Agent');
+      expect(host().querySelector('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.getAttribute('aria-label')).toBe('Open Messaging Document Agent');
     });
 
     it('leaves the ICP card open with nothing stored — its sibling documents are optional, not gates', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      // The ICP agent CONSUMES the Brand Kit and the Message Foundation but
+      // The ICP agent CONSUMES the Brand Kit and the Messaging Document but
       // does not require either, so it carries no `dependsOn`: gating it on
       // documents the agent runs without would lock out projects it can serve.
       const icpTile = host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-icp"]');
@@ -201,16 +224,16 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     });
 
     it('switches the gated card to its action name once the dependency resolves', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+      dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(mfTile()?.getAttribute('aria-label')).toBe('Open Message Foundation Agent');
+      expect(mfTile()?.getAttribute('aria-label')).toBe('Open Brand Kit Agent');
     });
 
     /**
-     * A live demo found the Message Foundation card still locked after the
-     * Brand Kit run finished: the gating only ever resolved on a project-uid
+     * A live demo found a gated card still locked after the run it waited on
+     * finished: the gating only ever resolved on a project-uid
      * change, so the only way to see a freshly generated Brand Kit was a full
      * page reload. Generating a document and walking back to the grid is the
      * ORDINARY path through this marketplace — it has to unlock without one.
@@ -221,8 +244,8 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
         await fixture.whenStable();
         expect(mfTile()?.disabled).toBe(true);
 
-        // The run page finished a Brand Kit for this project.
-        dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+        // The run page finished the required document for this project.
+        dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
         documentsChanged.next('proj-1');
         await fixture.whenStable();
 
@@ -235,9 +258,9 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
         const callsOnEntry = resolveDependencies.mock.calls.length;
         expect(mfTile()?.disabled).toBe(true);
 
-        // The Brand Kit was generated while the user was on the run page; the
+        // The document was generated while the user was on the run page; the
         // grid only learns about it by re-resolving on the way back.
-        dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+        dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
         await TestBed.inject(Router).navigateByUrl('/mktg-os-agents');
         await fixture.whenStable();
 
@@ -264,7 +287,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       });
 
       it('keeps the unlocked card unlocked while a refresh is in flight — no relock flicker', async () => {
-        dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+        dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         expect(mfTile()?.disabled).toBe(false);
@@ -278,8 +301,8 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       });
     });
 
-    it('re-evaluates on project switch — a kit on one project never unlocks another', async () => {
-      dependencyDocs = { 'proj-1:brand-kit': kitDoc() };
+    it('re-evaluates on project switch — a document on one project never unlocks another', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       expect(mfTile()?.disabled).toBe(false);
@@ -287,7 +310,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       activeContext.set(PROJECT_2);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-2', ['brand-kit']);
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-2', ['foundation-setup']);
       expect(mfTile()?.disabled).toBe(true);
       expect(requiresTag()).not.toBeNull();
     });

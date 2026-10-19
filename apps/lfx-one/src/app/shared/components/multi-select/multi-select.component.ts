@@ -24,6 +24,8 @@ export class MultiSelectComponent {
   public readonly optionSubLabel = input<string | undefined>(undefined);
   public readonly optionImage = input<string | undefined>(undefined);
   public readonly placeholder = input<string>('Select');
+  /** Keep showing the placeholder in the trigger even with a selection — for consumers that list the selection themselves. */
+  public readonly placeholderOnly = input<boolean>(false);
   public readonly showToggleAll = input<boolean>(true);
   /** Max simultaneous selections (PrimeNG `selectionLimit`) — undefined = unbounded. */
   public readonly selectionLimit = input<number | undefined>(undefined);

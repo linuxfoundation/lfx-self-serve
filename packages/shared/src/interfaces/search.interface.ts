@@ -51,6 +51,12 @@ export interface ProjectSearchParams {
 export type UserSearchType = (typeof USER_SEARCH_TYPES)[number];
 
 /**
+ * Where a user-search picker offers manual entry: a footer on every dropdown, or only inside the no-results
+ * state so it doesn't compete with real matches.
+ */
+export type UserSearchManualEntryPlacement = 'footer' | 'empty';
+
+/**
  * Where a {@link UserSearchResult} row came from: one of the searchable corpora, or
  * `project_member` for a row a consumer composed itself from a project's settings roles (the
  * formation assignee picker's candidate list — see `toAssigneeSearchOption`). Rows of that kind

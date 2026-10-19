@@ -35,7 +35,8 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
       return;
     }
 
-    const requestedSlug = typeof req.query['foundationSlug'] === 'string' ? req.query['foundationSlug'] : '';
+    const rawSlug = req.method === 'POST' ? req.body?.['foundationSlug'] : req.query['foundationSlug'];
+    const requestedSlug = typeof rawSlug === 'string' ? rawSlug.toLowerCase() : '';
 
     // No slug on the request means there is nothing to scope against — the handler is responsible
     // for rejecting a missing required parameter, and unscoped dashboard endpoints stay allowed.

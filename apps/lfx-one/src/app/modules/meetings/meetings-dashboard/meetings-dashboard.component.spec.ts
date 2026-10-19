@@ -879,7 +879,7 @@ describe('MeetingsDashboardComponent — cached consumers', () => {
     vi.mocked(meetings.getPastMeetingsByProjectPaginated).mockReturnValue(of({ data: [past] }));
     select(component, 'past');
     expect(ids(component)).toEqual(['past-other']);
-    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined);
+    expect(meetings.getPastMeetingsByProjectPaginated).toHaveBeenCalledWith('scope', undefined, undefined, undefined, true);
     lens.set('me');
     flush();
     http.expectOne('/api/user/past-meetings').flush([past]);

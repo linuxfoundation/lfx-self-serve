@@ -462,11 +462,14 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
     expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true);
   });
 
-  it('rejects without deleting anything when a committee row sits alongside a direct one', async () => {
+  it('removes a committee row together with a direct one', async () => {
     vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee'), registrantRow('reg-d', 'direct')]);
+    proxyRequest.mockResolvedValue(undefined);
 
-    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token')).rejects.toMatchObject({ statusCode: 400 });
-    expect(proxyRequest).not.toHaveBeenCalled();
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-c', 'reg-d'], remaining_registrant_ids: [] });
+    expect(proxyRequest.mock.calls.map((call) => call[4])).toEqual([{ registrant_id: 'reg-c' }, { registrant_id: 'reg-d' }]);
   });
 
   it.each([true, false])('returns exact removed and remaining IDs when the first delete succeeds: %s', async (firstSucceeds) => {
@@ -573,11 +576,14 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
     expect(history).not.toHaveBeenCalled();
   });
 
-  it('rejects when the only registration came from a committee, without calling upstream', async () => {
+  it('removes a registration that came only from a committee', async () => {
     vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
 
-    await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token')).rejects.toMatchObject({ statusCode: 400 });
-    expect(proxyRequest).not.toHaveBeenCalled();
+    const result = await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(result).toEqual({ removed_registrant_ids: ['reg-c'], remaining_registrant_ids: [] });
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ registrant_id: 'reg-c' });
   });
 
   it('throws not found when the caller is not a registrant, without calling upstream', async () => {

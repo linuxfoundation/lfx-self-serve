@@ -81,6 +81,15 @@ describe('AudienceSuppressionGridComponent', () => {
     expect(emitted, 'the toggle emitted a row whose list id is empty').toEqual([]);
   });
 
+  it('links a resolved row to HubSpot only when it has a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    render([suppression(), suppression({ key: 'lf_global_optout', listId: '202', hubspotUrl: '' })]);
+
+    const link = host().querySelector<HTMLAnchorElement>('[data-testid="audience-suppression-grid-link-201"]');
+    expect(link?.getAttribute('href')).toBe('https://app.hubspot.com/contacts/1/objectLists/201');
+    expect(host().querySelector('[data-testid="audience-suppression-grid-link-202"]'), 'a blank URL rendered a link back to this app').toBeNull();
+  });
+
   it('orders groups event-specific first, then brand, then portfolio-wide', () => {
     // The order is a judgement, not alphabetical: a per-event suppression list carried over from a
     // prior edition already bundles that edition's registrant and unsubscribe exclusions, so it is

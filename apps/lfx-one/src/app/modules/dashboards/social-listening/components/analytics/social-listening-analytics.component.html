@@ -2,6 +2,16 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div #analyticsContent class="flex flex-col gap-5" [class.analytics--exporting]="isExporting()" data-testid="social-listening-analytics">
+  <p class="text-xs text-gray-500" data-testid="social-listening-analytics-scope-notice">
+    Analytics reflect the selected period, project, and platform. Search and content filters narrow the mentions feed and Mentions by Tag. Bookmark and
+    read-state filters affect the feed only.
+    @if (analyticsComputedAt(); as computedAt) {
+      <span class="block" data-testid="social-listening-analytics-computed-at">Analytics as of {{ computedAt | date: 'short' }} · refreshed hourly</span>
+    } @else {
+      <span class="block">Refreshed hourly</span>
+    }
+  </p>
+
   <!-- KPI band (error degrades the row to a message instead of zeroed cards) -->
   @if (overviewError(); as overviewErrorMessage) {
     <lfx-message severity="error" [text]="overviewErrorMessage" data-testid="social-listening-analytics-overview-error" />

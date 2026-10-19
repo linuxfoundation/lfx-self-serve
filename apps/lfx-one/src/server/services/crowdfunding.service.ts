@@ -4,6 +4,8 @@
 import {
   Announcement,
   AnnouncementList,
+  AttributionEntity,
+  AttributionOptions,
   CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
@@ -17,13 +19,19 @@ import {
   RecurringDonation,
   RecurringDonationsResponse,
   UpdateAnnouncementInput,
+  UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
-import { DEFAULT_CROWDFUNDING_PAGE_SIZE } from '@lfx-one/shared/constants';
+import {
+  CROWDFUNDING_ATTRIBUTION_LOGO_URL_MAX_CHARS,
+  CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS,
+  DEFAULT_CROWDFUNDING_PAGE_SIZE,
+} from '@lfx-one/shared/constants';
 import { Request } from 'express';
 
 import {
   BackendAnnouncement,
+  BackendAttribution,
   BackendBeneficiaryInput,
   BackendCrowdfundingResponse,
   BackendGoalInput,
@@ -48,6 +56,8 @@ import {
   mapPaymentMethodWire,
 } from '../utils/crowdfunding-mapper';
 import { logger } from './logger.service';
+import { OrgRoleGrantsService } from './org-role-grants.service';
+import { ProjectService } from './project.service';
 
 const cfBaseUrl = (): string => (process.env['CROWDFUNDING_API_BASE_URL'] || '').replace(/\/+$/, '');
 
@@ -348,6 +358,75 @@ export class CrowdfundingService {
     });
 
     logger.success(req, 'cf_update_initiative', startTime, { id });
+    return mapToInitiativeDetail(raw);
+  }
+
+  /**
+   * Organizations and projects the caller may attribute an initiative to. Mirrors the crowdfunding create flow:
+   * organizations where the caller holds an accepted direct writer/auditor grant (b2b_org_settings), and projects
+   * with a direct grant. The CF gateway re-checks affiliation on the chosen target, so this list only shapes the UI.
+   */
+  public async getAttributionOptions(req: Request, username: string): Promise<AttributionOptions> {
+    const startTime = logger.startOperation(req, 'cf_get_attribution_options');
+
+    const [orgs, projectRows] = await Promise.all([
+      new OrgRoleGrantsService().getAccessAwareOrgs(req, username),
+      new ProjectService().getDirectGrantProjectRows(req),
+    ]);
+    // An empty list would read as "no affiliations", so a failed roster lookup is an error, not a default.
+    if (orgs.upstreamFailed) {
+      throw new MicroserviceError('Organization role grants lookup failed', 502, 'UPSTREAM_ERROR', {
+        operation: 'cf_get_attribution_options',
+        service: 'org-role-grants',
+      });
+    }
+
+    const organizations: AttributionEntity[] = [];
+    for (const [uid, role] of orgs.resolved) {
+      // Direct grants only; inherited (roll-up) rows carry the granting parent's uid.
+      if (role.parentUid) continue;
+      const doc = orgs.orgDocByUid.get(uid);
+      organizations.push({ id: uid, name: doc?.name || uid, logoUrl: doc?.logo_url || undefined });
+    }
+    const projects: AttributionEntity[] = projectRows.map((p) => ({ id: p.uid, name: p.name || p.uid, logoUrl: p.logo_url || undefined }));
+
+    logger.success(req, 'cf_get_attribution_options', startTime, { organizations: organizations.length, projects: projects.length });
+    return { organizations, projects };
+  }
+
+  /**
+   * Re-attributes an initiative (lfx-crowdfunding#342). CF allows this only for the creator, only while the
+   * initiative is submitted, and only to an entity the caller is affiliated with. The display name and logo are
+   * taken from the caller's attribution options, never from the request.
+   */
+  public async updateInitiativeAttribution(req: Request, username: string, id: string, input: UpdateInitiativeAttributionInput): Promise<InitiativeDetail> {
+    const startTime = logger.startOperation(req, 'cf_update_initiative_attribution', { id, attribution_type: input.type });
+
+    const body: BackendAttribution = { type: input.type };
+    if (input.type !== 'personal' && input.entityUid) {
+      // Fail closed: CF stores whatever display values it is sent, so a target outside the caller's options
+      // (an inherited grant, or a crafted request) would be saved without a name. A failed lookup throws.
+      const options = await this.getAttributionOptions(req, username);
+      const entity = (input.type === 'organization' ? options.organizations : options.projects).find((e) => e.id === input.entityUid);
+      if (!entity) {
+        throw new MicroserviceError(`That ${input.type} isn't one you can attribute this initiative to`, 403, 'FORBIDDEN', {
+          operation: 'cf_update_initiative_attribution',
+          service: 'crowdfunding',
+        });
+      }
+      body.entity_uid = input.entityUid;
+      body.name = Array.from(entity.name).slice(0, CROWDFUNDING_ATTRIBUTION_NAME_MAX_CHARS).join('');
+      if (entity.logoUrl?.startsWith('https://') && entity.logoUrl.length <= CROWDFUNDING_ATTRIBUTION_LOGO_URL_MAX_CHARS) {
+        body.logo_url = entity.logoUrl;
+      }
+    }
+
+    const raw = await cfFetch<BackendInitiative>(req, 'updateInitiativeAttribution', `/crowdfunding/initiatives/${encodeURIComponent(id)}/attribution`, {
+      method: 'PUT',
+      body,
+    });
+
+    logger.success(req, 'cf_update_initiative_attribution', startTime, { id });
     return mapToInitiativeDetail(raw);
   }
 

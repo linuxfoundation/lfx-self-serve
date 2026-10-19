@@ -9,10 +9,17 @@
         <h1 class="font-display font-light text-2xl" data-testid="mktg-os-agents-title">{{ labels.marketplaceTitle }}</h1>
         <p class="mt-1 text-sm text-gray-500" data-testid="mktg-os-agents-description">{{ labels.marketplaceDescription }}</p>
       </div>
+      <lfx-button
+        label="Documents"
+        icon="fa-light fa-folder-open"
+        [outlined]="true"
+        size="small"
+        data-testid="mktg-os-agents-documents-link"
+        (onClick)="onOpenDocuments()" />
     </div>
 
     <!-- Search -->
-    <div class="max-w-md" data-testid="mktg-os-agents-search">
+    <div data-testid="mktg-os-agents-search">
       <lfx-input-text
         id="mktg-os-agents-search-input"
         [form]="searchForm"

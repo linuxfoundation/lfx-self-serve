@@ -376,8 +376,8 @@ describe('executeRedditCampaignCreation — the authored post', () => {
    * Same load-bearing assertion as the image case above, for the same reason: `video_views` has no
    * static optimization goal, and a request that names the objective without a usable `videoGoal`
    * has to be refused before the campaign POST rather than after one exists in PAUSED (#3449).
-   * Nothing in the Implementation tab collects a goal yet, so this is every `video_views` request
-   * reaching this creator today, not an edge case.
+   * The Implementation tab blocks this shape, but `POST /api/campaigns/create` forwards
+   * `redditConfig` unvalidated, so the creator must still refuse it on its own.
    */
   it('refuses video_views with no usable goal before ANY upstream call', async () => {
     await expect(executeRedditCampaignCreation(undefined, config({ objective: 'video_views' }))).rejects.toThrow(/must be one of VIDEO_VIEW_6S/);
@@ -428,6 +428,23 @@ describe('executeRedditCampaignCreation — the authored post', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  /**
+   * The third input class the same lookup has to refuse, kept in its own block because the cause is
+   * unrelated to the two above: these are strings, and well-typed ones as far as the boundary is
+   * concerned — they fail because `REDDIT_OBJECTIVE_PARAMS` is a plain object literal and they
+   * resolve to truthy inherited `Object.prototype` members. `fetchMock` is the assertion that
+   * matters: before `Object.hasOwn`, this refusal did not fire and a campaign POST went out with
+   * `objective`, `bid_type` and `optimization_goal` all dropped by `JSON.stringify` (#3504).
+   */
+  it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])(
+    'refuses the inherited prototype key %s before any call',
+    async (objective) => {
+      await expect(executeRedditCampaignCreation(undefined, config({ objective }))).rejects.toThrow(`Unsupported Reddit objective: ${objective}`);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
 
   /** The other three objectives keep taking the goal the table carries. */
   it('sends the table goal for an objective that has one', async () => {

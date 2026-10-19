@@ -196,6 +196,15 @@ describe('AudienceLastSentComponent', () => {
     expect(emitted.map((list) => list.listId)).toEqual(['401']);
   });
 
+  it('links a master list to HubSpot only when it has a URL', () => {
+    // A blank URL renders href="", which opens this app instead of the list.
+    render({ masterLists: [master(), master({ listId: '402', hubspotUrl: '' })] });
+
+    const link = host().querySelector<HTMLAnchorElement>('[data-testid="audience-last-sent-master-link-401"]');
+    expect(link?.getAttribute('href')).toBe('https://app.hubspot.com/contacts/1/objectLists/401');
+    expect(host().querySelector('[data-testid="audience-last-sent-master-link-402"]'), 'a blank URL rendered a link back to this app').toBeNull();
+  });
+
   it('renders "size unknown" rather than "0 contacts" when HubSpot reported no size', () => {
     render({ masterLists: [master({ size: undefined })] });
 
@@ -494,5 +503,17 @@ describe('AudienceLastSentComponent', () => {
       const link = host().querySelector<HTMLAnchorElement>('[data-testid="audience-last-sent-list-link-301"]');
       expect(link?.href).toContain('/objectLists/301');
     });
+  });
+
+  it('says why each prior send is listed', () => {
+    fixture.componentRef.setInput('emails', [
+      { ...email(), emailId: 'e1', subject: 'Join us in Tokyo', matchReason: 'subject' },
+      { ...email(), emailId: 'e2', emailName: 'CNCF Monthly Newsletter', matchReason: 'brand_only' },
+    ]);
+    fixture.detectChanges();
+
+    expect(host().querySelector('[data-testid="audience-last-sent-subject-e1"]')?.textContent).toContain('Join us in Tokyo');
+    expect(host().querySelector('[data-testid="audience-last-sent-reason-e1"]')?.textContent).toContain('subject line');
+    expect(host().querySelector('[data-testid="audience-last-sent-reason-e2"]')?.textContent).toContain('brand only');
   });
 });

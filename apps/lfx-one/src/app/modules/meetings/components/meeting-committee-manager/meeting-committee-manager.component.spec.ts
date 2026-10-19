@@ -8,7 +8,7 @@ import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { syncShowMeetingAttendeesLock } from '@lfx-one/shared/utils';
 import { merge, Observable, of, Subject, throwError } from 'rxjs';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingCommitteeManagerComponent } from './meeting-committee-manager.component';
 
@@ -1179,5 +1179,69 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     // The lock withheld nothing on the way in, so the unlock has nothing to restore — a round
     // trip through Board must not silently re-enable a toggle the organizer switched off.
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+});
+
+describe('MeetingCommitteeManagerComponent — selected group chips', () => {
+  const OTHER = { ...BOARD, uid: 'committee-tac', name: 'Technical Advisory Committee', category: 'Technical' } as Committee;
+
+  it('names each picked group from the options and drops one on remove', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD, OTHER]);
+    component.committeeForm.get('committees')?.setValue([BOARD.uid, OTHER.uid]);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeChips()).toEqual([
+      { uid: BOARD.uid, name: 'Board' },
+      { uid: OTHER.uid, name: 'Technical Advisory Committee' },
+    ]);
+
+    component.removeCommittee(BOARD.uid);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeIds()).toEqual([OTHER.uid]);
+    expect(component.selectedCommitteeChips().map((chip) => chip.uid)).toEqual([OTHER.uid]);
+  });
+
+  it('falls back to the uid when a picked group is in neither the options nor the saved list', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    component.committeeForm.get('committees')?.setValue(['committee-unknown']);
+    await fixture.whenStable();
+
+    expect(component.selectedCommitteeChips()).toEqual([{ uid: 'committee-unknown', name: 'committee-unknown' }]);
+  });
+});
+
+describe('MeetingCommitteeManagerComponent — layout switches by width and surface', () => {
+  const mockViewport = (wide: boolean): void => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: (query: string) => ({ matches: wide, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }),
+    });
+  };
+  const flags = async (wide: boolean, composerLayout: boolean, groupChips: boolean) => {
+    mockViewport(wide);
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    fixture.componentRef.setInput('composerLayout', composerLayout);
+    fixture.componentRef.setInput('groupChips', groupChips);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return { chips: component['showGroupChips'](), radios: component['showRemovalRadios']() };
+  };
+
+  afterEach(() => {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  });
+
+  it('uses chips and removal radios only in the guests step at lg and up', async () => {
+    expect(await flags(true, true, true)).toEqual({ chips: true, radios: true });
+  });
+
+  it('keeps quick create on the dropdown and in-field picks even on a wide window', async () => {
+    expect(await flags(true, true, false)).toEqual({ chips: false, radios: false });
+  });
+
+  it('falls back to the stacked layout below lg', async () => {
+    expect(await flags(false, true, true)).toEqual({ chips: false, radios: false });
   });
 });

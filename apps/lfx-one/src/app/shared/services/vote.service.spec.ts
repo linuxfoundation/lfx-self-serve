@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import {
   RECENTLY_OPENED_VOTE_TTL_MS,
@@ -48,6 +48,57 @@ describe('VoteService', () => {
     });
 
     service = TestBed.inject(VoteService);
+  });
+
+  it.each([undefined, 'Synthetic Board'])('requests only parent/group summary parameters and preserves the response: %s', (group) => {
+    const result = { active_votes: 30, closing_soon: 4, as_of: '2026-10-09T12:00:00Z' };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+    service.getVotesSummaryByProject('synthetic-project', group).subscribe(next);
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes/summary');
+    expect(options.params.keys().sort()).toEqual(group ? ['group', 'parent'] : ['parent']);
+    expect(options.params.get('parent')).toBe('project:synthetic-project');
+    expect(options.params.get('group')).toBe(group ?? null);
+    expect(next).toHaveBeenCalledWith(result);
+  });
+
+  it.each([new HttpErrorResponse({ status: 503, error: { message: 'Synthetic private upstream detail' } }), new Error('Synthetic network failure')])(
+    'logs only the summary failure status once and propagates the original error: %s',
+    (failure) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        http.get.mockReturnValue(throwError(() => failure));
+        const error = vi.fn();
+        const next = vi.fn();
+        service.getVotesSummaryByProject('synthetic-project').subscribe({ next, error });
+        expect(next).not.toHaveBeenCalled();
+        expect(error).toHaveBeenCalledExactlyOnceWith(failure);
+        expect(log).toHaveBeenCalledExactlyOnceWith('Failed to load vote summary', {
+          status: failure instanceof HttpErrorResponse ? failure.status : undefined,
+        });
+      } finally {
+        log.mockRestore();
+      }
+    }
+  );
+
+  it.each([undefined, false, true])('adds only the optional closing flag and forwards authoritative totals: %s', (closingOnly) => {
+    const result = { data: [], total_records: 0 };
+    http.get.mockReturnValue(of(result));
+    const next = vi.fn();
+    service
+      .getVotesByProjectPaginated('synthetic-project', 25, 'offset:25', 'Board', ['status:active', 'committee_name:Synthetic Board'], closingOnly)
+      .subscribe(next);
+    const [url, options] = http.get.mock.calls[0];
+    expect(url).toBe('/api/votes');
+    expect(options.params.get('closing_soon')).toBe(closingOnly === undefined ? null : String(closingOnly));
+    expect(options.params.get('parent')).toBe('project:synthetic-project');
+    expect(options.params.get('page_size')).toBe('25');
+    expect(options.params.get('page_token')).toBe('offset:25');
+    expect(options.params.get('name')).toBe('Board');
+    expect(options.params.getAll('filters')).toEqual(['status:active', 'committee_name:Synthetic Board']);
+    expect(next).toHaveBeenCalledWith(result);
   });
 
   it('propagates personal-feed HTTP failures instead of reporting confirmed empty success', () => {

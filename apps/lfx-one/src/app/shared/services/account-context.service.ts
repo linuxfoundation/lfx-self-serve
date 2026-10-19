@@ -13,6 +13,7 @@ import { take } from 'rxjs/operators';
 
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
+import { OrgClaOnlyAccessService } from './org-cla-only-access.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 const PLACEHOLDER_ACCOUNT: Account = {
@@ -29,6 +30,7 @@ export class AccountContextService {
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
   private readonly http = inject(HttpClient);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly storageKey = ACCOUNT_COOKIE_KEY;
@@ -135,7 +137,9 @@ export class AccountContextService {
       this.orgRoleGrantsService.inheritedWriterSet().size > 0 ||
       this.orgRoleGrantsService.inheritedAuditorSet().size > 0 ||
       this.availableAccounts().length > 0 ||
-      this.orgRoleGrantsService.isStaff()
+      this.orgRoleGrantsService.isStaff() ||
+      // M3: a CLA Manager with no grant still needs the selector to reach their company's EasyCLA tab.
+      this.orgClaOnlyAccess.claOnlyOrgUids().size > 0
   );
 
   public constructor() {

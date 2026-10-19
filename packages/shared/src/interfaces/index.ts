@@ -31,6 +31,9 @@ export * from './auth.interface';
 // Session store interfaces
 export * from './session-store.interface';
 
+// Object store (S3 or file-backed) interfaces
+export * from './object-store.interface';
+
 // Auth-state (Flow C CSRF nonce) interfaces
 export * from './auth-state.interface';
 
@@ -39,6 +42,7 @@ export * from './api.interface';
 
 // Campaign interfaces
 export * from './campaign.interface';
+export * from './campaign-optimize.interface';
 
 // Permissions interfaces
 export * from './permissions.interface';
@@ -255,6 +259,7 @@ export * from './marketing-impact.interface';
 export * from './github-url.interface';
 export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
+export * from './mktg-document-store.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-run.interface';
 
@@ -300,6 +305,10 @@ export * from './person-detail-drawer.interface';
 
 // Org Lens — Code Contributions page (LFXV2-1894)
 export * from './org-contributions.interface';
+
+// Project Lens — Participating Organizations (#2091)
+export * from './project-participating-orgs.interface';
+export * from './project-participating-orgs.internal.interface';
 
 // Org Events interfaces
 export * from './org-events.interface';
@@ -391,6 +400,9 @@ export * from './social-listening.interface';
 
 // Gatewaze admin embed host-context contract (embedded React-in-Angular pilot)
 export * from './gw-embed.interface';
+
+// Gatewaze host-session mode: the server-held Gatewaze session (#2738)
+export * from './gw-host-session.interface';
 
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';

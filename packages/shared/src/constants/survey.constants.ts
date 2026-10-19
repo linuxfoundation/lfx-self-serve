@@ -313,3 +313,6 @@ export const SURVEY_TEMPLATE_OPTIONS = [
  * evict on error and on delete. Mirrors MEETING_DETAIL_CACHE_TTL_MS.
  */
 export const SURVEY_DETAIL_CACHE_TTL_MS = 10 * 1000;
+
+/** Total upstream budget for optional committee-writer enrichment of an otherwise-readable survey list. */
+export const SURVEY_COMMITTEE_ACCESS_TIMEOUT_MS = 5000;

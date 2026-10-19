@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, RSVP_RESPONSES } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -1250,9 +1250,8 @@ export class MeetingService {
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
    * The caller's registrant records are resolved server-side (by email or username) so the client
    * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
-   * record. A committee-sourced registration is re-created by committee sync (and the ITX delete refuses it),
-   * so when the caller has one the request is rejected before anything is deleted: removing only their other
-   * rows would leave them invited while reporting success.
+   * record. Committee and mailing list registrations are removed like any other: the meeting service flags
+   * the delete as a self removal, so ITX records an exclusion that keeps later syncs from adding the user back.
    * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
    * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
    * returned to the client and logged rather than reported as a failure, since the rows already deleted stay deleted.
@@ -1269,13 +1268,6 @@ export class MeetingService {
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Meeting registration', meetingUid, {
-        operation: 'remove_meeting_registrant_self',
-        service: 'meeting_service',
-      });
-    }
-
-    if (registrants.some((registrant) => registrant.type === 'committee')) {
-      throw ServiceValidationError.forField('registrant', 'You were added to this meeting through a committee. Leave the committee to stop being invited.', {
         operation: 'remove_meeting_registrant_self',
         service: 'meeting_service',
       });
@@ -1802,9 +1794,11 @@ export class MeetingService {
     );
 
     const rsvp = mapITXResponseToMeetingRsvp(result);
-    // A successful ITX acknowledgement can omit the answer. Preserve the accepted request
+    // A successful ITX acknowledgement can omit or mangle the answer. Preserve the accepted request
     // value at this boundary so polling, response filters, and confirmation use the same RSVP.
-    rsvp.response_type ||= rsvpData.response;
+    if (!RSVP_RESPONSES.includes(rsvp.response_type)) {
+      rsvp.response_type = rsvpData.response;
+    }
 
     // Poll query service until the RSVP is propagated so the UI can fetch it immediately
     await pollEndpoint({

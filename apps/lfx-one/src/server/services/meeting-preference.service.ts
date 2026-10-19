@@ -74,7 +74,7 @@ export class MeetingPreferenceService {
         return null;
       }
 
-      if (!this.isValidMeetingInviteReply(parsed)) {
+      if (!this.isValidMeetingInviteReply(parsed) || this.hasBlankOverride(parsed)) {
         // A contract-breaking reply (missing/malformed fields) must not be read as a confirmed
         // "no override" — that would silently re-enable Remove on the actual invite-email identity.
         logger.warning(req, 'get_meeting_invite_email', 'NATS preferred_email.get returned an unexpected shape', {
@@ -202,6 +202,12 @@ export class MeetingPreferenceService {
       return true;
     }
     return typeof email_id === 'string' && typeof email === 'string';
+  }
+
+  // Read-side only: a blank address matches no row, so it would silently drop the invite badge. A
+  // SET reply echoes a write upstream already committed, so it is not failed for a blank echo.
+  private hasBlankOverride(value: MeetingInviteEmail): boolean {
+    return value.email_id !== null && (value.email_id.trim() === '' || value.email?.trim() === '');
   }
 
   // Classify the upstream error so the controller can map it to an HTTP status: validation → 4xx,

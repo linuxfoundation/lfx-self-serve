@@ -5,11 +5,13 @@ import { Router } from 'express';
 
 import { AudienceBuilderController } from '../controllers/audience-builder.controller';
 import { CampaignController } from '../controllers/campaign.controller';
+import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
 const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
+const optimizeController = new CampaignOptimizeController();
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -38,12 +40,20 @@ router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSp
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
 router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
+// Which account each LinkedIn/Reddit/Meta/Microsoft/X Monitor panel offers: the project's OWN
+// connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
+router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));
 router.get('/linkedin/accounts', (req, res) => campaignController.getLinkedInAccounts(req, res));
 router.get('/linkedin/monitor', (req, res, next) => campaignController.getLinkedInMonitor(req, res, next));
 router.get('/reddit/accounts', (req, res) => campaignController.getRedditAccounts(req, res));
 router.get('/reddit/monitor', (req, res, next) => campaignController.getRedditMonitor(req, res, next));
 router.get('/meta/accounts', (req, res) => campaignController.getMetaAccounts(req, res));
 router.get('/meta/monitor', (req, res, next) => campaignController.getMetaMonitor(req, res, next));
+// campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
+// Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
+router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));
+router.get('/twitter/monitor', (req, res, next) => campaignController.getTwitterMonitor(req, res, next));
+router.get('/hubspot/monitor', (req, res, next) => campaignController.getHubSpotMonitor(req, res, next));
 router.get('/keywords', (req, res, next) => campaignController.getKeywords(req, res, next));
 // campaign-service only, from its saved Microsoft keyword reports: takes `?window=`, not `?days=`.
 router.get('/microsoft/keywords', (req, res, next) => campaignController.getMicrosoftKeywords(req, res, next));
@@ -59,8 +69,46 @@ router.patch('/:campaignId/status', (req, res, next) => campaignController.updat
 router.patch('/:campaignId/budget', (req, res, next) => campaignController.updateCampaignBudget(req, res, next));
 // campaign-service only, like the budget change. Manual max CPC bid, in the ad account's own currency.
 router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCampaignBid(req, res, next));
-// campaign-service only. Positional response: results[i] answers negativeKeywords[i].
+// campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
+// negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
+
+// --- Optimize: campaign-service reads and levers ------------------------------
+//
+// campaign-service only, no legacy arm, so ungated like the budget and bid levers above, EXCEPT
+// a read whose upstream endpoint is not served yet. None is pending today (both PENDING_UPSTREAM sets
+// are empty); such a read answers 404 unless LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS is on.
+// Authorization is the `requireCampaignManager` above. Campaign and brief ids are campaign-service UUIDs.
+router.get('/meta/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'meta-ads'));
+router.get('/twitter/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'twitter-ads'));
+router.get('/microsoft/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'microsoft-ads'));
+router.get('/reddit/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'reddit-ads'));
+router.get('/linkedin/audience', (req, res, next) => optimizeController.getPlatformAudience(req, res, next, 'linkedin-ads'));
+// Platform campaign id -> campaign-service campaign + brief. More than one match is reachable: refuse, never choose.
+router.get('/meta/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'meta-ads'));
+router.get('/reddit/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'reddit-ads'));
+router.get('/twitter/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'twitter-ads'));
+router.get('/linkedin/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'linkedin-ads'));
+router.get('/microsoft/campaign-ref', (req, res, next) => optimizeController.resolvePlatformCampaign(req, res, next, 'microsoft-ads'));
+// Reddit keyword performance, read-only (campaign-service #331). Takes `?window=` like the Microsoft keyword read.
+router.get('/reddit/keywords', (req, res, next) => optimizeController.getRedditKeywords(req, res, next));
+// Binds a campaign that already exists on its platform to a brief; creates nothing upstream.
+router.post('/adopt', (req, res, next) => optimizeController.adoptCampaign(req, res, next));
+// The approved paid briefs a campaign can be adopted into (Query Service). 404 unless campaign-service briefs are on.
+router.get('/briefs', (req, res, next) => optimizeController.listAdoptableBriefs(req, res, next));
+// The campaign row from campaign-service (not the index) with its current ETag. Two callers: the Optimize tab,
+// to recover a row's ETag after an ad-set write whose outcome left the validator unknown, and the
+// act-from-Monitor dialog, for its levers' If-Match.
+router.get('/:campaignId/record', (req, res, next) => optimizeController.getCampaignRecord(req, res, next));
+router.get('/:campaignId/settings', (req, res, next) => optimizeController.getCampaignSettings(req, res, next));
+router.get('/:campaignId/meta-ad-sets', (req, res, next) => optimizeController.listMetaAdSets(req, res, next));
+// Read-only: there is no per-ad lever. `truncated` in the answer says Meta's ad listing passed its page cap.
+router.get('/:campaignId/meta-ad-sets/:adSetId/ads', (req, res, next) => optimizeController.listMetaAds(req, res, next));
+// If-Match from the body's etag. A 503 that may have reached Meta answers code META_AD_SET_STATUS_UNCONFIRMED.
+router.post('/:campaignId/meta-ad-sets/:adSetId/status', (req, res, next) => optimizeController.updateMetaAdSetStatus(req, res, next));
+router.get('/:campaignId/keyword-targeting', (req, res, next) => optimizeController.getKeywordTargeting(req, res, next));
+// Positional response: results[i] answers keywords[i]. Reddit requires the read's revision.
+router.post('/:campaignId/keyword-targeting/removals', (req, res, next) => optimizeController.removeKeywordTargeting(req, res, next));
 
 // --- Audience Builder ------------------------------------------------------
 //
@@ -82,5 +130,8 @@ router.post('/audience-builder/compose-master', (req, res, next) => audienceBuil
 // send's selection, or a master built before) as the brief's send audience.
 router.post('/audience-builder/attach-existing', (req, res, next) => audienceBuilderController.attachExisting(req, res, next));
 router.post('/audience-builder/qa/run', (req, res, next) => audienceBuilderController.runQa(req, res, next));
+router.post('/audience-builder/custom/interpret', (req, res, next) => audienceBuilderController.interpretCustom(req, res, next));
+router.post('/audience-builder/custom/preview', (req, res, next) => audienceBuilderController.previewCustom(req, res, next));
+router.post('/audience-builder/custom/create', (req, res, next) => audienceBuilderController.createCustom(req, res, next));
 
 export default router;

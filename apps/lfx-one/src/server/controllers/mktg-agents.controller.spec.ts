@@ -20,12 +20,16 @@ const icpMocks = vi.hoisted(() => ({
 }));
 const validatorMocks = vi.hoisted(() => ({
   validateBrandKitIntakeAnswers: vi.fn(),
-  validateFoundationMessageIntakeAnswers: vi.fn(),
   validateIcpIntakeAnswers: vi.fn((): { valid: boolean; errors: string[] } => ({ valid: true, errors: [] })),
 }));
 const foundationMessageMocks = vi.hoisted(() => ({
   getStoredFoundationMessage: vi.fn(),
   getResult: vi.fn(),
+  startGeneration: vi.fn(),
+  sendAnswers: vi.fn(),
+}));
+const sourceTextMocks = vi.hoisted(() => ({
+  readFile: vi.fn(),
 }));
 const tokenMocks = vi.hoisted(() => ({
   createSessionOwnerToken: vi.fn(),
@@ -33,6 +37,7 @@ const tokenMocks = vi.hoisted(() => ({
 }));
 const authMocks = vi.hoisted(() => ({
   getEffectiveSub: vi.fn((): string | null => 'auth0|user-1'),
+  getEffectiveUsername: vi.fn((): string | null => 'user-1'),
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -47,10 +52,20 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const agents = await vi.importActual('../../../../../packages/shared/src/constants/mktg-os-agents.constants');
   const brandKit = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
   const artifact = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
-  return { ...agents, ...brandKit, ...artifact };
+  const foundationMessage = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
+  return { ...agents, ...brandKit, ...artifact, ...foundationMessage };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/utils', () => validatorMocks);
+vi.mock('@lfx-one/shared/utils', async () => {
+  // The Messaging Document's request validators run for real (pure, Angular-free); the rest are mocked.
+  const foundationMessage = await vi.importActual('../../../../../packages/shared/src/utils/foundation-message.utils');
+  return { ...(foundationMessage as object), ...validatorMocks };
+});
+vi.mock('../services/mktg-source-text.service', () => ({
+  MktgSourceTextService: class {
+    public readFile = sourceTextMocks.readFile;
+  },
+}));
 vi.mock('../services/guild.service', () => ({
   GuildService: class {},
 }));
@@ -64,6 +79,8 @@ vi.mock('../services/foundation-message.service', () => ({
   FoundationMessageService: class {
     public getStoredFoundationMessage = foundationMessageMocks.getStoredFoundationMessage;
     public getResult = foundationMessageMocks.getResult;
+    public startGeneration = foundationMessageMocks.startGeneration;
+    public sendAnswers = foundationMessageMocks.sendAnswers;
   },
 }));
 vi.mock('../services/icp.service', () => ({
@@ -126,7 +143,7 @@ const STORED = {
 };
 
 const STORED_FOUNDATION_MESSAGE = {
-  documentMarkdown: '# TestOrbit Message Foundation',
+  documentMarkdown: '# TestOrbit Messaging Document',
   receipt: { s3_key: 'foundation-message/proj-uid-1/abc.md', content_sha256: 'b'.repeat(64), project: 'proj-uid-1', version: 2, intake_mode: 'form' },
   storedAt: '2026-09-01T00:00:00.000Z',
 };
@@ -403,6 +420,164 @@ describe('MktgAgentsController', () => {
 
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
       expect(icpMocks.getResult).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('generateFoundationMessage (POST /api/mktg-agents/foundation-message/generate)', () => {
+    const messagingAnswers = (): Record<string, string> => ({
+      project_name: ' TestOrbit ',
+      website_url: 'https://testorbit.example.org',
+      github_url: 'https://github.com/aaif',
+      other_links: 'https://blog.example.org/launch',
+    });
+    const generateReq = (body: unknown): Request => ({ path: '/api/mktg-agents/foundation-message/generate', body }) as unknown as Request;
+
+    it('starts a fresh generation with the trimmed answers, the documents and the project uid, routed by the catalog handle', async () => {
+      foundationMessageMocks.startGeneration.mockResolvedValue('sess-1');
+      tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
+      const documents = [
+        { kind: 'file', title: 'note.md', text: 'Note.' },
+        { kind: 'link', title: 'Doc', url: 'https://wiki.example.org/doc' },
+      ];
+      const res = buildRes();
+
+      await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers(), documents, project: ' proj-uid-1 ' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const [, answers, sentDocuments, project, handle] = foundationMessageMocks.startGeneration.mock.calls[0];
+      expect(answers['project_name']).toBe('TestOrbit');
+      expect(answers['github_url']).toBe('https://github.com/aaif');
+      expect(sentDocuments).toEqual(documents);
+      expect(project).toBe('proj-uid-1');
+      expect(handle).toBe('foundation-message');
+      expect(res.json).toHaveBeenCalledWith({ sessionId: 'sess-1', ownerToken: 'owner-token' });
+    });
+
+    it('starts without a project when none is given, and refuses a malformed one', async () => {
+      foundationMessageMocks.startGeneration.mockResolvedValue('sess-1');
+      tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
+
+      await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers() }), buildRes(), next);
+      expect(foundationMessageMocks.startGeneration.mock.calls[0][3]).toBeUndefined();
+
+      await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers(), project: 'a/b' }), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(foundationMessageMocks.startGeneration).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses the retired question answers — the agent asks the gaps itself after researching', async () => {
+      await controller.generateFoundationMessage(generateReq({ answers: { ...messagingAnswers(), vision_mission: 'TBD' } }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+    });
+
+    it('refuses feedback or a prior version — the agent revises through comments in Documents, not a generate', async () => {
+      await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers(), feedback: 'Sharper' }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+    });
+
+    it('refuses a link whose text the browser claims to have read', async () => {
+      const documents = [{ kind: 'link', title: 'Doc', url: 'https://wiki.example.org/doc', text: 'forged' }];
+
+      await controller.generateFoundationMessage(generateReq({ answers: messagingAnswers(), documents }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(foundationMessageMocks.startGeneration).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('foundationMessageAnswers (POST /api/mktg-agents/foundation-message/answers)', () => {
+    const answersReq = (body: unknown): Request => ({ path: '/api/mktg-agents/foundation-message/answers', body }) as unknown as Request;
+    const answers = [
+      { key: 'audiences', text: ' Platform teams; SREs. ', origin: 'accepted' },
+      { key: 'pillars', text: 'Reliability; openness; speed.', origin: 'requester' },
+    ];
+
+    it('sends the trimmed answers to the session, routed by the catalog handle, for the session’s creator', async () => {
+      foundationMessageMocks.sendAnswers.mockResolvedValue(undefined);
+      const res = buildRes();
+
+      await controller.foundationMessageAnswers(answersReq({ sessionId: ' sess-1 ', ownerToken: 'token-1', answers }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(tokenMocks.verifySessionOwnerToken).toHaveBeenCalledWith('token-1', 'auth0|user-1', 'sess-1');
+      const [, sessionId, sent, handle] = foundationMessageMocks.sendAnswers.mock.calls[0];
+      expect(sessionId).toBe('sess-1');
+      expect(sent).toEqual([
+        { key: 'audiences', text: 'Platform teams; SREs.', origin: 'accepted' },
+        { key: 'pillars', text: 'Reliability; openness; speed.', origin: 'requester' },
+      ]);
+      expect(handle).toBe('foundation-message');
+      expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('refuses a skip, a TBD or an empty answer, and a missing session id', async () => {
+      await controller.foundationMessageAnswers(
+        answersReq({ sessionId: 'sess-1', ownerToken: 'token-1', answers: [{ key: 'audiences', text: 'TBD', origin: 'edited' }] }),
+        buildRes(),
+        next
+      );
+      await controller.foundationMessageAnswers(answersReq({ ownerToken: 'token-1', answers }), buildRes(), next);
+
+      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true]);
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+    });
+
+    it('never reaches the session when the owner token does not verify', async () => {
+      tokenMocks.verifySessionOwnerToken.mockReturnValueOnce(false);
+
+      await controller.foundationMessageAnswers(answersReq({ sessionId: 'sess-1', ownerToken: 'nope', answers }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(foundationMessageMocks.sendAnswers).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('existing documents (POST /api/mktg-agents/foundation-message/documents/file)', () => {
+    const fileReq = (headers: Record<string, string>, body: unknown): Request =>
+      ({ path: '/api/mktg-agents/foundation-message/documents/file', headers, body }) as unknown as Request;
+
+    it('reads an uploaded file and returns its text, word count and decoded name', async () => {
+      sourceTextMocks.readFile.mockResolvedValue({ text: 'Vision and mission notes.', truncated: false });
+      const res = buildRes();
+
+      await controller.readFoundationMessageFile(fileReq({ 'x-file-name': encodeURIComponent('Brand guide.pdf') }, Buffer.from('%PDF-1.7')), res, next);
+
+      expect(sourceTextMocks.readFile.mock.calls[0][1]).toBe('Brand guide.pdf');
+      expect(res.json).toHaveBeenCalledWith({ title: 'Brand guide.pdf', read: true, words: 4, truncated: false, text: 'Vision and mission notes.' });
+    });
+
+    it('says why a file could not be read', async () => {
+      sourceTextMocks.readFile.mockResolvedValue({ text: null, truncated: false, reason: 'encrypted' });
+      const res = buildRes();
+
+      await controller.readFoundationMessageFile(fileReq({ 'x-file-name': 'locked.pdf' }, Buffer.from('%PDF-1.7')), res, next);
+
+      expect(res.json.mock.calls[0][0]).toMatchObject({ read: false, words: 0, reason: expect.stringContaining('password') });
+    });
+
+    it('needs the file name header and a non-empty body', async () => {
+      await controller.readFoundationMessageFile(fileReq({}, Buffer.from('x')), buildRes(), next);
+      await controller.readFoundationMessageFile(fileReq({ 'x-file-name': 'a.txt' }, {}), buildRes(), next);
+
+      expect(next.mock.calls.map(([error]) => error instanceof ServiceValidationError)).toEqual([true, true]);
+      expect(sourceTextMocks.readFile).not.toHaveBeenCalled();
+    });
+
+    it('refuses a caller with no LFID username, the key the read gate holds slots on, even when a sub is present', async () => {
+      authMocks.getEffectiveUsername.mockReturnValueOnce(null);
+
+      await controller.readFoundationMessageFile(fileReq({ 'x-file-name': 'a.txt' }, Buffer.from('x')), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+      expect(sourceTextMocks.readFile).not.toHaveBeenCalled();
+    });
+
+    it('has no link endpoint any more — a document link goes to the agent as its URL', () => {
+      expect((controller as unknown as Record<string, unknown>)['readFoundationMessageLink']).toBeUndefined();
     });
   });
 

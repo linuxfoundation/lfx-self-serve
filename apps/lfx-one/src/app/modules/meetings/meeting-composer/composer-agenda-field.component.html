@@ -4,7 +4,9 @@
 <div class="flex flex-col gap-1.5">
   <div class="flex items-center justify-between gap-3">
     <label [for]="inputId()" class="text-sm font-medium text-gray-900">Agenda</label>
-    <div class="flex items-center gap-2">
+    <!-- Negative vertical margin: the small text buttons are taller than the label, and without it their
+         padding sets the row height and pushes the textarea down. The hit area is unchanged. -->
+    <div class="-my-[6px] flex items-center gap-2">
       <lfx-button
         label="Templates"
         icon="fa-light fa-list"

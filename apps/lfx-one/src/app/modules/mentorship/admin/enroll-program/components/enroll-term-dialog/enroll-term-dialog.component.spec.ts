@@ -87,4 +87,32 @@ describe('EnrollTermDialogComponent', () => {
       applicationEndDate: `${year}-02-15`,
     });
   });
+
+  it('lets the application window run into the term but not past its end month', () => {
+    build({ mode: 'add' });
+    const year = String(new Date().getFullYear() + 2);
+    const start = parseMentorshipMonthYear(`${year}-03-01`);
+    const end = parseMentorshipMonthYear(`${year}-05-01`);
+    const fill = (applicationEndDate: string): void =>
+      fixture.componentInstance['form'].patchValue({
+        name: `Term 1 - ${year}`,
+        startMonth: start?.month,
+        startYear: start?.year,
+        endMonth: end?.month,
+        endYear: end?.year,
+        applicationStartDate: parseMentorshipDateOnly(`${year}-01-01`),
+        applicationEndDate: parseMentorshipDateOnly(applicationEndDate),
+      });
+
+    fill(`${year}-04-10`);
+    expect(fixture.componentInstance['maxApplicationEndDate']()).toEqual(parseMentorshipDateOnly(`${year}-05-31`));
+    component().onSubmit();
+    expect(close).toHaveBeenCalledWith(expect.objectContaining({ applicationEndDate: `${year}-04-10` }));
+
+    close.mockClear();
+    fill(`${year}-06-01`);
+    component().onSubmit();
+    expect(close).not.toHaveBeenCalled();
+    expect(component().dateErrors()['applicationEndDate']).toBe('Application end date must be on or before the term end month.');
+  });
 });

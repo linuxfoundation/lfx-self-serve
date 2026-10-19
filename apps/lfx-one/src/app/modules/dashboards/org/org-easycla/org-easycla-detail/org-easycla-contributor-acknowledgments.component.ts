@@ -27,7 +27,7 @@ import type {
   OrgClaInvalidateAcknowledgmentDialogResult,
   OrgClaInvalidateAcknowledgmentRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant, isMailtoSafeEmail, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, isMailtoSafeEmail, orgClaPairFoundationSfid, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -268,13 +268,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         this.invalidateDialog = null;
       });
 
-    toObservable(
-      computed(() => {
-        const orgUid = this.orgUid();
-        const projectSfid = orgClaPairProjectSfid(this.claGroup());
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
-      })
-    )
+    toObservable(computed(() => this.initWritePermissionPair()))
       .pipe(
         distinctUntilChanged(),
         tap(() => {
@@ -283,10 +277,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
         }),
         switchMap((pair) => {
           if (!pair) return of<[boolean, boolean]>([false, false]);
-          const [orgUid, projectSfid] = pair.split('::');
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          const foundation = foundationSfid || undefined;
           return combineLatest([
-            this.claService.checkPermission(orgUid, 'ecla-invalidate', projectSfid),
-            this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
+            this.claService.checkPermission(orgUid, 'ecla-invalidate', projectSfid, foundation),
+            this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid, foundation),
           ]);
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -407,6 +402,14 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
       this.sendInvalidate(row, request, orgUid, claSignatureId, removeApprovalEntries ?? []);
     });
+  }
+
+  private initWritePermissionPair(): string {
+    const orgUid = this.orgUid();
+    const group = this.claGroup();
+    const projectSfid = orgClaPairProjectSfid(group);
+    const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
   }
 
   /** Entries added for this contributor alone. Domain and org entries cover others too, so they never match. */

@@ -23,6 +23,7 @@ describe('CampaignNegativeKeywordsService', () => {
     briefId: 'b-1',
     campaignId: 'c-1',
     campaignName: 'KubeCon EU',
+    platform: 'microsoft-ads',
     keywords: ['alpha', 'beta'],
     matchType: 'Exact',
     ...over,
@@ -57,10 +58,16 @@ describe('CampaignNegativeKeywordsService', () => {
   it('sends the keywords and keeps the outcomes in the order they were sent', () => {
     service.submit(submission());
 
-    expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [
-      { text: 'alpha', matchType: 'Exact' },
-      { text: 'beta', matchType: 'Exact' },
-    ]);
+    expect(addNegativeKeywords).toHaveBeenCalledWith(
+      'tlf',
+      'b-1',
+      'c-1',
+      [
+        { text: 'alpha', matchType: 'Exact' },
+        { text: 'beta', matchType: 'Exact' },
+      ],
+      undefined
+    );
     expect(service.requests()['tlf|b-1|c-1'].pending).toBe(true);
 
     answer(0, ['ALREADY_PRESENT', 'APPLIED']);
@@ -72,6 +79,51 @@ describe('CampaignNegativeKeywordsService', () => {
       ['beta', 'APPLIED'],
     ]);
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  // Reddit requires the keyword-targeting read's revision; Microsoft Advertising and X answer a
+  // PRESENT one (even empty) with 400, so it must reach Reddit and only Reddit.
+  it('sends the revision for a Reddit campaign', () => {
+    service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad', revision: 'sha256:r1' }));
+
+    expect(addNegativeKeywords).toHaveBeenCalledWith(
+      'tlf',
+      'b-1',
+      'c-1',
+      [
+        { text: 'alpha', matchType: 'Broad' },
+        { text: 'beta', matchType: 'Broad' },
+      ],
+      'sha256:r1'
+    );
+  });
+
+  it.each(['microsoft-ads', 'twitter-ads'] as const)('never sends a revision for a %s campaign, even when handed one', (platform) => {
+    service.submit(submission({ platform, revision: 'sha256:r1' }));
+
+    expect(addNegativeKeywords).toHaveBeenCalledTimes(1);
+    expect(addNegativeKeywords.mock.calls[0][4]).toBeUndefined();
+  });
+
+  it('sends nothing for a Reddit campaign without a revision', () => {
+    service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad' }));
+    service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad', revision: '' }));
+
+    expect(addNegativeKeywords).not.toHaveBeenCalled();
+    expect(service.requests()['tlf|b-1|c-1']).toBeUndefined();
+  });
+
+  // A mixed Reddit batch: the new keywords rode on one write that could not be confirmed, while the
+  // ones Reddit already excluded keep ALREADY_PRESENT. Neither is dropped, and the advice names Reddit.
+  it('keeps the ALREADY_PRESENT results of a mixed Reddit batch and words the advice for Reddit', () => {
+    service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad', revision: 'sha256:r1', keywords: ['alpha', 'beta', 'gamma'] }));
+    answer(0, ['UNCONFIRMED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+
+    const request = service.requests()['tlf|b-1|c-1'];
+    expect(request.outcomeRows.map((row) => row.outcome)).toEqual(['UNCONFIRMED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+    expect(request.outcomeRows[0].detail).toContain('Reddit');
+    expect(request.platform).toBe('reddit-ads');
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: expect.stringContaining('1 already present') }));
   });
 
   it('records an unreadable confirmation as unconfirmed, naming the keywords sent', () => {

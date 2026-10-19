@@ -398,10 +398,9 @@ async function stubMeetingEdit(page: Page, meeting: Record<string, unknown>): Pr
  * meeting does not exist. Booting on `/` first and navigating via pushState + popstate keeps every
  * fetch stubbed.
  *
- * The card's Edit button rather than `/project/meetings/:id/edit`: while `MEETING_V2_ENABLED_FLAG`
- * gates v2, that URL is pointed at the pre-v2 wizard unconditionally (see the comment in
- * `meetings.routes.ts` for why a lazy route cannot read the flag), so it can no longer reach the
- * composer. The card is the entry point the flag does gate, and it is the one real organizers use.
+ * The card's Edit button rather than `/project/meetings/:id/edit`: that URL reaches the composer
+ * too when the flag is on (`meetingsV2Guard`), but only through a full navigation, which SSRs the
+ * route and escapes the stubs above. The card is the entry point real organizers use.
  * It costs one extra step — the button re-checks edit access against the meeting detail before
  * opening anything — which the stub in {@link stubMeetingEdit} already answers.
  */

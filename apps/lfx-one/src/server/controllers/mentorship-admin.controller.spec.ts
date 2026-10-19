@@ -838,6 +838,17 @@ describe('MentorshipAdminController', () => {
       expect(out.status).toHaveBeenCalledWith(201);
     });
 
+    it.each(['2026-10-15', '2026-12-31'])('accepts an application window that runs into the term, ending %s', async (applicationEndDate) => {
+      const overlap = { ...termBody, applicationEndDate };
+      const write = vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
+      const out = writeRes();
+
+      await controller.createTerm(termReq(overlap, { programId: PROGRAM_ID }), out, next);
+
+      expect(write).toHaveBeenCalledWith(expect.anything(), PROGRAM_ID, overlap);
+      expect(out.status).toHaveBeenCalledWith(201);
+    });
+
     it('accepts a term that starts and ends in one month', async () => {
       const oneMonth = { ...termBody, endDate: termBody.startDate };
       const write = vi.spyOn(MentorshipAdminService.prototype, 'createTerm').mockResolvedValue(row as never);
@@ -869,7 +880,8 @@ describe('MentorshipAdminController', () => {
       ['a date that is not ISO', { ...termBody, startDate: '09/01/2026' }],
       ['a date that is not on the calendar', { ...termBody, startDate: '2026-02-30' }],
       ['an application end before its start', { ...termBody, applicationEndDate: '2026-06-30' }],
-      ['a start on the application end', { ...termBody, startDate: '2026-08-15' }],
+      ['an application end after the end month', { ...termBody, applicationEndDate: '2027-01-01' }],
+      ['an application start on the term start', { ...termBody, applicationStartDate: '2026-09-01', applicationEndDate: '2026-09-15' }],
       ['an end before the start', { ...termBody, endDate: '2026-08-01' }],
       ['no body', undefined],
     ])('rejects %s with a 400 and no upstream call', async (_label, body) => {

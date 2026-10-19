@@ -3,12 +3,9 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, loggerWarning, getUsernameFromAuth, generateM2MToken, isFlagEnabled } = vi.hoisted(() => ({
+const { proxyRequest, isFlagEnabled } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   isFlagEnabled: vi.fn(),
-  loggerWarning: vi.fn(),
-  getUsernameFromAuth: vi.fn(),
-  generateM2MToken: vi.fn(),
 }));
 
 vi.mock('./microservice-proxy.service', () => ({
@@ -24,13 +21,11 @@ vi.mock('./logger.service', () => ({
     startOperation: vi.fn(() => 0),
     success: vi.fn(),
     error: vi.fn(),
-    warning: loggerWarning,
+    warning: vi.fn(),
     debug: vi.fn(),
     info: vi.fn(),
   },
 }));
-vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
-vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken }));
 // The `@lfx-one/shared/*` alias isn't wired into this app's vitest config.
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/insights-tokens.constants')),
@@ -58,64 +53,31 @@ describe('InsightsTokensService', () => {
 
   beforeEach(() => {
     proxyRequest.mockReset();
-    loggerWarning.mockReset();
-    getUsernameFromAuth.mockReset().mockResolvedValue('jdoe');
-    generateM2MToken.mockReset().mockResolvedValue('m2m-token');
     isFlagEnabled.mockReset().mockResolvedValue(false);
     service = new InsightsTokensService();
   });
 
-  const eligible = { canCreate: true, orgs: [{ uid: 'org-1', name: 'Acme Corporation' }], checkFailed: false };
+  const eligible = { canCreate: true, checkFailed: false };
 
-  describe('Key Contact gate', () => {
+  describe('access gate', () => {
     const operations: [string, (s: InsightsTokensService) => Promise<unknown>][] = [
       ['listTokens', (s) => s.listTokens(req)],
       ['createToken', (s) => s.createToken(req, 'ci-pipeline')],
       ['revokeToken', (s) => s.revokeToken(req, patToken.uid)],
     ];
 
-    it.each(operations)('%s refuses a non-Key-Contact with 403 not_key_contact, without calling the PAT service', async (_name, run) => {
-      vi.spyOn(service, 'getEligibility').mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: false });
-
+    it.each(operations)('%s refuses a user the flag is off for with 403 not_enabled, without calling the PAT service', async (_name, run) => {
       const error = (await run(service).catch((e: unknown) => e)) as MicroserviceError;
-
-      expect(service.getEligibility).toHaveBeenCalledWith(req);
-      expect(error).toBeInstanceOf(MicroserviceError);
-      expect(error.statusCode).toBe(403);
-      expect(error.toResponse()).toMatchObject({ upstreamCode: 'not_key_contact' });
-      expect(proxyRequest).not.toHaveBeenCalled();
-    });
-
-    it.each(operations)('%s refuses with 503 eligibility_unavailable when the Key Contact check could not complete', async (_name, run) => {
-      vi.spyOn(service, 'getEligibility').mockResolvedValueOnce({ canCreate: false, orgs: [], checkFailed: true });
-
-      const error = (await run(service).catch((e: unknown) => e)) as MicroserviceError;
-
-      expect(error).toBeInstanceOf(MicroserviceError);
-      expect(error.statusCode).toBe(503);
-      expect(error.toResponse()).toMatchObject({ upstreamCode: 'eligibility_unavailable' });
-      expect(proxyRequest).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('insights-public-api-token-access flag', () => {
-    beforeEach(() => {
-      isFlagEnabled.mockResolvedValue(true);
-    });
-
-    it('evaluates the flag on the server for the request, defaulting to off', async () => {
-      await service.getEligibility(req);
 
       expect(isFlagEnabled).toHaveBeenCalledWith(req, 'insights-public-api-token-access', false);
-    });
-
-    it('treats a flagged user as a Key Contact without calling the member-tier endpoint', async () => {
-      expect(await service.getEligibility(req)).toEqual({ canCreate: true, orgs: [], checkFailed: false });
-      expect(generateM2MToken).not.toHaveBeenCalled();
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.statusCode).toBe(403);
+      expect(error.toResponse()).toMatchObject({ upstreamCode: 'not_enabled' });
       expect(proxyRequest).not.toHaveBeenCalled();
     });
 
-    it('lets a flagged user create, list and revoke through the PAT service, using the user bearer', async () => {
+    it('lets a flag-enabled user create, list and revoke through the PAT service, using the user bearer', async () => {
+      isFlagEnabled.mockResolvedValue(true);
       proxyRequest.mockResolvedValueOnce({ tokens: [] }).mockResolvedValueOnce({ token: patToken, secret: 'lfi_x' }).mockResolvedValueOnce(undefined);
 
       await service.listTokens(req);
@@ -125,14 +87,32 @@ describe('InsightsTokensService', () => {
       expect(proxyRequest.mock.calls.map((call) => call[2])).toEqual(['/tokens', '/tokens', `/tokens/${patToken.uid}`]);
       expect(proxyRequest.mock.calls.every((call) => call[0] === req && call[1] === 'LFX_V2_SERVICE')).toBe(true);
     });
+  });
 
-    it('ignores anything the client sends and still runs the Key Contact check when the flag is off', async () => {
-      isFlagEnabled.mockResolvedValue(false);
-      proxyRequest.mockResolvedValueOnce([]);
+  describe('getEligibility', () => {
+    it('evaluates the flag on the server for the request, defaulting to off', async () => {
+      await service.getEligibility(req);
+
+      expect(isFlagEnabled).toHaveBeenCalledWith(req, 'insights-public-api-token-access', false);
+    });
+
+    it('is eligible when the flag is on for the user, with no upstream call', async () => {
+      isFlagEnabled.mockResolvedValue(true);
+
+      expect(await service.getEligibility(req)).toEqual({ canCreate: true, checkFailed: false });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('is ineligible when the flag is off, as a confirmed answer rather than a failed check', async () => {
+      expect(await service.getEligibility(req)).toEqual({ canCreate: false, checkFailed: false });
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+
+    it('ignores anything the client sends', async () => {
       const forged = { bearerToken: 'user-token', headers: { 'x-insights-public-api-flag': 'true' } } as unknown as Request;
 
-      expect(await service.getEligibility(forged)).toEqual({ canCreate: false, orgs: [], checkFailed: false });
-      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(await service.getEligibility(forged)).toEqual({ canCreate: false, checkFailed: false });
+      expect(isFlagEnabled).toHaveBeenCalledWith(forged, 'insights-public-api-token-access', false);
     });
   });
 
@@ -211,86 +191,6 @@ describe('InsightsTokensService', () => {
       proxyRequest.mockResolvedValueOnce(undefined);
       await service.revokeToken(req, patToken.uid);
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', `/tokens/${patToken.uid}`, 'DELETE', { v: '1' });
-    });
-  });
-
-  describe('getEligibility', () => {
-    it('is eligible per org uid, without inspecting the tier, and scopes M2M to the call', async () => {
-      proxyRequest.mockResolvedValueOnce([
-        { b2b_org_uid: 'org-1', company_name: 'Acme Corporation', tier: 'silver' },
-        { b2b_org_uid: 'org-1', company_name: 'Acme Corporation', tier: 'gold' },
-        { b2b_org_uid: 'org-2', company_name: '  ', tier: 'platinum' },
-        { b2b_org_uid: 'org-3' },
-        { b2b_org_uid: ' ', company_name: 'No Uid Inc' },
-      ]);
-
-      const result = await service.getEligibility(req);
-
-      expect(result).toEqual({
-        canCreate: true,
-        orgs: [{ uid: 'org-1', name: 'Acme Corporation' }, { uid: 'org-2' }, { uid: 'org-3' }],
-        checkFailed: false,
-      });
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/b2b_orgs/member-tiers/jdoe', 'GET', { v: '1' }, undefined, undefined, {
-        bearerToken: 'm2m-token',
-      });
-      expect(req.bearerToken).toBe('user-token');
-    });
-
-    it('is eligible for a Key Contact whose org has no company name, and carries no name', async () => {
-      proxyRequest.mockResolvedValueOnce([{ b2b_org_uid: 'org-9', tier: 'silver' }]);
-      expect(await service.getEligibility(req)).toEqual({ canCreate: true, orgs: [{ uid: 'org-9' }], checkFailed: false });
-    });
-
-    it.each([
-      ['an object', {}],
-      ['null', null],
-      ['a string', 'ok'],
-      ['a list of entries with no org uid', [{}, { b2b_org_uid: ' ', company_name: 'No Uid Inc' }]],
-    ])('fails closed as unavailable, not ineligible, when a 200 body is %s', async (_label, body) => {
-      proxyRequest.mockResolvedValueOnce(body);
-      expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: true });
-      expect(loggerWarning).toHaveBeenCalledWith(req, 'get_insights_token_eligibility', expect.any(String), { status: undefined, code: 'TypeError' });
-    });
-
-    it('encodes the username in the path', async () => {
-      getUsernameFromAuth.mockResolvedValueOnce('a/b c');
-      proxyRequest.mockResolvedValueOnce([]);
-      await service.getEligibility(req);
-      expect(proxyRequest.mock.calls[0][2]).toBe('/b2b_orgs/member-tiers/a%2Fb%20c');
-    });
-
-    it('is ineligible when the user is not a key contact of any org', async () => {
-      proxyRequest.mockResolvedValueOnce([]);
-      expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: false });
-    });
-
-    it('fails closed when the tier endpoint errors', async () => {
-      proxyRequest.mockRejectedValueOnce(new Error('403 Forbidden'));
-      expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: true });
-      expect(loggerWarning).toHaveBeenCalled();
-    });
-
-    it('keeps the username out of the failure log, even though the upstream error path carries it', async () => {
-      proxyRequest.mockRejectedValueOnce(
-        MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', {}, 'LFX_V2_SERVICE', '/b2b_orgs/member-tiers/jdoe', 'get__b2b_orgs_member-tiers_jdoe')
-      );
-      await service.getEligibility(req);
-      expect(loggerWarning).toHaveBeenCalledWith(req, 'get_insights_token_eligibility', expect.any(String), { status: 403, code: 'FORBIDDEN' });
-      expect(JSON.stringify(loggerWarning.mock.calls)).not.toContain('jdoe');
-    });
-
-    it('fails closed when the M2M token cannot be minted', async () => {
-      generateM2MToken.mockRejectedValueOnce(new Error('auth down'));
-      expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: true });
-      expect(proxyRequest).not.toHaveBeenCalled();
-    });
-
-    it('fails closed without calling upstream when there is no username', async () => {
-      getUsernameFromAuth.mockResolvedValueOnce(null);
-      expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: false });
-      expect(generateM2MToken).not.toHaveBeenCalled();
-      expect(proxyRequest).not.toHaveBeenCalled();
     });
   });
 });

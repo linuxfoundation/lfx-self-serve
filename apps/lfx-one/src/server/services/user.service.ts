@@ -635,8 +635,8 @@ export class UserService {
     // `invited: true` — every row has a direct host/participant FGA tuple by virtue of
     // `filter_grants=direct`, so the user is invited by definition. Data-shape marker, not an
     // access decision (the subsequent `addAccessToResources` is the actual access layer).
-    // `invited_via_committee` comes from the same registrant lookup as `my_rsvp`; it stays false when that lookup
-    // failed, which only means the Remove action may be offered and then refused by the server.
+    // `invited_via_committee` comes from the same registrant lookup as `my_rsvp`; it only selects the wording of the
+    // Remove confirmation, so a failed lookup just shows the generic text.
     const invited = enriched.map((m) => ({ ...m, invited: true, invited_via_committee: committeeMeetingIds.has(m.id) }));
 
     return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
@@ -661,41 +661,9 @@ export class UserService {
       has_foundation_filter: !!foundationUid,
     });
 
-    const normalizedEmail = email.toLowerCase();
-    const username = await getUsernameFromAuth(req);
-
-    const filtersOr: string[] = [];
-    if (normalizedEmail) filtersOr.push(`email:${normalizedEmail}`);
-    if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
-
     // Participant scan sources `is_attended` for `user_attended` enrichment — FGA tuples don't
-    // carry attendance, so this lookup is independent of the meeting fetch. failOnPartial: true
-    // surfaces truncated sets; outer .catch degrades gracefully so a failure here drops attendance
-    // data without 500'ing the Me lens.
-    // `loaded` distinguishes "scan succeeded, user wasn't a participant" (loaded:true → attended:false is correct)
-    // from "couldn't determine attendance" (loaded:false → attended:undefined so UI can show 'unknown').
-    const participantQuery: Promise<{ participants: PastMeetingParticipant[]; loaded: boolean }> =
-      filtersOr.length > 0
-        ? fetchAllQueryResources<PastMeetingParticipant>(
-            req,
-            (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'v1_past_meeting_participant',
-                filters_or: filtersOr,
-                page_size: 500,
-                ...(pageToken && { page_token: pageToken }),
-              }),
-            { failOnPartial: true }
-          )
-            .then((participants) => ({ participants, loaded: true }))
-            .catch((error) => {
-              logger.warning(req, 'get_user_past_meetings', 'Participant query failed, continuing without attendance enrichment', {
-                stage: 'participant_query',
-                err: error,
-              });
-              return { participants: [] as PastMeetingParticipant[], loaded: false };
-            })
-        : Promise.resolve({ participants: [] as PastMeetingParticipant[], loaded: false });
+    // carry attendance, so this lookup is independent of the meeting fetch.
+    const participantQuery = this.fetchUserParticipantRecords(req, email, 'get_user_past_meetings');
 
     // .catch — same degrade-to-empty-scope pattern as getUserMeetings.
     const foundationQuery = foundationUid
@@ -788,15 +756,7 @@ export class UserService {
     // we have no user identity), leave user_attended undefined so the UI can distinguish "didn't
     // attend" from "attendance unknown".
     if (attendanceLoaded) {
-      const userAttendedByOccurrenceId = new Map<string, boolean>();
-      for (const p of participants) {
-        if (!p.meeting_and_occurrence_id) continue;
-        const prior = userAttendedByOccurrenceId.get(p.meeting_and_occurrence_id) ?? false;
-        userAttendedByOccurrenceId.set(p.meeting_and_occurrence_id, prior || !!p.is_attended);
-      }
-      for (const meeting of pastOnly) {
-        meeting.user_attended = userAttendedByOccurrenceId.get(meeting.id) ?? false;
-      }
+      this.applyUserAttendance(pastOnly, participants);
     }
 
     const enriched = await this.meetingService.getMeetingProjectName(req, pastOnly);
@@ -806,6 +766,30 @@ export class UserService {
     const withCreatedBy = await enrichMeetingsWithCreatedBy(req, enriched, (m) => m.meeting_id);
 
     return this.accessCheckService.addAccessToResources(req, withCreatedBy, 'v1_past_meeting', 'organizer');
+  }
+
+  /**
+   * Sets `user_attended` on each past meeting from the current user's participant records.
+   * Used by the project-lens past meetings list, which is not scoped to the user's own grants.
+   * Degrades gracefully: when the participant scan fails or no identity is available,
+   * `user_attended` stays undefined so no "Attended" label is shown.
+   * @param req - Express request object
+   * @param email - User's email address for participant lookup
+   * @param meetings - Past meetings to enrich in place (rows need `meeting_and_occurrence_id` or `id`)
+   */
+  public async enrichPastMeetingsWithUserAttendance(req: Request, email: string, meetings: PastMeeting[]): Promise<void> {
+    if (meetings.length === 0) return;
+
+    const { participants, loaded } = await this.fetchUserParticipantRecords(req, email, 'enrich_past_meetings_attendance');
+    if (loaded) {
+      this.applyUserAttendance(meetings, participants);
+    }
+
+    logger.debug(req, 'enrich_past_meetings_attendance', 'Enriched past meetings with viewer attendance', {
+      meeting_count: meetings.length,
+      participant_count: participants.length,
+      attendance_loaded: loaded,
+    });
   }
 
   /**
@@ -1209,6 +1193,66 @@ export class UserService {
   }
 
   /**
+   * Scans the current user's past meeting participant records (by email and username).
+   * `loaded` distinguishes "scan succeeded, user wasn't a participant" (loaded:true → attended:false is correct)
+   * from "couldn't determine attendance" (loaded:false → attended stays undefined). failOnPartial: true
+   * surfaces truncated sets; the .catch degrades so a failure drops attendance data without 500'ing the caller.
+   */
+  private async fetchUserParticipantRecords(
+    req: Request,
+    email: string,
+    operation: string
+  ): Promise<{ participants: PastMeetingParticipant[]; loaded: boolean }> {
+    const normalizedEmail = email.toLowerCase();
+    const username = await getUsernameFromAuth(req);
+
+    const filtersOr: string[] = [];
+    if (normalizedEmail) filtersOr.push(`email:${normalizedEmail}`);
+    if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
+
+    if (filtersOr.length === 0) {
+      return { participants: [], loaded: false };
+    }
+
+    return fetchAllQueryResources<PastMeetingParticipant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_past_meeting_participant',
+          filters_or: filtersOr,
+          page_size: 500,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    )
+      .then((participants) => ({ participants, loaded: true }))
+      .catch((error) => {
+        logger.warning(req, operation, 'Participant query failed, continuing without attendance enrichment', {
+          stage: 'participant_query',
+          err: error,
+        });
+        return { participants: [] as PastMeetingParticipant[], loaded: false };
+      });
+  }
+
+  /**
+   * Folds attendance from participant records onto meetings. OR-combines across records — a user with
+   * multiple participant rows for the same occurrence (re-joins, duplicate legacy data) is attended if
+   * ANY record has is_attended=true.
+   */
+  private applyUserAttendance(meetings: PastMeeting[], participants: PastMeetingParticipant[]): void {
+    const userAttendedByOccurrenceId = new Map<string, boolean>();
+    for (const p of participants) {
+      if (!p.meeting_and_occurrence_id) continue;
+      const prior = userAttendedByOccurrenceId.get(p.meeting_and_occurrence_id) ?? false;
+      userAttendedByOccurrenceId.set(p.meeting_and_occurrence_id, prior || !!p.is_attended);
+    }
+    for (const meeting of meetings) {
+      meeting.user_attended = userAttendedByOccurrenceId.get(meeting.meeting_and_occurrence_id ?? meeting.id) ?? false;
+    }
+  }
+
+  /**
    * Writes the section `visibility` preference: PATCH when it exists, else POST; a POST that races into
    * a 409 falls back to fetch + PATCH so the auto-saving client stays idempotent.
    */
@@ -1421,7 +1465,7 @@ export class UserService {
             })
         : Promise.resolve([] as MyFormationItemRow[]),
 
-      // Review authority comes from committee writer access, not the caller's email identity.
+      // Review authority comes from being on the group's own writer roster (not inherited writer access), not the caller's email identity.
       isMeLens
         ? this.committeeService.getManagedPendingApplications(req).catch((error) => {
             logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending join applications', { err: error });
@@ -1674,7 +1718,7 @@ export class UserService {
    *    ("Only invited users are allowed to RSVP"). Filtering here keeps the dashboard from
    *    surfacing rows the user can't action.
    *  - `committeeMeetingIds`: the subset of `meetingIds` where any of the user's registrations came from a
-   *    committee. Those follow committee membership, so the user cannot remove themselves from them.
+   *    committee. It only words the Remove confirmation, which tells the user the committee will not invite them again.
    *  - `uidsByMeeting`: the same registration UIDs grouped by meeting for personal-feed enrichment.
    */
   private async fetchUserActiveRegistrantIdentities(
@@ -1797,7 +1841,7 @@ export class UserService {
     return buildInvitationActions(invitations);
   }
 
-  /** Emit only the applicant/group identity and review address; omit private application details. */
+  /** Emit the applicant, the group and its project, and the applicant's own message — what a group writer needs to decide. */
   private transformApplicationsToActions(applications: ManagedPendingApplication[]): PendingActionItem[] {
     return applications.map((application) => ({
       type: 'JoinApplication',
@@ -1810,6 +1854,12 @@ export class UserService {
       applicationUid: application.uid,
       applicationApplicantEmail: application.applicant_email,
       applicationApplicantName: application.applicant_name,
+      applicationProjectName: application.project_name,
+      applicationGroupCategory: application.committee_category,
+      applicationProjectSlug: application.project_slug,
+      applicationIsFoundation: application.is_foundation,
+      applicationMessage: application.message,
+      applicationSubmittedAt: application.created_at,
     }));
   }
 

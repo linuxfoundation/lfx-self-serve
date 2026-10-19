@@ -176,9 +176,9 @@ export class MeetingCreateMenuComponent {
 
       // One group, not two: PrimeNG renders every *top-level* entry as a submenu label once any entry
       // has children, so a top-level Advanced would come out as a second section heading. Keeping it
-      // inside the group behind an item separator also matches the prototype, which shows a single
-      // "Quick start" heading and a divider above Advanced.
-      return [{ label: 'Quick start', items: [...typeRows, { separator: true }, advancedRow] }];
+      // inside the group behind an item separator keeps a single heading ("Quick start / Templates")
+      // with a divider above Advanced.
+      return [{ label: 'Quick start / Templates', items: [...typeRows, { separator: true }, advancedRow] }];
     });
   }
 

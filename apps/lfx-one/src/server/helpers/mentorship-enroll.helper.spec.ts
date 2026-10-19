@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { MENTORSHIP_MAX_OPEN_TERMS } from '@lfx-one/shared/constants';
+import { MENTORSHIP_MAX_OPEN_TERMS, MENTORSHIP_SKILL_MAX_LENGTH, MENTORSHIP_SKILLS_MAX_ITEMS } from '@lfx-one/shared/constants';
 import type { MentorshipUpstreamEnrollTemplate } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
@@ -75,6 +75,27 @@ describe('parseMentorshipEnrollCreateRequest', () => {
     expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' GO, Kubernetes ' }), OPERATION).industry).toBe('GO, Kubernetes');
     expect(parseMentorshipEnrollCreateRequest(validBody({ industry: '' }), OPERATION)).not.toHaveProperty('industry');
     expect(parseMentorshipEnrollCreateRequest(validBody({ industry: 5 }), OPERATION)).not.toHaveProperty('industry');
+  });
+
+  it('holds the skills and the industry technologies to the shared skill limits', () => {
+    const tooMany = Array.from({ length: MENTORSHIP_SKILLS_MAX_ITEMS + 1 }, (_, index) => `Skill ${index}`);
+    const tooLong = 'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH + 1);
+
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ skills: tooMany }), OPERATION)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ skills: [tooLong] }), OPERATION)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ industry: tooMany.join(', ') }), OPERATION)).toThrow(ServiceValidationError);
+    expect(() => parseMentorshipEnrollCreateRequest(validBody({ industry: `Go, ${tooLong}` }), OPERATION)).toThrow(ServiceValidationError);
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: 'Go, My Custom Tech' }), OPERATION).industry).toBe('Go, My Custom Tech');
+  });
+
+  it('measures and sends the industry technologies trimmed, with blanks dropped', () => {
+    const paddedTooLong = `${' '.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}${'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}`;
+
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' Go ,, Rust ,  ' }), OPERATION).industry).toBe('Go, Rust');
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: `Go, ${paddedTooLong}` }), OPERATION).industry).toBe(
+      `Go, ${'a'.repeat(MENTORSHIP_SKILL_MAX_LENGTH)}`
+    );
+    expect(parseMentorshipEnrollCreateRequest(validBody({ industry: ' , ' }), OPERATION)).not.toHaveProperty('industry');
   });
 
   it('drops fields the create body must never carry', () => {

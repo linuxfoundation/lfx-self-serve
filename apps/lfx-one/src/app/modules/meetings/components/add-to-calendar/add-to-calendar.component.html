@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" data-testid="add-to-calendar">
+  @if (isRecurring()) {
+    <div class="flex items-center gap-3" data-testid="add-to-calendar-scope">
+      <lfx-radio-button
+        [form]="scopeForm"
+        control="scope"
+        name="add-to-calendar-scope"
+        value="occurrence"
+        label="This date only"
+        inputId="add-to-calendar-scope-occurrence"></lfx-radio-button>
+      <lfx-radio-button
+        [form]="scopeForm"
+        control="scope"
+        name="add-to-calendar-scope"
+        value="series"
+        label="Entire series"
+        inputId="add-to-calendar-scope-series"></lfx-radio-button>
+    </div>
+  }
+
+  <lfx-menu #addToCalendarMenu [model]="menuItems()" [popup]="true" appendTo="body" (onShow)="menuOpen.set(true)" (onHide)="menuOpen.set(false)"></lfx-menu>
+  <lfx-button
+    label="Add to calendar"
+    icon="fa-regular fa-calendar-plus"
+    severity="secondary"
+    [outlined]="true"
+    ariaHaspopup="menu"
+    [ariaExpanded]="menuOpen()"
+    (onClick)="toggleMenu($event, addToCalendarMenu)"
+    data-testid="add-to-calendar-trigger">
+  </lfx-button>
+</div>

@@ -65,19 +65,16 @@ describe('InsightsTokenCreateDialogComponent', () => {
     expect(dialogRef.close).toHaveBeenCalledWith(created);
   });
 
-  it.each(['token_name_taken', 'token_limit_reached', 'not_key_contact', 'eligibility_unavailable'] as const)(
-    'maps upstream code %s to its inline message',
-    (code) => {
-      service.createToken.mockReturnValue(throwError(() => upstreamError(code)));
-      component['form'].controls.name.setValue('ci-pipeline');
+  it.each(['token_name_taken', 'token_limit_reached', 'not_enabled'] as const)('maps upstream code %s to its inline message', (code) => {
+    service.createToken.mockReturnValue(throwError(() => upstreamError(code)));
+    component['form'].controls.name.setValue('ci-pipeline');
 
-      component['submit']();
+    component['submit']();
 
-      expect(component['errorMessage']()).toBe(INSIGHTS_TOKEN_ERROR_MESSAGES[code]);
-      expect(component['submitting']()).toBe(false);
-      expect(dialogRef.close).not.toHaveBeenCalled();
-    }
-  );
+    expect(component['errorMessage']()).toBe(INSIGHTS_TOKEN_ERROR_MESSAGES[code]);
+    expect(component['submitting']()).toBe(false);
+    expect(dialogRef.close).not.toHaveBeenCalled();
+  });
 
   it.each(['toString', '__proto__', 'constructor'])('falls back for inherited key %s instead of mapping it', (code) => {
     service.createToken.mockReturnValue(throwError(() => upstreamError(code)));

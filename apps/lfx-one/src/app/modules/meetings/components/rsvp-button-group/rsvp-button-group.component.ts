@@ -30,6 +30,7 @@ import {
   resolveRsvpOccurrenceId,
   selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
+import { RSVP_RESPONSES } from '@lfx-one/shared/constants';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -187,6 +188,8 @@ export class RsvpButtonGroupComponent {
         tap((rsvp: MeetingRsvp) => {
           const acknowledged = {
             ...rsvp,
+            // The acknowledgement can omit or mangle the answer; the submitted response is what the user chose.
+            response_type: RSVP_RESPONSES.includes(rsvp.response_type) ? rsvp.response_type : response,
             occurrence_id: rsvp.occurrence_id || scopedOccurrenceId,
             // Creation time may predate a changed answer; use confirmation time without a modification timestamp.
             updated_at: rsvp.updated_at || rsvp.modified_at || new Date().toISOString(),

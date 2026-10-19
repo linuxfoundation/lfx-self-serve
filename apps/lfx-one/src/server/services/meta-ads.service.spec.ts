@@ -253,6 +253,26 @@ describe('executeMetaCampaignCreation', () => {
       expect(adSetBody.promoted_object).toBeUndefined();
     });
   });
+
+  /**
+   * The Reddit defect's Meta twin. `executeMetaDispatch` spreads `body.metaConfig` into this
+   * config without validating `objective`, so these five strings genuinely arrive — and because
+   * `META_OBJECTIVE_PARAMS` is a plain object literal they each resolve to a truthy inherited
+   * `Object.prototype` member and passed the `!objParams` test this replaced. Past it,
+   * `objParams.campaignObjective` was `undefined`, `JSON.stringify` dropped `objective`, and
+   * `POST /{accountId}/campaigns` went out anyway. The empty `fetchMock` is the assertion that
+   * matters: the refusal lands with the rest of the request validation, before even the Step 1
+   * account GET — the same point the Reddit creator refuses — so no upstream call is made (#3504).
+   */
+  describe('inherited prototype keys as objective', () => {
+    it.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__'])('refuses %s before any upstream call', async (objective) => {
+      await expect(executeMetaCampaignCreation(undefined, baseConfig({ objective } as Partial<MetaCampaignCreateRequest>))).rejects.toThrow(
+        `Unknown Meta objective: '${objective}'.`
+      );
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('buildMetaUtmUrl — utm_campaign omission', () => {
