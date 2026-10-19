@@ -1745,8 +1745,11 @@ export class ImplementationTabComponent implements OnInit {
     // dedicated input answers "is a save running" for every save, first or not.
     if (this.briefSaveInFlight()) return false;
     // A create sent mid-upload would go out with the pasted URL (or no image) instead of the file
-    // the operator just chose, and the upload would then land for a create already sent.
-    if (this.showRedditSection() && this.redditImageUploadStatus() === 'uploading') return false;
+    // the operator just chose, and the upload would then land for a create already sent. Only
+    // while the upload control is shown: its status and Remove live there, and without it the
+    // uploaded image is not sent anyway (`redditImageField`), so a resumed upload must not leave
+    // Create disabled with nothing on screen saying why or offering a way out.
+    if (this.showRedditSection() && this.redditAssetUploadAvailable() && this.redditImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;

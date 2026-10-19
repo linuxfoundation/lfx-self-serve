@@ -109,7 +109,7 @@ import { SseService } from './sse.service';
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
-  /** Each brief's latest creative-asset upload, kept until its answer is taken up: see `uploadCreativeAsset`. */
+  /** The latest creative-asset upload, by brief, kept until its answer is taken up: see `uploadCreativeAsset`. */
   private readonly creativeAssetUploads = new Map<string, Observable<CreativeAssetUploadResult>>();
   private readonly sse = inject(SseService);
 
@@ -302,6 +302,10 @@ export class CampaignService {
       .pipe(
         share({ connector: () => new ReplaySubject<CreativeAssetUploadResult>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false })
       );
+    // Only the latest upload is kept resumable. The tab resumes the brief it is showing, so an
+    // older brief's upload (an abandoned brief, a left page) has no one to resume it and would
+    // otherwise hold its image, up to CREATIVE_ASSET_MAX_BYTES, for the rest of the session.
+    this.creativeAssetUploads.clear();
     this.creativeAssetUploads.set(briefId, upload$);
     return upload$;
   }

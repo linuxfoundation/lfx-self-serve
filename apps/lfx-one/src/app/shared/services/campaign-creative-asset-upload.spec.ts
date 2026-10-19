@@ -58,6 +58,15 @@ describe('CampaignService creative-asset upload across a tab switch', () => {
     http.expectNone((r) => r.url === '/api/campaigns/brief/creative-assets');
   });
 
+  it('keeps only the latest upload, so an abandoned brief does not hold its image for the session', () => {
+    const OTHER_BRIEF = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);
+    const latest = service.uploadCreativeAsset(png(), 'tlf', OTHER_BRIEF);
+
+    expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBeNull();
+    expect(service.resumeCreativeAssetUpload(OTHER_BRIEF)).toBe(latest);
+  });
+
   it('forgets only the upload it is told to, so a stale answer cannot drop a newer pick', () => {
     const first = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);
     const second = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);

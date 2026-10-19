@@ -7765,6 +7765,26 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(submit(second.fixture)['imageAssetId']).toBe(ASSET_ID);
   });
 
+  // Once the upload control is gone (the capability withdrawn mid-upload), the upload has no
+  // status and no Remove on screen, and its image would not be sent, so it must not hold Create.
+  it('does not let an upload in flight block Create once the upload control is hidden', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    expect(c.canSubmit()).toBe(false);
+
+    f.componentRef.setInput('redditAssetUploadEnabled', false);
+    f.detectChanges();
+
+    expect(fileInput(f)).toBeNull();
+    expect(c.canSubmit()).toBe(true);
+  });
+
   it('says the upload was interrupted when there is nothing left to resume', async () => {
     uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
     const first = await mount(true);
