@@ -37,6 +37,8 @@ export interface MktgPrintBrand {
   accent: string;
   tint: string;
   onDark: string;
+  /** The body text on the white pages: the dark when it reads on white, else the app's darkest gray. The dark stays the ground of the cover and the panels. */
+  ink: string;
   /** The CSS font stack the print sets. */
   fontStack: string;
   /** The Google Fonts stylesheet of the typeface, null when the family is not there (or is the app's own). */

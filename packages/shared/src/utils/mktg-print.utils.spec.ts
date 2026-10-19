@@ -151,6 +151,19 @@ describe('the print’s brand', () => {
     expect([brand.fontUrl, brand.fontFamily]).toEqual([null, null]);
     expect(brand.onDark).toBe(MKTG_PRINT_INK_ON_LIGHT);
   });
+
+  it('sets the white pages’ body text in the kit’s dark when it reads on white, the LF navy without a kit', () => {
+    expect(mktgPrintBrand(kitWith()).ink).toBe('#20232A');
+    expect(mktgPrintBrand(null).ink).toBe(MKTG_PRINT_LF_LOOK.dark);
+  });
+
+  it('sets the white pages’ body text in dark ink when the kit’s "dark" is light or too pale to read on white, keeping the dark as the ground', () => {
+    for (const dark of ['#F4F4F4', '#FFFFFF', '#A0A0A0']) {
+      const brand = mktgPrintBrand(kitWith({ dark }));
+      expect(brand.ink).toBe(MKTG_PRINT_INK_ON_LIGHT);
+      expect(brand.dark).toBe(dark);
+    }
+  });
 });
 
 describe('the framework’s print', () => {

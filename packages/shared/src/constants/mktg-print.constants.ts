@@ -48,6 +48,9 @@ export const MKTG_PRINT_INK_ON_LIGHT = lfxColors.gray[900];
 /** White ink on a dark ground. */
 export const MKTG_PRINT_INK_ON_DARK = lfxColors.white;
 
+/** The contrast a kit's dark must reach on white to set the white pages' body text: WCAG AA for normal text. Below it the body takes MKTG_PRINT_INK_ON_LIGHT. */
+export const MKTG_PRINT_BODY_INK_MIN_CONTRAST = 4.5;
+
 /** The CSS filter that draws a full-colour lockup reversed (white), when the kit supplies no reversed artwork. */
 export const MKTG_PRINT_REVERSED_FILTER = 'brightness(0) invert(1)';
 

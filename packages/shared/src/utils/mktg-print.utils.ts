@@ -10,6 +10,7 @@ import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.co
 import {
   FOUNDATION_MESSAGE_PRINT_TAB_IDS,
   FOUNDATION_MESSAGE_PRINT_TITLE,
+  MKTG_PRINT_BODY_INK_MIN_CONTRAST,
   MKTG_PRINT_INK_ON_DARK,
   MKTG_PRINT_INK_ON_LIGHT,
   MKTG_PRINT_LF_LOOK,
@@ -25,7 +26,7 @@ import type {
   MktgPrintBrand,
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
-import { brandKitIsLight, brandKitTint } from './brand-kit-book.utils';
+import { brandKitContrastRatio, brandKitIsLight, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWeights } from './brand-kit.utils';
 import {
   foundationMessageAudienceRows,
@@ -45,6 +46,7 @@ function lfPrintBrand(): MktgPrintBrand {
     accent: look.accent,
     tint: look.tint,
     onDark: look.onDark,
+    ink: look.dark,
     fontStack: look.fontStack,
     fontUrl: null,
     fontFamily: null,
@@ -59,8 +61,11 @@ function lfPrintBrand(): MktgPrintBrand {
  * says it is there), and its logo — on the dark cover the supplied reversed
  * artwork, else the primary lockup drawn white; on the white pages the
  * primary lockup. A logo with no drawable artwork (no SVG bytes, or the
- * kit's placeholder) is left out rather than drawn as a placeholder. Without
- * a kit: the LF look.
+ * kit's placeholder) is left out rather than drawn as a placeholder. The
+ * white pages' body text is the dark only when it reaches WCAG AA on white:
+ * a kit whose "dark" is light (`#F4F4F4`) would otherwise print its body
+ * text near-invisible, so it takes the app's darkest gray there and keeps
+ * its dark as the cover's ground. Without a kit: the LF look.
  */
 export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   if (!kit) {
@@ -79,13 +84,16 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   } else if (primary?.src) {
     logoOnDark = { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER };
   }
-  const darkIsLight = /^#[0-9a-f]{6}$/i.test(dark) && brandKitIsLight(dark);
+  const darkIsHex = /^#[0-9a-f]{6}$/i.test(dark);
+  const darkIsLight = darkIsHex && brandKitIsLight(dark);
+  const darkReadsOnWhite = !darkIsHex || brandKitContrastRatio(brandKitLuminance(dark), 1) >= MKTG_PRINT_BODY_INK_MIN_CONTRAST;
   return {
     source: 'kit',
     dark,
     accent,
     tint: brandKitTint(dark),
     onDark: darkIsLight ? MKTG_PRINT_INK_ON_LIGHT : MKTG_PRINT_INK_ON_DARK,
+    ink: darkReadsOnWhite ? dark : MKTG_PRINT_INK_ON_LIGHT,
     fontStack: brandKitFontStack(type.family, type.fallback),
     fontUrl,
     fontFamily: fontUrl ? type.family.trim() : null,

@@ -3,6 +3,7 @@
 
 import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { MKTG_PRINT_INK_ON_LIGHT } from '@lfx-one/shared/constants';
 import { BrandKitRevision, FoundationMessageContent, FoundationMessagePrintView } from '@lfx-one/shared/interfaces';
 import { buildFoundationMessagePrintView } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
@@ -123,6 +124,17 @@ describe('MktgFrameworkPrintComponent', () => {
     const users = query('mktg-framework-print-icp-users');
     expect(users?.textContent).toContain('Goals: Adoption');
     expect(users?.textContent).toContain('Docs · Slack');
+  });
+
+  it('sets its body text in the brand’s ink, not its dark: a kit whose "dark" is white still prints readable text', async () => {
+    const kit = brandKitTestRevision();
+    const pale: BrandKitRevision = { ...kit, kit: { ...kit.kit, dark: '#FFFFFF' } };
+    await configure('browser', printView(pale));
+    const root = query('mktg-framework-print');
+    expect(root?.style.getPropertyValue('--mfp-dark')).toBe('#FFFFFF');
+    expect(root?.style.getPropertyValue('--mfp-ink')).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    expect(root?.className).toContain('text-[color:var(--mfp-ink)]');
+    expect(root?.className).not.toContain('text-[color:var(--mfp-dark)]');
   });
 
   describe('in the browser', () => {

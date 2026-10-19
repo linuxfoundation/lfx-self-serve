@@ -26,11 +26,12 @@
 
 <!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL, a hash) wraps inside its column instead of running off the page. -->
 <div
-  class="lfx-framework-print flex flex-col bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-dark)] [overflow-wrap:anywhere]"
+  class="lfx-framework-print flex flex-col bg-white font-[family-name:var(--mfp-font)] text-[9.5pt] leading-[1.45] text-[color:var(--mfp-ink)] [overflow-wrap:anywhere]"
   [style.--mfp-dark]="v.brand.dark"
   [style.--mfp-accent]="v.brand.accent"
   [style.--mfp-tint]="v.brand.tint"
   [style.--mfp-on-dark]="v.brand.onDark"
+  [style.--mfp-ink]="v.brand.ink"
   [style.--mfp-font]="v.brand.fontStack"
   [attr.data-brand]="v.brand.source"
   data-testid="mktg-framework-print">
