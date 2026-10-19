@@ -15,6 +15,8 @@ const store = vi.hoisted(() => ({
   objects: new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>(),
   clock: 0,
   failPutsMatching: null as RegExp | null,
+  failListsMatching: null as RegExp | null,
+  failGetsMatching: null as RegExp | null,
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -64,9 +66,15 @@ vi.mock('./object-store.service', () => ({
       return true;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
+      if (store.failListsMatching?.test(prefix)) {
+        throw new Error('store unavailable');
+      }
       return [...store.objects.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
     }
     public async getObject(_req: unknown, _purpose: string, key: string): Promise<{ body: string; metadata: Record<string, string> } | null> {
+      if (store.failGetsMatching?.test(key)) {
+        throw new Error('store unavailable');
+      }
       const object = store.objects.get(key);
       return object ? { body: object.body, metadata: object.metadata } : null;
     }
@@ -74,7 +82,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import type { MktgArtifactEnvelope, MktgDocumentType, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
+import type { MktgArtifactEnvelope, MktgArtifactJsonEnvelope, MktgDocumentType, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -82,7 +90,9 @@ import { MktgDocumentStoreService } from './mktg-document-store.service';
 const req = { path: '/api/mktg-agents/documents' } as unknown as Request;
 const PROJECT = 'proj-uid-1';
 const SPEC = MKTG_ARTIFACT_SPECS['brand-kit'];
+const FRAMEWORK_SPEC = MKTG_ARTIFACT_SPECS['foundation-message'];
 const BRAND_KIT = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'brand-kit') as MktgDocumentType;
+const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
 const LINKEDIN = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'linkedin-post') as MktgDocumentType;
 
 function sha(text: string): string {
@@ -99,6 +109,20 @@ function envelope(markdown: string, version = 1): MktgArtifactEnvelope {
     intake: { mode: 'form' as const, answers: [{ question_number: 1, answer: 'An answer' }] },
   };
   return full;
+}
+
+/** A Messaging Framework envelope as the store takes it: the JSON content, its sha over `JSON.stringify(content)`, and the rest as the sidecar. */
+function jsonEnvelope(tagline: string, version = 1): MktgArtifactJsonEnvelope {
+  const content = { mf: { tagline }, icp: [], mh: { line: tagline }, nums: [['1', 'one']] };
+  return {
+    contract: 'messaging-framework-output/v1',
+    content,
+    content_sha256: sha(JSON.stringify(content)),
+    version,
+    mode: 'draft',
+    report: { sources_read: [], sources_failed: [], gaps: ['No member count.'], notes: '' },
+    intake: { mode: 'form' as const },
+  } as MktgArtifactJsonEnvelope;
 }
 
 /** Seed a document stored before revisions existed, at `brand-kit/{project}/{sha}.md`. */
@@ -125,6 +149,8 @@ describe('MktgDocumentStoreService', () => {
     store.objects.clear();
     store.clock = 0;
     store.failPutsMatching = null;
+    store.failListsMatching = null;
+    store.failGetsMatching = null;
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     service = new MktgDocumentStoreService();
   });
@@ -212,6 +238,88 @@ describe('MktgDocumentStoreService', () => {
     });
   });
 
+  describe('persistJsonGeneration — an agent whose output is a structured asset', () => {
+    it('records the content’s JSON text as a JSON revision with the rest of the envelope as the sidecar, and writes no Markdown object', async () => {
+      const generated = jsonEnvelope('Search, open.');
+
+      const receipt = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'session-1');
+
+      const keys = revisionKeys();
+      expect(keys).toHaveLength(1);
+      expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/foundation-message/living/000001-[0-9a-f]{64}\\.json$`));
+      // The revision IS the stored copy: the receipt names its key, and nothing lands in the pre-revision `.md` partition.
+      expect(receipt).toEqual({ s3_key: keys[0], content_sha256: generated.content_sha256, project: PROJECT, version: 1, intake_mode: 'form' });
+      expect([...store.objects.keys()].filter((key) => key.endsWith('.md'))).toEqual([]);
+
+      const record = storedRecord(keys[0]);
+      expect(record.bundle.format).toBe('json');
+      expect(record.bundle.markdown).toBe(JSON.stringify(generated.content));
+      expect(record.bundle.contentSha256).toBe(generated.content_sha256);
+      expect(record.bundle.sidecar).toMatchObject({ contract: 'messaging-framework-output/v1', report: { gaps: ['No member count.'] }, mode: 'draft' });
+      expect(record.bundle.sidecar).not.toHaveProperty('content');
+    });
+
+    it('serves the JSON revision to the Documents area with its format and sidecar, and to dependent agents as its text', async () => {
+      const generated = jsonEnvelope('Search, open.');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'session-1');
+
+      const detail = await service.getDocument(req, PROJECT, FRAMEWORK, 'living');
+      expect(detail?.revisions[0]).toMatchObject({ number: 1, format: 'json', status: '', latest: true });
+      const revision = await service.getRevision(req, PROJECT, FRAMEWORK, 'living', detail?.revisions[0].id as string);
+      expect(revision?.markdown).toBe(JSON.stringify(generated.content));
+      expect(revision?.sidecar).toMatchObject({ report: { gaps: ['No member count.'] } });
+
+      const latest = await service.readLatest(req, FRAMEWORK_SPEC, PROJECT);
+      // The format travels with the bytes, so a dependent agent's read renders the JSON instead of attaching it as Markdown.
+      expect(latest).toMatchObject({ documentMarkdown: JSON.stringify(generated.content), format: 'json', receipt: { s3_key: revisionKeys()[0], version: 1 } });
+    });
+
+    it('never serves the pre-4.0 Markdown copy to dependent agents when the JSON revisions cannot be read', async () => {
+      const legacyKey = `foundation-message/${PROJECT}/${sha('# Old framework\n')}.md`;
+      store.objects.set(legacyKey, { body: '# Old framework\n', metadata: { version: '1', 'intake-mode': 'form' }, lastModified: new Date(0) });
+      await expect(service.readLatest(req, FRAMEWORK_SPEC, PROJECT)).resolves.toMatchObject({ documentMarkdown: '# Old framework\n' });
+
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Search, open.'), PROJECT, 'session-1');
+      store.failListsMatching = /^documents\//;
+      await expect(service.readLatest(req, FRAMEWORK_SPEC, PROJECT)).resolves.toBeNull();
+
+      store.failListsMatching = null;
+      store.failGetsMatching = /^documents\//;
+      await expect(service.readLatest(req, FRAMEWORK_SPEC, PROJECT)).resolves.toBeNull();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_document_store_read_latest',
+        expect.stringContaining('serving no stored document'),
+        expect.any(Object)
+      );
+    });
+
+    it('records a JSON generation once per session and bytes, adds a revision per new generation, and restores an older one as JSON', async () => {
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First.'), PROJECT, 'session-1');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First.'), PROJECT, 'session-1');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second.'), PROJECT, 'session-2');
+      expect(revisionKeys()).toHaveLength(2);
+
+      const detail = await service.getDocument(req, PROJECT, FRAMEWORK, 'living');
+      const restored = await service.restoreRevision(req, PROJECT, FRAMEWORK, 'living', detail?.revisions[1].id as string);
+      expect(restored?.revision).toMatchObject({ number: 3, origin: 'restored', restoredFromNumber: 1, format: 'json' });
+      await expect(service.readLatest(req, FRAMEWORK_SPEC, PROJECT)).resolves.toMatchObject({
+        documentMarkdown: JSON.stringify(jsonEnvelope('First.').content),
+      });
+    });
+
+    it('records nothing without the writer grant, and drops the receipt when the revision cannot be written', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+      await expect(service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('x'), PROJECT, 'session-1')).resolves.toBeNull();
+      expect(store.objects.size).toBe(0);
+
+      projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
+      store.failPutsMatching = /^documents\//;
+      await expect(service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('x'), PROJECT, 'session-1')).resolves.toBeNull();
+      expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_document_store_record', expect.stringContaining('Revision write failed'), expect.any(Object));
+    });
+  });
+
   describe('documents stored before revisions existed', () => {
     it('shows the pre-revision document as revision 1, Markdown only, without writing anything', async () => {
       const legacyMarkdown = '# Old Brand Kit\n';
@@ -267,6 +375,7 @@ describe('MktgDocumentStoreService', () => {
 
       const latest = await service.readLatest(req, SPEC, PROJECT);
       expect(latest?.documentMarkdown).toBe('# First\n');
+      expect(latest?.format).toBe('markdown');
       expect(latest?.receipt.s3_key).toBe(`brand-kit/${PROJECT}/${sha('# First\n')}.md`);
     });
 

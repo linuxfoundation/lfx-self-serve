@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
-import { MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_ANCHOR_QUESTIONS, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
+import { FoundationMessageContent, MktgRunAsset, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
+import { renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgArtifactService } from '@services/mktg-artifact.service';
 import { of, throwError } from 'rxjs';
@@ -22,6 +23,76 @@ import { MktgDependencyService } from './mktg-dependency.service';
  * registered `endpoints.stored`, so a Message Foundation generated in a
  * DIFFERENT browser resolves exactly like a Brand Kit does.
  */
+const pair = (a: string, b: string): [string, string] => [a, b];
+
+/** A contract-true Messaging Framework: the counts the agent gates, the message house in agreement with the framework. */
+function buildFramework(): FoundationMessageContent {
+  const goal = (id: string, n: number, t: string, icps: string[]): FoundationMessageContent['mf']['goals'][number] => ({
+    id,
+    n,
+    t,
+    vp: `${t} value proposition.`,
+    key: `${t} key message.`,
+    proof: [pair('1,200 members', 'Website'), pair('40 releases a year', 'Docs')],
+    bite: `${t} in open source`,
+    icps,
+  });
+  const icp = (id: string, name: string, goals: string[]): FoundationMessageContent['icp'][number] => ({
+    id,
+    name,
+    kind: 'Organization',
+    who: `${name}, described.`,
+    goals,
+    need: 'A need.',
+    value: 'A value.',
+    lead: `${name} lead message.`,
+    proof: [pair('A fact', 'Website')],
+    cta: 'Join the project.',
+    channels: ['Events'],
+    objection: ['Too early?', null],
+    personas: [pair('CTO', 'risk')],
+    basis: 'Website',
+  });
+  const icps = [
+    icp('vendors', 'Vendors', ['adoption']),
+    icp('users', 'End users', ['adoption']),
+    icp('contributors', 'Contributors', ['community']),
+    icp('members', 'Members', ['membership']),
+  ];
+  const pillar = (t: string): FoundationMessageContent['mh']['pillars'][number] => ({
+    t,
+    m: `${t} message.`,
+    p: [pair('Fact one', 'Website'), pair('Fact two', 'Docs'), pair('Fact three', 'Web')],
+  });
+  return {
+    mf: {
+      vision: 'A vision.',
+      mission: 'A mission.',
+      positioning: 'For platform teams, TestOrbit is the open release toolkit.',
+      tagline: 'Release, open.',
+      goals: [
+        goal('adoption', 1, 'Adoption', ['vendors', 'users']),
+        goal('community', 2, 'Community', ['contributors']),
+        goal('membership', 3, 'Membership', ['members']),
+      ],
+      crosscut: 'Goal 5 (grow our audience) has no column of its own: every column grows the audience when members amplify it.',
+      say: ['open release', 'community-governed'],
+      avoid: [pair('best-in-class', 'proven in production')],
+      anchor: [...FOUNDATION_MESSAGE_ANCHOR_QUESTIONS],
+      notes: '',
+    },
+    icp: icps,
+    mh: {
+      umbrella: 'Open releases for everyone.',
+      line: 'Release, open.',
+      pillars: [pillar('Open'), pillar('Proven'), pillar('Neutral')],
+      found: 'A Linux Foundation project.',
+      aud: icps.map((segment) => pair(segment.name, segment.lead)),
+    },
+    nums: [pair('1,200', 'members'), pair('40', 'releases a year'), pair('[00]', '[metric, from LFX]')],
+  };
+}
+
 describe('MktgDependencyService', () => {
   const storedRun = (document: string, agentId = 'brand-kit'): MktgStoredAgentRun => ({
     agentId,
@@ -198,6 +269,72 @@ describe('MktgDependencyService', () => {
           document: '# Browser message foundation',
         },
       });
+    });
+
+    it('hands over the server’s stored Messaging Framework (a JSON revision) as Markdown, never as JSON text', async () => {
+      // The ICP takes it as `message_foundation_markdown`, a Markdown document by its contract.
+      const content = buildFramework();
+      getStored.mockReturnValue(of({ documentMarkdown: JSON.stringify(content), format: 'json', receipt: { version: 2 } }));
+      loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));
+
+      const resolved = await new Promise<Record<string, unknown>>((resolve) =>
+        service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve)
+      );
+
+      expect(resolved).toEqual({
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'server',
+          version: 2,
+          document: renderFoundationMessageMarkdown(content),
+        },
+      });
+      expect(JSON.stringify(resolved)).toContain('# Messaging framework');
+    });
+
+    it('falls back to this browser’s run when the server’s stored JSON is not a framework, rather than attaching JSON text', async () => {
+      getStored.mockReturnValue(of({ documentMarkdown: JSON.stringify({ mf: {} }), format: 'json', receipt: { version: 2 } }));
+      loadRun.mockReturnValue(storedRun('# Browser message foundation', FOUNDATION_MESSAGE_INTAKE.agentId));
+
+      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
+
+      expect(resolved).toEqual({
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'browser',
+          version: 3,
+          document: '# Browser message foundation',
+        },
+      });
+    });
+
+    it('falls back to this browser’s stored Messaging Framework asset rendered to Markdown, the same reading the server copy gets', async () => {
+      const content = buildFramework();
+      const asset = { kind: 'messaging-framework', mode: 'draft', content, report: {}, checks: { findings: [] } } as unknown as MktgRunAsset;
+      const run = storedRun('', FOUNDATION_MESSAGE_INTAKE.agentId);
+      loadRun.mockReturnValue({ ...run, versions: [{ ...run.versions[0], asset }] });
+
+      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
+
+      expect(resolved).toEqual({
+        [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+          agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+          source: 'browser',
+          version: 3,
+          document: renderFoundationMessageMarkdown(content),
+        },
+      });
+    });
+
+    it('resolves nothing from a browser-stored asset that is not a framework (stale or hand-edited storage)', async () => {
+      const content = { mf: { tagline: 'Release, open.' } } as unknown as MktgRunAsset['content'];
+      const asset = { kind: 'messaging-framework', mode: 'draft', content, report: {}, checks: { findings: [] } } as unknown as MktgRunAsset;
+      const run = storedRun('', FOUNDATION_MESSAGE_INTAKE.agentId);
+      loadRun.mockReturnValue({ ...run, versions: [{ ...run.versions[0], asset }] });
+
+      const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', [FOUNDATION_MESSAGE_INTAKE.agentId]).subscribe(resolve));
+
+      expect(resolved).toEqual({ [FOUNDATION_MESSAGE_INTAKE.agentId]: null });
     });
 
     it('never asks the server for an agent that persists nothing', async () => {

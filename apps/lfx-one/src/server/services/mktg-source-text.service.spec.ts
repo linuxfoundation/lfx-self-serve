@@ -18,7 +18,7 @@ describe('MktgSourceTextService.readFile', () => {
     const service = new MktgSourceTextService();
 
     expect((await service.readFile(req, 'notes.md', Buffer.from('# Notes'), 1000)).text).toBe('# Notes');
-    expect(await service.readFile(req, 'deck.pptx', Buffer.from('PK'), 1000)).toEqual({ text: null, truncated: false, reason: 'unsupported' });
+    expect(await service.readFile(req, 'deck.key', Buffer.from('PK'), 1000)).toEqual({ text: null, truncated: false, reason: 'unsupported' });
   });
 
   it("refuses a file over the 20 MB cap unread, and caps a real PDF's text with the explicit marker", async () => {

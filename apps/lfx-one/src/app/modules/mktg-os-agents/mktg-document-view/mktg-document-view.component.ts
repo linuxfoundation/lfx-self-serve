@@ -8,20 +8,24 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision } from '@lfx-one/shared/utils';
+import { MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary, MktgRunAsset } from '@lfx-one/shared/interfaces';
+import { describeMktgRevision, foundationMessageAssetOfRevision } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
 
+import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
+
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
-// the body is the revision's Markdown, and the Revisions panel opens or
-// restores any other revision. `?revision=` picks the revision; without it
-// the latest is shown. Fetched in the browser only, after hydration.
+// the body is the revision's Markdown — or, for a Messaging Framework
+// revision (JSON content), the framework's own view — and the Revisions
+// panel opens or restores any other revision. `?revision=` picks the
+// revision; without it the latest is shown. Fetched in the browser only,
+// after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
-  imports: [DatePipe, NgClass, RouterLink, MarkdownRendererComponent, MessageComponent],
+  imports: [DatePipe, NgClass, RouterLink, MarkdownRendererComponent, MessageComponent, MktgFrameworkViewComponent],
   templateUrl: './mktg-document-view.component.html',
 })
 export class MktgDocumentViewComponent {
@@ -56,6 +60,23 @@ export class MktgDocumentViewComponent {
     const sha = this.view()?.revision.contentSha256 ?? '';
     return sha ? `${sha.slice(0, 4)}…${sha.slice(-4)}` : '';
   });
+  /**
+   * The revision as a framework asset, when it is one: a JSON revision of the
+   * foundation-message document whose text parses as a framework. Null for
+   * every Markdown revision — and for a JSON revision that does not parse,
+   * which then shows as its raw text rather than nothing.
+   */
+  protected readonly asset: Signal<MktgRunAsset | null> = computed(() => {
+    const view = this.view();
+    if (!view || view.revision.format !== 'json' || view.type.agentKey !== 'foundation-message') {
+      return null;
+    }
+    return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
+  });
+  /** The project name the framework view titles itself with. */
+  protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
+  /** A short word on the revision's standing, beside the asset's version. */
+  protected readonly revisionNote = computed(() => (this.view()?.revision.latest ? 'latest' : ''));
 
   private readonly request$ = toObservable(
     computed(() => ({ project: this.projectContext.activeContextUid(), ...this.params(), revisionId: this.revisionParam() }))

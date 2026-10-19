@@ -34,7 +34,8 @@ import {
   MKTG_RUN_ACTIVITY_PHASES,
   MKTG_RUN_ACTIVITY_QUESTIONS_MARKER,
   MKTG_RUN_ACTIVITY_TOOLS,
-  MKTG_RUN_QUESTION_SHORT_LABELS,
+  MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS,
+  MKTG_RUN_QUESTION_CHIP_WORDS,
 } from '../constants/mktg-run-activity.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
 
@@ -323,9 +324,25 @@ export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActiv
   });
 }
 
-/** The short chip label of a question in the stepper ("Vision", "Proof points"). */
-export function mktgRunQuestionShortLabel(key: string, label: string): string {
-  return MKTG_RUN_QUESTION_SHORT_LABELS[key] ?? label.split(/\s+/).slice(0, 2).join(' ');
+/**
+ * The short chip label of a question in the stepper: the label itself when it
+ * has at most {@link MKTG_RUN_QUESTION_CHIP_WORDS} words ("Words to avoid"),
+ * else its first words without a trailing connector ("Proof points to
+ * confirm" → "Proof points"). The hand test of 18 Oct showed "Words to".
+ */
+export function mktgRunQuestionShortLabel(label: string): string {
+  const words = label
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word !== '');
+  if (words.length <= MKTG_RUN_QUESTION_CHIP_WORDS) {
+    return words.join(' ');
+  }
+  const cut = words.slice(0, MKTG_RUN_QUESTION_CHIP_WORDS);
+  while (cut.length > 1 && MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS.includes(cut[cut.length - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
+    cut.pop();
+  }
+  return cut.join(' ').replace(/[,;:]$/, '');
 }
 
 /** True for any of the kinds the feed knows — for callers narrowing untyped input. */
