@@ -8,6 +8,7 @@ import {
   LINKEDIN_PROFILE_PATTERN,
   MEETING_DETAIL_CACHE_TTL_MS,
   MEETING_PASSWORD_HEADER,
+  MEETING_REMOVAL_SOURCE_HEADER,
   MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
@@ -32,6 +33,7 @@ import {
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
+  MeetingRemovalSource,
   MeetingRegistrantWithState,
   MeetingRsvp,
   PaginatedResponse,
@@ -727,8 +729,10 @@ export class MeetingService {
     });
   }
 
-  public removeMyMeetingRegistration(meetingUid: string): Observable<MeetingRegistrationRemovalResult> {
-    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`).pipe(
+  public removeMyMeetingRegistration(meetingUid: string, source: MeetingRemovalSource): Observable<MeetingRegistrationRemovalResult> {
+    const headers = new HttpHeaders({ [MEETING_REMOVAL_SOURCE_HEADER]: source });
+
+    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`, { headers }).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);

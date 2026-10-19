@@ -3,7 +3,7 @@
 
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
-import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { MEETING_COMPOSER_SECTIONS, MEETING_REMOVAL_SOURCES, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
 import type { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../constants/public-past-meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
@@ -669,6 +669,12 @@ export interface MeetingRegistrant {
   /** Registrant's RSVP (only included when include_rsvp=true) */
   rsvp?: MeetingRsvp | null;
 }
+
+/**
+ * UI surface a viewer removed themselves from a meeting on.
+ * Derived from the {@link MEETING_REMOVAL_SOURCES} constant so the union stays in sync with it.
+ */
+export type MeetingRemovalSource = (typeof MEETING_REMOVAL_SOURCES)[number];
 
 /** Server-resolved outcomes of removing the authenticated user's meeting registrations. */
 export interface MeetingRegistrationRemovalResult {

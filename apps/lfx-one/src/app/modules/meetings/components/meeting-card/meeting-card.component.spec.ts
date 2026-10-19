@@ -738,7 +738,7 @@ describe('MeetingCardComponent — remove myself', () => {
 
     expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
     confirm.mock.calls[0][0].accept();
-    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1');
+    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'meeting-card');
   });
 
   it('stops offering the action and tells the list to refresh once removed', async () => {

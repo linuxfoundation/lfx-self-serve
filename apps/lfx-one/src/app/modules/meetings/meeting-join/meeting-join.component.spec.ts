@@ -1243,7 +1243,7 @@ describe('MeetingJoinComponent', () => {
 
       await confirmAndAccept(fixture);
 
-      expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID);
+      expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'meeting-join');
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
       // `getPublicMeeting` keeps answering `invited: true`, which is the indexing lag the page must outlast.
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
