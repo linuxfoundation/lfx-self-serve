@@ -135,7 +135,7 @@ export class SidebarComponent {
 
   protected readonly footerItemsWithTestIds = computed(() => this.footerItems().map((item) => this.decorate(item)));
 
-  private readonly navigatedUrl = toSignal(
+  protected readonly navigatedUrl = toSignal(
     this.router.events.pipe(
       filter((event): event is NavigationEnd => event instanceof NavigationEnd),
       map((event) => event.urlAfterRedirects)

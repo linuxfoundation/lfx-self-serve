@@ -30,6 +30,7 @@ interface NavbarView {
   menuBlocks: Signal<NavbarMenuBlock<SidebarMenuItem & { trackKey: string }>[]>;
   lensTabs: Signal<LensOption[]>;
   roleMarks: Signal<NavbarRoleMark[]>;
+  isDocsActive: Signal<boolean>;
   showNoAccessState: Signal<'foundation' | 'project' | null>;
   menuPending: Signal<boolean>;
   menuLookupFailed: Signal<boolean>;
@@ -49,13 +50,14 @@ const createNavbar = async (
     lookupFailed = false,
     lenses = [ALL_LENSES.me, ALL_LENSES.project],
     mobile = false,
-  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean; lenses?: LensOption[]; mobile?: boolean } = {}
+    url = '/',
+  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean; lenses?: LensOption[]; mobile?: boolean; url?: string } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     imports: [NavbarComponent],
     providers: [
-      { provide: Router, useValue: { url: '/', events: EMPTY, navigate: vi.fn(), parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
+      { provide: Router, useValue: { url, events: EMPTY, navigate: vi.fn(), parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
       { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
       {
         provide: LensService,
@@ -189,6 +191,12 @@ describe('NavbarComponent', () => {
 
     expect(unenriched.projects[0].isFoundation).toBe(true);
     expect(enriched.projects[0].isFoundation).toBe(false);
+  });
+
+  it('marks the Documentation button active anywhere under /docs, and only there', async () => {
+    expect((await createNavbar([], [], {}, { url: '/docs/meetings/schedule-meeting' })).isDocsActive()).toBe(true);
+    expect((await createNavbar([], [], {}, { url: '/docs' })).isDocsActive()).toBe(true);
+    expect((await createNavbar([], [], {}, { url: '/meetings' })).isDocsActive()).toBe(false);
   });
 
   it('closes its body-level overlays as soon as the mobile drawer starts closing', async () => {

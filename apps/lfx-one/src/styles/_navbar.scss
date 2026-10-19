@@ -1076,6 +1076,12 @@
     color: #cad5e2;
   }
 
+  // The footer action for the current page (Documentation on `/docs`): white glyph on a filled circle.
+  .lfxn__foot-actions .lfxn__icon-btn.is-active {
+    background: #314158;
+    color: #fff;
+  }
+
   // Footer actions and the Create button: icon turns white and the button grows slightly on hover/focus.
   .lfxn__foot-actions .lfxn__icon-btn,
   .lfxn__head-actions .lfxn__icon-btn {

@@ -2,21 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import {
-  afterNextRender,
-  afterRenderEffect,
-  Component,
-  computed,
-  DestroyRef,
-  effect,
-  ElementRef,
-  inject,
-  input,
-  Signal,
-  signal,
-  untracked,
-  viewChild,
-} from '@angular/core';
+import { afterNextRender, afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, input, Signal, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ChangelogDrawerComponent } from '@components/changelog-drawer/changelog-drawer.component';
@@ -50,7 +37,7 @@ import {
   NavTooltipItem,
   SidebarMenuItem,
 } from '@lfx-one/shared/interfaces';
-import { buildInsightsUrl, toTitleCase } from '@lfx-one/shared/utils';
+import { buildInsightsUrl, isDocsPath, toTitleCase } from '@lfx-one/shared/utils';
 import { AppService } from '@services/app.service';
 import { ChangelogService } from '@services/changelog.service';
 import { CreatePermissionService } from '@services/create-permission.service';
@@ -65,6 +52,7 @@ import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directiv
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Popover, PopoverModule } from 'primeng/popover';
+import { filter } from 'rxjs';
 
 /**
  * The redesigned LFX navbar (sidebar v2): the 48px lens rail and the 300px nav panel merged into one
@@ -232,6 +220,8 @@ export class NavbarComponent extends SidebarComponent {
     },
   ];
   protected readonly brandSite = NAVBAR_BRAND_SITE;
+  /** The Documentation button reads as active anywhere under `/docs`, as the lens rail it replaced did. */
+  protected readonly isDocsActive: Signal<boolean> = computed(() => isDocsPath(this.navigatedUrl()));
 
   public constructor() {
     super();
@@ -401,15 +391,17 @@ export class NavbarComponent extends SidebarComponent {
    * soon as the drawer starts closing.
    */
   private initDrawerCloseCleanup(): void {
-    effect(() => {
-      if (!this.mobile() || this.appService.showMobileSidebar()) return;
-      untracked(() => {
+    toObservable(this.appService.showMobileSidebar)
+      .pipe(
+        filter((open) => !open && this.mobile()),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
         this.brandMenu()?.hide();
         this.createMenu()?.hide();
         this.userMenu()?.hide();
         NavTooltipDirective.hideWithin(this.navbarHost.nativeElement);
       });
-    });
   }
 
   /**
