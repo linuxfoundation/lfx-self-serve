@@ -276,15 +276,12 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
     await page.route('**/api/nav/org-items*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(orgItemsOnlyA) }));
     await page.reload({ waitUntil: 'domcontentloaded' });
 
+    // A sole organization renders as the navbar's static card (no panel), so read A from the card.
     let trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
-    await trigger.click();
-
-    const rowABefore = page.getByTestId(`org-item-${ORG_A_UID}`);
-    await expect(rowABefore).toBeVisible({ timeout: 5_000 });
-    const roleBefore = await page.getByTestId(`org-item-${ORG_A_UID}-role-badge`).getAttribute('data-role-label');
-    const nameBefore = await page.getByTestId(`org-item-${ORG_A_UID}-name`).textContent();
-    await page.keyboard.press('Escape');
+    await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+    const roleBefore = await page.getByTestId('org-selector-trigger-role-badge').getAttribute('data-role-label');
+    const nameBefore = (await page.getByTestId('org-selector-trigger-name').textContent())?.trim();
 
     // Simulate "administrator granted B": swap stubs so both A and B are writers.
     await context.unroute('**/api/orgs/me/role-grants');
@@ -296,9 +293,9 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
     await trigger.click();
 
-    // A's role label and displayed name are byte-for-byte identical after B is added.
+    // A's role label and displayed name are identical after B is added (now listed as a row).
     await expect(page.getByTestId(`org-item-${ORG_A_UID}-role-badge`)).toHaveAttribute('data-role-label', roleBefore ?? '');
-    const nameAfter = await page.getByTestId(`org-item-${ORG_A_UID}-name`).textContent();
+    const nameAfter = (await page.getByTestId(`org-item-${ORG_A_UID}-name`).textContent())?.trim();
     expect(nameAfter).toBe(nameBefore);
 
     // Simulate "administrator revoked B": swap stubs back to only-A.
@@ -310,13 +307,12 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
     await page.route('**/api/nav/org-items*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(orgItemsOnlyA) }));
     await page.reload({ waitUntil: 'domcontentloaded' });
 
+    // Back to a sole organization: the static card again, with A's role label and name unchanged.
     trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
-    await trigger.click();
-
-    // A's role label and name unchanged after B was revoked.
-    await expect(page.getByTestId(`org-item-${ORG_A_UID}-role-badge`)).toHaveAttribute('data-role-label', roleBefore ?? '');
-    const nameAfterRevoke = await page.getByTestId(`org-item-${ORG_A_UID}-name`).textContent();
+    await expect(trigger).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByTestId('org-selector-trigger-role-badge')).toHaveAttribute('data-role-label', roleBefore ?? '');
+    const nameAfterRevoke = (await page.getByTestId('org-selector-trigger-name').textContent())?.trim();
     expect(nameAfterRevoke).toBe(nameBefore);
   });
 
@@ -382,15 +378,13 @@ test.describe('Multi-Organization Switching — non-LF-team, two unrelated direc
 
     trigger = page.getByTestId('org-selector');
     await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+
+    // Only A remains and it is selected: the navbar shows it as the static single-organization card,
+    // which opens no panel.
+    await expect(trigger).toContainText(ORG_A_NAME);
+    await expect(trigger).toHaveAttribute('aria-disabled', 'true');
     await trigger.click();
-
-    const listbox = page.locator('#org-selector-listbox');
-    await expect(listbox).toBeVisible({ timeout: 5_000 });
-
-    // Exactly one row (A) is present and it is the aria-selected one.
-    const options = listbox.locator('[role="option"]');
-    await expect(options).toHaveCount(1);
-    await expect(page.getByTestId(`org-item-${ORG_A_UID}`)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('#org-selector-listbox')).toHaveCount(0);
 
     // No revocation-recovery toast is expected. If PrimeNG toasts exist in the DOM, none of them should
     // carry text about revoked access.

@@ -143,6 +143,10 @@ export class NavTooltipDirective {
     const host = this.host.nativeElement;
     if (!label || this.tooltip) return;
     if (this.onlyIfTruncated() && host.scrollWidth <= host.clientWidth) return;
+    // A card holding keyboard focus (a chip reached with ArrowDown) wins: hovering another trigger
+    // must not pull it away, so this one stays closed.
+    const other = NavTooltipDirective.active;
+    if (other && other !== this && other.tooltip?.contains(this.document.activeElement)) return;
 
     const tooltip = this.renderer.createElement('div') as HTMLElement;
     this.renderer.addClass(tooltip, 'lfxn-tooltip');

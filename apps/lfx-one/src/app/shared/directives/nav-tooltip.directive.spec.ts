@@ -163,5 +163,10 @@ describe('NavTooltipDirective', () => {
     vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS * 2);
 
     expect(tooltips()).toHaveLength(1);
+
+    // Hovering another trigger doesn't steal the focused card either.
+    second.dispatchEvent(new MouseEvent('mouseenter'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+    expect(tooltips().map((tooltip) => tooltip.getAttribute('role'))).toEqual(['group']);
   });
 });
