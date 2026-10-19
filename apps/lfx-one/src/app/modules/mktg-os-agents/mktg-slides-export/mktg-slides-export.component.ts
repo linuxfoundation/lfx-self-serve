@@ -68,6 +68,8 @@ export class MktgSlidesExportComponent {
   private readonly lookupSettled = signal(false);
   /** True when the current target's last export could not be read: the panel offers to check again, and Export waits. */
   protected readonly lookupFailed = signal(false);
+  /** True while the last export is being read: after a failed read the line stays, its "Check again" shown as checking. */
+  protected readonly lookupChecking = signal(false);
 
   // === Computed ===
   /** True while an export runs: the header's button shows it and takes no second click. */
@@ -126,6 +128,7 @@ export class MktgSlidesExportComponent {
             this.lookupFailed.set(true);
             return;
           }
+          this.lookupFailed.set(false);
           // A deck this panel saw finished is newer than any record the read found.
           this.last.set(this.record() ?? response.last);
           this.latest.set(response.latestRevision);
@@ -162,6 +165,9 @@ export class MktgSlidesExportComponent {
   }
 
   protected onCheckAgain(): void {
+    if (this.lookupChecking()) {
+      return;
+    }
     this.lookupRetry.next();
   }
 
@@ -183,7 +189,11 @@ export class MktgSlidesExportComponent {
     }
   }
 
-  /** Follow an export on the panel: progress, then its deck or its failure. */
+  /**
+   * Follow an export on the panel: progress, then its deck or its failure.
+   * The export's own mode is the one a retry uses, so an Update the panel
+   * attached to is retried as an Update, never as a second deck.
+   */
   private watch(run$: Observable<MktgSlidesExportRunUpdate>): void {
     this.phase.set('running');
     this.record.set(null);
@@ -193,6 +203,7 @@ export class MktgSlidesExportComponent {
     this.run?.unsubscribe();
     this.run = run$.subscribe({
       next: (update) => {
+        this.mode.set(update.mode);
         this.logoNote.set(update.logoNote);
         if (update.result) {
           this.onResult(update.result);
@@ -202,13 +213,18 @@ export class MktgSlidesExportComponent {
     });
   }
 
-  /** The target's last export, read again on "Check again"; null while the read has failed. */
+  /**
+   * The target's last export, read again on "Check again"; null while the
+   * read has failed. A failed read's line stays until a read succeeds, so a
+   * slow or unanswered check never takes away the way to check again.
+   */
   private readLast(target: MktgSlidesExportTarget): Observable<MktgSlidesExportLastResponse | null> {
     return this.lookupRetry.pipe(
       startWith(undefined),
-      tap(() => this.lookupFailed.set(false)),
+      tap(() => this.lookupChecking.set(true)),
       // The service logs the failure; the panel offers to check again.
-      switchMap(() => this.exportService.last(target).pipe(catchError(() => of(null))))
+      switchMap(() => this.exportService.last(target).pipe(catchError(() => of(null)))),
+      tap(() => this.lookupChecking.set(false))
     );
   }
 
@@ -218,6 +234,7 @@ export class MktgSlidesExportComponent {
     this.run = null;
     this.lookupSettled.set(false);
     this.lookupFailed.set(false);
+    this.lookupChecking.set(false);
     this.phase.set('idle');
     this.last.set(null);
     this.latest.set(null);

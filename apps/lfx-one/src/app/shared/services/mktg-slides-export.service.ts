@@ -71,8 +71,10 @@ export class MktgSlidesExportService {
   }
 
   /**
-   * Start an export and poll it to its end: the start's logo note first,
-   * then the one result. The export belongs to its document until it ends,
+   * Start an export and poll it to its end: its mode at once, the start's
+   * logo note next, then the one result, every update carrying the mode so
+   * a panel that attaches later retries it the same way. The export belongs
+   * to its document until it ends,
    * whoever is watching: it keeps running when every subscriber goes, and
    * {@link running} hands it to the next panel on the same document. An
    * export already under way for the document is returned instead of a
@@ -87,10 +89,11 @@ export class MktgSlidesExportService {
     const run$ = this.start({ ...target, mode }).pipe(
       switchMap((started) =>
         this.poll(target, started).pipe(
-          map((result): MktgSlidesExportRunUpdate => ({ logoNote: started.logoNote, result })),
-          startWith<MktgSlidesExportRunUpdate>({ logoNote: started.logoNote, result: null })
+          map((result): MktgSlidesExportRunUpdate => ({ mode, logoNote: started.logoNote, result })),
+          startWith<MktgSlidesExportRunUpdate>({ mode, logoNote: started.logoNote, result: null })
         )
       ),
+      startWith<MktgSlidesExportRunUpdate>({ mode, logoNote: null, result: null }),
       finalize(() => this.inFlight.delete(key)),
       shareReplay({ bufferSize: 1, refCount: false })
     );

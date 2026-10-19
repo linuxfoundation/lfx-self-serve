@@ -199,11 +199,14 @@ export interface MktgSlidesExportLastResponse {
 export type MktgSlidesExportPhase = 'idle' | 'choosing' | 'running' | 'done' | 'failed';
 
 /**
- * One step of an export the browser runs (client view model): once started,
- * why no logo was sent (null when one was) and no result yet; then the
- * poll's one result, ready or failed.
+ * One step of an export the browser runs (client view model): as soon as it
+ * is asked for, its mode with no logo note and no result yet; once started,
+ * why no logo was sent (null when one was); then the poll's one result,
+ * ready or failed. Every step carries the mode, so a panel that attaches to
+ * the export later retries it the same way (Update never becomes Create).
  */
 export interface MktgSlidesExportRunUpdate {
+  mode: MktgSlidesExportMode;
   logoNote: MktgSlidesExportLogoNote | null;
   result: MktgSlidesExportResultResponse | null;
 }

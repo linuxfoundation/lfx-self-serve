@@ -71,14 +71,15 @@ describe('MktgSlidesExportService', () => {
     http.verify();
   });
 
-  it('runs one export per document: started, then its result, shared with whoever comes back to the document until it ends', async () => {
+  it('runs one export per document: its mode, started, then its result, shared with whoever comes back to the document until it ends', async () => {
     vi.useFakeTimers();
     const { service, http } = configure();
     const first: MktgSlidesExportRunUpdate[] = [];
 
-    const subscription = service.run(TARGET, 'create').subscribe((update) => first.push(update));
-    http.expectOne('/api/mktg-agents/slides-export/start').flush(STARTED);
-    expect(first).toEqual([{ logoNote: null, result: null }]);
+    const subscription = service.run(TARGET, 'update').subscribe((update) => first.push(update));
+    expect(first).toEqual([{ mode: 'update', logoNote: null, result: null }]);
+    http.expectOne('/api/mktg-agents/slides-export/start').flush({ ...STARTED, mode: 'update', logoNote: 'not-public' });
+    expect(first.at(-1)).toEqual({ mode: 'update', logoNote: 'not-public', result: null });
     // The panel goes; the export does not.
     subscription.unsubscribe();
 
@@ -89,11 +90,13 @@ describe('MktgSlidesExportService', () => {
     expect(service.running({ ...TARGET, documentId: 'other' })).toBeNull();
     const second: MktgSlidesExportRunUpdate[] = [];
     running?.subscribe((update) => second.push(update));
+    // Whoever attaches learns the export is an Update, so a retry never makes a second deck.
+    expect(second).toEqual([{ mode: 'update', logoNote: 'not-public', result: null }]);
 
     await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
     http.expectOne('/api/mktg-agents/slides-export/result').flush({ status: 'failed', failure: 'google', message: 'm', deckLink: null });
 
-    expect(second.at(-1)).toEqual({ logoNote: null, result: { status: 'failed', failure: 'google', message: 'm', deckLink: null } });
+    expect(second.at(-1)).toEqual({ mode: 'update', logoNote: 'not-public', result: { status: 'failed', failure: 'google', message: 'm', deckLink: null } });
     expect(service.running(TARGET)).toBeNull();
     http.verify();
   });

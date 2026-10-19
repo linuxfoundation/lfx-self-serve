@@ -285,6 +285,66 @@ describe('MktgSlidesExportComponent', () => {
     expect(service.start).not.toHaveBeenCalled();
   });
 
+  it('keeps the failed check on screen while it checks again, so a slow check never takes away the retry', async () => {
+    await setup();
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    service.last.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+    fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
+
+    const lookup = new Subject<MktgSlidesExportLastResponse>();
+    service.last.mockReturnValueOnce(lookup);
+    await click('mktg-slides-export-check-again');
+
+    // The check is under way: the line and its (checking) button stay, Export still waits, and a second click asks nothing more.
+    expect(exporter.visible()).toBe(true);
+    expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
+    expect(query('mktg-slides-export-check-again')?.textContent).toContain('Checking');
+    expect(exporter.canExport()).toBe(false);
+    await click('mktg-slides-export-check-again');
+    expect(service.last).toHaveBeenCalledTimes(3);
+
+    // It fails again: the line offers Check again once more.
+    lookup.error(new HttpErrorResponse({ status: 503 }));
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-lookup-failed')).not.toBeNull();
+    expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+
+    await click('mktg-slides-export-check-again');
+    expect(service.last).toHaveBeenCalledTimes(4);
+    expect(query('mktg-slides-export-lookup-failed')).toBeNull();
+    expect(exporter.canExport()).toBe(true);
+  });
+
+  it('retries an Update the panel came back to as an Update, never as a second deck', async () => {
+    const results = new Subject<MktgSlidesExportResultResponse>();
+    lastResponse = { last: record(), latestRevision: null };
+    pollResult = results;
+    await setup();
+    await click('host-export');
+    await click('mktg-slides-export-update');
+    expect(service.start).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'update' }));
+
+    // The page is left and opened again while the update still runs: a new panel attaches to it.
+    fixture.destroy();
+    fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-running')).not.toBeNull();
+
+    // The poll answers once and ends, as the real one does.
+    results.next({ status: 'failed', failure: 'google', message: MKTG_SLIDES_EXPORT_FAILURE_MESSAGES.google, deckLink: null });
+    results.complete();
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-failed')).not.toBeNull();
+
+    pollResult = of({ status: 'ready', record: record({ mode: 'update' }) });
+    await click('mktg-slides-export-retry');
+    expect(service.start).toHaveBeenCalledTimes(2);
+    expect(service.start).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'update' }));
+    expect(query('mktg-slides-export-detail')?.textContent).toContain('the same deck, refreshed in place');
+  });
+
   it('takes no Export click until the last export is read, so an existing deck is offered Update and never duplicated', async () => {
     const lookup = new Subject<MktgSlidesExportLastResponse>();
     await setup();
