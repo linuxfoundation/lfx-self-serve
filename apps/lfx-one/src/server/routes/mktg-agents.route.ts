@@ -37,10 +37,13 @@ router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, nex
 // POST /api/mktg-agents/history - fetch mapped session history (owner-token in body)
 router.post('/history', (req, res, next) => mktgAgentsController.history(req, res, next));
 
-// POST /api/mktg-agents/brand-kit/generate - start a one-shot form-mode Brand Kit generation
+// POST /api/mktg-agents/brand-kit/generate - start a Brand Kit draft from the form and the uploaded logo files
 router.post('/brand-kit/generate', (req, res, next) => mktgAgentsController.generateBrandKit(req, res, next));
 
-// POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated document
+// POST /api/mktg-agents/brand-kit/answers - answer the session's questions turn (owner-token in body), on the same session
+router.post('/brand-kit/answers', (req, res, next) => mktgAgentsController.brandKitAnswers(req, res, next));
+
+// POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated kit
 router.post('/brand-kit/result', (req, res, next) => mktgAgentsController.brandKitResult(req, res, next));
 
 // GET /api/mktg-agents/brand-kit/stored - the project's latest persisted document (writer-entitled callers only)
@@ -69,7 +72,7 @@ router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIc
 // POST /api/mktg-agents/icp/result - poll a generation session for the validated document
 router.post('/icp/result', (req, res, next) => mktgAgentsController.icpResult(req, res, next));
 
-// GET /api/mktg-agents/foundation-message/stored - the project's latest stored framework (writer-entitled callers only)
+// GET /api/mktg-agents/foundation-message/stored - the project's latest stored framework (writer-entitled callers only); ?sidecar=true - the same latest revision with its envelope JSON and date (the Brand Kit's messaging framework)
 router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
 
 // GET /api/mktg-agents/documents?project=<uid> - every stored Marketing OS document of the project, grouped by type (writer-entitled callers only)

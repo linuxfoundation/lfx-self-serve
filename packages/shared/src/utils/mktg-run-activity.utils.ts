@@ -32,11 +32,12 @@ import {
   MKTG_RUN_ACTIVITY_OPAQUE_PATH_SEGMENTS,
   MKTG_RUN_ACTIVITY_PATH_SEGMENT_MAX_CHARS,
   MKTG_RUN_ACTIVITY_PHASES,
-  MKTG_RUN_ACTIVITY_QUESTIONS_MARKER,
+  MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS,
   MKTG_RUN_ACTIVITY_TOOLS,
   MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS,
   MKTG_RUN_QUESTION_CHIP_WORDS,
 } from '../constants/mktg-run-activity.constants';
+import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
 
 type UnknownRecord = Record<string, unknown>;
@@ -171,7 +172,13 @@ function isQuestionsTurn(event: UnknownRecord): boolean {
   if (type !== 'agent_notification_message' && type !== 'agent_notification_progress') {
     return false;
   }
-  return JSON.stringify(event['content'] ?? '').includes(MKTG_RUN_ACTIVITY_QUESTIONS_MARKER);
+  const content = JSON.stringify(event['content'] ?? '');
+  return MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS.some((marker) => content.includes(marker));
+}
+
+/** The first check's sentence: the Brand Kit's own, or the framework's. */
+function checkingLabel(brandKit: boolean): string {
+  return brandKit ? MKTG_RUN_ACTIVITY_LABELS.checkingBrandKit : MKTG_RUN_ACTIVITY_LABELS.checking;
 }
 
 /**
@@ -196,6 +203,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   let questionsAt = -1;
   let writingStart = '';
   let firstFinalizeAfterQuestions = '';
+  /** True once the run shows it is the Brand Kit's (its logo tool, its finalize tool or its questions turn): its writing and checking say so. */
+  let brandKit = false;
   /** Local-tool steps still open: done once any later event arrives. */
   const openLocal: Step[] = [];
 
@@ -234,14 +243,19 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
         let step: Step;
         if (tool === MKTG_RUN_ACTIVITY_TOOLS.askRequester) {
           step = { kind: 'questions', label: MKTG_RUN_ACTIVITY_LABELS.questions, status: 'running', startedAt: createdAt };
+        } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.inspectLogos) {
+          // The Brand Kit decodes the uploaded artwork inside the agent: reading, like a fetched page.
+          brandKit = true;
+          step = { kind: 'reading', label: MKTG_RUN_ACTIVITY_LABELS.inspectingLogos, status: 'running', startedAt: createdAt };
         } else {
           finalizeCount += 1;
+          brandKit ||= tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeBrandKit;
           if (questionsAt >= 0 && !firstFinalizeAfterQuestions) {
             firstFinalizeAfterQuestions = createdAt;
           }
           step = {
             kind: 'checking',
-            label: finalizeCount === 1 ? MKTG_RUN_ACTIVITY_LABELS.checking : MKTG_RUN_ACTIVITY_LABELS.fixing,
+            label: finalizeCount === 1 ? checkingLabel(brandKit) : MKTG_RUN_ACTIVITY_LABELS.fixing,
             status: 'running',
             startedAt: createdAt,
           };
@@ -254,6 +268,7 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
 
     if (isQuestionsTurn(event)) {
       questionsAt = index;
+      brandKit ||= JSON.stringify(event['content'] ?? '').includes(BRAND_KIT_QUESTIONS_CONTRACT_ID);
     }
   }
 
@@ -262,7 +277,7 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   if (writingStart) {
     steps.push({
       kind: 'writing',
-      label: MKTG_RUN_ACTIVITY_LABELS.writing,
+      label: brandKit ? MKTG_RUN_ACTIVITY_LABELS.writingBrandKit : MKTG_RUN_ACTIVITY_LABELS.writing,
       status: firstFinalizeAfterQuestions ? 'done' : 'running',
       startedAt: writingStart,
       ...(firstFinalizeAfterQuestions && { endedAt: firstFinalizeAfterQuestions }),

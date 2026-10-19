@@ -28,6 +28,7 @@ import {
   MktgLegacyDocument,
   MktgLegacyListing,
   MktgListedRevision,
+  MktgRevisionBundle,
   MktgRevisionContentSource,
   MktgRevisionFormat,
   MktgRevisionRecord,
@@ -319,7 +320,13 @@ export class MktgDocumentStoreService {
       }
       const summaries = this.summarize(revisions);
       const revision = summaries.find((summary) => summary.id === found.id) as MktgRevisionSummary;
-      return { ...this.detail(project, type, documentId, summaries), revision, markdown: found.record.bundle.markdown, sidecar: found.record.bundle.sidecar };
+      return {
+        ...this.detail(project, type, documentId, summaries),
+        revision,
+        markdown: found.record.bundle.markdown,
+        // The rest of the envelope: the framework view reads the report and inputs from it, the Brand Kit view renders the kit from it.
+        sidecar: found.record.bundle.sidecar ?? null,
+      };
     }
 
     // No stored revisions: only a living document's pre-revision object can answer.
@@ -384,12 +391,37 @@ export class MktgDocumentStoreService {
   /**
    * The project's latest document for an agent that dependent agents read:
    * the latest revision when the document has any, else the pre-revision
-   * read path exactly as before. Degrades to null like that path.
+   * read path exactly as before — only when the listing succeeded and found
+   * no revisions. A failed lookup, or revisions none of which load, degrade
+   * to null rather than to the older pre-revision copy.
+   *
+   * `withSidecar`: the same latest revision — the newest one that passes its
+   * integrity checks (a restore is itself the newest revision) — WITH its
+   * sidecar JSON and the date it was stored, which is what
+   * a consumer attaching the document as JSON takes (the Brand Kit's
+   * messaging framework). The latest revision regardless of its review
+   * status: LFX One has no Approve action yet, so an approved-only read
+   * could never answer (product decision, 17 Oct 2026 — Approve is a later
+   * item, and this is where the read narrows to the approved revision when
+   * it lands).
+   * Null when the agent has no document type or the project is not a valid
+   * partition (nothing is listed), or when the listing succeeded and no
+   * revision loads (a revision that fails its integrity checks is skipped
+   * like everywhere else); the pre-revision document carries no sidecar, so
+   * there is no fallback to it. A storage failure on this path is rethrown, never read as "no
+   * revision": the consumer gates a run on the answer, so it must render a
+   * failure state, not an absence.
    */
-  public async readLatest(req: Request, spec: MktgArtifactSpec, project: string): Promise<MktgArtifactStoredResponse | null> {
+  public async readLatest(
+    req: Request,
+    spec: MktgArtifactSpec,
+    project: string,
+    options: { withSidecar?: boolean } = {}
+  ): Promise<MktgArtifactStoredResponse | null> {
+    const withSidecar = options.withSidecar === true;
     const type = findMktgDocumentType(spec.agentKey);
     if (!type || !MKTG_ARTIFACT_PARTITION_REGEX.test(project)) {
-      return this.artifactService.readLatest(req, spec, project);
+      return withSidecar ? null : this.artifactService.readLatest(req, spec, project);
     }
 
     // The pre-revision copy is served only when a lookup that succeeded found
@@ -400,28 +432,36 @@ export class MktgDocumentStoreService {
     // hand that agent obsolete content.
     let listed: MktgListedRevision[];
     try {
+      if (withSidecar) {
+        // Every revision is read, so the one attached is named by its number
+        // in Documents: the count of the revisions that pass their integrity
+        // checks up to it, exactly as the Revisions table numbers them.
+        const revisions = await this.readRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
+        const latest = revisions[revisions.length - 1];
+        return latest
+          ? { ...this.latestResponse(spec, project, latest), revisionNumber: revisions.length, sidecar: this.envelopeSidecar(latest.record.bundle) }
+          : null;
+      }
       listed = await this.listRevisions(req, project, type, MKTG_LIVING_DOCUMENT_ID);
       for (const entry of [...listed].reverse()) {
         const revision = await this.loadRevision(req, entry);
         if (revision) {
-          const { bundle, source, createdAt } = revision.record;
-          // A Markdown revision has a pre-revision twin at the artifact key; a
-          // JSON revision is stored nowhere else, so its own key is the receipt's.
-          return {
-            documentMarkdown: bundle.markdown,
-            format: bundle.format ?? 'markdown',
-            receipt: {
-              s3_key: bundle.format === 'json' ? revision.key : buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
-              content_sha256: bundle.contentSha256,
-              project,
-              version: source.draftVersion,
-              intake_mode: source.intakeMode,
-            },
-            storedAt: createdAt,
-          };
+          return this.latestResponse(spec, project, revision);
         }
       }
     } catch (error) {
+      if (withSidecar) {
+        // The consumer gates a run on this answer, so a storage failure is a
+        // failure (the controller answers 5xx), never "no revision"; the
+        // centralized error handler logs the ERROR.
+        logger.warning(req, 'mktg_document_store_read_latest', 'Latest revision read failed — rethrowing for the caller to handle', {
+          agent: type.agentKey,
+          project,
+          with_sidecar: true,
+          err: error,
+        });
+        throw error;
+      }
       logger.warning(req, 'mktg_document_store_read_latest', 'Revision read failed — serving no stored document', {
         agent: type.agentKey,
         project,
@@ -438,6 +478,7 @@ export class MktgDocumentStoreService {
       });
       return null;
     }
+    // Reached only by the plain read: the sidecar read returned in the try.
     return this.artifactService.readLatest(req, spec, project);
   }
 
@@ -561,6 +602,25 @@ export class MktgDocumentStoreService {
     });
 
     return { id: buildMktgRevisionId(sequence, sha), key, record };
+  }
+
+  /** A stored revision as the latest read serves it: its Markdown, the receipt rebuilt from its record, and its date. */
+  private latestResponse(spec: MktgArtifactSpec, project: string, revision: MktgStoredRevision): MktgArtifactStoredResponse {
+    const { bundle, source, createdAt } = revision.record;
+    // A Markdown revision has a pre-revision twin at the artifact key; a
+    // JSON revision is stored nowhere else, so its own key is the receipt's.
+    return {
+      documentMarkdown: bundle.markdown,
+      format: bundle.format ?? 'markdown',
+      receipt: {
+        s3_key: bundle.format === 'json' ? revision.key : buildMktgArtifactObjectKey(spec, project, bundle.contentSha256),
+        content_sha256: bundle.contentSha256,
+        project,
+        version: source.draftVersion,
+        intake_mode: source.intakeMode,
+      },
+      storedAt: createdAt,
+    };
   }
 
   /** Summaries for the Revisions table, newest first, numbered by write order. */
@@ -687,6 +747,29 @@ export class MktgDocumentStoreService {
       version: envelope.version,
       intakeMode: envelope.intake.mode,
     };
+  }
+
+  /**
+   * The sidecar a consumer attaching the revision as JSON takes: for a
+   * Markdown revision the stored sidecar (the envelope's structured fields);
+   * for a JSON revision the envelope it was stored from — the sidecar with
+   * the content (the revision's JSON text) back under `content`, the shape
+   * the Brand Kit's framework reader unwraps. A JSON revision whose text
+   * does not parse to an object keeps its stored sidecar alone.
+   */
+  private envelopeSidecar(bundle: MktgRevisionBundle): Record<string, unknown> | null {
+    if (bundle.format !== 'json') {
+      return bundle.sidecar ?? null;
+    }
+    try {
+      const content: unknown = JSON.parse(bundle.markdown);
+      if (content !== null && typeof content === 'object' && !Array.isArray(content)) {
+        return { ...(bundle.sidecar ?? {}), content };
+      }
+    } catch {
+      // Not JSON: the stored sidecar alone, which the consumer's gate reads as no voice.
+    }
+    return bundle.sidecar ?? null;
   }
 
   private format(value: unknown): MktgRevisionFormat {

@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse, HttpStatusCode } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
 import { MktgDependencyDocument, MktgRevisionFormat } from '@lfx-one/shared/interfaces';
 import { readFoundationMessageContent, renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
-import { catchError, forkJoin, Observable, of, Subject, switchMap } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, Subject, switchMap, throwError } from 'rxjs';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
 import { MktgArtifactService } from './mktg-artifact.service';
@@ -64,10 +65,48 @@ export class MktgDependencyService {
    * Resolve one dependency agent's stored output for a project, or null when
    * neither source has one. Any server error (404 nothing stored, 403 not
    * entitled, transient failure) degrades to the browser-stored fallback.
+   *
+   * `withSidecar`: the server's LATEST stored revision read with its date
+   * and its sidecar JSON, which a `json` attachment submits (the Brand Kit's
+   * messaging framework — the latest regardless of its review status, since
+   * LFX One has no Approve action yet; Approve is a later item). There is
+   * no browser fallback then — a browser-stored run carries no sidecar —
+   * and an agent with no stored read endpoint resolves to null. Only a 404
+   * is "no revision": any other failure (403, a 5xx, the network) is logged
+   * and rethrown, because a null here reads as a measured absence — "Run
+   * the messaging framework first" — and the run page must show a failed
+   * check instead.
    */
-  public resolveDependency(projectUid: string, agentId: string): Observable<MktgDependencyDocument | null> {
-    const browserFallback$ = of(this.loadBrowserDocument(projectUid, agentId));
+  public resolveDependency(projectUid: string, agentId: string, withSidecar = false): Observable<MktgDependencyDocument | null> {
     const storedEndpoint = MKTG_AGENT_INTAKES[agentId]?.endpoints.stored;
+    if (withSidecar) {
+      if (!storedEndpoint) {
+        return of(null);
+      }
+      return this.artifactService.getStored(storedEndpoint, projectUid, true).pipe(
+        map(
+          (stored): MktgDependencyDocument => ({
+            agentId,
+            source: 'server',
+            // The chip names the revision attached as Documents numbers it; the receipt's version is the agent's draft version within its run.
+            version: stored.revisionNumber ?? stored.receipt.version,
+            // The document is Markdown like on every read; what a `json` attachment submits is the sidecar, untouched.
+            // A JSON revision with no Markdown reading still answers: the gate reads the sidecar, not this.
+            document: this.markdownOf(stored.documentMarkdown, stored.format) ?? '',
+            ...(stored.storedAt && { storedAt: stored.storedAt }),
+            ...(stored.sidecar && { sidecar: stored.sidecar }),
+          })
+        ),
+        catchError((error: unknown) => {
+          if (error instanceof HttpErrorResponse && error.status === HttpStatusCode.NotFound) {
+            return of(null);
+          }
+          console.error('[mktg-dependency] latest revision read failed', { agentId, projectUid, error });
+          return throwError(() => error);
+        })
+      );
+    }
+    const browserFallback$ = of(this.loadBrowserDocument(projectUid, agentId));
     if (!storedEndpoint) {
       // No stored read endpoint is registered for this agent — browser-stored
       // run only. This is not the same as "persists nothing": an intake can
@@ -89,15 +128,17 @@ export class MktgDependencyService {
   /**
    * Resolve several dependency agents at once, keyed by agent id. Emits a
    * single complete record (unresolved dependencies map to null); an empty
-   * dependency list resolves immediately to an empty record.
+   * dependency list resolves immediately to an empty record. The ids in
+   * `sidecarIds` resolve from the server's latest revision with its sidecar.
    */
-  public resolveDependencies(projectUid: string, agentIds: string[]): Observable<Record<string, MktgDependencyDocument | null>> {
+  public resolveDependencies(projectUid: string, agentIds: string[], sidecarIds: string[] = []): Observable<Record<string, MktgDependencyDocument | null>> {
     const uniqueIds = [...new Set(agentIds)];
     if (uniqueIds.length === 0) {
       return of({});
     }
+    const sidecar = new Set(sidecarIds);
     return forkJoin(
-      Object.fromEntries(uniqueIds.map((agentId) => [agentId, this.resolveDependency(projectUid, agentId)])) as Record<
+      Object.fromEntries(uniqueIds.map((agentId) => [agentId, this.resolveDependency(projectUid, agentId, sidecar.has(agentId))])) as Record<
         string,
         Observable<MktgDependencyDocument | null>
       >

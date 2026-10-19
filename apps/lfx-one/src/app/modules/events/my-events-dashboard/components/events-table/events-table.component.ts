@@ -106,7 +106,7 @@ export class EventsTableComponent {
           downloadFromUrl(url, fileName);
           // Deferred: some browsers begin the download asynchronously, and revoking
           // synchronously can invalidate the blob URL before it is consumed (see
-          // brand-kit-form.component.ts and mktg-agent-run.component.ts).
+          // mktg-agent-run.component.ts).
           setTimeout(() => URL.revokeObjectURL(url), 0);
         },
         error: () => {
