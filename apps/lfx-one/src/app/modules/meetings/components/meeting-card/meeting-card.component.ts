@@ -51,7 +51,6 @@ import {
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
-  isPastMeetingSummaryReadOnly,
   isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
@@ -78,6 +77,7 @@ import {
   getMeetingSelfRemovalMessage,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
+  isPastMeetingSummaryReadOnly,
   isSameOccurrenceId,
   retainConfirmedRsvp,
 } from '@lfx-one/shared/utils';
