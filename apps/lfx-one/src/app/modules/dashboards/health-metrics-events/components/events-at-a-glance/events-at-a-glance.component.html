@@ -20,7 +20,7 @@
   } @else {
     <span class="text-[13px] text-gray-500" data-testid="events-at-a-glance-control">{{ view().controlLabel }}</span>
 
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="events-at-a-glance-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-at-a-glance-hero">
       <div class="flex flex-col gap-2" data-testid="events-at-a-glance-headline">
         <div class="flex items-baseline gap-2">
           <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-at-a-glance-headline-value">{{ view().headline.value }}</span>
@@ -67,8 +67,10 @@
 
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="events-at-a-glance-tiles">
       @for (tile of view().tiles; track tile.key) {
-        <div class="flex flex-col gap-1 rounded-lg border border-gray-100 p-3" [attr.data-testid]="'events-at-a-glance-tile-' + tile.key">
-          <div class="flex items-baseline gap-1.5 text-lg font-semibold tabular-nums text-gray-900">
+        <!-- Unboxed, label first, as the design's metric tiles; they open nothing, so no hover. -->
+        <div class="flex flex-col gap-1" [attr.data-testid]="'events-at-a-glance-tile-' + tile.key">
+          <span class="text-[12px] text-gray-900">{{ tile.label }}</span>
+          <div class="flex items-baseline gap-1.5 text-[18px] font-medium tabular-nums text-gray-900">
             <span [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-value'">{{ tile.value }}</span>
             @if (tile.delta !== null) {
               <span
@@ -88,7 +90,6 @@
                 [attr.data-testid]="'events-at-a-glance-tile-' + tile.key + '-warn'"></i>
             }
           </div>
-          <span class="text-[12px] text-gray-500">{{ tile.label }}</span>
         </div>
       }
     </div>

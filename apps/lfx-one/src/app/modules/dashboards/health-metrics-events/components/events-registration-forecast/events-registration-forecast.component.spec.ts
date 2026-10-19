@@ -143,6 +143,16 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('events-registration-forecast-days-left')?.textContent?.trim()).toBe('40');
   });
 
+  it('lays the forecast out flat, with its range inline and the stats as columns', async () => {
+    await render();
+
+    expect(query('events-registration-forecast-card')?.classList).not.toContain('border');
+    // Range sits on the value's line; the caption comes after it.
+    expect(query('events-registration-forecast-range')?.parentElement).toBe(query('events-registration-forecast-value')?.parentElement);
+    expect(query('events-registration-forecast-headline')?.lastElementChild?.textContent?.trim()).toBe('Forecast final registrations');
+    expect(query('events-registration-forecast-stats')?.classList).toContain('flex-wrap');
+  });
+
   it('reports the miss count for the sub-nav note and settles once the list lands', async () => {
     await render({ events: [event(), event({ eventId: 'evt-2', goal: 700 })] });
 

@@ -96,6 +96,15 @@ describe('EventsAtAGlanceComponent', () => {
     expect(text('events-at-a-glance-baseline')).toBe('all against the same point last year');
   });
 
+  it('draws the hero and the metric tiles unboxed, each tile labelled above its value', async () => {
+    await render();
+
+    expect(query('events-at-a-glance-hero')?.classList).not.toContain('border');
+    const tile = query('events-at-a-glance-tile-attendees');
+    expect(tile?.classList).not.toContain('border');
+    expect(tile?.firstElementChild?.textContent?.trim()).toBe('Attendees');
+  });
+
   it('re-projects a period change without deltas for an uncompared year, and settles again', async () => {
     await render();
 
