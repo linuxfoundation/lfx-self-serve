@@ -2913,7 +2913,17 @@ export class ImplementationTabComponent implements OnInit {
       // asset id yet, and while the upload control is hidden (support unknown, unconfirmed or off)
       // this block is the only place its state shows and the only way to remove it.
       const hasImage = this.redditImageAssetForThisBrief() || this.redditImageUploadStatus() === 'uploading';
-      if (this.redditAssetUploadAvailable() || !hasImage) return null;
+      if (this.redditAssetUploadAvailable()) return null;
+      // A failed upload's reason lives in the upload control, so while that is hidden (a resumed
+      // upload that failed after a tab switch) it is shown here, holding Create until the operator
+      // removes it: otherwise the campaign would go out without the image they chose, unannounced.
+      if (this.redditImageUploadStatus() === 'error') {
+        return {
+          kind: 'uploadFailed',
+          message: `The Reddit image upload did not complete: ${this.redditImageUploadError()} Remove it to create the campaign without the image.`,
+        };
+      }
+      if (!hasImage) return null;
       if (this.redditCreativeEnabled() === false || this.redditAssetUploadEnabled() === false) {
         return {
           kind: 'unsupported',

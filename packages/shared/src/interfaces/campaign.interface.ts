@@ -4388,7 +4388,7 @@ export interface CampaignBiddingCapabilityBlock {
  * was made for a different brief than the one now open, so it is never sent whatever the capability.
  */
 export interface CampaignRedditImageAssetBlock {
-  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief';
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported' | 'otherBrief' | 'uploadFailed';
   message: string;
 }
 

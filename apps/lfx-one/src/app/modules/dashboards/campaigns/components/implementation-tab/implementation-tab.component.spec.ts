@@ -7923,6 +7923,33 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(second.latest()?.redditImageUploadPendingName).toBe('');
   });
 
+  it('shows a resumed upload that fails while the control is hidden, and holds Create until removed', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    f.detectChanges();
+
+    const block = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]') as HTMLElement | null;
+    expect(block?.textContent).toContain('The Reddit image upload did not complete');
+    expect(c.canSubmit()).toBe(false);
+
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-remove"] button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(c.canSubmit()).toBe(true);
+  });
+
   it('says the upload was interrupted when there is nothing left to resume', async () => {
     uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
     const first = await mount(true);
