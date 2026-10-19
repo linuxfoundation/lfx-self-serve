@@ -261,7 +261,7 @@
                         severity="secondary"
                         size="small"
                         [text]="true"
-                        (onClick)="onExtendDeadline(vote)"
+                        (onClick)="$event.stopPropagation(); onExtendDeadline(vote)"
                         [attr.data-testid]="'votes-extend-deadline-' + vote.uid">
                       </lfx-button>
                       <lfx-button

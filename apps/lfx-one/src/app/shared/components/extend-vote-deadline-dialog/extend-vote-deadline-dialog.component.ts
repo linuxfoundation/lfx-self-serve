@@ -9,7 +9,15 @@ import { CalendarComponent } from '@components/calendar/calendar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { ExtendVoteDeadlineDialogData, ExtendVoteDeadlineDialogResult } from '@lfx-one/shared/interfaces';
-import { buildTimezoneOptions, combineDateTime, formatTo12HourInTimezone, getUserTimezone, toZonedDateCarrier } from '@lfx-one/shared/utils';
+import {
+  buildTimezoneOptions,
+  combineDateTime,
+  formatTo12HourInTimezone,
+  getTimezoneUtcOffsetString,
+  getUserTimezone,
+  parseTime12Hour,
+  toZonedDateCarrier,
+} from '@lfx-one/shared/utils';
 import { validTimeFormat, voteExtendDeadlineValidator } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
@@ -70,8 +78,24 @@ export class ExtendVoteDeadlineDialogComponent {
     return this.data.currentEndTimeTimezone ?? getUserTimezone();
   }
 
+  // Offset labels must reflect the picked wall-clock date/time, not the dialog's frozen open-time
+  // value — static offsets lie across a DST boundary the organizer is extending into. A timezone
+  // absent from the curated catalog (e.g. America/Phoenix) would otherwise render the required
+  // select blank despite holding a value, so it's surfaced as a synthesized option (mirrors
+  // VoteBasicsComponent.initTimezoneOptions()).
   private initTimezoneOptions(): Signal<{ label: string; value: string }[]> {
-    return computed(() => buildTimezoneOptions(new Date(this.data.currentEndTime)));
+    return computed(() => {
+      const { close_date, close_time, timezone } = this.formValue();
+      const baseDate = close_date ?? new Date(this.data.currentEndTime);
+      const parsed = close_time ? parseTime12Hour(close_time) : null;
+      const deadline = parsed ? new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), parsed.hours, parsed.minutes) : baseDate;
+      const options = buildTimezoneOptions(deadline);
+      if (timezone && !options.some((option) => option.value === timezone)) {
+        const offset = getTimezoneUtcOffsetString(timezone, deadline);
+        return [{ label: offset ? `${timezone} (${offset})` : timezone, value: timezone }, ...options];
+      }
+      return options;
+    });
   }
 
   private initMinDate(): Signal<Date> {

@@ -166,6 +166,12 @@ export class VotesTableComponent {
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
+  /**
+   * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
+   * here immediately rather than waiting on `refresh.emit()`'s possibly-stale search-index refetch.
+   * Self-healing: an effect below evicts an entry once the incoming `votes()` row shows the same value.
+   */
+  private readonly extendedDeadlines = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
 
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
@@ -197,6 +203,23 @@ export class VotesTableComponent {
     effect(() => {
       if (!this.showDraftTab() && this.statusTab() === PollStatus.DISABLED) {
         untracked(() => this.statusTab.set('all'));
+      }
+    });
+    effect(() => {
+      const votes = this.votes();
+      const overrides = untracked(() => this.extendedDeadlines());
+      if (overrides.size === 0) return;
+      const next = new Map(overrides);
+      let changed = false;
+      for (const vote of votes) {
+        const override = next.get(vote.uid);
+        if (override && vote.end_time === override.end_time && vote.end_time_timezone === override.end_time_timezone) {
+          next.delete(vote.uid);
+          changed = true;
+        }
+      }
+      if (changed) {
+        untracked(() => this.extendedDeadlines.set(next));
       }
     });
     // Only personal/client scope owns these options. Do not clear controls during a feed refresh.
@@ -385,7 +408,10 @@ export class VotesTableComponent {
         .extendVote(vote.uid, result)
         .pipe(take(1))
         .subscribe({
-          next: () => {
+          next: (updatedVote) => {
+            this.extendedDeadlines.update((map) =>
+              new Map(map).set(vote.uid, { end_time: updatedVote.end_time, end_time_timezone: updatedVote.end_time_timezone })
+            );
             this.messageService.add({
               severity: 'success',
               summary: 'Success',
@@ -473,7 +499,8 @@ export class VotesTableComponent {
 
   private initDisplayedVotes(): Signal<VoteTableRow[]> {
     return computed(() => {
-      const allVotes = this.votes();
+      const overrides = this.extendedDeadlines();
+      const allVotes = overrides.size === 0 ? this.votes() : this.votes().map((vote) => ({ ...vote, ...overrides.get(vote.uid) }));
 
       // For lazy (server-side paginated) mode, the server handles all filtering via filtersChange
       if (this.lazy()) {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { Component, computed, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
@@ -101,6 +101,11 @@ export class VoteResultsDrawerComponent {
   protected readonly myResponseError = signal<boolean>(false);
   /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
+  /**
+   * Bumped each time the drawer opens (GH-3661) — reopening the same voteId after an extend-triggered
+   * cache eviction otherwise never re-fetches, since toSignal/toObservable only emit on value changes.
+   */
+  private readonly voteReopenToken = signal(0);
 
   // === Shared Observables ===
   private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
@@ -143,6 +148,15 @@ export class VoteResultsDrawerComponent {
   // close-date text falls back to UTC there and is replaced on client hydration.
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
+  // === Constructor ===
+  public constructor() {
+    effect(() => {
+      if (this.visible()) {
+        untracked(() => this.voteReopenToken.update((n) => n + 1));
+      }
+    });
+  }
+
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
@@ -161,8 +175,8 @@ export class VoteResultsDrawerComponent {
   // === Private Initializers ===
   private initVote(): Signal<Vote | null> {
     return toSignal(
-      this.voteId$.pipe(
-        switchMap((id) => {
+      combineLatest([this.voteId$, toObservable(this.voteReopenToken)]).pipe(
+        switchMap(([id]) => {
           if (!id) {
             this.loadingVoteDetails.set(false);
             return of(null);
