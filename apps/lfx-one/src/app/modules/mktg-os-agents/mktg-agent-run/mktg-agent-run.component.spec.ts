@@ -1915,6 +1915,36 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-export-slides')).toBeNull();
     });
 
+    it('exports the older version picked on the chips, never the newest: its own stored revision, by the hash of its content', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': assetRun([
+          { version: 1, document: '', asset: ASSET, contentSha256: '1'.repeat(64), createdAt: '2026-10-16T00:00:00.000Z' },
+          { version: 2, document: '', asset: ASSET, contentSha256: '2'.repeat(64), createdAt: '2026-10-17T00:00:00.000Z' },
+        ]),
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(slidesExport.last).toHaveBeenLastCalledWith(expect.objectContaining({ contentSha256: '2'.repeat(64) }));
+
+      query('mktg-agent-run-version-chip-1')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(slidesExport.last).toHaveBeenLastCalledWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', contentSha256: '1'.repeat(64) });
+
+      query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+      expect(slidesExport.start).toHaveBeenCalledTimes(1);
+      expect(slidesExport.start).toHaveBeenCalledWith({
+        project: 'proj-1',
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        contentSha256: '1'.repeat(64),
+        mode: 'create',
+      });
+    });
+
     it('restores a run the earlier Markdown form saved to the form, its answers kept — never an empty generating shell', async () => {
       storedRuns = {
         'proj-1:foundation-setup': assetRun([{ version: 1, document: '# An earlier Messaging Document', createdAt: '2026-10-01T00:00:00.000Z' }]),

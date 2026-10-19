@@ -76,6 +76,24 @@ describe('MktgDocumentViewComponent', () => {
     harness.detectChanges();
   }
 
+  /** A Brand Kit revision's sidecar, as the store serves it: the kit's envelope without its Markdown. */
+  function kitSidecar(): Record<string, unknown> {
+    const kit = brandKitTestRevision();
+    return {
+      contract: BRAND_KIT_CONTRACT_ID,
+      project_name: kit.projectName,
+      project: kit.project,
+      version: kit.version,
+      mode: kit.mode,
+      kit: kit.kit,
+      chapters: kit.chapters,
+      report: kit.report,
+      inputs: { website_url: kit.websiteUrl },
+      generated_at: kit.generatedAt,
+      agent: { agent_version: kit.agentVersion },
+    };
+  }
+
   /** A Messaging Framework document whose latest revision is the framework's JSON, as the store serves it. */
   function useFrameworkRevision(): void {
     const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
@@ -191,21 +209,7 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
-    const kit = brandKitTestRevision();
-    const sidecar = {
-      contract: BRAND_KIT_CONTRACT_ID,
-      project_name: kit.projectName,
-      project: kit.project,
-      version: kit.version,
-      mode: kit.mode,
-      kit: kit.kit,
-      chapters: kit.chapters,
-      report: kit.report,
-      inputs: { website_url: kit.websiteUrl },
-      generated_at: kit.generatedAt,
-      agent: { agent_version: kit.agentVersion },
-    };
-    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar }));
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
 
     await render('/documents/brand-kit/living');
 
@@ -223,6 +227,20 @@ describe('MktgDocumentViewComponent', () => {
     expect(slidesExport.last).toHaveBeenCalledWith(
       expect.objectContaining({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: expect.any(String) })
     );
+  });
+
+  it('exports the older revision in ?revision=, never the latest: the last export is read and the export started for exactly that revision', async () => {
+    store.getRevision.mockImplementation((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
+      of({ ...revisionResponse([LATEST, OLDER].find((candidate) => candidate.id === revisionId) ?? LATEST), sidecar: kitSidecar() })
+    );
+
+    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    query('brand-kit-web-view-export-slides')?.querySelector('button')?.click();
+    await settle();
+
+    expect(slidesExport.last).toHaveBeenCalledTimes(1);
+    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: OLDER.id });
+    expect(slidesExport.start).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: OLDER.id, mode: 'create' });
   });
 
   it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {

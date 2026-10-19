@@ -366,6 +366,34 @@ describe('MktgSlidesExportService', () => {
       expect(sentMessage()).toContain('\nLOGO URL: none\n');
     });
 
+    it('exports the older revision a page names after a newer one is stored — by its hash or its id — and keeps the deck with it', async () => {
+      const olderSha = await seedFramework(documentStore, 'Older.');
+      await seedFramework(documentStore, 'Newer.');
+      const assetsSent = (): Record<string, Record<string, unknown>> =>
+        JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
+
+      const byHash = await service.startExport(req, input({ selector: { contentSha256: olderSha } }));
+      expect(byHash.revision).toMatchObject({ number: 1, contentSha256: olderSha });
+      expect(assetsSent()['framework']['mf']).toEqual({ tagline: 'Older.' });
+
+      guildMocks.createSession.mockResolvedValueOnce('session-2');
+      const byId = await service.startExport(req, input({ selector: { revisionId: byHash.revision.id } }));
+      expect(byId.revision).toEqual(byHash.revision);
+      expect(assetsSent()['framework']['mf']).toEqual({ tagline: 'Older.' });
+
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      const result = await service.getResult(req, 'session-1', {
+        project: PROJECT,
+        type: FRAMEWORK,
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        revisionId: byHash.revision.id,
+      });
+      expect(result).toMatchObject({ status: 'ready', record: { revisionId: byHash.revision.id, revisionNumber: 1, contentSha256: olderSha } });
+      // The newer revision stands beside it, so the panel says the deck is out of date.
+      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).latestRevision).toMatchObject({ number: 2 });
+    });
+
     it('refuses an update before any deck exists, and a revision it does not store', async () => {
       await seedFramework(documentStore);
 
