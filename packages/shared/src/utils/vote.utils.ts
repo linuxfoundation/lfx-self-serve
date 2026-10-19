@@ -185,20 +185,21 @@ function isParticipationCount(value: unknown): value is number {
  * @description The denominator is the invited electorate (`total_voting_request_invitations`), not current group
  * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` in the results drawer.
  * Drafts never show counts; missing counts degrade to UNAVAILABLE/COUNT_ONLY instead of a false zero; a zero electorate
- * never yields a percent. Rounding matches `computeVoteParticipationStats`; the percent is clamped to 100 for index lag.
+ * never yields a percent. Round to the nearest integer, but reserve 100% for responses at or above the invited total.
  * @param vote - Vote list row from the query-service index or per-vote REST
  * @returns VoteRowParticipation for the Responses cell
  */
 export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
-  const empty = { responses: null, invited: null, percent: null, secondaryLabel: null };
+  const status = normalizePollStatus(vote.status);
+  const empty = { responses: null, invited: null, percent: null, secondaryLabel: null, ariaLabel: null };
 
-  if (normalizePollStatus(vote.status) === PollStatus.DISABLED) {
-    return { ...empty, state: VoteRowParticipationState.NOT_OPEN, label: 'Not open yet', ariaLabel: 'Participation: not open for responses yet' };
+  if (status === PollStatus.DISABLED) {
+    return { ...empty, state: VoteRowParticipationState.NOT_OPEN, label: 'Not open yet' };
   }
 
   const responses = vote.num_response_received;
   if (!isParticipationCount(responses)) {
-    return { ...empty, state: VoteRowParticipationState.UNAVAILABLE, label: 'Unavailable', ariaLabel: 'Participation unavailable' };
+    return { ...empty, state: VoteRowParticipationState.UNAVAILABLE, label: 'Unavailable' };
   }
 
   const invited = vote.total_voting_request_invitations;
@@ -209,7 +210,6 @@ export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
       responses,
       label: `${responses} responded`,
       secondaryLabel: 'Total unavailable',
-      ariaLabel: `Participation: ${responses} responded, total invited unavailable`,
     };
   }
 
@@ -220,11 +220,10 @@ export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
       responses,
       invited,
       label: 'No one invited',
-      ariaLabel: 'Participation: no one invited',
     };
   }
 
-  const percent = Math.min(100, Math.round((responses / invited) * 100));
+  const percent = Math.min(responses < invited ? 99 : 100, Math.round((responses / invited) * 100));
   return {
     state: VoteRowParticipationState.PROGRESS,
     responses,
@@ -232,7 +231,7 @@ export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
     percent,
     label: `${responses} of ${invited} responded · ${percent}%`,
     secondaryLabel: null,
-    ariaLabel: `Participation: ${responses} of ${invited} responded, ${percent}%`,
+    ariaLabel: status === PollStatus.ACTIVE ? `Participation: ${responses} of ${invited} responded, ${percent}%` : null,
   };
 }
 

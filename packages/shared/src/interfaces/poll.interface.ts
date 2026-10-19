@@ -266,14 +266,14 @@ export interface VoteRowParticipation {
   responses: number | null;
   /** Invited electorate, or null when not shown */
   invited: number | null;
-  /** Rounded response rate (0-100) for the progress bar, or null when no bar renders */
+  /** Rounded response rate (0-100) for PROGRESS summaries; capped at 99 until responses reach the invited total. */
   percent: number | null;
   /** Visible summary text */
   label: string;
   /** Muted follow-up text (e.g. "Total unavailable"), or null */
   secondaryLabel: string | null;
-  /** Screen-reader summary */
-  ariaLabel: string;
+  /** Screen-reader summary for an active PROGRESS bar, otherwise null. */
+  ariaLabel: string | null;
 }
 
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */

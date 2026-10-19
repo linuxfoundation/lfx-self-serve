@@ -327,6 +327,7 @@ describe('computeVoteRowParticipation', () => {
 
     expect(participation.state).toBe(VoteRowParticipationState.PROGRESS);
     expect(participation.label).toBe('8 of 12 responded · 67%');
+    expect(participation.ariaLabel).toBeNull();
   });
 
   it('shows a draft as not open, even when the payload carries counts', () => {
@@ -336,6 +337,7 @@ describe('computeVoteRowParticipation', () => {
       invited: null,
       percent: null,
       label: 'Not open yet',
+      ariaLabel: null,
     });
   });
 
@@ -345,6 +347,7 @@ describe('computeVoteRowParticipation', () => {
       responses: null,
       percent: null,
       label: 'Unavailable',
+      ariaLabel: null,
     });
   });
 
@@ -353,6 +356,7 @@ describe('computeVoteRowParticipation', () => {
     const participation = computeVoteRowParticipation(rowVote({ num_response_received: '8' }));
 
     expect(participation.state).toBe(VoteRowParticipationState.UNAVAILABLE);
+    expect(participation.ariaLabel).toBeNull();
   });
 
   it('shows the response count alone when the invited total is missing', () => {
@@ -363,13 +367,14 @@ describe('computeVoteRowParticipation', () => {
       percent: null,
       label: '8 responded',
       secondaryLabel: 'Total unavailable',
+      ariaLabel: null,
     });
   });
 
   it('never produces a percent for a zero-person electorate', () => {
     const participation = computeVoteRowParticipation(rowVote({ num_response_received: 0, total_voting_request_invitations: 0 }));
 
-    expect(participation).toMatchObject({ state: VoteRowParticipationState.NO_ELECTORATE, percent: null, label: 'No one invited' });
+    expect(participation).toMatchObject({ state: VoteRowParticipationState.NO_ELECTORATE, percent: null, label: 'No one invited', ariaLabel: null });
     expect(participation.label).not.toMatch(/%/);
   });
 
@@ -378,6 +383,26 @@ describe('computeVoteRowParticipation', () => {
       state: VoteRowParticipationState.PROGRESS,
       percent: 0,
       label: '0 of 12 responded · 0%',
+    });
+  });
+
+  it('provides a progress-bar summary for an active vote with raw uppercase status', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: 'ACTIVE' as PollStatus })).ariaLabel).toBe('Participation: 8 of 12 responded, 67%');
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('caps incomplete participation at 99%% for a %s vote', (status) => {
+    expect(computeVoteRowParticipation(rowVote({ status, num_response_received: 199, total_voting_request_invitations: 200 }))).toMatchObject({
+      percent: 99,
+      label: '199 of 200 responded · 99%',
+      ariaLabel: status === PollStatus.ACTIVE ? 'Participation: 199 of 200 responded, 99%' : null,
+    });
+  });
+
+  it('shows 100% when every invited voter has responded', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 200, total_voting_request_invitations: 200 }))).toMatchObject({
+      percent: 100,
+      label: '200 of 200 responded · 100%',
+      ariaLabel: 'Participation: 200 of 200 responded, 100%',
     });
   });
 
