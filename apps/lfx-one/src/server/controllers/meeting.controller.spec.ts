@@ -1402,7 +1402,7 @@ describe('MeetingController', () => {
       );
     });
 
-    it('logs the removing username, email and removed registrant IDs on success', async () => {
+    it("logs the removed registrant IDs on success without the removing user's username or email", async () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
       const req = buildReq();
 
@@ -1412,8 +1412,11 @@ describe('MeetingController', () => {
         req,
         'remove_my_meeting_registration',
         expect.anything(),
-        expect.objectContaining({ username: 'alice', email: 'user@example.com', removed_registrant_ids: ['reg-1'] })
+        expect.objectContaining({ removed_registrant_ids: ['reg-1'] })
       );
+      const logged = vi.mocked(logger.success).mock.calls[0][3];
+      expect(logged).not.toHaveProperty('username');
+      expect(logged).not.toHaveProperty('email');
     });
 
     it.each([[undefined], ['some-other-page'], ['']])('logs an unrecognised or missing removal source (%s) as unknown', async (header) => {
