@@ -398,4 +398,14 @@ describe('PersonaService — personaLookupFailed', () => {
     http.expectOne((req) => req.url.includes('enriched=true')).flush(mockResponse({}));
     expect(service.personaLookupFailed()).toBe(false);
   });
+
+  it('leaves the root flag alone when a project-scoped probe fails', () => {
+    service.refreshEnrichedPersonas(false, 'cncf').subscribe();
+    http.expectOne((req) => req.url.includes('project=cncf')).flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(service.personaLookupFailed()).toBe(false);
+
+    service.refreshEnrichedPersonas(false, 'cncf').subscribe();
+    http.expectOne((req) => req.url.includes('project=cncf')).flush(mockResponse({ error: 'Failed to fetch persona detections' }));
+    expect(service.personaLookupFailed()).toBe(false);
+  });
 });

@@ -45,9 +45,12 @@ export class PersonaService {
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
   /**
-   * True when the latest persona lookup failed (network error or an upstream `error` payload) rather
-   * than answering. Last-known-good state is kept either way; consumers that would read an empty
-   * result as "no access" use this to show a retryable error instead. Cleared by the next answer.
+   * True when the latest root (unscoped) persona lookup failed (network error or an upstream `error`
+   * payload) rather than answering. Last-known-good state is kept either way; consumers that would
+   * read an empty result as "no access" use this to show a retryable error instead. Cleared by the
+   * next answer, scoped or not — every answer carries the full persona set. A failed project-scoped
+   * probe leaves it alone: it says nothing about the root lookup, and callers track it per project
+   * (a late failure for a project the user has left must not flag the one now selected).
    */
   public readonly personaLookupFailed: WritableSignal<boolean> = signal<boolean>(false);
   /** `writer_guard` on the tenant root project — bypasses nav persona filtering; does not imply writer on a named project */
@@ -468,7 +471,7 @@ export class PersonaService {
         currentPersona: this.currentPersona(),
         allPersonas: this.allPersonas(),
       });
-      this.personaLookupFailed.set(true);
+      if (!projectSlug) this.personaLookupFailed.set(true);
       this.personaLoaded.set(true);
       return;
     }
