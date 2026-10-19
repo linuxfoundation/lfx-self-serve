@@ -125,4 +125,16 @@ describe('FilterPillsComponent', () => {
     expect(pill('kubecon').className).toContain('text-gray-600');
     expect(pill('all').getAttribute('aria-pressed')).toBe('true');
   });
+
+  it('lets a track host shrink inside a flex row, so the track scrolls instead of spilling out', async () => {
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.classList).not.toContain('min-w-0');
+
+    fixture.componentRef.setInput('variant', 'track');
+    await fixture.whenStable();
+
+    expect(host.classList).toContain('block');
+    expect(host.classList).toContain('min-w-0');
+    expect(host.classList).toContain('max-w-full');
+  });
 });

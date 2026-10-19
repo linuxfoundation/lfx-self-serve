@@ -12,6 +12,12 @@ export type FilterOption = FilterPillOption;
   selector: 'lfx-filter-pills',
   imports: [TooltipModule],
   templateUrl: './filter-pills.component.html',
+  // An inline host cannot shrink in a flex row, so a track would spill out of its card instead of scrolling.
+  host: {
+    '[class.block]': "variant() === 'track'",
+    '[class.min-w-0]': "variant() === 'track'",
+    '[class.max-w-full]': "variant() === 'track'",
+  },
 })
 export class FilterPillsComponent {
   public readonly options = input.required<FilterPillOption[]>();
@@ -21,7 +27,7 @@ export class FilterPillsComponent {
    * a grey track with the selected option as a white chip.
    */
   public readonly variant = input<'pill' | 'segmented' | 'track'>('pill');
-  /** Accessible name for the segmented group. */
+  /** Accessible name for the segmented or track group. */
   public readonly ariaLabel = input<string>('');
   public readonly filterChange = output<string>();
 
