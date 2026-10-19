@@ -41,6 +41,16 @@
   @apply rounded bg-gray-100 px-1.5 py-0.5 text-[0.875em];
 }
 
+:host ::ng-deep .prose pre {
+  @apply bg-gray-900 text-gray-100;
+}
+
+:host ::ng-deep .prose pre code {
+  @apply rounded-none bg-transparent p-0;
+  color: inherit;
+  font-size: inherit;
+}
+
 :host ::ng-deep .prose a {
   @apply text-blue-600 underline underline-offset-2;
 }

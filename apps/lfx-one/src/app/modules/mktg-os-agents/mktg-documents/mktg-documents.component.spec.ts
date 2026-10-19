@@ -91,6 +91,22 @@ describe('MktgDocumentsComponent', () => {
     }).compileComponents();
   });
 
+  it('lists a server-recorded first run without presenting it as an absent or already-stored document', async () => {
+    const response = documentsResponse();
+    response.groups = response.groups.map((group) => ({ ...group, documents: [] }));
+    response.runs = [
+      { project: PROJECT.uid, runId: 'a'.repeat(64), agentKey: 'brand-kit', documentId: 'living', startedAt: '2026-10-15T12:00:00Z', state: 'writing' },
+    ];
+    store.listDocuments.mockReturnValueOnce(of(response));
+    await render();
+    expect(query('mktg-documents-started-runs')?.textContent).toContain('Writing the document');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Writing');
+    expect(query('mktg-documents-empty-living')).toBeNull();
+    expect(query('mktg-documents-pending-document')).not.toBeNull();
+    expect(query('mktg-documents-open-started-' + 'a'.repeat(64))).not.toBeNull();
+    fixture.destroy();
+  });
+
   it('lists the living documents in run order with their revision state, and the runs', async () => {
     await render();
 
