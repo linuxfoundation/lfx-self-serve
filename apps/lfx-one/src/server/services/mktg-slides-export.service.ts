@@ -315,14 +315,16 @@ export class MktgSlidesExportService {
    * Draw the stored kit's primary SVG logo as a PNG and publish it where
    * Google can fetch it, or say why not. The URL is the public image
    * bucket's, which exists only where a CDN prefix is configured, so the
-   * drawing is skipped where there is none.
+   * drawing is skipped where there is none. A kit whose logo is still a
+   * placeholder has no logo to send, as in the print (`mktgPrintBrand`): a
+   * placeholder mark never reaches a deck.
    */
   private async publishLogo(
     req: Request,
     project: string,
     kit: BrandKitRevision | null
   ): Promise<{ url: string | null; note: MktgSlidesExportLogoNote | null }> {
-    const svg = kit?.chapters.logo.files.primary?.svg;
+    const svg = kit?.chapters.logo.placeholder ? null : kit?.chapters.logo.files.primary?.svg;
     if (!svg) {
       return { url: null, note: 'no-logo' };
     }

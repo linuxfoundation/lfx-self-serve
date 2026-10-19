@@ -128,10 +128,13 @@ function pngSize(bytes: Buffer): { width: number; height: number } | null {
 }
 
 /** Store a Brand Kit revision as the brand-kit run does: its Markdown, the rest of the envelope as the sidecar. */
-async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?: string | null } = {}): Promise<void> {
+async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?: string | null; placeholder?: boolean } = {}): Promise<void> {
   const kit = brandKitTestRevision();
   if (options.svg !== undefined) {
     kit.chapters.logo.files.primary = options.svg === null ? null : { ref: 'logo.svg', svg: options.svg };
+  }
+  if (options.placeholder !== undefined) {
+    kit.chapters.logo.placeholder = options.placeholder;
   }
   const markdown = `# ${kit.projectName} Brand Kit\n`;
   await documentStore.persistGeneration(
@@ -349,6 +352,15 @@ describe('MktgSlidesExportService', () => {
       expect((await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }))).logoNote).toBe('no-logo');
     });
 
+    it('sends no logo when the kit’s logo is still a placeholder, as the print does', async () => {
+      vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
+      await seedKit(documentStore, { placeholder: true });
+
+      expect((await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }))).logoNote).toBe('no-logo');
+      expect(store.publicImages.size).toBe(0);
+      expect(sentMessage()).toContain('\nLOGO URL: none\n');
+    });
+
     it('refuses an update before any deck exists, and a revision it does not store', async () => {
       await seedFramework(documentStore);
 
@@ -519,5 +531,6 @@ describe('MktgSlidesExportService', () => {
       ]);
       expect(await service.getResult(req, 'session-1', context)).toMatchObject({ status: 'failed', failure: 'intake' });
     });
+
   });
 });
