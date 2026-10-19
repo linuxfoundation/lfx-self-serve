@@ -105,7 +105,8 @@
           @let row = view.row;
           @let period = view.period;
           <!-- The name is the control screen readers and keyboards use: governance opens Members board attendance,
-               every other type scrolls to Group attendance. A click anywhere else on the row does the same. -->
+               every other type scrolls to Group attendance. A click anywhere else on the row does the same.
+               Both read as plain row text: the `!` utilities beat lfx-table's blue `td a` link style. -->
           <tr class="cursor-pointer" (click)="onRowPicked(row.governance)" [attr.data-testid]="'engagement-meeting-participation-row-' + row.label">
             <td>
               <div class="flex flex-col gap-0.5">
@@ -116,7 +117,7 @@
                     [queryParams]="boardQueryParams"
                     queryParamsHandling="merge"
                     (click)="$event.stopPropagation()"
-                    class="self-start text-sm font-medium text-gray-900 hover:underline focus-visible:underline"
+                    class="self-start !text-sm !font-medium !text-gray-900 !no-underline hover:!text-gray-900 hover:!no-underline rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                     [attr.data-testid]="'engagement-meeting-participation-row-' + row.label + '-link'"
                     >{{ row.label }}</a
                   >
@@ -125,7 +126,7 @@
                   <button
                     type="button"
                     (click)="$event.stopPropagation(); onSectionLink('committees')"
-                    class="self-start text-left text-sm font-medium text-gray-900 hover:underline focus-visible:underline"
+                    class="self-start rounded-sm text-left text-sm font-medium text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                     [attr.data-testid]="'engagement-meeting-participation-row-' + row.label + '-link'">
                     {{ row.label }}
                   </button>

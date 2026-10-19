@@ -261,6 +261,9 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(link.tagName).toBe('A');
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').getAttribute('tabindex')).toBeNull();
+    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
+    expect(link.classList).toContain('!text-gray-900');
+    expect(link.classList).toContain('!no-underline');
   });
 
   it('opens Members board attendance from anywhere on the governance row', async () => {
@@ -283,6 +286,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').click();
     const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing-link"]');
     expect(button.tagName).toBe('BUTTON');
+    expect(button.className).not.toContain('underline');
     button.click();
 
     expect(picked).toEqual(['committees', 'committees']);

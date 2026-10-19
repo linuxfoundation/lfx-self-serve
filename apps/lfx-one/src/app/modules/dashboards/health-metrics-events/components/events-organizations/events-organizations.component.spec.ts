@@ -140,6 +140,9 @@ describe('EventsOrganizationsComponent', () => {
     expect(nonMember?.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonSearch=Beta%20Coastal#orgs');
     expect(nonMember?.getAttribute('aria-label')).toBe('Open Beta Coastal in Non-Members');
     expect(query(`events-orgs-row-${ACCOUNT_ID}`)?.getAttribute('tabindex')).toBeNull();
+    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
+    expect(member?.classList).toContain('!text-gray-900');
+    expect(member?.classList).toContain('!no-underline');
   });
 
   it('opens the organization from anywhere on its row', async () => {
