@@ -644,4 +644,46 @@ describe('MktgDocumentViewComponent', () => {
     // Until project 2's kit arrives, the print is in the LF look — never project 1's brand.
     expect(brand() ?? 'lf').toBe('lf');
   });
+
+  it('renders an FAQ revision (JSON content) on the FAQ view, full width, flagging what needs an answer', async () => {
+    const FAQ = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'faq') as MktgDocumentType;
+    const content = {
+      faq: [
+        [
+          'About TestOrbit',
+          [
+            ['What is TestOrbit?', 'An open release toolkit.', 'Website'],
+            ['How much does membership cost?', null, null],
+          ],
+        ],
+      ],
+    };
+    const jsonRevision = revision(2, { latest: true, format: 'json', status: '' });
+    store.getDocument.mockReturnValue(of({ ...detail, type: FAQ, revisions: [jsonRevision] }));
+    store.getRevision.mockReturnValue(
+      of({
+        ...detail,
+        type: FAQ,
+        revisions: [jsonRevision],
+        revision: jsonRevision,
+        markdown: JSON.stringify(content),
+        sidecar: {
+          report: { sources_read: [], sources_failed: [], gaps: ['How much does membership cost?'], notes: '' },
+          checks: { findings: [] },
+          mode: 'draft',
+        },
+      })
+    );
+
+    await render('/documents/faq/living');
+
+    expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit FAQ');
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-framework-view')).toBeNull();
+    expect(query('mktg-faq-view-version')?.textContent).toContain('v2');
+    expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
+    expect(query('mktg-faq-view-needs-answer-0-1')).not.toBeNull();
+    expect(query('mktg-faq-view-unanswered-chip')?.textContent).toContain('1 question needs an answer from your team');
+    expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).toContain('@[800px]:col-span-2');
+  });
 });

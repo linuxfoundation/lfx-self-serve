@@ -12,6 +12,7 @@ import { MKTG_DOCUMENT_REVISION_PREVIEW_COUNT } from '@lfx-one/shared/constants'
 import {
   BrandKitRevision,
   MktgBoilerplatesAsset,
+  MktgFaqAsset,
   MktgFrameworkAsset,
   MktgRevisionResponse,
   MktgRevisionRow,
@@ -22,6 +23,7 @@ import {
   boilerplatesAssetOfRevision,
   describeMktgRevision,
   describeMktgRevisionAuthor,
+  faqAssetOfRevision,
   foundationMessageAssetOfRevision,
   isMktgSlidesExportAgentKey,
   readBrandKitRevision,
@@ -34,14 +36,16 @@ import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
+import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
 // the body is the revision's Markdown — or, for a Messaging Framework
 // revision (JSON content), the framework's own view, for a Boilerplates
-// revision (JSON content) the Boilerplates view, and for a Brand Kit
-// revision the kit's web view, rendered from the revision's sidecar — and the
+// revision (JSON content) the Boilerplates view, for an FAQ revision the FAQ
+// view, and for a Brand Kit revision the kit's web view, rendered from the
+// revision's sidecar — and the
 // Revisions panel opens or makes another revision current. `?revision=` picks
 // the revision; without it current is shown. Fetched in the browser only,
 // after hydration.
@@ -57,6 +61,7 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
     MarkdownRendererComponent,
     MessageComponent,
     MktgBoilerplatesViewComponent,
+    MktgFaqViewComponent,
     MktgFrameworkViewComponent,
     TooltipModule,
   ],
@@ -138,13 +143,21 @@ export class MktgDocumentViewComponent {
     }
     return boilerplatesAssetOfRevision(view.markdown, view.sidecar);
   });
+  /** The FAQ of a JSON revision of the FAQ document, when its text parses as one; null for everything else. */
+  protected readonly faq: Signal<MktgFaqAsset | null> = computed(() => {
+    const view = this.view();
+    if (!view || view.revision.format !== 'json' || view.type.agentKey !== 'faq') {
+      return null;
+    }
+    return faqAssetOfRevision(view.markdown, view.sidecar);
+  });
   /** The Brand Kit of a brand-kit revision, read from its sidecar; null for every other document, and for a kit stored by the earlier agent as Markdown alone. */
   protected readonly brandKit: Signal<BrandKitRevision | null> = computed(() => {
     const view = this.view();
     return view?.type.agentKey === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
-  /** A framework, the boilerplates or a kit takes the page's full width; a Markdown document keeps the reading column. */
-  protected readonly fullWidth = computed(() => this.asset() !== null || this.boilerplates() !== null || this.brandKit() !== null);
+  /** A framework, the boilerplates, an FAQ or a kit takes the page's full width; a Markdown document keeps the reading column. */
+  protected readonly fullWidth = computed(() => this.asset() !== null || this.boilerplates() !== null || this.faq() !== null || this.brandKit() !== null);
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   /** A short word on the revision's standing, beside the asset's version. */

@@ -121,6 +121,7 @@ export * from './profile-visibility.constants';
 export * from './org-lens-roi.constants';
 export * from './boilerplates.constants';
 export * from './brand-kit.constants';
+export * from './faq.constants';
 export * from './foundation-message.constants';
 export * from './mktg-print.constants';
 export * from './mktg-slides-export.constants';

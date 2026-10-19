@@ -39,6 +39,7 @@ import {
 } from '../constants/mktg-run-activity.constants';
 import { BOILERPLATES_QUESTIONS_CONTRACT_ID } from '../constants/boilerplates.constants';
 import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
+import { FAQ_QUESTIONS_CONTRACT_ID } from '../constants/faq.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
 
 type UnknownRecord = Record<string, unknown>;
@@ -202,8 +203,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   /**
    * The run's own writing and first-check sentences: the framework's, until
    * the run shows it is the Brand Kit's (its logo tool, its finalize tool or
-   * its questions turn) or the Boilerplates' (its finalize tool or its
-   * questions turn). The first agent the run shows is the one it stays.
+   * its questions turn), the Boilerplates' or the FAQ's (its finalize tool or
+   * its questions turn). The first agent the run shows is the one it stays.
    */
   let runLabels: { checking: string; writing: string } = { checking: MKTG_RUN_ACTIVITY_LABELS.checking, writing: MKTG_RUN_ACTIVITY_LABELS.writing };
   let identified = false;
@@ -215,6 +216,7 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   };
   const identifyBrandKit = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBrandKit, MKTG_RUN_ACTIVITY_LABELS.writingBrandKit);
   const identifyBoilerplates = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBoilerplates, MKTG_RUN_ACTIVITY_LABELS.writingBoilerplates);
+  const identifyFaq = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingFaq, MKTG_RUN_ACTIVITY_LABELS.writingFaq);
   /** Local-tool steps still open: done once any later event arrives. */
   const openLocal: Step[] = [];
 
@@ -263,6 +265,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
             identifyBrandKit();
           } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates) {
             identifyBoilerplates();
+          } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq) {
+            identifyFaq();
           }
           if (questionsAt >= 0 && !firstFinalizeAfterQuestions) {
             firstFinalizeAfterQuestions = createdAt;
@@ -287,6 +291,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
         identifyBrandKit();
       } else if (content.includes(BOILERPLATES_QUESTIONS_CONTRACT_ID)) {
         identifyBoilerplates();
+      } else if (content.includes(FAQ_QUESTIONS_CONTRACT_ID)) {
+        identifyFaq();
       }
     }
   }

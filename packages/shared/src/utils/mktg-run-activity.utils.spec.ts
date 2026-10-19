@@ -160,6 +160,33 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
       ['checking', 'Fixing what the check found', 'done'],
     ]);
   });
+
+  it('names an FAQ run by its own sentences: its questions turn and its finalize tool', () => {
+    const toolCall = (createdAt: string, name: string): string =>
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: createdAt,
+        body: `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_x","name":"${name}","input":{}}}`,
+      });
+    const faqRun = [
+      toolCall('2026-10-19T08:00:00Z', 'ask_requester'),
+      JSON.stringify({
+        type: 'agent_notification_message',
+        created_at: '2026-10-19T08:01:00Z',
+        content: { type: 'text', data: 'FAQ — QUESTIONS (faq-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:02:00Z' }),
+      toolCall('2026-10-19T08:03:00Z', 'finalize_faq'),
+      toolCall('2026-10-19T08:04:00Z', 'finalize_faq'),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:05:00Z' }),
+    ];
+    expect(buildMktgRunActivity(faqRun).map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['questions', 'Preparing a few questions for you', 'done'],
+      ['writing', 'Writing the FAQ', 'done'],
+      ['checking', 'Checking the FAQ', 'done'],
+      ['checking', 'Fixing what the check found', 'done'],
+    ]);
+  });
 });
 
 describe('mktgRunActivityReadingLabel', () => {

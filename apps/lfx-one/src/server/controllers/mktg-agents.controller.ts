@@ -4,6 +4,7 @@
 import {
   BOILERPLATES_FRAMEWORK_ANSWER_KEY,
   BRAND_KIT_FRAMEWORK_ANSWER_KEY,
+  FAQ_FRAMEWORK_ANSWER_KEY,
   FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
@@ -27,6 +28,12 @@ import {
   BrandKitResultRequest,
   BrandKitResultResponse,
   BrandKitStoredResponse,
+  FaqAnswersRequest,
+  FaqAnswersResponse,
+  FaqGenerateRequest,
+  FaqGenerateResponse,
+  FaqResultRequest,
+  FaqResultResponse,
   FoundationMessageAnswersRequest,
   FoundationMessageAnswersResponse,
   FoundationMessageGenerateRequest,
@@ -53,6 +60,9 @@ import {
   validateBrandKitAnswers,
   validateBrandKitIntakeAnswers,
   validateBrandKitLogoFiles,
+  validateFaqAnswers,
+  validateFaqDocuments,
+  validateFaqIntakeAnswers,
   validateFoundationMessageAnswers,
   validateFoundationMessageDocuments,
   validateFoundationMessageIntakeAnswers,
@@ -63,6 +73,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { BoilerplatesService } from '../services/boilerplates.service';
 import { BrandKitService } from '../services/brand-kit.service';
+import { FaqService } from '../services/faq.service';
 import { FoundationMessageService } from '../services/foundation-message.service';
 import { GuildService } from '../services/guild.service';
 import { IcpService } from '../services/icp.service';
@@ -76,6 +87,7 @@ export class MktgAgentsController {
   private readonly guildService = new GuildService();
   private readonly boilerplatesService = new BoilerplatesService();
   private readonly brandKitService = new BrandKitService();
+  private readonly faqService = new FaqService();
   private readonly foundationMessageService = new FoundationMessageService();
   private readonly icpService = new IcpService();
   private readonly mktgSourceTextService = new MktgSourceTextService();
@@ -1300,6 +1312,217 @@ export class MktgAgentsController {
 
       logger.success(req, 'foundation_message_stored', startTime, { project: project.uid, version: stored.receipt.version });
       res.json(stored);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/faq/generate
+   * Starts an FAQ draft from the intake form: the project name and
+   * description, the website (required, a real http(s) page) and the GitHub
+   * repository as URLs the agent reads itself, the notes, the LFX project
+   * uid, the documents — an upload as the text the BFF read from it, a link as
+   * its URL, each tagged press, deck, doc or plan — and the project's
+   * messaging framework (required: the latest stored revision's JSON, which
+   * must carry the framework itself, since the agent refuses a run without
+   * one). Every submission is a fresh draft — a redraft from comments and a
+   * check of a hand-edited version are later work, so a body with feedback or
+   * a prior version is refused rather than silently ignored. Returns the
+   * session id + creator-binding owner token for polling the result.
+   */
+  public async generateFaq(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { answers, documents, feedback, priorVersion, project } = (req.body ?? {}) as Partial<FaqGenerateRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'faq_generate', service: 'mktg_agents_controller', path: req.path }));
+
+    const answersResult = validateFaqIntakeAnswers(answers);
+    if (!answersResult.valid) {
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+    const documentsResult = validateFaqDocuments(documents);
+    if (!documentsResult.valid) {
+      fail('documents', documentsResult.errors.join('; '));
+      return;
+    }
+    if (feedback !== undefined || priorVersion !== undefined) {
+      fail('feedback', 'A generate is always a fresh draft of the FAQ; it takes no feedback or prior version.');
+      return;
+    }
+    // The project uid goes to the agent as data (its LFX lookups), never as
+    // the storage partition — that is the result endpoint's, resolved
+    // server-side. Shape-gated all the same so a crafted value never rides
+    // the form.
+    const trimmedProject = typeof project === 'string' ? project.trim() : '';
+    if (project !== undefined && (typeof project !== 'string' || !trimmedProject || !MKTG_ARTIFACT_PARTITION_REGEX.test(trimmedProject))) {
+      fail('project', 'project must be a single-segment project uid when provided');
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(
+        new AuthenticationError('Could not identify the requesting user.', { operation: 'faq_generate', service: 'mktg_agents_controller', path: req.path })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'faq');
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The FAQ agent is not available.');
+      return;
+    }
+
+    const submitted = documents ?? [];
+    // The framework rides the answers (validated above): its size is worth a log line, never its contents.
+    const frameworkChars = ((answers as Record<string, string>)[FAQ_FRAMEWORK_ANSWER_KEY] ?? '').length;
+    const startTime = logger.startOperation(req, 'faq_generate', { documents: submitted.length, framework_chars: frameworkChars });
+
+    try {
+      // Safe: validateFaqIntakeAnswers guaranteed a string record. Blank
+      // optionals are dropped so the renderer takes its "none" branch.
+      const trimmedAnswers = Object.fromEntries(
+        Object.entries(answers as Record<string, string>)
+          .map(([key, value]) => [key, value.trim()])
+          .filter(([, value]) => value !== '')
+      );
+      const sessionId = await this.faqService.startGeneration(req, trimmedAnswers, submitted, trimmedProject || undefined, agent.guildAgentHandle);
+      logger.success(req, 'faq_generate', startTime, { session_created: true });
+      const response: FaqGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/faq/answers
+   * Sends the requester's answers to the session's questions turn — one per
+   * question, at most six, each accepted, edited or written from scratch; no
+   * skip, no TBD, no empty — as the answers turn on the SAME session. Only
+   * the session's creator may answer (owner-token proof, like every session
+   * write). The run page polls the result again afterwards.
+   */
+  public async faqAnswers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, answers } = (req.body ?? {}) as Partial<FaqAnswersRequest>;
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'faq_answers', service: 'mktg_agents_controller', path: req.path }));
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      fail('sessionId', 'sessionId is required and must be a non-empty string');
+      return;
+    }
+    const answersResult = validateFaqAnswers(answers);
+    if (!answersResult.valid) {
+      fail('answers', answersResult.errors.join('; '));
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(new AuthenticationError('Could not identify the requesting user.', { operation: 'faq_answers', service: 'mktg_agents_controller', path: req.path }));
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to post to this session.', {
+          operation: 'faq_answers',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Routing handle comes from the shared catalog only — never the client.
+    const agent = MKTG_AGENTS.find((candidate) => candidate.id === 'faq');
+    if (!agent || agent.status !== 'active' || !agent.guildAgentHandle) {
+      fail('agentId', 'The FAQ agent is not available.');
+      return;
+    }
+
+    // Safe: validateFaqAnswers guaranteed the shape.
+    const validAnswers = (answers as MktgRunAnswer[]).map((answer) => ({ key: answer.key, text: answer.text.trim(), origin: answer.origin }));
+    const startTime = logger.startOperation(req, 'faq_answers', { answers: validAnswers.length });
+
+    try {
+      await this.faqService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      logger.success(req, 'faq_answers', startTime, { answers: validAnswers.length });
+      const response: FaqAnswersResponse = { success: true };
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/mktg-agents/faq/result
+   * Polls a generation session for the validated FAQ — the run's asset, the
+   * agent's questions while it waits for answers, or the reply that ended the
+   * run without one. Only the session's creator may read the result
+   * (owner-token proof).
+   *
+   * `project` (the run's LFX project uid) scopes the persistence write that
+   * rides a ready result: it is resolved server-side and the caller's writer
+   * grant is required before the FAQ can enter that project's storage
+   * partition. It is passed through untrusted — the partition is the
+   * RESOLVED project's uid, never this raw value.
+   */
+  public async faqResult(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Normalize a missing/null body so malformed requests get a 400, not a throw.
+    const { sessionId, ownerToken, project } = (req.body ?? {}) as Partial<FaqResultRequest>;
+
+    const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
+    if (!validSessionId) {
+      next(
+        ServiceValidationError.forField('sessionId', 'sessionId is required and must be a non-empty string', {
+          operation: 'faq_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const userId = getEffectiveSub(req);
+    if (!userId) {
+      next(new AuthenticationError('Could not identify the requesting user.', { operation: 'faq_result', service: 'mktg_agents_controller', path: req.path }));
+      return;
+    }
+
+    // Type-gate body fields — never rely on downstream defensive coercion.
+    const validOwnerToken = typeof ownerToken === 'string' && ownerToken ? ownerToken : undefined;
+    if (!verifySessionOwnerToken(validOwnerToken, userId, validSessionId)) {
+      next(
+        new AuthorizationError('You do not have permission to read this session.', {
+          operation: 'faq_result',
+          service: 'mktg_agents_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // An absent project means "no project to persist into", never "persist
+    // wherever the agent said"; its shape gate lives with the resolution in
+    // the shared artifact layer, so it degrades like every other persistence
+    // refusal: the caller still gets the FAQ.
+    const validProjectUid = typeof project === 'string' && project.trim() ? project.trim() : undefined;
+
+    const startTime = logger.startOperation(req, 'faq_result', {});
+
+    try {
+      const result: FaqResultResponse = await this.faqService.getResult(req, validSessionId, validProjectUid);
+      logger.success(req, 'faq_result', startTime, { status: result.status });
+      res.json(result);
     } catch (error) {
       next(error);
     }

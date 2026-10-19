@@ -175,7 +175,9 @@ export class MktgDependencyService {
   private loadBrowserDocument(projectUid: string, agentId: string): MktgDependencyDocument | null {
     const run = this.runService.loadRun(projectUid, agentId);
     const latest = run?.versions.at(-1);
-    const document = latest?.document || (latest?.asset ? (this.markdownOf(JSON.stringify(latest.asset.content), 'json') ?? '') : '');
+    // Only the framework has a Markdown reading; another asset (the Boilerplates, the FAQ) is not a document anything attaches.
+    const framework = latest?.asset?.kind === 'messaging-framework' ? latest.asset : null;
+    const document = latest?.document || (framework ? (this.markdownOf(JSON.stringify(framework.content), 'json') ?? '') : '');
     if (!latest || !document) {
       return null;
     }
