@@ -381,7 +381,7 @@ export const CAMPAIGN_LIVE_COST_LABELS = {
 } as const;
 
 /** The window a row's live counters cover, in words, keyed by campaign-service's `window`. */
-export const CAMPAIGN_METRICS_WINDOW_LABELS: Readonly<Record<CampaignMetricsWindow, string>> = {
+export const CAMPAIGN_LIVE_METRICS_WINDOW_PHRASES: Readonly<Record<CampaignMetricsWindow, string>> = {
   today: 'today',
   yesterday: 'yesterday',
   last_7_days: 'the last 7 days',

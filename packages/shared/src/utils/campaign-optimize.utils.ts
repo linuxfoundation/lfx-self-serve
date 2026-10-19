@@ -4,7 +4,7 @@
 import {
   CAMPAIGN_EMAIL_CHANNEL_PLATFORM,
   CAMPAIGN_LIVE_COST_LABELS,
-  CAMPAIGN_METRICS_WINDOW_LABELS,
+  CAMPAIGN_LIVE_METRICS_WINDOW_PHRASES,
   CAMPAIGN_REF_INT64_PLATFORMS,
   CAMPAIGN_SETTINGS_BID_AMOUNT_FIELD,
   CAMPAIGN_SETTINGS_BID_CURRENCY_FIELD,
@@ -229,7 +229,7 @@ export function buildCampaignLiveCounters(metrics: CampaignServiceCampaignMetric
     cost: isEmail ? null : (metrics.cost_micros / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
     costLabel: CAMPAIGN_USD_COST_PLATFORMS.has(platform) ? CAMPAIGN_LIVE_COST_LABELS.usd : CAMPAIGN_LIVE_COST_LABELS.account,
     ctrPct: metrics.ctr * 100,
-    windowLabel: CAMPAIGN_METRICS_WINDOW_LABELS[metrics.window] ?? metrics.window,
+    windowLabel: CAMPAIGN_LIVE_METRICS_WINDOW_PHRASES[metrics.window] ?? metrics.window,
   };
 }
 
