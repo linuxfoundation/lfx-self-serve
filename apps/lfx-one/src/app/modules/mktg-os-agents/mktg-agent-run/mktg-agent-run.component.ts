@@ -8,17 +8,17 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
-  MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
-  MKTG_README_SKIP_NOTES,
+  MKTG_LIVING_DOCUMENT_ID,
   MKTG_RUN_STAGES,
+  MKTG_README_SKIP_NOTES,
+  MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
 } from '@lfx-one/shared/constants';
 import {
   GithubRepoUrlError,
@@ -27,7 +27,6 @@ import {
   MktgAgentIntake,
   MktgAttachmentChip,
   MktgDependencyDocument,
-  MktgDocumentStatusChip,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgIntakeDocument,
@@ -37,19 +36,20 @@ import {
   MktgResolvedFieldGroup,
   MktgRunAnswer,
   MktgRunAnsweredQuestionRow,
-  MktgRunActivity,
   MktgRunAnswerOrigin,
-  MktgRunPhase,
-  MktgRunQuestionsPending,
   MktgRunVersion,
   MktgStoredAgentRun,
+  MktgDocumentStatusChip,
+  MktgRunActivity,
+  MktgRunPhase,
+  MktgRunQuestionsPending,
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
 import { findMktgDocumentStatus, mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
-import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap } from 'rxjs';
+import { combineLatest, distinctUntilChanged, EMPTY, filter, map, Subscription, switchMap, take } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
@@ -63,12 +63,10 @@ import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 
 // Form-first agent run page (approved Marketing OS design): batch intake form
-// → staged running checklist, or for agents with a live feed the agent's
-// activity as it happens → (for agents that research first, the questions
+// → the document view, or the agent's research activity → the questions
 // they could not settle, one at a time, each with a suggested answer to take
-// or replace, answered on the same run →) document result with versions and a
-// "Request changes" feedback box that regenerates as v+1 through the existing
-// chat/session BFF. The page is driven entirely by the shared intake registry
+// or replace, answered on the same run →) document view. Results and feedback
+// belong to Documents, never this intake. The page is driven by the intake registry
 // (MKTG_AGENT_INTAKES), so additional agent forms slot in without touching the
 // shell.
 @Component({
@@ -80,7 +78,6 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     ButtonComponent,
     InputTextComponent,
     TextareaComponent,
-    MarkdownRendererComponent,
     MessageComponent,
     MktgIntakeDocumentsComponent,
     MktgRunActivityComponent,
@@ -106,12 +103,10 @@ export class MktgAgentRunComponent {
   // only) in the constructor.
   private readonly activeContext$ = toObservable(this.projectContext.activeContext);
   private readonly effectiveUser$ = toObservable(this.userService.user);
-  /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
+  /** Intake dependency resolution and navigation handoff, cancelled when the active context changes. */
   private generationSub: Subscription | null = null;
   /** The existing-documents section, when the intake has one and the form is on screen: its file reads are cancelled with the generation. */
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
-  /** Deferred phase-set timer from completeRun — cleared on destroy so no timer outlives the view. */
-  private phaseTimer: ReturnType<typeof setTimeout> | null = null;
   /** Reset timer for the transient "Copied" chip state — cleared on destroy. */
   private copyTimer: ReturnType<typeof setTimeout> | null = null;
   /** The generate request of the run in flight — what an answers round continues. */
@@ -135,11 +130,10 @@ export class MktgAgentRunComponent {
   // === Constants ===
   protected readonly stageLabels = MKTG_RUN_STAGES;
 
+  // === Constants ===
+
   // === Forms ===
   protected readonly intakeForm: FormGroup<Record<string, FormControl<string>>> = this.buildIntakeForm();
-  protected readonly feedbackForm = new FormGroup({
-    feedback: new FormControl('', { nonNullable: true }),
-  });
 
   // === Signals ===
   protected readonly phase = signal<MktgRunPhase>('form');
@@ -215,7 +209,6 @@ export class MktgAgentRunComponent {
 
   // === Computed ===
   private readonly intakeValid = toSignal(this.intakeForm.statusChanges.pipe(map((status) => status === 'VALID')), { initialValue: this.intakeForm.valid });
-  private readonly feedbackValue = toSignal(this.feedbackForm.controls.feedback.valueChanges, { initialValue: '' });
   private readonly intakeValue = toSignal(this.intakeForm.valueChanges, { initialValue: this.intakeForm.getRawValue() });
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
@@ -224,9 +217,6 @@ export class MktgAgentRunComponent {
   protected readonly submitLabel = computed(() => `Generate ${this.intake?.documentName}`);
   protected readonly versions = computed(() => this.run()?.versions ?? []);
   protected readonly currentVersion: Signal<MktgRunVersion | null> = this.initCurrentVersion();
-  protected readonly nextVersion = computed(() => (this.versions().at(-1)?.version ?? 0) + 1);
-  protected readonly showVersionChips = computed(() => this.versions().length > 1 && this.phase() !== 'running');
-  protected readonly feedbackNote = computed(() => (this.currentVersion()?.feedback ?? '').slice(0, 120));
   protected readonly submitDisabled = computed(
     () => !this.intakeValid() || this.phase() === 'running' || this.documentsBusy() || !this.dependenciesSatisfied()
   );
@@ -331,16 +321,6 @@ export class MktgAgentRunComponent {
     const copied = this.derivativeChips().find((chip) => chip.copied);
     return copied ? `${copied.label} copied to the clipboard` : '';
   });
-  /**
-   * Regeneration is a full resubmit, so it gates exactly like the first
-   * submit — including the dependency gate. Without it a "Request changes"
-   * could fire while the project's dependency documents are still resolving
-   * (or gone), flipping the page to `running` only for submit-time resolution
-   * to abort it.
-   */
-  protected readonly regenerateDisabled = computed(
-    () => !this.feedbackValue().trim() || !this.intakeValid() || this.phase() === 'running' || !this.dependenciesSatisfied()
-  );
   protected readonly stages: Signal<{ label: string; state: 'done' | 'active' | 'pending'; labelClass: string }[]> = this.initStages();
   protected readonly sectionChecklist: Signal<{ label: string; present: boolean; iconClass: string; srText: string }[]> = this.initSectionChecklist();
 
@@ -392,13 +372,7 @@ export class MktgAgentRunComponent {
   protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
   public constructor() {
-    // The deferred timers must not outlive the view (their callbacks only
-    // write signals today, but an unmanaged timer is a foot-gun).
     this.destroyRef.onDestroy(() => {
-      if (this.phaseTimer !== null) {
-        clearTimeout(this.phaseTimer);
-        this.phaseTimer = null;
-      }
       if (this.copyTimer !== null) {
         clearTimeout(this.copyTimer);
         this.copyTimer = null;
@@ -460,11 +434,6 @@ export class MktgAgentRunComponent {
     this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
-  /** Every revision of this agent's document is kept in the Documents area. */
-  protected onOpenDocuments(): void {
-    this.router.navigate(['..', 'documents'], { relativeTo: this.route, queryParams: { type: this.documentsAgentKey }, queryParamsHandling: 'merge' });
-  }
-
   protected onSubmit(): void {
     if (this.submitDisabled()) {
       return;
@@ -472,18 +441,7 @@ export class MktgAgentRunComponent {
     this.startGeneration();
   }
 
-  protected onRegenerate(): void {
-    if (this.regenerateDisabled()) {
-      return;
-    }
-    this.startGeneration(this.feedbackForm.controls.feedback.value.trim());
-  }
-
-  protected onEditInputs(): void {
-    this.phase.set('form');
-  }
-
-  /** Sends the answers to the agent's questions on the same run; the page polls on for the document. */
+  /** Sends answers on the same session; once accepted, the document view takes over the result poll. */
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
@@ -496,14 +454,18 @@ export class MktgAgentRunComponent {
     this.writingStretch.set(true);
     this.activityStartedAt.set(Date.now());
     this.phase.set('running');
-    this.stage.set(0);
     this.generationSub?.unsubscribe();
     this.generationSub = this.runService
       .answerQuestions(request, pending, answers)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (progress) => {
           this.answersSending.set(false);
+          if (progress.type === 'submitted') {
+            const generation = this.runService.prepareGeneration({ ...request, answersRound: { pending, answers, submitted: true } });
+            this.openDocument(generation);
+            return;
+          }
           this.onProgress(progress, request.projectUid);
         },
         error: () => {
@@ -743,7 +705,7 @@ export class MktgAgentRunComponent {
         // only a value that is not a GitHub URL at all is refused.
         validators.push(githubRepoUrlValidator({ acceptOwner: true }));
       } else if (field.format === 'source-url') {
-        // A page the agent fetches itself: an https:// link, or Paul's "none".
+        // A page the agent fetches itself: an https:// link, or the agent's "none".
         validators.push(sourceUrlValidator());
       } else if (field.format === 'source-url-list') {
         // Several such links, one per line.
@@ -856,26 +818,19 @@ export class MktgAgentRunComponent {
     this.generationSub = null;
     // The answers POST was cut with it: its callbacks will never clear the flag, so the next questions step must not inherit it.
     this.answersSending.set(false);
-    this.run.set(null);
-    this.viewVersion.set(null);
     this.phase.set('form');
-    this.stage.set(0);
     this.errorText.set('');
-    this.docExpanded.set(false);
     this.fromLfxApplied.set({});
     this.lfxMissing.set({});
     this.fromPriorRunApplied.set({});
     this.filledFromMemoryApplied.set({});
     this.prefillAppliedValues.set({});
-    this.copiedDerivative.set('');
     // A file still being read for the previous context must not land in this one: the section stays mounted, so its reads are cancelled here.
     this.documentsSection()?.cancelReads();
     this.documents.set([]);
-    this.askedExpanded.set(false);
     this.activeRequest = null;
     this.clearQuestions();
     this.intakeForm.reset();
-    this.feedbackForm.reset();
     // Dependency documents are per-project — back to "resolving" until the
     // constructor stream's resolution for the NEW context lands (fail-closed:
     // submission stays disabled meanwhile).
@@ -883,14 +838,15 @@ export class MktgAgentRunComponent {
 
     const stored = this.runService.loadRun(context.uid, this.agent.id);
     if (stored) {
-      this.run.set(stored);
       // patchValue ignores keys without a control — answers persisted by the
       // retired Brand Kit gate UI (e.g. brand_kit_markdown) restore cleanly.
       this.intakeForm.patchValue(stored.answers);
-      this.viewVersion.set(stored.versions.at(-1)?.version ?? null);
-      if (stored.versions.length > 0) {
-        this.phase.set('result');
-      }
+    }
+    const questionsId = this.route.snapshot.queryParamMap?.get('questions');
+    const prepared = questionsId ? this.runService.takePreparedGeneration(questionsId, context.uid, this.agent.id) : null;
+    if (prepared?.pendingQuestions) {
+      this.activeRequest = prepared;
+      this.showQuestions(prepared.pendingQuestions);
     }
 
     // LFX prefill — fill only still-empty answers, and mark them "From LFX".
@@ -982,7 +938,7 @@ export class MktgAgentRunComponent {
     return Object.fromEntries(Object.entries(applied).filter(([key]) => intact[key]));
   }
 
-  private startGeneration(feedback?: string): void {
+  private startGeneration(): void {
     const projectUid = this.projectContext.activeContextUid();
     const agent = this.agent;
     const intake = this.intake;
@@ -993,7 +949,6 @@ export class MktgAgentRunComponent {
       this.errorText.set('No active project — select a project before running this agent.');
       return;
     }
-
     const answers = this.buildAnswers();
     // Remember what the user typed, keyed by intake field key, so the NEXT
     // agent's form on this project can offer it back instead of asking again.
@@ -1005,14 +960,12 @@ export class MktgAgentRunComponent {
     this.answerMemory.remember(projectUid, agent.id, this.buildIntakeState());
 
     this.errorText.set('');
-    this.docExpanded.set(false);
     this.clearQuestions();
     this.activity.set([]);
     this.activityStartedAt.set(Date.now());
     this.writingStretch.set(false);
     this.lastAnswers.set({});
     this.phase.set('running');
-    this.stage.set(0);
 
     // The prior draft's version is NOT sent — the run service derives it from
     // the stored run so the follow-up's version directive always matches the
@@ -1031,11 +984,24 @@ export class MktgAgentRunComponent {
             // The stored dependency disappeared between page load and submit —
             // surface the honest gate note instead of submitting an invalid run.
             this.errorText.set(this.missingDependencyNote() || 'A required dependency document is no longer available for this project.');
-            this.phase.set(this.versions().length > 0 ? 'result' : 'form');
+            this.phase.set('form');
             return EMPTY;
           }
-          const request: MktgGenerateRequest = { agentId: agent.id, projectUid, intake, answers: attached, feedback, documents: this.submittedDocuments() };
+          const request: MktgGenerateRequest = {
+            agentId: agent.id,
+            projectUid,
+            intake,
+            answers: attached,
+            startedAt: new Date().toISOString(),
+            documents: this.submittedDocuments(),
+          };
           this.activeRequest = request;
+          if (!intake.endpoints.answers) {
+            this.openDocument(this.runService.prepareGeneration(request));
+            return EMPTY;
+          }
+          // Research and questions keep the merged intake flow; once answers
+          // are accepted, the document view owns the remaining work.
           return this.runService.generate(request);
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -1044,7 +1010,7 @@ export class MktgAgentRunComponent {
         next: (progress) => this.onProgress(progress, projectUid),
         error: () => {
           this.errorText.set('The agent could not complete this run. Your answers are kept — try again.');
-          this.phase.set(this.versions().length > 0 ? 'result' : 'form');
+          this.phase.set('form');
         },
       });
   }
@@ -1052,7 +1018,6 @@ export class MktgAgentRunComponent {
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
     if (progress.type === 'submitted') {
-      this.stage.set(1);
       return;
     }
     if (progress.type === 'activity') {
@@ -1077,11 +1042,36 @@ export class MktgAgentRunComponent {
     }
     if (progress.type === 'failed') {
       this.errorText.set(progress.failureText || 'The agent finished without producing a document. Your answers are kept — try again.');
-      this.phase.set(this.versions().length > 0 ? 'result' : 'form');
+      this.phase.set('form');
       return;
     }
-    this.stage.set(2);
-    this.completeRun(progress.run);
+    this.dependencyService.notifyDocumentsChanged(projectUid);
+    this.openDocument(undefined, progress.location?.revisionId);
+  }
+
+  /** Navigate without ever serializing answers, documents or session capabilities. */
+  private openDocument(generation?: string, revision?: string): void {
+    if (!this.documentsAgentKey) {
+      this.phase.set('form');
+      this.errorText.set('This agent does not support document-view generation yet.');
+      return;
+    }
+    this.router
+      .navigate(['..', 'documents', this.documentsAgentKey, MKTG_LIVING_DOCUMENT_ID], {
+        relativeTo: this.route,
+        queryParams: { generation: generation ?? null, revision: revision ?? null, questions: null },
+        queryParamsHandling: 'merge',
+      })
+      .then((opened) => {
+        if (!opened) {
+          this.phase.set(this.questionsPending() ? 'questions' : 'form');
+          this.errorText.set('The document view could not be opened. Your answers are kept — try again.');
+        }
+      })
+      .catch(() => {
+        this.phase.set(this.questionsPending() ? 'questions' : 'form');
+        this.errorText.set('The document view could not be opened. Your answers are kept — try again.');
+      });
   }
 
   /** Puts the agent's questions on the page; the stepper asks them one at a time. */
@@ -1093,30 +1083,6 @@ export class MktgAgentRunComponent {
 
   private clearQuestions(): void {
     this.questionsPending.set(null);
-  }
-
-  private completeRun(run: MktgStoredAgentRun): void {
-    this.run.set(run);
-    this.viewVersion.set(run.versions.at(-1)?.version ?? null);
-    this.askedExpanded.set(false);
-    this.clearQuestions();
-    this.feedbackForm.reset();
-    // This run just produced stored output for the project — the marketplace's
-    // dependency gating is now out of date. Announcing it here means finishing
-    // a Brand Kit unlocks its dependents on the grid without a page reload
-    // (dec-agent-dependency-gating).
-    this.dependencyService.notifyDocumentsChanged(run.projectUid);
-    // Let the "Validating required sections" stage register before the result
-    // lands — but only if a project switch hasn't reset the page meanwhile.
-    if (this.phaseTimer !== null) {
-      clearTimeout(this.phaseTimer);
-    }
-    this.phaseTimer = setTimeout(() => {
-      this.phaseTimer = null;
-      if (this.run() === run) {
-        this.phase.set('result');
-      }
-    }, 600);
   }
 
   private sectionPresent(lowerDoc: string, label: string): boolean {
