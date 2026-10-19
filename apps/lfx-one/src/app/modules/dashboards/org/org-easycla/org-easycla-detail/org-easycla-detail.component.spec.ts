@@ -216,8 +216,54 @@ describe('OrgEasyclaDetailComponent', () => {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   }
 
-  function identifySomeoneElse(fixture: ComponentFixture<OrgEasyclaDetailComponent>): HTMLButtonElement | null {
-    return byTestId(fixture, 'org-easycla-detail-identify-someone-else') as HTMLButtonElement | null;
+  function startButton(fixture: ComponentFixture<OrgEasyclaDetailComponent>): HTMLButtonElement | null | undefined {
+    return byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button');
+  }
+
+  interface OpenedDialog {
+    onClose: Subject<unknown>;
+    onDestroy: Subject<void>;
+    close: ReturnType<typeof vi.fn>;
+  }
+
+  function recordDialogs(): OpenedDialog[] {
+    const dialogs: OpenedDialog[] = [];
+    openDialog.mockImplementation(() => {
+      const ref = { onClose: new Subject<unknown>(), onDestroy: new Subject<void>(), close: vi.fn() };
+      dialogs.push(ref);
+      return ref;
+    });
+    return dialogs;
+  }
+
+  function startAndOpenSendByEmail(fixture: ComponentFixture<OrgEasyclaDetailComponent>, dialogs: OpenedDialog[]): number {
+    const attestation = dialogs.length;
+    startButton(fixture)?.click();
+    expect(openDialog.mock.calls[attestation][0]).toBe(OrgEasyclaAttestationComponent);
+    dialogs[attestation].onClose.next({ sendByEmail: true });
+    dialogs[attestation].onDestroy.next();
+
+    const send = attestation + 1;
+    expect(openDialog.mock.calls[send][0]).toBe(OrgEasyclaSendByEmailComponent);
+    return send;
+  }
+
+  function sendByEmailData(send: number): { onMailed?: () => void; onRequestStarted?: () => void } | undefined {
+    return (openDialog.mock.calls[send][1] as { data?: { onMailed?: () => void; onRequestStarted?: () => void } }).data;
+  }
+
+  async function startAndSendByEmail(fixture: ComponentFixture<OrgEasyclaDetailComponent>, dialogs: OpenedDialog[], mailed: boolean): Promise<void> {
+    const send = startAndOpenSendByEmail(fixture, dialogs);
+    if (mailed) sendByEmailData(send)?.onMailed?.();
+    dialogs[send].onClose.next(null);
+    dialogs[send].onDestroy.next();
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  function startLockedAsEmailed(fixture: ComponentFixture<OrgEasyclaDetailComponent>): boolean {
+    const start = startButton(fixture);
+    return !!start?.disabled && !!start.getAttribute('aria-label')?.includes('a signature request has already been emailed');
   }
 
   /**
@@ -229,15 +275,6 @@ describe('OrgEasyclaDetailComponent', () => {
   function downloadTooltipContent(fixture: ComponentFixture<OrgEasyclaDetailComponent>): string | undefined {
     const host = fixture.debugElement.query(By.css('[data-testid="org-easycla-detail-download"] p-button'));
     return host?.injector.get(Tooltip, null)?.content as string | undefined;
-  }
-
-  /** Unavailable to activate, but still in the tab order so the aria-label reason is reachable. */
-  function identifyIsUnavailable(button: HTMLButtonElement | null): boolean {
-    return !!button && button.disabled === false && button.getAttribute('aria-disabled') === 'true';
-  }
-
-  function identifyIsOffered(button: HTMLButtonElement | null): boolean {
-    return !!button && button.disabled === false && button.getAttribute('aria-disabled') !== 'true';
   }
 
   beforeEach(() => {
@@ -507,26 +544,6 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(start).not.toBeNull();
       expect(start?.querySelector('button')?.disabled).toBe(true);
       expect(start?.querySelector('button')?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
-
-      const identify = identifySomeoneElse(fixture);
-      expect(identify?.getAttribute('aria-label')).toContain(ORG_CLA_NOT_STARTED_COPY.identifySomeoneElseLabel);
-      expect(identify?.getAttribute('aria-label')).toContain(CCLA_SIGN_COPY.picker.multiProjectDisabledReason);
-      expect(identify?.getAttribute('aria-label')).not.toContain(ORG_CLA_NOT_STARTED_COPY.startLabel);
-    });
-
-    /**
-     * Native `disabled` takes the control out of the tab order, so the reason on aria-label is
-     * unreachable from the keyboard. aria-disabled keeps it focusable; the click still refuses.
-     */
-    it('keeps Identify someone else in the tab order while it is unavailable, so the reason is reachable', async () => {
-      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
-
-      const fixture = await render();
-      const identify = identifySomeoneElse(fixture);
-
-      expect(identifyIsUnavailable(identify)).toBe(true);
-      identify?.click();
-      expect(openDialog).not.toHaveBeenCalled();
     });
 
     it('starts the confirmation for this agreement, without asking which CLA group', async () => {
@@ -550,8 +567,7 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(checkPermission).toHaveBeenCalledTimes(checksBeforeStart);
     });
 
-    it('opens the send-by-email dialog from Identify someone else, without attestation', async () => {
-      openDialog.mockReturnValue({ onClose: of(null), onDestroy: of(undefined), close: vi.fn() });
+    it('offers no way to name a signatory beside Proceed with signing', async () => {
       const signable = {
         ...notStarted,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
@@ -559,11 +575,26 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
 
       const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
+      const notStartedPanel = byTestId(fixture, 'org-easycla-detail-not-started');
 
-      expect(openDialog).toHaveBeenCalledTimes(1);
-      expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaSendByEmailComponent);
-      expect(openDialog.mock.calls[0][1]).toEqual(
+      expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-identify-someone-else')).toBeNull();
+      expect(notStartedPanel?.textContent).not.toContain('Not the right person to sign');
+    });
+
+    it('opens the send-by-email dialog for this agreement from I am not authorized', async () => {
+      const dialogs = recordDialogs();
+      const signable = {
+        ...notStarted,
+        projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
+      };
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+
+      const fixture = await render();
+      await startAndSendByEmail(fixture, dialogs, false);
+
+      expect(openDialog).toHaveBeenCalledTimes(2);
+      expect(openDialog.mock.calls[1][1]).toEqual(
         expect.objectContaining({
           data: expect.objectContaining({
             orgUid: SELECTED_ACCOUNT.uid,
@@ -634,6 +665,8 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).toBeNull();
         expect(fixture.nativeElement.textContent).toContain(ORG_CLA_NOT_STARTED_COPY.steps[0].body);
         expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.textContent).toContain('Start the CLA process');
+        expect(byTestId(fixture, 'org-easycla-detail-identify-someone-else')).toBeNull();
+        expect(fixture.nativeElement.textContent).not.toContain('Not the right person to sign');
       });
 
       it('asks the question before any attestation when the viewer cannot sign yet', async () => {
@@ -700,7 +733,7 @@ describe('OrgEasyclaDetailComponent', () => {
         response.complete();
         fixture.detectChanges();
 
-        expect(question.close).toHaveBeenCalledExactlyOnceWith(undefined);
+        expect(question.close).toHaveBeenCalledExactlyOnceWith();
         expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
         expect(byTestId(fixture, 'org-easycla-detail-designee-identified')?.textContent).toContain(
           "You've been identified as the initial CLA Manager from your company for this project."
@@ -752,20 +785,6 @@ describe('OrgEasyclaDetailComponent', () => {
         answerYes(fixture);
 
         expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: ORG_CLA_DESIGNEE_REFUSAL_COPY.unknown }));
-      });
-
-      it('routes Identify someone else through the question, and Yes continues into the signatory step', async () => {
-        const question = questionRef();
-        openDialog.mockReturnValueOnce(question).mockReturnValue(closingWith(undefined));
-        const fixture = await renderSignable();
-        claServiceWith({ assignDesignee: vi.fn(() => of({ assigned: true })) });
-
-        identifySomeoneElse(fixture)?.click();
-        fixture.detectChanges();
-        answerYes(fixture);
-
-        expect(question.close).toHaveBeenCalledExactlyOnceWith('assigned');
-        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent, OrgEasyclaSendByEmailComponent]);
       });
 
       it('opens Identify CLA Manager on No and nominates the named person, not the viewer', async () => {
@@ -963,10 +982,7 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     it('closes the send-by-email dialog on an organization switch, since no mail has been sent yet', async () => {
-      const onClose = new Subject<unknown>();
-      const onDestroy = new Subject<void>();
-      const close = vi.fn();
-      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const dialogs = recordDialogs();
       const signable = {
         ...notStarted,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
@@ -974,14 +990,13 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
 
       const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
-      expect(openDialog).toHaveBeenCalledTimes(1);
+      const send = startAndOpenSendByEmail(fixture, dialogs);
 
       selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(close).toHaveBeenCalled();
+      expect(dialogs[send].close).toHaveBeenCalled();
     });
 
     /**
@@ -991,10 +1006,7 @@ describe('OrgEasyclaDetailComponent', () => {
      * the manager send a second copy.
      */
     it('leaves send-by-email standing once Send has started, because the request is already with EasyCLA', async () => {
-      const onClose = new Subject<unknown>();
-      const onDestroy = new Subject<void>();
-      const close = vi.fn();
-      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const dialogs = recordDialogs();
       const signable = {
         ...notStarted,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
@@ -1002,23 +1014,18 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
 
       const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
-      expect(openDialog).toHaveBeenCalledTimes(1);
-
-      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
-      opened.data?.onRequestStarted?.();
+      const send = startAndOpenSendByEmail(fixture, dialogs);
+      sendByEmailData(send)?.onRequestStarted?.();
 
       selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(close).not.toHaveBeenCalled();
+      expect(dialogs[send].close).not.toHaveBeenCalled();
     });
 
-    it('does not offer Identify someone else again after the mail has been sent', async () => {
-      const onClose = new Subject<unknown>();
-      const onDestroy = new Subject<void>();
-      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+    it('does not offer Proceed with signing again after the mail has been sent', async () => {
+      const dialogs = recordDialogs();
       const signable = {
         ...notStarted,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
@@ -1026,25 +1033,13 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
 
       const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
-      expect(openDialog).toHaveBeenCalledTimes(1);
+      await startAndSendByEmail(fixture, dialogs, true);
 
-      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
-      opened.data?.onMailed?.();
-      onClose.next(null);
-      onDestroy.next();
-      fixture.detectChanges();
-
-      const identify = identifySomeoneElse(fixture);
-      expect(identifyIsUnavailable(identify)).toBe(true);
-      expect(identify?.getAttribute('aria-label')).toContain('a signature request has already been emailed');
-      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+      expect(startLockedAsEmailed(fixture)).toBe(true);
     });
 
-    it('still offers Identify someone else on a different CLA Group after this one was emailed', async () => {
-      const onClose = new Subject<unknown>();
-      const onDestroy = new Subject<void>();
-      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+    it('still offers Proceed with signing on a different CLA Group after this one was emailed', async () => {
+      const dialogs = recordDialogs();
       const signable = {
         ...notStarted,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
@@ -1059,20 +1054,14 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
 
       const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
-      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
-      opened.data?.onMailed?.();
-      onClose.next(null);
-      onDestroy.next();
-      fixture.detectChanges();
-      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+      await startAndSendByEmail(fixture, dialogs, true);
+      expect(startLockedAsEmailed(fixture)).toBe(true);
 
       paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
-      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+      expect(startButton(fixture)?.disabled).toBe(false);
     });
 
     /**
@@ -1081,12 +1070,7 @@ describe('OrgEasyclaDetailComponent', () => {
      * holds neither agreement — so returning to A is the moment a duplicate CCLA goes out.
      */
     it('keeps the first group locked after a second group is emailed and the route returns', async () => {
-      const dialogs: { onClose: Subject<unknown>; onDestroy: Subject<void> }[] = [];
-      openDialog.mockImplementation(() => {
-        const ref = { onClose: new Subject<unknown>(), onDestroy: new Subject<void>() };
-        dialogs.push(ref);
-        return { ...ref, close: vi.fn() };
-      });
+      const dialogs = recordDialogs();
       const signable = {
         ...notStarted,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
@@ -1101,39 +1085,26 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
 
       const fixture = await render();
-      const identify = (): HTMLButtonElement | null => identifySomeoneElse(fixture);
-      const mailTheDisplayedGroup = async (nth: number): Promise<void> => {
-        identify()?.click();
-        const opened = openDialog.mock.calls[nth][1] as { data?: { onMailed?: () => void } };
-        opened.data?.onMailed?.();
-        dialogs[nth].onClose.next(null);
-        dialogs[nth].onDestroy.next();
-        fixture.detectChanges();
-        await fixture.whenStable();
-      };
       const addressGroup = async (claGroupId: string): Promise<void> => {
         paramMap.next(convertToParamMap({ claGroupId }));
         fixture.detectChanges();
         await fixture.whenStable();
       };
 
-      await mailTheDisplayedGroup(0);
+      await startAndSendByEmail(fixture, dialogs, true);
 
       await addressGroup(ELSEWHERE_GROUP_ID);
-      expect(identifyIsOffered(identify())).toBe(true);
-      await mailTheDisplayedGroup(1);
-      expect(identifyIsUnavailable(identify())).toBe(true);
+      expect(startButton(fixture)?.disabled).toBe(false);
+      await startAndSendByEmail(fixture, dialogs, true);
+      expect(startLockedAsEmailed(fixture)).toBe(true);
 
       await addressGroup(GROUP_ID);
 
-      expect(identifyIsUnavailable(identify())).toBe(true);
-      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+      expect(startLockedAsEmailed(fixture)).toBe(true);
     });
 
-    it('still offers Identify someone else after Close when the mail was not sent', async () => {
-      const onClose = new Subject<unknown>();
-      const onDestroy = new Subject<void>();
-      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+    it('still offers Proceed with signing after Close when the mail was not sent', async () => {
+      const dialogs = recordDialogs();
       const signable = {
         ...notStarted,
         projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD2AAI' }],
@@ -1141,13 +1112,9 @@ describe('OrgEasyclaDetailComponent', () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
 
       const fixture = await render();
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
-      onClose.next(null);
-      onDestroy.next();
-      fixture.detectChanges();
+      await startAndSendByEmail(fixture, dialogs, false);
 
-      expect(identifyIsOffered(identifySomeoneElse(fixture))).toBe(true);
-      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+      expect(startButton(fixture)?.disabled).toBe(false);
     });
 
     it('opens the send-by-email dialog after I am not authorized, not the self-sign hand-off', async () => {
@@ -1587,27 +1554,21 @@ describe('OrgEasyclaDetailComponent', () => {
      * let the manager send a second copy. Stay until the dialog closes, then leave.
      */
     it('keeps send-by-email standing on a preview organization switch once Send has started, then leaves when it closes', async () => {
-      const onClose = new Subject<unknown>();
-      const onDestroy = new Subject<void>();
-      const close = vi.fn();
-      openDialog.mockReturnValue({ onClose, onDestroy, close });
+      const dialogs = recordDialogs();
 
       const fixture = await render(previewing());
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
-      expect(openDialog).toHaveBeenCalledTimes(1);
-
-      const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
-      opened.data?.onRequestStarted?.();
+      const send = startAndOpenSendByEmail(fixture, dialogs);
+      sendByEmailData(send)?.onRequestStarted?.();
 
       selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(close).not.toHaveBeenCalled();
+      expect(dialogs[send].close).not.toHaveBeenCalled();
       expect(navigate).not.toHaveBeenCalled();
 
-      onClose.next(null);
-      onDestroy.next();
+      dialogs[send].onClose.next(null);
+      dialogs[send].onDestroy.next();
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1651,27 +1612,19 @@ describe('OrgEasyclaDetailComponent', () => {
      * emailed agreement. The lock must follow that displayed group, not the route — otherwise it
      * lifts and Close can send a second copy of the same CCLA.
      */
-    it('keeps Identify someone else disabled when the route moves but the preview still shows the emailed group', async () => {
-      const onClose = new Subject<unknown>();
-      const onDestroy = new Subject<void>();
-      openDialog.mockReturnValue({ onClose, onDestroy, close: vi.fn() });
+    it('keeps Start locked when the route moves but the preview still shows the emailed group', async () => {
+      const dialogs = recordDialogs();
 
       const fixture = await render(previewing());
-      byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
-      const opened = openDialog.mock.calls[0][1] as { data?: { onMailed?: () => void } };
-      opened.data?.onMailed?.();
-      onClose.next(null);
-      onDestroy.next();
-      fixture.detectChanges();
-      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
+      await startAndSendByEmail(fixture, dialogs, true);
+      expect(startLockedAsEmailed(fixture)).toBe(true);
 
       paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
       fixture.detectChanges();
       await fixture.whenStable();
 
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
-      expect(identifyIsUnavailable(identifySomeoneElse(fixture))).toBe(true);
-      expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(true);
+      expect(startLockedAsEmailed(fixture)).toBe(true);
     });
 
     /**

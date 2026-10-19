@@ -1447,15 +1447,12 @@ export interface OrgClaDesigneeNominationValidation {
 export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
 
 /** Dismissing the question closes it with `undefined`, as does an assignment that ends the flow on the overview. */
-export type OrgClaManagerQuestionResult = 'no' | 'assigned';
+export type OrgClaManagerQuestionResult = 'no';
 
 export interface OrgClaManagerQuestionDialogData {
   /** Called once, on Yes. The opener performs the assignment and closes the dialog when it answers. */
   onYes: () => void;
 }
-
-/** The step the viewer chose on the unsigned overview: sign it themselves, or mail it to a signatory. */
-export type OrgClaDesigneeNextStep = 'attest' | 'mail';
 
 export type OrgClaIdentifyManagerField = keyof OrgClaDesigneeNominationValidation;
 
