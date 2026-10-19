@@ -59,10 +59,19 @@ export class MktgSlidesExportComponent {
   protected readonly failureMessage = signal('');
   protected readonly failureDeckLink = signal<string | null>(null);
   private readonly mode = signal<MktgSlidesExportMode>('create');
+  /** True once the current target's last export has been read (or its read failed): until then Export cannot tell Update from Create. */
+  private readonly lookupSettled = signal(false);
 
   // === Computed ===
   /** True while an export runs: the header's button shows it and takes no second click. */
   public readonly busy = computed(() => this.phase() === 'running');
+  /**
+   * The header's button takes a click only for a target whose last export is
+   * known and with no export running: a click while the last export is still
+   * being read would see no deck and create a second one instead of offering
+   * Update.
+   */
+  public readonly canExport = computed(() => this.target() !== null && this.lookupSettled() && !this.busy());
   protected readonly assetLabel = computed(() => {
     const target = this.target();
     return target ? MKTG_SLIDES_EXPORT_ASSET_LABELS[target.agentKey] : 'asset';
@@ -103,6 +112,7 @@ export class MktgSlidesExportComponent {
         .subscribe((response) => {
           this.last.set(response.last);
           this.latest.set(response.latestRevision);
+          this.lookupSettled.set(true);
         });
     }
     this.destroyRef.onDestroy(() => this.run?.unsubscribe());
@@ -111,7 +121,7 @@ export class MktgSlidesExportComponent {
   // === Public methods ===
   /** The header's "Export to Google Slides": with a deck already made, ask Update or Create; else create one. */
   public onExport(): void {
-    if (!this.target() || this.busy()) {
+    if (!this.canExport()) {
       return;
     }
     if (this.last()) {
@@ -163,6 +173,7 @@ export class MktgSlidesExportComponent {
   private reset(): void {
     this.run?.unsubscribe();
     this.run = null;
+    this.lookupSettled.set(false);
     this.phase.set('idle');
     this.last.set(null);
     this.latest.set(null);

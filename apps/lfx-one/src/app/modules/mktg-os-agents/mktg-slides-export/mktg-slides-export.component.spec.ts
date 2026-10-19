@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MKTG_SLIDES_EXPORT_FAILURE_MESSAGES, MKTG_SLIDES_EXPORT_LOGO_NOTES, MKTG_SLIDES_EXPORT_START_MESSAGES } from '@lfx-one/shared/constants';
 import {
@@ -14,7 +15,7 @@ import {
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
 import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgSlidesExportComponent } from './mktg-slides-export.component';
@@ -224,6 +225,52 @@ describe('MktgSlidesExportComponent', () => {
     expect(query('mktg-slides-export-running')).toBeNull();
     expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
     expect(service.last).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes no Export click until the last export is read, so an existing deck is offered Update and never duplicated', async () => {
+    const lookup = new Subject<MktgSlidesExportLastResponse>();
+    await setup();
+    service.last.mockReturnValue(lookup);
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    expect(exporter.canExport()).toBe(true);
+
+    // The page names another revision of the same document: its last export is read again, and is slow to answer.
+    fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
+    await fixture.whenStable();
+    expect(exporter.canExport()).toBe(false);
+
+    await click('host-export');
+    expect(service.start).not.toHaveBeenCalled();
+    expect(query('mktg-slides-export-choice')).toBeNull();
+
+    lookup.next({ last: record(), latestRevision: { id: `000002-${SHA}`, number: 2, contentSha256: SHA } });
+    await fixture.whenStable();
+    expect(exporter.canExport()).toBe(true);
+
+    await click('host-export');
+    expect(service.start).not.toHaveBeenCalled();
+    expect(query('mktg-slides-export-choice')).not.toBeNull();
+  });
+
+  it('holds Export on first load until the last export is read', async () => {
+    const lookup = new Subject<MktgSlidesExportLastResponse>();
+    lastResponse = { last: record(), latestRevision: null };
+    service = { last: vi.fn(() => lookup), start: vi.fn(() => of(started)), poll: vi.fn(() => pollResult) };
+    await TestBed.configureTestingModule({
+      imports: [HostComponent],
+      providers: [provideNoopAnimations(), { provide: MktgSlidesExportService, useValue: service }, { provide: PLATFORM_ID, useValue: 'browser' }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+
+    await click('host-export');
+    expect(service.start).not.toHaveBeenCalled();
+
+    lookup.next(lastResponse);
+    await fixture.whenStable();
+    await click('host-export');
+    expect(service.start).not.toHaveBeenCalled();
+    expect(query('mktg-slides-export-choice')).not.toBeNull();
   });
 
   it('never shows a finished deck under another asset', async () => {

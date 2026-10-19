@@ -40,7 +40,7 @@
           [outlined]="true"
           size="small"
           [loading]="slidesExport.busy()"
-          [disabled]="!exportTarget() || slidesExport.busy()"
+          [disabled]="!slidesExport.canExport()"
           ariaLabel="Export the messaging framework to Google Slides"
           data-testid="mktg-framework-view-export-slides"
           (onClick)="slidesExport.onExport()" />

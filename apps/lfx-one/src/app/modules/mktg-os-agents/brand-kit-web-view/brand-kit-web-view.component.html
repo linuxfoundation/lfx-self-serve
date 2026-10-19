@@ -41,7 +41,7 @@
         [outlined]="true"
         size="small"
         [loading]="slidesExport.busy()"
-        [disabled]="!exportTarget() || slidesExport.busy()"
+        [disabled]="!slidesExport.canExport()"
         ariaLabel="Export the brand kit to Google Slides"
         data-testid="brand-kit-web-view-export-slides"
         (onClick)="slidesExport.onExport()" />
