@@ -13,7 +13,7 @@ This article applies to users with the **executive-director** persona and to **L
 
 ## Open the Analytics tab
 
-1. Open **Social Listening** from the **Metrics** section of the left navigation in the **Foundation** lens.
+1. Open **Social Listening** from the **Metrics** section of the left navigation in the **Foundation** lens. If your group gives you access but you don't have the Foundation lens, open `/foundation/social-listening?project=<foundation-slug>` directly.
 2. Select **Analytics** at the top of the page, next to **Feed**.
 
 ## Set the scope

@@ -161,6 +161,17 @@ describe('SocialListeningAccessService.getAccess', () => {
     });
   });
 
+  it('keys the remembered answer by foundation as well as user', async () => {
+    await expect(service.getAccess(req, 'tlf')).resolves.toEqual({ canView: true, reason: 'group-member' });
+
+    getProjectIdBySlug.mockResolvedValue({ uid: 'cncf-uid', slug: 'cncf', exists: true });
+    canGroupMemberViewSocialListening.mockResolvedValue(false);
+
+    await expect(service.getAccess(req, 'cncf')).resolves.toEqual({ canView: false, reason: 'none' });
+    expect(canGroupMemberViewSocialListening).toHaveBeenCalledTimes(2);
+    expect(canGroupMemberViewSocialListening).toHaveBeenLastCalledWith(req, 'cncf-uid');
+  });
+
   it('fails closed on an upstream error and does not remember the failure', async () => {
     canGroupMemberViewSocialListening.mockRejectedValueOnce(new Error('query service down'));
 

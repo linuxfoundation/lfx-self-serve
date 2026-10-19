@@ -44,11 +44,6 @@ export class SocialListeningAccessService {
     return canView ? { canView: true, reason: 'group-member' } : { canView: false, reason: 'none' };
   }
 
-  /** Test-only: drops every remembered group-member answer. */
-  public clearCacheForTests(): void {
-    this.groupAccessCache.clear();
-  }
-
   private async canGroupMemberView(req: Request, foundationSlug: string): Promise<boolean> {
     const username = await getUsernameFromAuth(req);
     if (!username) {

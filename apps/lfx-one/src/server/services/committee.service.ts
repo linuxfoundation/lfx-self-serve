@@ -1455,21 +1455,8 @@ export class CommitteeService {
 
     const m2mToken = await generateM2MToken(req);
     // allSettled: one failed read must not hide another group that has the setting on.
-    const results = await Promise.allSettled(
-      groupUids.map((uid) =>
-        this.microserviceProxy.proxyRequest<CommitteeSettingsData>(
-          req,
-          'LFX_V2_SERVICE',
-          `/committees/${uid}/settings`,
-          'GET',
-          undefined,
-          undefined,
-          undefined,
-          {
-            bearerToken: m2mToken,
-          }
-        )
-      )
+    const results = await settleInBatches(groupUids, 10, (uid) =>
+      this.getCommitteeSettings(req, uid, { throwOnError: true, requestOptions: { bearerToken: m2mToken } })
     );
     if (results.some((r) => r.status === 'fulfilled' && r.value?.members_can_view_social_listening === true)) {
       return true;

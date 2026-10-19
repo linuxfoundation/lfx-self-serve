@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { EXECUTIVE_DIRECTOR_PERSONA } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError } from '../errors';
@@ -26,6 +27,7 @@ export async function requireDashboardAccess(req: Request, _res: Response, next:
       path: req.path,
       personas: result.personas,
       requested_slug: requestedSlug || undefined,
+      scoped_slugs: (result.personaProjects?.[EXECUTIVE_DIRECTOR_PERSONA] ?? []).map((project) => project.projectSlug),
     });
 
     next(

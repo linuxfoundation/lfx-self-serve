@@ -573,7 +573,7 @@ export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
     icon: 'fa-light fa-ear-listen',
     title: 'Members Can View Social Listening',
     description:
-      "Let this group's members view Social Listening for the whole foundation and filter it by project. Executive Directors and LF staff always have access.",
+      "Let this group's members view Social Listening for the whole foundation and filter it by project. Applies to the foundation's own groups, not its projects' groups. Executive Directors and LF staff always have access.",
     color: lfxColors.violet[500],
   },
 ];

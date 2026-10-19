@@ -23,7 +23,7 @@ Social Listening tracks brand mentions and sentiment across social, forums, and 
 
 ## Navigation
 
-Switch to your **Foundation** lens using the lens switcher, then select **Social Listening** under **Metrics** in the left navigation sidebar (route: `/foundation/social-listening`).
+Switch to your **Foundation** lens using the lens switcher, then select **Social Listening** under **Metrics** in the left navigation sidebar (route: `/foundation/social-listening`). If your group gives you access but you don't have the Foundation lens, open `/foundation/social-listening?project=<foundation-slug>` directly.
 
 A summary of social listening activity also appears as a tab on the **Campaign Impact** page — see [the FAQ](./faq/) for how the two views differ.
 

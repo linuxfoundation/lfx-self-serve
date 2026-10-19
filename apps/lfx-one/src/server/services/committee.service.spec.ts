@@ -1855,7 +1855,7 @@ describe('CommitteeService — group Social Listening access (lfx-self-serve-ops
   });
 
   describe('canGroupMemberViewSocialListening', () => {
-    /** Membership query, then one settings read per Board group. */
+    /** Membership query, then one settings read per active group. */
     function upstream(memberships: string[], settings: Record<string, boolean | Error>, status = 'Active'): void {
       proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
         if (path === '/query/resources') {

@@ -13,7 +13,7 @@ This article applies to users with the **executive-director** persona and to **L
 
 ## Search mentions
 
-1. Open **Social Listening** from the **Metrics** section of the left navigation in the **Foundation** lens.
+1. Open **Social Listening** from the **Metrics** section of the left navigation in the **Foundation** lens. If your group gives you access but you don't have the Foundation lens, open `/foundation/social-listening?project=<foundation-slug>` directly.
 2. Type at least 3 characters into the **Search mentions...** box.
 3. The feed updates automatically, about half a second after you stop typing.
 
