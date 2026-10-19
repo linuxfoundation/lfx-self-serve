@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MKTG_PRINT_INK_ON_LIGHT, MKTG_PRINT_LF_LOOK, MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
+import { MKTG_PRINT_INK_ON_DARK, MKTG_PRINT_INK_ON_LIGHT, MKTG_PRINT_LF_LOOK, MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
 import { BrandKitLogoRef, BrandKitRevision } from '../interfaces/brand-kit.interface';
 import { FoundationMessageContent } from '../interfaces/foundation-message.interface';
 import { buildFoundationMessagePrintView, foundationMessagePrintSections, mktgPrintBrand } from './mktg-print.utils';
@@ -150,6 +150,12 @@ describe('the print’s brand', () => {
     const brand = mktgPrintBrand(kitWith({ googleFonts: false, dark: '#F4F4F4' }));
     expect([brand.fontUrl, brand.fontFamily]).toEqual([null, null]);
     expect(brand.onDark).toBe(MKTG_PRINT_INK_ON_LIGHT);
+  });
+
+  it('sets text on the kit’s dark panels in whichever ink reads better, so a mid-grey "dark" gets dark ink', () => {
+    // White on #A0A0A0 is only 2.6:1; the dark ink reads far better there.
+    expect(mktgPrintBrand(kitWith({ dark: '#A0A0A0' })).onDark).toBe(MKTG_PRINT_INK_ON_LIGHT);
+    expect(mktgPrintBrand(kitWith({ dark: '#20232A' })).onDark).toBe(MKTG_PRINT_INK_ON_DARK);
   });
 
   it('sets the white pages’ body text in the kit’s dark when it reads on white, the LF navy without a kit', () => {

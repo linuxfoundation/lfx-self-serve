@@ -26,7 +26,7 @@ import type {
   MktgPrintBrand,
   MktgPrintLogo,
 } from '../interfaces/mktg-print.interface';
-import { brandKitContrastRatio, brandKitIsLight, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
+import { brandKitContrastRatio, brandKitLuminance, brandKitTint } from './brand-kit-book.utils';
 import { brandKitFontStack, brandKitGoogleFontsUrl, brandKitLogoImage, brandKitWeights } from './brand-kit.utils';
 import {
   foundationMessageAudienceRows,
@@ -53,6 +53,14 @@ function lfPrintBrand(): MktgPrintBrand {
     logoOnDark: { src: look.logoOnDark, alt: look.logoAlt, filter: '' },
     logoOnLight: { src: look.logoOnLight, alt: look.logoAlt, filter: '' },
   };
+}
+
+/** The ink, light or dark, with the higher contrast against a background colour. */
+function betterInkOn(background: string): string {
+  const ground = brandKitLuminance(background);
+  const onLight = brandKitContrastRatio(ground, brandKitLuminance(MKTG_PRINT_INK_ON_LIGHT));
+  const onDark = brandKitContrastRatio(ground, brandKitLuminance(MKTG_PRINT_INK_ON_DARK));
+  return onLight >= onDark ? MKTG_PRINT_INK_ON_LIGHT : MKTG_PRINT_INK_ON_DARK;
 }
 
 /**
@@ -85,14 +93,16 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
     logoOnDark = { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER };
   }
   const darkIsHex = /^#[0-9a-f]{6}$/i.test(dark);
-  const darkIsLight = darkIsHex && brandKitIsLight(dark);
+  // Text on the kit's dark panels takes whichever ink reads better against it:
+  // a mid-grey "dark" can be too light for white text yet not light enough to count as light.
+  const onDark = darkIsHex ? betterInkOn(dark) : MKTG_PRINT_INK_ON_DARK;
   const darkReadsOnWhite = !darkIsHex || brandKitContrastRatio(brandKitLuminance(dark), 1) >= MKTG_PRINT_BODY_INK_MIN_CONTRAST;
   return {
     source: 'kit',
     dark,
     accent,
     tint: brandKitTint(dark),
-    onDark: darkIsLight ? MKTG_PRINT_INK_ON_LIGHT : MKTG_PRINT_INK_ON_DARK,
+    onDark,
     ink: darkReadsOnWhite ? dark : MKTG_PRINT_INK_ON_LIGHT,
     fontStack: brandKitFontStack(type.family, type.fallback),
     fontUrl,
