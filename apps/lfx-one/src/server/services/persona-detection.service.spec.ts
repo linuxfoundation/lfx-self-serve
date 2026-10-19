@@ -356,6 +356,24 @@ describe('PersonaDetectionService', () => {
       expect(checkAccess).not.toHaveBeenCalled();
     });
 
+    it('treats a verified project grant as verified even when the ROOT check for the same relation failed', async () => {
+      natsRequest.mockImplementation((subject: string) => {
+        if (subject.includes('personas')) {
+          return Promise.resolve({ data: JSON.stringify({ projects: [] }) });
+        }
+        return Promise.reject(new Error('timeout'));
+      });
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) =>
+        Promise.resolve(args.id === 'uid-project' && args.access === 'marketing_auditor')
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'marketing_auditor');
+
+      expect(response.isMarketingAuditor).toBe(true);
+      expect(response.marketingGrantCheckFailed).toBe(false);
+    });
+
     it('reports a ROOT lookup timeout on the marketing-auditor path as unverified', async () => {
       rootLookupTimesOut();
       checkSingleAccess.mockResolvedValue(true);

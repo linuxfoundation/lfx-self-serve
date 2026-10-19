@@ -53,10 +53,11 @@ export class PersonaDetectionService {
   // Dedupes the projectSlug -> uid NATS lookup within a single request — checkMarketingAuditorAccess
   // and checkCampaignManagerAccess both resolve the same slug in the same getPersonas Promise.all.
   private readonly projectSlugRequestCache = new WeakMap<Request, Map<string, Promise<{ uid: string; exists: boolean }>>>();
-  // Requests on which a marketing grant check (ROOT or project-scoped) could not be verified upstream.
-  // Every such check still fails closed to `false`; this only lets getPersonas tell the client
-  // "couldn't check" apart from "denied" (`marketingGrantCheckFailed`).
-  private readonly failedMarketingGrantChecks = new WeakSet<Request>();
+  // Per request, the marketing relations whose grant check (ROOT or project-scoped) could not be
+  // verified upstream. Every such check still fails closed to `false`; getPersonas reports
+  // `marketingGrantCheckFailed` only for a relation that came back `false` — a `true` from another
+  // check of the same relation (ROOT miss, project grant) is verified.
+  private readonly failedMarketingGrantChecks = new WeakMap<Request, Set<'marketing_auditor' | 'campaign_manager'>>();
 
   public constructor() {
     this.natsService = new NatsService();
@@ -176,7 +177,9 @@ export class PersonaDetectionService {
       isCampaignManager,
       isMarketingAuditorRootGrant,
       isCampaignManagerRootGrant: false,
-      marketingGrantCheckFailed: this.failedMarketingGrantChecks.has(req),
+      marketingGrantCheckFailed:
+        (!isMarketingAuditor && this.marketingGrantCheckFailed(req, 'marketing_auditor')) ||
+        (!isCampaignManager && this.marketingGrantCheckFailed(req, 'campaign_manager')),
     };
   }
 
@@ -300,7 +303,7 @@ export class PersonaDetectionService {
       .then(async (rootUid) => {
         // A null ROOT uid means the lookup failed (ROOT always exists), so the grant is unverified, not denied.
         if (!rootUid) {
-          this.failedMarketingGrantChecks.add(req);
+          this.recordFailedMarketingGrantCheck(req, 'campaign_manager');
           return none;
         }
         const results = await this.accessCheckService.checkAccessStrict(req, [{ resource: 'project', id: rootUid, access: 'global_marketing_ops' }]);
@@ -308,7 +311,7 @@ export class PersonaDetectionService {
       })
       .catch((error) => {
         logger.warning(req, 'check_root_campaign_manager', 'Root global_marketing_ops check failed, assuming no access', { err: error });
-        this.failedMarketingGrantChecks.add(req);
+        this.recordFailedMarketingGrantCheck(req, 'campaign_manager');
         return none;
       });
     this.rootMarketingOpsRequestCache.set(req, promise);
@@ -330,9 +333,19 @@ export class PersonaDetectionService {
       return await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access });
     } catch (error) {
       logger.warning(req, operation, `Project ${access} check failed, assuming no access`, { err: error, projectSlug });
-      if (access !== 'writer_guard') this.failedMarketingGrantChecks.add(req);
+      if (access !== 'writer_guard') this.recordFailedMarketingGrantCheck(req, access);
       return false;
     }
+  }
+
+  private recordFailedMarketingGrantCheck(req: Request, relation: 'marketing_auditor' | 'campaign_manager'): void {
+    const failed = this.failedMarketingGrantChecks.get(req) ?? new Set();
+    failed.add(relation);
+    this.failedMarketingGrantChecks.set(req, failed);
+  }
+
+  private marketingGrantCheckFailed(req: Request, relation: 'marketing_auditor' | 'campaign_manager'): boolean {
+    return this.failedMarketingGrantChecks.get(req)?.has(relation) ?? false;
   }
 
   private resolveProjectSlug(req: Request, projectSlug: string): Promise<{ uid: string; exists: boolean }> {
@@ -364,14 +377,14 @@ export class PersonaDetectionService {
       .then((rootUid) => {
         // A null ROOT uid means the lookup failed (ROOT always exists): unverified, not denied.
         if (!rootUid) {
-          if (access === 'marketing_auditor') this.failedMarketingGrantChecks.add(req);
+          if (access === 'marketing_auditor') this.recordFailedMarketingGrantCheck(req, access);
           return false;
         }
         return this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: rootUid, access });
       })
       .catch((error) => {
         logger.warning(req, operation, `Root ${access} check failed, assuming no access`, { err: error });
-        if (access === 'marketing_auditor') this.failedMarketingGrantChecks.add(req);
+        if (access === 'marketing_auditor') this.recordFailedMarketingGrantCheck(req, access);
         return false;
       });
     cache.set(req, promise);
