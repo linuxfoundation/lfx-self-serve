@@ -12,6 +12,7 @@ import type {
   MktgRunAnswersBody,
   MktgRunAnswersResponse,
   MktgRunGenerateBody,
+  MktgRunQuestion,
   MktgRunResultBody,
   MktgRunResultResponse,
   MktgRunSessionResponse,
@@ -155,6 +156,13 @@ export interface BoilerplatesResultResponse extends MktgRunResultResponse {
   /** Persistence receipt; absent on a ready result when the write did not happen (retried on the next poll). */
   persistence?: BoilerplatesPersistReceipt;
 }
+
+/**
+ * The latest outcome the agent wrote in a session without a valid envelope:
+ * its questions block, or its end-of-run reply (§2b refusal or §3 run that
+ * ended without a validated result). The last one in the session wins.
+ */
+export type BoilerplatesRunOutcome = { kind: 'questions'; questions: MktgRunQuestion[] } | { kind: 'refused'; reply: string };
 
 /** Structured result of validating a candidate envelope or a request body. */
 export interface BoilerplatesValidationResult {

@@ -16,6 +16,7 @@ import {
   BOILERPLATES_AGENT_VERSION_REGEX,
   BOILERPLATES_ANSWER_MAX_CHARS,
   BOILERPLATES_ANSWERS_HEADER,
+  BOILERPLATES_CONTENT_KEYS,
   BOILERPLATES_CONTRACT_ID,
   BOILERPLATES_DRAFT_HEADER,
   BOILERPLATES_FIELD_KEYS,
@@ -451,7 +452,8 @@ export function findBoilerplatesContentErrors(content: unknown): string[] {
     return ['content must be an object'];
   }
   const errors: string[] = [];
-  const extra = Object.keys(content).filter((key) => key !== 'bp');
+  const allowed = new Set<string>(BOILERPLATES_CONTENT_KEYS);
+  const extra = Object.keys(content).filter((key) => !allowed.has(key));
   if (extra.length > 0) {
     errors.push(`content has unknown keys: ${extra.join(', ')}`);
   }

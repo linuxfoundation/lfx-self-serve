@@ -232,6 +232,22 @@ describe('BoilerplatesService.getResult', () => {
     expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'refused', reply });
   });
 
+  it('reports a run that ended without a validated result after answered questions as refused', async () => {
+    const reply =
+      'The Boilerplates run for Acme Mesh ended without a validated result: the boilerplates were submitted before the finalize step accepted them, so nothing was delivered. Could you submit the Boilerplates request again?';
+    guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload(questionsText()), agentTextPayload(reply)]);
+
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'refused', reply });
+  });
+
+  it('reports a questions block that follows an earlier reply as the questions to answer', async () => {
+    const reply =
+      'The Boilerplates run for Acme Mesh ended without a validated result: the boilerplates were submitted before the finalize step accepted them, so nothing was delivered. Could you submit the Boilerplates request again?';
+    guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload(reply), agentTextPayload(questionsText())]);
+
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+  });
+
   it('stays pending while the agent works', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload('Reading the website.')]);
 

@@ -79,12 +79,18 @@ export class MktgBoilerplatesViewComponent {
   };
   /** Reset timer of the "Copied" state — cleared on destroy. */
   private copyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Deferred focus move of a panel shortcut (`onGoToTab`) — cleared on destroy. */
+  private focusTimer: ReturnType<typeof setTimeout> | null = null;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
       if (this.copyTimer !== null) {
         clearTimeout(this.copyTimer);
         this.copyTimer = null;
+      }
+      if (this.focusTimer !== null) {
+        clearTimeout(this.focusTimer);
+        this.focusTimer = null;
       }
     });
   }
@@ -104,7 +110,13 @@ export class MktgBoilerplatesViewComponent {
     if (isPlatformBrowser(this.platformId)) {
       const tab = this.tabs().find((entry) => entry.id === id);
       if (tab) {
-        setTimeout(() => this.document.getElementById(tab.tabId)?.focus());
+        if (this.focusTimer !== null) {
+          clearTimeout(this.focusTimer);
+        }
+        this.focusTimer = setTimeout(() => {
+          this.focusTimer = null;
+          this.document.getElementById(tab.tabId)?.focus();
+        });
       }
     }
   }

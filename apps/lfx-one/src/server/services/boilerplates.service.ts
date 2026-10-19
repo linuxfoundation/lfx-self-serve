@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { BOILERPLATES_CONTRACT_ID, BOILERPLATES_FINALIZE_TOOL, MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
-import { BoilerplatesEnvelope, BoilerplatesPersistReceipt, BoilerplatesResultResponse, MktgRunAnswer, MktgRunQuestion } from '@lfx-one/shared/interfaces';
+import {
+  BoilerplatesEnvelope,
+  BoilerplatesPersistReceipt,
+  BoilerplatesResultResponse,
+  BoilerplatesRunOutcome,
+  MktgRunAnswer,
+} from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAsset,
   boilerplatesContentJson,
@@ -109,13 +115,14 @@ export class BoilerplatesService {
    * Fetch the session's current result: `ready` once a valid envelope appears
    * in the event stream, with the boilerplates as the run's asset and (when
    * the write succeeded) the persistence receipt of the stored revision;
-   * `questions` whenever the session holds a questions block and no valid
-   * envelope yet — the LATEST block the agent wrote, with a `questionsId` so
-   * the run shell ignores the block it already answered; `refused` when the
-   * agent ended the session with its one plain reply instead of an envelope;
-   * `pending` otherwise. `projectUid` decides the storage partition and is
-   * entitlement-checked before anything is written; without it the
-   * boilerplates are still returned, just not stored.
+   * otherwise the agent's LATEST outcome decides: `questions` when it is a
+   * questions block, with a `questionsId` so the run shell ignores the block
+   * it already answered; `refused` when it is the agent's one plain reply
+   * ending the session instead of an envelope — even after an earlier,
+   * answered questions block; `pending` when there is neither. `projectUid`
+   * decides the storage partition and is entitlement-checked before anything
+   * is written; without it the boilerplates are still returned, just not
+   * stored.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<BoilerplatesResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
@@ -124,13 +131,12 @@ export class BoilerplatesService {
     const activity = buildMktgRunActivity(payloads);
 
     if (!envelope) {
-      const questions = this.findLatestQuestions(req, payloads);
-      if (questions) {
-        return { status: 'questions', questions, questionsId: foundationMessageQuestionsId(questions), activity };
+      const outcome = this.findLatestOutcome(req, payloads);
+      if (outcome?.kind === 'refused') {
+        return { status: 'refused', reply: outcome.reply, activity };
       }
-      const reply = this.findRefusal(req, payloads);
-      if (reply) {
-        return { status: 'refused', reply, activity };
+      if (outcome?.kind === 'questions') {
+        return { status: 'questions', questions: outcome.questions, questionsId: foundationMessageQuestionsId(outcome.questions), activity };
       }
       return { status: 'pending', activity };
     }
@@ -159,43 +165,39 @@ export class BoilerplatesService {
   }
 
   /**
-   * The latest questions block the AGENT wrote in the session, when there is
-   * one: the raw payloads are chronological and so are the agent's texts
-   * within each, so the last block found is the latest. Only the agent's own
-   * text turns are read — never a tool result, where a fetched page could
-   * plant a block, and never a user event, which `getRawEventPayloads` drops.
+   * The latest outcome the AGENT wrote in the session, when there is one: a
+   * questions block, or its end-of-run reply — the refusal of a run with no
+   * messaging framework (or a JSON that is not one, §2b), or the reply of a
+   * run that ended without a validated result (§3). One chronological pass:
+   * the raw payloads are chronological and so are the agent's texts within
+   * each, so the last outcome found wins. A §3 reply after an answered
+   * questions block therefore ends the run, and a questions block after a
+   * reply is the one to answer. Only the agent's own text turns are read —
+   * never a tool result, where a fetched page could plant a block, and never
+   * a user event, which `getRawEventPayloads` drops. Null while the agent is
+   * still working.
    */
-  private findLatestQuestions(req: Request, payloads: string[]): MktgRunQuestion[] | null {
-    let latest: MktgRunQuestion[] | null = null;
+  private findLatestOutcome(req: Request, payloads: string[]): BoilerplatesRunOutcome | null {
+    let latest: BoilerplatesRunOutcome | null = null;
     for (const payload of payloads) {
       for (const text of extractMktgAgentTexts(payload)) {
-        latest = extractBoilerplatesQuestions(text) ?? latest;
-      }
-    }
-    if (latest) {
-      logger.debug(req, 'boilerplates_result', 'The agent is asking questions', { questions: latest.length });
-    }
-    return latest;
-  }
-
-  /**
-   * The agent's end-of-run reply, when the session holds one: the refusal of
-   * a run with no messaging framework (or a JSON that is not one), or the
-   * reply of a run that ended without a validated result — read from its own
-   * text turns like the questions block, never from a tool result. Null while
-   * the agent is running or asking.
-   */
-  private findRefusal(req: Request, payloads: string[]): string | null {
-    for (const payload of payloads) {
-      for (const text of extractMktgAgentTexts(payload)) {
+        const questions = extractBoilerplatesQuestions(text);
+        if (questions) {
+          latest = { kind: 'questions', questions };
+          continue;
+        }
         const reply = extractBoilerplatesRefusal(text);
         if (reply) {
-          logger.info(req, 'boilerplates_result', 'The agent ended the run with a reply', { reply_chars: reply.length });
-          return reply;
+          latest = { kind: 'refused', reply };
         }
       }
     }
-    return null;
+    if (latest?.kind === 'questions') {
+      logger.debug(req, 'boilerplates_result', 'The agent is asking questions', { questions: latest.questions.length });
+    } else if (latest?.kind === 'refused') {
+      logger.info(req, 'boilerplates_result', 'The agent ended the run with a reply', { reply_chars: latest.reply.length });
+    }
+    return latest;
   }
 
   /**

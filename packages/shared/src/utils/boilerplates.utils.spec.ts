@@ -341,6 +341,12 @@ describe('boilerplates envelope', () => {
     expect(validateBoilerplatesEnvelope(foreign).valid).toBe(false);
   });
 
+  it('refuses content keys outside the contract’s content keys', () => {
+    const extra = envelope();
+    (extra.content as unknown as Record<string, unknown>)['mf'] = {};
+    expect(validateBoilerplatesEnvelope(extra).errors).toContain('content has unknown keys: mf');
+  });
+
   it('turns the envelope into the run’s asset, and a stored revision back into the same asset', () => {
     const asset = boilerplatesAsset(envelope());
     expect(asset.kind).toBe('boilerplates');
