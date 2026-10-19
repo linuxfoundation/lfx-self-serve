@@ -45,8 +45,8 @@ export class BrandKitWebViewComponent {
   protected readonly selectedTab = signal<BrandKitWebViewTabId>('overview');
 
   // === Computed ===
-  /** Every value the samples bind, from the same view model as the printed book. */
-  protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit()));
+  /** Every value the samples bind — built once here and handed to the printed book, which lays out the same view model. */
+  protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit(), this.versionNumber()));
   protected readonly chapters: Signal<BrandKitChapterSummary[]> = computed(() => brandKitChapterSummaries(this.kit()));
   protected readonly title = computed(() => `${this.kit().projectName} Brand Kit`);
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);

@@ -403,7 +403,7 @@
           <div class="flex min-h-0 flex-col gap-[2.4cqw]">
             <div class="grid gap-[1.6cqw]" [style.grid-template-columns]="'repeat(' + v.palette.length + ', minmax(0, 1fr))'">
               @for (card of v.palette; track card.hex) {
-                <div class="flex flex-col gap-[0.6cqw] text-[1cqw] leading-[1.4]" [attr.data-testid]="'brand-kit-swatch-' + card.hex.slice(1)">
+                <div class="flex flex-col gap-[0.6cqw] text-[1cqw] leading-[1.4]" [attr.data-testid]="'brand-kit-swatch-' + card.hexDigits">
                   <div
                     class="flex h-[9cqw] items-end rounded-[0.8cqw] p-[1cqw] text-[1.05cqw] tracking-[0.06em]"
                     [class.border]="card.light"

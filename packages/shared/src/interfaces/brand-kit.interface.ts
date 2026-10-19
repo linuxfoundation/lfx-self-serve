@@ -457,6 +457,8 @@ export interface BrandKitColorwayTile {
 export interface BrandKitPaletteCard {
   name: string;
   hex: string;
+  /** The hex without its `#` (`4D4E4E`): what names the swatch's test id. */
+  hexDigits: string;
   /** `77 78 78`. */
   rgb: string;
   role: string;

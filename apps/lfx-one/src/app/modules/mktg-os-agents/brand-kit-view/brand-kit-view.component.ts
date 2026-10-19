@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, PLATFORM_ID } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { BrandKitBookView, BrandKitRevision } from '@lfx-one/shared/interfaces';
-import { buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { BrandKitBookView } from '@lfx-one/shared/interfaces';
 import { distinctUntilChanged, filter } from 'rxjs';
 
 // The Brand Kit of one revision, laid out as the reference kit's 16 letter
@@ -34,13 +33,14 @@ export class BrandKitViewComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
-  /** The kit to lay out. */
-  public readonly kit = input.required<BrandKitRevision>();
-  /** The version the cover and the running heads print — the one the page shows; the kit's own when not given. */
-  public readonly version = input<number | null>(null);
+  /**
+   * The kit to lay out, as the web view built it (`buildBrandKitBookView`
+   * with the version the page shows, which the cover and the running heads
+   * print): built once there, never again here.
+   */
+  public readonly view = input.required<BrandKitBookView>();
 
   // === Computed ===
-  protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit(), this.version()));
   /** The proportion bar's accessible name: every colour and its share, since the segments themselves are paint. */
   protected readonly proportionLabel = computed(
     () =>

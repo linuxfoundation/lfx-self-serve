@@ -97,7 +97,7 @@ describe('MktgIntakeLogoFilesComponent', () => {
     expect(component.busy()).toBe(true);
     await settled();
 
-    expect(component.files()).toEqual([expect.objectContaining({ badge: 'SVG', status: '1 KB, sent as text', file: { name: 'logo.svg', text: '<svg/>' } })]);
+    expect(component.files()).toEqual([expect.objectContaining({ badge: 'SVG', status: '6 B, sent as text', file: { name: 'logo.svg', text: '<svg/>' } })]);
     expect(query('mktg-intake-logo-files-list')?.textContent).toContain('logo.svg');
     expect(component['errorText']()).toBe('');
   });
@@ -108,7 +108,7 @@ describe('MktgIntakeLogoFilesComponent', () => {
     await settled();
 
     expect(component.files()).toEqual([
-      expect.objectContaining({ badge: 'PNG', status: '1 KB, sent as bytes', file: { name: 'mark.png', base64: 'iVBORw==' } }),
+      expect.objectContaining({ badge: 'PNG', status: '4 B, sent as bytes', file: { name: 'mark.png', base64: 'iVBORw==' } }),
     ]);
   });
 

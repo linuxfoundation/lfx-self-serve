@@ -147,6 +147,7 @@ export function brandKitPaletteCards(kit: BrandKitRevision): BrandKitPaletteCard
   return kit.chapters.color.palette.map((entry) => ({
     name: entry.name,
     hex: entry.hex,
+    hexDigits: entry.hex.slice(1),
     rgb: entry.rgb.join(' '),
     role: entry.role,
     source: brandKitFoundIn(entry.found_in),

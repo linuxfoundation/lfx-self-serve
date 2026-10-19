@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MktgIntakeLogoFile, MktgIntakeLogoFileEntry, MktgIntakeLogoFilesConfig } from '@lfx-one/shared/interfaces';
-import { brandKitLogoFileKind } from '@lfx-one/shared/utils';
+import { brandKitLogoFileKind, formatFileSize } from '@lfx-one/shared/utils';
 import { httpsUrlValidator } from '@lfx-one/shared/validators';
 import type { FileSelectEvent } from 'primeng/fileupload';
 
@@ -155,7 +155,7 @@ export class MktgIntakeLogoFilesComponent {
         this.errorText.set(`${file.name} would take the files over what one request can carry — add it as a link instead.`);
         return;
       }
-      const size = `${Math.max(1, Math.round(file.size / 1024)).toLocaleString('en-US')} KB`;
+      const size = formatFileSize(file.size);
       if (kind === 'svg') {
         this.add({ name: file.name, text: content }, 'SVG', `${size}, sent as text`);
       } else {

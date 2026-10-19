@@ -5,6 +5,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BrandKitRevision } from '@lfx-one/shared/interfaces';
+import { buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -31,7 +32,7 @@ describe('BrandKitViewComponent', () => {
       providers: [provideNoopAnimations(), { provide: PLATFORM_ID, useValue: platformId }],
     }).compileComponents();
     fixture = TestBed.createComponent(BrandKitViewComponent);
-    fixture.componentRef.setInput('kit', kit);
+    fixture.componentRef.setInput('view', buildBrandKitBookView(kit));
     await fixture.whenStable();
   };
 
@@ -93,10 +94,10 @@ describe('BrandKitViewComponent', () => {
       expect(links[0].href).toContain('Montserrat');
 
       // A new revision of the same kit, and a second view of it on the same page: still one link.
-      fixture.componentRef.setInput('kit', { ...brandKitTestRevision(), version: 2 });
+      fixture.componentRef.setInput('view', buildBrandKitBookView({ ...brandKitTestRevision(), version: 2 }));
       await fixture.whenStable();
       const second = TestBed.createComponent(BrandKitViewComponent);
-      second.componentRef.setInput('kit', brandKitTestRevision());
+      second.componentRef.setInput('view', buildBrandKitBookView(brandKitTestRevision()));
       await second.whenStable();
 
       expect(fontLinks()).toHaveLength(1);
@@ -107,7 +108,7 @@ describe('BrandKitViewComponent', () => {
       fontLinks().forEach((link) => link.remove());
       const kit = brandKitTestRevision();
       kit.chapters.type.google_fonts = false;
-      fixture.componentRef.setInput('kit', kit);
+      fixture.componentRef.setInput('view', buildBrandKitBookView(kit));
       await fixture.whenStable();
 
       expect(fontLinks()).toHaveLength(0);
@@ -116,7 +117,7 @@ describe('BrandKitViewComponent', () => {
     it('names a logo file by its own name, never its URL, and breaks long tokens inside their column', async () => {
       const kit = brandKitTestRevision();
       kit.chapters.logo.files.primary = { ref: 'https://cdn.example.org/images/a1/production/orbit-logo%20horizontal.png?w=200', svg: null };
-      fixture.componentRef.setInput('kit', kit);
+      fixture.componentRef.setInput('view', buildBrandKitBookView(kit));
       await fixture.whenStable();
 
       const book = query('brand-kit-book');
