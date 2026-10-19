@@ -20,6 +20,7 @@ import type {
   RedditKeywordsWindow,
   RedditKeywordsWindowOption,
 } from '../interfaces/campaign-optimize.interface';
+import type { CampaignMetricsWindow } from '../interfaces/campaign.interface';
 import { CAMPAIGN_METRICS_WINDOWS, isCanonicalPositiveInt64, MICROSOFT_KEYWORDS_WINDOWS } from './campaign.constants';
 
 // ---------------------------------------------------------------------------
@@ -719,6 +720,37 @@ export const META_AD_SET_BUDGET_AMOUNT_NOT_REPORTED = '{type} budget, amount not
 
 /** Why an ad set Meta reports deleted or archived, or no longer lists, offers no action. */
 export const META_AD_SET_NO_ACTION_REASON = 'This ad set cannot be paused or resumed.';
+
+/**
+ * A reporting window as a sentence names it ("Last 30 days"), for a read that states which window
+ * its counters cover. `PLATFORM_AUDIENCE_WINDOW_LABELS` covers the same values but in the audience
+ * selector's compact form ("30d"), which does not read as a label beside a timestamp.
+ */
+export const CAMPAIGN_METRICS_WINDOW_LABELS: Readonly<Record<CampaignMetricsWindow, string>> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  last_7_days: 'Last 7 days',
+  last_14_days: 'Last 14 days',
+  last_30_days: 'Last 30 days',
+  this_month: 'This month',
+  last_month: 'Last month',
+};
+
+/** What the Ads section says when the read fails without a readable message. */
+export const META_ADS_READ_FAILED_MESSAGE = "This ad set's ads could not be read from Meta.";
+
+/**
+ * What the Ads section says when `truncated` is true: the LISTING passed its page cap, so some ads
+ * are missing, but delivery is all or nothing, so any unlisted ad that delivered is still shown.
+ */
+export const META_ADS_TRUNCATED_NOTE =
+  'Meta lists more ads in this ad set than can be read at once, so not every ad is shown. Any ad past the listing that delivered in this window is still shown, with its counters only.';
+
+/** An ad Meta's listing did not return (`listed: false`): its counters count, but nothing describes it. */
+export const META_AD_UNLISTED_NOTE = 'Not listed by Meta (deleted, archived, or past the listing); counters only.';
+
+/** The creative cell when neither the creative's name nor its id is reported. */
+export const META_AD_CREATIVE_NOT_REPORTED = 'Creative not reported';
 
 // --- Keyword targeting panel (Reddit and X) ----------------------------------
 
