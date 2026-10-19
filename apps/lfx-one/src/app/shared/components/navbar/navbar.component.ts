@@ -152,6 +152,11 @@ export class NavbarComponent extends SidebarComponent {
     return lens;
   });
 
+  /** An empty project/foundation menu still waiting on what shapes it — keep the skeleton, not a blank panel. */
+  protected readonly menuPending: Signal<boolean> = computed(
+    () => this.navLens() !== null && this.itemsWithTestIds().length === 0 && this.sidebarNavService.sidebarItemsPending()
+  );
+
   protected readonly noAccessGhostItems = NAVBAR_NO_ACCESS_GHOST_ITEMS;
 
   // ── Me card ──────────────────────────────────────────────────────────────────────────────────

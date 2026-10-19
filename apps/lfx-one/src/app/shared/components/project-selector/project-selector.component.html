@@ -8,7 +8,7 @@
     type="button"
     class="lfxn__context lfxn__context--switchable"
     (click)="togglePanel($event, popover)"
-    [attr.aria-expanded]="popover.overlayVisible"
+    [attr.aria-expanded]="isPanelOpen()"
     [attr.aria-label]="'Switch from ' + displayName()"
     data-testid="project-selector">
     <span class="lfxn__context-body">

@@ -29,6 +29,7 @@ interface NavbarView {
   lensTabs: Signal<LensOption[]>;
   roleMarks: Signal<NavbarRoleMark[]>;
   showNoAccessState: Signal<'foundation' | 'project' | null>;
+  menuPending: Signal<boolean>;
 }
 
 const createNavbar = async (
@@ -149,6 +150,12 @@ describe('NavbarComponent', () => {
 
   it('keeps the no-access state hidden while the menu is still pending, when it has items, or off a nav lens', async () => {
     expect((await createNavbar([], [], {}, { lens: 'project', itemsPending: true })).showNoAccessState()).toBeNull();
+  });
+
+  it('holds the skeleton while an empty nav-lens menu is pending, and only then', async () => {
+    expect((await createNavbar([], [], {}, { lens: 'project', itemsPending: true })).menuPending()).toBe(true);
+    expect((await createNavbar([], [], {}, { lens: 'project' })).menuPending()).toBe(false);
+    expect((await createNavbar([], [], {}, { lens: 'me', itemsPending: true })).menuPending()).toBe(false);
     expect((await createNavbar([{ label: 'Dashboard', routerLink: '/project/overview' }], [], {}, { lens: 'project' })).showNoAccessState()).toBeNull();
     expect((await createNavbar([], [], {}, { lens: 'me' })).showNoAccessState()).toBeNull();
   });
