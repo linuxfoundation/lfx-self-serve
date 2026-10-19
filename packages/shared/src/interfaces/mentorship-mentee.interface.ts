@@ -431,6 +431,15 @@ export interface MentorshipMenteeApplyBlockedState {
   subtitle: string;
 }
 
+/**
+ * A blocked state chosen by the reason upstream gave for refusing an application. `match` is a
+ * lowercase fragment of the mentorship service's error message, which names the rule that failed.
+ */
+export interface MentorshipMenteeApplyUpstreamErrorState {
+  match: string;
+  state: MentorshipMenteeApplyBlockedState;
+}
+
 // ---------------------------------------------------------------------------
 // Mentee overview — derived from the mentee's applications
 // ---------------------------------------------------------------------------
