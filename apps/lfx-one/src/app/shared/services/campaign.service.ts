@@ -191,11 +191,15 @@ export class CampaignService {
    * call, and the validator rides as `If-Match`, where a validator belongs — there is no body for
    * it to travel in, and `approve-brief` upstream requires one.
    *
-   * `knownEtag` may be null: the server re-reads the row for a fresh validator rather than
-   * refusing. Safe here for the reason it is not in `persistBrief` — approving sends no content,
-   * so a self-read validator cannot overwrite another writer's work.
+   * `knownEtag` must be the validator from the read that put the displayed brief on screen, and
+   * is REQUIRED rather than defaulted. A null one is accepted by the type and then refused by the
+   * BFF with `conflict: 'unverified-validator'` — `approveStoredBrief` reads nothing and approves
+   * nothing, because approving a row this page cannot prove is the one it restored is exactly the
+   * defect this path was built to close (#3801). The default argument this parameter used to
+   * carry made that refusal reachable by omission, so it is gone: a caller with no validator has
+   * to say so, and the honest answer for it is a fresh read, not an approval.
    */
-  public approveBrief(projectSlug: string, briefId: string, knownEtag: string | null = null): Observable<CampaignBriefApproveResult> {
+  public approveBrief(projectSlug: string, briefId: string, knownEtag: string | null): Observable<CampaignBriefApproveResult> {
     const params = new HttpParams().set('project', projectSlug);
     const headers = knownEtag !== null && knownEtag !== '' ? new HttpHeaders({ 'If-Match': knownEtag }) : undefined;
     return this.http.post<CampaignBriefApproveResult>(`/api/campaigns/brief/${encodeURIComponent(briefId)}/approve`, null, { params, headers });

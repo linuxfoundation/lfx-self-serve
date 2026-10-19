@@ -367,13 +367,16 @@ describe('CampaignController.approveBrief', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  // Absent is SUPPORTED here, unlike on a save: approving sends no content, so the service
-  // re-reads the row for a fresh validator rather than refusing. Refusing instead would strand
-  // exactly the brief this feature exists for — one restored from a read that carried no ETag.
+  // The controller NORMALISES rather than decides. Absent and blank both become a null
+  // validator and are forwarded, because what to do about a missing one is the service's call:
+  // `approveStoredBrief` answers it with `conflict: 'unverified-validator'` and approves
+  // nothing. Rejecting here instead would turn that classified refusal — which the client has a
+  // message and a recovery path for — into a 400 the client cannot tell apart from a bad
+  // request, and would duplicate a decision that already has exactly one home.
   it.each([
     ['no If-Match header at all', {}],
     ['a blank If-Match header', { 'If-Match': '   ' }],
-  ])('passes %s through as no known validator rather than refusing', async (_label, headers) => {
+  ])('normalises %s to a null validator and forwards it for the service to classify', async (_label, headers) => {
     await controller.approveBrief(buildApproveReq({ briefId: 'brief-1' }, { project: 'tlf' }, headers), res, next);
 
     expect(approveStoredBrief).toHaveBeenCalledTimes(1);
