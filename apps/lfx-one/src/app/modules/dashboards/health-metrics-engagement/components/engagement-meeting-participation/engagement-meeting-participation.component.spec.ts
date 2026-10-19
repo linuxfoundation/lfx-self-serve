@@ -254,11 +254,20 @@ describe('EngagementMeetingParticipationComponent', () => {
     await vi.waitFor(() => expect(picked).toEqual(['committees', 'reps']));
   });
 
-  it('links the governance row to Members board attendance', async () => {
+  it('makes each meeting-type row a keyboard control named for where it opens', async () => {
     await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board-link"]');
-    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
+    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]');
+    expect(board.getAttribute('tabindex')).toBe('0');
+    expect(board.getAttribute('aria-label')).toBe('Open board attendance in Members');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').getAttribute('aria-label')).toBe(
+      'Show groups for Marketing'
+    );
+
+    board.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+
+    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], { fragment: 'board', queryParamsHandling: 'preserve' });
   });
 
   it('opens Members board attendance from anywhere on the governance row', async () => {
@@ -270,12 +279,13 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], { fragment: 'board', queryParamsHandling: 'preserve' });
   });
 
-  it('scrolls any other meeting type to Group attendance, once per click on the row or its name', async () => {
+  it('scrolls any other meeting type to Group attendance, by click or by Space', async () => {
     const picked: unknown[] = [];
     await render(response(), {}, (key) => picked.push(key));
 
-    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').click();
-    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing-link"]').click();
+    const marketing = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]');
+    marketing.click();
+    marketing.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
 
     expect(picked).toEqual(['committees', 'committees']);
   });

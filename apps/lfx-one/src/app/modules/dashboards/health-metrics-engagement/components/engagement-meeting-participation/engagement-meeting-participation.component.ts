@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
@@ -48,7 +48,7 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-meeting-participation',
-  imports: [EmptyStateComponent, FilterPillsComponent, RouterLink, SkeletonModule, TableComponent, EngagementAttendanceBarComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, SkeletonModule, TableComponent, EngagementAttendanceBarComponent],
   templateUrl: './engagement-meeting-participation.component.html',
 })
 export class EngagementMeetingParticipationComponent {
@@ -66,7 +66,6 @@ export class EngagementMeetingParticipationComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
-  protected readonly boardRoute = [HEALTH_METRICS_BASE_PATH, 'members'];
   protected readonly modeOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES.map((mode) => ({
     id: mode.key,
     label: mode.label,
@@ -177,7 +176,7 @@ export class EngagementMeetingParticipationComponent {
 
   protected onRowPicked(governance: boolean): void {
     if (governance) {
-      void this.router.navigate(this.boardRoute, { fragment: 'board', queryParamsHandling: 'preserve' });
+      void this.router.navigate([HEALTH_METRICS_BASE_PATH, 'members'], { fragment: 'board', queryParamsHandling: 'preserve' });
       return;
     }
     this.sectionPicked.emit('committees');

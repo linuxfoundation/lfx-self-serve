@@ -938,15 +938,19 @@ describe('buildHealthMetricsEventsOrganizationRowView', () => {
         fragment: 'list',
         queryParams: { memSearch: 'Acme Motors', memTier: null, memNps: null, memPage: null },
       },
+      linkLabel: 'Open Acme Motors in Members',
     });
   });
 
   it('opens a non-member in Non-Members company participation, searched by name with its filters cleared', () => {
-    expect(buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false })).link).toEqual({
+    const row = buildHealthMetricsEventsOrganizationRowView(organization({ isMember: false }));
+
+    expect(row.link).toEqual({
       commands: ['/foundation/health-metrics', 'non-members'],
       fragment: 'orgs',
       queryParams: { nonSearch: 'Acme Motors', nonFit: null, nonPage: null },
     });
+    expect(row.linkLabel).toBe('Open Acme Motors in Non-Members');
   });
 
   it('caps the search it opens with at the target search box length', () => {

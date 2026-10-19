@@ -75,21 +75,19 @@
         </ng-template>
 
         <ng-template #body let-view>
-          <!-- The whole row opens the organization; the name link carries it for keyboard and middle-click. -->
-          <tr class="cursor-pointer" (click)="openOrganization(view)" [attr.data-testid]="'events-orgs-row-' + view.accountId">
+          <!-- The whole row opens the organization; the row itself is the control, as in Engagement group attendance. -->
+          <tr
+            class="cursor-pointer"
+            tabindex="0"
+            [attr.aria-label]="view.linkLabel"
+            (click)="openOrganization(view)"
+            (keydown.enter)="openOrganization(view)"
+            (keydown.space)="$event.preventDefault(); openOrganization(view)"
+            [attr.data-testid]="'events-orgs-row-' + view.accountId">
             <td>
               <div class="flex items-center gap-2.5">
                 <lfx-avatar [label]="view.accountName" [image]="view.logoUrl" size="normal" styleClass="shrink-0" [ariaLabel]="view.accountName + ' logo'" />
-                <a
-                  [routerLink]="view.link.commands"
-                  [fragment]="view.link.fragment"
-                  [queryParams]="view.link.queryParams"
-                  queryParamsHandling="merge"
-                  (click)="$event.stopPropagation()"
-                  class="text-sm font-medium text-gray-900 hover:underline focus-visible:underline"
-                  [attr.data-testid]="'events-orgs-row-' + view.accountId + '-name'"
-                  >{{ view.accountName }}</a
-                >
+                <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-name'">{{ view.accountName }}</span>
               </div>
             </td>
             <td>

@@ -111,11 +111,12 @@ export function buildHealthMetricsEventsOrganizationRowView(organization: Health
     speakersLabel: formatHealthMetricsEventsCount(organization.speakers),
     eventsLabel: formatHealthMetricsEventsCount(organization.events),
     link: buildHealthMetricsEventsOrganizationLink(organization),
+    linkLabel: `Open ${organization.accountName} in ${organization.isMember ? 'Members' : 'Non-Members'}`,
   };
 }
 
 /** A member opens the Members directory and a non-member opens Non-Members company participation, each searched by name with other filters cleared. */
-export function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationLink {
+function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationLink {
   if (organization.isMember) {
     return {
       commands: [HEALTH_METRICS_BASE_PATH, 'members'],
