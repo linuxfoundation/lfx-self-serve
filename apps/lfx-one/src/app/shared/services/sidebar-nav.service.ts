@@ -125,8 +125,12 @@ export class SidebarNavService {
 
   /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
   private readonly foundationAuditorProbePending = signal(false);
-  /** True when the latest scoped marketing probe failed rather than answered (tracked apart from the root lookup). */
-  private readonly marketingProbeFailed = signal(false);
+  /**
+   * Scopes whose latest marketing probe failed rather than answered, tracked apart from the root
+   * lookup. Keyed by slug so a late result (a retry outliving a context switch) only touches its own
+   * scope, never the one now selected.
+   */
+  private readonly marketingProbeFailedSlugs = signal<ReadonlySet<string>>(new Set());
   /** In flight while a `retryMenuLookups()` persona refresh runs. */
   private readonly retryPending = signal(false);
 
@@ -135,7 +139,7 @@ export class SidebarNavService {
    * "couldn't check", not "no access". Retry with `retryMenuLookups()`.
    */
   public readonly menuLookupFailed: Signal<boolean> = computed(
-    () => this.personaService.personaLookupFailed() || (this.marketingScopeSlug() !== '' && this.marketingProbeFailed())
+    () => this.personaService.personaLookupFailed() || this.marketingProbeFailedSlugs().has(this.marketingScopeSlug())
   );
 
   /**
@@ -452,7 +456,7 @@ export class SidebarNavService {
           return of('');
         }
         return this.personaService.refreshEnrichedPersonas(false, slug).pipe(
-          tap((response) => this.marketingProbeFailed.set(!response || !!response.error)),
+          tap((response) => this.recordMarketingProbe(slug, !response || !!response.error)),
           map(() => slug)
         );
       })
@@ -946,8 +950,19 @@ export class SidebarNavService {
     forkJoin([this.personaService.refreshEnrichedPersonas(true), slug ? this.personaService.refreshEnrichedPersonas(false, slug) : of(null)])
       .pipe(finalize(() => this.retryPending.set(false)))
       .subscribe(([, scoped]) => {
-        if (slug) this.marketingProbeFailed.set(!scoped || !!scoped.error);
+        if (slug) this.recordMarketingProbe(slug, !scoped || !!scoped.error);
       });
+  }
+
+  /** Records one scope's marketing-probe outcome without touching any other scope's. */
+  private recordMarketingProbe(slug: string, failed: boolean): void {
+    this.marketingProbeFailedSlugs.update((slugs) => {
+      if (slugs.has(slug) === failed) return slugs;
+      const next = new Set(slugs);
+      if (failed) next.add(slug);
+      else next.delete(slug);
+      return next;
+    });
   }
 
   private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {

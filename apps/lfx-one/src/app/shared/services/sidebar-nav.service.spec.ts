@@ -922,5 +922,66 @@ describe('SidebarNavService', () => {
       expect(service.sidebarItemsPending()).toBe(false);
       expect(service.menuLookupFailed()).toBe(false);
     });
+
+    it('keeps a late retry result for a previous scope from overwriting the selected scope', () => {
+      const failingCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? failingCncf : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      failingCncf.next(null);
+      failingCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf is still running when the user switches to aaif, whose probe succeeds.
+      const retryCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? retryCncf : of({ error: null })
+      );
+      service.retryMenuLookups();
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(false);
+
+      // cncf's late failure lands — aaif stays clean.
+      retryCncf.next(null);
+      retryCncf.complete();
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it("keeps a late successful retry for a previous scope from clearing the selected scope's failure", () => {
+      const failingCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? failingCncf : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      failingCncf.next(null);
+      failingCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf is still running when the user switches to aaif, whose own probe fails.
+      const retryCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => {
+        if (slug === 'cncf') return retryCncf;
+        return slug === 'aaif' ? of(null) : of({ error: null });
+      });
+      service.retryMenuLookups();
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // cncf's late success lands — aaif keeps its retryable error.
+      retryCncf.next({ error: null });
+      retryCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+    });
   });
 });
