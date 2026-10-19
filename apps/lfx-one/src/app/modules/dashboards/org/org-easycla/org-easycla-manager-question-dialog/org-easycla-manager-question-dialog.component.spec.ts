@@ -103,6 +103,7 @@ describe('OrgEasyclaManagerQuestionDialogComponent', () => {
     expect(configuring?.textContent).toContain('When this CLA is signed, you will be the initial CLA Manager.');
     expect(configuring?.querySelector('.fa-spin')).not.toBeNull();
     expect(byTestId(fixture, 'org-easycla-manager-question-dialog')?.getAttribute('aria-live')).toBe('polite');
+    expect(byTestId(fixture, 'org-easycla-manager-question-dialog')?.getAttribute('role')).toBe('status');
   });
 
   it('reads the configuring copy the signing hand-off reads, so the two cannot drift apart', async () => {

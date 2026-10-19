@@ -731,9 +731,6 @@ export const ORG_CLA_MANAGER_QUESTION_COPY = {
 } as const;
 
 /**
- * The unsigned overview for a viewer who is already the initial CLA Manager designee (#3758), verbatim
- * from the approved M3 prototype.
- *
  * One state whether the viewer said Yes in this session or held the role when the page loaded: the
  * Sign pair check cannot tell the two apart after a reload, and the copy holds for both.
  */

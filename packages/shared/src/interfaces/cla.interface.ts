@@ -1446,13 +1446,7 @@ export interface OrgClaDesigneeNominationValidation {
 
 export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
 
-/**
- * What the CLA manager question closes with. Dismissing it closes with `undefined`.
- *
- * Yes does not close it. The dialog shows the configuring state and the opener closes it when the
- * assignment answers: with `assigned` when the flow continues into another step, and with
- * `undefined` when it ends on the overview.
- */
+/** Dismissing the question closes it with `undefined`, as does an assignment that ends the flow on the overview. */
 export type OrgClaManagerQuestionResult = 'no' | 'assigned';
 
 export interface OrgClaManagerQuestionDialogData {

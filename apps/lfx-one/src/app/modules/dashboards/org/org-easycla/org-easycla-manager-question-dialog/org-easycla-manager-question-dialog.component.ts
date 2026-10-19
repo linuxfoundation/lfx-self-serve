@@ -18,6 +18,8 @@ export function orgClaManagerQuestionDialogConfig(data: OrgClaManagerQuestionDia
     dismissableMask: false,
     width: '32rem',
     style: { maxWidth: '90vw' },
+    // Uniform padding all around — PrimeNG's default content padding zeroes the top
+    // (normally supplied by the header we removed), so set it explicitly here.
     contentStyle: { padding: '1.5rem' },
     data,
   };
@@ -26,10 +28,8 @@ export function orgClaManagerQuestionDialogConfig(data: OrgClaManagerQuestionDia
 /**
  * Corporate Console's "Are you authorized to be a CLA Manager?" before Start (#2780).
  *
- * Yes hands the assignment to the detail page and stays open on "Configuring CLA Manager
- * Settings…" until the page closes it (#3758). It cannot be dismissed in that state: the role
- * write still lands upstream, so a dismissal would only hide it. Before an answer it can be closed,
- * and a dismissed question assigns nothing.
+ * It cannot be dismissed while configuring: the role write still lands upstream, so a dismissal
+ * would only hide it.
  */
 @Component({
   selector: 'lfx-org-easycla-manager-question-dialog',

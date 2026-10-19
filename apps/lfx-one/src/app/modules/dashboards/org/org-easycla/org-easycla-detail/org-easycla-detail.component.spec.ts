@@ -583,7 +583,6 @@ describe('OrgEasyclaDetailComponent', () => {
         return { onClose: of(value), onDestroy: of(undefined), close: vi.fn() };
       }
 
-      /** The question's ref, which Yes does not close: only the page's `close` emits and tears it down. */
       function questionRef() {
         const onClose = new Subject<unknown>();
         const onDestroy = new Subject<void>();
@@ -594,7 +593,6 @@ describe('OrgEasyclaDetailComponent', () => {
         return { onClose, onDestroy, close };
       }
 
-      /** Yes, as the question dialog reports it: through `onYes`, leaving the dialog open. */
       function answerYes(fixture: ComponentFixture<OrgEasyclaDetailComponent>): void {
         (openDialog.mock.calls[0][1] as { data: OrgClaManagerQuestionDialogData }).data.onYes();
         fixture.detectChanges();
@@ -863,6 +861,31 @@ describe('OrgEasyclaDetailComponent', () => {
         fixture.detectChanges();
         expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
         expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).toBeNull();
+        expect(addMessage).not.toHaveBeenCalled();
+      });
+
+      it('shows no refusal on another CLA group when the configuring Yes is refused after the move', async () => {
+        const response = new Subject<{ assigned: true }>();
+        const question = questionRef();
+        const other = {
+          ...notStarted,
+          id: 'signature-uuid-elsewhere',
+          claGroupId: ELSEWHERE_GROUP_ID,
+          claGroupName: 'Elsewhere CLA',
+          projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+        };
+        openDialog.mockReturnValueOnce(question).mockReturnValue(closingWith(undefined));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+        const fixture = await render();
+        claServiceWith({ assignDesignee: vi.fn(() => response) });
+        clickStart(fixture);
+        answerYes(fixture);
+
+        await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
+        response.error(new HttpErrorResponse({ status: 409, error: { upstreamCode: 'already-signed' } }));
+        fixture.detectChanges();
+
+        expect(question.close).toHaveBeenCalled();
         expect(addMessage).not.toHaveBeenCalled();
       });
 

@@ -659,7 +659,6 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly startDisabledReason: Signal<string> = this.initStartDisabledReason();
 
-  /** Proceed with signing once the viewer is the designee: the question is behind them, and this opens attestation. */
   protected readonly startLabel = computed(() => (this.alreadyDesignee() ? this.designeeRestingCopy.proceedLabel : this.notStartedCopy.startLabel));
 
   protected readonly startAriaLabel = computed(() => {
@@ -1121,13 +1120,6 @@ export class OrgEasyclaDetailComponent {
     return false;
   }
 
-  /**
-   * Yes: make the viewer the designee while the question shows its configuring state, then close it.
-   *
-   * From Start the flow ends there, on the overview's designee state, whose Proceed with signing is
-   * the next step (#3758). From Identify someone else it continues into the signatory step. A
-   * refusal leaves the viewer on the overview with the reason.
-   */
   private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep, questionRef: DynamicDialogRef): void {
     if (!this.signingContextHeld(orgUid, chosen)) {
       questionRef.close();
