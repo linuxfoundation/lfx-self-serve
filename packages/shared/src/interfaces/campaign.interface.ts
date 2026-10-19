@@ -758,6 +758,8 @@ export interface CampaignImplementationDraft {
    * instead of losing the image the operator picked; empty when nothing is uploading.
    */
   redditImageUploadPendingName?: string;
+  /** The brief that upload was started for, so a remount resumes that upload, not the current brief's. */
+  redditImageUploadPendingBriefId?: string;
   /**
    * The Reddit video goal, carried for the same reason as the objective. Kept whatever the
    * objective is, so switching away from Video Views and back does not lose the choice; only the

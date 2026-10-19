@@ -7590,6 +7590,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
   let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
 
   interface Internals {
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
@@ -7674,6 +7675,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
     uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
     resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
+    cancelCreativeAssetUpload = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
@@ -7685,7 +7687,14 @@ describe('ImplementationTabComponent reddit image upload', () => {
         { provide: MessageService, useValue: { add: vi.fn() } },
         {
           provide: CampaignService,
-          useValue: { createCampaign, uploadCreativeAsset, resumeCreativeAssetUpload, forgetCreativeAssetUpload: vi.fn(), getLinkedInAccounts: () => of([]) },
+          useValue: {
+            createCampaign,
+            uploadCreativeAsset,
+            resumeCreativeAssetUpload,
+            forgetCreativeAssetUpload: vi.fn(),
+            cancelCreativeAssetUpload,
+            getLinkedInAccounts: () => of([]),
+          },
         },
       ],
     }).compileComponents();
@@ -7819,6 +7828,68 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(c.redditImageUploadStatus()).toBe('uploading');
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-pending"]')).not.toBeNull();
     expect(c.canSubmit()).toBe(false);
+  });
+
+  // A stalled upload has no timeout, so the shown control must offer a way out of it, and that way
+  // out must abort the request rather than leave it running.
+  it('offers Cancel while an upload is in flight, which aborts it and releases Create', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    expect(c.canSubmit()).toBe(false);
+
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-cancel"]') as HTMLButtonElement).click();
+    f.detectChanges();
+
+    expect(cancelCreativeAssetUpload).toHaveBeenCalled();
+    expect(c.redditImageUploadStatus()).toBe('idle');
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  it('does not hold Create for an upload when a post URL is what the campaign sends', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f) as Internals & { redditPostUrl: { set(v: string): void } };
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+
+    c.redditPostUrl.set('https://www.reddit.com/r/kubernetes/comments/abc123/promo/');
+    f.detectChanges();
+
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  // A foundation switch clears the current brief but keeps the draft; the upload still belongs to
+  // the brief it was started for, so the remount must resume by that one.
+  it('resumes by the brief the upload was started for, not the current one', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    expect(draft.redditImageUploadPendingBriefId).toBe(BRIEF_ID);
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const second = TestBed.createComponent(ImplementationTabComponent);
+    second.componentRef.setInput('draft', { ...draft, eventSlug: 'kubecon-eu-2026' });
+    second.componentRef.setInput('redditCreativeEnabled', true);
+    second.componentRef.setInput('redditAssetUploadEnabled', true);
+    second.componentRef.setInput('briefPersistence', { status: 'idle', briefId: null, message: null, approved: false });
+    second.componentRef.setInput('briefData', brief());
+    second.detectChanges();
+    await second.whenStable();
+
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith(BRIEF_ID);
+    expect(at(second).redditImageUploadStatus()).toBe('uploading');
   });
 
   it('says the upload was interrupted when there is nothing left to resume', async () => {

@@ -784,6 +784,11 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   /** The file name of the upload in flight, carried in the draft so a remount can resume it. */
   private readonly redditImageUploadPendingName = signal('');
+  /**
+   * The brief the upload in flight was started for, carried in the draft beside its name: a remount
+   * resumes by THIS brief, not whichever one is current (a foundation switch clears the current).
+   */
+  private readonly redditImageUploadPendingBriefId = signal('');
   /** The readable reason the last upload was refused; empty unless the status is `error`. */
   protected readonly redditImageUploadError = signal('');
   /** The `accept` list for the file picker — the same allowlist the BFF route enforces. */
@@ -796,7 +801,10 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditImageFileDescribedBy = computed(() =>
     ['reddit-image-file-hint', 'reddit-image-file-status', ...(this.redditImageUploadStatus() === 'error' ? ['reddit-image-file-error'] : [])].join(' ')
   );
-  /** The in-flight upload, cancelled when another file is chosen or the upload is removed. */
+  /**
+   * This component's subscription to the upload in flight. Unsubscribing only detaches it (a tab
+   * switch must not abort the upload); `clearRedditImageAsset` cancels the request itself.
+   */
   private redditImageUploadSub: Subscription | null = null;
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
@@ -1747,8 +1755,9 @@ export class ImplementationTabComponent implements OnInit {
     // A create sent mid-upload would go out with the pasted URL (or no image) instead of the file
     // the operator just chose, and the upload would then land for a create already sent. Held here
     // while the upload control is shown, where its status and Remove live; while it is hidden,
-    // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove.
-    if (this.showRedditSection() && this.redditAssetUploadAvailable() && this.redditImageUploadStatus() === 'uploading') return false;
+    // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove. Not
+    // with a post URL, which `redditImageField` sends in place of any image, as the block agrees.
+    if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
@@ -2939,10 +2948,12 @@ export class ImplementationTabComponent implements OnInit {
     this.redditImageUploadStatus.set('uploading');
     this.redditImageUploadError.set('');
     this.redditImageUploadPendingName.set(fileName);
+    this.redditImageUploadPendingBriefId.set(briefId);
     this.redditImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (asset) => {
-        this.campaignService.forgetCreativeAssetUpload(briefId, upload$);
+        this.campaignService.forgetCreativeAssetUpload(upload$);
         this.redditImageUploadPendingName.set('');
+        this.redditImageUploadPendingBriefId.set('');
         // The brief changed while the upload was in flight: the asset belongs to the old one.
         if ((this.briefPersistence().briefId ?? '') !== briefId) {
           this.failRedditImageUpload('The brief changed during the upload. Choose the image again.');
@@ -2956,8 +2967,9 @@ export class ImplementationTabComponent implements OnInit {
         this.emitDraft();
       },
       error: (err: unknown) => {
-        this.campaignService.forgetCreativeAssetUpload(briefId, upload$);
+        this.campaignService.forgetCreativeAssetUpload(upload$);
         this.redditImageUploadPendingName.set('');
+        this.redditImageUploadPendingBriefId.set('');
         this.failRedditImageUpload(this.redditImageUploadErrorMessage(err));
         this.emitDraft();
       },
@@ -2969,8 +2981,8 @@ export class ImplementationTabComponent implements OnInit {
    * service still has it, finished or not; with none (a reload ended it) the operator is told
    * rather than left with an image that silently never arrived.
    */
-  private resumeRedditImageUpload(fileName: string): void {
-    const briefId = this.briefPersistence().briefId ?? '';
+  private resumeRedditImageUpload(fileName: string, uploadBriefId: string): void {
+    const briefId = uploadBriefId || (this.briefPersistence().briefId ?? '');
     const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload(briefId) : null;
     if (!upload$) {
       this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`);
@@ -2982,11 +2994,13 @@ export class ImplementationTabComponent implements OnInit {
   private clearRedditImageAsset(): void {
     this.redditImageUploadSub?.unsubscribe();
     this.redditImageUploadSub = null;
-    // The replaced or removed upload runs on in the service; dropping it here keeps a later
-    // remount from resuming the image the operator let go.
-    const briefId = this.briefPersistence().briefId ?? '';
-    if (briefId) this.campaignService.forgetCreativeAssetUpload(briefId);
+    // Aborted, not just detached: a replaced or removed upload would otherwise run on, compete
+    // with the next one for campaign-service's upload budget, and store an asset nobody uses.
+    if (this.redditImageUploadStatus() === 'uploading') {
+      this.campaignService.cancelCreativeAssetUpload();
+    }
     this.redditImageUploadPendingName.set('');
+    this.redditImageUploadPendingBriefId.set('');
     this.redditImageAssetId.set('');
     this.redditImageAssetName.set('');
     this.redditImageAssetBriefId.set('');
@@ -3245,7 +3259,7 @@ export class ImplementationTabComponent implements OnInit {
       this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
     }
     if (draft.redditImageUploadPendingName) {
-      this.resumeRedditImageUpload(draft.redditImageUploadPendingName);
+      this.resumeRedditImageUpload(draft.redditImageUploadPendingName, draft.redditImageUploadPendingBriefId ?? '');
     }
     if (draft.redditVideoGoal !== undefined) {
       this.redditVideoGoal.set(draft.redditVideoGoal);
@@ -3418,6 +3432,7 @@ export class ImplementationTabComponent implements OnInit {
       redditImageAssetName: this.redditImageAssetName(),
       redditImageAssetBriefId: this.redditImageAssetBriefId(),
       redditImageUploadPendingName: this.redditImageUploadPendingName(),
+      redditImageUploadPendingBriefId: this.redditImageUploadPendingBriefId(),
       redditVideoGoal: this.redditVideoGoal(),
     });
   }

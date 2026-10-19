@@ -1727,7 +1727,17 @@
                       Uploaded: {{ redditImageAssetName() || 'image' }}
                     }
                   </p>
-                  @if (redditImageAssetId() && redditImageUploadStatus() !== 'uploading') {
+                  @if (redditImageUploadStatus() === 'uploading') {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onRedditImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-reddit-image-cancel">
+                        Cancel upload
+                      </button>
+                    </div>
+                  } @else if (redditImageAssetId()) {
                     <div>
                       <button
                         type="button"

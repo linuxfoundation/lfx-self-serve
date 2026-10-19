@@ -71,9 +71,31 @@ describe('CampaignService creative-asset upload across a tab switch', () => {
     const first = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);
     const second = service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID);
 
-    service.forgetCreativeAssetUpload(BRIEF_ID, first);
+    service.forgetCreativeAssetUpload(first);
     expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBe(second);
-    service.forgetCreativeAssetUpload(BRIEF_ID);
+    service.forgetCreativeAssetUpload(second);
+    expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBeNull();
+  });
+
+  // A discarded upload must not run on: it would compete with the next one for campaign-service's
+  // upload budget (which sheds with a 503) and store an asset nobody uses.
+  it('aborts the previous upload when a new one starts', () => {
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID).subscribe();
+    const first = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
+
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID).subscribe();
+
+    expect(first.cancelled).toBe(true);
+    http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets').flush(ASSET);
+  });
+
+  it('aborts and drops the upload when it is cancelled', () => {
+    service.uploadCreativeAsset(png(), 'tlf', BRIEF_ID).subscribe();
+    const req = http.expectOne((r) => r.url === '/api/campaigns/brief/creative-assets');
+
+    service.cancelCreativeAssetUpload();
+
+    expect(req.cancelled).toBe(true);
     expect(service.resumeCreativeAssetUpload(BRIEF_ID)).toBeNull();
   });
 });
