@@ -377,6 +377,12 @@ export class CampaignsComponent {
     // stored, campaign-service declined to approve it as it stands, and no retry here changes
     // that. The honest advice is the one path that produces a brief it will approve.
     rejected: 'This saved brief could not be approved, so campaigns cannot be created from it. Go back to Planning and proceed again to save a new one.',
+    // Nothing was sent: this page holds no validator for the stored row, so it cannot tell
+    // whether what is stored is still what was restored onto the screen. A fresh read is both
+    // the remedy and the only thing that produces a validator, which is why this names the same
+    // action as `stale-brief` without claiming, as that one does, that the row actually moved.
+    'unverified-validator':
+      'This saved brief could not be confirmed as the version on your screen, so it was not approved. Reload and re-enter the event URL to open the version that is stored now.',
     // Deliberately says "could not be confirmed", not "failed": the approval may well have
     // landed and only its answer was lost. Re-restoring re-reads the stored status, which is the
     // only way to find out, and costs nothing if it did land.
@@ -6076,11 +6082,15 @@ export class CampaignsComponent {
           //
           // And guarded on the CONFLICT, because `approved: false` is not one outcome. The BFF
           // answers a 412 with `conflict: 'stale-brief'`, a missing row with `'brief-not-found'`,
-          // a refusal with `'rejected'` — and a 5xx, a timeout or a reset with NO conflict at all
+          // a refusal with `'rejected'`, a request it never sent for want of a validator with
+          // `'unverified-validator'` — and a 5xx, a timeout or a reset with NO conflict at all
           // (`campaign-service.service.ts`, the bare `refused` return), because the approval may
           // in fact have landed. Only the first of those tells the user someone else moved the
           // row, and being told that is the entire content of `'overwrite'`: a warning was shown
-          // and a choice was made. Granting the licence on the others hands the next Proceed an
+          // and a choice was made. `'unverified-validator'` is the clearest non-member: nothing
+          // was sent, so nothing is known to have moved, and its message sends the user to a
+          // fresh read — which the unconditional refresh below is what delivers. Granting the
+          // licence on the others hands the next Proceed an
           // ETag fallback off the back of a message that said only "could not be confirmed" —
           // which is how this session silently overwrites an editor nobody was warned about.
           //

@@ -58,6 +58,7 @@ import {
   deriveEventSlug,
   fromBriefResponse,
   isCampaignServiceJobId,
+  readBriefValidator,
 } from './campaign-service.service';
 
 const req = {} as unknown as Request;
@@ -1125,12 +1126,24 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
-  // A response that reaches us without the header — a proxy that strips it, say. The version
-  // number is not a substitute: the design says the ETag "mirrors" the version, which fixes the
-  // correspondence but not the serialisation, so a synthesised value either 428s or matches the
-  // wrong revision.
-  it('refuses to replace a brief whose response carried no ETag header instead of synthesising one', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 }));
+  // A response that reaches us without the header — a proxy that strips it, say. The version IS
+  // a substitute, and not a synthesised one: upstream renders the header from that same value
+  // as `"` + the decimal + `"` in one literal, so quoting it reproduces the header's own string
+  // rather than guessing at a second serialisation. See `readBriefValidator`.
+  it('replaces a brief whose response carried no ETag header, using the version the header is rendered from', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 })).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"8"' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toMatchObject({ briefId: 'b-1' });
+    // The PUT carries the recovered validator, so the precondition is a real check rather than
+    // the `etag_fallback` read that always matches itself.
+    expect(proxyRequestWithResponse.mock.calls[1]?.[6]).toEqual({ 'If-Match': '"7"' });
+  });
+
+  // The throw is still reachable, and must stay so: a body with no usable version leaves nothing
+  // to recover, and a PUT with no `If-Match` is the unconditional overwrite this guard exists to
+  // prevent.
+  it('refuses to replace a brief whose response carried neither an ETag header nor a usable version', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1' }));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toThrow(/no ETag/);
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
@@ -1607,11 +1620,19 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: 'W/"7"' });
   });
 
-  // A read that produced no validator still yields a restorable brief. `null` here is an ABSENT
-  // validator, not permission to overwrite — what an absent one licenses is decided by the
+  // A stripped header is not a lost validator: the body's `version` is the value that header is
+  // rendered from, so the read still hands back something a save can send as `If-Match`.
+  it('recovers the validator from the body version when the response carried no ETag header', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: 7 }), {}));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: '"7"' });
+  });
+
+  // A read that produced no validator at all still yields a restorable brief. `null` here is an
+  // ABSENT validator, not permission to overwrite — what an absent one licenses is decided by the
   // `absence` the caller records alongside it, never by the null itself.
-  it('reports a null ETag rather than inventing one when the response carried none', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), {}));
+  it('reports a null ETag rather than inventing one when neither the header nor a usable version arrived', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: undefined }), {}));
 
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: null });
   });
@@ -1769,6 +1790,51 @@ describe('CampaignServiceClient.loadBriefById', () => {
 
     await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).rejects.toMatchObject({ statusCode: 404 });
   });
+
+  // The read this method feeds — the restore — is the one whose null validator used to send
+  // `approveStoredBrief` down a blind re-read, and now refuses outright. Recovering the
+  // validator from the body is what keeps that refusal rare rather than routine.
+  it('recovers the validator from the body version when the ETag header does not survive the hop', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: 7 })));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toMatchObject({ status: 'loaded', etag: '"7"' });
+  });
+});
+
+/**
+ * The validator every brief READ returns.
+ *
+ * Briefs are the one resource whose `etag` attribute is header-mapped upstream, so Goa keeps it
+ * out of the response body — `readEtag(response) ?? response.data.etag`, the idiom the audience
+ * and campaign reads use, recovers nothing here. What the body does carry is the `version` the
+ * header is rendered from, so quoting it reconstructs the header's own string.
+ */
+describe('readBriefValidator', () => {
+  it('prefers the header when it is present, rather than re-deriving it', () => {
+    // Deliberately disagreeing values: the header is the authority, and a derived validator must
+    // never silently replace one the server actually sent.
+    expect(readBriefValidator({ data: storedBrief({ version: 7 }), status: 200, statusText: 'OK', headers: { etag: '"9"' } } as never)).toBe('"9"');
+  });
+
+  it('quotes the body version when no header arrives, matching what the server would have sent', () => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version: 7 })) as never)).toBe('"7"');
+  });
+
+  // Version 0 is a real version, and `0` is falsy — the one value a truthiness test would drop.
+  it('keeps version zero rather than reading it as absent', () => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version: 0 })) as never)).toBe('"0"');
+  });
+
+  // An int64 past 2^53 is already mangled by `JSON.parse` before this ever sees it, so quoting it
+  // would mint an `If-Match` that cannot match anything. No validator is the safer answer: it is
+  // refused, with a message, instead of silently failing a precondition the user cannot act on.
+  it.each([
+    ['a version past the safe-integer range', Number.MAX_SAFE_INTEGER + 2],
+    ['a non-numeric version', 'seven'],
+    ['an absent version', undefined],
+  ])('returns null for %s rather than minting an If-Match that cannot match', (_label, version) => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version })) as never)).toBeNull();
+  });
 });
 
 /**
@@ -1820,63 +1886,33 @@ describe('CampaignServiceClient.approveStoredBrief', () => {
     });
   });
 
-  it('re-reads the row by id for a validator when the caller holds none', async () => {
-    proxyRequestWithResponse
-      .mockResolvedValueOnce(apiResponse(storedBrief({ status: 'draft' }), { etag: '"3"' }))
-      .mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"4"' }));
-
-    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null);
-
-    expect(result).toEqual({ enabled: true, briefId: 'b-1', etag: '"4"', approved: true });
-    expect(proxyRequestWithResponse.mock.calls.map((call: unknown[]) => [call[2], call[3]])).toEqual([
-      ['/projects/tlf/briefs/b-1', 'GET'],
-      ['/projects/tlf/briefs/b-1/approve', 'POST'],
-    ]);
-    // The validator sent is the one that read returned — not a synthesised or empty `If-Match`.
-    expect(proxyRequestWithResponse.mock.calls[1]?.[6]).toEqual({ 'If-Match': '"3"' });
-  });
-
-  it('reports the brief as gone when the re-read finds no row, instead of approving blind', async () => {
-    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
-
+  // The regression this method used to have: it re-read the row and approved with whatever
+  // validator came back. The restore approves automatically one round trip after its own read,
+  // and campaign creation builds from the approved row — so a writer who replaced the brief in
+  // between had THEIR content approved and built on while the user looked at the restore's.
+  // Refusing is the fix, and the refusal has to be classified so the UI can name the remedy.
+  it('refuses to approve when the caller holds no validator, rather than reading one itself', async () => {
     await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
       enabled: true,
       briefId: 'b-1',
       etag: null,
       approved: false,
-      conflict: 'brief-not-found',
+      conflict: 'unverified-validator',
     });
-    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    // Zero calls. A GET here is the re-read coming back; a POST is the blind approval itself.
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
-  // No conflict: nothing was rejected, we simply never obtained the validator `approve-brief`
-  // requires, and a reload may well produce one. Reported as a conflict it would tell the user
-  // their brief had moved or been deleted — neither of which happened.
-  it('reports an indeterminate result when the re-read returns no ETag', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'draft' })));
+  // The whole point of the refusal above: a brief replaced between the restore's read and this
+  // approve must not be approved silently. With a validator in hand the 412 does that job; the
+  // user is told the row moved instead of being told the approval succeeded.
+  it('surfaces a brief replaced since the restore as stale-brief, never as a silent approval', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED'));
 
-    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
-      enabled: true,
-      briefId: 'b-1',
-      etag: null,
-      approved: false,
-    });
-    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
-  });
+    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"3"');
 
-  // A re-read that 503s is the same class of failure as an approve that 503s: indeterminate, no
-  // conflict. Throwing instead would be the one path where a caller got an exception rather than
-  // the result shape this method documents.
-  it('reports an indeterminate result when the re-read itself fails', async () => {
-    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream unavailable', 503, 'UNAVAILABLE'));
-
-    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
-      enabled: true,
-      briefId: 'b-1',
-      etag: null,
-      approved: false,
-    });
-    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ approved: false, conflict: 'stale-brief' });
+    expect(proxyRequestWithResponse.mock.calls[0]?.[6]).toEqual({ 'If-Match': '"3"' });
   });
 
   it('reports a stale validator as stale-brief, so the UI can say the row moved', async () => {

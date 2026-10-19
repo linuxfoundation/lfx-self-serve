@@ -1848,8 +1848,9 @@ export class CampaignController {
 
     try {
       // The validator the caller already holds, from the read that put this brief on their
-      // screen. Absent is a supported case, not an error — the service re-reads the row for a
-      // fresh one. See `approveStoredBrief` for why that is safe here and is not in `saveBrief`.
+      // screen. Absent is a classified outcome, not an error: `approveStoredBrief` refuses to
+      // approve a brief it cannot verify and returns `conflict: 'unverified-validator'`, which
+      // the response below carries to the client like any other conflict.
       const ifMatch = req.get('If-Match');
       const knownEtag = typeof ifMatch === 'string' && ifMatch.trim() !== '' ? ifMatch : null;
       const result = await this.campaignServiceClient.approveStoredBrief(req, projectSlug, briefId, knownEtag);

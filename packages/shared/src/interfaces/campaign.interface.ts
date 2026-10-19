@@ -480,16 +480,24 @@ export interface CampaignBriefApproveResult {
    * caller read it. The remedy is to reload the brief and approve the version that is actually
    * stored, never to retry with the same validator.
    *
-   * `brief-not-found`: the row is gone. Reached both from a typed 404 on the approve and from a
-   * 404 on the re-read this endpoint does when the caller holds no validator.
+   * `brief-not-found`: the row is gone — a typed 404 on the approve itself.
    *
    * `rejected`: campaign-service refused the approval outright (a 4xx that is neither of the
    * above) — the brief is stored but campaign-service will not approve it as it stands.
    *
+   * `unverified-validator`: the caller held no validator, so nothing was sent. The same name and
+   * the same meaning as `CampaignBriefPersistResult`'s: an approval the server would accept is
+   * not the same as an approval that is about the row the user was SHOWN, and without a
+   * validator from the read that filled the screen, nothing can tell the two apart. Reading one
+   * here rather than refusing is what made this path able to approve an intervening writer's
+   * content — the restore approves automatically, one round trip after its own read, and
+   * campaign creation then builds from the approved row. The remedy is a fresh read: reload and
+   * re-enter the event URL.
+   *
    * An indeterminate outcome (5xx, timeout) carries NO conflict and `approved: false`: the
    * approval may or may not have landed, and claiming either way would be a guess.
    */
-  conflict?: 'stale-brief' | 'brief-not-found' | 'rejected';
+  conflict?: 'stale-brief' | 'brief-not-found' | 'rejected' | 'unverified-validator';
 }
 
 /**
