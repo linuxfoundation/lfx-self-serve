@@ -16,6 +16,7 @@ import {
   BRAND_KIT_TYPE_SPECIMEN,
   BRAND_KIT_WEIGHT_NAMES,
 } from '../constants/brand-kit.constants';
+import { MKTG_PRINT_REVERSED_FILTER } from '../constants/mktg-print.constants';
 import {
   BrandKitBookView,
   BrandKitChapterSummary,
@@ -99,11 +100,11 @@ export function brandKitTint(dark: string): string {
  */
 export function brandKitColorwayTiles(kit: BrandKitRevision, tint: string, logos: Record<BrandKitLogoSlot, BrandKitLogoImage | null>): BrandKitColorwayTile[] {
   const primary = logos.primary;
-  const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '' } : { logo: primary, logoFilter: 'brightness(0) invert(1)' };
+  const reversed = logos.reversed ? { logo: logos.reversed, logoFilter: '' } : { logo: primary, logoFilter: MKTG_PRINT_REVERSED_FILTER };
   // The symbol is never the supplied reversed lockup, so it always takes the tile's own filter.
   const grounds = [
     { ground: 'white', light: true, logo: primary, logoFilter: '', symbolFilter: '' },
-    { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: 'brightness(0) invert(1)' },
+    { ground: kit.kit.dark, light: false, ...reversed, symbolFilter: MKTG_PRINT_REVERSED_FILTER },
     { ground: tint, light: true, logo: primary, logoFilter: '', symbolFilter: '' },
     { ground: 'white', light: true, logo: primary, logoFilter: 'brightness(0)', symbolFilter: 'brightness(0)' },
   ];

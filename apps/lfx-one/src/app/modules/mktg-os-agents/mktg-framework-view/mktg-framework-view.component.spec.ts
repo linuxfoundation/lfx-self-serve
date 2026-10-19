@@ -3,8 +3,13 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MktgFrameworkAsset, MktgFrameworkViewState } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
+import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget } from '@lfx-one/shared/interfaces';
+import { MktgPrintService } from '@services/mktg-print.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { NEVER, of } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
 
@@ -13,7 +18,7 @@ import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
   selector: 'lfx-test-framework-host',
   imports: [MktgFrameworkViewComponent],
   template: `
-    <lfx-mktg-framework-view projectName="TestOrbit" [asset]="asset()" [state]="state()" [version]="version()">
+    <lfx-mktg-framework-view projectName="TestOrbit" [asset]="asset()" [state]="state()" [version]="version()" [kit]="kit()" [exportTarget]="exportTarget()">
       <p data-testid="projected">The feed goes here</p>
     </lfx-mktg-framework-view>
   `,
@@ -22,6 +27,8 @@ class HostComponent {
   public readonly asset = signal<MktgFrameworkAsset | null>(null);
   public readonly state = signal<MktgFrameworkViewState>('generating');
   public readonly version = signal<number | null>(null);
+  public readonly kit = signal<BrandKitRevision | null>(null);
+  public readonly exportTarget = signal<MktgSlidesExportTarget | null>(null);
 }
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -122,6 +129,8 @@ const ASSET: MktgFrameworkAsset = {
 describe('MktgFrameworkViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
+  let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>; ensureFontStylesheet: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
@@ -131,7 +140,16 @@ describe('MktgFrameworkViewComponent', () => {
   };
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [HostComponent] }).compileComponents();
+    printer = { print: vi.fn(() => Promise.resolve()), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
+      poll: vi.fn(() => NEVER),
+    };
+    await TestBed.configureTestingModule({
+      imports: [HostComponent],
+      providers: [{ provide: MktgPrintService, useValue: printer }, provideMktgSlidesExportStub(slidesExport)],
+    }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;
     await fixture.whenStable();
@@ -145,6 +163,9 @@ describe('MktgFrameworkViewComponent', () => {
     expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]').length).toBe(5);
     expect(element().querySelectorAll<HTMLButtonElement>('[role="tab"]:disabled').length).toBe(5);
     expect(element().textContent).not.toContain('Paul');
+    // Nothing to print or export until the framework exists.
+    expect(query('mktg-framework-view-actions')).toBeNull();
+    expect(query('mktg-framework-view-print')).toBeNull();
   });
 
   it('says it is waiting for answers while the questions are projected in', async () => {
@@ -269,6 +290,78 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-report-notes')).toBeNull();
     expect(query('mktg-framework-view-findings')).toBeNull();
     expect(query('mktg-framework-view-checks-empty')?.textContent).toContain('Nothing to check.');
+  });
+
+  it('prints the framework’s tabs as one document in the LF look — the report and the reviewer’s note left out — with Download PDF', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.version.set(3);
+    await fixture.whenStable();
+
+    const wrapper = query('mktg-framework-view-print');
+    expect(wrapper?.className).toContain('lfx-framework-print-only');
+    const print = query('mktg-framework-print');
+    expect(print?.getAttribute('data-brand')).toBe('lf');
+    expect(query('mktg-framework-print-title')?.textContent).toContain('Messaging Framework');
+    expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 3');
+    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toBe('/images/logo_lf_white.svg');
+    expect(query('mktg-framework-print-contents')?.textContent).toContain('Key numbers');
+    expect(query('mktg-framework-print-contents')?.textContent).not.toContain('Sources and gaps');
+    expect(query('mktg-framework-print-goals')?.querySelectorAll('article').length).toBe(2);
+    expect(query('mktg-framework-print-icp-contributors')?.textContent).toContain('Build it with us.');
+    expect(query('mktg-framework-print-pillars')?.querySelectorAll('article').length).toBe(3);
+    expect(query('mktg-framework-print-numbers')?.textContent).toContain('releases a year');
+    expect(print?.textContent).not.toContain('No member count.');
+    expect(print?.textContent).not.toContain('Check the member count.');
+    expect(print?.textContent).not.toContain('Check the dates.');
+
+    // Export to Google Slides waits for the page to name a stored revision.
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, null);
+
+    fixture.destroy();
+    expect(printer.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
+  });
+
+  it('exports the stored framework to Google Slides, the panel under the header showing the progress', async () => {
+    const target: MktgSlidesExportTarget = { project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', contentSha256: 'a'.repeat(64) };
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.kit.set(kit);
+    host.exportTarget.set(target);
+    await fixture.whenStable();
+
+    expect(slidesExport.last).toHaveBeenCalledWith(target);
+    query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
+    await new Promise((resolve) => setTimeout(resolve));
+    await fixture.whenStable();
+
+    expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
+    expect(query('mktg-slides-export-running')?.textContent).toContain('Exporting the messaging framework');
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+  });
+
+  it('sets the print in the project’s Brand Kit when there is one: its colours, its typeface (waited for before the dialog), its logo', async () => {
+    const kit = brandKitTestRevision();
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.kit.set(kit);
+    await fixture.whenStable();
+
+    const print = query('mktg-framework-print') as HTMLElement;
+    expect(print.getAttribute('data-brand')).toBe('kit');
+    expect(print.style.getPropertyValue('--mfp-dark')).toBe(kit.kit.dark);
+    expect(print.style.getPropertyValue('--mfp-accent')).toBe(kit.kit.accent);
+    expect(print.style.getPropertyValue('--mfp-font')).toContain('Montserrat');
+    // No reversed artwork in the kit: the cover draws the primary lockup white.
+    expect(query('mktg-framework-print-cover-logo')?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    expect(query('mktg-framework-print-cover-logo')?.style.filter).toContain('invert');
+
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Montserrat');
   });
 
   it('opens the Sources tab from the reviewer note and moves keyboard focus onto that tab', async () => {

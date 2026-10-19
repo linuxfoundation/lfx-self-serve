@@ -483,6 +483,66 @@ export class MktgDocumentStoreService {
   }
 
   /**
+   * The revision an export names, with its summary: the revision
+   * `revisionId` names, else the newest revision holding the content
+   * `contentSha256` names (a run's version, which knows the hash of what it
+   * stored, not the revision id), else the latest. Stored revisions only: a
+   * pre-revision document is Markdown alone, with no asset to export. Null
+   * when the document has no stored revision or none matches. Throws on a
+   * storage failure.
+   */
+  public async readExportRevision(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    selector: { revisionId?: string; contentSha256?: string }
+  ): Promise<{ revision: MktgStoredRevision; summary: MktgRevisionSummary } | null> {
+    const revisions = await this.readRevisions(req, project, type, documentId);
+    if (revisions.length === 0) {
+      return null;
+    }
+    let found: MktgStoredRevision | undefined;
+    if (selector.revisionId) {
+      found = this.findRevision(revisions, selector.revisionId);
+    } else if (selector.contentSha256) {
+      found = [...revisions].reverse().find((revision) => revision.record.bundle.contentSha256 === selector.contentSha256);
+    } else {
+      found = revisions[revisions.length - 1];
+    }
+    if (!found) {
+      return null;
+    }
+    const summary = this.summarize(revisions).find((candidate) => candidate.id === found.id) as MktgRevisionSummary;
+    return { revision: found, summary };
+  }
+
+  /**
+   * The document's newest stored revision that passes its integrity checks,
+   * read from the listing and that one revision's body alone (walking back
+   * past one that fails), for a caller that needs only its identity: the
+   * last-export lookup, which compares hashes. `number` is the revision's
+   * place in the listing — the Revisions table's number unless an earlier
+   * revision fails its checks, which this read does not open. Null when the
+   * document has no stored revision. Throws on a storage failure.
+   */
+  public async readNewestRevisionRef(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string
+  ): Promise<{ id: string; number: number; contentSha256: string } | null> {
+    const listed = await this.listRevisions(req, project, type, documentId);
+    for (let index = listed.length - 1; index >= 0; index--) {
+      const revision = await this.loadRevision(req, listed[index]);
+      if (revision) {
+        return { id: revision.id, number: index + 1, contentSha256: revision.record.bundle.contentSha256 };
+      }
+    }
+    return null;
+  }
+
+  /**
    * The stored revision an id names. A legacy id names the pre-revision
    * object, which is the materialized revision 1 with the same bytes once the
    * document has stored revisions.

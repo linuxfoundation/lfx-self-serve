@@ -741,9 +741,10 @@ export interface MktgRunQuestionChip {
 
 /**
  * Receipt of an agent's server-side persistence write, returned on a `ready`
- * result by agents whose contract persists the validated document (the Brand
- * Kit's dec-brand-kit-storage-v2 write path today). The run shell reads only
- * its PRESENCE: a ready result WITHOUT a receipt means the object-store write
+ * result by every agent whose contract persists the validated document (the
+ * Brand Kit, the Messaging Framework and the ICP). The run shell keeps its
+ * `content_sha256` on the version (an export names the stored revision by
+ * it), and a ready result WITHOUT a receipt means the object-store write
  * did not happen — transient by default, and because the keys are
  * content-addressed the next poll re-runs the same write idempotently.
  * Field names are snake_case (unlike the camelCase enclosing response) on
@@ -1058,6 +1059,12 @@ export interface MktgRunVersion {
   answers?: MktgRunAnswer[];
   /** The Brand Kit this version is, for the Brand Kit agent: what the kit view renders (the document is its Markdown rendering). */
   brandKit?: BrandKitRevision;
+  /**
+   * SHA-256 of the content the server stored for this version (its
+   * persistence receipt), which names the stored revision an export of this
+   * version reads; absent when the result carried no receipt.
+   */
+  contentSha256?: string;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
@@ -1163,7 +1170,10 @@ export interface MktgRunQuestionsPending {
  * copy is what dependency gating reads for every browser and user: a document
  * announced on `document` alone can leave consumers holding the previous
  * server version until a page reload, and this is the event that says the
- * shared copy has caught up.
+ * shared copy has caught up. It carries the stored run with the receipt's
+ * hash on the version it persisted, which is what names that version's
+ * stored revision (an export reads it), or null when this browser no longer
+ * holds the run: the shared copy has still caught up.
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }
@@ -1171,7 +1181,7 @@ export type MktgGenerateProgress =
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'refused'; reply: string }
   | { type: 'document'; run: MktgStoredAgentRun }
-  | { type: 'persisted' };
+  | { type: 'persisted'; run: MktgStoredAgentRun | null };
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {

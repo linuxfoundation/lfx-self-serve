@@ -396,6 +396,12 @@ export * from './brand-kit.interface';
 export * from './foundation-message.interface';
 export * from './icp.interface';
 
+// Marketing OS asset print documents (Download PDF)
+export * from './mktg-print.interface';
+
+// Marketing OS Export to Google Slides (slides-export-output/v1)
+export * from './mktg-slides-export.interface';
+
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';
 

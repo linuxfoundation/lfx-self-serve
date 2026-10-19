@@ -70,7 +70,8 @@
               "@opentelemetry/semantic-conventions",
               "pdfkit",
               "google-ads-api",
-              "@aws-sdk/client-s3"
+              "@aws-sdk/client-s3",
+              "@resvg/resvg-js"
             ]
           },
           "configurations": {

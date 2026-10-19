@@ -467,10 +467,15 @@ export class MktgAgentsController {
   }
 
   /**
-   * GET /api/mktg-agents/brand-kit/stored?project=<uid>
+   * GET /api/mktg-agents/brand-kit/stored?project=<uid>[&sidecar=true]
    * Returns the project's LATEST server-persisted Brand Kit document with its
    * receipt metadata (the dec-agent-dependency-gating read path), or 404 when
    * nothing is stored for the project.
+   * With `sidecar=true`, the same latest revision with its envelope JSON (the
+   * stored sidecar: the kit's tokens, chapters and logo files) and date, as
+   * the Messaging Framework's read offers — what another asset's print
+   * (Download PDF) sets itself in: the kit's colours, typeface and logo; 404
+   * when the document has no revision.
    *
    * AUTHZ — this is the read boundary for the persisted partition: the caller
    * must hold writer entitlement on the requested project (the
@@ -498,7 +503,8 @@ export class MktgAgentsController {
       return;
     }
 
-    const startTime = logger.startOperation(req, 'brand_kit_stored', {});
+    const withSidecar = req.query['sidecar'] === 'true';
+    const startTime = logger.startOperation(req, 'brand_kit_stored', { with_sidecar: withSidecar });
 
     try {
       // Entitlement gate: resolve the project by uid WITH the caller's access
@@ -516,7 +522,7 @@ export class MktgAgentsController {
         return;
       }
 
-      const stored: BrandKitStoredResponse | null = await this.brandKitService.getStoredBrandKit(req, project.uid);
+      const stored: BrandKitStoredResponse | null = await this.brandKitService.getStoredBrandKit(req, project.uid, withSidecar);
       if (!stored) {
         next(
           new ResourceNotFoundError('Stored Brand Kit', project.uid, {

@@ -229,8 +229,27 @@ describe('MktgAgentsController', () => {
       // The partition comes from the RESOLVED project's uid — never the raw
       // client input, and never the agent's own slug — so a caller can never
       // address another partition and the write path addresses the same one.
-      expect(brandKitMocks.getStoredBrandKit).toHaveBeenCalledWith(req, 'proj-uid-1');
+      expect(brandKitMocks.getStoredBrandKit).toHaveBeenCalledWith(req, 'proj-uid-1', false);
       expect(res.json).toHaveBeenCalledWith(STORED);
+    });
+
+    it('serves the latest revision with its sidecar and date on ?sidecar=true — what a print reads the kit from — and 404s when there is none', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
+      const latest = { ...STORED, storedAt: '2026-10-18T09:00:00.000Z', revisionNumber: 3, sidecar: { contract: 'brand-kit-output/v1' } };
+      brandKitMocks.getStoredBrandKit.mockResolvedValue(latest);
+      const req = buildReq({ project: 'proj-uid-1', sidecar: 'true' });
+      const res = buildRes();
+
+      await controller.storedBrandKit(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(brandKitMocks.getStoredBrandKit).toHaveBeenCalledWith(req, 'proj-uid-1', true);
+      expect(res.json).toHaveBeenCalledWith(latest);
+
+      brandKitMocks.getStoredBrandKit.mockResolvedValue(null);
+      await controller.storedBrandKit(buildReq({ project: 'proj-uid-1', sidecar: 'true' }), buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ResourceNotFoundError);
     });
 
     it('denies a caller without the project writer entitlement before any storage read (403)', async () => {

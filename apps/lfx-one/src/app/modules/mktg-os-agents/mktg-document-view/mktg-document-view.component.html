@@ -50,6 +50,8 @@
               state="ready"
               [version]="current.revision.number"
               [note]="revisionNote()"
+              [kit]="printKit()"
+              [exportTarget]="exportTarget()"
               data-testid="mktg-document-view-framework" />
           } @else if (boilerplates(); as boilerplatesAsset) {
             <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
@@ -61,7 +63,12 @@
               data-testid="mktg-document-view-boilerplates" />
           } @else if (brandKit(); as kit) {
             <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
-            <lfx-brand-kit-web-view [kit]="kit" [version]="current.revision.number" [note]="revisionNote()" data-testid="mktg-document-view-brand-kit" />
+            <lfx-brand-kit-web-view
+              [kit]="kit"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              [exportTarget]="exportTarget()"
+              data-testid="mktg-document-view-brand-kit" />
           } @else {
             <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
               @if (current.revision.format === 'json') {

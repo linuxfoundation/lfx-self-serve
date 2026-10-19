@@ -15,11 +15,19 @@ import {
   MktgRevisionResponse,
   MktgRevisionRow,
   MktgRevisionSummary,
+  MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
-import { boilerplatesAssetOfRevision, describeMktgRevision, foundationMessageAssetOfRevision, readBrandKitRevision } from '@lfx-one/shared/utils';
+import {
+  boilerplatesAssetOfRevision,
+  describeMktgRevision,
+  foundationMessageAssetOfRevision,
+  isMktgSlidesExportAgentKey,
+  readBrandKitRevision,
+} from '@lfx-one/shared/utils';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
@@ -50,6 +58,7 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
 })
 export class MktgDocumentViewComponent {
   // === Injections ===
+  private readonly dependencyService = inject(MktgDependencyService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -117,6 +126,18 @@ export class MktgDocumentViewComponent {
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   /** A short word on the revision's standing, beside the asset's version. */
   protected readonly revisionNote = computed(() => (this.view()?.revision.latest ? 'latest' : ''));
+  /** The project's stored Brand Kit, which a framework revision's print (Download PDF) is set in; null for the LF look. */
+  protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
+  /** The revision on screen as Export to Google Slides reads it: a framework or a kit revision of the active project; null otherwise. */
+  protected readonly exportTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
+    const view = this.view();
+    const project = this.projectContext.activeContextUid();
+    const agentKey = view?.type.agentKey;
+    if (!view || !project || !isMktgSlidesExportAgentKey(agentKey) || (this.asset() === null && this.brandKit() === null)) {
+      return null;
+    }
+    return { project, agentKey, documentId: view.documentId, revisionId: view.revision.id };
+  });
 
   private readonly request$ = toObservable(
     computed(() => ({ project: this.projectContext.activeContextUid(), ...this.params(), revisionId: this.revisionParam() }))
@@ -183,6 +204,24 @@ export class MktgDocumentViewComponent {
   }
 
   // === Private initializers ===
+  /**
+   * The project's Brand Kit, read only while a framework revision is on
+   * screen (a kit or a Markdown document prints nothing of this) and only in
+   * the browser. Any failed read is the LF look, not an error.
+   */
+  private initPrintKit(): Signal<BrandKitRevision | null> {
+    const projectUid = computed(() => (isPlatformBrowser(this.platformId) && this.asset() !== null ? this.projectContext.activeContextUid() : ''));
+    return toSignal(
+      toObservable(projectUid).pipe(
+        distinctUntilChanged(),
+        // A project switch drops the previous project's kit at once: until the new
+        // project's kit resolves, the print takes the LF look, never another project's brand.
+        switchMap((uid) => (uid ? this.dependencyService.resolveBrandKit(uid).pipe(startWith(null)) : of(null)))
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();
