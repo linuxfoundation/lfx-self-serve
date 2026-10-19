@@ -432,3 +432,4 @@ export * from './log-scrub.interface';
 // App navbar (sidebar v2)
 export * from './navbar.interface';
 export * from './mktg-asset.interface';
+export * from './mktg-kit.interface';
