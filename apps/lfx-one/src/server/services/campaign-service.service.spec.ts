@@ -42,6 +42,7 @@ import {
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
@@ -1182,7 +1183,17 @@ describe('fromBriefResponse', () => {
   it('round-trips a brief written by the save path', async () => {
     proxyRequestWithResponse.mockReset();
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
-    const original = briefWithSlug('kubecon-eu-2026');
+    // The two Google extension lists are set HERE rather than on `briefWithSlug`, which a few
+    // dozen other cases compare request payloads against exactly. Without them this round-trip
+    // asserts nothing about either field: both would be absent from the fixture, absent from what
+    // `toBriefInput` writes, and absent from what `fromBriefResponse` reads back, so a write or
+    // read path that dropped them entirely would still match. They are the newest fields on this
+    // contract and the ones a drop would cost the operator most — the lists they edited by hand.
+    const original: CampaignBriefOutput = {
+      ...briefWithSlug('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing', 'Co-located events'],
+      googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/register/' }],
+    };
 
     await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf', 'b-1');
     const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
@@ -1383,6 +1394,48 @@ describe('fromBriefResponse', () => {
       { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
       { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
     ]);
+  });
+
+  /**
+   * The entry SHAPE, which the callout cases cover for their own list and this one did not.
+   *
+   * `copy` is an opaque blob campaign-service stores without inspecting, so an entry here can be
+   * any JSON value. A string or a `null` in the array reaches `asRecord` first: without that guard
+   * the next line indexes `null` and the whole restore throws, losing the brief rather than one
+   * sitelink. An entry shaped right but with no usable label is the quieter half — upstream refuses
+   * a sitelink with empty text, so carrying one opens the editor on a chip that cannot dispatch.
+   */
+  it('drops stored sitelinks that are not objects, and objects with no usable label', () => {
+    const googleSitelinks = [
+      'View the Agenda',
+      null,
+      42,
+      { finalUrl: 'https://example.test/agenda' },
+      { text: '   ', finalUrl: 'https://example.test/schedule' },
+      { text: 42, finalUrl: 'https://example.test/speakers' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The sitelink cap, which is the callout cap's sibling and upstream's own `maxSitelinks`: the
+  // editor refuses an add past it, so a longer stored list is filled to the cap rather than
+  // opening the editor holding entries the operator can neither have typed nor submit.
+  it('fills a stored sitelink list to the cap and drops the overflow', () => {
+    const googleSitelinks = Array.from({ length: GOOGLE_ADS_MAX_SITELINKS + 3 }, (_unused, i) => ({
+      text: `Sitelink ${i}`,
+      finalUrl: `https://example.test/s${i}`,
+    }));
+
+    const restored = fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks;
+
+    // Length AND the first entry: a cap that kept the TAIL is a different behaviour, and one the
+    // operator would read as the app reordering their sitelinks.
+    expect(restored).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+    expect(restored?.[0]).toEqual({ text: 'Sitelink 0', finalUrl: 'https://example.test/s0' });
   });
 
   // The description pair is all-or-nothing upstream (`googleads/assets.go`), so a lone line is

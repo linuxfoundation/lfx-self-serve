@@ -24,7 +24,7 @@ vi.mock('../helpers/url-validation', () => ({
   fetchSafeUrl: vi.fn(async (url: string) => ({ html: '<html><body></body></html>', ok: true, status: 200, finalUrl: url })),
 }));
 
-import { CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES, GOOGLE_ADS_MAX_FINAL_URL_BYTES } from '@lfx-one/shared/constants';
+import { CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES, GOOGLE_ADS_MAX_CALLOUTS, GOOGLE_ADS_MAX_FINAL_URL_BYTES } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
 import { fetchSafeUrl } from '../helpers/url-validation';
@@ -660,33 +660,50 @@ describe('CampaignProxyService Google extensions', () => {
    * Stub every AI call to answer with a payload, and the scrape to carry the hrefs that payload
    * names. Both are overridable so a test can hand the generator its own event fields and its own
    * page without rewriting the stub.
+   *
+   * `scrape: false` queues no page at all, for the refinement mode that never fetches one.
+   * `failCallouts: true` fails the ONE AI call that carries the extensions-strategist system
+   * prompt, leaving extraction and copy answering normally — the only way to reach the callout
+   * catch without also breaking the stages before it.
    */
-  function stubStream(overrides: { payload?: string; html?: string } = {}): void {
+  function stubStream(overrides: { payload?: string; html?: string; scrape?: boolean; failCallouts?: boolean } = {}): void {
     const body = overrides.payload ?? payload;
     process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
     process.env['AI_API_KEY'] = 'test-key';
     // Queued per test rather than set for the block: an unconsumed `mockImplementation` would
-    // outlive this describe and hand the file's other blocks markup they do not expect.
-    vi.mocked(fetchSafeUrl).mockResolvedValueOnce({
-      html: overrides.html ?? `<html><body><a href="${AGENDA_URL}">Agenda</a><a href="${CFP_URL}">CFP</a></body></html>`,
-      ok: true,
-      status: 200,
-      finalUrl: 'https://events.example.com/kubecon-eu-2026',
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
+    // outlive this describe and hand the file's other blocks markup they do not expect. Which is
+    // also why `scrape: false` queues NOTHING rather than queuing a page the refinement will not
+    // consume — a left-over `…Once` is handed to whichever test fetches next.
+    if (overrides.scrape !== false) {
+      vi.mocked(fetchSafeUrl).mockResolvedValueOnce({
+        html: overrides.html ?? `<html><body><a href="${AGENDA_URL}">Agenda</a><a href="${CFP_URL}">CFP</a></body></html>`,
         ok: true,
         status: 200,
-        text: async () => body,
-        json: async () => ({ choices: [{ message: { content: body } }] }),
-        body: new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
-            controller.close();
-          },
-        }),
-      }))
+        finalUrl: 'https://events.example.com/kubecon-eu-2026',
+      });
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: { body?: string }) => {
+        // Matched on the system prompt rather than on call ORDER: the stages before this one vary
+        // by brief (an email brief makes no copy call at all), so an index would pin the wrong
+        // request the moment anything upstream changed.
+        if (overrides.failCallouts && String(init?.body ?? '').includes('Google Ads extensions strategist')) {
+          return { ok: false, status: 503, text: async () => 'upstream unavailable', json: async () => ({}), body: null };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => body,
+          json: async () => ({ choices: [{ message: { content: body } }] }),
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{}"}}]}\n\ndata: [DONE]\n\n'));
+              controller.close();
+            },
+          }),
+        };
+      })
     );
     service = new CampaignProxyService();
   }
@@ -705,11 +722,55 @@ describe('CampaignProxyService Google extensions', () => {
       }>
     );
 
-    // The fixed labels, in `SITELINK_SOURCES` order, with no descriptions: the pair is
+    // The fixed labels, in `SITELINK_SOURCES_EVENTS` order, with no descriptions: the pair is
     // all-or-nothing upstream and nothing on the page supplies either line.
     expect(events.find((e) => e.type === 'sitelinks')?.data).toEqual([
       { text: 'View the Agenda', finalUrl: AGENDA_URL },
       { text: 'Submit a Talk', finalUrl: CFP_URL },
+    ]);
+  });
+
+  /**
+   * The other half of that table, and the reason it was split.
+   *
+   * The Google-extension gate admits Education briefs, and the education extraction prompt fills
+   * the SAME two keys with different pages: `agenda_url` is the syllabus, `venue_url` the delivery
+   * details. Labelled from the event table, an online course opened the Implementation editor
+   * holding 'Venue & Travel' on a page with no venue — ad copy that misdescribes its own
+   * destination, and the one thing the table's own comment promises cannot happen.
+   */
+  it('labels an education brief’s sitelinks for a course, not an event', async () => {
+    const SYLLABUS_URL = 'https://events.example.com/cka/syllabus';
+    const DELIVERY_URL = 'https://events.example.com/cka/delivery-details';
+
+    stubStream({
+      payload: JSON.stringify({
+        name: 'Certified Kubernetes Administrator',
+        slug: 'cka',
+        agenda_url: SYLLABUS_URL,
+        venue_url: DELIVERY_URL,
+        callouts: [],
+      }),
+      html: `<html><body><a href="${SYLLABUS_URL}">Syllabus</a><a href="${DELIVERY_URL}">Delivery</a></body></html>`,
+    });
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/cka', platforms: ['google-ads'], programType: 'education' },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    // Asserted as the whole list so the EVENT wording cannot also be present, and so a builder
+    // that fell back to the event table on an unknown program type fails here rather than
+    // producing a list that merely contains the right two entries.
+    expect(events.find((e) => e.type === 'sitelinks')?.data).toEqual([
+      { text: 'Course Outline', finalUrl: SYLLABUS_URL },
+      { text: 'Training Details', finalUrl: DELIVERY_URL },
     ]);
   });
 
@@ -842,6 +903,126 @@ describe('CampaignProxyService Google extensions', () => {
 
     expect(events.some((e) => e.type === 'done')).toBe(true);
     expect(events.some((e) => e.type === 'sitelinks' || e.type === 'callouts')).toBe(false);
+  });
+
+  /**
+   * The door the `!isRefinement` half of the gate actually guards — the test above does not.
+   *
+   * `streamRefinedBrief` has no extension block at all, so deleting `!isRefinement &&` from
+   * `streamBrief`'s gate leaves that one green. `/brief/generate` has its OWN refinement mode
+   * (`refineFeedback` + `previousCopy`), and that is the call that arrives here having skipped the
+   * scrape: `pageLinks` is empty, so every sitelink would fail verification and the block would
+   * yield an EMPTY list over the operator's edited one — a wipe, not a no-op, since absent and
+   * empty are the same value on this wire. Regenerated callouts would discard their edits the
+   * same way.
+   */
+  it('emits neither when streamBrief itself is called in refinement mode', async () => {
+    // No page is queued: a refinement never calls `fetchSafeUrl`, and a left-over `…Once` would
+    // be handed to whichever test scrapes next.
+    stubStream({ scrape: false });
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        {
+          url: 'https://events.example.com/kubecon-eu-2026',
+          platforms: ['google-ads'],
+          refineFeedback: 'more technical',
+          previousCopy: { google_rsa: { headlines: ['Join us in Amsterdam'] } },
+        },
+        new AbortController().signal
+      ) as AsyncGenerator<{ type: string; data: unknown }>
+    );
+
+    // Paired with `done` for the same reason as the platform-gate case: a stream that refused
+    // early emits neither event either.
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    expect(events.some((e) => e.type === 'sitelinks' || e.type === 'callouts')).toBe(false);
+  });
+
+  /**
+   * The cap, which is a create-time refusal moved earlier rather than a cosmetic limit:
+   * `campaign.controller.ts` refuses a create carrying more than `GOOGLE_ADS_MAX_CALLOUTS`, so a
+   * generator that seeded 25 would fill the editor with a list the operator cannot submit and
+   * cannot see the reason for.
+   */
+  it('stops at the callout cap the create path will accept', async () => {
+    const overCap = Array.from({ length: GOOGLE_ADS_MAX_CALLOUTS + 5 }, (_, i) => `Callout ${i + 1}`);
+    stubStream({ payload: JSON.stringify({ name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', callouts: overCap }) });
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    // The first twenty, asserted whole rather than by length alone: a cap that kept an arbitrary
+    // twenty, or the tail, is a different behaviour the operator would read as reordered copy.
+    expect(events.find((e) => e.type === 'callouts')?.data).toEqual(overCap.slice(0, GOOGLE_ADS_MAX_CALLOUTS));
+  });
+
+  /**
+   * The response shape the prompt actually asks for.
+   *
+   * `CALLOUT_SYSTEM_PROMPT` asks for "a valid JSON array of strings"; the wrapped
+   * `{ callouts: [...] }` form every other case here uses is the one the model returns
+   * intermittently and `shapeCallouts` tolerates. With only the wrapped form covered, a
+   * regression in the PRIMARY branch would drop every callout on every brief and no test would
+   * notice.
+   */
+  it('reads the bare array the callout prompt asks for', async () => {
+    stubStream({ payload: JSON.stringify(['Free To Attend', '  Hands-On Labs  ']) });
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    // Shaped, not passed through: the same payload answers the extraction call, so this also
+    // confirms an unwrapped response is read as callouts rather than as event fields.
+    expect(events.find((e) => e.type === 'callouts')?.data).toEqual(['Free To Attend', 'Hands-On Labs']);
+  });
+
+  /**
+   * The try/catch, whose absence is invisible until it matters: the callout call is the LAST
+   * generator in the stream, so an uncaught failure aborts the generator after copy and keywords
+   * have already been produced, and the client — which commits the brief on `done` — throws all
+   * of it away over one optional extension list.
+   */
+  it('degrades to a status line when the callout call fails, and still reaches done', async () => {
+    stubStream({ failCallouts: true });
+
+    const events = await drain(
+      service.streamBrief(
+        req,
+        { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] },
+        new AbortController().signal
+      ) as AsyncGenerator<{
+        type: string;
+        data: unknown;
+      }>
+    );
+
+    expect(events.some((e) => e.type === 'callouts')).toBe(false);
+    expect(events.filter((e) => e.type === 'status').map((e) => e.data)).toContain('Callout generation failed, skipping...');
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+    // And the model-free half of the block is untouched by the model call's failure — which is
+    // what says the catch wraps the callout call rather than the whole gate.
+    expect(events.find((e) => e.type === 'sitelinks')?.data).toEqual([
+      { text: 'View the Agenda', finalUrl: AGENDA_URL },
+      { text: 'Submit a Talk', finalUrl: CFP_URL },
+    ]);
   });
 });
 

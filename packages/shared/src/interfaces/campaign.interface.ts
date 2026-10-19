@@ -396,13 +396,16 @@ export interface CampaignBriefOutput {
    * Held on exactly the same terms as {@link googleCallouts}: a seed the operator edits, with
    * absent and empty meaning different things.
    *
-   * Two producers, and they guarantee different things about `finalUrl`. The GENERATOR builds each
-   * one from a URL `verifyPageLink` already confirmed the scraped page carries, so a generated
+   * Three producers, and they guarantee different things about `finalUrl`. The GENERATOR builds
+   * each one from a URL `verifyPageLink` already confirmed the scraped page carries, so a generated
    * sitelink cannot point at a destination the model composed. The brief RESTORE path rebuilds the
    * list from campaign-service's opaque `copy` blob, which carries no page provenance to check; it
    * guarantees only what it can enforce on the value itself — an absolute http(s) URL within
-   * {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, a bounded label, and no duplicate labels. Do not treat
-   * a value read off this field as page-verified.
+   * {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, a bounded label, and no duplicate labels. The CARRY
+   * (the Implementation tab's `briefWithCarriedExtensions`) re-attaches the operator's own edited
+   * list, which the editor's add-guards vetted on the same value-only terms — a destination the
+   * operator typed or pasted there was never fetched and is not known to resolve. Do not treat a
+   * value read off this field as page-verified.
    *
    * The URLs are UNTAGGED here, and deliberately. campaign-service tags every sitelink
    * destination itself (`googleads/assets.go` calls the same `buildTaggedFinalURL` the ad's own

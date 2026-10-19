@@ -7518,6 +7518,21 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     }) as unknown as CampaignBriefOutput;
 
   it('keeps an edited callout list when the same event is refined and proceeded again', async () => {
+    // The SAVED half of the carry, not just the in-memory one. `onProceedToImplementation` hands
+    // `handedOver` to both `briefOutput` and `persistBrief`, and a regression passing the pre-carry
+    // `brief` to the second would leave the editor showing the operator's edits while the stored row
+    // held the generator's originals — invisible until the next Restore quietly lost them.
+    //
+    // The stub RESOLVES, and must: `persistBrief` serializes saves on `persistChain`, so a `NEVER`
+    // here would leave the first Proceed's save in flight forever and the second one would never be
+    // sent at all — the assertion below would then read the first call and fail for the wrong
+    // reason. It resolves as the cutover-dark no-op (`enabled: false`, no id), which records no
+    // ownership and leaves the banner idle, so the save bookkeeping other specs own stays out of
+    // this one.
+    const persistBrief = vi
+      .spyOn(TestBed.inject(CampaignService), 'persistBrief')
+      .mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
+
     // Driven through the mounted child rather than by hand-building a draft, so the carry is shown
     // composing with the draft `buildDraft` actually emits — the editor's own edits are then layered
     // onto that real draft the way `draftChange` would.
@@ -7545,6 +7560,18 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
     // And the regenerated copy still wins for the fields refine actually produces.
     expect(headlineInput()?.value).toBe('Generated A');
+
+    // The same object the page holds, not a sibling that happens to match: identity is what pins
+    // `persistBrief(handedOver)` rather than `persistBrief(brief)`, since the two differ only in
+    // the carried lists.
+    // Awaited, not read straight away: saves are dispatched from `persistChain`, a promise queue
+    // `fixture.whenStable()` does not drain — the second Proceed's link only runs once the first
+    // save's response has been handled, which lands after the awaits above have resolved.
+    await vi.waitFor(() => expect(persistBrief).toHaveBeenCalledTimes(2));
+    const persisted = persistBrief.mock.calls[1][0];
+    expect(persisted).toBe(internals().briefOutput());
+    expect(persisted.googleCallouts).toEqual(['Early bird pricing']);
+    expect(persisted.googleSitelinks).toEqual(emitted!.googleSitelinks);
   });
 
   it('leaves a brief that carries no extension lists exactly as it arrived', () => {
@@ -7552,7 +7579,10 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     // second Proceed would add `googleCallouts: []` to a brief that never had one — a field written
     // into the persisted row recording a clearance of a list that was never there.
     internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
-    internals().implementationDraft.set(completeDraftFor('kubecon-eu-2026'));
+    // The shape `emitDraft` actually produces — both fields present and EMPTY. A draft with the
+    // fields missing returns on `callouts !== undefined` before the exception clause this test
+    // exists to pin is ever reached, so it would stay green with the clause deleted.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: [], googleSitelinks: [] });
 
     const plain = briefFor('kubecon-eu-2026');
     internals().onProceedToImplementation(plain);
@@ -7686,6 +7716,30 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['After restore'] });
     internals().onProceedToImplementation(regeneratedBrief('kubecon-eu-2026'));
     expect(internals().briefOutput()?.googleCallouts).toEqual(['After restore']);
+  });
+
+  it('does not carry onto a restored brief whose lists MATCH the baseline', () => {
+    // The case the test above cannot cover. There the restored brief's lists differ from the
+    // baseline, so `sameCallouts` refuses the carry on its own and the `alreadyPersisted` exclusion
+    // could be deleted with the test still green. Here the restored lists are the baseline's, the
+    // draft holds an edit, and the exclusion is the ONLY thing standing between them — a realistic
+    // flow too: generate, proceed, edit, New Brief, then restore the row this generation wrote.
+    const restore = internals() as unknown as { onProceedToImplementation(b: CampaignBriefOutput, alreadyPersisted: boolean): void };
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing'],
+      googleSitelinks: [{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }],
+    });
+
+    const restored = briefWithExtensions('kubecon-eu-2026');
+    restore.onProceedToImplementation(restored, true);
+
+    // Identity, not equality: a restore must hand the stored object through untouched, and a carry
+    // would return a substituted copy carrying the draft's edits over values no row holds.
+    expect(internals().briefOutput()).toBe(restored);
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
   });
 
   it('carries nothing after Start Over, which clears the baseline with the draft', () => {

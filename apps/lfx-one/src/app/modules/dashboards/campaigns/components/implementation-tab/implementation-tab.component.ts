@@ -4231,9 +4231,14 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Whether a destination URL is one the ad platforms will serve.
    *
-   * The accept set itself is {@link isGoogleAdsServableUrl}, shared with the two BFF paths that
-   * judge the same destinations, so this tier cannot drift stricter than the guard that would have
-   * named the real reason — a URL refused only here is refused with no explanation at all.
+   * The accept set itself is {@link isGoogleAdsServableUrl}, which the brief-restore path
+   * (`asSitelinks` in `campaign-service.service.ts`) also calls. The controller's dispatch refusal,
+   * `googleSitelinkUrlRefusal`, does NOT: it goes through its own `describeDestinationUrl`, which
+   * judges brief destinations for all five platforms and reports WHICH refusal a URL hits so the
+   * error message can name it. That second copy of the accept set is kept in step BY HAND, and this
+   * tier must never be the stricter of the two — a URL this guard refuses and that one would accept
+   * is refused with no explanation at all, because the message that would have named the reason
+   * only exists on the path that never runs.
    *
    * The trim stays at this tier rather than moving into the shared predicate: the trimmed value is
    * what {@link addGoogleSitelink} goes on to STORE, so this must judge exactly the string it keeps.

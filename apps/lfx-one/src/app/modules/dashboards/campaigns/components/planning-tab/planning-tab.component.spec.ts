@@ -1733,6 +1733,39 @@ describe('PlanningTabComponent email brief editing', () => {
   });
 
   /**
+   * The same clear, at the OTHER site that needs it — and the one the reset test above cannot
+   * stand in for.
+   *
+   * `generate()` clears both lists before the new stream starts. Without it, a second generate
+   * that produces no extensions — a page with no linkable sections, a model call that failed and
+   * degraded to a status line — hands the Implementation tab the PREVIOUS event's lists, which
+   * `onProceedToImplementation` emits as present values because they are non-empty. That is the
+   * stale-sitelink defect the reset test names, reached by regenerating rather than by New Brief.
+   */
+  it('clears both extension lists when a new generation starts', async () => {
+    await buildForExtensions();
+    // Never completes, so the component stays in 'generating' and the cleared signals are
+    // observable rather than overwritten by the new stream's own events.
+    vi.spyOn(TestBed.inject(CampaignService), 'generateBrief').mockReturnValue(new Subject() as never);
+
+    extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({
+      type: 'sitelinks',
+      data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    } as SSEEvent<CampaignSSEEventType>);
+
+    // `generate()` returns early unless the form validates, which would make the assertions below
+    // pass with the clears deleted.
+    const form = (fixture.componentInstance as unknown as { briefForm: FormGroup }).briefForm;
+    form.controls['url'].setValue('https://events.example.com/kubecon-eu-2026');
+    fixture.detectChanges();
+    (fixture.componentInstance as unknown as { generate(): void }).generate();
+
+    expect(extensions().googleCallouts()).toEqual([]);
+    expect(extensions().googleSitelinks()).toEqual([]);
+  });
+
+  /**
    * The hand-off is where `[]` and absence stop meaning the same thing. `populateFromBrief` and
    * `applyDraft` seed the Implementation tab's editors on `!== undefined`, so an emitted `[]`
    * CLEARS an editor the operator may have filled by hand, and stores `[]` on the saved row —

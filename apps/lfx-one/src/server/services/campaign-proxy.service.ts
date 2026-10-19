@@ -1750,7 +1750,7 @@ export class CampaignProxyService {
     if (!isEmail && !isRefinement && selectedPlatforms.includes('google-ads')) {
       // Deterministic and free — no model call, so no try/catch and no status line of its own.
       // An empty result is the honest answer for a page that carries none of the four links.
-      const sitelinks = buildSitelinksFromPage(eventDetails, pageLinks, pageBaseUrl);
+      const sitelinks = buildSitelinksFromPage(eventDetails, pageLinks, pageBaseUrl, body.programType);
       if (sitelinks.length > 0) {
         yield { type: 'sitelinks', data: sitelinks };
       }
@@ -1767,6 +1767,12 @@ export class CampaignProxyService {
           yield { type: 'callouts', data: callouts };
         }
       } catch (error) {
+        // The controller aborts this signal on `res.on('close')`, so an operator closing the tab
+        // mid-call lands here as an AbortError — a cancellation, not a degradation. Checked first
+        // the way every sibling catch in this file that carries the same signal does, because WARN
+        // is for on-call-relevant failure and a caller-triggered cancel is neither relevant nor
+        // rate-limited: one per closed tab.
+        if (signal.aborted) return;
         logger.warning(req, 'campaign_brief_callouts', 'Callout generation failed', { err: error });
         yield { type: 'status', data: 'Callout generation failed, skipping...' };
       }
@@ -2640,26 +2646,54 @@ ${platformInstruction}`;
 const SITELINK_URL_ENCODER = new TextEncoder();
 
 /**
- * The event-page links that become sitelinks, each with the label it is given.
+ * The page links that become sitelinks, each with the label it is given, keyed by program type.
  *
- * `registration_url` is deliberately NOT here. It is the ad's own final URL, so a sitelink built
- * from it would offer the operator a second control pointing where the headline already points —
- * paying for the same destination twice in the same ad and crowding out a link that goes somewhere
- * new. The four below are the ones that add a destination.
+ * `registration_url` is deliberately NOT here on either program. It is the ad's own final URL, so a
+ * sitelink built from it would offer the operator a second control pointing where the headline
+ * already points — paying for the same destination twice in the same ad and crowding out a link
+ * that goes somewhere new. The entries below are the ones that add a destination.
+ *
+ * The two tables exist because the extraction prompts fill the SAME keys with different pages.
+ * {@link EDUCATION_EXTRACTION_PROMPT} defines `agenda_url` as the syllabus/course-outline page and
+ * `venue_url` as the training-location/delivery-details page, so an event's wording — "View the
+ * Agenda", "Venue & Travel" — would label an online course's delivery page as a place to travel to.
+ * That is the failure this table's own guarantee below rules out, and it would reach public ad copy
+ * through an Implementation editor the operator opens pre-filled. {@link buildCalloutPrompt}
+ * already branches on the same program type; this table was the half that did not.
+ *
+ * Education carries only the two keys its prompt can answer — it pins `cfp_url` and
+ * `sponsorship_url` to null, and a course has neither. A key added to that prompt later needs its
+ * label added here too, or the link is silently dropped rather than mislabelled, which is the safer
+ * way round.
  *
  * Labels are fixed strings rather than model output, so no sitelink can be labelled something the
  * page does not support. Each is well inside {@link GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES}; the
  * builder bounds them anyway rather than trusting this table to stay that way.
  */
-const SITELINK_SOURCES: readonly { key: string; text: string }[] = [
+const SITELINK_SOURCES_EVENTS: readonly { key: string; text: string }[] = [
   { key: 'agenda_url', text: 'View the Agenda' },
   { key: 'cfp_url', text: 'Submit a Talk' },
   { key: 'venue_url', text: 'Venue & Travel' },
   { key: 'sponsorship_url', text: 'Become a Sponsor' },
 ];
 
+const SITELINK_SOURCES_EDUCATION: readonly { key: string; text: string }[] = [
+  { key: 'agenda_url', text: 'Course Outline' },
+  { key: 'venue_url', text: 'Training Details' },
+];
+
 /**
- * Build sitelinks from the event page's own verified links.
+ * Build sitelinks from the scraped page's own verified links.
+ *
+ * Labels come from {@link SITELINK_SOURCES_EVENTS} or {@link SITELINK_SOURCES_EDUCATION} according
+ * to `programType`, because the two extraction prompts fill the same keys with different pages.
+ *
+ * Destinations are emitted UNTAGGED, unlike the ad's own final URL from {@link buildFinalUrl} in
+ * this same file. campaign-service tags every sitelink itself at dispatch, and a URL that arrived
+ * pre-tagged would keep its own `utm_campaign` through that step — attributing the click to
+ * whichever campaign first seeded the link rather than the one that served it. The reasoning is
+ * recorded on `CampaignBriefOutput.googleSitelinks` as well; it is repeated here because this is
+ * the function that makes the choice, two screens from the one that does the opposite.
  *
  * Deterministic and model-free on purpose. The destinations come from {@link verifyPageLink}, which
  * refuses any URL the scraped page does not actually carry, so this cannot produce a sitelink
@@ -2680,11 +2714,17 @@ const SITELINK_SOURCES: readonly { key: string; text: string }[] = [
  * add-guard and the controller's dispatch check exist: a chip the operator can neither have typed
  * nor submit is a dead end whose only exit is deleting a row they did not add.
  */
-function buildSitelinksFromPage(eventDetails: Record<string, unknown> | null, pageLinks: Map<string, string>, pageBaseUrl: string): CampaignSitelink[] {
+function buildSitelinksFromPage(
+  eventDetails: Record<string, unknown> | null,
+  pageLinks: Map<string, string>,
+  pageBaseUrl: string,
+  programType?: CampaignProgramType
+): CampaignSitelink[] {
   if (!eventDetails) return [];
+  const sources = programType === 'education' ? SITELINK_SOURCES_EDUCATION : SITELINK_SOURCES_EVENTS;
   const sitelinks: CampaignSitelink[] = [];
   const seen = new Set<string>();
-  for (const source of SITELINK_SOURCES) {
+  for (const source of sources) {
     const finalUrl = verifyPageLink(eventDetails[source.key], pageLinks, pageBaseUrl);
     if (!finalUrl) continue;
     // Being a real href on the event's own page is not the same as being a destination Google will

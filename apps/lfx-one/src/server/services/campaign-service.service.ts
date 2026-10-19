@@ -3222,10 +3222,12 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       reddit: brief.redditCopy ?? null,
       meta: brief.metaCopy ?? null,
       // Written as `null` when the brief has no list, NOT as `[]`, and the difference is load-bearing
-      // on the way back: `populateFromBrief` seeds these two on `!== undefined`, so a stored `[]`
-      // restores as "the generator ran and produced nothing" and CLEARS an editor the operator may
-      // have typed into, while `null` restores as absent and leaves it alone. `fromBriefResponse`
-      // below is the half that holds up this end of the contract.
+      // on the way back: `populateFromBrief` seeds these two on `!== undefined`. `null` restores as
+      // absent — the generator produced nothing, or ran before these fields existed — and leaves an
+      // editor the operator may have typed into alone. `[]` says something narrower and reaches here
+      // from one producer only: `briefWithCarriedExtensions`, which carries the operator's own
+      // emptied list forward, and whose `[]` restores as a cleared editor because that is what they
+      // asked for. `fromBriefResponse` below is the half that holds up this end of the contract.
       //
       // Under `copy` rather than a new top-level field because `BriefInput` has no first-class home
       // for them and `copy` is the opaque slot whose meaning — "the creative this brief generated" —
@@ -3637,12 +3639,21 @@ function asKeywords(value: unknown): CampaignKeyword[] {
  *
  * `undefined` and `[]` are NOT interchangeable here, unlike in `asKeywords` above: the
  * Implementation tab seeds `googleCallouts` on `!== undefined`, so returning `[]` for a brief
- * written before this feature existed would clear an editor rather than leave it untouched. A
- * stored `[]` — the generator ran and shaped everything away — still returns `[]`, which is the
- * same seed an absent list produces on a first mount and differs only on a re-mount.
+ * written before this feature existed would clear an editor rather than leave it untouched.
  *
- * Bounded and de-duplicated exactly as the generator bounds it, so a row written by an older or
- * foreign client cannot open the editor holding a list it would refuse the operator for typing.
+ * A stored `[]` is a list the OPERATOR emptied. It reaches the row from one producer only —
+ * `briefWithCarriedExtensions` on the client, which carries an emptied draft list forward — because
+ * the generator yields its `callouts` event only when it shaped at least one entry, so a generation
+ * that produced nothing writes no field at all. So `[]` returns as `[]` and re-clears the editor,
+ * which is what the operator asked for, while the generation-produced-nothing and
+ * written-before-this-feature cases both arrive as the `null` `toBriefInput` writes, restore as
+ * absent, and leave the editor alone.
+ *
+ * Bounded and de-duplicated by the editor's own rules, so a row written by an older or foreign
+ * client cannot open the editor holding a list it would refuse the operator for typing. Where the
+ * generator's `shapeCallouts` DROPS an over-long entry, this one TRUNCATES it: there the entry is
+ * one the model just produced and the next candidate can take its place, here it is one the
+ * operator typed and the only alternative is losing it.
  */
 function asCallouts(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
@@ -3673,6 +3684,9 @@ function asCallouts(value: unknown): string[] | undefined {
   return callouts;
 }
 
+/** Hoisted out of {@link asSitelinks}' loop — one encoder for the whole module, not one per row. */
+const SITELINK_URL_ENCODER = new TextEncoder();
+
 /**
  * A stored sitelink list, or `undefined` when the field is absent or not an array.
  *
@@ -3681,16 +3695,24 @@ function asCallouts(value: unknown): string[] | undefined {
  * `finalUrl` past the byte cap is one the operator could not have saved and campaign-service would
  * refuse.
  *
- * `finalUrl` is re-checked for an http(s) scheme even though this app only ever writes URLs that
- * `verifyPageLink` already confirmed, because what comes back is whatever the opaque `copy` blob
- * holds — and this value lands in an `href` the operator clicks and in an ad's destination.
+ * Every guard below is re-applied here because a stored list has three possible producers and only
+ * one of them page-verified anything:
+ *
+ * - the GENERATOR, whose destinations came from `verifyPageLink` — every URL was fetched and found
+ *   servable on the event's own page;
+ * - this RESTORE path, whose output is only ever as good as the checks in this function, since what
+ *   it reads is whatever the opaque `copy` blob holds;
+ * - the CARRY (`briefWithCarriedExtensions` on the client), which re-persists the operator's EDITED
+ *   list — vetted by the editor's add-guards alone, so a destination typed or pasted there was
+ *   never fetched and is not known to resolve.
+ *
+ * So "this app only ever writes verified URLs" is not a premise this function may rest on, and the
+ * value lands in an `href` the operator clicks and in an ad's destination.
  *
  * The two description lines are ALL-OR-NOTHING, as upstream requires: a lone `description1` is
  * dropped rather than carried, so the editor never opens on a pair that `googleads/assets.go`
  * would reject on dispatch.
  */
-/** Hoisted out of {@link asSitelinks}' loop — one encoder for the whole module, not one per row. */
-const SITELINK_URL_ENCODER = new TextEncoder();
 
 function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
   if (!Array.isArray(value)) {
