@@ -6,7 +6,7 @@
 // project's brand when the project has a Brand Kit (its colours, typeface and
 // logo) and in the LF look otherwise. The Brand Kit's own book keeps its
 // constants in brand-kit.constants.ts; these are the Messaging Framework's
-// print and the look every print shares.
+// print and what every print shares.
 
 import { lfxColors } from './colors.constants';
 
@@ -57,5 +57,16 @@ export const MKTG_PRINT_REVERSED_FILTER = 'brightness(0) invert(1)';
 /** How long Download PDF waits for the brand's typeface before it opens the print dialog anyway (ms). */
 export const MKTG_PRINT_FONT_WAIT_MS = 3000;
 
-/** The weights the print sets the brand's typeface in, loaded before the print dialog opens. */
-export const MKTG_PRINT_FONT_WEIGHTS = [400, 600] as const;
+/**
+ * The weights the framework print sets the brand's typeface in, loaded before
+ * the print dialog opens: the body (400), the headings, tagline and key
+ * numbers (`font-medium`, 500) and the labels (`font-semibold`, 600).
+ */
+export const MKTG_PRINT_FONT_WEIGHTS = [400, 500, 600] as const;
+
+/**
+ * The id prefix of a typeface's Google Fonts stylesheet link in the page's
+ * head, followed by the stylesheet's encoded URL: one link per typeface,
+ * whichever print (the framework's or the Brand Kit's book) loaded it first.
+ */
+export const MKTG_PRINT_FONT_LINK_ID_PREFIX = 'brand-kit-font-';

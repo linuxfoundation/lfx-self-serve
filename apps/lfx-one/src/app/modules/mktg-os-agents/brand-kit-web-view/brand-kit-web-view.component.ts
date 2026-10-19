@@ -13,7 +13,8 @@ import {
   BrandKitWebViewTabId,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
-import { brandKitChapterSummaries, buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { brandKitChapterSummaries, brandKitWeights, buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { MktgPrintService } from '@services/mktg-print.service';
 
 import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
@@ -42,6 +43,7 @@ export class BrandKitWebViewComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly printService = inject(MktgPrintService);
 
   // === Inputs ===
   /** The kit to show. */
@@ -81,6 +83,11 @@ export class BrandKitWebViewComponent {
         .join(', ')
   );
   protected readonly tabs: Signal<BrandKitWebViewTab[]> = this.initTabs();
+  /** The kit's typeface as Download PDF waits for it: the family the book loads from Google Fonts and its weights; null when it is not there. */
+  private readonly printFont = computed(() => {
+    const type = this.kit().chapters.type;
+    return this.view().fontUrl ? { family: type.family.trim(), weights: brandKitWeights(type.weights) } : null;
+  });
   protected readonly printOnlyClass = BRAND_KIT_PRINT_ONLY_CLASS;
 
   // Literal class names so Tailwind's content scan generates them (the framework view's tab classes).
@@ -90,8 +97,9 @@ export class BrandKitWebViewComponent {
   };
 
   public constructor() {
-    // The print mark never outlives the view (a print dialog still up when the page goes).
-    this.destroyRef.onDestroy(() => this.document.body.classList.remove(BRAND_KIT_PRINT_BODY_CLASS));
+    // The print mark never outlives the view (a print dialog still up when
+    // the page goes), and a print still waiting for its font is cancelled.
+    this.destroyRef.onDestroy(() => this.printService.clear(BRAND_KIT_PRINT_BODY_CLASS));
   }
 
   // === Protected methods ===
@@ -147,17 +155,15 @@ export class BrandKitWebViewComponent {
     }
   }
 
-  /** Prints the book: 16 letter pages, landscape, through the browser's print dialog ("Save as PDF"). */
+  /**
+   * Prints the book: 16 letter pages, landscape, through the browser's print
+   * dialog ("Save as PDF"), once the kit's typeface has loaded (the book is
+   * never laid out on screen, so nothing else fetches it) or the wait has
+   * run out. The print service guards SSR.
+   */
   protected onDownloadPdf(): void {
-    // SSR guard: window/document are browser-only (ssr-safety rule).
-    if (!isPlatformBrowser(this.platformId)) {
-      return;
-    }
-    const body = this.document.body;
-    body.classList.add(BRAND_KIT_PRINT_BODY_CLASS);
-    // The class stays for as long as the dialog is up (the preview renders from it) and goes with the print's end.
-    window.addEventListener('afterprint', () => body.classList.remove(BRAND_KIT_PRINT_BODY_CLASS), { once: true });
-    window.print();
+    const font = this.printFont();
+    void this.printService.print(BRAND_KIT_PRINT_BODY_CLASS, font?.family ?? null, font?.weights);
   }
 
   // === Private initializers ===

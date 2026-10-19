@@ -303,8 +303,9 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-notes-empty')).not.toBeNull();
     });
 
-    it('Download PDF marks the body for the print, asks the browser to print the book, and clears the mark when the print ends', () => {
+    it('Download PDF marks the body for the print, asks the browser to print the book, and clears the mark when the print ends', async () => {
       button('brand-kit-web-view-download-pdf')?.click();
+      await fixture.whenStable();
 
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
       expect(print).toHaveBeenCalledTimes(1);
@@ -313,8 +314,23 @@ describe('BrandKitWebViewComponent', () => {
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);
     });
 
-    it('clears the print mark when the view is destroyed with the dialog still up', () => {
+    it('Download PDF waits for the kit’s typeface in the kit’s weights before the dialog opens: the book is never laid out on screen', async () => {
+      const load = vi.fn(() => Promise.resolve([]));
+      Object.defineProperty(document, 'fonts', { value: { load }, configurable: true });
+      try {
+        button('brand-kit-web-view-download-pdf')?.click();
+        await fixture.whenStable();
+
+        expect(load.mock.calls).toEqual([['400 1em "Montserrat"'], ['700 1em "Montserrat"']]);
+        expect(print).toHaveBeenCalledTimes(1);
+      } finally {
+        delete (document as unknown as Record<string, unknown>)['fonts'];
+      }
+    });
+
+    it('clears the print mark when the view is destroyed with the dialog still up', async () => {
       button('brand-kit-web-view-download-pdf')?.click();
+      await fixture.whenStable();
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(true);
 
       fixture.destroy();
@@ -326,11 +342,12 @@ describe('BrandKitWebViewComponent', () => {
   describe('on the server', () => {
     beforeEach(async () => configure('server'));
 
-    it('renders the page and the print-only book, and never prints', () => {
+    it('renders the page and the print-only book, and never prints', async () => {
       expect(query('brand-kit-web-view-panel-overview')).not.toBeNull();
       expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
 
       button('brand-kit-web-view-download-pdf')?.click();
+      await fixture.whenStable();
 
       expect(print).not.toHaveBeenCalled();
       expect(document.body.classList.contains(BRAND_KIT_PRINT_BODY_CLASS)).toBe(false);

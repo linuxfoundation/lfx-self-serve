@@ -6,6 +6,7 @@
 // templates bind properties only and the layout is unit-testable without a
 // browser.
 
+import { BRAND_KIT_HEX_REGEX } from '../constants/brand-kit.constants';
 import { FOUNDATION_MESSAGE_VIEW_TABS } from '../constants/foundation-message.constants';
 import {
   FOUNDATION_MESSAGE_PRINT_TAB_IDS,
@@ -92,7 +93,7 @@ export function mktgPrintBrand(kit: BrandKitRevision | null): MktgPrintBrand {
   } else if (primary?.src) {
     logoOnDark = { src: primary.src, alt, filter: MKTG_PRINT_REVERSED_FILTER };
   }
-  const darkIsHex = /^#[0-9a-f]{6}$/i.test(dark);
+  const darkIsHex = BRAND_KIT_HEX_REGEX.test(dark);
   // Text on the kit's dark panels takes whichever ink reads better against it:
   // a mid-grey "dark" can be too light for white text yet not light enough to count as light.
   const onDark = darkIsHex ? betterInkOn(dark) : MKTG_PRINT_INK_ON_DARK;

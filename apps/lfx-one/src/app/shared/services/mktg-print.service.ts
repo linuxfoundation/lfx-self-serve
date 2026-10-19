@@ -3,14 +3,16 @@
 
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { inject, Injectable, PLATFORM_ID } from '@angular/core';
-import { MKTG_PRINT_FONT_WAIT_MS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
+import { MKTG_PRINT_FONT_LINK_ID_PREFIX, MKTG_PRINT_FONT_WAIT_MS, MKTG_PRINT_FONT_WEIGHTS } from '@lfx-one/shared/constants';
 
 /**
  * Download PDF for a Marketing OS asset view: the browser's print dialog
  * ("Save as PDF") with the asset's print document alone on paper. The asset
  * view holds its print document in a print-only wrapper; while the body
  * carries the asset's print class (styles.scss) only that document prints.
- * The Brand Kit's book is printed the same way by its web view.
+ * The Messaging Framework's view and the Brand Kit's web view (the book)
+ * both print through it, and both print documents load their typeface's
+ * stylesheet through it.
  *
  * The brand's typeface is loaded before the dialog opens: the print document
  * is never laid out on screen, so nothing else would fetch it, and a print
@@ -27,12 +29,12 @@ export class MktgPrintService {
 
   /**
    * Prints the document the body class shows, once the given typeface (if
-   * any) has loaded or the wait has run out. The class stays while the dialog
+   * any) has loaded in the given weights or the wait has run out. The class stays while the dialog
    * is up (the preview renders from it) and goes when the print ends. A
    * {@link clear} during the font wait cancels the print: the view that asked
    * for it is gone.
    */
-  public async print(bodyClass: string, fontFamily: string | null = null): Promise<void> {
+  public async print(bodyClass: string, fontFamily: string | null = null, weights: readonly number[] = MKTG_PRINT_FONT_WEIGHTS): Promise<void> {
     // SSR guard: window and the print dialog are browser-only (ssr-safety rule).
     const view = this.document.defaultView;
     if (!isPlatformBrowser(this.platformId) || !view) {
@@ -40,7 +42,7 @@ export class MktgPrintService {
     }
     const request = ++this.request;
     if (fontFamily) {
-      await this.loadFont(fontFamily);
+      await this.loadFont(fontFamily, weights);
     }
     if (request !== this.request) {
       return;
@@ -57,15 +59,35 @@ export class MktgPrintService {
     this.document.body?.classList.remove(bodyClass);
   }
 
+  /**
+   * Adds the typeface's Google Fonts stylesheet to the page's head, once per
+   * stylesheet whichever print document asks first. Browser only: SSR
+   * renders the fallback and never touches the head.
+   */
+  public ensureFontStylesheet(url: string): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    const id = `${MKTG_PRINT_FONT_LINK_ID_PREFIX}${encodeURIComponent(url)}`;
+    if (this.document.getElementById(id)) {
+      return;
+    }
+    const link = this.document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = url;
+    this.document.head.appendChild(link);
+  }
+
   // === Private helpers ===
-  private async loadFont(family: string): Promise<void> {
+  private async loadFont(family: string, weights: readonly number[]): Promise<void> {
     // Not every browser (nor the test DOM) has the CSS Font Loading API: then the print goes ahead at once.
     const fonts: FontFaceSet | undefined = this.document.fonts;
     if (!fonts) {
       return;
     }
     const name = family.replace(/["']/g, '');
-    const loads = MKTG_PRINT_FONT_WEIGHTS.map((weight) => fonts.load(`${weight} 1em "${name}"`));
+    const loads = weights.map((weight) => fonts.load(`${weight} 1em "${name}"`));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, MKTG_PRINT_FONT_WAIT_MS);

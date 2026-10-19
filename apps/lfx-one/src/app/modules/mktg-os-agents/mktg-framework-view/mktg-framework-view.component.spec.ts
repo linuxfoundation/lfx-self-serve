@@ -129,7 +129,7 @@ const ASSET: MktgFrameworkAsset = {
 describe('MktgFrameworkViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
-  let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
+  let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn>; ensureFontStylesheet: ReturnType<typeof vi.fn> };
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -140,7 +140,7 @@ describe('MktgFrameworkViewComponent', () => {
   };
 
   beforeEach(async () => {
-    printer = { print: vi.fn(() => Promise.resolve()), clear: vi.fn() };
+    printer = { print: vi.fn(() => Promise.resolve()), clear: vi.fn(), ensureFontStylesheet: vi.fn() };
     slidesExport = {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),

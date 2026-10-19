@@ -4,7 +4,7 @@
 import { DOCUMENT } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MKTG_PRINT_FONT_WAIT_MS } from '@lfx-one/shared/constants';
+import { MKTG_PRINT_FONT_LINK_ID_PREFIX, MKTG_PRINT_FONT_WAIT_MS } from '@lfx-one/shared/constants';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgPrintService } from './mktg-print.service';
@@ -51,9 +51,22 @@ describe('MktgPrintService', () => {
     try {
       await service.print(CLASS, "'Space Grotesk'");
 
-      expect(load).toHaveBeenCalledWith('400 1em "Space Grotesk"');
-      expect(load).toHaveBeenCalledWith('600 1em "Space Grotesk"');
+      expect(load.mock.calls).toEqual([['400 1em "Space Grotesk"'], ['500 1em "Space Grotesk"'], ['600 1em "Space Grotesk"']]);
       expect(print).toHaveBeenCalledOnce();
+    } finally {
+      delete (doc as unknown as Record<string, unknown>)['fonts'];
+    }
+  });
+
+  it('waits for the weights a print names, when it names them', async () => {
+    const service = configure();
+    const doc = TestBed.inject(DOCUMENT);
+    const load = vi.fn(() => Promise.resolve([]));
+    Object.defineProperty(doc, 'fonts', { value: { load }, configurable: true });
+    try {
+      await service.print(CLASS, 'Montserrat', [300, 700]);
+
+      expect(load.mock.calls).toEqual([['300 1em "Montserrat"'], ['700 1em "Montserrat"']]);
     } finally {
       delete (doc as unknown as Record<string, unknown>)['fonts'];
     }
@@ -102,6 +115,25 @@ describe('MktgPrintService', () => {
 
     expect(print).not.toHaveBeenCalled();
     expect(document.body.classList.contains(CLASS)).toBe(false);
+  });
+
+  it('adds a typeface’s stylesheet to the head once, whichever print asks first, and never on the server', () => {
+    const url = 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap';
+    const links = (): HTMLLinkElement[] => Array.from(document.head.querySelectorAll<HTMLLinkElement>(`link[id^="${MKTG_PRINT_FONT_LINK_ID_PREFIX}"]`));
+    try {
+      const service = configure();
+      service.ensureFontStylesheet(url);
+      service.ensureFontStylesheet(url);
+
+      expect(links()).toHaveLength(1);
+      expect(links()[0]).toMatchObject({ id: `${MKTG_PRINT_FONT_LINK_ID_PREFIX}${encodeURIComponent(url)}`, rel: 'stylesheet', href: url });
+
+      TestBed.resetTestingModule();
+      configure('server').ensureFontStylesheet(`${url}&server`);
+      expect(links()).toHaveLength(1);
+    } finally {
+      links().forEach((link) => link.remove());
+    }
   });
 
   it('takes the class off the body for a view that goes while the dialog is up', () => {
