@@ -139,6 +139,8 @@ export class SidebarNavService {
   private readonly marketingProbeGenerations = new Map<string, number>();
   /** In flight while a `retryMenuLookups()` persona refresh runs. */
   private readonly retryPending = signal(false);
+  /** True while a `retryMenuLookups()` run is in flight, so the error card can stay up with a busy Retry. */
+  public readonly menuRetryPending: Signal<boolean> = this.retryPending.asReadonly();
 
   /**
    * True when a lookup that shapes the menu failed instead of answering — an empty menu then means
@@ -683,9 +685,12 @@ export class SidebarNavService {
   private readonly marketingSectionItem = computed((): SidebarMenuItem | null => {
     const slug = this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
+    // A grant counts only once the probe has caught up with the scope on screen: while it is still in
+    // flight, `slug` names the previous scope, whose grant must not show under the new one.
+    const hasCurrentScopeGrant = (relation: 'isMarketingAuditor' | 'isCampaignManager'): boolean =>
+      this.isMarketingOpsFgaEnabled() && slug === this.marketingScopeSlug() && this.hasMarketingGrant(slug, relation);
 
-    const canSeeMarketingImpact =
-      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isMarketingAuditor'));
+    const canSeeMarketingImpact = this.personaService.canViewExecutiveDashboards() || hasCurrentScopeGrant('isMarketingAuditor');
     if (canSeeMarketingImpact) {
       marketingItems.push({
         label: 'Campaign Impact',
@@ -698,8 +703,7 @@ export class SidebarNavService {
     // Campaigns needs ED, or — while marketing-ops-fga-enabled is on — a campaign_manager grant.
     // A campaign_manager-only user (no ED, no marketing_auditor, not LF Staff) must still see this
     // item, so it cannot be nested inside the Campaign Impact check above.
-    const canSeeCampaigns =
-      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isCampaignManager'));
+    const canSeeCampaigns = this.personaService.currentPersona() === 'executive-director' || hasCurrentScopeGrant('isCampaignManager');
     if (canSeeCampaigns) {
       marketingItems.push({
         label: 'Campaigns',

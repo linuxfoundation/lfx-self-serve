@@ -153,7 +153,7 @@ class PersonaService {
 }
 ```
 
-Typical consumers: `navbar.component.ts` (hides lens tabs the persona can't use), `sidebar.component.ts` (decides which nav items to render), and `ProjectContextService` (picks the right context based on `hasBoardRole`).
+Typical consumers: `navbar.component.ts` (hides lens tabs the persona can't use), `SidebarNavService` (decides which nav items `NavbarComponent` renders; `SidebarComponent` is no longer mounted and survives only as `NavbarComponent`'s base class), and `ProjectContextService` (picks the right context based on `hasBoardRole`).
 
 ## Project Context
 

@@ -946,6 +946,14 @@
       outline: 2px solid var(--color-azure-azure-500);
       outline-offset: 2px;
     }
+
+    // Busy while a retry runs: no hover lift, no pointer.
+    &:disabled {
+      background: transparent;
+      color: #e2e8f0;
+      cursor: default;
+      opacity: 0.7;
+    }
   }
 
   // Tucked ~2 rows up under the card, so the first rows read as continuing behind it.

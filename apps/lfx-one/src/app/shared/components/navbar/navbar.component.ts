@@ -156,15 +156,19 @@ export class NavbarComponent extends SidebarComponent {
   protected readonly showNoAccessState: Signal<'foundation' | 'project' | null> = computed(() => {
     const lens = this.navLens();
     if (!lens || this.itemsWithTestIds().length > 0 || this.footerMenuItems().length > 0) return null;
-    // An empty menu only means "no role" once everything that shapes it has resolved.
-    if (this.sidebarNavService.sidebarItemsPending()) return null;
+    // An empty menu only means "no role" once everything that shapes it has resolved — except during a
+    // Retry from the error card, which keeps the card (with a busy button) rather than the skeleton.
+    if (this.sidebarNavService.sidebarItemsPending() && !this.retryingLookups()) return null;
     return lens;
   });
 
   /** An empty project/foundation menu still waiting on what shapes it — keep the skeleton, not a blank panel. */
   protected readonly menuPending: Signal<boolean> = computed(
-    () => this.navLens() !== null && this.itemsWithTestIds().length === 0 && this.sidebarNavService.sidebarItemsPending()
+    () => this.navLens() !== null && this.itemsWithTestIds().length === 0 && this.sidebarNavService.sidebarItemsPending() && !this.retryingLookups()
   );
+
+  /** A Retry from the lookup-error card is running: the card stays up, its button busy, until the lookups settle. */
+  protected readonly retryingLookups: Signal<boolean> = computed(() => this.sidebarNavService.menuRetryPending());
 
   /** The empty menu comes from a failed lookup, not a confirmed denial: the card offers a retry instead. */
   protected readonly menuLookupFailed: Signal<boolean> = computed(() => this.sidebarNavService.menuLookupFailed());

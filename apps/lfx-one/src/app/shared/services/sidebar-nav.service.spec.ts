@@ -65,6 +65,7 @@ describe('SidebarNavService', () => {
   const marketingOpsEnabled = signal(false);
   const authenticated = signal(false);
   const writerGrantsResolved = signal(true);
+  const grantsByScope = signal<ReadonlyMap<string | null, { isCampaignManager: boolean; isMarketingAuditor: boolean }>>(new Map());
   const writerLookupFailed = signal(false);
   let retrySummary = vi.fn((): Observable<void> => of(undefined));
   let refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
@@ -107,6 +108,7 @@ describe('SidebarNavService', () => {
     marketingOpsEnabled.set(false);
     authenticated.set(false);
     writerGrantsResolved.set(true);
+    grantsByScope.set(new Map());
     writerLookupFailed.set(false);
     retrySummary = vi.fn((): Observable<void> => of(undefined));
     refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
@@ -140,7 +142,7 @@ describe('SidebarNavService', () => {
             isLFStaff: signal(false),
             canViewExecutiveDashboards: hasFullFoundationAccess,
             currentPersona,
-            grantsByScope: signal(new Map()),
+            grantsByScope,
             marketingGrantSlug: signal(null),
             isMarketingAuditor: signal(false),
             isCampaignManager: signal(false),
@@ -1002,6 +1004,31 @@ describe('SidebarNavService', () => {
       refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({ error: null, marketingGrantCheckFailed: false }));
       service.retryMenuLookups();
       expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it("hides the previous scope's marketing grant while the new scope's probe is in flight", () => {
+      // A campaign_manager-only viewer: no ED persona, no executive dashboards.
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([['cncf', { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      expect(showsCampaigns()).toBe(true);
+
+      // Switch to aaif (no grant) while its probe is still in flight.
+      const aaifProbe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => aaifProbe);
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(false);
+
+      aaifProbe.next({ error: null });
+      aaifProbe.complete();
+      expect(showsCampaigns()).toBe(false);
     });
 
     it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {

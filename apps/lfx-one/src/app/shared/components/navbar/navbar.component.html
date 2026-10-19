@@ -164,7 +164,9 @@
       <!-- Persistent live region: the no-access message is swapped in here rather than mounting a new status node. -->
       <div class="sr-only" role="status" data-testid="navbar-no-access-status">
         @if (showNoAccessState(); as kind) {
-          @if (menuLookupFailed()) {
+          @if (retryingLookups()) {
+            Retrying…
+          } @else if (menuLookupFailed()) {
             Couldn't load this {{ kind }}'s tools.
           } @else {
             No access to this {{ kind }}'s tools.
@@ -176,15 +178,21 @@
           @if (showNoAccessState(); as kind) {
             <!-- The message card overlaps a faded menu that emerges from beneath it. -->
             <div class="lfxn__no-access">
-              @if (menuLookupFailed()) {
-                <!-- A lookup that shapes the menu failed: say so and offer a retry, never "no access". -->
+              @if (menuLookupFailed() || retryingLookups()) {
+                <!-- A lookup that shapes the menu failed: say so and offer a retry, never "no access". The card stays up while the retry runs. -->
                 <div class="lfxn__empty" data-testid="navbar-lookup-failed">
                   <span class="lfxn__empty-icon"><i class="fa-light fa-triangle-exclamation" aria-hidden="true"></i></span>
                   <p class="lfxn__empty-title">Couldn't load this {{ kind }}'s tools</p>
                   <p class="lfxn__empty-body">Something went wrong while checking your access. Try again in a moment.</p>
-                  <button type="button" class="lfxn__empty-action" (click)="retryMenu()" data-testid="navbar-lookup-retry">
-                    <i class="fa-light fa-arrow-rotate-right" aria-hidden="true"></i>
-                    <span>Retry</span>
+                  <button
+                    type="button"
+                    class="lfxn__empty-action"
+                    [disabled]="retryingLookups()"
+                    [attr.aria-busy]="retryingLookups() || null"
+                    (click)="retryMenu()"
+                    data-testid="navbar-lookup-retry">
+                    <i class="fa-light fa-arrow-rotate-right" [class.fa-spin]="retryingLookups()" aria-hidden="true"></i>
+                    <span>{{ retryingLookups() ? 'Retrying…' : 'Retry' }}</span>
                   </button>
                 </div>
               } @else {

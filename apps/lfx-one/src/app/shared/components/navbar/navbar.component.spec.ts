@@ -34,6 +34,7 @@ interface NavbarView {
   showNoAccessState: Signal<'foundation' | 'project' | null>;
   menuPending: Signal<boolean>;
   menuLookupFailed: Signal<boolean>;
+  retryingLookups: Signal<boolean>;
   retryMenu(): void;
 }
 
@@ -51,7 +52,17 @@ const createNavbar = async (
     lenses = [ALL_LENSES.me, ALL_LENSES.project],
     mobile = false,
     url = '/',
-  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean; lenses?: LensOption[]; mobile?: boolean; url?: string } = {}
+    retrying = false,
+  }: {
+    lens?: Lens;
+    itemsPending?: boolean;
+    tierResolved?: boolean;
+    lookupFailed?: boolean;
+    lenses?: LensOption[];
+    mobile?: boolean;
+    url?: string;
+    retrying?: boolean;
+  } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -96,7 +107,10 @@ const createNavbar = async (
       { provide: AccountContextService, useValue: { hasOrgSelectorAccess: vi.fn(() => false) } },
       { provide: ChangelogService, useValue: { unseenChangelogCount: signal(0), loadUnseenCount: vi.fn() } },
       { provide: DialogService, useValue: { open: vi.fn() } },
-      { provide: SidebarNavService, useValue: { sidebarItemsPending: signal(itemsPending), menuLookupFailed: signal(lookupFailed), retryMenuLookups } },
+      {
+        provide: SidebarNavService,
+        useValue: { sidebarItemsPending: signal(itemsPending), menuLookupFailed: signal(lookupFailed), menuRetryPending: signal(retrying), retryMenuLookups },
+      },
       { provide: CreatePermissionService, useValue: { canShowCreateButton: signal(false), creatableTypes: signal([]) } },
     ],
   });
@@ -210,6 +224,14 @@ describe('NavbarComponent', () => {
     TestBed.tick();
     expect(hideWithin).toHaveBeenCalledTimes(1);
     hideWithin.mockRestore();
+  });
+
+  it('keeps the lookup-error card (not the skeleton) up while a retry runs', async () => {
+    const navbar = await createNavbar([], [], {}, { lens: 'foundation', itemsPending: true, lookupFailed: true, retrying: true });
+
+    expect(navbar.retryingLookups()).toBe(true);
+    expect(navbar.menuPending()).toBe(false);
+    expect(navbar.showNoAccessState()).toBe('foundation');
   });
 
   it('shows the no-access state once an empty project or foundation menu has resolved', async () => {
