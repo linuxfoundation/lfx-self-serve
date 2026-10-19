@@ -220,7 +220,7 @@ export class MktgDocumentViewComponent {
           ...view,
           revisions: restored.revisions,
           current: restored.current ?? null,
-          revision: restored.revisions.find((entry) => entry.id === view.revision.id) ?? view.revision,
+          revision: { ...view.revision, latest: view.revision.id === restored.revision.id },
         });
         this.notice.set(`Revision ${revision.number} is now current. No revision was added.`);
       },

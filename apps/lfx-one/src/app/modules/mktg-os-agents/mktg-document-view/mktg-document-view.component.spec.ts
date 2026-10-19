@@ -329,6 +329,34 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getRevision).not.toHaveBeenCalled();
   });
 
+  it('preserves the opened body-derived status when Make current refreshes bounded summaries', async () => {
+    const status = `Draft — ${'x'.repeat(300)}`;
+    const opened = { ...LATEST, status };
+    store.getRevision.mockReturnValue(of(revisionResponse(opened)));
+    store.restoreRevision.mockReturnValue(
+      of({
+        ...detail,
+        revisions: [{ ...LATEST, latest: false, status: status.slice(0, 199) + '…' }, RESTORED],
+        revision: RESTORED,
+      })
+    );
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    query('mktg-document-view-restore-1')?.click();
+    await settle();
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(query('mktg-document-view-revision-chip')?.textContent).toContain(status);
+    expect(query('mktg-document-view-revision-chip')?.textContent).not.toContain('Current');
+  });
+
+  it('omits a missing date and its separator from the revision label', async () => {
+    const opened = { ...LATEST, createdAt: null };
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(opened), revisions: [opened, OLDER] }));
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    expect(query('mktg-document-view-revision-label-2')?.textContent).toBe(
+      'v2 · Current · generated from the form · no name (stored before names were recorded)'
+    );
+  });
+
   it('makes the open revision current without adding one', async () => {
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 

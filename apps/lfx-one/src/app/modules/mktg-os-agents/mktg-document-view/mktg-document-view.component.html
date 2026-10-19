@@ -94,7 +94,9 @@
                   <div class="min-w-0 flex-1 break-words">
                     <span [attr.data-testid]="'mktg-document-view-revision-label-' + row.revision.number">
                       <span class="font-mono" [textContent]="'v' + row.revision.number"></span>
-                      <span [textContent]="' · ' + (row.revision.createdAt | date: 'd MMM')"></span>
+                      @if (row.revision.createdAt) {
+                        <span [textContent]="' · ' + (row.revision.createdAt | date: 'd MMM')"></span>
+                      }
                       @if (row.revision.latest) {
                         <span [textContent]="' · '"></span>
                         <!-- The design specifies 12px pill type; text-xs undershoots at the app's 14px root size. -->
