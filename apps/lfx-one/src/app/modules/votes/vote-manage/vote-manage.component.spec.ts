@@ -679,6 +679,43 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.form().disabled).toBe(false);
       expect(fixture.componentInstance.currentStep()).toBe(1);
     });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86t1wKG, copilot): clone X, use the rail to start a regular vote
+    // (cloneSourceVote goes null, but the form/step keep advancing normally), then browser-Back into
+    // ?clone=X. The removal branch only resets on exit when cloneSourceVote() was truthy, and the old
+    // entry branch mirrored that same guard — so entering a clone while cloneSourceVote() is already
+    // null left the regular vote's valid, step-2 form sitting enabled while X's slow/failing fetch was
+    // in flight, letting onSubmit() fire with the stale payload. Pins the fix: entering a clone resets
+    // unconditionally, regardless of whether a clone was previously active.
+    it('clears a regular-create form in progress when navigating back into a clone', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      const fixture = await createComponent();
+
+      // Regular create flow (no ?clone=): advance past Step 1 with a valid, in-progress form.
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+      const form = fixture.componentInstance.form();
+      form.get('title')?.setValue('A regular vote in progress');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: undefined });
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      form.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.nextStep();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(fixture.componentInstance.currentStep()).toBe(2);
+
+      // Browser Back into ?clone=X — fetch is slow/pending.
+      const clone$ = new Subject<ReturnType<typeof sourceVote>>();
+      fetchVote.mockReturnValue(clone$.asObservable());
+      queryParams$.next(convertToParamMap({ clone: CLONE_SOURCE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+      expect(fixture.componentInstance.form().disabled).toBe(true);
+      expect(fixture.componentInstance.currentStep()).toBe(1);
+    });
   });
 
   // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): pins the write-access-leg `startWith(undefined)` fix —

@@ -966,15 +966,18 @@ export class VoteManageComponent {
             }
             return of(null);
           }
-          // Switching from one clone source to another on a reused component — drop the prior
-          // source/form/step before fetching the replacement. Otherwise a replacement that fails to
-          // load or is rejected as unsupported re-enables the *previous* clone's form, which then
-          // silently submits under the previous clone's project/data despite the URL naming the new one.
-          if (this.cloneSourceVote()) {
-            this.cloneSourceVote.set(null);
-            this.form.set(this.createFormGroup());
-            this.internalStep.set(1);
-          }
+          // Entering a clone — unconditionally drop whatever form/step state the reused component
+          // instance is currently holding before fetching the source. This covers switching from one
+          // clone to another (stale source data would otherwise re-enable under the new URL), and also
+          // a normal-create -> clone back-navigation: the rail can drive this same route to a plain
+          // create with no `?clone=`, which advances the form/step with `cloneSourceVote` staying null
+          // (see the removal branch above), so gating this reset on `cloneSourceVote()` being truthy
+          // would leave that regular vote's fields and Review step sitting valid/enabled while this
+          // fetch is in flight, letting onSubmit() fire with the stale payload if the fetch is slow or
+          // fails.
+          this.cloneSourceVote.set(null);
+          this.form.set(this.createFormGroup());
+          this.internalStep.set(1);
           this.loading.set(true);
           // Lock the form while the source vote loads so an organizer can't type into fields a slow
           // fetch is about to overwrite with patchFormWithClonedVote.
