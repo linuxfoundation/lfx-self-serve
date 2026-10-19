@@ -348,7 +348,7 @@ export class MktgSlidesExportService {
         detail: drawn.detail,
         svg_chars: svg.length,
       });
-      return { url: null, note: 'not-drawn' };
+      return { url: null, note: drawn.reason === 'live-text' ? 'live-text' : 'not-drawn' };
     }
 
     const png = Buffer.from(drawn.png);

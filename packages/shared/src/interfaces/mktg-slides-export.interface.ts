@@ -217,14 +217,24 @@ export interface MktgSlidesExportStartInput {
   mode: MktgSlidesExportMode;
 }
 
-/** Why the server could not draw the kit's SVG logo as a PNG. */
-export type MktgLogoPngFailure = 'external-reference' | 'unreadable' | 'too-big';
+/**
+ * Why the server could not draw the kit's SVG logo as a PNG:
+ * `external-reference` — an href that is not a same-document fragment or an
+ * embedded image, or an entity declaration that is external, a parameter
+ * entity, or carries markup or references; `live-text` — a text element,
+ * which the fontless server would draw as nothing; `unreadable` — the SVG
+ * does not parse, has no size, or does not draw; `too-big` — the PNG is over
+ * the Slides API's limit.
+ */
+export type MktgLogoPngFailure = 'external-reference' | 'live-text' | 'unreadable' | 'too-big';
 
 /**
  * The kit's SVG logo drawn as a PNG on the server (server-side). `png` is a
  * `Uint8Array` so the contract stays Node-free; the rasterizer returns a
- * `Buffer`. `detail` is the rasterizer's own error or the PNG's byte size,
- * for the log only.
+ * `Buffer`. `detail` explains a failure, for the log only: a fixed sentence
+ * for a refused SVG (`external-reference`, `live-text`), the parsed size or
+ * the rasterizer's own error (`unreadable`), or the PNG's byte count
+ * (`too-big`).
  */
 export type MktgLogoPngResult = { png: Uint8Array; reason: null } | { png: null; reason: MktgLogoPngFailure; detail: string };
 

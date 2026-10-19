@@ -19,6 +19,8 @@ const ENTITY_START = /<!ENTITY/gi;
 const ENTITY_DECLARATION = /^<!ENTITY((?:[^>"']|"[^"]*"|'[^']*')*)>/i;
 /** An external or parameter entity, or one whose text carries markup or references. */
 const UNSAFE_ENTITY = /\b(?:SYSTEM|PUBLIC)\b|[<&%]/i;
+/** A text element (`<text>`, `<tspan>`, `<textPath>`, namespace prefix or not): live text needs a font to draw. */
+const LIVE_TEXT = /<(?:[\w.-]+:)?(?:text|tspan|textPath)[\s>/]/i;
 
 /**
  * Whether an SVG may be rasterized on this server. The rasterizer reads an
@@ -48,14 +50,25 @@ export function isRasterizableLogoSvg(svg: string): boolean {
 /**
  * The kit's SVG logo as a PNG for the Slides API (which takes PNG, JPEG or
  * GIF only): its longest side at MKTG_SLIDES_EXPORT_LOGO_SIDE_PX, on a
- * transparent background. Rendered off the event loop. Answers why not when
- * the SVG is refused, cannot be read or drawn, or draws too big.
+ * transparent background. Answers why not when the SVG is refused, sets
+ * live text, cannot be read or drawn, or draws too big.
+ *
+ * No font is loaded: the runtime image ships none, so live text would draw
+ * as nothing while the export reported the logo placed. A logo that sets
+ * text is refused instead (`live-text`) and the deck keeps the template's
+ * logo; one with its text converted to outlines draws as it is. Without the
+ * system font scan, the size probe below is a plain parse on the event loop
+ * (about 2 ms for a typical logo, about 25 ms at the 2,000,000-character
+ * cap); the drawing itself runs on libuv's thread pool.
  */
 export async function rasterizeLogoSvg(svg: string): Promise<MktgLogoPngResult> {
   if (!isRasterizableLogoSvg(svg)) {
     return { png: null, reason: 'external-reference', detail: 'an href or entity that is not a fragment or an embedded image' };
   }
-  const base: ResvgRenderOptions = { logLevel: 'off' };
+  if (LIVE_TEXT.test(svg)) {
+    return { png: null, reason: 'live-text', detail: 'a text element, which draws as nothing without its font' };
+  }
+  const base: ResvgRenderOptions = { logLevel: 'off', font: { loadSystemFonts: false } };
   try {
     // Parsing first gives the SVG's own size, so the longest side is the one fitted.
     const { width, height } = new Resvg(svg, base);

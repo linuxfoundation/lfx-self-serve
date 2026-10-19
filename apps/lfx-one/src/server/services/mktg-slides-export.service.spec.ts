@@ -322,7 +322,7 @@ describe('MktgSlidesExportService', () => {
       expect(started.logoNote).toBeNull();
     });
 
-    it('sends no logo, and says why, when the SVG reaches outside itself, cannot be drawn, or cannot be published', async () => {
+    it('sends no logo, and says why, when the SVG reaches outside itself, sets live text, cannot be drawn, or cannot be published', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       const kitInput = input({ type: BRAND_KIT, agentKey: 'brand-kit' });
 
@@ -332,6 +332,11 @@ describe('MktgSlidesExportService', () => {
       expect((await service.startExport(req, kitInput)).logoNote).toBe('not-drawn');
       await seedKit(documentStore, { svg: 'not an svg' });
       expect((await service.startExport(req, kitInput)).logoNote).toBe('not-drawn');
+      // Live text draws as nothing on the fontless server: the deck keeps the template's logo, and the panel says why.
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><text x="0" y="2" font-size="2">Orbit</text></svg>',
+      });
+      expect((await service.startExport(req, kitInput)).logoNote).toBe('live-text');
       expect(store.publicImages.size).toBe(0);
       expect(loggerMocks.warning).toHaveBeenCalledWith(
         req,

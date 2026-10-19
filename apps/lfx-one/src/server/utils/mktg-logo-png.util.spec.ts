@@ -62,4 +62,16 @@ describe('rasterizeLogoSvg', () => {
     });
     expect(await rasterizeLogoSvg('not an svg')).toMatchObject({ png: null, reason: 'unreadable' });
   });
+
+  it('refuses a logo that sets live text, which draws as nothing without its font, and draws one whose text is outlined', async () => {
+    const wordmark = (text: string): string => `<svg ${SVG_NS} viewBox="0 0 400 100"><rect width="40" height="40"/>${text}</svg>`;
+
+    expect(await rasterizeLogoSvg(wordmark('<text x="50" y="60" font-size="40">Orbit</text>'))).toMatchObject({ png: null, reason: 'live-text' });
+    expect(await rasterizeLogoSvg(wordmark('<g><svg:text xmlns:svg="http://www.w3.org/2000/svg">Orbit</svg:text></g>'))).toMatchObject({
+      png: null,
+      reason: 'live-text',
+    });
+    expect(await rasterizeLogoSvg(wordmark('<text><textPath href="#p">Orbit</textPath></text>'))).toMatchObject({ reason: 'live-text' });
+    expect((await rasterizeLogoSvg(wordmark('<path d="M50 20h300v40H50z"/>'))).reason).toBeNull();
+  });
 });

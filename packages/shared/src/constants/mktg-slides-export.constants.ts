@@ -110,6 +110,8 @@ export const MKTG_SLIDES_EXPORT_POLL = { intervalMs: 4000, maxAttempts: 120, tim
 export const MKTG_SLIDES_EXPORT_LOGO_NOTES = {
   'no-logo': 'The kit has no SVG logo to place, so the deck keeps the template’s logo.',
   'not-drawn': 'The logo could not be drawn as an image, so the deck keeps the template’s logo.',
+  'live-text':
+    'The logo sets its text in a font the server cannot draw, so the deck keeps the template’s logo. A logo with its text converted to outlines is placed.',
   'not-public':
     'The logo was not applied: this environment has no public address Google can fetch it from. The deck still takes the kit’s colours and typeface.',
   'not-published': 'The logo was not applied: it could not be published for Google to fetch. The deck still takes the kit’s colours and typeface.',
