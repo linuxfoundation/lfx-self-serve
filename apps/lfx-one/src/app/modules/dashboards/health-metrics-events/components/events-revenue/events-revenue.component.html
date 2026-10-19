@@ -26,7 +26,7 @@
   } @else {
     <span class="self-end text-[12px] text-gray-400" data-testid="events-revenue-pending">{{ pendingNote }}</span>
 
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="events-revenue-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-revenue-hero">
       <div class="flex flex-col gap-2" data-testid="events-revenue-headline">
         <div class="flex items-baseline gap-2">
           <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-revenue-headline-value">{{ view().headline.value }}</span>
@@ -51,7 +51,7 @@
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-revenue-side">
         @for (stat of view().side; track stat.key) {
           <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-revenue-side-' + stat.key">
-            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
             <dd class="flex items-baseline gap-1.5 text-[17px] font-semibold tabular-nums text-gray-900">
               <span [attr.data-testid]="'events-revenue-side-' + stat.key + '-value'">{{ stat.value }}</span>
               @if (stat.key === 'registration' && view().headlineUnconverted) {

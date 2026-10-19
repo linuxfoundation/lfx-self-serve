@@ -22,18 +22,16 @@
       view().summary
     }}</span>
 
-    <div
-      class="flex flex-col gap-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4 md:flex-row md:items-start md:gap-9"
-      data-testid="non-members-conversion-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="non-members-conversion-hero">
       <div class="flex flex-col gap-2" data-testid="non-members-conversion-pipeline">
-        <span class="text-3xl font-semibold tabular-nums text-blue-700" data-testid="non-members-conversion-pipeline-value">{{ view().pipelineValue }}</span>
+        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="non-members-conversion-pipeline-value">{{ view().pipelineValue }}</span>
         <span class="text-[12.5px] text-gray-500" data-testid="non-members-conversion-pipeline-label">{{ view().pipelineLabel }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="non-members-conversion-side">
         @for (stat of view().side; track stat.key) {
           <div class="flex flex-col gap-0.5" [attr.data-testid]="'non-members-conversion-side-' + stat.key">
-            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
             <dd class="text-[17px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-side-' + stat.key + '-value'">
               {{ stat.value }}
             </dd>

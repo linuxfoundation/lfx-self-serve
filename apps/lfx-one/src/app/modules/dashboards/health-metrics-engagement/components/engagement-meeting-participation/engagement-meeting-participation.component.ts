@@ -19,7 +19,6 @@ import {
 import {
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementCount,
-  formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
   resolveHealthMetricsEngagementDeltaDirection,
@@ -113,19 +112,10 @@ export class EngagementMeetingParticipationComponent {
     return formatHealthMetricsEngagementCount(period.meetingsHeld);
   });
   protected readonly heroLabel = computed(() => (this.attendanceMode() ? 'All-meeting attendance' : 'Meetings held'));
-  protected readonly heroDelta = computed(() => {
-    const period = this.totalPeriod();
-    if (!period) return '—';
-
-    return this.attendanceMode()
-      ? formatHealthMetricsEngagementPpDelta(period.attendanceChangePp)
-      : formatHealthMetricsEngagementPctDelta(period.meetingsChangePct);
-  });
-  protected readonly heroDeltaDirection = computed(() => {
-    const period = this.totalPeriod();
-    const change = this.attendanceMode() ? (period?.attendanceChangePp ?? null) : (period?.meetingsChangePct ?? null);
-    return resolveHealthMetricsEngagementDeltaDirection(change);
-  });
+  /** Attendance only: the design shows no delta for meetings held. */
+  protected readonly heroDelta = computed(() => formatHealthMetricsEngagementPpDelta(this.totalPeriod()?.attendanceChangePp ?? null));
+  protected readonly heroDeltaDirection = computed(() => resolveHealthMetricsEngagementDeltaDirection(this.totalPeriod()?.attendanceChangePp ?? null));
+  protected readonly neverAttendedFlagged = computed(() => (this.totalPeriod()?.neverAttended ?? 0) > 0);
   /** The side row carries whichever measure the hero is not showing. */
   protected readonly secondaryLabel = computed(() => (this.attendanceMode() ? 'Meetings held' : 'All-meeting attendance'));
   protected readonly secondaryValue = computed(() => {

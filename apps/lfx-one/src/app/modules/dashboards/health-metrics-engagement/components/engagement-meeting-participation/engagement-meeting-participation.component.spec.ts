@@ -149,8 +149,30 @@ describe('EngagementMeetingParticipationComponent', () => {
   it('takes the hero from the roll-up row rather than the type rows', async () => {
     await render();
 
-    expect(text('engagement-meeting-participation-active-groups')).toBe('6 / 8');
-    expect(text('engagement-meeting-participation-never-attended')).toBe('3');
+    expect(text('engagement-meeting-participation-active-groups-value')).toBe('6 / 8');
+    expect(text('engagement-meeting-participation-never-attended-value')).toBe('3');
+  });
+
+  it('lays the hero out as the design does: delta inline, side stats as columns, never attended in red', async () => {
+    await render();
+
+    const hero = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]');
+    expect(hero.querySelector('[data-testid="engagement-meeting-participation-delta"] .sr-only').textContent).toBe(' vs prior period');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-side"]').classList).toContain('flex-wrap');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').textContent).toContain('Active groups');
+    // Labels use gray-500, a shade darker than the design's gray-400, so the 11.5px text clears WCAG AA contrast.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"] span').classList).toContain('text-gray-500');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]').classList).toContain('text-red-600');
+  });
+
+  it('keeps Never attended in ink when nobody has missed every meeting', async () => {
+    const total = participationRow();
+    total.periods = total.periods.map((period) => ({ ...period, neverAttended: 0 }));
+    await render(response({ total }));
+
+    const value = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]');
+    expect(value.classList).toContain('text-gray-900');
+    expect(value.classList).not.toContain('text-red-600');
   });
 
   it('swaps the hero and the side row in meetings mode, and drops the attendance column', async () => {
@@ -161,7 +183,8 @@ describe('EngagementMeetingParticipationComponent', () => {
 
     expect(text('engagement-meeting-participation-hero')).toContain('Meetings held');
     expect(text('engagement-meeting-participation-hero')).toContain('12');
-    expect(text('engagement-meeting-participation-delta')).toBe('+20.0% vs prior period');
+    // The design shows no delta for meetings held.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-delta"]')).toBeNull();
     expect(text('engagement-meeting-participation-secondary')).toBe('70%');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
   });
@@ -186,14 +209,14 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-count')).toBe('Meetings in period not available yet');
     expect(text('engagement-meeting-participation-hero')).toContain('—');
     expect(text('engagement-meeting-participation-secondary')).toBe('—');
-    expect(text('engagement-meeting-participation-active-groups')).toBe('—');
-    expect(text('engagement-meeting-participation-never-attended')).toBe('—');
+    expect(text('engagement-meeting-participation-delta')).toBe('— vs prior period');
+    expect(text('engagement-meeting-participation-active-groups-value')).toBe('—');
+    expect(text('engagement-meeting-participation-never-attended-value')).toBe('—');
 
     fixture.componentInstance['onModeChange']('meetings');
     fixture.detectChanges();
 
     expect(text('engagement-meeting-participation-hero')).toContain('—');
-    expect(text('engagement-meeting-participation-delta')).toBe('— vs prior period');
     expect(text('engagement-meeting-participation-secondary')).toBe('—');
   });
 
@@ -261,6 +284,9 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(link.tagName).toBe('A');
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').getAttribute('tabindex')).toBeNull();
+    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
+    expect(link.classList).toContain('!text-gray-900');
+    expect(link.classList).toContain('!no-underline');
   });
 
   it('opens Members board attendance from anywhere on the governance row', async () => {
@@ -283,6 +309,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').click();
     const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing-link"]');
     expect(button.tagName).toBe('BUTTON');
+    expect(button.className).not.toContain('underline');
     button.click();
 
     expect(picked).toEqual(['committees', 'committees']);

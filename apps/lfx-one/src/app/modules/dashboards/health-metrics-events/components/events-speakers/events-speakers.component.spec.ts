@@ -145,6 +145,8 @@ describe('EventsSpeakersComponent', () => {
     await render();
 
     expect(text('events-speakers-headline-value')).toBe('300');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-speakers-hero')?.classList).not.toContain('border');
     expect(text('events-speakers-side-total-value')).toBe('1,200');
     expect(text('events-speakers-side-acceptance-rate-value')).toBe('25%');
     expect(text('events-speakers-side-speakers-delta')).toBe('−35%');

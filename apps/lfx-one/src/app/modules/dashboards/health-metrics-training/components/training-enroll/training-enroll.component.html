@@ -27,7 +27,7 @@
       <span class="text-[13px] text-gray-500" data-testid="training-enroll-type-count">{{ view().typeCountLabel }}</span>
     </div>
 
-    <div class="flex flex-col gap-3 rounded-lg border border-gray-100 p-4" data-testid="training-enroll-hero">
+    <div class="flex flex-col gap-3" data-testid="training-enroll-hero">
       <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
         <div class="flex flex-col gap-2" data-testid="training-enroll-headline">
           <div class="flex items-baseline gap-2">
@@ -47,7 +47,7 @@
         <dl class="flex flex-wrap gap-7 pt-1" data-testid="training-enroll-side">
           @for (stat of view().side; track stat.key) {
             <div class="flex flex-col gap-0.5" [attr.data-testid]="'training-enroll-side-' + stat.key">
-              <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+              <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
               <dd class="flex items-baseline gap-1.5 text-[17px] font-semibold tabular-nums text-gray-900">
                 <span [attr.data-testid]="'training-enroll-side-' + stat.key + '-value'">{{ stat.value }}</span>
                 <span
