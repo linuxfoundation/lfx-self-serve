@@ -3943,7 +3943,6 @@ const SITELINK_URL_ENCODER = new TextEncoder();
  * dropped rather than carried, so the editor never opens on a pair that `googleads/assets.go`
  * would reject on dispatch.
  */
-
 function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;

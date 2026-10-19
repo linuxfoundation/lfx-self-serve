@@ -1837,8 +1837,9 @@ export function googleAdsUrlGoParseFlaw(url: string): boolean {
  *
  * `describeDestinationUrl` (`campaign.controller.ts`) deliberately stays separate: it reports WHICH
  * refusal a URL hits, as a token the error messages name, and it judges brief destinations for all
- * five platforms rather than Google sitelinks. Its accept set is this one — `ok`/`ok-http` plus the
- * same flaw test — and the two must move together.
+ * five platforms rather than Google sitelinks. Its accept set is this one: `ok`/`ok-http`, with the
+ * same flaw test layered on by `googleSitelinkUrlRefusal` at the sitelink site, and the two must
+ * move together.
  */
 export function isGoogleAdsServableUrl(trimmedUrl: string): boolean {
   if (trimmedUrl === '' || googleAdsUrlGoParseFlaw(trimmedUrl)) return false;
