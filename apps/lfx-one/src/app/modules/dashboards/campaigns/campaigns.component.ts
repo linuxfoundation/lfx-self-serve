@@ -682,6 +682,25 @@ export class CampaignsComponent {
   private readonly pendingApprovals = new Map<string, Promise<void>>();
 
   /**
+   * The in-flight approve REQUEST itself, so a second restore joins it instead of racing it.
+   *
+   * `pendingApprovals` above is a different thing and does not help here: it is consulted only by
+   * `persistBrief`, and it holds the post-processing promise rather than the response. Two
+   * restores of the same unapproved row fire two approve calls, and campaign-service gates
+   * approval on the row's `version` — so the first succeeds and MOVES the version, and the second
+   * sends the same now-stale validator and is refused. Worse, the first response arrives to find
+   * the second restore has already bumped this key's ownership epoch, so it discards its own new
+   * validator and returns before reporting. The user is left with "could not be approved" for a
+   * row that is, in fact, approved.
+   *
+   * Keyed by ownership key and guarded on BOTH the brief id and the validator the request was
+   * sent with. The validator is part of the identity because the request is version-gated: a
+   * response fired with a different ETag answers a different question, and handing it to this
+   * caller would report an approval that was never attempted on its behalf.
+   */
+  private readonly pendingApprovalRequests = new Map<string, { id: string; etag: string | null; response: Promise<CampaignBriefApproveResult> }>();
+
+  /**
    * The foundation the current `briefPersistence` was filed under.
    *
    * A foundation switch does NOT re-create this component. The sidebar navigates only on a lens
@@ -5547,13 +5566,37 @@ export class CampaignsComponent {
               if (owned !== undefined) {
                 // EXPLICIT: the user has just been shown the stale-brief warning. The next save
                 // may take the freshly read validator, which is what proceeding means.
-                // Spread rather than rebuilt, so `approved` survives: a conflict means this save
-                // did not change the row, so whatever approval state the session had recorded for
-                // it is still the truth. Rebuilding the record would drop it and send the next
-                // restore back to the offer's stale answer.
-                this.rememberBriefId(ownershipKey, { ...owned, etag: null, absence: 'overwrite' });
+                //
+                // `approved` is REBUILT AWAY, not spread through. An earlier revision spread the
+                // record to preserve it, reasoning that a conflict leaves the row untouched — and
+                // that reasoning is wrong for two of these three conflicts. `stale-brief` means
+                // another writer's PUT landed, and campaign-service's replace resets the row to
+                // `status='draft', approved_by=NULL`; `superseded-after-write` means OUR write
+                // landed and did exactly the same before being overtaken. In both the stored row
+                // is a draft, and a recorded `approved: true` is now a claim about a row that no
+                // longer exists. Carrying it forward makes the next restore hand
+                // `onProceedToImplementation` an `approved` it never verified, which skips
+                // `approveRestoredBrief` and enables Create Campaign against a draft — #3801
+                // through a second door.
+                //
+                // `unverified-validator` is a pure local refusal with no write, so its recorded
+                // flag is merely unchanged rather than falsified. It drops the flag anyway: the
+                // bump below re-reads the row, so the next restore gets the server's own answer
+                // instead of this session's, and the worst case is one redundant approve POST
+                // that the version gate makes harmless. One rule for all three beats a per-
+                // conflict branch whose correctness depends on upstream SQL staying as it is.
+                this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
               }
             }
+            // Planning is visibility-toggled, not destroyed, so its lookup cache outlives this
+            // conflict and still holds the pair that LOST. Dropping `approved` above only stops
+            // this session asserting a stale truth — it falls back on the offer, which is stale in
+            // the same way and by the same event. Bump here so the offer is re-read from the row
+            // that actually moved; the success path at the end of this method does the same thing
+            // for the same reason. The lookup is a GET against a row the user is looking at, and
+            // `applySavedBrief` writes only the Restore offer — never the generated plan on
+            // screen — so re-reading cannot disturb work in progress.
+            this.savedBriefRefreshToken.update((token) => token + 1);
             this.briefPersistence.set({
               status: 'error',
               briefId: result.briefId,
@@ -5721,7 +5764,32 @@ export class CampaignsComponent {
       return;
     }
 
-    const request: Promise<void> = firstValueFrom(this.campaignService.approveBrief(projectSlug, known.id, known.etag)).then(
+    // One request per (key, id, validator), shared by every caller that asks for the same thing
+    // while it is in flight. A second restore before the first approval resolves is the ordinary
+    // way this happens: Planning still holds the pre-approval offer, so `onRestoreSavedBrief`
+    // hands over the same id and the same ETag again. Firing a second version-gated POST with
+    // that validator cannot succeed — the first one moved the version — so the only question is
+    // whether the second caller gets the first caller's answer or a manufactured refusal.
+    //
+    // Sharing the RESPONSE, not the whole handler: each caller still attaches its own arms below
+    // and so applies the result under its OWN generation and ownership snapshots. The caller the
+    // user is actually looking at reports and records; a superseded one discards, exactly as it
+    // would have with its own request.
+    const inFlight = this.pendingApprovalRequests.get(ownershipKey);
+    const reusable = inFlight !== undefined && inFlight.id === known.id && inFlight.etag === known.etag ? inFlight : null;
+    const shared = reusable ?? {
+      id: known.id,
+      etag: known.etag,
+      response: firstValueFrom(this.campaignService.approveBrief(projectSlug, known.id, known.etag)),
+    };
+    // Published only when it is NEW, so every caller sharing one request also shares the one map
+    // entry — the first cleanup below removes it and the rest find it already gone, rather than
+    // each registering an entry that the others' identity checks then refuse to delete.
+    if (reusable === null) {
+      this.pendingApprovalRequests.set(ownershipKey, shared);
+    }
+
+    const request: Promise<void> = shared.response.then(
       (result) => {
         // Latched before the generation check, for the reason `persistBrief` documents at length:
         // `enabled` is a fact about the deployment, not about this brief, and dropping it with a
@@ -5799,11 +5867,22 @@ export class CampaignsComponent {
           if (stillOurs) {
             const owned = this.knownBriefIds.get(ownershipKey);
             if (owned !== undefined) {
-              // Spread, so `approved` is not invented: the approval was REFUSED, so whatever the
-              // session knew about the row's approval state is unchanged by this answer.
-              this.rememberBriefId(ownershipKey, { ...owned, etag: null, absence: 'overwrite' });
+              // `approved` is rebuilt away here for the same reason the save path's conflict
+              // promotion does it: a refused approval is a `stale-brief` 412, which says another
+              // writer's PUT moved the row — and that PUT reset it to `draft`. This used to
+              // spread, on the argument that a refusal leaves what the session knew unchanged;
+              // the refusal does, but the event that CAUSED it does not. The session's own
+              // knowledge is the thing that is now wrong, so it stops asserting it and the next
+              // restore asks the server. Nothing is invented either way — an absent flag is read
+              // as "not approved", which is the safe side of a gate on campaign creation.
+              this.rememberBriefId(ownershipKey, { id: owned.id, etag: null, absence: 'overwrite' });
             }
           }
+          // Same bump the save path's conflict branch makes, for the same reason: the refusal
+          // says the stored row moved, and Planning is still holding the pair it read before it
+          // did. Re-reading is what makes the offer the next Restore replays describe the row
+          // that actually exists rather than the one this approval lost to.
+          this.savedBriefRefreshToken.update((token) => token + 1);
           this.briefPersistence.set({
             status: 'error',
             briefId: known.id,
@@ -5850,6 +5929,12 @@ export class CampaignsComponent {
         // in flight is not deleted by this one finishing.
         if (this.pendingApprovals.get(ownershipKey) === request) {
           this.pendingApprovals.delete(ownershipKey);
+        }
+        // Same identity check, same reason, for the shared request: a LATER approval for this key
+        // (a different id, or the same id with the validator this one just earned) has already
+        // replaced the entry, and that one is still in flight.
+        if (this.pendingApprovalRequests.get(ownershipKey) === shared) {
+          this.pendingApprovalRequests.delete(ownershipKey);
         }
       });
   }
