@@ -86,6 +86,7 @@ test.describe('Org Lens EasyCLA send-by-email — structure', () => {
   test('renders no Identify someone else control on the unsigned overview', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
       await stubPage(p);
+      await stubHandoff(p);
     });
 
     await reachPreview(page);

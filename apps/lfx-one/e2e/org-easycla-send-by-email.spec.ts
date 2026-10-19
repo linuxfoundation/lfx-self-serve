@@ -84,6 +84,7 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
   test('offers no Not the right person to sign link on the unsigned overview', async ({ page }) => {
     await gotoEasyclaList(page, async (p) => {
       await stubList(p);
+      await stubHandoff(p);
     });
 
     await chooseClaGroup(page);
