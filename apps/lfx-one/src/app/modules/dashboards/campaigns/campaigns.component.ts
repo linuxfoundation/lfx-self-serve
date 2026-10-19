@@ -54,6 +54,7 @@ import type {
   CampaignPaidTab,
   CampaignProgramType,
   CampaignServiceEmailMetrics,
+  CampaignSitelink,
   CampaignTabOption,
   EmailBriefCopy,
   EventTemplateTerms,
@@ -284,6 +285,37 @@ export class CampaignsComponent {
    * would be machinery guarding against a hazard that is already closed one level down.
    */
   protected readonly implementationDraft = signal<CampaignImplementationDraft | null>(null);
+
+  /**
+   * The extension lists of the brief last handed to Implementation, exactly as the GENERATOR
+   * produced them — before {@link briefWithCarriedExtensions} substituted anything into them.
+   *
+   * This is the key the carry is decided on, and it exists because the event slug cannot answer
+   * the question the carry actually asks. The invariant is: *the operator's extension edits may be
+   * replayed onto an incoming brief only if that brief's extension lists are the ones those edits
+   * were typed over.* The slug answers "same event", which is a strictly weaker claim — the same
+   * event can be generated twice (New Brief, then Generate again), and the second generation's
+   * lists are new text that edits to the first generation's lists have nothing to say about.
+   * Keying on the slug carried them anyway, so a re-generated brief opened — and was persisted —
+   * showing the previous generation's extensions.
+   *
+   * Comparing by VALUE rather than by a counter is what makes this correct across both axes.
+   * Refine hands back the same lists it was given, so they compare equal and the edits carry, which
+   * is the behaviour LFXV2-3229 asked for; a counter bumped by the Planning tab's `generateGeneration`
+   * would not, because refine bumps it too. And recording the INCOMING lists rather than the
+   * handed-over ones is what lets a SECOND refine carry: after the first carry the brief on screen
+   * holds the operator's edits while Planning still holds the generator's originals, so a baseline
+   * taken post-carry would never match again and the edits would be dropped on the next Proceed.
+   *
+   * A re-generation that happens to produce byte-identical lists compares equal and carries. That
+   * is the right outcome, not a hole: the edits were typed over exactly that text, so replaying
+   * them loses nothing. Where the comparison is in any doubt it fails closed — no carry, and the
+   * freshly generated lists are what the operator sees.
+   *
+   * Not a signal: nothing reactive reads it. It is written at handover and cleared by
+   * {@link resetToPlanning}, alongside the draft whose validity it qualifies.
+   */
+  private generatorExtensions: Pick<CampaignBriefOutput, 'googleCallouts' | 'googleSitelinks'> | null = null;
 
   /**
    * What each conflict means to the user. A map rather than nested ternaries, which the lint
@@ -2732,8 +2764,27 @@ export class CampaignsComponent {
     // and proceed again for the SAME event, so the slugs match and stale edits would silently
     // overwrite the copy just generated. Ordinary Implement/Insights tab switches do not come
     // through here, so they keep the draft — which is the whole point of holding it.
+    //
+    // The clear is right for everything the brief REGENERATES — refine produces new copy, and the
+    // old edits to it belong to the brief being replaced. It is wrong for the two extension lists
+    // WHEN THIS BRIEF CARRIES THE ONES THE OPERATOR WAS EDITING: refine hands back the lists it was
+    // given, so clearing there restores the generator's originals over their edits. A re-GENERATE
+    // for the same event hands back new lists instead, and those edits must not follow. Which of
+    // the two happened is decided by `generatorExtensions` below, not by the event slug — the slug
+    // is identical in both cases. Carried BEFORE the clear, since the clear is what makes the
+    // edits unreachable.
+    const handedOver = alreadyPersisted ? brief : this.briefWithCarriedExtensions(brief);
+    // From the INCOMING brief and AFTER the carry has read the previous value: this records the
+    // generator output the next round of edits will be typed over. Set on every handover, the
+    // restore path included — a restored brief's lists are equally the ones the editor opens on,
+    // and leaving a previous generation's baseline standing behind it would let edits typed over
+    // the restored brief carry onto a later, unrelated generation.
+    this.generatorExtensions = {
+      googleCallouts: brief.googleCallouts ? [...brief.googleCallouts] : undefined,
+      googleSitelinks: brief.googleSitelinks?.map((sitelink) => ({ ...sitelink })),
+    };
     this.implementationDraft.set(null);
-    this.briefOutput.set(brief);
+    this.briefOutput.set(handedOver);
     this.selectedTab.set('implementation');
     if (alreadyPersisted) {
       // Bump the generation even though nothing is being saved. `persistBrief` normally does
@@ -2797,7 +2848,7 @@ export class CampaignsComponent {
     }
     // The create path has no id yet — `persistBrief` mints one — so the read is triggered from
     // its success arm rather than here. See `loadCreateCapabilitiesFor`.
-    this.persistBrief(brief);
+    this.persistBrief(handedOver);
   }
 
   /** A brief restored from campaign-service: hand it over WITHOUT writing it back. */
@@ -5503,6 +5554,120 @@ export class CampaignsComponent {
   }
 
   /**
+   * The incoming brief with the operator's current callouts and sitelinks in place of the ones it
+   * was generated with — the narrow exception to the draft clear in {@link onProceedToImplementation}.
+   *
+   * Only these two fields are carried, and only when the incoming brief still holds the lists the
+   * edits were typed over: every other field the draft holds IS reproduced by the brief that
+   * replaces it, so carrying those would be the stale-edit bug the clear exists to prevent. Refine
+   * for the same event hands back the same extension lists the operator has since edited, so
+   * without this the generator's originals silently overwrite their work and the only clue is the
+   * editor's contents changing.
+   *
+   * Two guards, answering two different questions, and the second is the one that matters here.
+   * `eventSlug` asks whether the draft belongs to this EVENT — the same check `applyDraft` applies
+   * one level down. {@link generatorExtensions} asks whether it belongs to this GENERATION, which
+   * the slug cannot: New Brief re-arms Generate without leaving the event, and the Planning tab's
+   * own template reaches `reset()` from both its Cancel and its New Brief controls. Without the
+   * second guard a re-generated brief opened on the previous generation's extensions and
+   * `persistBrief` stored them. Each field is gated independently, so a brief that regenerates one
+   * list and preserves the other keeps the carry wherever it is still valid.
+   *
+   * It rides on the brief rather than on a surviving partial draft because
+   * {@link CampaignImplementationDraft} declares most of its members REQUIRED, so an
+   * extensions-only draft is not expressible — and `applyDraft` patches its form block
+   * unconditionally, so a hypothetical partial one would write `undefined` over the seeded event
+   * identity. One substituted brief needs neither.
+   *
+   * The same object is handed to the child and to `persistBrief`, so what the editor opens on and
+   * what the row stores cannot diverge. The restore path is excluded by its caller for exactly that
+   * reason: it writes nothing, so substituting there would show values no stored row holds.
+   *
+   * An empty list is carried as `[]`, not dropped. On {@link CampaignBriefOutput} `[]` CLEARS the
+   * editor while absent leaves it untouched, so `[]` is the only value that preserves "the operator
+   * removed every entry" — and the polarity is safe to rely on here because this draft was built by
+   * `buildDraft` in this same session, which always emits both fields as arrays. (The opposite rule
+   * on the draft itself — absent and empty agree — is about drafts persisted before the fields
+   * existed, which this in-memory signal can never hold.)
+   *
+   * The one case an empty list is NOT written is the brief that carries no list of its own, and
+   * that exception exists precisely BECAUSE `buildDraft` always emits arrays: a brief generated
+   * before this feature, or for a platform set that produces no extensions, would otherwise come
+   * back from a second Proceed carrying `googleCallouts: []` it never had — a field added to the
+   * persisted row to record a clearance of a list that was never there. Absent and empty-draft
+   * agree only here, where both mean "no extensions were ever in play".
+   */
+  private briefWithCarriedExtensions(brief: CampaignBriefOutput): CampaignBriefOutput {
+    const draft = this.implementationDraft();
+    // The same guard `applyDraft` applies one level down: a draft belongs to the event it was typed
+    // against, and the brief on screen may be for a different one.
+    if (!draft || draft.eventSlug !== brief.eventDetails.slug) return brief;
+
+    // No baseline means no brief has been handed over under this reset, so there is nothing the
+    // draft could have been typed over here. Fail closed.
+    const generated = this.generatorExtensions;
+    if (!generated) return brief;
+
+    const callouts = draft.googleCallouts;
+    const sitelinks = draft.googleSitelinks;
+    const carryCallouts =
+      callouts !== undefined &&
+      this.sameCallouts(brief.googleCallouts, generated.googleCallouts) &&
+      !(brief.googleCallouts === undefined && callouts.length === 0);
+    const carrySitelinks =
+      sitelinks !== undefined &&
+      this.sameSitelinks(brief.googleSitelinks, generated.googleSitelinks) &&
+      !(brief.googleSitelinks === undefined && sitelinks.length === 0);
+    if (!carryCallouts && !carrySitelinks) return brief;
+
+    return {
+      ...brief,
+      ...(carryCallouts ? { googleCallouts: [...callouts] } : {}),
+      ...(carrySitelinks ? { googleSitelinks: sitelinks.map((s) => ({ ...s })) } : {}),
+    };
+  }
+
+  /**
+   * Are these the same callout list?
+   *
+   * Absent and empty are DIFFERENT here, deliberately. Everywhere else in the carry they are
+   * reconciled, because there they mean "no extensions were ever in play"; this comparison is
+   * asking a narrower question — is the incoming list the same text the baseline recorded — and a
+   * brief that lost its list entirely has not kept it. Order is part of the answer: the operator
+   * edits positionally, so a reordered list is one their edits no longer line up with.
+   */
+  private sameCallouts(a: string[] | undefined, b: string[] | undefined): boolean {
+    if (a === undefined || b === undefined) return a === b;
+    return a.length === b.length && a.every((value, index) => value === b[index]);
+  }
+
+  /**
+   * Are these the same sitelink list?
+   *
+   * Compared field by field rather than by serializing: `JSON.stringify` would make two equal
+   * sitelinks differ on key order alone, and an optional field present as `undefined` on one side
+   * and absent on the other would serialize differently while meaning the same thing. Both sides
+   * of this comparison come from a generator response, so the fields are the four the interface
+   * declares — a fifth added later belongs in this list, and until it is, a change confined to it
+   * reads as "unchanged" and carries edits it should not.
+   */
+  private sameSitelinks(a: CampaignSitelink[] | undefined, b: CampaignSitelink[] | undefined): boolean {
+    if (a === undefined || b === undefined) return a === b;
+    return (
+      a.length === b.length &&
+      a.every((sitelink, index) => {
+        const other = b[index];
+        return (
+          sitelink.text === other.text &&
+          sitelink.finalUrl === other.finalUrl &&
+          sitelink.description1 === other.description1 &&
+          sitelink.description2 === other.description2
+        );
+      })
+    );
+  }
+
+  /**
    * Save the approved brief in the background.
    *
    * Deliberately NOT awaited before the tab switch above: gating the handoff on a network call
@@ -6264,6 +6429,11 @@ export class CampaignsComponent {
     // generated next. The child's `eventSlug` guard would catch a DIFFERENT event, but not the
     // same event re-generated, which is exactly what Start Over does.
     this.implementationDraft.set(null);
+    // Cleared WITH the draft, never separately: the baseline only means anything as the answer to
+    // "what was that draft typed over", so a baseline outliving its draft is a claim about edits
+    // that no longer exist. Clearing the draft alone would already stop the carry; clearing both
+    // keeps the pair honest for whoever reads this next.
+    this.generatorExtensions = null;
     this.selectedTab.set('planning');
     this.emailBriefOutput.set(null);
     this.resetEmailBriefDerivedState();

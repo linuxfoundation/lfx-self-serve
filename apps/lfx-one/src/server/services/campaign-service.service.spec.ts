@@ -39,6 +39,10 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
@@ -1192,7 +1196,17 @@ describe('fromBriefResponse', () => {
   it('round-trips a brief written by the save path', async () => {
     proxyRequestWithResponse.mockReset();
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
-    const original = briefWithSlug('kubecon-eu-2026');
+    // The two Google extension lists are set HERE rather than on `briefWithSlug`, which a few
+    // dozen other cases compare request payloads against exactly. Without them this round-trip
+    // asserts nothing about either field: both would be absent from the fixture, absent from what
+    // `toBriefInput` writes, and absent from what `fromBriefResponse` reads back, so a write or
+    // read path that dropped them entirely would still match. They are the newest fields on this
+    // contract and the ones a drop would cost the operator most — the lists they edited by hand.
+    const original: CampaignBriefOutput = {
+      ...briefWithSlug('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing', 'Co-located events'],
+      googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/register/' }],
+    };
 
     await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf', 'b-1');
     const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
@@ -1268,6 +1282,187 @@ describe('fromBriefResponse', () => {
     const keywords = [{ term: '  ' }, 'kubecon', { term: 'cloud native', matchType: 'Fuzzy', intentLevel: 'Urgent' }];
 
     expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([{ term: 'cloud native', matchType: 'Broad', intentLevel: 'Medium', notes: '' }]);
+  });
+
+  // The Implementation tab seeds both extension editors on `!== undefined`, so this is the one
+  // field pair where absent and empty must NOT collapse: returning `[]` for a brief written before
+  // extension generation shipped would clear an editor the operator had typed into rather than
+  // leave it alone. `toBriefInput` writes `null` for a brief that carries no list, which is what
+  // lands here.
+  it.each([
+    ['an absent googleCallouts', undefined],
+    ['a null googleCallouts', null],
+    ['a non-array googleCallouts', 'Free Admission'],
+  ])('restores %s as absent, not as an empty list', (_label, googleCallouts) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toBeUndefined();
+  });
+
+  // The other side of the same distinction: a list the generator shaped away to nothing WAS
+  // recorded, and comes back as the empty list rather than as absent.
+  it('restores a stored empty callout list as an empty list', () => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts: [] } }))?.googleCallouts).toEqual([]);
+  });
+
+  // Bounded by the same rules the editor applies on an add, so a row written by an older build or
+  // another client cannot open the editor holding entries it would refuse the operator for typing.
+  it('bounds, trims and de-duplicates a stored callout list the way the editor would', () => {
+    const googleCallouts = ['  Free To Attend  ', 'free to attend', 42, '', 'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 5)];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toEqual([
+      'Free To Attend',
+      'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES),
+    ]);
+  });
+
+  // The cap is the editor's own: it refuses an add past the maximum rather than growing, so a
+  // longer stored list is filled to the cap and the overflow left out.
+  it('fills a stored callout list to the cap and drops the overflow', () => {
+    const googleCallouts = Array.from({ length: GOOGLE_ADS_MAX_CALLOUTS + 5 }, (_unused, i) => `Callout ${i}`);
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toHaveLength(GOOGLE_ADS_MAX_CALLOUTS);
+  });
+
+  it.each([
+    ['an absent googleSitelinks', undefined],
+    ['a null googleSitelinks', null],
+    ['a non-array googleSitelinks', 'View the Agenda'],
+  ])('restores %s as absent, not as an empty list', (_label, googleSitelinks) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toBeUndefined();
+  });
+
+  // `finalUrl` lands in an href the operator clicks and in an ad's destination, and `copy` is an
+  // opaque blob upstream never validated — so the scheme is re-checked here rather than trusted
+  // because this app only ever writes URLs `verifyPageLink` confirmed.
+  it.each([
+    ['a javascript: destination', 'javascript:alert(1)'],
+    ['a data: destination', 'data:text/html,<p>x</p>'],
+    ['a relative destination', '/agenda'],
+    ['an unparseable destination', 'not a url'],
+    ['a missing destination', undefined],
+    // The four this path accepted while it was a scheme check of its own rather than the shared
+    // predicate. Every one parses fine under `new URL()` and is refused by the controller's
+    // `googleSitelinkUrlRefusal` at create, so seeding one opened the editor holding a chip the
+    // operator could not have typed and could not submit — and the only refusal they would ever
+    // see named a row they never added.
+    ['embedded credentials', 'https://user:pw@example.test/agenda'],
+    ['no // after the scheme', 'https:example.test/agenda'],
+    ['a `;` separating query parameters, which Go refuses', 'https://example.test/agenda?track=platform;day=2'],
+    ['a stray `%` that is not an escape', 'https://example.test/agenda?q=100%'],
+  ])('drops a sitelink with %s', (_label, finalUrl) => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The byte cap is the editor's add-guard and the controller's dispatch check; without it here a
+  // stored row would open the editor holding a chip the operator could not have typed and could not
+  // submit. Bytes of the encoded URL, so the boundary is asserted on both sides of the cap.
+  it('drops a stored sitelink whose finalUrl is over the byte cap and keeps one exactly at it', () => {
+    const prefix = 'https://example.test/';
+    const atCap = prefix + 'a'.repeat(GOOGLE_ADS_MAX_FINAL_URL_BYTES - prefix.length);
+    const overCap = `${atCap}a`;
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: overCap },
+      { text: 'Venue & Travel', finalUrl: atCap },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([{ text: 'Venue & Travel', finalUrl: atCap }]);
+  });
+
+  /**
+   * Trimmed with Go's space set, not JS's. `googleAdsTrimSpace` follows Go's `unicode.IsSpace`,
+   * which includes U+0085 (NEL) — a character JS `trim` leaves exactly where it is. The editor's
+   * `addGoogleSitelink` trims the destination that way, so a stored row carrying one is a row the
+   * editor itself would accept; trimmed the JS way the leftover U+0085 makes `new URL()` throw and
+   * the row is dropped on restore, which the operator reads as the app losing their sitelink.
+   */
+  it('trims a stored finalUrl with Go\u2019s space set, not JS\u2019s', () => {
+    // A stored destination that arrived with a NEL around it. Pinned with an assertion first, so
+    // this case cannot quietly stop testing anything: JS `trim` really does leave U+0085 in place,
+    // which is the whole reason the restore path cannot use it here.
+    const stored = '\u0085 https://example.test/agenda \u0085';
+    expect(stored.trim()).not.toBe('https://example.test/agenda');
+    const googleSitelinks = [{ text: 'View the Agenda', finalUrl: stored }];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
+  // De-duplicated on the LABEL, which is the editor's guard and upstream's rule: Google Ads
+  // refuses duplicate sitelink text and is indifferent to two labels sharing one URL.
+  it('de-duplicates stored sitelinks on their label, not their destination', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'view the agenda', finalUrl: 'https://example.test/schedule' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
+  /**
+   * The entry SHAPE, which the callout cases cover for their own list and this one did not.
+   *
+   * `copy` is an opaque blob campaign-service stores without inspecting, so an entry here can be
+   * any JSON value. A string or a `null` in the array reaches `asRecord` first: without that guard
+   * the next line indexes `null` and the whole restore throws, losing the brief rather than one
+   * sitelink. An entry shaped right but with no usable label is the quieter half — upstream refuses
+   * a sitelink with empty text, so carrying one opens the editor on a chip that cannot dispatch.
+   */
+  it('drops stored sitelinks that are not objects, and objects with no usable label', () => {
+    const googleSitelinks = [
+      'View the Agenda',
+      null,
+      42,
+      { finalUrl: 'https://example.test/agenda' },
+      { text: '   ', finalUrl: 'https://example.test/schedule' },
+      { text: 42, finalUrl: 'https://example.test/speakers' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The sitelink cap, which is the callout cap's sibling and upstream's own `maxSitelinks`: the
+  // editor refuses an add past it, so a longer stored list is filled to the cap rather than
+  // opening the editor holding entries the operator can neither have typed nor submit.
+  it('fills a stored sitelink list to the cap and drops the overflow', () => {
+    const googleSitelinks = Array.from({ length: GOOGLE_ADS_MAX_SITELINKS + 3 }, (_unused, i) => ({
+      text: `Sitelink ${i}`,
+      finalUrl: `https://example.test/s${i}`,
+    }));
+
+    const restored = fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks;
+
+    // Length AND the first entry: a cap that kept the TAIL is a different behaviour, and one the
+    // operator would read as the app reordering their sitelinks.
+    expect(restored).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+    expect(restored?.[0]).toEqual({ text: 'Sitelink 0', finalUrl: 'https://example.test/s0' });
+  });
+
+  // The description pair is all-or-nothing upstream (`googleads/assets.go`), so a lone line is
+  // dropped rather than carried — otherwise the editor opens on a sitelink that cannot dispatch.
+  it('keeps a complete description pair and drops a lone description line', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue', description1: 'Hotel block open' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
   });
 
   // An unknown platform id reaches a template that indexes icon and label maps by it and

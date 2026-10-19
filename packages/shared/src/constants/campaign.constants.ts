@@ -1820,6 +1820,43 @@ export function googleAdsUrlGoParseFlaw(url: string): boolean {
 }
 
 /**
+ * Whether a destination URL is one upstream's `validateServableURL` will serve: absolute, http(s),
+ * with a hostname, no embedded credentials, and none of the Go parser flaws
+ * {@link googleAdsUrlGoParseFlaw} names.
+ *
+ * The accept set lived in three hand-written copies before this existed — the Implementation tab's
+ * add guard, the controller's dispatch refusal, and the brief-restore path — and the third had
+ * drifted to a scheme check alone, so a URL with embedded credentials or a `;` in its query was
+ * seeded into the editor and then refused at create with no way to see why from the editor. One
+ * definition is the only arrangement in which "the same accept set" stays a fact rather than a
+ * comment, since the tiers cannot call each other's private methods.
+ *
+ * The argument must ALREADY be trimmed, with {@link googleAdsTrimSpace} rather than
+ * `String.prototype.trim` — the two disagree on U+0085 and U+FEFF, and the trimmed value is the one
+ * the caller goes on to store, so trimming here instead would judge a string no caller keeps.
+ *
+ * `describeDestinationUrl` (`campaign.controller.ts`) deliberately stays separate: it reports WHICH
+ * refusal a URL hits, as a token the error messages name, and it judges brief destinations for all
+ * five platforms rather than Google sitelinks. Its accept set is this one: `ok`/`ok-http`, with the
+ * same flaw test layered on by `googleSitelinkUrlRefusal` at the sitelink site, and the two must
+ * move together.
+ */
+export function isGoogleAdsServableUrl(trimmedUrl: string): boolean {
+  if (trimmedUrl === '' || googleAdsUrlGoParseFlaw(trimmedUrl)) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmedUrl);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (parsed.hostname === '') return false;
+  return parsed.username === '' && parsed.password === '';
+}
+
+/**
  * Caller-supplied text cut short for an error message, by code point so an emoji is never split
  * into a lone surrogate. The text comes from an unvalidated body, so the echo is bounded.
  */
@@ -1838,6 +1875,33 @@ export function googleAdsEchoed(text: string, max = 32): string {
  */
 export function googleAdsToLower(text: string): string {
   return [...text].map((ch) => (ch === '\u0130' ? 'i' : ch.toLowerCase())).join('');
+}
+
+/**
+ * An untrusted extension string — a callout, a sitelink label, a sitelink description — trimmed and
+ * bounded to `maxRunes`, or `''` when there is nothing usable in it.
+ *
+ * Shared rather than written twice because two places take extension text from outside this app and
+ * must agree with the editor's own guard to the character: the brief generator shaping a model
+ * response, and the brief restore reading a row campaign-service stored opaquely. A list either of
+ * them seeds must be one the operator could have typed, or the editor opens holding entries it
+ * would refuse them for adding.
+ *
+ * {@link googleAdsTrimSpace} rather than `String.prototype.trim`, and the spread rather than
+ * `.slice`, for the reasons those two carry: JS and Go disagree about U+0085 and U+FEFF at the
+ * edges, and `.slice` counts UTF-16 units where upstream counts runes, so it can both cut an astral
+ * character's string shorter than needed and leave a lone surrogate behind.
+ *
+ * The trailing re-trim matters: cutting at a rune boundary can land immediately after a space, and a
+ * trailing space is a difference upstream's duplicate check sees.
+ */
+export function googleAdsBoundExtensionText(value: unknown, maxRunes: number): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = googleAdsTrimSpace(value);
+  const runes = [...trimmed];
+  return runes.length > maxRunes ? googleAdsTrimSpace(runes.slice(0, maxRunes).join('')) : trimmed;
 }
 
 /**

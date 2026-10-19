@@ -16,11 +16,21 @@ import {
   campaignResumeRefusedAdoptedMessage,
   campaignResumeRefusedMessage,
   COUNTRIES,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  googleAdsBoundExtensionText,
+  googleAdsToLower,
+  googleAdsTrimSpace,
+  isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
@@ -70,6 +80,7 @@ import type {
   CampaignServiceNegativeKeywordInput,
   CampaignServiceNegativeKeywordResult,
   CampaignServiceNegativeKeywords,
+  CampaignSitelink,
   CampaignToggleStatus,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
@@ -3440,6 +3451,19 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       linkedIn: brief.linkedInCopy ?? null,
       reddit: brief.redditCopy ?? null,
       meta: brief.metaCopy ?? null,
+      // Written as `null` when the brief has no list, NOT as `[]`, and the difference is load-bearing
+      // on the way back: `populateFromBrief` seeds these two on `!== undefined`. `null` restores as
+      // absent — the generator produced nothing, or ran before these fields existed — and leaves an
+      // editor the operator may have typed into alone. `[]` says something narrower and reaches here
+      // from one producer only: `briefWithCarriedExtensions`, which carries the operator's own
+      // emptied list forward, and whose `[]` restores as a cleared editor because that is what they
+      // asked for. `fromBriefResponse` below is the half that holds up this end of the contract.
+      //
+      // Under `copy` rather than a new top-level field because `BriefInput` has no first-class home
+      // for them and `copy` is the opaque slot whose meaning — "the creative this brief generated" —
+      // these fit; the same reasoning `targeting` carries for the planning fields.
+      googleCallouts: brief.googleCallouts ?? null,
+      googleSitelinks: brief.googleSitelinks ?? null,
     },
     keywords: brief.keywords,
     targeting: {
@@ -3549,6 +3573,11 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit'], REDDIT_VARIANT_FIELDS),
     metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta'], META_VARIANT_FIELDS),
     keywords: asKeywords(found.keywords),
+    // `undefined` rather than `[]` for anything that is not an array, which is what makes a brief
+    // written before extension generation shipped restore as ABSENT instead of as an empty list —
+    // see the write side for why the Implementation tab needs those to stay distinguishable.
+    googleCallouts: asCallouts(copy['googleCallouts']),
+    googleSitelinks: asSitelinks(copy['googleSitelinks']),
     campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
@@ -3833,6 +3862,143 @@ function asKeywords(value: unknown): CampaignKeyword[] {
     });
     return keywords;
   }, []);
+}
+
+/**
+ * A stored callout list, or `undefined` when the field is absent or not an array.
+ *
+ * `undefined` and `[]` are NOT interchangeable here, unlike in `asKeywords` above: the
+ * Implementation tab seeds `googleCallouts` on `!== undefined`, so returning `[]` for a brief
+ * written before this feature existed would clear an editor rather than leave it untouched.
+ *
+ * A stored `[]` is a list the OPERATOR emptied. It reaches the row from one producer only —
+ * `briefWithCarriedExtensions` on the client, which carries an emptied draft list forward — because
+ * the generator yields its `callouts` event only when it shaped at least one entry, so a generation
+ * that produced nothing writes no field at all. So `[]` returns as `[]` and re-clears the editor,
+ * which is what the operator asked for, while the generation-produced-nothing and
+ * written-before-this-feature cases both arrive as the `null` `toBriefInput` writes, restore as
+ * absent, and leave the editor alone.
+ *
+ * Bounded and de-duplicated by the editor's own rules, so a row written by an older or foreign
+ * client cannot open the editor holding a list it would refuse the operator for typing. Where the
+ * generator's `shapeCallouts` DROPS an over-long entry, this one TRUNCATES it: there the entry is
+ * one the model just produced and the next candidate can take its place, here it is one the
+ * operator typed and the only alternative is losing it.
+ */
+function asCallouts(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const callouts: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const text = googleAdsBoundExtensionText(entry, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES);
+    if (text === '') {
+      continue;
+    }
+    // Case-insensitive under Go's rules, matching the editor's own add-guard
+    // (`googleAdsToLower(c) === key`): it refuses a second "Free Admission" for an existing
+    // "free admission", so a restore that seeded both would leave the operator holding a pair
+    // they could not have created.
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    callouts.push(text);
+    if (callouts.length === GOOGLE_ADS_MAX_CALLOUTS) {
+      break;
+    }
+  }
+  return callouts;
+}
+
+/** Hoisted out of {@link asSitelinks}' loop — one encoder for the whole module, not one per row. */
+const SITELINK_URL_ENCODER = new TextEncoder();
+
+/**
+ * A stored sitelink list, or `undefined` when the field is absent or not an array.
+ *
+ * Held on the same `undefined`-vs-`[]` terms as {@link asCallouts}, and dropping an entry rather
+ * than the list for anything unusable — a sitelink with no text, no servable destination, or a
+ * `finalUrl` past the byte cap is one the operator could not have saved and campaign-service would
+ * refuse.
+ *
+ * Every guard below is re-applied here because a stored list has three possible producers and only
+ * one of them page-verified anything:
+ *
+ * - the GENERATOR, whose destinations came from `verifyPageLink` — every URL was fetched and found
+ *   servable on the event's own page;
+ * - this RESTORE path, whose output is only ever as good as the checks in this function, since what
+ *   it reads is whatever the opaque `copy` blob holds;
+ * - the CARRY (`briefWithCarriedExtensions` on the client), which re-persists the operator's EDITED
+ *   list — vetted by the editor's add-guards alone, so a destination typed or pasted there was
+ *   never fetched and is not known to resolve.
+ *
+ * So "this app only ever writes verified URLs" is not a premise this function may rest on, and the
+ * value lands in an `href` the operator clicks and in an ad's destination.
+ *
+ * The two description lines are ALL-OR-NOTHING, as upstream requires: a lone `description1` is
+ * dropped rather than carried, so the editor never opens on a pair that `googleads/assets.go`
+ * would reject on dispatch.
+ */
+function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sitelinks: CampaignSitelink[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const record = asRecord(entry);
+    if (record === null) {
+      continue;
+    }
+
+    const text = googleAdsBoundExtensionText(record['text'], GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+    // Trimmed with Go's space set, not JS's, for the same reason `text` above is: the editor's
+    // `addGoogleSitelink` trims the destination with `googleAdsTrimSpace`, and the two disagree on
+    // characters this field really can carry. JS `trim` leaves U+0085 in place, `new URL()` then
+    // throws on it, and the guard below would drop a row the editor itself would accept.
+    const finalUrl = googleAdsTrimSpace(asText(record['finalUrl']));
+    // The same accept set the editor's add guard and the controller's dispatch refusal use, not a
+    // scheme check: a stored row carrying embedded credentials, a `;` in its query or a stray `%`
+    // parses fine under `new URL()` and is refused by `googleSitelinkUrlRefusal` at create. Seeding
+    // it would open the editor holding a chip the operator cannot have typed and cannot submit, and
+    // the only refusal they would ever see names a row they never added.
+    if (text === '' || !isGoogleAdsServableUrl(finalUrl)) {
+      continue;
+    }
+    // The byte cap is checked here and not only at dispatch, because the three other places that
+    // know about it all sit AFTER this one: `addGoogleSitelink` refuses an over-long URL on the
+    // add path, and the controller refuses the create. A restored row that skipped this would open
+    // the editor holding a chip the operator cannot have typed and cannot submit — a dead end whose
+    // only exit is deleting a row they did not add. Bytes, not runes: the limit is Google's and it
+    // counts the encoded URL.
+    if (SITELINK_URL_ENCODER.encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) {
+      continue;
+    }
+    // Keyed on the LABEL, not the destination, because that is the editor's guard
+    // (`googleAdsToLower(s.text)`) and upstream's: Google Ads refuses duplicate sitelink TEXT and
+    // is indifferent to two labels sharing one URL, which a combined "venue and agenda" page
+    // legitimately produces.
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    const description1 = googleAdsBoundExtensionText(record['description1'], GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+    const description2 = googleAdsBoundExtensionText(record['description2'], GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+    const descriptions = description1 !== '' && description2 !== '' ? { description1, description2 } : {};
+
+    sitelinks.push({ text, finalUrl, ...descriptions });
+    if (sitelinks.length === GOOGLE_ADS_MAX_SITELINKS) {
+      break;
+    }
+  }
+  return sitelinks;
 }
 
 /**

@@ -25,6 +25,7 @@ import type {
   CampaignPlatform,
   CampaignPlatformOption,
   CampaignProgramTypeOption,
+  CampaignSitelink,
   CampaignSSEEventType,
   HubSpotUtmLookupResult,
   LinkedInBriefCopy,
@@ -419,6 +420,16 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly hsHasAlternatives = computed(() => this.hsMatches().some((m) => m.hs_utm !== this.hsUtm()));
   protected readonly keywords = signal<CampaignKeyword[]>([]);
+  /**
+   * The generated Google extension seeds, carried to the Implementation tab's editors.
+   *
+   * Held here rather than emitted straight through because generation and the hand-off are
+   * separate moments: the SSE events arrive while the operator is still reading the brief, and
+   * `onProceedToImplementation` is what posts them onward. There is no editor for either on THIS
+   * tab -- the Implementation tab owns that, and owns the cap enforcement with it.
+   */
+  protected readonly googleCallouts = signal<string[]>([]);
+  protected readonly googleSitelinks = signal<CampaignSitelink[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
   private lastLookedUpEventValue = '';
@@ -857,6 +868,8 @@ export class PlanningTabComponent implements OnInit {
     this.structuredCopy.set(null);
     this.hsUtm.set(null);
     this.keywords.set([]);
+    this.googleCallouts.set([]);
+    this.googleSitelinks.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
     // Audience and pitch described the brief just DISCARDED; leaving them pre-filled the next New
@@ -1281,6 +1294,8 @@ export class PlanningTabComponent implements OnInit {
     this.copyBuffer.set('');
     this.structuredCopy.set(null);
     this.keywords.set([]);
+    this.googleCallouts.set([]);
+    this.googleSitelinks.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
 
@@ -1364,6 +1379,15 @@ export class PlanningTabComponent implements OnInit {
       eventDetails: details,
       structuredCopy: this.structuredCopy(),
       keywords: this.keywords(),
+      // `undefined` when the generator produced nothing, never `[]`, because the two mean different
+      // things from here on: `[]` is a list and CLEARS the Implementation tab's editor, while
+      // absence leaves entries the operator typed by hand alone. Emitting `[]` unconditionally
+      // would store `[]` on every row this app writes and make the `null`-vs-`[]` contract
+      // `toBriefInput` and `populateFromBrief` are built on unreachable. Neither signal is operator-
+      // editable on this tab — they are set from the stream and cleared on reset — so an empty one
+      // can only mean the list was never generated.
+      googleCallouts: this.googleCallouts().length > 0 ? this.googleCallouts() : undefined,
+      googleSitelinks: this.googleSitelinks().length > 0 ? this.googleSitelinks() : undefined,
       hsUtm: this.hsUtm(),
       totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
@@ -2264,6 +2288,15 @@ export class PlanningTabComponent implements OnInit {
         break;
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
+        break;
+      // Only the GENERATE stream carries these two. `handleRefineSSEEvent` has no arm for them
+      // because the server's refine path yields neither -- regenerating an extension list would
+      // overwrite whatever the operator has since edited into it.
+      case 'callouts':
+        this.googleCallouts.set(event.data as string[]);
+        break;
+      case 'sitelinks':
+        this.googleSitelinks.set(event.data as CampaignSitelink[]);
         break;
       case 'linkedin_strategy': {
         const raw = event.data as Record<string, unknown>;

@@ -8148,7 +8148,316 @@ describe('CampaignsComponent — Implementation edits survive a tab switch', () 
     // Event B's own generated copy stands.
     expect(headlineInput()?.value).toBe('Generated A');
   });
+
+  /**
+   * #3810 (Copilot): the draft clear is right for everything refine REGENERATES and wrong for the
+   * two extension lists, which it does not.
+   *
+   * Refine for the same event hands back a brief carrying the callouts and sitelinks the generator
+   * produced the first time — the operator has been editing them since, and the clear puts the
+   * originals back over their work. The slug guard one level down cannot catch it: refining the
+   * SAME event is the whole scenario, so the slugs agree.
+   */
+  const briefWithExtensions = (slug: string): CampaignBriefOutput =>
+    ({
+      ...briefFor(slug),
+      googleCallouts: ['Generated callout'],
+      googleSitelinks: [{ text: 'Register', finalUrl: 'https://example.com/register' }],
+    }) as unknown as CampaignBriefOutput;
+
+  it('keeps an edited callout list when the same event is refined and proceeded again', async () => {
+    // The SAVED half of the carry, not just the in-memory one. `onProceedToImplementation` hands
+    // `handedOver` to both `briefOutput` and `persistBrief`, and a regression passing the pre-carry
+    // `brief` to the second would leave the editor showing the operator's edits while the stored row
+    // held the generator's originals — invisible until the next Restore quietly lost them.
+    //
+    // The stub RESOLVES, and must: `persistBrief` serializes saves on `persistChain`, so a `NEVER`
+    // here would leave the first Proceed's save in flight forever and the second one would never be
+    // sent at all — the assertion below would then read the first call and fail for the wrong
+    // reason. It resolves as the cutover-dark no-op (`enabled: false`, no id), which records no
+    // ownership and leaves the banner idle, so the save bookkeeping other specs own stays out of
+    // this one.
+    const persistBrief = vi
+      .spyOn(TestBed.inject(CampaignService), 'persistBrief')
+      .mockReturnValue(of({ enabled: false, briefId: '', etag: null, created: false, approved: false }));
+
+    // Driven through the mounted child rather than by hand-building a draft, so the carry is shown
+    // composing with the draft `buildDraft` actually emits — the editor's own edits are then layered
+    // onto that real draft the way `draftChange` would.
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const emitted = internals().implementationDraft();
+    expect(emitted).not.toBeNull();
+    expect(emitted!.eventSlug).toBe('kubecon-eu-2026');
+    internals().implementationDraft.set({ ...emitted!, googleCallouts: ['Early bird pricing'] });
+
+    // Back to Planning, refine, proceed again — the SAME event, so a new brief object carrying the
+    // generator's original list arrives while the operator's edit lives only in the draft. The
+    // child's `eventSlug` guard cannot help: the slugs agree, which is the whole scenario.
+    internals().selectTab('planning', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().selectTab('implementation', 'paid-marketing');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
+    // And the regenerated copy still wins for the fields refine actually produces.
+    expect(headlineInput()?.value).toBe('Generated A');
+
+    // The same object the page holds, not a sibling that happens to match: identity is what pins
+    // `persistBrief(handedOver)` rather than `persistBrief(brief)`, since the two differ only in
+    // the carried lists.
+    // Awaited, not read straight away: saves are dispatched from `persistChain`, a promise queue
+    // `fixture.whenStable()` does not drain — the second Proceed's link only runs once the first
+    // save's response has been handled, which lands after the awaits above have resolved.
+    await vi.waitFor(() => expect(persistBrief).toHaveBeenCalledTimes(2));
+    const persisted = persistBrief.mock.calls[1][0];
+    expect(persisted).toBe(internals().briefOutput());
+    expect(persisted.googleCallouts).toEqual(['Early bird pricing']);
+    expect(persisted.googleSitelinks).toEqual(emitted!.googleSitelinks);
+  });
+
+  it('leaves a brief that carries no extension lists exactly as it arrived', () => {
+    // `buildDraft` always emits both fields as arrays, so without the empty-and-absent exception a
+    // second Proceed would add `googleCallouts: []` to a brief that never had one — a field written
+    // into the persisted row recording a clearance of a list that was never there.
+    internals().onProceedToImplementation(briefFor('kubecon-eu-2026'));
+    // The shape `emitDraft` actually produces — both fields present and EMPTY. A draft with the
+    // fields missing returns on `callouts !== undefined` before the exception clause this test
+    // exists to pin is ever reached, so it would stay green with the clause deleted.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: [], googleSitelinks: [] });
+
+    const plain = briefFor('kubecon-eu-2026');
+    internals().onProceedToImplementation(plain);
+
+    expect(internals().briefOutput()).toBe(plain);
+  });
+
+  it('carries an emptied extension list as [], so a full clear-out is not undone', () => {
+    // The case Copilot named explicitly. On `CampaignBriefOutput` absent and empty differ — `[]`
+    // CLEARS the editor, `undefined` leaves it alone — so dropping an empty list here would put the
+    // generator's entries back over a deliberate removal.
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: [],
+      googleSitelinks: [],
+    });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual([]);
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([]);
+  });
+
+  it('carries edited sitelinks and leaves the regenerated fields alone', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    const edited = { text: 'Operator link', finalUrl: 'https://example.com/schedule' };
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleSitelinks: [edited] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }]);
+    // Deep-copied, not aliased — the entry the editor goes on to mutate must not be the same object
+    // the brief (and the row persisted from it) now holds.
+    expect(internals().briefOutput()?.googleSitelinks?.[0]).not.toBe(edited);
+    // Everything refine DOES regenerate is untouched by the carry.
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  it('does not carry one event extensions onto a different event brief', () => {
+    internals().onProceedToImplementation(briefWithExtensions('event-a'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('event-a'),
+      googleCallouts: ['Event A only'],
+    });
+
+    internals().onProceedToImplementation(briefWithExtensions('event-b'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  /**
+   * #3810 round 2 (Copilot and Cursor, independently): the carry was keyed on the event SLUG, and
+   * the slug cannot tell "the same brief, refined" from "the same event, generated again".
+   *
+   * The route is real and sits in the Planning tab's own template: `planning-new-brief-btn` calls
+   * `reset()`, which puts the step back to `input` and re-arms Generate without leaving the event.
+   * A full generate emits NEW callouts and sitelinks; the draft from the last Implement visit then
+   * replaced them, so the regenerated brief opened — and `persistBrief` stored it — carrying the
+   * previous generation's extensions.
+   *
+   * The whole class is "every transition that replaces the brief", and each member has a test here
+   * rather than this one route being patched: refine must still carry (both the first and the
+   * second time), restore must not, and Start Over must leave nothing behind.
+   */
+  const regeneratedBrief = (slug: string): CampaignBriefOutput =>
+    ({
+      ...briefFor(slug),
+      googleCallouts: ['Regenerated callout'],
+      googleSitelinks: [{ text: 'Book now', finalUrl: 'https://example.com/book' }],
+    }) as unknown as CampaignBriefOutput;
+
+  it('drops the edits when the same event is generated again, rather than overwriting the new lists', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing'],
+      googleSitelinks: [{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }],
+    });
+
+    // New Brief → Generate: same event, same slug, different lists.
+    internals().onProceedToImplementation(regeneratedBrief('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Regenerated callout']);
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([{ text: 'Book now', finalUrl: 'https://example.com/book' }]);
+  });
+
+  it('still carries the edits on a SECOND refine of the same brief', () => {
+    // The trap in the obvious fix. Comparing the incoming lists against the brief ON SCREEN works
+    // once and then stops: after the first carry the on-screen brief holds the operator's edits
+    // while Planning still holds the generator's originals, so the second refine compares unequal
+    // and silently drops the edits. The baseline is therefore recorded from the INCOMING brief,
+    // before the carry, which keeps it equal to what Planning keeps handing back.
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
+
+    // Refine a second time. The edit is re-entered because the first Proceed cleared the draft,
+    // exactly as a returning operator would re-enter the editor and have it seeded from the brief.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Early bird pricing']);
+  });
+
+  it('carries nothing on the first Proceed of a session, when no brief has been handed over yet', () => {
+    // Fail-closed: a draft with no baseline behind it is a draft typed over nothing this page
+    // handed out, so it has no claim on the incoming lists.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Stale'] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  it('does not carry onto a restored brief, and records its lists for what follows', () => {
+    const restore = internals() as unknown as { onProceedToImplementation(b: CampaignBriefOutput, alreadyPersisted: boolean): void };
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    // A restore writes nothing, so substituting into it would show values no stored row holds.
+    const restored = regeneratedBrief('kubecon-eu-2026');
+    restore.onProceedToImplementation(restored, true);
+    expect(internals().briefOutput()).toBe(restored);
+
+    // And the baseline moved with it: edits typed over the RESTORED brief carry back onto it, and
+    // the pre-restore generation's lists no longer match anything.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['After restore'] });
+    internals().onProceedToImplementation(regeneratedBrief('kubecon-eu-2026'));
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['After restore']);
+  });
+
+  it('does not carry onto a restored brief whose lists MATCH the baseline', () => {
+    // The case the test above cannot cover. There the restored brief's lists differ from the
+    // baseline, so `sameCallouts` refuses the carry on its own and the `alreadyPersisted` exclusion
+    // could be deleted with the test still green. Here the restored lists are the baseline's, the
+    // draft holds an edit, and the exclusion is the ONLY thing standing between them — a realistic
+    // flow too: generate, proceed, edit, New Brief, then restore the row this generation wrote.
+    const restore = internals() as unknown as { onProceedToImplementation(b: CampaignBriefOutput, alreadyPersisted: boolean): void };
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing'],
+      googleSitelinks: [{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }],
+    });
+
+    const restored = briefWithExtensions('kubecon-eu-2026');
+    restore.onProceedToImplementation(restored, true);
+
+    // Identity, not equality: a restore must hand the stored object through untouched, and a carry
+    // would return a substituted copy carrying the draft's edits over values no row holds.
+    expect(internals().briefOutput()).toBe(restored);
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  it('carries nothing after Start Over, which clears the baseline with the draft', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    internals().resetToPlanning();
+    // Re-seeded the way a stale draft would survive if anything ever held one past the reset: the
+    // baseline alone must be enough to refuse the carry.
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['Early bird pricing'] });
+
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Generated callout']);
+  });
+
+  it('gates each extension list on its own, so one regenerated list does not void the other', () => {
+    internals().onProceedToImplementation(briefWithExtensions('kubecon-eu-2026'));
+    internals().implementationDraft.set({
+      ...completeDraftFor('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing'],
+      googleSitelinks: [{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }],
+    });
+
+    // Callouts regenerated, sitelinks handed back unchanged.
+    const mixed = {
+      ...briefWithExtensions('kubecon-eu-2026'),
+      googleCallouts: ['Regenerated callout'],
+    } as unknown as CampaignBriefOutput;
+    internals().onProceedToImplementation(mixed);
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Regenerated callout']);
+    expect(internals().briefOutput()?.googleSitelinks).toEqual([{ text: 'Operator link', finalUrl: 'https://example.com/schedule' }]);
+  });
+
+  it('treats a reordered list as regenerated, since positional edits no longer line up', () => {
+    const twoCallouts = { ...briefFor('kubecon-eu-2026'), googleCallouts: ['First', 'Second'] } as unknown as CampaignBriefOutput;
+    internals().onProceedToImplementation(twoCallouts);
+    internals().implementationDraft.set({ ...completeDraftFor('kubecon-eu-2026'), googleCallouts: ['First edited', 'Second'] });
+
+    const reordered = { ...briefFor('kubecon-eu-2026'), googleCallouts: ['Second', 'First'] } as unknown as CampaignBriefOutput;
+    internals().onProceedToImplementation(reordered);
+
+    expect(internals().briefOutput()?.googleCallouts).toEqual(['Second', 'First']);
+  });
 });
+
+/** A draft with every REQUIRED member of {@link CampaignImplementationDraft} present. */
+function completeDraftFor(slug: string): CampaignImplementationDraft {
+  return {
+    eventName: 'KubeCon',
+    countryCode: 'US',
+    registrationUrl: 'https://example.com',
+    headlines: ['Generated A', 'Generated B'],
+    descriptions: ['Generated desc'],
+    budgetUsd: 500,
+    searchBudgetPct: 100,
+    startDate: '2026-01-01',
+    endDate: '2026-02-01',
+    includeSearch: true,
+    includeDemandGen: false,
+    includePerformanceMax: false,
+    includeVideo: false,
+    includeDisplay: false,
+    linkedInAccountId: '',
+    linkedInGeoTargets: [],
+    linkedInTargetingProfile: 'mcp',
+    eventSlug: slug,
+  };
+}
 
 /**
  * The HubSpot template picker (LFXV2-3198).
