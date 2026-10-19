@@ -3,7 +3,26 @@
 
 <!-- Arbitrary [Npx] values throughout match the design's exact pixel sizes, per .claude/rules/styling.md's
      rem-scale-undershoot exception (this app's 14px root font makes e.g. `text-xs` render ~10.5px, not 12px). -->
-<div class="flex flex-col gap-3 p-[16px]">
+@if (tile().tabRoute; as tabRoute) {
+  <!-- The whole tile opens the top of its tab, as the tab bar does; hover and focus reveal the chevron. -->
+  <a
+    [routerLink]="tabRoute"
+    queryParamsHandling="preserve"
+    [attr.aria-label]="'Open ' + tile().name"
+    class="group relative flex h-full flex-col gap-3 p-[16px] transition-colors hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
+    data-testid="health-metrics-overview-tile-link">
+    <ng-container [ngTemplateOutlet]="tileBody" />
+    <i
+      class="fa-light fa-chevron-right absolute top-[12px] right-[12px] text-[12px] text-gray-400 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      aria-hidden="true"></i>
+  </a>
+} @else {
+  <div class="flex h-full flex-col gap-3 p-[16px]">
+    <ng-container [ngTemplateOutlet]="tileBody" />
+  </div>
+}
+
+<ng-template #tileBody>
   <div class="flex items-center gap-2">
     <i [class]="tile().icon + ' text-sm text-gray-500'" aria-hidden="true"></i>
     <span class="text-[12px] font-semibold text-gray-900">{{ tile().name }}</span>
@@ -29,30 +48,14 @@
         data-testid="health-metrics-overview-tile-insights-link">
         LFX Insights <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
       </a>
-    } @else if (tile().showStatus !== false || tile().route) {
-      <!-- A linked tile keeps its status chip; the link sits beside it. -->
-      <div class="flex flex-wrap items-center gap-3" data-testid="health-metrics-overview-tile-status-row">
-        @if (tile().showStatus !== false) {
-          <span class="flex items-center gap-1.5 text-xs font-medium" [ngClass]="classificationMeta().textClass">
-            <i [class]="classificationMeta().icon" aria-hidden="true"></i>
-            {{ classificationMeta().label }}
-          </span>
-        }
-        @if (tile().route; as route) {
-          <a
-            [routerLink]="route.commands"
-            [fragment]="route.fragment"
-            [queryParams]="route.queryParams"
-            queryParamsHandling="merge"
-            class="text-xs font-medium text-blue-600 hover:underline"
-            [attr.data-testid]="'health-metrics-overview-tile-' + tile().area + '-link'">
-            {{ tile().routeLabel }} <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
-          </a>
-        }
-      </div>
+    } @else if (tile().showStatus !== false) {
+      <span class="flex items-center gap-1.5 text-xs font-medium" [ngClass]="classificationMeta().textClass" data-testid="health-metrics-overview-tile-status">
+        <i [class]="classificationMeta().icon" aria-hidden="true"></i>
+        {{ classificationMeta().label }}
+      </span>
     }
     @if (asOfLabel(); as asOfLabelText) {
       <span class="text-xs text-gray-400">{{ asOfLabelText }}</span>
     }
   </div>
-</div>
+</ng-template>

@@ -12,7 +12,6 @@ import type {
   HealthMetricsOverviewLinkTarget,
   HealthMetricsOverviewMembersLinkSpec,
   HealthMetricsOverviewNonMembersLinkSpec,
-  HealthMetricsOverviewTileLinkSpec,
   HealthMetricsOverviewTrainingLinkSpec,
   HealthOverviewKpisRow,
   HealthOverviewRevenueRow,
@@ -26,12 +25,12 @@ import type {
  * Order here is the tile-strip render order — never re-sorted.
  */
 export const HEALTH_METRICS_OVERVIEW_AREAS = [
-  { key: 'eng', name: 'Engagement', icon: 'fa-light fa-users' },
-  { key: 'evt', name: 'Events', icon: 'fa-light fa-calendar' },
-  { key: 'mem', name: 'Members', icon: 'fa-light fa-building' },
-  { key: 'non', name: 'Non-Members', icon: 'fa-light fa-handshake' },
-  { key: 'trn', name: 'Training', icon: 'fa-light fa-graduation-cap' },
-  { key: 'code', name: 'Code', icon: 'fa-light fa-code-branch' },
+  { key: 'eng', name: 'Engagement', icon: 'fa-light fa-users', tab: 'engagement' },
+  { key: 'evt', name: 'Events', icon: 'fa-light fa-calendar', tab: 'events' },
+  { key: 'mem', name: 'Members', icon: 'fa-light fa-building', tab: 'members' },
+  { key: 'non', name: 'Non-Members', icon: 'fa-light fa-handshake', tab: 'non-members' },
+  { key: 'trn', name: 'Training', icon: 'fa-light fa-graduation-cap', tab: 'training' },
+  { key: 'code', name: 'Code', icon: 'fa-light fa-code-branch', tab: null },
 ] as const;
 
 /**
@@ -141,17 +140,17 @@ export const HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS = {
   'trn.enrollment': { section: 'enroll', queryParams: {} },
 } as const satisfies Record<string, HealthMetricsOverviewTrainingLinkSpec>;
 
-/** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
+/** The stat value every no-data tile shows. */
 export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
 
-/** Each linked tile's target and link text; Engagement opens the unfiltered group attendance, the source of its counts. */
-export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
-  eng: { linkTarget: 'eng.groups', label: 'View groups' },
-  evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
-  mem: { linkTarget: 'mem.list', label: 'View members' },
-  non: { linkTarget: 'non.orgs', label: 'View organizations' },
-  trn: { linkTarget: 'trn.enrollment', label: 'View enrollment' },
-} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
+/** Each area's default `link_target`, used when a signal's key has no section of its own; Engagement opens group attendance, the source of its counts. */
+export const HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS = {
+  eng: 'eng.groups',
+  evt: 'evt.forecast',
+  mem: 'mem.list',
+  non: 'non.orgs',
+  trn: 'trn.enrollment',
+} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewLinkTarget>>;
 
 /** The one `link_target` that opens externally (LFX Insights) instead of an in-app tab. */
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
@@ -207,13 +206,13 @@ export const HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS: Readonly<Record<string
 };
 
 /** `HEALTH_OVERVIEW_SIGNALS.category` → Overview area. A row whose category isn't listed is dropped from the feed. */
-export const HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: Readonly<Record<string, keyof typeof HEALTH_METRICS_OVERVIEW_TILE_LINKS>> = {
+export const HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: Readonly<Record<string, keyof typeof HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS>> = {
   ENGAGEMENT: 'eng',
   MEMBERS: 'mem',
   'NON-MEMBERS': 'non',
 };
 
-/** `signal_key` → the Level 2 section its finding opens; the table carries no link column, so an unknown key falls back to its area's tile link. */
+/** `signal_key` → the Level 2 section its finding opens; the table carries no link column, so an unknown key falls back to its area's default target. */
 export const HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS: Readonly<Record<string, HealthMetricsOverviewLinkTarget>> = {
   engagement_dormant_groups: 'eng.groups',
   engagement_tsc_steady: 'eng.groups',

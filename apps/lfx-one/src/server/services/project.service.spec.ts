@@ -102,9 +102,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
+    HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS,
     HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
     HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
-    HEALTH_METRICS_OVERVIEW_TILE_LINKS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_TILE_LINKS,
     // Real maps: getHealthOverviewSignals drops any row these don't cover, and the tests assert on that.
     HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS,
     HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS,
