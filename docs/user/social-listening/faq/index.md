@@ -11,7 +11,7 @@ intercom_collection: Social Listening
 
 ## Who can see Social Listening?
 
-Social Listening is available to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's groups can also see it for that foundation when their group's **Members Can View Social Listening** setting is on. The setting is off by default, and anyone who can manage the group can turn it on in the group's **Settings** tab. Group members see the whole foundation and can filter by project. It appears in the **Foundation** lens only.
+Social Listening is available to users with the **executive-director** persona and to **LF Staff**. Members of a foundation's own groups (not its projects' groups) can also see it for that foundation when their group's **Members Can View Social Listening** setting is on. The setting is off by default, and anyone who can manage the group can turn it on in the group's **Settings** tab. Group members see the whole foundation and can filter by project. It appears in the **Foundation** lens only.
 
 ## Why don't I see Social Listening in the navigation?
 

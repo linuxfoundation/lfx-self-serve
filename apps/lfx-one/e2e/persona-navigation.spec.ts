@@ -16,8 +16,8 @@
  *   S4  Foundation lens — board-member without canWrite hides Newsletters
  *   S5  Project lens — contributor without canWrite hides Newsletters
  *   S6  Project lens — contributor with canWrite sees Newsletters
- *   S7  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard redirect non-ED to /foundation/overview (incl. /foundation/social-listening)
- *   S8  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard pass for ED persona (incl. /foundation/social-listening page content)
+ *   S7  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard/socialListeningAccessGuard redirect non-ED to /foundation/overview (social listening: unless an opted-in group grants access)
+ *   S8  Route guard — dashboardAccessGuard/marketingImpactAccessGuard/campaignAccessGuard/socialListeningAccessGuard pass for ED persona (incl. /foundation/social-listening page content)
  *   S9  Route guard — writerGuard redirects contributor without write access
  *   S10 Route guard — writerGuard passes for ED via synchronous fast path
  *   S11 Settings page — view-only banner shown to non-writer
@@ -531,7 +531,7 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
     });
   });
 
-  test('board-member navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
+  test('board-member without an opted-in group navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
     await stubPersona(page, ['board-member']);
     await stubNavLensItems(page, 'foundation');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
@@ -740,7 +740,7 @@ test.describe('S15: Foundation lens — LF Staff (isLFStaff: true, contributor p
     });
   });
 
-  test('LF Staff navigating to /foundation/social-listening reaches the page (dashboardAccessGuard)', async ({ page }) => {
+  test('LF Staff navigating to /foundation/social-listening reaches the page (socialListeningAccessGuard)', async ({ page }) => {
     await stubSocialListeningApi(page);
 
     await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
