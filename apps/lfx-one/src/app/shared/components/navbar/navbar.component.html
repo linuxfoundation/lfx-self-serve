@@ -162,8 +162,9 @@
       -->
       <!-- lfxScrollShadow tracks the scroll edges; the fade classes mask items as they scroll under the header/footer. -->
       <!-- Persistent live region: the no-access message is swapped in here rather than mounting a new status node. -->
+      <!-- Gated like the visible panel below, so screen readers never hear a state the panel hasn't shown yet. -->
       <div class="sr-only" role="status" data-testid="navbar-no-access-status">
-        @if (showNoAccessState(); as kind) {
+        @if (hydrated() && lensLoaded() && !menuPending() && showNoAccessState(); as kind) {
           @if (retryingLookups()) {
             Retrying…
           } @else if (menuLookupFailed()) {

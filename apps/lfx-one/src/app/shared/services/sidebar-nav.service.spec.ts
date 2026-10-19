@@ -1068,6 +1068,33 @@ describe('SidebarNavService', () => {
       expect(service.menuRetryPending()).toBe(false);
     });
 
+    it("doesn't hold another scope's menu pending or block its retry while an older scope's retry runs", () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const cncfRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => cncfRetry);
+      service.retryMenuLookups();
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // Switch to aaif: its menu isn't held by cncf's retry, and it can retry on its own.
+      selectedFoundation.set({ slug: 'aaif' });
+      expect(service.sidebarItemsPending()).toBe(false);
+      const aaifRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => aaifRetry);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalled();
+      expect(service.menuRetryPending()).toBe(true);
+
+      // cncf's retry settles late: it must not end aaif's.
+      cncfRetry.next({});
+      cncfRetry.complete();
+      expect(service.menuRetryPending()).toBe(true);
+      aaifRetry.next({});
+      aaifRetry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
     it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {
       refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
         slug === 'cncf' ? of(null) : of({ error: null })

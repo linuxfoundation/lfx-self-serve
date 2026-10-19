@@ -80,7 +80,7 @@ export class NavTooltipDirective {
 
   @HostListener('mouseleave')
   protected onMouseLeave(): void {
-    this.dismiss();
+    this.dismiss(true);
   }
 
   @HostListener('focusout', ['$event'])
@@ -124,8 +124,12 @@ export class NavTooltipDirective {
     return this.items().length > 0;
   }
 
-  /** Label-only tooltips hide at once; interactive ones wait so the pointer can reach the card. */
-  private dismiss(): void {
+  /**
+   * Label-only tooltips hide at once; interactive ones wait so the pointer can reach the card.
+   * `fromPointer`: the pointer left (rather than focus moving away), so a trigger still holding keyboard
+   * focus keeps its card.
+   */
+  private dismiss(fromPointer = false): void {
     this.clearShowTimer();
     if (!this.isInteractive()) {
       this.hide();
@@ -135,8 +139,9 @@ export class NavTooltipDirective {
     // Keyboard users who moved into the chips keep the card while focus is inside it; the pointer
     // wandering off must not pull a focused chip out from under them (focusout / Escape close it).
     if (this.tooltip?.contains(this.document.activeElement)) return;
-    // Likewise while the trigger itself holds keyboard focus: ArrowDown must still find the chips.
-    if (this.host.nativeElement.matches(':focus-visible')) return;
+    // Likewise when only the pointer left a trigger that still holds keyboard focus: ArrowDown must still
+    // find the chips. Focus moving away (Tab) is a real dismissal, even while the trigger still matches.
+    if (fromPointer && this.host.nativeElement.matches(':focus-visible')) return;
     this.hideTimer = setTimeout(() => this.hide(), NAV_TOOLTIP_HIDE_DELAY_MS);
   }
 
@@ -178,7 +183,7 @@ export class NavTooltipDirective {
         // Focus arriving in the card (ArrowDown into a chip) cancels a hide already scheduled by the
         // pointer leaving during the grace period.
         this.renderer.listen(tooltip, 'focusin', () => this.cancelHide()),
-        this.renderer.listen(tooltip, 'mouseleave', () => this.dismiss()),
+        this.renderer.listen(tooltip, 'mouseleave', () => this.dismiss(true)),
         this.renderer.listen(tooltip, 'focusout', (event: FocusEvent) => {
           const next = event.relatedTarget as Node | null;
           if (!tooltip.contains(next) && next !== host) this.dismiss();

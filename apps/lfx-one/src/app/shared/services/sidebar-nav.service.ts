@@ -137,16 +137,19 @@ export class SidebarNavService {
    * for the same scope (A → B → A while A's retry is still running).
    */
   private readonly marketingProbeGenerations = new Map<string, number>();
-  /** In flight while a `retryMenuLookups()` persona refresh runs. */
-  private readonly retryPending = signal(false);
-  /** The menu scope (lens + selected foundation / project) a `retryMenuLookups()` run started on. */
-  private readonly retryScope = signal<string | null>(null);
+  /**
+   * The latest `retryMenuLookups()` run still in flight, with the menu scope (lens + selected foundation /
+   * project) it started on. Only that run's own finalizer clears it, so an older run settling late can't
+   * end a newer one's pending state.
+   */
+  private readonly activeRetry = signal<{ id: number; scope: string } | null>(null);
+  private retryRunId = 0;
   /**
    * True while a `retryMenuLookups()` run started on the scope still on screen is in flight, so its error
-   * card can stay up with a busy Retry. Scoped: after a context switch the new scope's empty menu shows
-   * its own state, never a retry it didn't start.
+   * card can stay up with a busy Retry. Scoped: after a context switch the new scope's menu is neither held
+   * pending by nor blocked from retrying behind a retry it didn't start.
    */
-  public readonly menuRetryPending: Signal<boolean> = computed(() => this.retryPending() && this.retryScope() === this.menuScopeKey());
+  public readonly menuRetryPending: Signal<boolean> = computed(() => this.activeRetry()?.scope === this.menuScopeKey());
 
   /**
    * True when a lookup that shapes the menu failed instead of answering — an empty menu then means
@@ -168,7 +171,7 @@ export class SidebarNavService {
    */
   public readonly sidebarItemsPending = computed((): boolean => {
     if (!this.personaService.personaLoaded()) return true;
-    if (this.retryPending()) return true;
+    if (this.menuRetryPending()) return true;
     // A scoped marketing grant can be the only thing that fills the menu; wait for its probe too.
     if (this.marketingPersonaSlug() !== this.marketingScopeSlug()) return true;
     // A foundation writer grant can be what unlocks the foundation menu: wait for the fast path only.
@@ -966,9 +969,10 @@ export class SidebarNavService {
    * The menu stays pending until all settle, then shows the menu, the no-access state, or the error again.
    */
   public retryMenuLookups(): void {
-    if (this.retryPending()) return;
-    this.retryPending.set(true);
-    this.retryScope.set(this.menuScopeKey());
+    // One retry per scope at a time; a retry still running for another scope doesn't block this one.
+    if (this.menuRetryPending()) return;
+    const run = { id: ++this.retryRunId, scope: this.menuScopeKey() };
+    this.activeRetry.set(run);
     const slug = this.marketingScopeSlug();
     const generation = slug ? this.startMarketingProbe(slug) : 0;
     // The lookups re-run together and the menu stays pending until all settle, so none can resolve
@@ -978,7 +982,7 @@ export class SidebarNavService {
       slug ? this.personaService.refreshEnrichedPersonas(false, slug) : of(null),
       this.writerGrantsService.lookupFailed() ? this.writerGrantsService.retrySummary() : of(null),
     ])
-      .pipe(finalize(() => this.retryPending.set(false)))
+      .pipe(finalize(() => this.activeRetry.update((active) => (active?.id === run.id ? null : active))))
       .subscribe(([, scoped]) => {
         if (slug) this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(scoped));
       });

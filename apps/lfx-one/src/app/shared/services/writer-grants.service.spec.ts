@@ -113,5 +113,23 @@ describe('WriterGrantsService', () => {
       expect(service.lookupFailed()).toBe(false);
       expect(service.hasWriterFoundation()).toBe(true);
     });
+
+    it('shares one in-flight retry between concurrent callers', () => {
+      userService.authenticated.set(true);
+      const service = TestBed.inject(WriterGrantsService);
+      const pending = new Subject<WriterSummary | null>();
+      getWriterSummary.mockReturnValue(pending);
+      getWriterSummary.mockClear();
+
+      service.retrySummary().subscribe();
+      service.retrySummary().subscribe();
+      expect(getWriterSummary).toHaveBeenCalledTimes(1);
+
+      pending.next({ hasWriterFoundation: false, hasWriterProject: false } as WriterSummary);
+      pending.complete();
+      getWriterSummary.mockReturnValue(of(null));
+      service.retrySummary().subscribe();
+      expect(getWriterSummary).toHaveBeenCalledTimes(2);
+    });
   });
 });

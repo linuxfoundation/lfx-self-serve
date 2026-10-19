@@ -8,7 +8,7 @@ import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { summarizeWriterGrants } from '@lfx-one/shared/utils';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
-import { finalize, map, Observable } from 'rxjs';
+import { finalize, map, Observable, shareReplay } from 'rxjs';
 
 /**
  * Whether the user holds a `writer` grant on a foundation-level and/or non-foundation project —
@@ -73,6 +73,8 @@ export class WriterGrantsService {
   public readonly summaryResolved: Signal<boolean> = this.summaryResolvedInternal.asReadonly();
 
   private readonly lookupFailedInternal: WritableSignal<boolean> = signal(false);
+  /** The writer-summary retry in flight, shared by every caller until it settles. */
+  private retrySummary$: Observable<void> | null = null;
 
   /**
    * True when the latest fast-path lookup failed (error or timeout) instead of answering. The grants
@@ -114,10 +116,14 @@ export class WriterGrantsService {
    * so a caller can hold its pending state until then.
    */
   public retrySummary(): Observable<void> {
-    return this.projectService.getWriterSummary().pipe(
+    // Concurrent callers (retries for different menu scopes) share one in-flight request.
+    this.retrySummary$ ??= this.projectService.getWriterSummary().pipe(
       map((summary) => this.applySummary(summary)),
-      takeUntilDestroyed(this.destroyRef)
+      finalize(() => (this.retrySummary$ = null)),
+      takeUntilDestroyed(this.destroyRef),
+      shareReplay({ bufferSize: 1, refCount: false })
     );
+    return this.retrySummary$;
   }
 
   /** Records a fast-path outcome: `null` is a failed lookup, anything else an answer to widen with. */

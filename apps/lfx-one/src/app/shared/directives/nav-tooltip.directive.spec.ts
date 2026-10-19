@@ -132,6 +132,20 @@ describe('NavTooltipDirective', () => {
     matches.mockRestore();
   });
 
+  it('still closes the card when keyboard focus moves away (Tab), even while the trigger matches :focus-visible', () => {
+    host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
+    TestBed.tick();
+    const matches = vi.spyOn(first, 'matches').mockImplementation((selector: string) => selector === ':focus-visible');
+    first.dispatchEvent(new FocusEvent('focusin'));
+    vi.advanceTimersByTime(0);
+    expect(tooltips()).toHaveLength(1);
+
+    first.dispatchEvent(new FocusEvent('focusout', { relatedTarget: second }));
+    vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS);
+    expect(tooltips()).toHaveLength(0);
+    matches.mockRestore();
+  });
+
   it('holds an interactive card open while the pointer crosses into it', () => {
     host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
     TestBed.tick();
