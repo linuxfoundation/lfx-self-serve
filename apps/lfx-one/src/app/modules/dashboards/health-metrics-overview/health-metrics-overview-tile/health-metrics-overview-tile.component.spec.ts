@@ -53,7 +53,8 @@ describe('HealthMetricsOverviewTileComponent', () => {
 
     const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-link"]');
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement');
-    expect(link.getAttribute('aria-label')).toBe('Open Engagement');
+    expect(link.getAttribute('aria-label')).toBeNull();
+    expect(link.getAttribute('title')).toBe('Open Engagement');
     expect(link.textContent).toContain('8 of 31');
     expect(link.textContent).not.toContain('View');
     expect(fixture.nativeElement.textContent).not.toContain('Awaiting data');

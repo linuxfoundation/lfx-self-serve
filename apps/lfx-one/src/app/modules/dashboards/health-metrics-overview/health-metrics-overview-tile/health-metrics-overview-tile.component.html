@@ -4,11 +4,12 @@
 <!-- Arbitrary [Npx] values throughout match the design's exact pixel sizes, per .claude/rules/styling.md's
      rem-scale-undershoot exception (this app's 14px root font makes e.g. `text-xs` render ~10.5px, not 12px). -->
 @if (tile().tabRoute; as tabRoute) {
-  <!-- The whole tile opens the top of its tab, as the tab bar does; hover and focus reveal the chevron. -->
+  <!-- The whole tile opens the top of its tab, as the tab bar does; hover and focus reveal the chevron.
+       No aria-label: the link's name comes from the tile's figures and status, which a label would hide. -->
   <a
     [routerLink]="tabRoute"
     queryParamsHandling="preserve"
-    [attr.aria-label]="'Open ' + tile().name"
+    [attr.title]="'Open ' + tile().name"
     class="group relative flex h-full flex-col gap-3 p-[16px] transition-colors hover:bg-gray-50 focus-visible:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset"
     data-testid="health-metrics-overview-tile-link">
     <ng-container [ngTemplateOutlet]="tileBody" />

@@ -2807,7 +2807,7 @@ describe('ProjectService — getHealthOverviewSignals', () => {
     ]);
   });
 
-  it("falls back to the area's tile link for an unmapped signal key", async () => {
+  it("falls back to the area's default target for an unmapped signal key", async () => {
     execute.mockResolvedValueOnce({ rows: [signalRow({ SIGNAL_KEY: 'engagement_new_signal', CATEGORY: 'ENGAGEMENT', SEVERITY_BAND: 'opportunity' })] });
 
     const result = await service.getHealthOverviewSignals('cncf');
