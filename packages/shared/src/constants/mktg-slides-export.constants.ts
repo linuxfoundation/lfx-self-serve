@@ -78,23 +78,16 @@ export const MKTG_SLIDES_EXPORT_KEY_PREFIX = 'slides-exports';
 export const MKTG_SLIDES_EXPORT_KEY_TIME_DIGITS = 15;
 
 /**
- * The project logo as the browser drew it from the kit's SVG: a PNG, since
+ * The project logo as the server draws it from the kit's SVG: a PNG, since
  * the Slides API takes PNG, JPEG or GIF only. It is published under this
  * prefix of the public image bucket, content-addressed per project.
  */
 export const MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX = 'mktg-slides-logos';
 export const MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE = 'image/png';
-/** Largest PNG accepted, in bytes (the drawn logo is far smaller). */
+/** Largest drawn PNG published, in bytes (a logo at the drawing size is far smaller). */
 export const MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES = 1_048_576;
-/** The eight bytes every PNG starts with. */
-export const MKTG_SLIDES_EXPORT_PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const;
-/** Longest side of the drawn logo and of an accepted PNG, in pixels. */
-export const MKTG_SLIDES_EXPORT_LOGO_MAX_SIDE_PX = 1600;
-/** Longest side the browser draws the logo at. */
-export const MKTG_SLIDES_EXPORT_LOGO_DRAW_SIDE_PX = 1200;
-
-/** How long the browser waits for the logo to load before exporting without it. */
-export const MKTG_SLIDES_EXPORT_LOGO_LOAD_MS = 5000;
+/** Longest side the server draws the logo at, in pixels. */
+export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
 
 /**
  * A runtime error is a failed export only once it has settled: a session can

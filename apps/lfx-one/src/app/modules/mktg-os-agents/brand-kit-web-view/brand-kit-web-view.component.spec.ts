@@ -27,7 +27,7 @@ const CDN_LOGO_URL = 'https://cdn.sanity.io/images/p4x9k2m1/production/0f3e9c2b8
 describe('BrandKitWebViewComponent', () => {
   let fixture: ComponentFixture<BrandKitWebViewComponent>;
   let print: ReturnType<typeof vi.spyOn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
@@ -44,7 +44,6 @@ describe('BrandKitWebViewComponent', () => {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
       poll: vi.fn(() => NEVER),
-      drawLogoPng: vi.fn(() => Promise.resolve('UE5H')),
     };
     await TestBed.configureTestingModule({
       imports: [BrandKitWebViewComponent],
@@ -69,7 +68,7 @@ describe('BrandKitWebViewComponent', () => {
   describe('in the browser', () => {
     beforeEach(async () => configure('browser'));
 
-    it('exports the stored kit to Google Slides with its logo drawn for the deck, the panel showing the progress', async () => {
+    it('exports the stored kit to Google Slides, the panel showing the progress', async () => {
       const target = { project: 'proj-1', agentKey: 'brand-kit' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
       fixture.componentRef.setInput('exportTarget', target);
       await fixture.whenStable();
@@ -79,8 +78,7 @@ describe('BrandKitWebViewComponent', () => {
       await new Promise((resolve) => setTimeout(resolve));
       await fixture.whenStable();
 
-      expect(slidesExport.drawLogoPng).toHaveBeenCalledWith(brandKitTestRevision().chapters.logo.files.primary?.svg);
-      expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create', logoPng: 'UE5H' });
+      expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
       expect(query('mktg-slides-export-running')).not.toBeNull();
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
       expect(query('brand-kit-web-view-footer')?.textContent).toContain('Export to Google Slides builds the kit as a deck');

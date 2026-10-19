@@ -1,13 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  MKTG_ARTIFACT_PARTITION_REGEX,
-  MKTG_DOCUMENT_ID_REGEX,
-  MKTG_REVISION_ID_REGEX,
-  MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES,
-  MKTG_SLIDES_EXPORT_MODES,
-} from '@lfx-one/shared/constants';
+import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_DOCUMENT_ID_REGEX, MKTG_REVISION_ID_REGEX, MKTG_SLIDES_EXPORT_MODES } from '@lfx-one/shared/constants';
 import {
   MktgDocumentType,
   MktgSlidesExportAgentKey,
@@ -35,8 +29,9 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
  * grant on the requested project, and storage is addressed by the
  * SERVER-resolved project uid, never client input. Every path-forming value
  * is shape-gated first. The asset is read from the store, never taken from
- * the browser; the deck an update refreshes comes from the stored export
- * record. The owner token binds the session to its creator AND to the
+ * the browser, and so is the logo the deck carries (the server draws the
+ * stored kit's own SVG); the deck an update refreshes comes from the stored
+ * export record. The owner token binds the session to its creator AND to the
  * revision it exports, so a poll cannot file the deck under another
  * revision.
  */
@@ -57,11 +52,6 @@ export class MktgSlidesExportController {
       next(this.invalidField(req, operation, 'mode', `mode must be one of ${MKTG_SLIDES_EXPORT_MODES.join(', ')}`));
       return;
     }
-    // A base64 PNG, at most the cap once decoded; its bytes are checked by the service.
-    if (body.logoPng !== undefined && (typeof body.logoPng !== 'string' || body.logoPng.length > Math.ceil(MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES / 3) * 4)) {
-      next(this.invalidField(req, operation, 'logoPng', 'logoPng must be a base64 PNG within the size limit'));
-      return;
-    }
     const userId = getEffectiveSub(req);
     if (!userId) {
       next(new AuthenticationError('Could not identify the requesting user.', { operation, service: 'mktg_slides_export_controller', path: req.path }));
@@ -69,7 +59,7 @@ export class MktgSlidesExportController {
     }
 
     const mode = body.mode as MktgSlidesExportMode;
-    const startTime = logger.startOperation(req, operation, { agent: target.agentKey, mode, has_logo: !!body.logoPng });
+    const startTime = logger.startOperation(req, operation, { agent: target.agentKey, mode });
     try {
       const project = await this.resolveWritableProject(req, target.projectUid, operation);
       const started = await this.exportService.startExport(req, {
@@ -80,7 +70,6 @@ export class MktgSlidesExportController {
         documentId: target.documentId,
         selector: { revisionId: target.revisionId, contentSha256: target.contentSha256 },
         mode,
-        logoPng: body.logoPng || undefined,
       });
       const binding = this.binding(started.sessionId, target.projectUid, target.agentKey, target.documentId, started.revision.id);
       const response: MktgSlidesExportStartResponse = { ...started, ownerToken: createSessionOwnerToken(userId, binding) };

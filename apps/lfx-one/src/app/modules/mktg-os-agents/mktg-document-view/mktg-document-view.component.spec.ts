@@ -57,7 +57,7 @@ describe('MktgDocumentViewComponent', () => {
     restoreRevision: ReturnType<typeof vi.fn>;
   };
   let resolveBrandKit: ReturnType<typeof vi.fn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
     return harness.routeNativeElement?.querySelector(`[data-testid="${testId}"]`) ?? null;
@@ -88,7 +88,6 @@ describe('MktgDocumentViewComponent', () => {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of()),
       poll: vi.fn(() => of()),
-      drawLogoPng: vi.fn(() => Promise.resolve(undefined)),
     };
     const activeContext = signal<ProjectContext | null>(PROJECT);
 

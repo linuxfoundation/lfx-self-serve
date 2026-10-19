@@ -58,7 +58,7 @@
   </div>
 
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
-  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [logoSvg]="logoSvg()" data-testid="brand-kit-web-view-slides-export" />
+  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" data-testid="brand-kit-web-view-slides-export" />
 
   <!-- Tabs: the overview, the six chapters, the run's report -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Brand kit" data-testid="brand-kit-web-view-tabs" (keydown)="onTabKeydown($event)">

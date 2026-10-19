@@ -10,10 +10,7 @@ import {
   MKTG_SLIDES_EXPORT_GUILD_HANDLE,
   MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE,
   MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX,
-  MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES,
-  MKTG_SLIDES_EXPORT_LOGO_MAX_SIDE_PX,
   MKTG_SLIDES_EXPORT_MAX_LOGO_URL_CHARS,
-  MKTG_SLIDES_EXPORT_PNG_SIGNATURE,
   MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
   MKTG_REVISION_CONTENT_TYPE,
 } from '@lfx-one/shared/constants';
@@ -56,6 +53,7 @@ import { Request } from 'express';
 
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { getAvatarCdnPrefix } from '../utils/avatar-url.util';
+import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
@@ -76,9 +74,10 @@ import { ObjectStoreService } from './object-store.service';
  *    exporter parses back, with the `@slides-export` mention on a line of
  *    its own so the intake header line stays intact.
  * 2. The logo: the Slides API fetches a public PNG, JPEG or GIF; the kit
- *    stores SVG. The browser draws the kit's primary logo as a PNG (this
- *    server has no SVG rasterizer), the PNG is checked here and published
- *    to the public, CDN-fronted image bucket under a content-addressed key.
+ *    stores SVG. This server draws the stored kit's primary logo as a PNG
+ *    (never bytes from the browser: what is published is always the kit's
+ *    own logo) and publishes it to the public, CDN-fronted image bucket
+ *    under a content-addressed key.
  *    Where there is no public URL (local development: no CDN prefix, and the
  *    object store is not reachable from Google) no logo is sent: the deck
  *    still takes the kit's colours and typeface, and the result says so.
@@ -122,7 +121,7 @@ export class MktgSlidesExportService {
       deckId = last.deckId;
     }
 
-    const logo = await this.publishLogo(req, input.project, kit, input.logoPng);
+    const logo = await this.publishLogo(req, input.project, kit);
     const projectName = mktgSlidesExportOneLine(input.projectName) || input.project;
     const runDate = mktgSlidesExportToday();
     const form: MktgSlidesExportForm = {
@@ -251,25 +250,19 @@ export class MktgSlidesExportService {
   }
 
   /**
-   * Publish the drawn logo where Google can fetch it, or say why not. The
-   * PNG must be a PNG of sane size; the URL is the public image bucket's,
-   * which exists only where a CDN prefix is configured.
+   * Draw the stored kit's primary SVG logo as a PNG and publish it where
+   * Google can fetch it, or say why not. The URL is the public image
+   * bucket's, which exists only where a CDN prefix is configured, so the
+   * drawing is skipped where there is none.
    */
   private async publishLogo(
     req: Request,
     project: string,
-    kit: BrandKitRevision | null,
-    logoPng?: string
+    kit: BrandKitRevision | null
   ): Promise<{ url: string | null; note: MktgSlidesExportLogoNote | null }> {
-    if (!kit?.chapters.logo.files.primary?.svg) {
+    const svg = kit?.chapters.logo.files.primary?.svg;
+    if (!svg) {
       return { url: null, note: 'no-logo' };
-    }
-    const png = logoPng ? this.readPng(logoPng) : null;
-    if (!png) {
-      if (logoPng) {
-        logger.warning(req, 'mktg_slides_export_logo', 'The drawn logo is not a PNG of a usable size — exporting without it', { bytes: logoPng.length });
-      }
-      return { url: null, note: 'not-drawn' };
     }
 
     let cdnPrefix: string | null;
@@ -284,6 +277,17 @@ export class MktgSlidesExportService {
       return { url: null, note: 'not-public' };
     }
 
+    const drawn = await rasterizeLogoSvg(svg);
+    if (drawn.png === null) {
+      logger.warning(req, 'mktg_slides_export_logo', 'The kit logo could not be drawn as a PNG — exporting without it', {
+        reason: drawn.reason,
+        detail: drawn.detail,
+        svg_chars: svg.length,
+      });
+      return { url: null, note: 'not-drawn' };
+    }
+
+    const png = Buffer.from(drawn.png);
     const key = `${MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX}/${project}/${createHash('sha256').update(png).digest('hex')}.png`;
     try {
       const { url } = await this.objectStore.putPublicImage(req, key, png, MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE);
@@ -292,28 +296,9 @@ export class MktgSlidesExportService {
       }
       return { url, note: null };
     } catch (error) {
-      logger.warning(req, 'mktg_slides_export_logo', 'The logo could not be published — exporting without it', { key, err: error });
+      logger.warning(req, 'mktg_slides_export_logo', 'The logo could not be published — exporting without it', { key, bytes: png.length, err: error });
       return { url: null, note: 'not-published' };
     }
-  }
-
-  /** The PNG a base64 string holds, or null when it is not a PNG within the size limits. */
-  private readPng(base64: string): Buffer | null {
-    if (base64.length > Math.ceil(MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
-      return null;
-    }
-    const png = Buffer.from(base64, 'base64');
-    if (
-      png.length < 24 ||
-      png.length > MKTG_SLIDES_EXPORT_LOGO_MAX_BYTES ||
-      !png.subarray(0, 8).equals(Buffer.from(MKTG_SLIDES_EXPORT_PNG_SIGNATURE)) ||
-      png.toString('ascii', 12, 16) !== 'IHDR'
-    ) {
-      return null;
-    }
-    const width = png.readUInt32BE(16);
-    const height = png.readUInt32BE(20);
-    return width >= 1 && height >= 1 && width <= MKTG_SLIDES_EXPORT_LOGO_MAX_SIDE_PX && height <= MKTG_SLIDES_EXPORT_LOGO_MAX_SIDE_PX ? png : null;
   }
 
   /**

@@ -22,7 +22,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isMktgSlidesExportStale, mktgSlidesExportBrandSummary } from '@lfx-one/shared/utils';
 import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
-import { catchError, distinctUntilChanged, from, map, of, Subscription, switchMap, tap } from 'rxjs';
+import { distinctUntilChanged, map, of, Subscription, switchMap, tap } from 'rxjs';
 
 // Export to Google Slides on a Marketing OS asset page (the Messaging
 // Framework and the Brand Kit): the panel under the asset's header that the
@@ -48,8 +48,6 @@ export class MktgSlidesExportComponent {
   // === Inputs ===
   /** The stored revision to export; null when there is none (no project, or nothing stored yet). */
   public readonly target = input<MktgSlidesExportTarget | null>(null);
-  /** The kit's primary logo as SVG, drawn as a PNG for the deck; null without one. */
-  public readonly logoSvg = input<string | null>(null);
 
   // === Signals ===
   public readonly phase = signal<MktgSlidesExportPhase>('idle');
@@ -95,11 +93,8 @@ export class MktgSlidesExportComponent {
         .pipe(
           map((target) => (target ? { project: target.project, agentKey: target.agentKey, documentId: target.documentId } : null)),
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
-          switchMap((target) => {
-            const none: MktgSlidesExportLastResponse = { last: null, latestRevision: null };
-            // A failed read shows no last export: Export still works and creates a new deck.
-            return target ? this.exportService.last(target).pipe(catchError(() => of(none))) : of(none);
-          }),
+          // The service logs a failed read and answers no last export: Export still works and creates a new deck.
+          switchMap((target) => (target ? this.exportService.last(target) : of<MktgSlidesExportLastResponse>({ last: null, latestRevision: null }))),
           takeUntilDestroyed()
         )
         .subscribe((response) => {
@@ -149,9 +144,9 @@ export class MktgSlidesExportComponent {
     this.failureMessage.set('');
     this.failureDeckLink.set(null);
     this.run?.unsubscribe();
-    this.run = from(this.exportService.drawLogoPng(this.logoSvg()))
+    this.run = this.exportService
+      .start({ ...target, mode })
       .pipe(
-        switchMap((logoPng) => this.exportService.start({ ...target, mode, ...(logoPng && { logoPng }) })),
         tap((started) => this.logoNote.set(started.logoNote)),
         switchMap((started) => this.exportService.poll(target, started))
       )

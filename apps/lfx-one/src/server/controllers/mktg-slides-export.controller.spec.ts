@@ -86,6 +86,7 @@ describe('MktgSlidesExportController', () => {
   });
 
   it('starts an export of the named revision for the resolved project, and its token reads that export back', async () => {
+    // Image bytes from the browser are never taken: the server draws the stored kit's logo itself.
     const { json, next } = await call('start', { body: startBody({ logoPng: 'iVBORw0KGgo=' }) });
 
     expect(next).not.toHaveBeenCalled();
@@ -98,9 +99,9 @@ describe('MktgSlidesExportController', () => {
         documentId: 'living',
         selector: { revisionId: REVISION_ID, contentSha256: undefined },
         mode: 'create',
-        logoPng: 'iVBORw0KGgo=',
       })
     );
+    expect(exportMocks.startExport.mock.calls[0][1]).not.toHaveProperty('logoPng');
     const response = json.mock.calls[0][0] as { ownerToken: string; sessionId: string };
     expect(response).toMatchObject({ sessionId: 'session-1', logoNote: 'not-public' });
 
@@ -116,7 +117,7 @@ describe('MktgSlidesExportController', () => {
     expect(exportMocks.getResult).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a malformed target, mode or logo before anything is read', async () => {
+  it('refuses a malformed target or mode before anything is read', async () => {
     for (const body of [
       startBody({ project: '../other' }),
       startBody({ agentKey: 'icp' }),
@@ -124,7 +125,6 @@ describe('MktgSlidesExportController', () => {
       startBody({ revisionId: 'latest' }),
       startBody({ contentSha256: 'ABC' }),
       startBody({ mode: 'replace' }),
-      startBody({ logoPng: 42 }),
     ]) {
       const { next } = await call('start', { body });
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);

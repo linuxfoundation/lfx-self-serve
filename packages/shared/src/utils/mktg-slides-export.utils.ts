@@ -321,12 +321,12 @@ export function parseMktgSlidesExportRecordKey(key: string, prefix: string): { t
   return match ? { time: match[1], sha: match[2] } : null;
 }
 
-/** A stored record read back and shape-checked, or null when it is not one. */
-export function readMktgSlidesExportRecord(value: unknown): MktgSlidesExportRecord | null {
+/** Whether a stored value has every field of an export record, each in its shape. */
+export function isMktgSlidesExportRecord(value: unknown): value is MktgSlidesExportRecord {
   if (!isRecord(value) || value['schema'] !== MKTG_SLIDES_EXPORT_RECORD_SCHEMA) {
-    return null;
+    return false;
   }
-  const valid =
+  return (
     isText(value['project']) &&
     isMktgSlidesExportAgentKey(value['agentKey']) &&
     isText(value['documentId']) &&
@@ -336,15 +336,20 @@ export function readMktgSlidesExportRecord(value: unknown): MktgSlidesExportReco
     SHA256.test(value['contentSha256']) &&
     (MKTG_SLIDES_EXPORT_MODES as readonly unknown[]).includes(value['mode']) &&
     isMktgSlidesExportDriveId(value['deckId']) &&
-    value['link'] === mktgSlidesExportDeckLink(value['deckId'] as string) &&
+    value['link'] === mktgSlidesExportDeckLink(value['deckId']) &&
     (value['title'] === null || typeof value['title'] === 'string') &&
     isCount(value['slideCount'], 1) &&
     Array.isArray(value['assets']) &&
     brandedErrors(value['branded']).length === 0 &&
     typeof value['exportedAt'] === 'string' &&
     ISO_DATE_TIME.test(value['exportedAt']) &&
-    typeof value['agentVersion'] === 'string';
-  return valid ? (value as unknown as MktgSlidesExportRecord) : null;
+    typeof value['agentVersion'] === 'string'
+  );
+}
+
+/** A stored record read back and shape-checked, or null when it is not one. */
+export function readMktgSlidesExportRecord(value: unknown): MktgSlidesExportRecord | null {
+  return isMktgSlidesExportRecord(value) ? value : null;
 }
 
 /** Whether the last export is out of date: the document's latest revision holds other content than the revision exported. */
@@ -364,32 +369,4 @@ export function mktgSlidesExportBrandSummary(branded: MktgSlidesExportBranded, l
   // A logo that was sent and not placed is Google's refusal; otherwise the reason it was never sent.
   const note = logoNote ?? 'not-placed';
   return { text: 'In the kit’s colours and typeface.', logoNote: MKTG_SLIDES_EXPORT_LOGO_NOTES[note] };
-}
-
-/**
- * The size the browser draws a logo at: the SVG's own proportions (its
- * viewBox, else its width and height, else the size the image loaded at),
- * the longest side at `side` pixels.
- */
-export function mktgSlidesExportLogoSize(svg: string, natural: { width: number; height: number }, side: number): { width: number; height: number } {
-  const root = /<svg\b[^>]*>/i.exec(svg)?.[0] ?? '';
-  const viewBox = (/\sviewBox\s*=\s*["']([^"']+)["']/i.exec(root)?.[1] ?? '')
-    .trim()
-    .split(/[\s,]+/)
-    .map(Number);
-  const attribute = (name: string): number => Number.parseFloat(new RegExp(`\\s${name}\\s*=\\s*["']([0-9.]+)(?:px)?["']`, 'i').exec(root)?.[1] ?? '');
-  let width = natural.width;
-  let height = natural.height;
-  if (viewBox.length === 4 && viewBox[2] > 0 && viewBox[3] > 0) {
-    width = viewBox[2];
-    height = viewBox[3];
-  } else if (attribute('width') > 0 && attribute('height') > 0) {
-    width = attribute('width');
-    height = attribute('height');
-  }
-  if (!(width > 0 && height > 0)) {
-    return { width: side, height: side };
-  }
-  const scale = side / Math.max(width, height);
-  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }

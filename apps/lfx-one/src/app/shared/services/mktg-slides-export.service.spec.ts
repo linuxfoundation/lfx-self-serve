@@ -3,7 +3,6 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MKTG_SLIDES_EXPORT_FAILURE_MESSAGES, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import { MktgSlidesExportResultResponse, MktgSlidesExportStartResponse, MktgSlidesExportTarget } from '@lfx-one/shared/interfaces';
@@ -15,7 +14,8 @@ import { MktgSlidesExportService } from './mktg-slides-export.service';
  * The export client: the last export read, the start, and the poll — which
  * keeps going through pending answers and transient failures, stops on the
  * first ready or failed answer, and answers the timeout message when the
- * export is still pending at the end. The logo is never drawn on the server.
+ * export is still pending at the end. Failed reads are logged before their
+ * fallback.
  */
 describe('MktgSlidesExportService', () => {
   const SHA = 'a'.repeat(64);
@@ -28,13 +28,14 @@ describe('MktgSlidesExportService', () => {
     logoNote: null,
   };
 
-  function configure(platformId: 'browser' | 'server' = 'browser'): { service: MktgSlidesExportService; http: HttpTestingController } {
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), { provide: PLATFORM_ID, useValue: platformId }] });
+  function configure(): { service: MktgSlidesExportService; http: HttpTestingController } {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
     return { service: TestBed.inject(MktgSlidesExportService), http: TestBed.inject(HttpTestingController) };
   }
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('reads the last export of the document and starts an export', () => {
@@ -47,16 +48,30 @@ describe('MktgSlidesExportService', () => {
     expect(last.request.params.get('documentId')).toBe('living');
     last.flush({ last: null, latestRevision: null });
 
-    service.start({ ...TARGET, mode: 'create', logoPng: 'UE5H' }).subscribe();
+    service.start({ ...TARGET, mode: 'create' }).subscribe();
     const start = http.expectOne('/api/mktg-agents/slides-export/start');
     expect(start.request.method).toBe('POST');
-    expect(start.request.body).toEqual({ ...TARGET, mode: 'create', logoPng: 'UE5H' });
+    expect(start.request.body).toEqual({ ...TARGET, mode: 'create' });
     start.flush(STARTED);
+    http.verify();
+  });
+
+  it('logs a failed last-export read and answers no last export', () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { service, http } = configure();
+    const answers: unknown[] = [];
+
+    service.last(TARGET).subscribe((answer) => answers.push(answer));
+    http.expectOne((request) => request.url === '/api/mktg-agents/slides-export/last').flush(null, { status: 500, statusText: 'Server Error' });
+
+    expect(answers).toEqual([{ last: null, latestRevision: null }]);
+    expect(consoleError).toHaveBeenCalledWith('[mktg-slides-export] last export read failed', expect.objectContaining({ documentId: 'living' }));
     http.verify();
   });
 
   it('polls through pending answers and a transient failure until the deck is ready', async () => {
     vi.useFakeTimers();
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { service, http } = configure();
     const results: MktgSlidesExportResultResponse[] = [];
 
@@ -72,6 +87,7 @@ describe('MktgSlidesExportService', () => {
     http.expectOne('/api/mktg-agents/slides-export/result').flush({ status: 'failed', failure: 'google', message: 'm', deckLink: null });
 
     expect(results).toEqual([{ status: 'failed', failure: 'google', message: 'm', deckLink: null }]);
+    expect(consoleWarn).toHaveBeenCalledWith('[mktg-slides-export] poll failed, retrying', expect.objectContaining({ sessionId: 'session-1' }));
     await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs * 3);
     http.verify();
   });
@@ -89,11 +105,5 @@ describe('MktgSlidesExportService', () => {
 
     expect(results).toEqual([{ status: 'failed', failure: 'timeout', message: MKTG_SLIDES_EXPORT_FAILURE_MESSAGES.timeout, deckLink: null }]);
     http.verify();
-  });
-
-  it('draws no logo on the server or without an SVG', async () => {
-    expect(await configure('server').service.drawLogoPng('<svg/>')).toBeUndefined();
-    TestBed.resetTestingModule();
-    expect(await configure().service.drawLogoPng(null)).toBeUndefined();
   });
 });

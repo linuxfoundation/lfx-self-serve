@@ -127,7 +127,7 @@ describe('MktgAgentRunComponent', () => {
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let rememberAnswers: ReturnType<typeof vi.fn>;
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
   let readFile: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
@@ -180,7 +180,6 @@ describe('MktgAgentRunComponent', () => {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
       poll: vi.fn(() => NEVER),
-      drawLogoPng: vi.fn(() => Promise.resolve(undefined)),
     };
 
     await TestBed.configureTestingModule({

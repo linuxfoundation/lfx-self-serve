@@ -161,8 +161,6 @@ export interface MktgSlidesExportRevisionRef {
 /** Body of `POST /api/mktg-agents/slides-export/start`. */
 export interface MktgSlidesExportStartRequest extends MktgSlidesExportTarget {
   mode: MktgSlidesExportMode;
-  /** The kit's primary logo drawn as a PNG by the browser, base64; absent when there is none or it could not be drawn. */
-  logoPng?: string;
 }
 
 /** Response of a start: the session to poll, and what was exported. */
@@ -217,8 +215,18 @@ export interface MktgSlidesExportStartInput {
   documentId: string;
   selector: { revisionId?: string; contentSha256?: string };
   mode: MktgSlidesExportMode;
-  logoPng?: string;
 }
+
+/** Why the server could not draw the kit's SVG logo as a PNG. */
+export type MktgLogoPngFailure = 'external-reference' | 'unreadable' | 'too-big';
+
+/**
+ * The kit's SVG logo drawn as a PNG on the server (server-side). `png` is a
+ * `Uint8Array` so the contract stays Node-free; the rasterizer returns a
+ * `Buffer`. `detail` is the rasterizer's own error or the PNG's byte size,
+ * for the log only.
+ */
+export type MktgLogoPngResult = { png: Uint8Array; reason: null } | { png: null; reason: MktgLogoPngFailure; detail: string };
 
 /** What the BFF's export service answers a start with; the controller adds the owner token. */
 export interface MktgSlidesExportStarted {

@@ -49,7 +49,7 @@
   </div>
 
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
-  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [logoSvg]="logoSvg()" data-testid="mktg-framework-view-slides-export" />
+  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" data-testid="mktg-framework-view-slides-export" />
 
   <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs" (keydown)="onTabKeydown($event)">

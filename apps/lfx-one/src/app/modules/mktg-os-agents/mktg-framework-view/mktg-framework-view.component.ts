@@ -136,8 +136,6 @@ export class MktgFrameworkViewComponent {
     return content ? buildFoundationMessagePrintView(content, this.projectName(), this.version(), this.kit()) : null;
   });
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
-  /** The kit's primary logo, which the deck carries in place of the template's. */
-  protected readonly logoSvg = computed(() => this.kit()?.chapters.logo.files.primary?.svg ?? null);
   /** The report's notes as lines (a check writes one issue per line). */
   protected readonly reportNotes = computed(() =>
     (this.report()?.notes ?? '')

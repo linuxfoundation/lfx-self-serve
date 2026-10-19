@@ -118,15 +118,13 @@ function sha(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-/** A PNG header the export accepts: the signature and an IHDR chunk of the given size. */
-function png(width = 400, height = 120): string {
-  const bytes = Buffer.alloc(33);
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes, 0);
-  bytes.writeUInt32BE(13, 8);
-  bytes.write('IHDR', 12, 'ascii');
-  bytes.writeUInt32BE(width, 16);
-  bytes.writeUInt32BE(height, 20);
-  return bytes.toString('base64');
+/** The width and height a PNG's IHDR chunk names, or null when the bytes are not a PNG. */
+function pngSize(bytes: Buffer): { width: number; height: number } | null {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (bytes.length < 24 || !bytes.subarray(0, 8).equals(signature) || bytes.toString('ascii', 12, 16) !== 'IHDR') {
+    return null;
+  }
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
 /** Store a Brand Kit revision as the brand-kit run does: its Markdown, the rest of the envelope as the sidecar. */
@@ -247,7 +245,7 @@ describe('MktgSlidesExportService', () => {
       await seedKit(documentStore);
       await seedFramework(documentStore);
 
-      const started = await service.startExport(req, input({ logoPng: png() }));
+      const started = await service.startExport(req, input());
 
       expect(started).toMatchObject({ sessionId: 'session-1', mode: 'create', revision: { number: 1 } });
       const call = guildMocks.createSession.mock.calls[0][1] as { handle: string; mentionOnOwnLine: boolean };
@@ -277,37 +275,50 @@ describe('MktgSlidesExportService', () => {
       expect(started.logoNote).toBe('no-logo');
     });
 
-    it('publishes the drawn logo to the public image bucket and sends its URL where there is one', async () => {
+    it('draws the stored kit’s SVG logo as a PNG, publishes it to the public image bucket and sends its URL', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
       await seedKit(documentStore);
 
-      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit', logoPng: png() }));
+      const started = await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
 
-      const [key] = [...store.publicImages.keys()];
+      const [[key, published]] = [...store.publicImages.entries()];
       expect(key).toMatch(new RegExp(`^mktg-slides-logos/${PROJECT}/[0-9a-f]{64}\\.png$`));
+      // The test kit's logo is a 10 x 3 viewBox: drawn with its longest side at the drawing size.
+      expect(pngSize(published)).toEqual({ width: 1200, height: 360 });
       expect(sentMessage()).toContain(`\nLOGO URL: https://cdn.example.test/${key}\n`);
       expect(sentMessage()).toContain('\nASSETS: kit\n');
       expect(sentMessage()).toMatch(/\nDECK TITLE: Example Project · Brand kit · /);
       expect(started.logoNote).toBeNull();
     });
 
-    it('sends no logo, and says why, when it is missing, not a PNG, too big or cannot be published', async () => {
+    it('sends no logo, and says why, when the SVG reaches outside itself, cannot be drawn, or cannot be published', async () => {
       vi.stubEnv('CDN_URL_PREFIX', 'https://cdn.example.test');
-      await seedKit(documentStore);
       const kitInput = input({ type: BRAND_KIT, agentKey: 'brand-kit' });
 
+      await seedKit(documentStore, {
+        svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 3"><image href="/etc/logo.png" width="10" height="3"/></svg>',
+      });
       expect((await service.startExport(req, kitInput)).logoNote).toBe('not-drawn');
-      expect((await service.startExport(req, { ...kitInput, logoPng: Buffer.from('<svg/>').toString('base64') })).logoNote).toBe('not-drawn');
-      expect((await service.startExport(req, { ...kitInput, logoPng: png(5000, 100) })).logoNote).toBe('not-drawn');
+      await seedKit(documentStore, { svg: 'not an svg' });
+      expect((await service.startExport(req, kitInput)).logoNote).toBe('not-drawn');
+      expect(store.publicImages.size).toBe(0);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_logo',
+        expect.any(String),
+        expect.objectContaining({ reason: 'unreadable', svg_chars: 'not an svg'.length })
+      );
+
+      await seedKit(documentStore);
       store.failPublicPut = true;
-      expect((await service.startExport(req, { ...kitInput, logoPng: png() })).logoNote).toBe('not-published');
+      expect((await service.startExport(req, kitInput)).logoNote).toBe('not-published');
       expect(sentMessage()).toContain('\nLOGO URL: none\n');
     });
 
     it('says the kit has no logo when its primary logo is not an SVG', async () => {
       await seedKit(documentStore, { svg: null });
 
-      expect((await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit', logoPng: png() }))).logoNote).toBe('no-logo');
+      expect((await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }))).logoNote).toBe('no-logo');
     });
 
     it('refuses an update before any deck exists, and a revision it does not store', async () => {

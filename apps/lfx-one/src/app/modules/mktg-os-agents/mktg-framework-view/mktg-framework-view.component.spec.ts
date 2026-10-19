@@ -130,7 +130,7 @@ describe('MktgFrameworkViewComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
   let host: HostComponent;
   let printer: { print: ReturnType<typeof vi.fn>; clear: ReturnType<typeof vi.fn> };
-  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn>; drawLogoPng: ReturnType<typeof vi.fn> };
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
@@ -145,7 +145,6 @@ describe('MktgFrameworkViewComponent', () => {
       last: vi.fn(() => of({ last: null, latestRevision: null })),
       start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
       poll: vi.fn(() => NEVER),
-      drawLogoPng: vi.fn(() => Promise.resolve(undefined)),
     };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
@@ -329,7 +328,7 @@ describe('MktgFrameworkViewComponent', () => {
     expect(printer.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   });
 
-  it('exports the stored framework to Google Slides with the project kit’s logo, the panel under the header showing the progress', async () => {
+  it('exports the stored framework to Google Slides, the panel under the header showing the progress', async () => {
     const target: MktgSlidesExportTarget = { project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', contentSha256: 'a'.repeat(64) };
     const kit = brandKitTestRevision();
     host.asset.set(ASSET);
@@ -343,7 +342,6 @@ describe('MktgFrameworkViewComponent', () => {
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
 
-    expect(slidesExport.drawLogoPng).toHaveBeenCalledWith(kit.chapters.logo.files.primary?.svg);
     expect(slidesExport.start).toHaveBeenCalledWith({ ...target, mode: 'create' });
     expect(query('mktg-slides-export-running')?.textContent).toContain('Exporting the messaging framework');
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);

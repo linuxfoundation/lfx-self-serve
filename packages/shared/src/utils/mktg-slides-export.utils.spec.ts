@@ -24,7 +24,6 @@ import {
   mktgSlidesExportDeckLink,
   mktgSlidesExportDeckTitle,
   mktgSlidesExportFailed,
-  mktgSlidesExportLogoSize,
   mktgSlidesExportOneLine,
   parseMktgSlidesExportRecordKey,
   readMktgSlidesExportRecord,
@@ -244,6 +243,8 @@ describe('the export record', () => {
     expect(readMktgSlidesExportRecord(record())).toEqual(record());
     expect(readMktgSlidesExportRecord({ ...record(), link: 'https://example.test/x' })).toBeNull();
     expect(readMktgSlidesExportRecord({ ...record(), schema: 'other' })).toBeNull();
+    expect(readMktgSlidesExportRecord({ ...record(), slideCount: 0 })).toBeNull();
+    expect(readMktgSlidesExportRecord('not a record')).toBeNull();
   });
 
   it('is stale when the latest revision holds other content than the one exported', () => {
@@ -270,17 +271,5 @@ describe('mktgSlidesExportBrandSummary', () => {
 
   it('says a deck without a kit is in the LF look', () => {
     expect(mktgSlidesExportBrandSummary({ ...BRANDED, kit: false, logo: false, logos: 0, tables_header: null }, 'no-logo').logoNote).toBe('');
-  });
-});
-
-describe('mktgSlidesExportLogoSize', () => {
-  it('keeps the SVG’s proportions, longest side at the drawing size', () => {
-    expect(mktgSlidesExportLogoSize('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100"/>', { width: 0, height: 0 }, 1200)).toEqual({
-      width: 1200,
-      height: 300,
-    });
-    expect(mktgSlidesExportLogoSize('<svg width="50px" height="100px"/>', { width: 0, height: 0 }, 1200)).toEqual({ width: 600, height: 1200 });
-    expect(mktgSlidesExportLogoSize('<svg/>', { width: 300, height: 150 }, 1200)).toEqual({ width: 1200, height: 600 });
-    expect(mktgSlidesExportLogoSize('<svg/>', { width: 0, height: 0 }, 1200)).toEqual({ width: 1200, height: 1200 });
   });
 });

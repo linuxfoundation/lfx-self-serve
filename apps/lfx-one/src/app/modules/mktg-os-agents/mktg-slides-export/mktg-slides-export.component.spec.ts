@@ -51,7 +51,7 @@ function record(overrides: Partial<MktgSlidesExportRecord> = {}): MktgSlidesExpo
   imports: [MktgSlidesExportComponent],
   template: `
     <button type="button" data-testid="host-export" (click)="exporter.onExport()">Export</button>
-    <lfx-mktg-slides-export #exporter [target]="target()" logoSvg="<svg/>" />
+    <lfx-mktg-slides-export #exporter [target]="target()" />
   `,
 })
 class HostComponent {
@@ -67,14 +67,12 @@ describe('MktgSlidesExportComponent', () => {
     last: ReturnType<typeof vi.fn>;
     start: ReturnType<typeof vi.fn>;
     poll: ReturnType<typeof vi.fn>;
-    drawLogoPng: ReturnType<typeof vi.fn>;
   };
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => element().querySelector(`[data-testid="${testId}"]`);
   const click = async (testId: string): Promise<void> => {
     (query(testId)?.querySelector('button') ?? query(testId))?.click();
-    // The logo is drawn first (a promise), then the start and the poll run.
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
   };
@@ -84,7 +82,6 @@ describe('MktgSlidesExportComponent', () => {
       last: vi.fn(() => of(lastResponse)),
       start: vi.fn(() => of(started)),
       poll: vi.fn(() => pollResult),
-      drawLogoPng: vi.fn(() => Promise.resolve('UE5HIGJ5dGVz')),
     };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
@@ -120,8 +117,7 @@ describe('MktgSlidesExportComponent', () => {
 
     await click('host-export');
 
-    expect(service.drawLogoPng).toHaveBeenCalledWith('<svg/>');
-    expect(service.start).toHaveBeenCalledWith({ ...TARGET, mode: 'create', logoPng: 'UE5HIGJ5dGVz' });
+    expect(service.start).toHaveBeenCalledWith({ ...TARGET, mode: 'create' });
     expect(service.poll).toHaveBeenCalledWith(TARGET, started);
     expect(query('mktg-slides-export-running')?.textContent).toContain('Exporting the messaging framework to Google Slides');
 

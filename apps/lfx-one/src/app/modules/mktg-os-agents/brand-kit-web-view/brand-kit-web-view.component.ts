@@ -82,8 +82,6 @@ export class BrandKitWebViewComponent {
   );
   protected readonly tabs: Signal<BrandKitWebViewTab[]> = this.initTabs();
   protected readonly printOnlyClass = BRAND_KIT_PRINT_ONLY_CLASS;
-  /** The kit's primary logo, which the deck carries in place of the template's. */
-  protected readonly logoSvg = computed(() => this.kit().chapters.logo.files.primary?.svg ?? null);
 
   // Literal class names so Tailwind's content scan generates them (the framework view's tab classes).
   private readonly tabClasses: Record<'selected' | 'idle', string> = {
