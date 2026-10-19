@@ -929,7 +929,7 @@ describe('SidebarNavService', () => {
       expect(service.menuLookupFailed()).toBe(false);
     });
 
-    it('flags a failed scoped marketing probe on its own, and retry waits for both lookups before clearing it', () => {
+    it('flags a failed scoped marketing probe on its own, and a scoped retry re-runs only the scoped request', () => {
       const firstScoped = new Subject<unknown>();
       refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => (slug ? firstScoped : of({})));
       marketingOpsEnabled.set(true);
@@ -943,15 +943,14 @@ describe('SidebarNavService', () => {
       firstScoped.complete();
       expect(service.menuLookupFailed()).toBe(true);
 
-      const root = new Subject<unknown>();
+      // The scoped answer also refreshes personas and ROOT grants, so no parallel ROOT-only request runs:
+      // its ROOT-only marketing grants would otherwise land over the scoped ones.
       const scoped = new Subject<unknown>();
-      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => (slug ? scoped : root));
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => scoped);
       service.retryMenuLookups();
-
-      root.next({});
-      root.complete();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+      expect(refreshEnrichedPersonas).toHaveBeenCalledWith(false, 'cncf');
       expect(service.sidebarItemsPending()).toBe(true);
-      expect(service.menuLookupFailed()).toBe(true);
 
       scoped.next({ error: null });
       scoped.complete();

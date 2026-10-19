@@ -113,6 +113,25 @@ export class NavTooltipDirective {
     }
   }
 
+  /**
+   * The card sits at the end of `body`, so Tab order out of the chips would skip the rest of the navbar.
+   * Leaving the chip list goes back through the trigger instead: Shift+Tab from the first chip lands on
+   * the trigger, and Tab from the last chip moves on to whatever follows the trigger.
+   */
+  private onCardKeydown(event: KeyboardEvent, tooltip: HTMLElement): void {
+    if (event.key !== 'Tab') return;
+    const chips = Array.from(tooltip.querySelectorAll<HTMLElement>('button.lfxn-tooltip__chip'));
+    const active = this.document.activeElement;
+    const leavingStart = event.shiftKey && active === chips[0];
+    const leavingEnd = !event.shiftKey && active === chips[chips.length - 1];
+    if (!leavingStart && !leavingEnd) return;
+    // Refocus before hiding, as Escape does: the trigger's focusin schedules a reopen that hide() clears.
+    this.host.nativeElement.focus();
+    this.hide();
+    // Shift+Tab stops on the trigger; Tab's default action now continues from the trigger.
+    if (leavingStart) event.preventDefault();
+  }
+
   private onEscape(): void {
     const focusInside = !!this.tooltip?.contains(this.document.activeElement);
     // Refocus before hiding: the trigger's focusin schedules a reopen that hide() then clears.
@@ -184,6 +203,7 @@ export class NavTooltipDirective {
         // pointer leaving during the grace period.
         this.renderer.listen(tooltip, 'focusin', () => this.cancelHide()),
         this.renderer.listen(tooltip, 'mouseleave', () => this.dismiss(true)),
+        this.renderer.listen(tooltip, 'keydown', (event: KeyboardEvent) => this.onCardKeydown(event, tooltip)),
         this.renderer.listen(tooltip, 'focusout', (event: FocusEvent) => {
           const next = event.relatedTarget as Node | null;
           if (!tooltip.contains(next) && next !== host) this.dismiss();

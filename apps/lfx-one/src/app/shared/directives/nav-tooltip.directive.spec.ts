@@ -146,6 +146,36 @@ describe('NavTooltipDirective', () => {
     matches.mockRestore();
   });
 
+  it('leaves the chip list through the trigger: Shift+Tab lands on it, Tab continues from it', () => {
+    host.items.set([
+      { key: 'k8s', label: 'Kubernetes' },
+      { key: 'cncf', label: 'CNCF' },
+    ]);
+    TestBed.tick();
+    const open = (): void => {
+      first.dispatchEvent(new MouseEvent('mouseenter'));
+      vi.advanceTimersByTime(NAV_TOOLTIP_SHOW_DELAY_MS);
+      first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    };
+    const chip = (key: string): HTMLElement => document.body.querySelector<HTMLElement>(`[data-testid="nav-tooltip-chip-${key}"]`) as HTMLElement;
+
+    open();
+    const backward = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+    chip('k8s').dispatchEvent(backward);
+    expect(document.activeElement).toBe(first);
+    expect(backward.defaultPrevented).toBe(true);
+    expect(tooltips()).toHaveLength(0);
+
+    open();
+    chip('cncf').focus();
+    const forward = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    chip('cncf').dispatchEvent(forward);
+    // The browser's own Tab then moves on from the trigger.
+    expect(document.activeElement).toBe(first);
+    expect(forward.defaultPrevented).toBe(false);
+    expect(tooltips()).toHaveLength(0);
+  });
+
   it('holds an interactive card open while the pointer crosses into it', () => {
     host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
     TestBed.tick();

@@ -967,8 +967,9 @@ export class SidebarNavService {
   });
 
   /**
-   * Re-runs the lookups that shape the menu after one failed: a forced persona refresh (root grants,
-   * auditor / root-writer), the scoped marketing probe and, when it failed, the writer-grant summary.
+   * Re-runs the lookups that shape the menu after one failed: the persona refresh (the scoped marketing
+   * probe when a scope is selected, else a forced root refresh; either refreshes root grants and auditor /
+   * root-writer) and, when it failed, the writer-grant summary.
    * The menu stays pending until all settle, then shows the menu, the no-access state, or the error again.
    */
   public retryMenuLookups(): void {
@@ -981,9 +982,11 @@ export class SidebarNavService {
     const generation = slug ? this.startMarketingProbe(slug) : 0;
     // The lookups re-run together and the menu stays pending until all settle, so none can resolve
     // the menu (or clear the error) while another is still in flight.
+    // With a scope, only the scoped persona request runs: it refreshes personas and the ROOT writer /
+    // auditor checks too, and a parallel ROOT-only answer would write its ROOT-only marketing grants
+    // over the scoped ones before the scoped answer lands.
     forkJoin([
-      this.personaService.refreshEnrichedPersonas(true),
-      slug ? this.personaService.refreshEnrichedPersonas(false, slug) : of(null),
+      slug ? this.personaService.refreshEnrichedPersonas(false, slug) : this.personaService.refreshEnrichedPersonas(true),
       this.writerGrantsService.lookupFailed() ? this.writerGrantsService.retrySummary() : of(null),
     ])
       .pipe(
@@ -996,8 +999,8 @@ export class SidebarNavService {
           })
         )
       )
-      .subscribe(([, scoped]) => {
-        if (slug) this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(scoped));
+      .subscribe(([persona]) => {
+        if (slug) this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(persona));
       });
   }
 
