@@ -124,7 +124,9 @@ export class PersonaService {
    * on to actually apply moves this mark forward (Cursor Bugbot finding, PR #1835: "Global probe
    * gate drops grant slug").
    */
-  private latestAppliedGrantProbeId = 0;
+  // Per relation: a probe that verified only one relation must not mark the other relation's grant
+  // from an older probe as stale (Copilot finding, PR #3783).
+  private readonly latestAppliedGrantProbeId: Record<'marketing' | 'campaign', number> = { marketing: 0, campaign: 0 };
   /**
    * Last probeId that actually **applied** (wrote the signals for) a given scope (`projectSlug`, or
    * `undefined` for root) — used only by {@link confirmActiveGrant} to tell a genuine cross-scope
@@ -142,7 +144,8 @@ export class PersonaService {
    * findings, PR #1835). Only a probe that actually goes on to write moves this forward, matching
    * {@link latestAppliedGrantProbeId}'s same rationale one level down, per scope.
    */
-  private readonly latestAppliedGrantProbeIdByScope = new Map<string | undefined, number>();
+  // Keyed per relation and queried scope ({@link scopeRecencyKey}), for the same reason as above.
+  private readonly latestAppliedGrantProbeIdByScope = new Map<string, number>();
   /**
    * Last probeId that actually wrote a given **resolved** map key (`null` for ROOT, or the exact
    * `projectSlug` string) in {@link _grantsByScope} — distinct from
@@ -229,7 +232,11 @@ export class PersonaService {
           // `isMarketingAuditor`/`isCampaignManager` always move together off the same
           // most-recently-issued response — a root-scoped call (no `projectSlug`) leaves this
           // untouched, since a ROOT grant isn't tied to one project.
-          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId >= this.latestAppliedGrantProbeId) {
+          if (
+            projectSlug &&
+            ((response.isMarketingAuditor && probeId >= this.latestAppliedGrantProbeId.marketing) ||
+              (response.isCampaignManager && probeId >= this.latestAppliedGrantProbeId.campaign))
+          ) {
             this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
           }
         }
@@ -277,13 +284,16 @@ export class PersonaService {
     const verified = this.verifiedGrantRelations(response);
     if (!verified.marketing && !verified.campaign) return;
     const probeId = this.grantProbeIdByResponse.get(response);
-    const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
-    if (probeId !== undefined && latestAppliedForScope !== undefined && probeId < latestAppliedForScope) {
-      return;
-    }
-    if (verified.marketing) this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
-    if (verified.campaign) this.isCampaignManager.set(response.isCampaignManager ?? false);
-    if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
+    // Stale per relation: a later probe for this scope that applied one relation leaves the other open.
+    const isFresh = (relation: 'marketing' | 'campaign'): boolean => {
+      const latest = this.latestAppliedGrantProbeIdByScope.get(this.scopeRecencyKey(relation, projectSlug));
+      return probeId === undefined || latest === undefined || probeId >= latest;
+    };
+    const apply = { marketing: verified.marketing && isFresh('marketing'), campaign: verified.campaign && isFresh('campaign') };
+    if (!apply.marketing && !apply.campaign) return;
+    if (apply.marketing) this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+    if (apply.campaign) this.isCampaignManager.set(response.isCampaignManager ?? false);
+    if (projectSlug && ((apply.marketing && response.isMarketingAuditor) || (apply.campaign && response.isCampaignManager))) {
       this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
     }
     // Also write to per-scope map — same rationale as the write in applyPersonaResponse.
@@ -292,10 +302,8 @@ export class PersonaService {
     // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
     // Gating against the resolved map key (not this queried `projectSlug`) is handled inside
     // writeGrantForScope itself — see latestAppliedGrantProbeIdByResolvedKey.
-    this.writeGrantForScope(response, projectSlug, probeId, verified);
-    if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
-      this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
-    }
+    this.writeGrantForScope(response, projectSlug, probeId, apply);
+    this.markScopeApplied(apply, projectSlug, probeId);
   }
 
   /**
@@ -331,6 +339,21 @@ export class PersonaService {
       return null;
     }
     return projectSlug;
+  }
+
+  private scopeRecencyKey(relation: 'marketing' | 'campaign', projectSlug?: string): string {
+    return `${relation}:${projectSlug ?? '__root__'}`;
+  }
+
+  /** Advances the queried scope's applied-probe mark for each relation that applied, never moving it back. */
+  private markScopeApplied(applied: { marketing: boolean; campaign: boolean }, projectSlug?: string, probeId?: number): void {
+    if (probeId === undefined) return;
+    for (const relation of ['marketing', 'campaign'] as const) {
+      if (!applied[relation]) continue;
+      const key = this.scopeRecencyKey(relation, projectSlug);
+      const latest = this.latestAppliedGrantProbeIdByScope.get(key);
+      if (latest === undefined || probeId > latest) this.latestAppliedGrantProbeIdByScope.set(key, probeId);
+    }
   }
 
   /** Which marketing relations a response actually verified — an unverified one is `false` for "couldn't check". */
@@ -518,12 +541,13 @@ export class PersonaService {
     // the signals and the per-scope map — while still applying the relation that was verified.
     const verified = this.verifiedGrantRelations(response);
     const anyVerified = verified.marketing || verified.campaign;
-    if (anyVerified && (probeId === undefined || probeId >= this.latestAppliedGrantProbeId)) {
-      if (verified.marketing) this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
-      if (verified.campaign) this.isCampaignManager.set(response.isCampaignManager ?? false);
-      if (probeId !== undefined) {
-        this.latestAppliedGrantProbeId = probeId;
-      }
+    if (verified.marketing && (probeId === undefined || probeId >= this.latestAppliedGrantProbeId.marketing)) {
+      this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+      if (probeId !== undefined) this.latestAppliedGrantProbeId.marketing = probeId;
+    }
+    if (verified.campaign && (probeId === undefined || probeId >= this.latestAppliedGrantProbeId.campaign)) {
+      this.isCampaignManager.set(response.isCampaignManager ?? false);
+      if (probeId !== undefined) this.latestAppliedGrantProbeId.campaign = probeId;
     }
     // The per-scope map write must not share the global gate above — nesting it there meant a
     // probe for scope A could be dropped entirely (including its per-scope write) just because an
@@ -541,12 +565,7 @@ export class PersonaService {
     // see every probe that applied via this method (not only ones that applied via
     // confirmActiveGrant itself), or it can no longer detect a same-scope probe that has already
     // superseded it.
-    if (anyVerified && probeId !== undefined) {
-      const latestForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
-      if (latestForScope === undefined || probeId > latestForScope) {
-        this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
-      }
-    }
+    this.markScopeApplied(verified, projectSlug, probeId);
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();

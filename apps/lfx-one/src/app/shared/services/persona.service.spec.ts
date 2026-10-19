@@ -257,6 +257,25 @@ describe('PersonaService — grant probe recency ordering', () => {
       expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: true, isMarketingAuditor: true });
     });
 
+    it('lets an older probe apply a relation a newer probe left unverified, out of order', () => {
+      // Probe 1 then probe 2 for the same foundation; probe 2 answers first.
+      let first: PersonaApiResponse | null = null;
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (first = response));
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      const [req1, req2] = http.match((req) => req.url.includes('project=foundation-a'));
+
+      // Probe 2: auditor denial verified, campaign check failed.
+      req2.flush(mockResponse({ isMarketingAuditor: false, isCampaignManager: false, marketingGrantCheckFailed: true, campaignManagerUnverified: true }));
+      // Probe 1: campaign grant confirmed.
+      req1.flush(mockResponse({ isMarketingAuditor: false, isCampaignManager: true }));
+      service.confirmActiveGrant(first!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(true);
+      expect(service.isMarketingAuditor()).toBe(false);
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
+      expect(service.marketingGrantSlug()).toBe('foundation-a');
+    });
+
     it('applies a verified grant from a response whose other marketing check failed', () => {
       // Campaign manager confirmed; the independent auditor check failed upstream.
       let mixed: PersonaApiResponse | null = null;
