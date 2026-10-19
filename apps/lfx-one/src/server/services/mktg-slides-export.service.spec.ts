@@ -99,7 +99,7 @@ vi.mock('./object-store.service', () => ({
   },
 }));
 
-import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_FOLDER_ID } from '@lfx-one/shared/constants';
+import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_FOLDER_ID, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import type { MktgDocumentType, MktgSlidesExportStartInput } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -234,9 +234,14 @@ describe('MktgSlidesExportService', () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([]);
     service = new MktgSlidesExportService();
     documentStore = new MktgDocumentStoreService();
+    // Every start polls its session to the end on the server: its timers are
+    // the test's to run, and never reach into the next test.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
@@ -362,6 +367,44 @@ describe('MktgSlidesExportService', () => {
       await service.startExport(req, input({ mode: 'update' }));
       expect(sentMessage()).toContain(`\nDECK ID: ${DECK_ID}\n`);
       expect(sentMessage()).toContain('\nFOLDER ID: none\n');
+    });
+
+    it('keeps the deck’s record on its own when no browser polls to the end, then stops polling', async () => {
+      await seedFramework(documentStore);
+      const started = await service.startExport(req, input());
+      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last).toBeNull();
+
+      await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+      expect(guildMocks.getRawEventPayloads).toHaveBeenCalledWith(req, 'session-1');
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+
+      const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
+      expect(last.last).toMatchObject({ deckId: DECK_ID, revisionId: started.revision.id });
+      const polls = guildMocks.getRawEventPayloads.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs * 5);
+      expect(guildMocks.getRawEventPayloads).toHaveBeenCalledTimes(polls);
+    });
+
+    it('gives up on the server at the poll deadline, and a failed poll is tried again', async () => {
+      await seedFramework(documentStore);
+      await service.startExport(req, input());
+      guildMocks.getRawEventPayloads.mockRejectedValueOnce(new Error('guild unavailable'));
+
+      await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs * 2);
+      expect(guildMocks.getRawEventPayloads).toHaveBeenCalledTimes(2);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_finish',
+        expect.any(String),
+        expect.objectContaining({ session_id: 'session-1' })
+      );
+
+      await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.timeoutMs);
+      const polls = guildMocks.getRawEventPayloads.mock.calls.length;
+      expect(polls).toBeLessThanOrEqual(MKTG_SLIDES_EXPORT_POLL.maxAttempts + 1);
+      await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs * 5);
+      expect(guildMocks.getRawEventPayloads).toHaveBeenCalledTimes(polls);
     });
 
     it('reports the newer revision beside the last export once the framework changes', async () => {

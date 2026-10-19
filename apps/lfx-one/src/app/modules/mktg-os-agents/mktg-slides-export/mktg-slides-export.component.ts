@@ -22,7 +22,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isMktgSlidesExportStale, mktgSlidesExportBrandSummary } from '@lfx-one/shared/utils';
 import { MktgSlidesExportService } from '@services/mktg-slides-export.service';
-import { distinctUntilChanged, map, of, Subscription, switchMap, tap } from 'rxjs';
+import { distinctUntilChanged, of, Subscription, switchMap, tap } from 'rxjs';
 
 // Export to Google Slides on a Marketing OS asset page (the Messaging
 // Framework and the Brand Kit): the panel under the asset's header that the
@@ -88,11 +88,14 @@ export class MktgSlidesExportComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // The last export is per document: re-read when the page names another document, not another revision of it.
+      // The panel belongs to one target (project, document and revision). When
+      // the page names another, the export under way and its outcome go with
+      // the old one (the server keeps its record either way), and the last
+      // export is read again for the new one.
       toObservable(this.target)
         .pipe(
-          map((target) => (target ? { project: target.project, agentKey: target.agentKey, documentId: target.documentId } : null)),
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
+          tap(() => this.reset()),
           // The service logs a failed read and answers no last export: Export still works and creates a new deck.
           switchMap((target) => (target ? this.exportService.last(target) : of<MktgSlidesExportLastResponse>({ last: null, latestRevision: null }))),
           takeUntilDestroyed()
@@ -154,6 +157,20 @@ export class MktgSlidesExportComponent {
         next: (result) => this.onResult(result),
         error: (error: unknown) => this.onFailed(null, this.requestErrorMessage(error), null),
       });
+  }
+
+  /** Back to an empty panel: the export under way is cancelled and nothing of the previous target stays on screen. */
+  private reset(): void {
+    this.run?.unsubscribe();
+    this.run = null;
+    this.phase.set('idle');
+    this.last.set(null);
+    this.latest.set(null);
+    this.record.set(null);
+    this.logoNote.set(null);
+    this.failure.set(null);
+    this.failureMessage.set('');
+    this.failureDeckLink.set(null);
   }
 
   private onResult(result: MktgSlidesExportResultResponse): void {

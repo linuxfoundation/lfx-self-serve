@@ -106,4 +106,20 @@ describe('MktgSlidesExportService', () => {
     expect(results).toEqual([{ status: 'failed', failure: 'timeout', message: MKTG_SLIDES_EXPORT_FAILURE_MESSAGES.timeout, deckLink: null }]);
     http.verify();
   });
+
+  it('answers the timeout message at the deadline behind a poll that never answers, and drops that poll', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { service, http } = configure();
+    const results: MktgSlidesExportResultResponse[] = [];
+
+    service.poll(TARGET, STARTED).subscribe((result) => results.push(result));
+    await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+    const stalled = http.expectOne('/api/mktg-agents/slides-export/result');
+    await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.timeoutMs);
+
+    expect(results).toEqual([{ status: 'failed', failure: 'timeout', message: MKTG_SLIDES_EXPORT_FAILURE_MESSAGES.timeout, deckLink: null }]);
+    expect(stalled.cancelled).toBe(true);
+    http.verify();
+  });
 });

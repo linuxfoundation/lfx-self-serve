@@ -106,7 +106,7 @@ describe('MktgSlidesExportComponent', () => {
   it('shows nothing until there is a last export or an export under way', async () => {
     await setup();
 
-    expect(service.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
+    expect(service.last).toHaveBeenCalledWith(TARGET);
     expect(query('mktg-slides-export-panel')).toBeNull();
     expect(element().querySelector('lfx-mktg-slides-export')?.classList.contains('hidden')).toBe(true);
   });
@@ -205,6 +205,38 @@ describe('MktgSlidesExportComponent', () => {
     await click('host-export');
 
     expect(query('mktg-slides-export-failed')?.textContent).toContain(MKTG_SLIDES_EXPORT_START_MESSAGES['REVISION_NOT_STORED']);
+  });
+
+  it('drops the export under way and its outcome when the page names another revision, and reads its last export', async () => {
+    let unsubscribed = false;
+    pollResult = new Observable<MktgSlidesExportResultResponse>(() => () => {
+      unsubscribed = true;
+    });
+    await setup();
+    await click('host-export');
+    expect(query('mktg-slides-export-running')).not.toBeNull();
+
+    lastResponse = { last: record({ revisionNumber: 1 }), latestRevision: null };
+    fixture.componentInstance.target.set({ ...TARGET, revisionId: `000001-${'c'.repeat(64)}` });
+    await fixture.whenStable();
+
+    expect(unsubscribed).toBe(true);
+    expect(query('mktg-slides-export-running')).toBeNull();
+    expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
+    expect(service.last).toHaveBeenCalledTimes(2);
+  });
+
+  it('never shows a finished deck under another asset', async () => {
+    await setup();
+    await click('host-export');
+    expect(query('mktg-slides-export-done')).not.toBeNull();
+
+    lastResponse = { last: null, latestRevision: null };
+    fixture.componentInstance.target.set({ ...TARGET, project: 'proj-2' });
+    await fixture.whenStable();
+
+    expect(query('mktg-slides-export-done')).toBeNull();
+    expect(query('mktg-slides-export-panel')).toBeNull();
   });
 
   it('reads nothing on the server', async () => {

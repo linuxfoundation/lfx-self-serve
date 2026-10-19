@@ -337,7 +337,7 @@ describe('MktgFrameworkViewComponent', () => {
     host.exportTarget.set(target);
     await fixture.whenStable();
 
-    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
+    expect(slidesExport.last).toHaveBeenCalledWith(target);
     query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();

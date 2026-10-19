@@ -14,7 +14,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { mktgSlidesExportFailed } from '@lfx-one/shared/utils';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import { catchError, exhaustMap, map, Observable, of, take, takeLast, takeWhile, throwError, timer } from 'rxjs';
+import { catchError, defer, exhaustMap, map, Observable, of, take, takeLast, takeWhile, tap, throwError, timer, TimeoutError } from 'rxjs';
 
 /**
  * Export to Google Slides for the Marketing OS asset pages. The BFF reads
@@ -57,6 +57,10 @@ export class MktgSlidesExportService {
    * Poll an export until it is ready or failed; one emission. A transient
    * poll failure is a spent attempt, and an export still pending when the
    * attempts run out answers the timeout message (it may still finish).
+   * `exhaustMap` drops the ticks a slow poll overlaps, so the attempts alone
+   * would never run out behind a poll that never answers: the wall-clock
+   * deadline is checked on every tick before it, and the tick past it tears
+   * the request down and answers the timeout message too.
    */
   public poll(target: MktgSlidesExportTarget, started: MktgSlidesExportStartResponse): Observable<MktgSlidesExportResultResponse> {
     const body: MktgSlidesExportResultRequest = {
@@ -67,23 +71,38 @@ export class MktgSlidesExportService {
       sessionId: started.sessionId,
       ownerToken: started.ownerToken,
     };
-    return timer(MKTG_SLIDES_EXPORT_POLL.intervalMs, MKTG_SLIDES_EXPORT_POLL.intervalMs).pipe(
-      exhaustMap(() =>
-        this.http.post<MktgSlidesExportResultResponse>(`${MKTG_SLIDES_EXPORT_API_PATH}/result`, body).pipe(
-          catchError((error: unknown) => {
-            if (isTransientHttpError(error)) {
-              console.warn('[mktg-slides-export] poll failed, retrying', { sessionId: started.sessionId, error });
-              return of<MktgSlidesExportResultResponse>({ status: 'pending' });
-            }
-            console.error('[mktg-slides-export] poll refused', { sessionId: started.sessionId, error });
-            return throwError(() => error);
-          })
-        )
-      ),
-      take(MKTG_SLIDES_EXPORT_POLL.maxAttempts),
-      takeWhile((result) => result.status === 'pending', true),
-      takeLast(1),
-      map((result) => (result.status === 'pending' ? mktgSlidesExportFailed('timeout') : result))
-    );
+    return defer(() => {
+      const deadline = Date.now() + MKTG_SLIDES_EXPORT_POLL.timeoutMs;
+      return timer(MKTG_SLIDES_EXPORT_POLL.intervalMs, MKTG_SLIDES_EXPORT_POLL.intervalMs).pipe(
+        tap(() => {
+          if (Date.now() > deadline) {
+            throw new TimeoutError();
+          }
+        }),
+        exhaustMap(() =>
+          this.http.post<MktgSlidesExportResultResponse>(`${MKTG_SLIDES_EXPORT_API_PATH}/result`, body).pipe(
+            catchError((error: unknown) => {
+              if (isTransientHttpError(error)) {
+                console.warn('[mktg-slides-export] poll failed, retrying', { sessionId: started.sessionId, error });
+                return of<MktgSlidesExportResultResponse>({ status: 'pending' });
+              }
+              console.error('[mktg-slides-export] poll refused', { sessionId: started.sessionId, error });
+              return throwError(() => error);
+            })
+          )
+        ),
+        take(MKTG_SLIDES_EXPORT_POLL.maxAttempts),
+        takeWhile((result) => result.status === 'pending', true),
+        takeLast(1),
+        map((result) => (result.status === 'pending' ? mktgSlidesExportFailed('timeout') : result)),
+        catchError((error: unknown) => {
+          if (error instanceof TimeoutError) {
+            console.warn('[mktg-slides-export] poll ran past its deadline', { sessionId: started.sessionId });
+            return of(mktgSlidesExportFailed('timeout'));
+          }
+          return throwError(() => error);
+        })
+      );
+    });
   }
 }

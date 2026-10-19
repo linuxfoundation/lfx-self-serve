@@ -98,8 +98,13 @@ export const MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS = 30_000;
 /** Events this soon after an error are the run's teardown, not a recovery. */
 export const MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS = 5_000;
 
-/** How the browser polls an export: every few seconds, for as long as a slow Drive copy can take. */
-export const MKTG_SLIDES_EXPORT_POLL = { intervalMs: 4000, maxAttempts: 120 } as const;
+/**
+ * How an export is polled: every few seconds, for as long as a slow Drive
+ * copy can take. `timeoutMs` is the wall-clock bound on the whole wait (the
+ * attempts and one interval of slack), so a poll that never answers cannot
+ * hold it open; the server finishes the export's record within it too.
+ */
+export const MKTG_SLIDES_EXPORT_POLL = { intervalMs: 4000, maxAttempts: 120, timeoutMs: 484_000 } as const;
 
 /** Why the deck carries no project logo, as the result says it. */
 export const MKTG_SLIDES_EXPORT_LOGO_NOTES = {

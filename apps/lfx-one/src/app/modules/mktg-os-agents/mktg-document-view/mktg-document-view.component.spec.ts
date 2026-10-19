@@ -156,7 +156,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(resolveBrandKit).not.toHaveBeenCalled();
     // Export to Google Slides reads this revision of the document, and its last export is looked up.
     expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
-    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
+    expect(slidesExport.last).toHaveBeenCalledWith(
+      expect.objectContaining({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: expect.any(String) })
+    );
   });
 
   it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
@@ -240,7 +242,9 @@ describe('MktgDocumentViewComponent', () => {
     expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
     expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
-    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
+    expect(slidesExport.last).toHaveBeenCalledWith(
+      expect.objectContaining({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', revisionId: expect.any(String) })
+    );
     expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
     expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');

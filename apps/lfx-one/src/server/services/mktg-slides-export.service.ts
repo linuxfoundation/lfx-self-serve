@@ -11,6 +11,7 @@ import {
   MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE,
   MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX,
   MKTG_SLIDES_EXPORT_MAX_LOGO_URL_CHARS,
+  MKTG_SLIDES_EXPORT_POLL,
   MKTG_SLIDES_EXPORT_RECORD_SCHEMA,
   MKTG_REVISION_CONTENT_TYPE,
 } from '@lfx-one/shared/constants';
@@ -88,6 +89,9 @@ import { ObjectStoreService } from './object-store.service';
  *    {documentId}/{time}-{sha}.json`, immutable and content-addressed, no
  *    personal identity). An error event, or a final output that is not an
  *    envelope, is a failed export, answered with a plain message only.
+ *    The server polls every export it starts to its end itself, so the
+ *    record is kept even when no browser does (the page left mid-export);
+ *    the browser's polls write the same content-addressed record, once.
  */
 export class MktgSlidesExportService {
   private readonly guildService = new GuildService();
@@ -147,6 +151,14 @@ export class MktgSlidesExportService {
       message: renderMktgSlidesExportFormMessage(form),
       handle: MKTG_SLIDES_EXPORT_GUILD_HANDLE,
       mentionOnOwnLine: true,
+    });
+
+    this.finishInBackground(req, sessionId, {
+      project: input.project,
+      type: input.type,
+      agentKey: input.agentKey,
+      documentId: input.documentId,
+      revisionId: found.summary.id,
     });
 
     return { sessionId, revision: this.revisionRef(found.summary), mode: input.mode, logoNote: logo.note };
@@ -213,6 +225,41 @@ export class MktgSlidesExportService {
       this.documentStore.readExportRevision(req, project, type, documentId, {}),
     ]);
     return { last, latestRevision: found ? this.revisionRef(found.latest) : null };
+  }
+
+  /**
+   * Poll a started export to its end on the server, on the browser's
+   * interval and within its deadline: `getResult` keeps the record of a ready
+   * deck, so the deck is never left without one when the page that started
+   * it goes before the end (the next visit would offer Create again and make
+   * a second deck). A failed poll is logged and the next one tries again.
+   * The timers never hold the process open; an export still running when the
+   * server stops is kept by the browser's own polls, as before.
+   */
+  private finishInBackground(req: Request, sessionId: string, context: MktgSlidesExportResultContext): void {
+    const deadline = Date.now() + MKTG_SLIDES_EXPORT_POLL.timeoutMs;
+    const schedule = (): void => {
+      if (Date.now() + MKTG_SLIDES_EXPORT_POLL.intervalMs > deadline) {
+        logger.warning(req, 'mktg_slides_export_finish', 'Slides export still pending at its deadline — no record kept by the server', {
+          session_id: sessionId,
+          agent: context.agentKey,
+        });
+        return;
+      }
+      setTimeout(() => void poll(), MKTG_SLIDES_EXPORT_POLL.intervalMs).unref();
+    };
+    const poll = async (): Promise<void> => {
+      try {
+        const result = await this.getResult(req, sessionId, context);
+        if (result.status !== 'pending') {
+          return;
+        }
+      } catch (error) {
+        logger.warning(req, 'mktg_slides_export_finish', 'Server-side export poll failed — trying again', { session_id: sessionId, err: error });
+      }
+      schedule();
+    };
+    schedule();
   }
 
   /**
