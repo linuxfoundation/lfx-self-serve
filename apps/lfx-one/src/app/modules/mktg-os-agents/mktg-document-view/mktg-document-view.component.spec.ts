@@ -12,6 +12,7 @@ import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, Mkt
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -86,6 +87,8 @@ describe('MktgDocumentViewComponent', () => {
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },
+        // The Boilerplates view says a failed copy through the app's toasts.
+        MessageService,
       ],
     }).compileComponents();
   });
@@ -216,6 +219,49 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view-sources-read')?.textContent).toContain('testorbit.example.org');
     // The revisions panel is as built: open and restore any other revision.
     expect(query('mktg-document-view-revisions')).not.toBeNull();
+  });
+
+  it('renders a Boilerplates revision (JSON content) on the Boilerplates view, full width, with the sidecar’s report and word counts', async () => {
+    const BOILERPLATES = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'boilerplates') as MktgDocumentType;
+    const content = {
+      bp: [
+        { l: 'One-liner', max: 15, t: 'TestOrbit is the open release toolkit.' },
+        { l: '25 words', max: 25, t: 'TestOrbit, a Linux Foundation project, is the open release toolkit.' },
+        { l: '50 words', max: 50, t: 'TestOrbit, a Linux Foundation project, is the open release toolkit for platform teams.' },
+        { l: '100 words', max: 100, t: 'TestOrbit, a Linux Foundation project. Learn more at testorbit.example.org.' },
+      ],
+    };
+    const jsonRevision = revision(3, { latest: true, format: 'json', status: '' });
+    store.getDocument.mockReturnValue(of({ ...detail, type: BOILERPLATES, revisions: [jsonRevision] }));
+    store.getRevision.mockReturnValue(
+      of({
+        ...detail,
+        type: BOILERPLATES,
+        revisions: [jsonRevision],
+        revision: jsonRevision,
+        markdown: JSON.stringify(content),
+        sidecar: {
+          report: { sources_read: ['https://testorbit.example.org'], sources_failed: [], gaps: ['No launch year.'], notes: '' },
+          checks: { word_counts: [6, 10, 13, 9], findings: [] },
+          mode: 'draft',
+        },
+      })
+    );
+
+    await render('/documents/boilerplates/living');
+
+    expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Boilerplates');
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-framework-view')).toBeNull();
+    expect(query('mktg-boilerplates-view-title')?.textContent).toContain('TestOrbit Boilerplates');
+    expect(query('mktg-boilerplates-view-version')?.textContent).toContain('v3');
+    expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
+    expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');
+    expect(harness.routeNativeElement?.querySelector('main')?.className).toContain('basis-full');
+
+    harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-boilerplates-view-tab-sources"]')?.click();
+    await settle();
+    expect(query('mktg-boilerplates-view-gaps')?.textContent).toContain('No launch year.');
   });
 
   it('says the document has no such revision on a 404', async () => {

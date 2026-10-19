@@ -66,6 +66,24 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'violet',
     guildAgentHandle: 'brand-kit',
   },
+  // Live Guild agent (linux-foundation~boilerplates 1.0.0): the one-liner and
+  // the 25, 50 and 100-word boilerplates from the project's messaging
+  // framework (boilerplates-output/v1, one JSON asset). It runs after the
+  // framework, which its intake attaches as a required attachment; like the
+  // Brand Kit, not `dependsOn`, so the card stays open and the run page says
+  // what is needed, with the link to the Messaging Framework page.
+  {
+    id: 'boilerplates',
+    number: 3,
+    name: 'Boilerplates Agent',
+    tags: ['Copy', 'Descriptions'],
+    status: 'active',
+    description:
+      'Writes the project’s one-liner and its 25, 50 and 100-word descriptions, each within its word limit, from your Messaging Framework and the project’s own website, press release and LFX record.',
+    icon: 'fa-light fa-paragraph',
+    accent: 'amber',
+    guildAgentHandle: 'boilerplates',
+  },
   // Live Guild agent (linux-foundation~icp) with its batch intake form
   // registered in MKTG_AGENT_INTAKES (wi-icp-lfx-selfserve). It CONSUMES the
   // Brand Kit and the Messaging Framework, but only when the project has them:
@@ -76,7 +94,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   // the agent does not require would lock out projects it can serve today.
   {
     id: 'icp',
-    number: 3,
+    number: 4,
     name: 'ICP & Target Markets Agent',
     tags: ['Personas', 'Research'],
     status: 'active',
@@ -88,7 +106,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'pitch-deck',
-    number: 4,
+    number: 5,
     name: 'Pitch Deck Agent',
     tags: ['Slides', 'Narrative'],
     status: 'coming-soon',
@@ -98,7 +116,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'qtrly-plan',
-    number: 5,
+    number: 6,
     name: 'Quarterly Plan Agent',
     tags: ['Planning'],
     status: 'coming-soon',
@@ -108,7 +126,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'linkedin-post',
-    number: 6,
+    number: 7,
     name: 'LinkedIn Post Agent',
     tags: ['Social', 'Copy'],
     status: 'coming-soon',
@@ -118,7 +136,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'website-builder',
-    number: 7,
+    number: 8,
     name: 'Website Builder Agent',
     tags: ['Web'],
     status: 'coming-soon',
@@ -128,7 +146,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'aeo-geo',
-    number: 8,
+    number: 9,
     name: 'AEO / GEO Agent',
     tags: ['Search', 'AI visibility'],
     status: 'coming-soon',

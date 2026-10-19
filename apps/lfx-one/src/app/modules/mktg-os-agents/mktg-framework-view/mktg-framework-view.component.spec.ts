@@ -3,7 +3,7 @@
 
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MktgFrameworkViewState, MktgRunAsset } from '@lfx-one/shared/interfaces';
+import { MktgFrameworkAsset, MktgFrameworkViewState } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
@@ -19,14 +19,14 @@ import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
   `,
 })
 class HostComponent {
-  public readonly asset = signal<MktgRunAsset | null>(null);
+  public readonly asset = signal<MktgFrameworkAsset | null>(null);
   public readonly state = signal<MktgFrameworkViewState>('generating');
   public readonly version = signal<number | null>(null);
 }
 
 const pair = (a: string, b: string): [string, string] => [a, b];
 
-const ASSET: MktgRunAsset = {
+const ASSET: MktgFrameworkAsset = {
   kind: 'messaging-framework',
   mode: 'draft',
   content: {

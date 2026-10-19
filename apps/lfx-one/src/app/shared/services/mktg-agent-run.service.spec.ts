@@ -14,10 +14,10 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MktgAgentIntake,
+  MktgFrameworkAsset,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgRunActivity,
-  MktgRunAsset,
   MktgRunQuestion,
   MktgRunQuestionsPending,
   MktgRunResultResponse,
@@ -681,9 +681,9 @@ describe('MktgAgentRunService', () => {
     });
 
     it('ends the poll on a ready result that carries the framework as an asset — no document at all — and stores the asset with the version', async () => {
-      const asset: MktgRunAsset = {
+      const asset: MktgFrameworkAsset = {
         kind: 'messaging-framework',
-        content: { mf: { tagline: 'Release, open.' }, icp: [], mh: {}, nums: [] } as unknown as MktgRunAsset['content'],
+        content: { mf: { tagline: 'Release, open.' }, icp: [], mh: {}, nums: [] } as unknown as MktgFrameworkAsset['content'],
         report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
         checks: { findings: [] },
         mode: 'draft',

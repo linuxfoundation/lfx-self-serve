@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
+import { BOILERPLATES_ANSWERS_ENDPOINT, BOILERPLATES_FIELD_KEYS, BOILERPLATES_FRAMEWORK_ANSWER_KEY } from './boilerplates.constants';
 import {
   BRAND_KIT_ANSWERS_ENDPOINT,
   BRAND_KIT_FIELD_KEYS,
@@ -354,6 +355,119 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
 };
 
 /**
+ * Boilerplates intake (marketing-os-agents agents/boilerplates 1.0.0,
+ * boilerplates-output/v1; wi-boilerplates-intake-and-run). A short form: the
+ * project name from LFX, the website from LFX (its host is the domain the
+ * 100-word version ends on: "Learn more at <domain>."; left empty, the agent
+ * takes the LFX record's website or asks) and notes. The LFX project uid
+ * rides the form (`submitsProject`) for the agent's own LFX lookups. The
+ * agent reads the website, the launch press release and the LFX record
+ * itself, then asks only the gaps it could not settle — the domain, the main
+ * programs, the member names it may use — each with a suggested answer
+ * (`endpoints.answers`), on the same run.
+ *
+ * The boilerplates carry the messaging framework's positioning and proof,
+ * so they run AFTER it: the project's LATEST stored messaging framework
+ * revision is attached automatically, the way the Brand Kit attaches it —
+ * the chip names it with its version and date and links to the Messaging
+ * Framework page — as its JSON, which the BFF unwraps to the framework's
+ * content. The latest revision regardless of its review status (LFX One has
+ * no Approve action yet; Approve is a later item). A project with no
+ * framework revision cannot run the agent: the Run button is disabled with
+ * "Run the messaging framework first" and the link; nor can one whose latest
+ * revision does not carry the framework's content (a legacy Messaging
+ * Document, a restore without its sidecar), which gets `incompleteNote`
+ * instead. The agent itself refuses a run without a framework up front; that
+ * reply, should it ever come, is shown as the run's outcome.
+ *
+ * The output is not a document but the boilerplates' JSON, so the run lands
+ * on the Boilerplates view (`assetView`): the feed and the questions on their
+ * own while the run is live, then the four lengths with their word counts.
+ * Every submission is a fresh draft (`freshRunPerSubmission`): comments per
+ * length (a redraft) and a check of a hand edit are later work. Each result is
+ * stored as a new revision of the project's Boilerplates document, as the
+ * JSON content with the report in the sidecar.
+ */
+export const BOILERPLATES_INTAKE: MktgAgentIntake = {
+  agentId: 'boilerplates',
+  formTitleAction: 'Write',
+  documentName: 'Boilerplates',
+  intro:
+    'The agent writes the one-liner and the 25, 50 and 100-word boilerplates from your project’s Messaging Framework, which is attached automatically. It reads the website, the launch press release and the LFX record itself and asks you only for what is still missing, with a suggested answer each time. Every result is saved as a new revision in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
+  fields: [
+    {
+      key: BOILERPLATES_FIELD_KEYS.projectName,
+      question: 'Project name',
+      kind: 'text',
+      prefill: 'project-name',
+      oneLine: true,
+      hint: 'Every boilerplate names the project in full, as written here.',
+    },
+    {
+      key: BOILERPLATES_FIELD_KEYS.websiteUrl,
+      question: 'Website',
+      kind: 'text',
+      optional: true,
+      prefill: 'website-url',
+      placeholder: 'https://…',
+      hint: 'The agent reads it, and its domain ends the 100-word boilerplate (“Learn more at …”).',
+      missingPrefillHint: 'Not set on your LFX project — add the website, or the agent asks you for the domain.',
+      format: 'source-url',
+    },
+    {
+      key: BOILERPLATES_FIELD_KEYS.notes,
+      question: 'Notes',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'An audience to address, a fact to lead with, words to avoid',
+    },
+  ],
+  fieldGroups: [
+    {
+      id: 'project',
+      title: 'The project',
+      hint: 'the agent reads its sources itself',
+      fieldKeys: [BOILERPLATES_FIELD_KEYS.projectName, BOILERPLATES_FIELD_KEYS.websiteUrl, BOILERPLATES_FIELD_KEYS.notes],
+    },
+  ],
+  // The messaging framework, required: the LATEST stored revision of the
+  // project's framework (approved or not — Approve is a later item),
+  // submitted as its JSON under the agent's own form key and read whole.
+  attachments: [
+    {
+      sourceAgentId: 'foundation-setup',
+      answerKey: BOILERPLATES_FRAMEWORK_ANSWER_KEY,
+      documentName: 'Messaging Framework',
+      format: 'json',
+      frameworkContent: true,
+      incompleteNote: 'The latest messaging framework could not be read as a framework — generate it again first.',
+    },
+  ],
+  requiredNote: '* required — everything else is optional',
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  submitsProject: true,
+  fullWidth: true,
+  assetView: 'boilerplates',
+  // The asset view shows the boilerplates themselves; there is no section checklist to tick.
+  sections: [],
+  endpoints: {
+    generate: '/api/mktg-agents/boilerplates/generate',
+    result: '/api/mktg-agents/boilerplates/result',
+    answers: BOILERPLATES_ANSWERS_ENDPOINT,
+  },
+  // The result endpoint stores every validated result as a revision of the
+  // project's Boilerplates document and reports the receipt, so a
+  // receipt-less ready result is a failed write the run shell must retry.
+  // No `stored` read endpoint yet: nothing attaches the boilerplates.
+  persistsDocument: true,
+};
+
+/**
  * ICP & Target Markets batch intake (wi-icp-lfx-selfserve). Fixed question
  * wording is quoted VERBATIM from the agent's own `src/questions.ts`
  * (marketing-os-agents `agents/icp-ts`), never paraphrased — every question
@@ -444,6 +558,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
 export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BRAND_KIT_INTAKE.agentId]: BRAND_KIT_INTAKE,
   [FOUNDATION_MESSAGE_INTAKE.agentId]: FOUNDATION_MESSAGE_INTAKE,
+  [BOILERPLATES_INTAKE.agentId]: BOILERPLATES_INTAKE,
   [ICP_INTAKE.agentId]: ICP_INTAKE,
 };
 

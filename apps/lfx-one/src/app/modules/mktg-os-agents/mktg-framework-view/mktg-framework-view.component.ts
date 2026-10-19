@@ -13,9 +13,9 @@ import {
   FoundationMessageNumberRow,
   FoundationMessagePillarView,
   FoundationMessageViewTab,
+  MktgFrameworkAsset,
   MktgFrameworkViewState,
   MktgFrameworkViewTab,
-  MktgRunAsset,
 } from '@lfx-one/shared/interfaces';
 import {
   foundationMessageAudienceRows,
@@ -46,7 +46,7 @@ export class MktgFrameworkViewComponent {
   /** The project the framework is for. */
   public readonly projectName = input.required<string>();
   /** The validated framework with its report and checks; null while the run is live. */
-  public readonly asset = input<MktgRunAsset | null>(null);
+  public readonly asset = input<MktgFrameworkAsset | null>(null);
   /** Generating (the feed is projected in), questions (the stepper is projected in), or ready. */
   public readonly state = input<MktgFrameworkViewState>('ready');
   /** The revision or run version shown in the header, when known. */
