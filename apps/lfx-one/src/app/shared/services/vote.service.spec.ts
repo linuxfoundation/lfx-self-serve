@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteService } from './vote.service';
 
-import type { CreateVoteRequest, Vote } from '@lfx-one/shared/interfaces';
+import type { CreateVoteRequest, ExtendVoteRequest, Vote } from '@lfx-one/shared/interfaces';
 
 function buildVote(overrides: Partial<Vote> = {}): Vote {
   return {
@@ -304,6 +304,15 @@ describe('VoteService', () => {
       expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/reminders', { recipient_ids: ['r-1', 'r-2'] });
       expect(next).toHaveBeenCalledWith({ recipient_count: 2 });
     });
+  });
+
+  it('extendVote posts the new end_time/end_time_timezone to the dedicated extend endpoint', () => {
+    const data: ExtendVoteRequest = { end_time: '2026-09-01T23:59:00.000Z', end_time_timezone: 'America/New_York' };
+    http.post.mockReturnValue(of(buildVote({ end_time: data.end_time })));
+
+    service.extendVote('vote-1', data).subscribe();
+
+    expect(http.post).toHaveBeenCalledWith('/api/votes/vote-1/extend', data);
   });
 
   // GH-2826 Design A: dialog-open fires the speculative create; accept chains the enable onto it. The

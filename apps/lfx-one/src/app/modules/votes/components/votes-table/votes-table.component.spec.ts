@@ -11,7 +11,7 @@ import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponse
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1224,5 +1224,88 @@ describe('VotesTableComponent — participation progress', () => {
     for (const cell of cells) {
       expect(`${cell.textContent} ${cell.getAttribute('aria-label') ?? ''}`).not.toMatch(/quorum|approv|winn|passed/i);
     }
+  });
+});
+
+describe('VotesTableComponent — Extend deadline', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let extendVote: ReturnType<typeof vi.fn>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let onClose: Subject<{ end_time: string; end_time_timezone: string } | undefined>;
+  const ROWS = [vote('active'), vote('ended', { status: PollStatus.ENDED }), vote('draft', { status: PollStatus.DISABLED })];
+  const extendButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-extend-deadline-${uid}"] button`);
+
+  beforeEach(async () => {
+    extendVote = vi.fn().mockReturnValue(of(vote('active')));
+    onClose = new Subject();
+    dialogOpen = vi.fn().mockReturnValue({ onClose });
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { extendVote } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    })
+      // DialogService is a component-level provider (see the "deliberately not here" comment on
+      // VotesTableComponent) — it must be overridden on the component itself, not the TestBed root.
+      .overrideComponent(VotesTableComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: dialogOpen } }] },
+      })
+      .compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('shows the button only for a manager on an active vote', async () => {
+    await settle();
+    expect(extendButton('active')).not.toBeNull();
+    expect(extendButton('ended')).toBeNull();
+    expect(extendButton('draft')).toBeNull();
+  });
+
+  it('hides the button for a non-manager viewer', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', false);
+    await settle();
+    expect(extendButton('active')).toBeNull();
+  });
+
+  it('opens the dialog seeded with the vote name/current deadline and extends on confirm', async () => {
+    await settle();
+
+    extendButton('active')!.click();
+    await settle();
+
+    expect(dialogOpen).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        data: expect.objectContaining({ voteName: 'Board active', currentEndTime: '2026-10-12T12:00:00Z' }),
+      })
+    );
+
+    const result = { end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' };
+    onClose.next(result);
+    await settle();
+
+    expect(extendVote).toHaveBeenCalledWith('active', result);
+  });
+
+  it('does nothing when the dialog is dismissed without a result', async () => {
+    await settle();
+
+    extendButton('active')!.click();
+    onClose.next(undefined);
+    await settle();
+
+    expect(extendVote).not.toHaveBeenCalled();
   });
 });

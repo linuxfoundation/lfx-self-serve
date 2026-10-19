@@ -57,4 +57,7 @@ router.put('/:uid/enable', voteWriteRateLimiter, (req, res, next) => voteControl
 // POST /votes/:uid/reminders - resend the vote email to selected recipients
 router.post('/:uid/reminders', voteWriteRateLimiter, (req, res, next) => voteController.sendVoteReminders(req, res, next));
 
+// POST /votes/:uid/extend - extend a vote's deadline
+router.post('/:uid/extend', voteWriteRateLimiter, (req, res, next) => voteController.extendVote(req, res, next));
+
 export default router;

@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { ExtendVoteDeadlineDialogComponent } from '@components/extend-vote-deadline-dialog/extend-vote-deadline-dialog.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -81,7 +82,8 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     ConfirmDialogModule,
     EmptyStateComponent,
   ],
-  providers: [ConfirmationService],
+  // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
+  providers: [ConfirmationService, DialogService],
   templateUrl: './votes-table.component.html',
 })
 export class VotesTableComponent {
@@ -361,6 +363,44 @@ export class VotesTableComponent {
             },
           });
       },
+    });
+  }
+
+  protected onExtendDeadline(vote: Vote): void {
+    const ref = this.dialogService.open(ExtendVoteDeadlineDialogComponent, {
+      header: 'Extend Deadline',
+      width: '480px',
+      modal: true,
+      data: {
+        voteName: vote.name,
+        currentEndTime: vote.end_time,
+        currentEndTimeTimezone: vote.end_time_timezone,
+      },
+    });
+
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
+      if (!result) return;
+
+      this.voteService
+        .extendVote(vote.uid, result)
+        .pipe(take(1))
+        .subscribe({
+          next: () => {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: `${this.voteLabel.singular} deadline extended successfully`,
+            });
+            this.refresh.emit();
+          },
+          error: (error) => {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: `Failed to extend ${this.voteLabel.singular.toLowerCase()} deadline: ${error.message || 'Unknown error'}`,
+            });
+          },
+        });
     });
   }
 
