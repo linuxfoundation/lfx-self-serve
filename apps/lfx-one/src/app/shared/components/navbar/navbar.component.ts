@@ -162,6 +162,9 @@ export class NavbarComponent extends SidebarComponent {
     () => this.navLens() !== null && this.itemsWithTestIds().length === 0 && this.sidebarNavService.sidebarItemsPending()
   );
 
+  /** The empty menu comes from a failed lookup, not a confirmed denial: the card offers a retry instead. */
+  protected readonly menuLookupFailed: Signal<boolean> = computed(() => this.sidebarNavService.menuLookupFailed());
+
   protected readonly noAccessGhostItems = NAVBAR_NO_ACCESS_GHOST_ITEMS;
 
   // ── Me card ──────────────────────────────────────────────────────────────────────────────────
@@ -292,6 +295,10 @@ export class NavbarComponent extends SidebarComponent {
     }) as DynamicDialogRef;
 
     nameDynamicDialog(this.dialogService, dialogRef, CreateArtifactDialogComponent.headingId);
+  }
+
+  protected retryMenu(): void {
+    this.sidebarNavService.retryMenuLookups();
   }
 
   protected closeMobileDrawer(): void {

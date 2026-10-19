@@ -30,13 +30,22 @@ interface NavbarView {
   roleMarks: Signal<NavbarRoleMark[]>;
   showNoAccessState: Signal<'foundation' | 'project' | null>;
   menuPending: Signal<boolean>;
+  menuLookupFailed: Signal<boolean>;
+  retryMenu(): void;
 }
+
+const retryMenuLookups = vi.fn();
 
 const createNavbar = async (
   items: SidebarMenuItem[],
   personas: PersonaType[] = [],
   personaProjects: Partial<Record<PersonaType, PersonaProject[]>> = {},
-  { lens = 'me', itemsPending = false, tierResolved = true }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean } = {}
+  {
+    lens = 'me',
+    itemsPending = false,
+    tierResolved = true,
+    lookupFailed = false,
+  }: { lens?: Lens; itemsPending?: boolean; tierResolved?: boolean; lookupFailed?: boolean } = {}
 ): Promise<NavbarView> => {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -81,7 +90,7 @@ const createNavbar = async (
       { provide: AccountContextService, useValue: { hasOrgSelectorAccess: vi.fn(() => false) } },
       { provide: ChangelogService, useValue: { unseenChangelogCount: signal(0), loadUnseenCount: vi.fn() } },
       { provide: DialogService, useValue: { open: vi.fn() } },
-      { provide: SidebarNavService, useValue: { sidebarItemsPending: signal(itemsPending) } },
+      { provide: SidebarNavService, useValue: { sidebarItemsPending: signal(itemsPending), menuLookupFailed: signal(lookupFailed), retryMenuLookups } },
       { provide: CreatePermissionService, useValue: { canShowCreateButton: signal(false), creatableTypes: signal([]) } },
     ],
   });
@@ -168,5 +177,18 @@ describe('NavbarComponent', () => {
     expect((await createNavbar([], [], {}, { lens: 'me', itemsPending: true })).menuPending()).toBe(false);
     expect((await createNavbar([{ label: 'Dashboard', routerLink: '/project/overview' }], [], {}, { lens: 'project' })).showNoAccessState()).toBeNull();
     expect((await createNavbar([], [], {}, { lens: 'me' })).showNoAccessState()).toBeNull();
+  });
+
+  it('marks the empty-menu state as a failed lookup, not a denial, and retries through the service', async () => {
+    const failed = await createNavbar([], [], {}, { lens: 'foundation', lookupFailed: true });
+    const denied = await createNavbar([], [], {}, { lens: 'foundation' });
+
+    expect(failed.showNoAccessState()).toBe('foundation');
+    expect(failed.menuLookupFailed()).toBe(true);
+    expect(denied.menuLookupFailed()).toBe(false);
+
+    retryMenuLookups.mockClear();
+    failed.retryMenu();
+    expect(retryMenuLookups).toHaveBeenCalledTimes(1);
   });
 });

@@ -914,6 +914,40 @@
     color: #90a1b9;
   }
 
+  // Retry on the lookup-failed card: a compact outline pill in the navbar's dark idiom.
+  .lfxn__empty-action {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 4px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 9999px;
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    color: #e2e8f0;
+    cursor: pointer;
+    transition: background-color 150ms ease-in-out;
+
+    i {
+      font-size: 11px;
+    }
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-azure-azure-500);
+      outline-offset: 2px;
+    }
+  }
+
   // Tucked ~2 rows up under the card, so the first rows read as continuing behind it.
   .lfxn__ghost {
     margin-top: -58px;

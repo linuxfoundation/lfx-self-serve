@@ -368,3 +368,34 @@ describe('PersonaService — grant probe recency ordering', () => {
     });
   });
 });
+
+describe('PersonaService — personaLookupFailed', () => {
+  let service: PersonaService;
+  let http: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [PersonaService, provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(PersonaService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    http.verify();
+  });
+
+  it('flags a network failure and an upstream error payload, and clears on the next answer', () => {
+    service.refreshEnrichedPersonas(true).subscribe();
+    http.expectOne((req) => req.url.includes('enriched=true')).flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(service.personaLookupFailed()).toBe(true);
+
+    service.refreshEnrichedPersonas(true).subscribe();
+    http.expectOne((req) => req.url.includes('enriched=true')).flush(mockResponse({ error: 'Failed to fetch persona detections' }));
+    expect(service.personaLookupFailed()).toBe(true);
+
+    service.refreshEnrichedPersonas(true).subscribe();
+    http.expectOne((req) => req.url.includes('enriched=true')).flush(mockResponse({}));
+    expect(service.personaLookupFailed()).toBe(false);
+  });
+});

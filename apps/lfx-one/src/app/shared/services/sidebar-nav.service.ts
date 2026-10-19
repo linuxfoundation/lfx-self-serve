@@ -125,6 +125,16 @@ export class SidebarNavService {
 
   /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
   private readonly foundationAuditorProbePending = signal(false);
+  /** Bumped by `retryMenuLookups()` so the scoped marketing probe re-runs for the same scope. */
+  private readonly lookupRetry = signal(0);
+  /** In flight while a `retryMenuLookups()` persona refresh runs. */
+  private readonly retryPending = signal(false);
+
+  /**
+   * True when a lookup that shapes the menu failed instead of answering — an empty menu then means
+   * "couldn't check", not "no access". Retry with `retryMenuLookups()`.
+   */
+  public readonly menuLookupFailed: Signal<boolean> = computed(() => this.personaService.personaLookupFailed());
 
   /**
    * True while `sidebarItems` is empty only because what decides its shape is still loading — the
@@ -134,6 +144,7 @@ export class SidebarNavService {
    */
   public readonly sidebarItemsPending = computed((): boolean => {
     if (!this.personaService.personaLoaded()) return true;
+    if (this.retryPending()) return true;
     // A scoped marketing grant can be the only thing that fills the menu; wait for its probe too.
     if (this.marketingPersonaSlug() !== this.marketingScopeSlug()) return true;
     // A foundation writer grant can be what unlocks the foundation menu: wait for the fast path only.
@@ -433,7 +444,9 @@ export class SidebarNavService {
   });
 
   private readonly marketingPersonaSlug: Signal<string> = toSignal(
-    toObservable(this.marketingScopeSlug).pipe(
+    // `lookupRetry` re-emits the same scope so a failed probe can run again.
+    toObservable(computed(() => ({ slug: this.marketingScopeSlug(), retry: this.lookupRetry() }))).pipe(
+      map(({ slug }) => slug),
       switchMap((slug) => {
         if (!slug) {
           return of('');
@@ -915,6 +928,21 @@ export class SidebarNavService {
       },
     ];
   });
+
+  /**
+   * Re-runs the lookups that shape the menu after one failed: a forced persona refresh (root grants,
+   * auditor / root-writer) and the scoped marketing probe. The menu stays pending until the refresh
+   * settles, then shows the menu, the no-access state, or the error again.
+   */
+  public retryMenuLookups(): void {
+    if (this.retryPending()) return;
+    this.retryPending.set(true);
+    this.lookupRetry.update((count) => count + 1);
+    this.personaService
+      .refreshEnrichedPersonas(true)
+      .pipe(finalize(() => this.retryPending.set(false)))
+      .subscribe();
+  }
 
   private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {
     const profileIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('profile'));

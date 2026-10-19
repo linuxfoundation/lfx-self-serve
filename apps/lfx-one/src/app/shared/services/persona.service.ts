@@ -44,6 +44,12 @@ export class PersonaService {
   public readonly personaLoaded: WritableSignal<boolean>;
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * True when the latest persona lookup failed (network error or an upstream `error` payload) rather
+   * than answering. Last-known-good state is kept either way; consumers that would read an empty
+   * result as "no access" use this to show a retryable error instead. Cleared by the next answer.
+   */
+  public readonly personaLookupFailed: WritableSignal<boolean> = signal<boolean>(false);
   /** `writer_guard` on the tenant root project — bypasses nav persona filtering; does not imply writer on a named project */
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
@@ -462,10 +468,12 @@ export class PersonaService {
         currentPersona: this.currentPersona(),
         allPersonas: this.allPersonas(),
       });
+      this.personaLookupFailed.set(true);
       this.personaLoaded.set(true);
       return;
     }
 
+    this.personaLookupFailed.set(false);
     console.info('[PersonaService] Persona detection response:', response);
     this.personaProjects.set(response.personaProjects);
     this.detectedProjects.set(response.projects);

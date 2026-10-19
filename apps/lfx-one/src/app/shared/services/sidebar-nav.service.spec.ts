@@ -61,6 +61,7 @@ describe('SidebarNavService', () => {
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
   const personaLoaded = signal(true);
+  const personaLookupFailed = signal(false);
   const marketingOpsEnabled = signal(false);
   const authenticated = signal(false);
   const writerGrantsResolved = signal(true);
@@ -100,6 +101,7 @@ describe('SidebarNavService', () => {
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
     personaLoaded.set(true);
+    personaLookupFailed.set(false);
     marketingOpsEnabled.set(false);
     authenticated.set(false);
     writerGrantsResolved.set(true);
@@ -140,6 +142,7 @@ describe('SidebarNavService', () => {
             isCampaignManager: signal(false),
             isAuditor,
             personaLoaded,
+            personaLookupFailed,
             // Late-bound so a case can swap in a probe that stays in flight.
             refreshEnrichedPersonas: () => refreshEnrichedPersonas(),
           },
@@ -866,6 +869,28 @@ describe('SidebarNavService', () => {
       probe.next({});
       probe.complete();
       expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('reports a failed lookup, and holds the menu pending while a retry refresh runs', () => {
+      personaLookupFailed.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      expect(service.menuLookupFailed()).toBe(true);
+
+      const retry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => retry);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // A second click while it runs doesn't stack another refresh.
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+
+      personaLookupFailed.set(false);
+      retry.next({});
+      retry.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
     });
   });
 });
