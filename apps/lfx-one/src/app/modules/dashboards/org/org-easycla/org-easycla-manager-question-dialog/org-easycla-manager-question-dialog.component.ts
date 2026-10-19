@@ -26,7 +26,7 @@ export function orgClaManagerQuestionDialogConfig(data: OrgClaManagerQuestionDia
 }
 
 /**
- * Corporate Console's "Are you authorized to be a CLA Manager?" before Start (#2780).
+ * Corporate Console's "Are you authorized to be a CLA Manager?" before Start.
  *
  * It cannot be dismissed while configuring: the role write still lands upstream, so a dismissal
  * would only hide it.

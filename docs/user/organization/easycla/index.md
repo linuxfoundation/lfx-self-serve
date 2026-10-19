@@ -75,7 +75,7 @@ Signing a corporate CLA starts on EasyCLA and finishes in DocuSign. Self Serve p
 1. On EasyCLA, select **Sign CLA**.
 2. In **Sign a CLA**, search for the project, CLA Group, or repository, then select **Continue to sign**.
 3. On the agreement, select **Start the CLA process**. If you are not already the initial CLA Manager, the page asks **Are you authorized to be a CLA Manager for your organization?**
-   - **Yes** shows **Configuring CLA Manager Settings…** while you are made the initial CLA Manager designee, then closes. Overview then says **You've been identified as the initial CLA Manager from your company for this project.** and offers **Proceed with signing**. You can leave and select **Proceed with signing** later. Select it to continue to step 4.
+   - **Yes** shows **Configuring CLA Manager Settings…** while you are made the initial CLA Manager designee, then closes. Overview then says **You've been identified as the initial CLA Manager from your company for this project.** and offers **Proceed with signing**. Select it to continue to step 4.
    - **No** asks you to **Identify CLA Manager** — a name and email for the person at your company who will be the CLA Manager. That person needs an LF Login before they can become the designee. Answering **No** ends your part: Overview shows a notice, and no confirmation screen follows.
 
    If you are already the initial CLA Manager designee, Overview offers **Proceed with signing** instead of **Start the CLA process**, and the question is not asked. Steps 4 to 6 are for the person continuing as the initial CLA Manager.
