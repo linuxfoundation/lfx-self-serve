@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { lfxColors } from './colors.constants';
 import { COMMITTEE_LABEL } from './committees.constants';
 import type { Lens, LensOption, NavbarGhostItem, NavbarRoleStyle, OrgRolePersona, PersonaType } from '../interfaces';
 
@@ -14,10 +15,10 @@ export const NAVBAR_LENS_OVERRIDES: Readonly<Partial<Record<Lens, Pick<LensOptio
 
 /** Role glyph and ink on the navbar's dark surface, per persona. */
 export const NAVBAR_ROLE_STYLES: Readonly<Record<PersonaType, NavbarRoleStyle>> = {
-  'executive-director': { icon: 'fa-solid fa-star', ink: '#FFD230' },
-  'board-member': { icon: 'fa-solid fa-chair-office', ink: '#C4B4FF' },
-  maintainer: { icon: 'fa-solid fa-shield-halved', ink: '#85C2FF' },
-  contributor: { icon: 'fa-solid fa-code', ink: '#E2E8F0' },
+  'executive-director': { icon: 'fa-solid fa-star', ink: lfxColors.amber[300] },
+  'board-member': { icon: 'fa-solid fa-chair-office', ink: lfxColors.violet[300] },
+  maintainer: { icon: 'fa-solid fa-shield-halved', ink: lfxColors.blue[400] },
+  contributor: { icon: 'fa-solid fa-code', ink: lfxColors.gray[200] },
 };
 
 /** How each role reads in front of its project list in the role tooltip ("Maintainer of", "Contributor to"). */
@@ -29,7 +30,7 @@ export const NAVBAR_ROLE_PREPOSITIONS: Readonly<Record<PersonaType, string>> = {
 };
 
 /** Ink for a context role pill when the user holds no detected role on the selected project. */
-export const NAVBAR_DEFAULT_ROLE_STYLE: NavbarRoleStyle = { icon: 'fa-solid fa-user', ink: '#E2E8F0' };
+export const NAVBAR_DEFAULT_ROLE_STYLE: NavbarRoleStyle = { icon: 'fa-solid fa-user', ink: lfxColors.gray[200] };
 
 /** Public site listed under the LFX apps in the navbar brand menu. */
 export const NAVBAR_BRAND_SITE = { domain: 'linuxfoundation.org', url: 'https://www.linuxfoundation.org/' } as const;

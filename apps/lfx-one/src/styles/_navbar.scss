@@ -3,9 +3,10 @@
 
 // Navbar v2 (sidebar redesign) — global stylesheet for `lfx-navbar`. Ported verbatim from the
 // design's `navbar.css` plus its floating (`lfxn-float`) and dark (`lfxn-dark`) overrides, with the
-// dark cascade resolved into the base rules. Values are exact pixel/hex values from the design and
-// deliberately do not follow the rem-based Tailwind scale (html is 14px) or the `lfxColors` tokens —
-// do not round them.
+// dark cascade resolved into the base rules. Sizes are exact pixel values from the design and
+// deliberately do not follow the rem-based Tailwind scale (html is 14px) — do not round them. Colours
+// come from the `lfxColors` tokens via `theme('colors.…')` (the design's values are palette stops; the
+// two off-palette navy surfaces are rebuilt from tokens, see the notes where they're used).
 //
 // Global rather than component-scoped: the project/org selectors' `navbar` variant renders the
 // context card inside their own hosts and the popovers/tooltips are appended to <body>, so the rules
@@ -32,16 +33,16 @@
   // ---------- Panel ----------
   .lfxn {
     // Slate scale as the dark navbar re-maps it.
-    --color-slate-slate-50: #002741;
-    --color-slate-slate-100: #314158;
-    --color-slate-slate-200: #45556c;
-    --color-slate-slate-300: #45556c;
-    --color-slate-slate-400: #90a1b9;
-    --color-slate-slate-500: #90a1b9;
-    --color-slate-slate-600: #90a1b9;
-    --color-slate-slate-900: #cad5e2;
-    --color-azure-azure-500: rgb(0, 154, 255);
-    --color-azure-azure-600: rgb(0, 130, 217);
+    --color-slate-slate-50: theme('colors.blue.900');
+    --color-slate-slate-100: theme('colors.gray.700');
+    --color-slate-slate-200: theme('colors.gray.600');
+    --color-slate-slate-300: theme('colors.gray.600');
+    --color-slate-slate-400: theme('colors.gray.400');
+    --color-slate-slate-500: theme('colors.gray.400');
+    --color-slate-slate-600: theme('colors.gray.400');
+    --color-slate-slate-900: theme('colors.gray.300');
+    --color-azure-azure-500: theme('colors.blue.500');
+    --color-azure-azure-600: theme('colors.blue.600');
 
     box-sizing: border-box;
     width: 280px;
@@ -118,7 +119,7 @@
 
     &:hover,
     &.is-open {
-      background: rgba(255, 255, 255, 0.14);
+      background: theme('colors.white / 14%');
     }
 
     &:focus-visible {
@@ -134,7 +135,7 @@
     flex-shrink: 0;
 
     path {
-      fill: #fff;
+      fill: theme('colors.white');
     }
   }
 
@@ -145,7 +146,7 @@
     width: 15px;
     height: 15px;
     flex-shrink: 0;
-    color: #cad5e2;
+    color: theme('colors.gray.300');
     font-size: 12px;
     line-height: 1;
   }
@@ -194,11 +195,11 @@
 
   .lfxn__icon-btn--accent {
     background: var(--color-azure-azure-500);
-    color: #fff;
+    color: theme('colors.white');
 
     &:hover {
       background: var(--color-azure-azure-600);
-      color: #fff;
+      color: theme('colors.white');
     }
   }
 
@@ -233,8 +234,8 @@
     align-items: center;
     padding: 2px;
     border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.07);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+    background: theme('colors.white / 7%');
+    box-shadow: 0 0 0 1px theme('colors.white / 14%');
     position: relative;
     isolation: isolate;
   }
@@ -247,10 +248,10 @@
     z-index: -1;
     height: 24px;
     border-radius: 9999px;
-    background: #fff;
+    background: theme('colors.white');
     box-shadow:
-      0 1px 2px -1px rgba(0, 0, 0, 0.05),
-      0 1px 3px 0 rgba(0, 0, 0, 0.05);
+      0 1px 2px -1px theme('colors.black / 5%'),
+      0 1px 3px 0 theme('colors.black / 5%');
     transition:
       transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
       width 260ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -285,30 +286,30 @@
     font-weight: 400;
     line-height: 16px;
     white-space: nowrap;
-    color: #cad5e2;
+    color: theme('colors.gray.300');
     transition: color 150ms ease-in-out;
 
     i {
       font-size: 12px;
       line-height: 1;
-      color: #cad5e2;
+      color: theme('colors.gray.300');
       flex-shrink: 0;
     }
 
     &:hover {
-      color: #fff;
+      color: theme('colors.white');
     }
 
     &.is-active {
       font-weight: 500;
-      color: #0f172b;
-      background: #fff;
+      color: theme('colors.gray.900');
+      background: theme('colors.white');
       box-shadow:
-        0 1px 2px -1px rgba(0, 0, 0, 0.05),
-        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
 
       i {
-        color: #009aff;
+        color: theme('colors.blue.500');
       }
     }
 
@@ -322,7 +323,7 @@
     width: 1px;
     height: 12px;
     flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.12);
+    background: theme('colors.white / 12%');
   }
 
   // ---------- Context card ----------
@@ -353,23 +354,23 @@
     padding: 10px;
     border: 0;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.07);
+    background: theme('colors.white / 7%');
     cursor: pointer;
     text-align: left;
     font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
     box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.14),
-      0 1px 2px -1px rgba(0, 0, 0, 0.05),
-      0 1px 3px 0 rgba(0, 0, 0, 0.05);
+      0 0 0 1px theme('colors.white / 14%'),
+      0 1px 2px -1px theme('colors.black / 5%'),
+      0 1px 3px 0 theme('colors.black / 5%');
     transition: box-shadow 150ms ease-in-out;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 
     &:hover {
       box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.28),
-        0 1px 2px -1px rgba(0, 0, 0, 0.05),
-        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+        0 0 0 1px theme('colors.white / 28%'),
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
     }
 
     &:focus-visible {
@@ -407,7 +408,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    color: #fff;
+    color: theme('colors.white');
   }
 
   .lfxn__context-meta {
@@ -416,7 +417,7 @@
     font-weight: 400;
     line-height: 14px;
     white-space: nowrap;
-    color: #90a1b9;
+    color: theme('colors.gray.400');
   }
 
   // A context card with nothing to switch to (single organization): no pointer, no hover ring.
@@ -425,9 +426,9 @@
 
     &:hover {
       box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.14),
-        0 1px 2px -1px rgba(0, 0, 0, 0.05),
-        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+        0 0 0 1px theme('colors.white / 14%'),
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
     }
   }
 
@@ -443,7 +444,7 @@
 
   // Role pill under a project's name — outlined in the role's ink.
   .lfxn__role {
-    --lfxn-role-ink: #e2e8f0;
+    --lfxn-role-ink: theme('colors.gray.200');
 
     box-sizing: border-box;
     display: inline-flex;
@@ -477,7 +478,7 @@
     font-weight: 400;
     line-height: 14px;
     white-space: nowrap;
-    color: #90a1b9;
+    color: theme('colors.gray.400');
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
@@ -498,9 +499,9 @@
     flex-shrink: 0;
     overflow: hidden;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.07);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
-    color: #cad5e2;
+    background: theme('colors.white / 7%');
+    box-shadow: 0 0 0 1px theme('colors.white / 10%');
+    color: theme('colors.gray.300');
     font-size: 13px;
 
     > img {
@@ -511,7 +512,7 @@
   }
 
   .lfxn__tile--logo {
-    background: #fff;
+    background: theme('colors.white');
 
     > img {
       padding: 5px;
@@ -519,7 +520,7 @@
     }
 
     > i {
-      color: #45556c;
+      color: theme('colors.gray.600');
     }
   }
 
@@ -540,7 +541,7 @@
   .lfxn__avatar-initials {
     font-size: 11px;
     font-weight: 600;
-    color: #fff;
+    color: theme('colors.white');
   }
 
   // Me card: identity row + role marks, then the My Profile / Account & Settings action strip.
@@ -555,9 +556,9 @@
     &,
     &:hover {
       box-shadow:
-        0 0 0 1px rgba(255, 255, 255, 0.14),
-        0 1px 2px -1px rgba(0, 0, 0, 0.05),
-        0 1px 3px 0 rgba(0, 0, 0, 0.05);
+        0 0 0 1px theme('colors.white / 14%'),
+        0 1px 2px -1px theme('colors.black / 5%'),
+        0 1px 3px 0 theme('colors.black / 5%');
     }
   }
 
@@ -573,7 +574,7 @@
   }
 
   .lfxn__me-role {
-    --lfxn-role-ink: #85c2ff;
+    --lfxn-role-ink: theme('colors.blue.400');
 
     position: relative;
     box-sizing: border-box;
@@ -584,9 +585,9 @@
     height: 22px;
     border: 1.5px solid var(--lfxn-role-ink);
     border-radius: 9999px;
-    background: #12354d;
+    background: color-mix(in srgb, theme('colors.white') 7%, theme('colors.blue.900'));
     color: var(--lfxn-role-ink);
-    box-shadow: 0 0 0 2px #12354d;
+    box-shadow: 0 0 0 2px color-mix(in srgb, theme('colors.white') 7%, theme('colors.blue.900'));
     padding: 0;
     font: inherit;
     cursor: pointer;
@@ -612,7 +613,7 @@
     display: flex;
     align-items: stretch;
     margin: 10px -10px -10px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid theme('colors.white / 10%');
   }
 
   .lfxn__me-action {
@@ -631,7 +632,7 @@
     font-weight: 400;
     white-space: nowrap;
     overflow: hidden;
-    color: #cad5e2;
+    color: theme('colors.gray.300');
     text-decoration: none;
     cursor: pointer;
 
@@ -640,14 +641,14 @@
     }
 
     &:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      background: theme('colors.white / 10%');
+      color: theme('colors.white');
       text-decoration: none;
     }
 
     &.is-active {
       font-weight: 600;
-      color: #fff;
+      color: theme('colors.white');
     }
 
     &:focus-visible {
@@ -690,7 +691,13 @@
     --lfxn-fade-top: 0px;
     --lfxn-fade-bottom: 0px;
 
-    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--lfxn-fade-top), #000 calc(100% - var(--lfxn-fade-bottom)), transparent 100%);
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      theme('colors.black') var(--lfxn-fade-top),
+      theme('colors.black') calc(100% - var(--lfxn-fade-bottom)),
+      transparent 100%
+    );
 
     &.is-fade-top {
       --lfxn-fade-top: 28px;
@@ -788,26 +795,26 @@
     font-weight: 400;
     line-height: 1.25;
     white-space: nowrap;
-    color: #cad5e2;
+    color: theme('colors.gray.300');
     transition: background-color 150ms ease-in-out;
 
     &:hover {
-      background: #314158;
-      color: #fff;
+      background: theme('colors.gray.700');
+      color: theme('colors.white');
       text-decoration: none;
 
       .lfxn__item-icon {
-        color: #fff;
+        color: theme('colors.white');
       }
     }
 
     &.is-active {
       font-weight: 500;
-      background: #62748e;
-      color: #fff;
+      background: theme('colors.gray.500');
+      color: theme('colors.white');
 
       .lfxn__item-icon {
-        color: #fff;
+        color: theme('colors.white');
       }
     }
 
@@ -829,7 +836,7 @@
     width: 15px;
     flex-shrink: 0;
     align-self: stretch;
-    color: #cad5e2;
+    color: theme('colors.gray.300');
     font-size: 12px;
     line-height: 1;
 
@@ -880,11 +887,11 @@
     flex-direction: column;
     gap: 6px;
     padding: 14px 12px;
-    border: 1px dashed rgba(255, 255, 255, 0.14);
+    border: 1px dashed theme('colors.white / 14%');
     border-radius: 10px;
-    // Opaque (the panel colour with a 7% white tint baked in) so the menu behind it is hidden.
-    background: #12364e;
-    box-shadow: 0 10px 18px -10px rgba(0, 0, 0, 0.45);
+    // Opaque (the panel colour with a 7% white tint baked in, mixed from tokens) so the menu behind it is hidden.
+    background: color-mix(in srgb, theme('colors.white') 7%, theme('colors.blue.900'));
+    box-shadow: 0 10px 18px -10px theme('colors.black / 45%');
   }
 
   .lfxn__empty-icon {
@@ -895,8 +902,8 @@
     height: 28px;
     margin-bottom: 2px;
     border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.07);
-    color: #cad5e2;
+    background: theme('colors.white / 7%');
+    color: theme('colors.gray.300');
     font-size: 12px;
   }
 
@@ -905,14 +912,14 @@
     font-size: 12px;
     font-weight: 600;
     line-height: 16px;
-    color: #fff;
+    color: theme('colors.white');
   }
 
   .lfxn__empty-body {
     margin: 0;
     font-size: 12px;
     line-height: 17px;
-    color: #90a1b9;
+    color: theme('colors.gray.400');
   }
 
   // Retry on the lookup-failed card: a compact outline pill in the navbar's dark idiom.
@@ -923,14 +930,14 @@
     gap: 6px;
     margin-top: 4px;
     padding: 4px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid theme('colors.white / 18%');
     border-radius: 9999px;
     background: transparent;
     font: inherit;
     font-size: 12px;
     font-weight: 500;
     line-height: 16px;
-    color: #e2e8f0;
+    color: theme('colors.gray.200');
     cursor: pointer;
     transition: background-color 150ms ease-in-out;
 
@@ -939,8 +946,8 @@
     }
 
     &:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      background: theme('colors.white / 10%');
+      color: theme('colors.white');
     }
 
     &:focus-visible {
@@ -951,7 +958,7 @@
     // Busy while a retry runs: no hover lift, no pointer.
     &:disabled {
       background: transparent;
-      color: #e2e8f0;
+      color: theme('colors.gray.200');
       cursor: default;
       opacity: 0.7;
     }
@@ -963,14 +970,14 @@
     pointer-events: none;
     user-select: none;
     opacity: 0.6;
-    mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, theme('colors.black') 55%, transparent 100%);
   }
 
   // Loading placeholders on the dark surface.
   .lfxn__skeleton {
     display: block;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.07);
+    background: theme('colors.white / 7%');
   }
 
   .lfxn__skeleton--item {
@@ -1004,7 +1011,7 @@
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
-    border-top: 1px solid #45556c;
+    border-top: 1px solid theme('colors.gray.600');
   }
 
   .lfxn__user {
@@ -1025,7 +1032,7 @@
 
     &:hover,
     &.is-open {
-      background: rgba(255, 255, 255, 0.14);
+      background: theme('colors.white / 14%');
     }
 
     > i {
@@ -1054,7 +1061,7 @@
     font-weight: 400;
     line-height: 16px;
     white-space: nowrap;
-    color: #f8fafc;
+    color: theme('colors.gray.50');
   }
 
   .lfxn__foot-actions {
@@ -1082,13 +1089,13 @@
 
   // Footer actions sit on the dark navy — a lighter slate than the default ghost icon for contrast.
   .lfxn__foot-actions .lfxn__icon-btn {
-    color: #cad5e2;
+    color: theme('colors.gray.300');
   }
 
   // The footer action for the current page (Documentation on `/docs`): white glyph on a filled circle.
   .lfxn__foot-actions .lfxn__icon-btn.is-active {
-    background: #314158;
-    color: #fff;
+    background: theme('colors.gray.700');
+    color: theme('colors.white');
   }
 
   // Footer actions and the Create button: icon turns white and the button grows slightly on hover/focus.
@@ -1101,7 +1108,7 @@
 
     &:hover,
     &:focus-visible {
-      color: #fff;
+      color: theme('colors.white');
       transform: scale(1.15);
     }
 
@@ -1126,7 +1133,7 @@
     flex-shrink: 0;
     overflow: hidden;
     border-radius: 9999px;
-    background: #314158;
+    background: theme('colors.gray.700');
 
     > img {
       display: block;
@@ -1160,11 +1167,11 @@
   // Fixed panels can't be reached by scrolling the page: cap to the viewport and scroll inside.
   max-height: calc(100dvh - 64px);
   overflow-y: auto;
-  border: 1px solid #e2e8f0;
+  border: 1px solid theme('colors.gray.200');
   border-radius: 12px;
   box-shadow:
-    0 10px 24px -8px rgba(15, 23, 43, 0.18),
-    0 2px 6px -2px rgba(15, 23, 43, 0.08);
+    0 10px 24px -8px theme('colors.gray.900 / 18%'),
+    0 2px 6px -2px theme('colors.gray.900 / 8%');
 }
 
 // Under the impersonation banner the navbar sits 48px lower. Classes stacked so this wins on specificity.
@@ -1192,7 +1199,7 @@
   text-decoration: none;
 
   &:hover {
-    background: #f8fafc;
+    background: theme('colors.gray.50');
     text-decoration: none;
   }
 }
@@ -1205,7 +1212,7 @@
   width: 32px;
   height: 32px;
   font-size: 18px;
-  color: #45556c;
+  color: theme('colors.gray.600');
 }
 
 .lfxn-brand-menu__text {
@@ -1219,27 +1226,27 @@
 .lfxn-brand-menu__name {
   font-size: 13px;
   font-weight: 500;
-  color: #0f172b;
+  color: theme('colors.gray.900');
 }
 
 .lfxn-brand-menu__blurb {
   font-size: 12px;
   font-weight: 400;
   line-height: 1.45;
-  color: #62748e;
+  color: theme('colors.gray.500');
   text-wrap: pretty;
 }
 
 .lfxn-brand-menu__ext {
   margin-top: 4px;
   font-size: 11px;
-  color: #90a1b9;
+  color: theme('colors.gray.400');
 }
 
 .lfxn-brand-menu__rule {
   height: 1px;
   margin: 6px 4px;
-  background: #e2e8f0;
+  background: theme('colors.gray.200');
 }
 
 .lfxn-brand-menu__site {
@@ -1253,7 +1260,7 @@
   text-decoration: none;
 
   &:hover {
-    background: #f8fafc;
+    background: theme('colors.gray.50');
     text-decoration: none;
   }
 
@@ -1271,7 +1278,7 @@
   min-width: 0;
   font-size: 13px;
   font-weight: 400;
-  color: #314158;
+  color: theme('colors.gray.700');
 
   svg {
     display: block;
@@ -1288,11 +1295,11 @@
   bottom: 58px !important;
   left: 16px !important;
   margin: 0 !important;
-  border: 1px solid #e2e8f0;
+  border: 1px solid theme('colors.gray.200');
   border-radius: 12px;
   box-shadow:
-    0 10px 24px -8px rgba(15, 23, 43, 0.18),
-    0 2px 6px -2px rgba(15, 23, 43, 0.08);
+    0 10px 24px -8px theme('colors.gray.900 / 18%'),
+    0 2px 6px -2px theme('colors.gray.900 / 8%');
 }
 
 .lfxn-account-menu {
@@ -1320,8 +1327,8 @@
   height: 32px;
   overflow: hidden;
   border-radius: 9999px;
-  background: #314158;
-  color: #fff;
+  background: theme('colors.gray.700');
+  color: theme('colors.white');
   font-size: 12px;
   font-weight: 600;
 
@@ -1351,19 +1358,19 @@
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
-  color: #0f172b;
+  color: theme('colors.gray.900');
 }
 
 .lfxn-account-menu__email {
   font-size: 12px;
   line-height: 16px;
-  color: #62748e;
+  color: theme('colors.gray.500');
 }
 
 .lfxn-account-menu__rule {
   height: 1px;
   margin: 6px 4px;
-  background: #e2e8f0;
+  background: theme('colors.gray.200');
 }
 
 .lfxn-account-menu__row {
@@ -1382,7 +1389,7 @@
   font-family: inherit;
   font-size: 13px;
   font-weight: 400;
-  color: #314158;
+  color: theme('colors.gray.700');
   transition: background-color 150ms ease-in-out;
 
   > i {
@@ -1390,17 +1397,17 @@
     flex: 0 0 auto;
     text-align: center;
     font-size: 13px;
-    color: #62748e;
+    color: theme('colors.gray.500');
   }
 
   &:hover {
-    background: #f8fafc;
-    color: #0f172b;
+    background: theme('colors.gray.50');
+    color: theme('colors.gray.900');
     text-decoration: none;
   }
 
   &:focus-visible {
-    outline: 2px solid #009aff;
+    outline: 2px solid theme('colors.blue.500');
     outline-offset: -2px;
   }
 }
@@ -1430,13 +1437,13 @@
   z-index: 1100;
   max-width: 240px;
   padding: 4px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid theme('colors.white / 8%');
   border-radius: 6px;
-  background: #1c2433;
+  background: theme('colors.gray.800');
   box-shadow:
-    0 4px 12px -2px rgba(0, 0, 0, 0.35),
-    0 1px 2px rgba(0, 0, 0, 0.25);
-  color: #e2e8f0;
+    0 4px 12px -2px theme('colors.black / 35%'),
+    0 1px 2px theme('colors.black / 25%');
+  color: theme('colors.gray.200');
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
   font-size: 12px;
   font-weight: 500;
@@ -1483,7 +1490,7 @@
 }
 
 .lfxn-tooltip--rich .lfxn-tooltip__label {
-  color: #fff;
+  color: theme('colors.white');
   font-weight: 600;
 }
 
@@ -1499,10 +1506,10 @@
   max-width: 100%;
   height: 22px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid theme('colors.white / 8%');
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #cad5e2;
+  background: theme('colors.white / 6%');
+  color: theme('colors.gray.300');
   font-family: inherit;
   font-size: 11px;
   font-weight: 500;
@@ -1518,13 +1525,13 @@
 
   &:hover,
   &:focus-visible {
-    border-color: rgba(255, 255, 255, 0.16);
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
+    border-color: theme('colors.white / 16%');
+    background: theme('colors.white / 12%');
+    color: theme('colors.white');
   }
 
   &:focus-visible {
-    outline: 2px solid #009aff;
+    outline: 2px solid theme('colors.blue.500');
     outline-offset: 1px;
   }
 }
@@ -1534,9 +1541,9 @@
   cursor: default;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.06);
-    color: #cad5e2;
+    border-color: theme('colors.white / 8%');
+    background: theme('colors.white / 6%');
+    color: theme('colors.gray.300');
   }
 }
 
