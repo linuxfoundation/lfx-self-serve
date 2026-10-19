@@ -61,7 +61,7 @@ import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
 import { AuthenticationError, MicroserviceError, PreconditionFailedError, ServiceValidationError } from '../errors';
-import { getEffectiveSub } from '../utils/auth-helper';
+import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { ObjectStoreService } from './object-store.service';
@@ -176,7 +176,8 @@ export class MktgDocumentStoreService {
   /**
    * A CAS publishes a revision and moves current together. Losing writers retry
    * against the committed listing; overlapping polls find the winner's token.
-   * An explicitly supplied basedOnId survives a retry (the writer's actual base).
+   * Each attempt re-derives its automatic base from the fresh committed snapshot.
+   * An explicitly supplied basedOnId (including null) survives retries: it is the writer's actual base.
    * Pre-revision documents become revision 1; same-generation polls are no-ops
    * under If-None-Match, including historical records without generation metadata.
    */
@@ -189,7 +190,6 @@ export class MktgDocumentStoreService {
     generation?: string,
     excludeLegacySha?: string
   ): Promise<MktgStoredRevision> {
-    let basedOnId = fields.basedOnId;
     for (let attempt = 0; attempt < MKTG_DOCUMENT_WRITE_ATTEMPTS; attempt++) {
       const snapshot = await this.readCurrent(req, project, type, documentId);
       const entries = await this.listRevisions(req, project, type, documentId, snapshot);
@@ -223,7 +223,7 @@ export class MktgDocumentStoreService {
           entries.push({ ...parsed, key: migrated.key });
         }
       }
-      if (basedOnId === undefined) basedOnId = snapshot.record?.revisionId ?? entries.at(-1)?.id ?? null;
+      const basedOnId = fields.basedOnId === undefined ? (snapshot.record?.revisionId ?? entries.at(-1)?.id ?? null) : fields.basedOnId;
       if (basedOnId && !entries.some((entry) => entry.id === basedOnId)) {
         throw ServiceValidationError.forField('basedOnId', 'The base revision does not belong to this document.');
       }
@@ -759,12 +759,12 @@ export class MktgDocumentStoreService {
     return value === 'json' ? 'json' : 'markdown';
   }
 
-  /** Store only the effective opaque subject; an incomplete impersonation identity fails closed. */
-  private author(req: Request): string {
-    // The stored ID must be opaque: the operator rejected usernames and names on #3773.
+  /** Store only the effective opaque subject; an unidentified impersonation target is unattributed. */
+  private author(req: Request): string | null {
+    // #3773 rejects stored names/usernames; a missing target sub stays null, never the operator's sub.
     // getEffectiveSub's deprecation concerns upstream API arguments, not a stored opaque key.
     const userId = getEffectiveSub(req);
-    if (!userId) throw new AuthenticationError('The requesting writer could not be identified.');
+    if (!userId && !isImpersonating(req)) throw new AuthenticationError('A signed-in writer subject is required when not impersonating.');
     return userId;
   }
 
@@ -801,12 +801,14 @@ export class MktgDocumentStoreService {
     return new MicroserviceError(message, 500, 'MKTG_DOCUMENT_CORRUPT', { service: 'mktg_document_store' });
   }
 
+  /** Preserve absent/invalid historical intake metadata as unknown when displaying revisions. */
   private recordedIntakeMode(value: unknown): MktgArtifactIntakeMode | null {
     return MKTG_ARTIFACT_INTAKE_MODES.includes(value as MktgArtifactIntakeMode) ? (value as MktgArtifactIntakeMode) : null;
   }
 
+  /** Supply the legacy artifact receipt's required default when intake metadata is unknown. */
   private intakeMode(value: unknown): MktgArtifactIntakeMode {
-    return MKTG_ARTIFACT_INTAKE_MODES.includes(value as MktgArtifactIntakeMode) ? (value as MktgArtifactIntakeMode) : 'form';
+    return this.recordedIntakeMode(value) ?? 'form';
   }
 
   private sha256(value: string): string {

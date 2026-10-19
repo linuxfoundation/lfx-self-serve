@@ -20,6 +20,7 @@ const store = vi.hoisted(() => ({
   activeHeads: 0,
   maxHeads: 0,
   rejectComparisons: false,
+  onRejectedComparison: null as (() => Promise<void>) | null,
   failPutsMatching: null as RegExp | null,
   failListsMatching: null as RegExp | null,
   failGetsMatching: null as RegExp | null,
@@ -94,7 +95,10 @@ vi.mock('./object-store.service', () => ({
     ): Promise<boolean> {
       if (store.failPutsMatching?.test(key)) throw new Error('store unavailable');
       const previous = store.objects.get(key);
-      if (input.ifMatch && store.rejectComparisons) return false;
+      if (input.ifMatch && store.rejectComparisons) {
+        await store.onRejectedComparison?.();
+        return false;
+      }
       if ((input.ifNoneMatch && previous) || (input.ifMatch && (!previous || input.ifMatch !== String(previous.lastModified.getTime())))) return false;
       store.clock += 1000;
       store.objects.set(key, { body: input.body.toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date(store.clock) });
@@ -117,7 +121,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import type { MktgArtifactEnvelope, MktgArtifactJsonEnvelope, MktgDocumentType, MktgRevisionRecord } from '@lfx-one/shared/interfaces';
+import type { MktgArtifactEnvelope, MktgArtifactJsonEnvelope, MktgDocumentType, MktgRevisionRecord, MktgRevisionRecordFields } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
@@ -200,6 +204,7 @@ describe('MktgDocumentStoreService', () => {
     store.activeHeads = 0;
     store.maxHeads = 0;
     store.rejectComparisons = false;
+    store.onRejectedComparison = null;
     store.failPutsMatching = null;
     store.failListsMatching = null;
     store.failGetsMatching = null;
@@ -382,6 +387,80 @@ describe('MktgDocumentStoreService', () => {
       store.failPutsMatching = /^documents\//;
       await expect(service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('x'), PROJECT, 'session-1')).resolves.toBeNull();
       expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_document_store_record', expect.stringContaining('Revision write failed'), expect.any(Object));
+    });
+  });
+
+  describe('PR round 2 contracts', () => {
+    it.each(['automatic', 'explicit', 'root'])('retries a lost CAS with a fresh sequence and the %s base contract', async (base) => {
+      const first = await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Initial'), 'initial');
+      const markdown = '# Retried';
+      const fields: MktgRevisionRecordFields = {
+        createdAt: '2026-10-19T09:00:00.000Z',
+        origin: 'generated',
+        restoredFromId: null,
+        source: { sessionId: 'retried', draftVersion: 1, intakeMode: 'form' },
+        bundle: { markdown, contentSha256: sha(markdown), sidecar: null, brandFile: null },
+      };
+      if (base === 'explicit') fields.basedOnId = first.id;
+      if (base === 'root') fields.basedOnId = null;
+      let competingId = '';
+      store.rejectComparisons = true;
+      store.onRejectedComparison = async () => {
+        store.rejectComparisons = false;
+        competingId = (await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# Concurrent'), 'concurrent')).id;
+      };
+      const saved = await service.recordRevision(req, PROJECT, BRAND_KIT, 'living', fields, sha(`retried:${sha(markdown)}`));
+      let expectedBase: string | null = competingId;
+      if (base === 'explicit') expectedBase = first.id;
+      if (base === 'root') expectedBase = null;
+      expect(saved.record.sequence).toBe(3);
+      expect(saved.record.basedOnId).toBe(expectedBase);
+      expect(competingId).not.toBe('');
+      const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
+      expect(detail?.revisions.map((entry) => entry.number)).toEqual([3, 2, 1]);
+      expect(detail?.revisions.filter((entry) => entry.contentSha256 === sha(markdown))).toHaveLength(1);
+      expect(detail?.current?.revisionId).toBe(saved.id);
+    });
+
+    it.each(['auth0|target', null])('writes and makes current with only the impersonation target subject %s', async (targetSub) => {
+      const impersonated = {
+        ...req,
+        oidc: { user: { sub: 'auth0|operator', 'https://sso.linuxfoundation.org/claims/username': 'synthetic-operator', name: 'The operator' } },
+        impersonationActive: true,
+        appSession: { impersonationUser: { username: 'synthetic-target', ...(targetSub && { sub: targetSub }) } },
+      } as unknown as Request;
+      directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The target' } });
+      const first = await service.recordGeneration(impersonated, BRAND_KIT, PROJECT, envelope('# Initial'), 'initial');
+      await service.recordGeneration(impersonated, BRAND_KIT, PROJECT, envelope('# Newer'), 'newer');
+      const currentKey = `documents/${PROJECT}/brand-kit/living/current.json`;
+      expect(JSON.parse(storedObject(currentKey).body).changedBy).toBe(targetSub);
+      const restored = await service.restoreRevision(impersonated, PROJECT, BRAND_KIT, 'living', first.id);
+      expect(restored?.revision.id).toBe(first.id);
+      expect(revisionKeys()).toHaveLength(2);
+      expect(JSON.parse(storedObject(currentKey).body).changedBy).toBe(targetSub);
+      for (const key of revisionKeys()) {
+        if (targetSub) expect(storedObject(key).metadata['author-id']).toBe(targetSub);
+        else expect(storedObject(key).metadata).not.toHaveProperty('author-id');
+      }
+      if (targetSub) expect(restored?.detail.current?.changedBy).toEqual({ name: 'The target' });
+      else {
+        expect(restored?.detail.current?.changedBy).toBeNull();
+        expect(restored?.detail.revisions.every((entry) => entry.author === null)).toBe(true);
+        expect(directoryMocks.getUserInfo).not.toHaveBeenCalled();
+      }
+      const stored = JSON.stringify([...store.objects.values()]);
+      expect(stored).not.toContain('auth0|operator');
+      expect(stored).not.toContain('synthetic-operator');
+      expect(stored).not.toContain('synthetic-target');
+    });
+
+    it('still refuses an ordinary writer without a subject', async () => {
+      const unidentified = { oidc: { user: { name: 'The writer' } }, impersonationActive: false } as unknown as Request;
+      await expect(service.recordGeneration(unidentified, BRAND_KIT, PROJECT, envelope('# New'), 'new')).rejects.toMatchObject({
+        statusCode: 401,
+        message: 'A signed-in writer subject is required when not impersonating.',
+      });
+      expect(store.objects.size).toBe(0);
     });
   });
 

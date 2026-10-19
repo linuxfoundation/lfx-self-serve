@@ -31,8 +31,11 @@ losing write can leave an immutable object, but it is not visible history.
 New objects carry `managed` metadata so an interrupted first save is not mistaken
 for historical data when no current record exists yet.
 
-A bounded retry handles competing new writers. The generation token in revision
-metadata deduplicates overlapping result polls, including one-off run polls.
+A bounded retry handles competing new writers. Each attempt derives an automatic
+base from its fresh committed snapshot and sequence listing. A caller's explicit
+`basedOnId`, including null, remains stable because it names the writer's actual
+base. The generation token in revision metadata deduplicates overlapping result
+polls, including one-off run polls.
 Historical revisions without that token are matched by session and content hash.
 A failed revision write drops the receipt so a later poll retries. Pre-revision
 artifacts become revision 1 on the next run, excluding that run's own artifact.
@@ -64,8 +67,13 @@ authentication or permission failures.
 
 New revision metadata stores only an opaque effective user ID in `author-id`.
 The mutable current record stores the selector's opaque ID in `changedBy` plus
-a timestamp. No names, usernames or emails are persisted as attribution in these
-objects, and no personal attribution is embedded in immutable revision bytes.
+a timestamp. If an impersonation target has no effective subject, generation and
+Make current still succeed with `author-id` absent and `changedBy: null`; neither
+the impersonator's subject nor any username is a fallback. These writes remain
+unattributed and use the existing absent-author label on reads. Ordinary writers
+without a subject still receive an authentication error. No names, usernames or
+emails are persisted as attribution in these objects, and no personal attribution
+is embedded in immutable revision bytes.
 Names are resolved at read time through `UserService.getUserInfo` and the existing
 NATS `USER_METADATA_READ` directory lookup, which accepts Auth0 subjects. Lookups
 are memoized per request and bounded like revision reads. A stored author whose
