@@ -785,10 +785,12 @@ describe('CampaignsComponent brief persistence', () => {
         expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', 'W/"v2"', false);
       });
 
-      it('licenses the next save when the approval came back without a validator', async () => {
-        // An ordinary restore carries NO absence marker, so carrying it through unchanged would
-        // leave the session on `etag: null` with nothing licensing the ETag fallback, and the next
-        // Proceed would be refused `unverified-validator` for an approval that wrote nothing.
+      it('does not license an overwrite the user was never warned about', async () => {
+        // The restore's own read DID carry a validator, and the approval came back without one.
+        // Licensing the ETag fallback here would let the next Proceed send `etag_fallback=1`, and
+        // `replaceBrief` then PUTs with the validator it reads itself inside that save — so an
+        // editor who replaced the brief in between is overwritten with no conflict ever shown.
+        // The approve wrote nothing, but the marker licenses the next WRITE, not this request.
         approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: true }));
         restore(brief, 'restored-a', false, 'W/"v1"');
         await fixture.whenStable();
@@ -797,7 +799,27 @@ describe('CampaignsComponent brief persistence', () => {
         proceed();
         await fixture.whenStable();
 
-        // The trailing `true` is the fallback licence.
+        // The trailing `false` withholds the fallback licence: this save is refused
+        // `unverified-validator`, the banner says proceeding again replaces what is stored, and
+        // the conflict handler then promotes the record to `'overwrite'` — one warned click away,
+        // which is the whole point of refusing here.
+        expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, false);
+      });
+
+      it('carries through an overwrite permission the restore already held', async () => {
+        // The other half of the same default. This restore's read carried NO validator, which
+        // records `absence: 'overwrite'` — no validator BY CHOICE, against content the user was
+        // shown. An approval that returns no validator must not downgrade that: nothing about
+        // this request withdraws a permission the restore legitimately established.
+        approveBrief.mockReturnValue(of({ enabled: true, briefId: 'restored-a', etag: null, approved: true }));
+        restore(brief, 'restored-a', false, null);
+        await fixture.whenStable();
+
+        persistBrief.mockReturnValue(NEVER);
+        proceed();
+        await fixture.whenStable();
+
+        // The trailing `true` is the fallback licence, carried, not newly granted.
         expect(persistBrief).toHaveBeenLastCalledWith(brief, expect.anything(), 'restored-a', null, true);
       });
 
@@ -1334,7 +1356,12 @@ describe('CampaignsComponent brief persistence', () => {
       expect(refreshToken()).toBe(before + 1);
       // And the message no longer names an action that could not be performed: `onUrlInput` emits
       // nothing for an unchanged url, so "re-enter the event URL" was never followed by a lookup.
-      expect(state().message).toContain('Go back to Planning and restore the saved brief');
+      //
+      // It names New Brief for the same class of reason. Proceeding leaves Planning on its
+      // `review` step, and the restore offer renders only under `@if (step() === 'input')`, so
+      // "go back and restore" alone pointed at a button that is not on the screen the user lands
+      // on. `reset()` — the New Brief button — returns to the input step and keeps the offer.
+      expect(state().message).toContain('Go back to Planning, select New Brief, then restore the saved brief');
       expect(state().message).not.toContain('re-enter the event URL');
     });
 

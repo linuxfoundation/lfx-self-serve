@@ -439,8 +439,8 @@ export class CampaignsComponent {
    * treatment on the next save:
    *
    * - `'overwrite'` — permission is real, so falling back to the freshly read validator is what
-   *   the user asked for. TWO paths set it, and both are explicit decisions taken on content the
-   *   user was actually shown:
+   *   the user asked for. TWO reasons earn it, and both are explicit decisions taken on content
+   *   the user was actually shown:
    *     1. The stale-brief warning was displayed and they proceeded anyway.
    *     2. A restore whose read returned NO validator. They were shown the stored brief and chose
    *        to work from it; there is simply no ETag to carry. Classifying that as `'unknown'`
@@ -448,9 +448,20 @@ export class CampaignsComponent {
    *        a conflict anyone can act on.
    *   What separates both from `'unknown'` is that something was displayed and something was
    *   chosen, NOT that a warning specifically appeared.
-   * - `'unknown'` — the write returned no ETag, or its approval outcome was indeterminate. Nobody
-   *   was warned and nothing was decided; falling back here would bypass the precondition
-   *   silently and could overwrite an intervening writer without ever showing a conflict.
+   *   One writer predates these two and matches neither: the EMAIL brief save records
+   *   `'overwrite'` whenever its own successful persist came back without a validator (#3386).
+   *   That is the shape this field was introduced to stop granting, and the paid save beside it
+   *   now records `'unknown'` in exactly that case — but the email path is not this issue's to
+   *   change, and saying so here is cheaper than letting the next reader grep
+   *   `absence: 'overwrite'`, find six writers, and conclude the two above were the count.
+   * - `'unknown'` — the write returned no ETag, its approval outcome was indeterminate, or an
+   *   approval SUCCEEDED but came back without one. Nobody was warned and nothing was decided;
+   *   falling back here would bypass the precondition silently and could overwrite an intervening
+   *   writer without ever showing a conflict. The successful-approval case belongs here for the
+   *   same reason as the others and not because the approve itself is risky: an approve writes no
+   *   content, but the marker licenses the next SAVE, and granting that off a request the user was
+   *   told merely approved their brief is a permission nobody asked for. It costs one warned
+   *   click — the refusal promotes the record to `'overwrite'` — not a dead end.
    *
    * Encoding the reason rather than the absence keeps them apart. A save with an `'unknown'`
    * validator sends none, and the server's ownership check still decides whether it may replace.
@@ -5596,7 +5607,7 @@ export class CampaignsComponent {
       const known =
         ownershipKey === null || (this.ownershipEpochs.get(ownershipKey) ?? 0) !== ownershipEpochAtSend ? null : (this.knownBriefIds.get(ownershipKey) ?? null);
       // `allowFallback` says the caller has no validator BY CHOICE — see `knownBriefIds` for the
-      // two paths that set `absence: 'overwrite'`. Without it, an absent validator means
+      // reasons that earn `absence: 'overwrite'`. Without it, an absent validator means
       // "unknown", and the server refuses rather than substituting one it read itself.
       return firstValueFrom(this.campaignService.persistBrief(brief, projectSlug, known?.id ?? null, known?.etag ?? null, known?.absence === 'overwrite')).then(
         (result) => {
@@ -5813,7 +5824,15 @@ export class CampaignsComponent {
                 // ever appeared. The save above bumps `savedBriefRefreshToken` instead, which
                 // re-runs Planning's lookup against the row this save just created — so the offer
                 // is simply there when the user arrives.
-                'This brief was saved but not approved, so campaigns cannot be created from it yet. Go back to Planning and restore the saved brief to approve it.',
+                //
+                // It names "New Brief" because the offer is not on the screen the user lands on.
+                // Proceeding to Implement leaves Planning on its `review` step, and the restore
+                // offer renders only under `@if (step() === 'input')` -- so "go back and restore"
+                // would send the user to a tab with no Restore button anywhere on it. "New Brief"
+                // (`planning-new-brief-btn`) calls `reset()`, which returns to the input step and
+                // deliberately keeps the saved-brief offer rather than clearing it with everything
+                // else, which is precisely what makes it the step that reveals Restore.
+                'This brief was saved but not approved, so campaigns cannot be created from it yet. Go back to Planning, select New Brief, then restore the saved brief to approve it.',
           });
         },
         // The message is intentionally about DURABILITY, not about the HTTP call: what the user
@@ -5987,21 +6006,25 @@ export class CampaignsComponent {
           (this.ownershipEpochs.get(ownershipKey) ?? 0) === ownershipEpochAtSend &&
           this.knownBriefIds.get(ownershipKey)?.id === known.id;
         if (result.enabled && result.approved && stillOurs) {
-          // With NO validator back, the restore's own marker is carried through rather than
-          // replaced with `'unknown'` -- and that is the difference between this and a save. An
-          // indeterminate WRITE leaves the caller not knowing what is stored, so `'unknown'`
-          // refuses the next save; an approve wrote nothing, so what this session knows about the
-          // row is exactly what the restore knew a moment ago. Downgrading it would refuse the
-          // next save of a brief the user restored and was told was ready, for a request that
-          // changed no content.
+          // With NO validator back, an overwrite permission the restore ALREADY held is carried
+          // through, and nothing else is granted: a restore whose own read carried a validator
+          // falls to `'unknown'`.
           //
-          // An ordinary restore carries NO marker at all (`absence` is undefined whenever its read
-          // returned a validator), so carrying it through unchanged would leave this session on
-          // `etag: null` with nothing licensing the fallback, and `persistBrief(..., owned?.absence
-          // === 'overwrite')` would refuse the next save as `unverified-validator` -- exactly the
-          // outcome the paragraph above promises to prevent. `'overwrite'` is the right default
-          // because it is what the restore itself records when ITS read carried no validator: no
-          // validator by choice, not an indeterminate write.
+          // The permission is what matters here, not this request. An approve writes no content,
+          // so recording `'overwrite'` looks harmless -- but the marker is not a statement about
+          // the approve, it is a licence for the next SAVE. `persistBrief(..., owned?.absence ===
+          // 'overwrite')` sends `etag_fallback=1`, which tells `replaceBrief` to take the
+          // validator it reads itself inside that save (`campaign-service.service.ts`, the
+          // `knownEtag ?? existing.etag` fallback). If another editor replaced the brief in
+          // between, that PUT carries THEIR freshly-read validator, the precondition cannot fire,
+          // and their content is replaced with no conflict ever shown. Granting that silently, off
+          // a request the user was told merely approved their brief, is not ours to do.
+          //
+          // `'unknown'` is not a dead end, which is why it is affordable. It refuses the next save
+          // as `unverified-validator`, the banner says in so many words that proceeding again
+          // replaces whatever is stored, and the conflict handler promotes the record to
+          // `'overwrite'` -- so the user reaches the same place one warned click later. A warned
+          // overwrite is the whole difference.
           this.rememberBriefId(ownershipKey, {
             id: known.id,
             etag: result.etag,
@@ -6013,7 +6036,7 @@ export class CampaignsComponent {
             // Planning's cache outlives the request — would be refused as superseded when its
             // content is in fact the same bytes.
             contentAt: known.contentAt,
-            ...(result.etag === null ? { absence: known.absence ?? ('overwrite' as const) } : {}),
+            ...(result.etag === null ? { absence: known.absence ?? ('unknown' as const) } : {}),
           });
         }
 
