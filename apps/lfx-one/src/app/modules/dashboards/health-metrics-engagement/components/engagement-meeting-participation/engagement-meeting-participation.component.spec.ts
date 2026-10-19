@@ -254,20 +254,13 @@ describe('EngagementMeetingParticipationComponent', () => {
     await vi.waitFor(() => expect(picked).toEqual(['committees', 'reps']));
   });
 
-  it('makes each meeting-type row a keyboard control named for where it opens', async () => {
+  it('links the governance name to Members board attendance, clearing a cohort the URL carries', async () => {
     await render();
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
-    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]');
-    expect(board.getAttribute('tabindex')).toBe('0');
-    expect(board.getAttribute('aria-label')).toBe('Open board attendance in Members');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').getAttribute('aria-label')).toBe(
-      'Show groups for Marketing'
-    );
-
-    board.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-
-    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], { fragment: 'board', queryParamsHandling: 'preserve' });
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board-link"]');
+    expect(link.tagName).toBe('A');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').getAttribute('tabindex')).toBeNull();
   });
 
   it('opens Members board attendance from anywhere on the governance row', async () => {
@@ -276,16 +269,21 @@ describe('EngagementMeetingParticipationComponent', () => {
 
     fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').click();
 
-    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], { fragment: 'board', queryParamsHandling: 'preserve' });
+    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], {
+      fragment: 'board',
+      queryParams: { boardCohort: null, boardPage: null },
+      queryParamsHandling: 'merge',
+    });
   });
 
-  it('scrolls any other meeting type to Group attendance, by click or by Space', async () => {
+  it('scrolls any other meeting type to Group attendance, once per click on the row or its name button', async () => {
     const picked: unknown[] = [];
     await render(response(), {}, (key) => picked.push(key));
 
-    const marketing = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]');
-    marketing.click();
-    marketing.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').click();
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing-link"]');
+    expect(button.tagName).toBe('BUTTON');
+    button.click();
 
     expect(picked).toEqual(['committees', 'committees']);
   });

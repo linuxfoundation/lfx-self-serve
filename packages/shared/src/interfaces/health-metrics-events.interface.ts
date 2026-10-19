@@ -615,11 +615,11 @@ export interface HealthMetricsEventsOrganizationRowView {
   eventsLabel: string;
   /** Where the row opens: the Members directory or Non-Members company participation, searched by the organization's name. */
   link: HealthMetricsEventsOrganizationLink;
-  /** The row's accessible name, e.g. `Open Acme Motors in Members`. */
+  /** The name link's accessible name, e.g. `Open Acme Motors in Members`. */
   linkLabel: string;
 }
 
-/** A row's in-app target, bound to `routerLink` / `fragment` / `queryParams`. */
+/** A row's in-app target: the name link's `routerLink` / `fragment` / `queryParams`, and what a row click navigates to. */
 export interface HealthMetricsEventsOrganizationLink {
   commands: readonly string[];
   fragment: 'list' | 'orgs';

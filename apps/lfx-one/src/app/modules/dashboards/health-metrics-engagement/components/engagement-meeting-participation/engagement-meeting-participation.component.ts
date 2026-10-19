@@ -4,7 +4,7 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+  HEALTH_METRICS_MEMBERS_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
 import {
   formatHealthMetricsEngagementAttendance,
@@ -48,7 +49,7 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-meeting-participation',
-  imports: [EmptyStateComponent, FilterPillsComponent, SkeletonModule, TableComponent, EngagementAttendanceBarComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, RouterLink, SkeletonModule, TableComponent, EngagementAttendanceBarComponent],
   templateUrl: './engagement-meeting-participation.component.html',
 })
 export class EngagementMeetingParticipationComponent {
@@ -66,6 +67,12 @@ export class EngagementMeetingParticipationComponent {
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
+  protected readonly boardRoute = [HEALTH_METRICS_BASE_PATH, 'members'];
+  /** Clears a cohort or page the URL already carries, so the row lands on board attendance itself. */
+  protected readonly boardQueryParams = {
+    [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardCohort]: null,
+    [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.boardPage]: null,
+  };
   protected readonly modeOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES.map((mode) => ({
     id: mode.key,
     label: mode.label,
@@ -176,7 +183,7 @@ export class EngagementMeetingParticipationComponent {
 
   protected onRowPicked(governance: boolean): void {
     if (governance) {
-      void this.router.navigate([HEALTH_METRICS_BASE_PATH, 'members'], { fragment: 'board', queryParamsHandling: 'preserve' });
+      void this.router.navigate(this.boardRoute, { fragment: 'board', queryParams: this.boardQueryParams, queryParamsHandling: 'merge' });
       return;
     }
     this.sectionPicked.emit('committees');
