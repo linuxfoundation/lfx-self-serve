@@ -99,11 +99,12 @@ vi.mock('./object-store.service', () => ({
   },
 }));
 
-import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_FOLDER_ID, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
+import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
 import type { MktgDocumentType, MktgSlidesExportStartInput } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
 import { brandKitTestRevision } from '../../app/shared/testing/brand-kit-test-data';
+import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgSlidesExportService } from './mktg-slides-export.service';
@@ -207,7 +208,7 @@ function outputEvent(overrides: { mode?: 'create' | 'update'; deckId?: string; t
       id: deckId,
       link: `https://docs.google.com/presentation/d/${deckId}/edit`,
       title: 'Example Project · Messaging framework · 2026-10-19',
-      folder_id: MKTG_SLIDES_EXPORT_FOLDER_ID,
+      folder_id: MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID,
     },
     slide_count: 12,
     content,
@@ -261,7 +262,7 @@ describe('MktgSlidesExportService', () => {
       const lines = sentMessage().split('\n');
       expect(lines[0]).toBe('BATCH INTAKE SUBMISSION (Slides export)');
       expect(lines[1]).toBe('PROJECT NAME: Example Project');
-      expect(lines[3]).toBe(`FOLDER ID: ${MKTG_SLIDES_EXPORT_FOLDER_ID}`);
+      expect(lines[3]).toBe(`FOLDER ID: ${MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID}`);
       expect(lines[4]).toBe('DECK ID: none (create a new deck from the LF 2025 template)');
       expect(lines[5]).toMatch(/^DECK TITLE: Example Project · Messaging framework · \d{4}-\d{2}-\d{2}$/);
       expect(lines[7]).toBe('ASSETS: framework, kit');
@@ -272,6 +273,15 @@ describe('MktgSlidesExportService', () => {
       expect(lines[6]).toBe('LOGO URL: none');
       expect(started.logoNote).toBe('not-public');
       expect(store.publicImages.size).toBe(0);
+    });
+
+    it('creates the deck in the folder the environment names, so a test environment keeps its decks out of the Marketing OS folder', async () => {
+      vi.stubEnv('MKTG_SLIDES_EXPORT_FOLDER_ID', ' 1TestFolderForStagingDecks ');
+      await seedFramework(documentStore);
+
+      await service.startExport(req, input());
+
+      expect(sentMessage()).toContain('\nFOLDER ID: 1TestFolderForStagingDecks\n');
     });
 
     it('sends the stored kit with its chapters on a brand kit export, so the deck lays out the whole book', async () => {

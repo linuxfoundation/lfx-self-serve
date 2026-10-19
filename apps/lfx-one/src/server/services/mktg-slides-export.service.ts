@@ -6,7 +6,6 @@ import {
   MKTG_SLIDES_EXPORT_CONTRACT_ID,
   MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS,
   MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS,
-  MKTG_SLIDES_EXPORT_FOLDER_ID,
   MKTG_SLIDES_EXPORT_GUILD_HANDLE,
   MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE,
   MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX,
@@ -52,6 +51,7 @@ import {
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
+import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID, MKTG_SLIDES_EXPORT_FOLDER_ID_ENV } from '../constants';
 import { ConflictError, ResourceNotFoundError } from '../errors';
 import { getAvatarCdnPrefix } from '../utils/avatar-url.util';
 import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
@@ -70,7 +70,8 @@ import { ObjectStoreService } from './object-store.service';
  *    Brand Kit tokens when it has a kit (so the deck takes its colours and
  *    typeface), or a kit revision's whole stored kit with its chapters (so
  *    the deck lays out the book; slides-export 1.1.0 or later). The deck
- *    goes to the Marketing OS folder (`folder_id`) or, on an update,
+ *    goes to the Marketing OS folder, or the one the environment names
+ *    (`folder_id`, MKTG_SLIDES_EXPORT_FOLDER_ID), or, on an update,
  *    refreshes the deck of the document's last export (`deck_id`, from the
  *    stored export record, never the browser). The form is sent as the one
  *    rendered text message the exporter parses back, with the
@@ -133,9 +134,7 @@ export class MktgSlidesExportService {
     const form: MktgSlidesExportForm = {
       project_name: projectName,
       run_date: runDate,
-      ...(deckId
-        ? { deck_id: deckId }
-        : { folder_id: MKTG_SLIDES_EXPORT_FOLDER_ID, deck_title: mktgSlidesExportDeckTitle(input.agentKey, projectName, runDate) }),
+      ...(deckId ? { deck_id: deckId } : { folder_id: this.folderId(), deck_title: mktgSlidesExportDeckTitle(input.agentKey, projectName, runDate) }),
       ...(logo.url && { logo_url: logo.url }),
       assets,
     };
@@ -557,6 +556,11 @@ export class MktgSlidesExportService {
       logger.warning(req, 'mktg_slides_export_record', 'Stored export record does not match its key or schema — skipping', { key: entry.key });
     }
     return null;
+  }
+
+  /** The Drive folder new decks go to: the environment's, else the Marketing OS folder. */
+  private folderId(): string {
+    return process.env[MKTG_SLIDES_EXPORT_FOLDER_ID_ENV]?.trim() || MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID;
   }
 
   private revisionRef(summary: MktgRevisionSummary): MktgSlidesExportRevisionRef {

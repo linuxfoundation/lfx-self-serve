@@ -41,13 +41,6 @@ export const MKTG_SLIDES_EXPORT_SLIDE_KINDS = ['title', 'statement', 'section', 
 /** The documents LFX One exports today: the Messaging Framework and the Brand Kit. */
 export const MKTG_SLIDES_EXPORT_AGENT_KEYS = ['foundation-message', 'brand-kit'] as const;
 
-/**
- * Where a new deck is created. LFX One stores no per-project Drive folder
- * yet, so every export goes to the Marketing OS folder (the one that holds
- * the LF 2025 template) until a project's own folder is stored.
- */
-export const MKTG_SLIDES_EXPORT_FOLDER_ID = '1rH6qCSXSb_GEQ5-N1-IEosGjy2y8GcoH';
-
 /** A content hash: 64 lowercase hex characters (the envelope's `content_sha256`, a revision's hash). */
 export const MKTG_SLIDES_EXPORT_SHA256_REGEX = MKTG_ARTIFACT_SHA256_REGEX;
 
