@@ -181,9 +181,14 @@ function computeParticipationPercent(responses: number, invited: number): number
  * timezone rather than the source's stored zone (a still-future deadline is reused as-is, in its own zone).
  * @param vote - The source Vote entity to clone
  * @param nowMs - Current time in epoch ms, injectable for deterministic tests (defaults to Date.now())
+ * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
+ * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
+ * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`) — the
+ * server and the browser otherwise resolve different zones for the same clone, so the server-rendered
+ * and client-hydrated form values diverge (GH-3781)
  * @returns VoteFormValue to patch into the create form
  */
-export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now()): VoteFormValue {
+export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), fallbackTimezone: string = getUserTimezone()): VoteFormValue {
   const base = mapVoteToFormValue(vote);
   const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX)
     ? base.title
@@ -195,7 +200,7 @@ export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now()):
     return { ...base, title };
   }
 
-  const timezone = getUserTimezone();
+  const timezone = fallbackTimezone;
   const resetDate = addDays(new Date(nowMs), CLONE_VOTE_DEFAULT_DURATION_DAYS);
   return {
     ...base,

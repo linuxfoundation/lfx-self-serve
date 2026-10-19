@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -81,6 +82,7 @@ export class VoteManageComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly projectService = inject(ProjectService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
@@ -103,7 +105,12 @@ export class VoteManageComponent {
   // source vote's own project/foundation context for entity-context sync and project-UID resolution.
   private readonly cloneSourceVote = signal<Vote | null>(null);
   private readonly internalStep = signal<number>(1);
-  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
+  // Reactive, not a snapshot read — the rail's Create Vote dialog can navigate this reused component
+  // to a new ?committee_uid= without a full reload (GH-3781); a one-time read would leave writeAccess's
+  // committee leg and initCommitteeContext() pinned to whatever group was active when the route first matched.
+  private readonly committeeUidFromUrl: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('committee_uid'))), {
+    initialValue: this.route.snapshot.queryParamMap.get('committee_uid'),
+  });
 
   // Complex computed/toSignal signals
   public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
@@ -212,7 +219,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.cloneSourceVote()?.project_uid || this.project()?.uid;
+    const projectUid = this.resolveAuthorizedProjectUid();
     if (!projectUid) {
       this.messageService.add({
         severity: 'error',
@@ -291,7 +298,7 @@ export class VoteManageComponent {
 
       // Speculative create (GH-2826 Design A): fire the plain create at dialog-open, hiding the ~3 s
       // create behind reading time; accept chains onto it, every dismiss path discards via reject.
-      const projectUid = this.cloneSourceVote()?.project_uid || this.project()?.uid;
+      const projectUid = this.resolveAuthorizedProjectUid();
       if (projectUid) {
         const speculativeRequest = buildCreateVoteRequest(this.form().getRawValue() as VoteFormValue, projectUid);
         this.voteService
@@ -404,7 +411,7 @@ export class VoteManageComponent {
       return;
     }
 
-    const projectUid = this.vote()?.project_uid || this.cloneSourceVote()?.project_uid || this.project()?.uid;
+    const projectUid = this.resolveAuthorizedProjectUid();
     if (!projectUid) {
       // Same discard reasoning as the invalid path above: a pending speculation (if any) must not
       // outlive an accept that cannot proceed.
@@ -508,7 +515,24 @@ export class VoteManageComponent {
    * Rebuilds the questions FormArray to match the source vote's poll_questions.
    */
   private patchFormWithClonedVote(vote: Vote): void {
-    this.patchFormWithValue(mapVoteToCloneFormValue(vote));
+    const fallbackTimezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+    this.patchFormWithValue(mapVoteToCloneFormValue(vote, Date.now(), fallbackTimezone));
+  }
+
+  /** Resolves the project to submit against, verified against the project writeAccess actually
+   *  authorized. A clone whose own project diverges from the synced active context fails closed
+   *  rather than silently submitting into a project the organizer wasn't granted (GH-3781). */
+  private resolveAuthorizedProjectUid(): string | null {
+    const editProjectUid = this.vote()?.project_uid;
+    if (editProjectUid) {
+      return editProjectUid;
+    }
+    const activeProjectUid = this.project()?.uid ?? null;
+    const cloneProjectUid = this.cloneSourceVote()?.project_uid ?? null;
+    if (cloneProjectUid && activeProjectUid && cloneProjectUid !== activeProjectUid) {
+      return null;
+    }
+    return cloneProjectUid ?? activeProjectUid;
   }
 
   private patchFormWithValue(formValue: VoteFormValue): void {
@@ -771,20 +795,17 @@ export class VoteManageComponent {
     // mirroring writerGuard's entity-scoped resolution. Hoisted: toObservable needs the injection
     // context, so it can't be created lazily inside the switchMap below.
     const editCommitteeUid$: Observable<string | null | undefined> = toObservable(this.vote).pipe(
-      map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl) : undefined))
+      map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl()) : undefined))
     );
+    // Reactive on committeeUidFromUrl too (create mode) — the rail's Create Vote dialog can swap
+    // ?committee_uid= on this reused component without a full reload (GH-3781).
+    const committeeCandidate$: Observable<string | null | undefined> = editVoteId ? editCommitteeUid$ : toObservable(this.committeeUidFromUrl);
     // Gated on the project leg resolving false: a granted project leg makes the committee fetch
     // moot, and while it's pending this leg stays pending too. undefined stays pending; null resolves immediately.
-    const committeeUid$: Observable<string | null | undefined> = toObservable(projectAccess).pipe(
-      filter((project): project is boolean => project !== undefined),
-      distinctUntilChanged(),
-      switchMap((project) => {
-        if (project) {
-          // Project leg granted — resolve the committee leg without firing the HTTP probe.
-          return of<string | null>(null);
-        }
-        return editVoteId ? editCommitteeUid$ : of(this.committeeUidFromUrl);
-      })
+    const committeeUid$: Observable<string | null | undefined> = combineLatest([toObservable(projectAccess), committeeCandidate$]).pipe(
+      filter(([project]) => project !== undefined),
+      map(([project, uid]) => (project ? null : uid)),
+      distinctUntilChanged()
     );
     const committeeAccess = toSignal(
       committeeUid$.pipe(
@@ -919,25 +940,40 @@ export class VoteManageComponent {
     this.form().get('committee')?.markAsTouched();
   }
 
-  /** Reads committee_uid from queryParams and pre-populates the committee field (locked). */
+  /** Reads committee_uid from queryParams and pre-populates the committee field (locked).
+   *  Reactive rather than one-shot: the rail's Create Vote dialog can navigate this reused component
+   *  to a new ?committee_uid= (e.g. after leaving a clone) without a full reload — a `take(1)` read
+   *  would leave the group unlocked and unpopulated for every change after the first (GH-3781). */
   private initCommitteeContext(): void {
     this.route.queryParamMap
       .pipe(
-        take(1),
         filter((params) => !params.get('clone')), // clone's own committee prefill stays editable; locking it here would fight that
         map((params) => params.get('committee_uid')),
-        filter((uid): uid is string => !!uid && !this.route.snapshot.paramMap.has('id')),
-        switchMap((uid) => this.committeeService.getCommittee(uid)),
-        catchError(() => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
-          return of(null);
-        })
+        distinctUntilChanged(),
+        switchMap((uid) => {
+          if (!uid || this.route.snapshot.paramMap.has('id')) {
+            return of(null);
+          }
+          return this.committeeService.getCommittee(uid).pipe(
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+              return of(null);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((committee) => {
-        if (!committee) return;
+        const committeeControl = this.form().get('committee');
+        if (!committee) {
+          // committee_uid removed (or never applicable) on a reused component — unlock the field
+          // rather than leaving it stuck disabled/prefilled from a prior activation.
+          this.committeeContext.set(null);
+          committeeControl?.enable();
+          return;
+        }
         this.committeeContext.set(committee);
         const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
-        const committeeControl = this.form().get('committee');
         committeeControl?.setValue(ref);
         committeeControl?.disable();
       });
@@ -956,6 +992,16 @@ export class VoteManageComponent {
         map((params) => params.get('clone')),
         distinctUntilChanged(),
         switchMap((cloneId) => {
+          // A confirmation dialog (and its speculative vote) belongs to whatever form state preceded
+          // this clone-param change — e.g. clone X -> start a regular vote via the rail -> open its
+          // confirmation -> browser Back to X. Left alone, accepting the surviving dialog would open
+          // the earlier pending speculative record instead of the newly-selected vote (GH-3781).
+          if (this.confirmingOpenVote()) {
+            this.confirmingOpenVote.set(false);
+            this.confirmationService.close();
+            this.voteService.discardSpeculativeVote();
+          }
+
           if (!cloneId || this.route.snapshot.paramMap.has('id')) {
             // Clone removed (or never applicable) on a reused component — drop any stale source/form/step
             // state left over from a prior activation instead of letting it keep winning at submit time.

@@ -519,12 +519,16 @@ describe('VoteManageComponent', () => {
       expect(committeeControl?.disabled).toBe(false);
     });
 
-    // GH-3781 review: the create-mode `vote` signal never populates (no :id route param), so without
-    // cloneSourceVote feeding the fallback, submission silently used the viewer's active project lens
-    // instead of the cloned vote's own project — wrong for a cross-project clone off the dashboard.
-    it("submits using the cloned source vote's own project_uid, not the viewer's active project lens", async () => {
+    // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): a clone's own project_uid is untrusted until the entity-
+    // context sync has actually retargeted activeContext to match it — writeAccess in create mode follows
+    // activeContext, so submitting straight off cloneSourceVote().project_uid could land in a project
+    // writeAccess never admitted. Once sync has converged (activeContext === the clone's project), both
+    // signals agree and submission proceeds normally.
+    it("submits using the cloned source vote's own project_uid once the active context has synced to it", async () => {
       const SOURCE_PROJECT_UID = 'source-project-uid';
-      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Viewer Active Project' });
+      // Simulates syncEntityProjectContextFallback already having retargeted activeContext to the
+      // clone's project (the converged, authorized state) before the organizer finishes the form.
+      activeContext.set({ uid: SOURCE_PROJECT_UID, slug: 'source-project', name: 'Source Project' });
       getProject.mockReturnValue(of({ uid: SOURCE_PROJECT_UID, writer: true }));
       fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
       const fixture = await createComponent();
@@ -542,6 +546,44 @@ describe('VoteManageComponent', () => {
 
       expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
       expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: SOURCE_PROJECT_UID });
+    });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): fail closed rather than silently trusting the clone's own
+    // project over the one writeAccess actually authorized — e.g. the clone's project_slug is missing so
+    // entity-context sync never retargeted activeContext. Submitting with cloneSourceVote's project here
+    // would bypass the write-access check entirely, since the voting service doesn't re-authorize project_uid.
+    it('blocks submission instead of trusting an unsynced clone project that diverges from the active context', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Viewer Active Project' });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      let capturedConfirmation: Confirmation | null = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: Confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      // projectUid resolves to null at dialog-open too (same divergence), so no speculative create fires.
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+
+      // Accepting the dialog still routes through submitVote()'s own resolution — surface the error there.
+      (capturedConfirmation as Confirmation | null)?.accept?.();
+
+      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No project selected' }));
     });
 
     // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): the clone fetch disables the form while in flight
