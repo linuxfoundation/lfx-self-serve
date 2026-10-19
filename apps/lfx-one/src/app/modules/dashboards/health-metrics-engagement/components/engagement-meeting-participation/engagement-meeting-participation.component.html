@@ -1,8 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- The [13px]/[12px] text and [170px] column are the design's exact sizes; the rem scale
-     undershoots them at this root font size. -->
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
 <div class="flex flex-col gap-4" data-testid="engagement-meeting-participation">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <lfx-filter-pills
@@ -39,14 +38,13 @@
       <div class="flex flex-col gap-2" data-testid="engagement-meeting-participation-hero">
         <div class="flex items-baseline gap-2">
           <span class="text-3xl font-semibold tabular-nums text-gray-900">{{ heroValue() }}</span>
-          <!-- Meetings held carries no delta in the design; the comparison reads as a tooltip, not a caption. -->
+          <!-- Meetings held carries no delta in the design. The comparison window is screen-reader text only for now. -->
           @if (attendanceMode()) {
             <span
               class="text-[13px] font-medium tabular-nums"
               [class.text-emerald-600]="heroDeltaDirection() === 'up'"
               [class.text-red-600]="heroDeltaDirection() === 'down'"
               [class.text-gray-400]="heroDeltaDirection() === 'neutral'"
-              title="vs prior period"
               data-testid="engagement-meeting-participation-delta"
               >{{ heroDelta() }}<span class="sr-only"> vs prior period</span></span
             >
@@ -85,8 +83,8 @@
             <span class="text-[11.5px] text-gray-400">Never attended</span>
             <span
               class="text-[17px] font-semibold tabular-nums"
-              [class.text-red-600]="(totalPeriod()?.neverAttended ?? 0) > 0"
-              [class.text-gray-900]="!((totalPeriod()?.neverAttended ?? 0) > 0)"
+              [class.text-red-600]="neverAttendedFlagged()"
+              [class.text-gray-900]="!neverAttendedFlagged()"
               data-testid="engagement-meeting-participation-never-attended-value"
               >{{ totalPeriod()?.neverAttended ?? '—' }}</span
             >

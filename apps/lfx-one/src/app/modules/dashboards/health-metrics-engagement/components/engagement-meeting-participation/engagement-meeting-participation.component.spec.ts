@@ -157,10 +157,20 @@ describe('EngagementMeetingParticipationComponent', () => {
     await render();
 
     const hero = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]');
-    expect(hero.querySelector('[data-testid="engagement-meeting-participation-delta"]').getAttribute('title')).toBe('vs prior period');
+    expect(hero.querySelector('[data-testid="engagement-meeting-participation-delta"] .sr-only').textContent).toBe(' vs prior period');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-side"]').classList).toContain('flex-wrap');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').textContent).toContain('Active groups');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]').classList).toContain('text-red-600');
+  });
+
+  it('keeps Never attended in ink when nobody has missed every meeting', async () => {
+    const total = participationRow();
+    total.periods = total.periods.map((period) => ({ ...period, neverAttended: 0 }));
+    await render(response({ total }));
+
+    const value = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]');
+    expect(value.classList).toContain('text-gray-900');
+    expect(value.classList).not.toContain('text-red-600');
   });
 
   it('swaps the hero and the side row in meetings mode, and drops the attendance column', async () => {
