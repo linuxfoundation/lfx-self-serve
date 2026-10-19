@@ -7867,29 +7867,42 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(c.canSubmit()).toBe(true);
   });
 
-  // A foundation switch clears the current brief but keeps the draft; the upload still belongs to
-  // the brief it was started for, so the remount must resume by that one.
-  it('resumes by the brief the upload was started for, not the current one', async () => {
+  // A foundation switch clears the current brief but keeps the draft. The upload belongs to the brief
+  // it was started for, so this mount must neither follow it (holding Create, then discarding the
+  // answer as a brief change) nor drop it: it stays parked in the draft for when that brief reopens.
+  it('parks an upload for another brief, then resumes it when that brief is open again', async () => {
     const pending = new Subject<unknown>();
     uploadCreativeAsset.mockReturnValue(pending);
     const first = await mount(true);
     choose(first.fixture, png());
-    const draft = first.latest() as CampaignImplementationDraft;
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
     expect(draft.redditImageUploadPendingBriefId).toBe(BRIEF_ID);
     first.fixture.destroy();
     resumeCreativeAssetUpload.mockReturnValue(pending);
 
-    const second = TestBed.createComponent(ImplementationTabComponent);
-    second.componentRef.setInput('draft', { ...draft, eventSlug: 'kubecon-eu-2026' });
-    second.componentRef.setInput('redditCreativeEnabled', true);
-    second.componentRef.setInput('redditAssetUploadEnabled', true);
-    second.componentRef.setInput('briefPersistence', { status: 'idle', briefId: null, message: null, approved: false });
-    second.componentRef.setInput('briefData', brief());
-    second.detectChanges();
-    await second.whenStable();
+    const switched = TestBed.createComponent(ImplementationTabComponent);
+    let parked: CampaignImplementationDraft | null = null;
+    switched.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (parked = d));
+    switched.componentRef.setInput('draft', draft);
+    switched.componentRef.setInput('redditCreativeEnabled', true);
+    switched.componentRef.setInput('redditAssetUploadEnabled', true);
+    switched.componentRef.setInput('briefPersistence', { status: 'idle', briefId: null, message: null, approved: false });
+    switched.componentRef.setInput('briefData', brief());
+    switched.detectChanges();
+    await switched.whenStable();
 
+    expect(resumeCreativeAssetUpload).not.toHaveBeenCalled();
+    expect(at(switched).redditImageUploadStatus()).toBe('idle');
+    expect(parked).not.toBeNull();
+    expect((parked as unknown as CampaignImplementationDraft).redditImageUploadPendingName).toBe('promo.png');
+    expect((parked as unknown as CampaignImplementationDraft).redditImageUploadPendingBriefId).toBe(BRIEF_ID);
+    switched.destroy();
+
+    const back = await mount(true, true, parked as unknown as CampaignImplementationDraft);
     expect(resumeCreativeAssetUpload).toHaveBeenCalledWith(BRIEF_ID);
-    expect(at(second).redditImageUploadStatus()).toBe('uploading');
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    back.fixture.detectChanges();
+    expect(at(back.fixture).redditImageAssetId()).toBe(ASSET_ID);
   });
 
   it('says the upload was interrupted when there is nothing left to resume', async () => {

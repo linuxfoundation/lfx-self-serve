@@ -2982,7 +2982,17 @@ export class ImplementationTabComponent implements OnInit {
    * rather than left with an image that silently never arrived.
    */
   private resumeRedditImageUpload(fileName: string, uploadBriefId: string): void {
-    const briefId = uploadBriefId || (this.briefPersistence().briefId ?? '');
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      // The upload belongs to a brief that is not the open one (a foundation switch clears the
+      // current brief but keeps the draft). Its asset could never be sent with this brief, so
+      // following it would only hold Create and then discard the answer as "brief changed". Keep it
+      // parked in the draft instead, untouched in the service, so reopening that brief resumes it.
+      this.redditImageUploadPendingName.set(fileName);
+      this.redditImageUploadPendingBriefId.set(briefId);
+      return;
+    }
     const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload(briefId) : null;
     if (!upload$) {
       this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`);
