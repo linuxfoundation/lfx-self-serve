@@ -56,7 +56,7 @@
       <!-- A plain group rather than a <dl>: two of the stats are buttons, which a <dl> cannot hold as dt/dd pairs. -->
       <div class="flex flex-wrap gap-7 pt-1" data-testid="engagement-meeting-participation-side">
         <div class="flex flex-col gap-0.5">
-          <span class="text-[11.5px] text-gray-400">{{ secondaryLabel() }}</span>
+          <span class="text-[11.5px] text-gray-500">{{ secondaryLabel() }}</span>
           <span class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-meeting-participation-secondary">{{
             secondaryValue()
           }}</span>
@@ -68,7 +68,7 @@
             class="-m-1 flex flex-col gap-0.5 rounded-md p-1 text-left transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
             (click)="onSectionLink('committees')"
             data-testid="engagement-meeting-participation-active-groups">
-            <span class="text-[11.5px] text-gray-400">Active groups</span>
+            <span class="text-[11.5px] text-gray-500">Active groups</span>
             <span class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="engagement-meeting-participation-active-groups-value">{{
               activeGroupsLabel()
             }}</span>
@@ -80,7 +80,7 @@
             class="-m-1 flex flex-col gap-0.5 rounded-md p-1 text-left transition-colors hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
             (click)="onNeverAttended()"
             data-testid="engagement-meeting-participation-never-attended">
-            <span class="text-[11.5px] text-gray-400">Never attended</span>
+            <span class="text-[11.5px] text-gray-500">Never attended</span>
             <span
               class="text-[17px] font-semibold tabular-nums"
               [class.text-red-600]="neverAttendedFlagged()"

@@ -160,6 +160,8 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(hero.querySelector('[data-testid="engagement-meeting-participation-delta"] .sr-only').textContent).toBe(' vs prior period');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-side"]').classList).toContain('flex-wrap');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').textContent).toContain('Active groups');
+    // Labels use gray-500, a shade darker than the design's gray-400, so the 11.5px text clears WCAG AA contrast.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"] span').classList).toContain('text-gray-500');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]').classList).toContain('text-red-600');
   });
 

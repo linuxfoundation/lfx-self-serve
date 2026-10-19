@@ -121,6 +121,8 @@ describe('TrainingEnrollComponent', () => {
     await render();
 
     expect(text('training-enroll-headline-value')).toBe('12,000');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('training-enroll-hero')?.classList).not.toContain('border');
     expect(text('training-enroll-headline-delta')).toBe('+20%');
     expect(query('training-enroll-headline-delta')?.classList).toContain('text-emerald-600');
     expect(text('training-enroll-side-certifications-value')).toBe('300');

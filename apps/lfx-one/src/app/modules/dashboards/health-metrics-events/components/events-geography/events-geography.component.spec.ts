@@ -105,6 +105,8 @@ describe('EventsGeographyComponent', () => {
     await render();
 
     expect(text('events-geo-headline-value')).toBe('42');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-geo-headline')?.classList).not.toContain('border');
     expect(text('events-geo-headline-delta')).toBe('+10%');
     expect(query('events-geo-headline-delta')?.className).toContain('text-emerald-600');
     expect(text('events-geo-countries')).toBe('42 countries');

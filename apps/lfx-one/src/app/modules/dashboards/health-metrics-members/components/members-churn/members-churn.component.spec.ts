@@ -147,6 +147,8 @@ describe('MembersChurnComponent', () => {
     expect(query('members-churn-change')?.classList).toContain('text-red-600');
     expect(text('members-churn-caption')).toBe("of last year's dues did not renew");
     expect(text('members-churn-side-dues-lost')).toBe('$1.5M');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-churn-hero')?.classList).not.toContain('border');
     expect(query('members-churn-side-dues-lost')?.classList).toContain('text-red-600');
     expect(text('members-churn-side-logo')).toBe('10% (12 of 120)');
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);

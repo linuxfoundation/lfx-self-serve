@@ -104,6 +104,8 @@ describe('EventsSponsorshipComponent', () => {
     await render();
 
     expect(text('events-sponsorship-headline-value')).toBe('$750K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-sponsorship-hero')?.classList).not.toContain('border');
     expect(text('events-sponsorship-headline-delta')).toBe('+20%');
     expect(query('events-sponsorship-headline-delta')?.className).toContain('text-emerald-600');
     expect(text('events-sponsorship-side-goal-value')).toBe('$1M');

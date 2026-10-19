@@ -41,7 +41,7 @@
             <div class="flex items-baseline gap-2">
               <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-value">{{ forecastLabel() }}</span>
               @if (rangeLabel()) {
-                <span class="text-[11.5px] font-medium tabular-nums text-gray-400" data-testid="events-registration-forecast-range"
+                <span class="text-[11.5px] font-medium tabular-nums text-gray-500" data-testid="events-registration-forecast-range"
                   >{{ rangeLabel() }}<span class="sr-only"> likely range</span></span
                 >
               }
@@ -50,19 +50,19 @@
           </div>
           <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-registration-forecast-stats">
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-400">Now</dt>
+              <dt class="text-[11.5px] text-gray-500">Now</dt>
               <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-now">{{ nowLabel() }}</dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-400">Same point last year</dt>
+              <dt class="text-[11.5px] text-gray-500">Same point last year</dt>
               <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-last-year">{{ lastYearLabel() }}</dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-400">Goal</dt>
+              <dt class="text-[11.5px] text-gray-500">Goal</dt>
               <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-goal">{{ goalLabel() }}</dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-[11.5px] text-gray-400">Days left</dt>
+              <dt class="text-[11.5px] text-gray-500">Days left</dt>
               <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-days-left">{{ daysLeftLabel() }}</dd>
             </div>
           </dl>
