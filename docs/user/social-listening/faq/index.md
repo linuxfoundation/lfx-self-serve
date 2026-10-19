@@ -5,7 +5,7 @@ display_order: 4
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, faq, octolens, access, limits]
-last_updated: 2026-10-14
+last_updated: 2026-10-19
 intercom_collection: Social Listening
 ---
 

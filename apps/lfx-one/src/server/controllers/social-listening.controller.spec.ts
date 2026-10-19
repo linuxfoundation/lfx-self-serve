@@ -87,6 +87,17 @@ describe('SocialListeningController', () => {
       expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
       expect(accessSvc.getAccess).not.toHaveBeenCalled();
     });
+
+    it('forwards a service rejection to next', async () => {
+      const error = new Error('access lookup failed');
+      accessSvc.getAccess.mockRejectedValueOnce(error);
+      const res = buildRes();
+
+      await controller.getAccess(buildReq({ query: { foundationSlug: 'tlf' } }), res, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+      expect(res.json).not.toHaveBeenCalled();
+    });
   });
 
   describe('getPreference', () => {

@@ -5,7 +5,7 @@ display_order: 1
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, mentions, feed, filters, search, bookmarks, read state]
-last_updated: 2026-10-13
+last_updated: 2026-10-19
 intercom_collection: Social Listening
 ---
 

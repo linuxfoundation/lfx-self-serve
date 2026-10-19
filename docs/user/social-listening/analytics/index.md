@@ -5,7 +5,7 @@ display_order: 2
 audience: [contributor, maintainer, board-member, executive-director]
 product_area: Social Listening
 tags: [social listening, analytics, charts, sentiment, trends, export]
-last_updated: 2026-10-14
+last_updated: 2026-10-19
 intercom_collection: Social Listening
 ---
 
