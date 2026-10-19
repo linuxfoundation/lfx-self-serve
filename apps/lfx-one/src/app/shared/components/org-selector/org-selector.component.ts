@@ -300,6 +300,11 @@ export class OrgSelectorComponent {
     this.destroyRef.onDestroy(() => this.detachKeyboardHandler());
   }
 
+  /** Closes the selector panel without moving focus — for a host that is going away (e.g. a closing drawer), since the panel is appended to `body`. */
+  public closePanel(): void {
+    this.popoverRef()?.hide();
+  }
+
   protected selectItem(item: OrgItem): void {
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The

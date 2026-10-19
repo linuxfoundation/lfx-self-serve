@@ -146,6 +146,11 @@ export class ProjectSelectorComponent {
     });
   }
 
+  /** Closes the selector panel without moving focus — for a host that is going away (e.g. a closing drawer), since the panel is appended to `body`. */
+  public closePanel(): void {
+    this.popoverRef()?.hide();
+  }
+
   protected selectItem(item: LensItem, popover: Popover): void {
     this.itemSelected.emit(item);
     popover.hide();

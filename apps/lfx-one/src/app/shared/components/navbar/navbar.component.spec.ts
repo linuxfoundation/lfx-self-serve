@@ -235,7 +235,11 @@ describe('NavbarComponent', () => {
   });
 
   it('closes its body-level overlays as soon as the mobile drawer starts closing', async () => {
-    await createNavbar([], [], {}, { mobile: true });
+    const navbar = await createNavbar([], [], {}, { mobile: true });
+    // The context selectors' panels are appended to `body` too; the template is empty, so stand in for them.
+    const closeProjectPanel = vi.fn();
+    const closeOrgPanel = vi.fn();
+    Object.assign(navbar, { projectSelector: () => ({ closePanel: closeProjectPanel }), orgSelector: () => ({ closePanel: closeOrgPanel }) });
     const appService = TestBed.inject(AppService);
     appService.openMobileSidebar();
     TestBed.tick();
@@ -244,6 +248,8 @@ describe('NavbarComponent', () => {
     appService.closeMobileSidebar();
     TestBed.tick();
     expect(hideWithin).toHaveBeenCalledTimes(1);
+    expect(closeProjectPanel).toHaveBeenCalledTimes(1);
+    expect(closeOrgPanel).toHaveBeenCalledTimes(1);
     hideWithin.mockRestore();
   });
 

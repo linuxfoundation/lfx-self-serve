@@ -98,6 +98,8 @@ export class NavbarComponent extends NavMenuBase {
   protected readonly brandMenu = viewChild<Popover>('brandMenu');
   protected readonly createMenu = viewChild<Popover>('createMenu');
   protected readonly userMenu = viewChild<Popover>('userMenu');
+  private readonly projectSelector = viewChild(ProjectSelectorComponent);
+  private readonly orgSelector = viewChild(OrgSelectorComponent);
   protected readonly brandMenuOpen = signal(false);
   // Popover open state as signals: zoneless, an outside click or Escape closes a popover without
   // re-rendering the trigger, so `overlayVisible` would leave it styled and announced as open.
@@ -415,8 +417,8 @@ export class NavbarComponent extends NavMenuBase {
   }
 
   /**
-   * The mobile drawer keeps its navbar alive through the close animation, and the popovers and tooltips
-   * are appended to `body` — so they would float over the page until the drawer finishes. Close them as
+   * The mobile drawer keeps its navbar alive through the close animation, and the popovers (the context
+   * selectors' panels included) and tooltips are appended to `body` — so they would float over the page until the drawer finishes. Close them as
    * soon as the drawer starts closing.
    */
   private initDrawerCloseCleanup(): void {
@@ -429,6 +431,8 @@ export class NavbarComponent extends NavMenuBase {
         this.brandMenu()?.hide();
         this.createMenu()?.hide();
         this.userMenu()?.hide();
+        this.projectSelector()?.closePanel();
+        this.orgSelector()?.closePanel();
         NavTooltipDirective.hideWithin(this.elementRef.nativeElement);
       });
   }
