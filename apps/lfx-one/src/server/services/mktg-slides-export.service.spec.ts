@@ -283,6 +283,17 @@ describe('MktgSlidesExportService', () => {
       expect(assets['kit']).toMatchObject({ projectName: expect.any(String), version: expect.any(Number) });
     });
 
+    it("exports a framework in the LF look when the project's kit cannot be read, instead of failing", async () => {
+      await seedFramework(documentStore);
+      const readLatest = vi.spyOn(MktgDocumentStoreService.prototype, 'readLatest').mockRejectedValueOnce(new Error('store unavailable'));
+
+      const started = await service.startExport(req, input());
+
+      expect(readLatest).toHaveBeenCalled();
+      expect(sentMessage()).toContain('\nASSETS: framework\n');
+      expect(started.logoNote).toBe('no-logo');
+    });
+
     it('exports a framework without a kit in the LF look', async () => {
       await seedFramework(documentStore);
 

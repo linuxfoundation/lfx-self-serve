@@ -296,8 +296,18 @@ export class MktgSlidesExportService {
     if (!framework) {
       throw nothing('messaging framework');
     }
-    const stored = await this.documentStore.readLatest(req, MKTG_ARTIFACT_SPECS['brand-kit'], input.project, { withSidecar: true });
-    const kit = readBrandKitRevision(stored?.sidecar ?? null);
+    // The kit only brands a framework deck: when it cannot be read, the export
+    // goes ahead in the LF look, as the print does, instead of failing.
+    let kit: BrandKitRevision | null = null;
+    try {
+      const stored = await this.documentStore.readLatest(req, MKTG_ARTIFACT_SPECS['brand-kit'], input.project, { withSidecar: true });
+      kit = readBrandKitRevision(stored?.sidecar ?? null);
+    } catch (error) {
+      logger.warning(req, 'mktg_slides_export_start', 'Brand Kit could not be read — exporting the framework in the LF look', {
+        project: input.project,
+        err: error,
+      });
+    }
     return { assets: kit ? { framework, kit: kit.kit } : { framework }, kit };
   }
 
