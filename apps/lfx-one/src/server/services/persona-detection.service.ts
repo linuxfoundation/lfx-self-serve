@@ -167,6 +167,10 @@ export class PersonaDetectionService {
       personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
     }
 
+    // A `true` grant is verified by the check that granted it; only a `false` alongside a failed check is unverified.
+    const marketingAuditorUnverified = !isMarketingAuditor && this.marketingGrantCheckFailed(req, 'marketing_auditor');
+    const campaignManagerUnverified = !isCampaignManager && this.marketingGrantCheckFailed(req, 'campaign_manager');
+
     return {
       ...detections,
       personas,
@@ -177,9 +181,9 @@ export class PersonaDetectionService {
       isCampaignManager,
       isMarketingAuditorRootGrant,
       isCampaignManagerRootGrant: false,
-      marketingGrantCheckFailed:
-        (!isMarketingAuditor && this.marketingGrantCheckFailed(req, 'marketing_auditor')) ||
-        (!isCampaignManager && this.marketingGrantCheckFailed(req, 'campaign_manager')),
+      marketingGrantCheckFailed: marketingAuditorUnverified || campaignManagerUnverified,
+      marketingAuditorUnverified,
+      campaignManagerUnverified,
     };
   }
 

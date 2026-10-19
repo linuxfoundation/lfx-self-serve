@@ -102,12 +102,17 @@ export interface PersonaApiResponse extends PersonaDetections {
    */
   isCampaignManagerRootGrant: boolean;
   /**
-   * True when a marketing grant check behind {@link isMarketingAuditor} / {@link isCampaignManager}
+   * True when either marketing grant is unverified ({@link marketingAuditorUnverified} /
+   * {@link campaignManagerUnverified}): a marketing grant check behind {@link isMarketingAuditor} / {@link isCampaignManager}
    * (ROOT or project-scoped, including its slug lookup) failed upstream instead of answering. Those
    * booleans still fail closed to `false`; this tells the client the `false` means "couldn't check",
    * not "denied", so it can offer a retry. Absent on responses that never ran the checks.
    */
   marketingGrantCheckFailed?: boolean;
+  /** {@link isMarketingAuditor} is `false` only because its check failed upstream: unverified, not denied. */
+  marketingAuditorUnverified?: boolean;
+  /** {@link isCampaignManager} is `false` only because its check failed upstream: unverified, not denied. */
+  campaignManagerUnverified?: boolean;
 }
 
 export interface SsrPersonaResult {

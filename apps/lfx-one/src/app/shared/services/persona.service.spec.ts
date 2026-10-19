@@ -241,12 +241,34 @@ describe('PersonaService — grant probe recency ordering', () => {
       service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (unverified = response));
       http
         .expectOne((req) => req.url.includes('project=foundation-a'))
-        .flush(mockResponse({ isCampaignManager: false, isMarketingAuditor: false, marketingGrantCheckFailed: true }));
+        .flush(
+          mockResponse({
+            isCampaignManager: false,
+            isMarketingAuditor: false,
+            marketingGrantCheckFailed: true,
+            marketingAuditorUnverified: true,
+            campaignManagerUnverified: true,
+          })
+        );
       service.confirmActiveGrant(unverified!, 'foundation-a');
 
       expect(service.isCampaignManager()).toBe(true);
       expect(service.isMarketingAuditor()).toBe(true);
       expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: true, isMarketingAuditor: true });
+    });
+
+    it('applies a verified grant from a response whose other marketing check failed', () => {
+      // Campaign manager confirmed; the independent auditor check failed upstream.
+      let mixed: PersonaApiResponse | null = null;
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (mixed = response));
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: false, marketingGrantCheckFailed: true, marketingAuditorUnverified: true }));
+      service.confirmActiveGrant(mixed!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(true);
+      expect(service.isMarketingAuditor()).toBe(false);
+      expect(service.grantsByScope().get('foundation-a')?.isCampaignManager).toBe(true);
     });
 
     it('writes to grantsByScope from applyPersonaResponse so the per-scope result is available before confirmActiveGrant is called', () => {
