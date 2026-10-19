@@ -101,6 +101,10 @@ export class MktgDocumentViewComponent {
       : [];
   });
   protected readonly currentSelectorLabel = computed(() => describeMktgRevisionAuthor(this.view()?.current?.changedBy));
+  protected readonly savingStatus = computed(() => {
+    const revision = this.view()?.revisions.find((entry) => entry.id === this.restoringId());
+    return revision ? `Saving revision ${revision.number}…` : '';
+  });
   protected readonly viewedAuthorLabel: Signal<string> = this.initViewedAuthorLabel();
   protected readonly currentRevision: Signal<MktgRevisionSummary | null> = this.initCurrentRevision();
   protected readonly visibleRevisionRows: Signal<MktgRevisionRow[]> = this.initVisibleRevisionRows();

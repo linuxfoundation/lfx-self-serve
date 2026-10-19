@@ -477,6 +477,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current. No revision was added.');
+    expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
     expect(query('mktg-document-view-history-bar')).toBeNull();
     expect(query('mktg-document-view-current-since-1')?.textContent).toMatch(/^Current since 15 Oct 2026, \d{2}:\d{2} · The selector$/);
     expect(query('mktg-document-view-current-since-2')).toBeNull();
@@ -489,8 +490,13 @@ describe('MktgDocumentViewComponent', () => {
     const pending = new Subject<unknown>();
     store.restoreRevision.mockReturnValue(pending);
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    const status = query('mktg-document-view-saving-status');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.textContent).toBe('');
     query('mktg-document-view-history-bar-make-current')?.click();
     await settle();
+    expect(status?.textContent).toBe('Saving revision 1…');
+    expect(status?.closest('[aria-busy]')).toBeNull();
     expect(query('mktg-document-view-history-bar-make-current')?.textContent?.trim()).toBe('Saving…');
     expect(query('mktg-document-view-history-bar')?.getAttribute('aria-busy')).toBe('true');
     expect((query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null)?.disabled).toBe(true);
@@ -518,6 +524,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect((query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null)?.disabled).toBe(false);
     expect(query('mktg-document-view-history-bar')?.getAttribute('aria-busy')).toBe('false');
+    expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
   });
   it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
