@@ -73,6 +73,31 @@ for (const width of [1440, 1280, 390]) {
   });
 }
 
+for (const width of [1280, 390]) {
+  test(`family run frame and one intake card at ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    // setupMember360 calls suppressCookieBanner(page) before navigating.
+    await setupMember360(page);
+    await openMember360(page);
+    const breadcrumb = page.getByRole('navigation', { name: 'Breadcrumb' });
+    await expect(breadcrumb.locator('li:not([aria-hidden])')).toHaveCount(3);
+    await expect(breadcrumb.getByTestId('member-360-back')).toHaveText('Sample Foundation kit');
+    await expect(breadcrumb).toContainText('Sample Foundation kit');
+    await expect(breadcrumb).toContainText('Member & sponsor kit');
+    await expect(breadcrumb.locator('[aria-current="page"]')).toHaveText('Member 360');
+    const intake = page.getByTestId('member-360-intake');
+    await expect(intake).toHaveCount(1);
+    await expect(intake.getByRole('heading', { name: 'Sources', exact: true })).toBeVisible();
+    await expect(intake.getByTestId('member-360-window')).toBeVisible();
+    await expect(intake.getByTestId('member-360-compare')).toBeVisible();
+    await expect(intake.getByTestId('member-360-run').getByRole('button')).toBeEnabled();
+    await expect(page.getByTestId('mktg-run-questions')).toHaveCount(0);
+    const bounds = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: innerWidth }));
+    expect(bounds.scroll).toBeLessThanOrEqual(bounds.viewport);
+    await page.screenshot({ path: info.outputPath(`family-run-${width}.png`), fullPage: true });
+  });
+}
+
 test('non-writer sees an access message, never a run form', async ({ page }, info) => {
   await setupMember360(page, { writer: false });
   await openMember360(page);

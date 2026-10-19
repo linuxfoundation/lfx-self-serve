@@ -220,7 +220,28 @@ describe('Member 360 entitlement and generation', () => {
   });
   it('never stores an envelope scoped to a different project', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([finalized({ ...member360Fixture(), project_uid: 'other-project' })]);
-    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'pending' });
+    expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'pending', activity: [] });
+    expect(mocks.recordGeneration).not.toHaveBeenCalled();
+  });
+  it('reports shared web and LFX activity while the envelope is pending without leaking tool output', async () => {
+    mocks.getRawEventPayloads.mockResolvedValue(
+      ['web_search_web_search', 'lfx_mcp_search_members'].map((tool, index) =>
+        JSON.stringify({
+          type: 'runtime_start',
+          created_at: '2026-10-19T10:00:00.000Z',
+          task: { id: `tool-${index}`, entity_type: 'EntTaskTool', tool_name: tool, status: 'RUNNING', created_at: '2026-10-19T10:00:00.000Z' },
+          content: { query: 'Sample Foundation speaking', result: 'private-tool-output' },
+        })
+      )
+    );
+    const result = await new Member360Service().result(req, 'session-1', 'sample-project');
+    expect(result.status).toBe('pending');
+    expect(result.activity).toEqual([
+      expect.objectContaining({ kind: 'search', label: 'Searching the web', detail: '“Sample Foundation speaking”', status: 'running' }),
+      expect.objectContaining({ kind: 'lfx', label: 'Checking LFX', status: 'running' }),
+    ]);
+    expect(JSON.stringify(result)).not.toContain('private-tool-output');
+    expect(JSON.stringify(result)).not.toContain('lfx_mcp_search_members');
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
   });
   it('keeps storage failure retryable instead of declaring the run stored', async () => {
@@ -257,6 +278,27 @@ describe('Member 360 entitlement and generation', () => {
     expect(stored.inputs).not.toHaveProperty('research');
     expect(stored.tabs.member_ranking[0].member_organization).toBe(candidate.tabs.member_ranking[0].member_organization);
   });
+  it.each(['member-360-questions/v1', 'MEMBER 360 — QUESTIONS (member-360-questions/v1)'])(
+    'recognizes %s without exposing question text or persisting',
+    async (header) => {
+      const questions = {
+        project: 'Sample Foundation',
+        questions: [
+          {
+            id: 'priority',
+            question: 'Which outreach should lead this run?',
+            why: 'The sources do not name a priority.',
+            suggested_answer: 'Renewal outreach.',
+            basis: 'inferred',
+          },
+        ],
+      };
+      const questionsText = `${header}\n\`\`\`json\n${JSON.stringify(questions)}\n\`\`\``;
+      mocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'agent_notification_message', content: `  ${questionsText}  ` })]);
+      expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({ status: 'needs_input', activity: [] });
+      expect(mocks.recordGeneration).not.toHaveBeenCalled();
+    }
+  );
   it('does not let short or placeholder contact rows damage report prose', async () => {
     const envelope = member360Fixture();
     envelope.tabs.member_ranking[0].key_contact = '—';

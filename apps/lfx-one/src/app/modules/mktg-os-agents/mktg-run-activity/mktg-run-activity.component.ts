@@ -45,6 +45,8 @@ export class MktgRunActivityComponent {
   public readonly iconClass = input('bg-blue-50 text-blue-600');
   /** The agent's icon. */
   public readonly icon = input('fa-light fa-sparkles');
+  /** Form-only agents have no questions turn, even before any activity arrives. */
+  public readonly showQuestions = input(true);
 
   // === Signals ===
   protected readonly showAll = signal(false);
@@ -116,7 +118,7 @@ export class MktgRunActivityComponent {
     return computed(() =>
       mktgRunActivityPhases(this.activity())
         // A phase the run passed over says nothing; one not reached yet is shown so the user sees what is ahead.
-        .filter((phase) => phase.state !== 'skipped')
+        .filter((phase) => phase.state !== 'skipped' && (this.showQuestions() || phase.id !== 'questions'))
         .map((phase) => ({ ...phase, ...this.phaseClasses[phase.state] }))
     );
   }

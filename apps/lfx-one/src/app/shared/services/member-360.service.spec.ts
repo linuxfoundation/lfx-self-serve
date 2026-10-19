@@ -26,13 +26,13 @@ describe('Member360Service workbook transport', () => {
     vi.useRealTimers();
     sessionStorage.clear();
   });
-  function startPending() {
+  function startPending(onActivity?: Parameters<Member360Service['waitForStored']>[2]) {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
     api.generate({ project: 'sample-project' }).subscribe();
     http
       .expectOne('/api/mktg-agents/member-360/generate')
       .flush({ sessionId: 'session-1', ownerToken: 'synthetic-token', documentId: 'run-0123456789abcdef01234567' });
-    return api.waitForStored('sample-project', 'run-0123456789abcdef01234567');
+    return api.waitForStored('sample-project', 'run-0123456789abcdef01234567', onActivity);
   }
   it('does not cancel or overlap a slow result request', () => {
     let stored = false;
@@ -63,6 +63,38 @@ describe('Member360Service workbook transport', () => {
     vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
     http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
     expect(stored).toBe(true);
+  });
+  it('delivers activity without releasing the storage gate, retaining the feed across a failed poll', () => {
+    const onActivity = vi.fn();
+    const stored = vi.fn();
+    startPending(onActivity).subscribe(stored);
+    expect(api.pendingStartedAt('sample-project', 'run-0123456789abcdef01234567')).toBeTypeOf('number');
+    expect(api.pendingStartedAt('other-project', 'run-0123456789abcdef01234567')).toBeNull();
+    const activity = [{ id: 'step-1', kind: 'lfx', label: 'Checking LFX', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' }];
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'pending', activity });
+    expect(onActivity).toHaveBeenCalledWith(activity);
+    expect(stored).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({}, { status: 503, statusText: 'Temporary failure' });
+    expect(onActivity).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: false });
+    expect(stored).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'ready', stored: true });
+    expect(stored).toHaveBeenCalledTimes(1);
+    expect(api.pendingStartedAt('sample-project', 'run-0123456789abcdef01234567')).toBeNull();
+  });
+  it('stops polling on needs_input without forgetting the open run', () => {
+    const received = vi.fn();
+    startPending().subscribe(received);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    http.expectOne('/api/mktg-agents/member-360/result').flush({ status: 'needs_input' });
+    expect(received).toHaveBeenCalledWith(expect.objectContaining({ status: 'needs_input' }));
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
   });
   it.each([400, 401, 403, 404])('forgets the capability on a permanent %s result error', (status) => {
     let denied = false;
@@ -114,5 +146,18 @@ describe('Member360Service workbook transport', () => {
     result.subscribe({ error });
     expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'No pending run for this user and project' }));
     http.expectNone('/api/mktg-agents/member-360/result');
+  });
+  it('downloads a stored document through the BFF without sending client tabs', () => {
+    const blob = new Blob(['synthetic workbook']);
+    let received: Blob | undefined;
+    api.download('sample-project', 'run-0123456789abcdef01234567').subscribe((value) => {
+      received = value;
+    });
+    const request = http.expectOne('/api/mktg-agents/member-360/documents/run-0123456789abcdef01234567/workbook?project=sample-project');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.body).toBeNull();
+    expect(request.request.responseType).toBe('blob');
+    request.flush(blob);
+    expect(received).toBe(blob);
   });
 });
