@@ -189,7 +189,8 @@ export class MenteeApplyComponent {
    * Router `state` from the register redirect, read once at construction — see `menteeApplyGuard`'s equivalent check.
    * Single-use: cleared from history immediately after read so a later reload or back/forward navigation doesn't replay it.
    * SSR has neither a navigation nor a browser `history`, so it falls back to `false`. The flag only skips the client-side
-   * checklist: upstream does not look at the mentee profile when an application is filed, and nothing server-side re-checks it.
+   * checklist; upstream still refuses an application from a user with no mentee profile, which is created by confirming the
+   * eligibility criteria at registration.
    *
    * Always reads and clears against `location.getState()` (the entry actually on top of history right now), never
    * `router.getCurrentNavigation()` — that navigation is still in flight during construction, so `router.url` has not

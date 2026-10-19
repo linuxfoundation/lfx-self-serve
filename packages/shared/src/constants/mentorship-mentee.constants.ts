@@ -573,9 +573,11 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES: Readonly<Record<MentorshipM
 /**
  * Upstream statuses on the apply-target read or the submit that mean the form cannot be used,
  * keyed by status. 400 is an id that is not a UUID, 403 a program the mentee cannot view, 404 a
- * term that is not in the program, 422 a term outside its application window, and 409 an existing
- * application for the term (pending, decided or declined; upstream does not say which). Any other
- * status keeps the form and reports the failure.
+ * term that is not in the program, 422 an applicant or term that fails an eligibility rule (the
+ * term is outside its application window, no mentee profile, reapply limit, ...), and 409 an
+ * existing application for the term (pending, decided or declined; upstream does not say which).
+ * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` refines the state when the message names the rule.
+ * Any other status keeps the form and reports the failure.
  */
 export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<number, MentorshipMenteeApplyBlockedReason>> = {
   400: 'not-found',
