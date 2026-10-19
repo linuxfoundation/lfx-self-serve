@@ -262,9 +262,14 @@ export class PersonaService {
    * must only invoke this with an authoritative, non-errored response.
    */
   public confirmActiveGrant(
-    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    response: Pick<
+      PersonaApiResponse,
+      'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant' | 'marketingGrantCheckFailed'
+    >,
     projectSlug?: string
   ): void {
+    // Unverified grants are not an answer to force-apply; keep the last-known-good ones.
+    if (response.marketingGrantCheckFailed) return;
     const probeId = this.grantProbeIdByResponse.get(response);
     const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
     if (probeId !== undefined && latestAppliedForScope !== undefined && probeId < latestAppliedForScope) {
@@ -489,7 +494,11 @@ export class PersonaService {
     // current foundation (LFXV2-2235). Gating on the applied high-water mark rather than the
     // issuance counter also means a later-issued probe that itself never writes (error/empty
     // response) can't block this one just by having been issued — see `latestAppliedGrantProbeId`.
-    if (probeId === undefined || probeId >= this.latestAppliedGrantProbeId) {
+    // A response whose marketing grant checks failed upstream (`marketingGrantCheckFailed`) carries
+    // `false` grants that mean "couldn't check", not "denied": keep the last-known-good grants — the
+    // signals, the per-scope map and its recency record — as the error branch above does for the rest.
+    const grantsVerified = !response.marketingGrantCheckFailed;
+    if (grantsVerified && (probeId === undefined || probeId >= this.latestAppliedGrantProbeId)) {
       this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
       this.isCampaignManager.set(response.isCampaignManager ?? false);
       if (probeId !== undefined) {
@@ -504,7 +513,7 @@ export class PersonaService {
     // this queried `projectSlug`), so two differently-queried probes that both resolve to the same
     // ROOT key correctly race against each other (Cursor Bugbot finding, PR #1835: "Stale ROOT
     // grant race").
-    if (!skipGrantScopeWrite) {
+    if (grantsVerified && !skipGrantScopeWrite) {
       this.writeGrantForScope(response, projectSlug, probeId);
     }
     // Record that this queried scope was applied here, independent of the write gating above —
@@ -512,7 +521,7 @@ export class PersonaService {
     // see every probe that applied via this method (not only ones that applied via
     // confirmActiveGrant itself), or it can no longer detect a same-scope probe that has already
     // superseded it.
-    if (probeId !== undefined) {
+    if (grantsVerified && probeId !== undefined) {
       const latestForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
       if (latestForScope === undefined || probeId > latestForScope) {
         this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);

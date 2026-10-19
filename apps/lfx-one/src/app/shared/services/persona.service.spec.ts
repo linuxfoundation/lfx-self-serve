@@ -232,6 +232,23 @@ describe('PersonaService — grant probe recency ordering', () => {
       expect(service.grantsByScope().get('foundation-b')?.isCampaignManager).toBe(false);
     });
 
+    it('keeps the last confirmed grants when a later answer could not verify them', () => {
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
+      http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
+
+      // The next probe answers, but its grant checks failed upstream: its `false` grants are unverified.
+      let unverified: PersonaApiResponse | null = null;
+      service.refreshEnrichedPersonas(true, 'foundation-a').subscribe((response) => (unverified = response));
+      http
+        .expectOne((req) => req.url.includes('project=foundation-a'))
+        .flush(mockResponse({ isCampaignManager: false, isMarketingAuditor: false, marketingGrantCheckFailed: true }));
+      service.confirmActiveGrant(unverified!, 'foundation-a');
+
+      expect(service.isCampaignManager()).toBe(true);
+      expect(service.isMarketingAuditor()).toBe(true);
+      expect(service.grantsByScope().get('foundation-a')).toEqual({ isCampaignManager: true, isMarketingAuditor: true });
+    });
+
     it('writes to grantsByScope from applyPersonaResponse so the per-scope result is available before confirmActiveGrant is called', () => {
       service.refreshEnrichedPersonas(true, 'foundation-a').subscribe();
       http.expectOne((req) => req.url.includes('project=foundation-a')).flush(mockResponse({ isCampaignManager: true, isMarketingAuditor: true }));
