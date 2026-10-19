@@ -67,7 +67,16 @@
                   (answered)="onAnswerQuestions($event)" />
               </div>
             } @else if (phase() === 'result') {
-              <lfx-mktg-framework-view [projectName]="projectName()" [asset]="currentAsset()" [state]="frameworkState()" [version]="assetVersion()" />
+              @if (currentBoilerplatesAsset(); as boilerplates) {
+                <!-- The Boilerplates' own app page: the four lengths with their word counts, then the run's report. -->
+                <lfx-mktg-boilerplates-view [projectName]="projectName()" [asset]="boilerplates" [version]="assetVersion()" />
+              } @else {
+                <lfx-mktg-framework-view
+                  [projectName]="projectName()"
+                  [asset]="currentFrameworkAsset()"
+                  [state]="frameworkState()"
+                  [version]="assetVersion()" />
+              }
             } @else {
               <div data-testid="mktg-agent-run-live">
                 <lfx-mktg-run-activity
@@ -109,14 +118,14 @@
                 </div>
               }
 
-              <!-- Every stored framework is a document with revisions in the Documents area. -->
+              <!-- Every stored asset is a document with revisions in the Documents area. -->
               <!-- What you can do with the framework (hand test, 18 Oct): the kit's outputs, shown but inert until they ship, and a new run from edited inputs. No raw-JSON download: nobody reads it. -->
               <div
                 class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
                 data-testid="mktg-agent-run-new-run">
                 <div class="flex flex-col gap-0.5 min-w-0">
                   <span class="text-sm font-medium text-gray-900">Every revision is kept in Documents.</span>
-                  <span class="text-xs text-gray-500">To change the framework, edit the inputs and generate again; the result is a new revision.</span>
+                  <span class="text-xs text-gray-500" data-testid="mktg-agent-run-change-note">{{ assetChangeNote() }}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                   <lfx-button

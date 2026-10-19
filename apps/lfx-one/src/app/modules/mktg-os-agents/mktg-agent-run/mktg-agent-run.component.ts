@@ -29,6 +29,7 @@ import {
   MktgAgentAccent,
   MktgAgentIntake,
   MktgAttachmentChip,
+  MktgBoilerplatesAsset,
   MktgDependencyDocument,
   MktgDocumentStatusChip,
   MktgGenerateProgress,
@@ -37,6 +38,7 @@ import {
   MktgIntakeDocument,
   MktgIntakeDocumentEntry,
   MktgIntakeField,
+  MktgFrameworkAsset,
   MktgFrameworkViewState,
   MktgIntakeLogoFile,
   MktgIntakeLogoFileEntry,
@@ -47,7 +49,6 @@ import {
   MktgRunAnsweredQuestionRow,
   MktgRunActivity,
   MktgRunAnswerOrigin,
-  MktgRunAsset,
   MktgRunPhase,
   MktgRunQuestionsPending,
   MktgRunVersion,
@@ -69,6 +70,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
+import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
@@ -82,7 +84,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 // or replace, answered on the same run →) document result with versions and a
 // "Request changes" feedback box that regenerates as v+1 through the existing
 // chat/session BFF. An agent whose output is a structured asset (the Messaging
-// Framework, `intake.assetView`) lands on the asset's own view instead: the
+// Framework, the Boilerplates: `intake.assetView`) lands on the asset's own view instead: the
 // feed and the questions on their own while the run is live, then the
 // rendered asset. The Brand Kit, whose revision is a JSON kit, shows the kit
 // laid out as its 16-page book on the result. The page is driven entirely by
@@ -101,6 +103,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     MarkdownRendererComponent,
     MessageComponent,
     BrandKitWebViewComponent,
+    MktgBoilerplatesViewComponent,
     MktgFrameworkViewComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,
@@ -322,8 +325,20 @@ export class MktgAgentRunComponent {
   );
   /** True when the run is shown on the intake's asset view (every phase but the form). */
   protected readonly assetViewActive = computed(() => !!this.intake?.assetView && this.phase() !== 'form');
-  /** The asset of the version on screen, for the asset view. */
-  protected readonly currentAsset: Signal<MktgRunAsset | null> = computed(() => this.currentVersion()?.asset ?? null);
+  /** The Messaging Framework of the version on screen, for the framework view. */
+  protected readonly currentFrameworkAsset: Signal<MktgFrameworkAsset | null> = computed(() => {
+    const asset = this.currentVersion()?.asset;
+    return asset?.kind === 'messaging-framework' ? asset : null;
+  });
+  /** The Boilerplates of the version on screen, for the Boilerplates view. */
+  protected readonly currentBoilerplatesAsset: Signal<MktgBoilerplatesAsset | null> = computed(() => {
+    const asset = this.currentVersion()?.asset;
+    return asset?.kind === 'boilerplates' ? asset : null;
+  });
+  /** How the result's footer says the asset is changed: a new run from edited inputs is a new revision. */
+  protected readonly assetChangeNote = computed(
+    () => `To change the ${(this.intake?.documentName ?? 'document').toLowerCase()}, edit the inputs and generate again; the result is a new revision.`
+  );
   /** Where the asset view stands: generating while the feed shows, questions while the stepper does, ready on the result. */
   protected readonly frameworkState: Signal<MktgFrameworkViewState> = computed(() => {
     const phase = this.phase();

@@ -8,26 +8,44 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
-import { BrandKitRevision, MktgRevisionResponse, MktgRevisionRow, MktgRevisionSummary, MktgRunAsset } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision, foundationMessageAssetOfRevision, readBrandKitRevision } from '@lfx-one/shared/utils';
+import {
+  BrandKitRevision,
+  MktgBoilerplatesAsset,
+  MktgFrameworkAsset,
+  MktgRevisionResponse,
+  MktgRevisionRow,
+  MktgRevisionSummary,
+} from '@lfx-one/shared/interfaces';
+import { boilerplatesAssetOfRevision, describeMktgRevision, foundationMessageAssetOfRevision, readBrandKitRevision } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
+import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
 // the body is the revision's Markdown — or, for a Messaging Framework
-// revision (JSON content), the framework's own view, and for a Brand Kit
+// revision (JSON content), the framework's own view, for a Boilerplates
+// revision (JSON content) the Boilerplates view, and for a Brand Kit
 // revision the kit's web view, rendered from the revision's sidecar — and the
 // Revisions panel opens or restores any other revision. `?revision=` picks
 // the revision; without it the latest is shown. Fetched in the browser only,
 // after hydration.
 @Component({
   selector: 'lfx-mktg-document-view',
-  imports: [DatePipe, NgClass, RouterLink, BrandKitWebViewComponent, MarkdownRendererComponent, MessageComponent, MktgFrameworkViewComponent],
+  imports: [
+    DatePipe,
+    NgClass,
+    RouterLink,
+    BrandKitWebViewComponent,
+    MarkdownRendererComponent,
+    MessageComponent,
+    MktgBoilerplatesViewComponent,
+    MktgFrameworkViewComponent,
+  ],
   templateUrl: './mktg-document-view.component.html',
 })
 export class MktgDocumentViewComponent {
@@ -68,20 +86,33 @@ export class MktgDocumentViewComponent {
    * every Markdown revision — and for a JSON revision that does not parse,
    * which then shows as its raw text rather than nothing.
    */
-  protected readonly asset: Signal<MktgRunAsset | null> = computed(() => {
+  protected readonly asset: Signal<MktgFrameworkAsset | null> = computed(() => {
     const view = this.view();
     if (!view || view.revision.format !== 'json' || view.type.agentKey !== 'foundation-message') {
       return null;
     }
     return foundationMessageAssetOfRevision(view.markdown, view.sidecar);
   });
+  /**
+   * The revision as the Boilerplates, when it is one: a JSON revision of the
+   * boilerplates document whose text parses as the four lengths, with the
+   * report and checks from its sidecar. Null otherwise — a JSON revision
+   * that does not parse shows as its raw text.
+   */
+  protected readonly boilerplates: Signal<MktgBoilerplatesAsset | null> = computed(() => {
+    const view = this.view();
+    if (!view || view.revision.format !== 'json' || view.type.agentKey !== 'boilerplates') {
+      return null;
+    }
+    return boilerplatesAssetOfRevision(view.markdown, view.sidecar);
+  });
   /** The Brand Kit of a brand-kit revision, read from its sidecar; null for every other document, and for a kit stored by the earlier agent as Markdown alone. */
   protected readonly brandKit: Signal<BrandKitRevision | null> = computed(() => {
     const view = this.view();
     return view?.type.agentKey === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
-  /** A framework or a kit takes the page's full width; a Markdown document keeps the reading column. */
-  protected readonly fullWidth = computed(() => this.asset() !== null || this.brandKit() !== null);
+  /** A framework, the boilerplates or a kit takes the page's full width; a Markdown document keeps the reading column. */
+  protected readonly fullWidth = computed(() => this.asset() !== null || this.boilerplates() !== null || this.brandKit() !== null);
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   /** A short word on the revision's standing, beside the asset's version. */

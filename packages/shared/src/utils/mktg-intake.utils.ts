@@ -5,6 +5,7 @@ import { BRAND_KIT_FRAMEWORK_ANSWER_KEY } from '../constants/brand-kit.constants
 import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { MktgAgentIntake, MktgIntakeAttachment } from '../interfaces';
+import { boilerplatesFrameworkContentOf } from './boilerplates.utils';
 import { brandKitFrameworkOfRevision } from './brand-kit.utils';
 
 /**
@@ -28,6 +29,11 @@ export function mktgAgentDocumentName(agentId: string): string {
  * BFF validator applies, so the gate and the submission agree with the
  * server instead of earning a 400 no retry could clear:
  *
+ * - a messaging framework the consuming agent reads whole
+ *   (`frameworkContent`, the Boilerplates) is usable only when the sidecar
+ *   carries the framework's content ({@link boilerplatesFrameworkContentOf}):
+ *   a legacy Messaging Document revision, or one restored without its
+ *   sidecar, is not;
  * - the Brand Kit's messaging framework (`BRAND_KIT_FRAMEWORK_ANSWER_KEY`)
  *   is usable only when a voice can be read from it
  *   ({@link brandKitFrameworkOfRevision}): a revision whose positioning and
@@ -40,6 +46,9 @@ export function mktgAgentDocumentName(agentId: string): string {
 export function mktgJsonAttachmentUsable(attachment: MktgIntakeAttachment, sidecar: Record<string, unknown> | undefined): boolean {
   if (!sidecar) {
     return false;
+  }
+  if (attachment.frameworkContent) {
+    return boilerplatesFrameworkContentOf(sidecar) !== null;
   }
   if (attachment.answerKey === BRAND_KIT_FRAMEWORK_ANSWER_KEY) {
     return brandKitFrameworkOfRevision(sidecar) !== null;

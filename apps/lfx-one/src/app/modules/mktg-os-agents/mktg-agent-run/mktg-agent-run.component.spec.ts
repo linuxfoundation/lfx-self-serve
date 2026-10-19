@@ -1076,6 +1076,164 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('Boilerplates — a short form, the run, the questions, landing on the Boilerplates view', () => {
+    /** The project's latest stored messaging framework revision as the sidecar read rebuilds it: the envelope with the content back under `content`. */
+    const latestFramework: MktgDependencyDocument = {
+      agentId: 'foundation-setup',
+      source: 'server',
+      version: 3,
+      document: '# Project One Messaging framework',
+      storedAt: '2026-10-18T09:00:00.000Z',
+      sidecar: {
+        contract: 'messaging-framework-output/v1',
+        version: 1,
+        content: {
+          mf: { positioning: 'The open service mesh.', tagline: 'Mesh, open.' },
+          icp: [],
+          mh: { umbrella: 'Open mesh', line: 'Mesh, open.' },
+          nums: [],
+        },
+      },
+    };
+    const BOILERPLATES: MktgRunAsset = {
+      kind: 'boilerplates',
+      mode: 'draft',
+      content: {
+        bp: [
+          { l: 'One-liner', max: 15, t: 'Project One is the open service mesh.' },
+          { l: '25 words', max: 25, t: 'Project One, a Linux Foundation project, is the open service mesh.' },
+          { l: '50 words', max: 50, t: 'Project One, a Linux Foundation project, is the open service mesh for platform teams.' },
+          { l: '100 words', max: 100, t: 'Project One, a Linux Foundation project, is the open service mesh. Learn more at one.example.org.' },
+        ],
+      },
+      report: { sources_read: ['https://one.example.org'], sources_failed: [], gaps: ['The launch year is not stated.'], notes: '' },
+      checks: { word_counts: [7, 11, 14, 16], findings: [] },
+    };
+
+    beforeEach(async () => configure('browser', 'boilerplates'));
+
+    it('asks only for the project name, the website and notes — both prefilled from LFX — and spans the full width', async () => {
+      projects = { 'proj-one': { repository_url: '', website_url: 'https://one.example.org', description: '' } };
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(Object.keys(component['intakeForm'].controls)).toEqual(['project_name', 'website_url', 'notes']);
+      expect(component['intakeForm'].controls['project_name'].value).toBe('Project One');
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://one.example.org');
+      expect(fromLfxChip('project_name')).not.toBeNull();
+      expect(fromLfxChip('website_url')).not.toBeNull();
+      expect(query('mktg-agent-run-form-title')?.textContent).toContain('Write the Project One Boilerplates');
+      expect(host().querySelector('[data-test="mktg-intake-messaging_framework"]')).toBeNull();
+      expect(query('mktg-agent-run-page')?.className).toContain('w-full');
+      expect(query('mktg-agent-run-page')?.className).not.toContain('container');
+      // Nothing a user reads names the author of the reference material.
+      expect(host().textContent).not.toMatch(/\bPaul\b/);
+    });
+
+    it('attaches the latest messaging framework, says so with its version, and submits it with the form and the project', async () => {
+      projects = { 'proj-one': { repository_url: '', website_url: 'https://one.example.org', description: '' } };
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], ['foundation-setup']);
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'Uses the latest messaging framework · v3 · 18 Oct'
+      );
+      expect(component['submitDisabled']()).toBe(false);
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      const request = generate.mock.calls[0][0] as MktgGenerateRequest;
+      expect(request.intake).toBe(MKTG_AGENT_INTAKES['boilerplates']);
+      expect(request.projectUid).toBe('proj-1');
+      expect(request.answers).toEqual({
+        project_name: 'Project One',
+        website_url: 'https://one.example.org',
+        messaging_framework: JSON.stringify(latestFramework.sidecar),
+      });
+    });
+
+    it('cannot run without a framework: Run is disabled, the page says to run the framework first and links to it', async () => {
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Run the messaging framework first');
+      const link = query('mktg-agent-run-missing-dependency-link');
+      expect(link?.textContent).toContain('Open the Messaging Framework page');
+      link?.querySelector('button')?.click();
+      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('stops on a latest revision that is not a framework (a legacy Messaging Document), with the link, instead of a run that would fail', async () => {
+      dependencyDocs = {
+        'proj-1:foundation-setup': {
+          ...latestFramework,
+          sidecar: { contract: 'messaging-document-output/v1', fields: { 'md.tagline': { value: 'Mesh, open.', source: 'Site', status: 'approved' } } },
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('could not be read as a framework');
+      expect(query('mktg-agent-run-missing-dependency-link')?.textContent).toContain('Open the Messaging Framework page');
+      expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+    });
+
+    it('shows the live feed alone while the agent works, then lands on the Boilerplates view', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress.asObservable());
+
+      component['onSubmit']();
+      progress.next({ type: 'submitted' });
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-live')).not.toBeNull();
+      expect(query('mktg-boilerplates-view')).toBeNull();
+
+      vi.useFakeTimers();
+      try {
+        progress.next({
+          type: 'document',
+          run: {
+            agentId: 'boilerplates',
+            projectUid: 'proj-1',
+            sessionId: 'sess-bp',
+            ownerToken: 'token-bp',
+            answers: {},
+            versions: [{ version: 1, document: '', asset: BOILERPLATES, createdAt: '2026-10-19T09:00:00.000Z' }],
+            savedAt: '2026-10-19T09:00:00.000Z',
+          },
+        });
+        vi.advanceTimersByTime(600);
+      } finally {
+        vi.useRealTimers();
+      }
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('result');
+      expect(query('mktg-boilerplates-view-title')?.textContent).toContain('Project One Boilerplates');
+      expect(query('mktg-boilerplates-view-version')?.textContent).toContain('v1');
+      expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('Project One is the open service mesh.');
+      expect(query('mktg-boilerplates-view-count-3')?.textContent).toContain('16 / 100 words');
+      expect(query('mktg-framework-view')).toBeNull();
+      expect(query('mktg-agent-run-change-note')?.textContent).toContain('To change the boilerplates, edit the inputs and generate again');
+      expect(query('mktg-agent-run-download-pdf')?.textContent).toContain('Download PDF');
+      expect(query('mktg-agent-run-export-slides')?.textContent).toContain('Export to Google Slides');
+      expect(notifyDocumentsChanged).toHaveBeenCalledWith('proj-1');
+    });
+  });
+
   describe('github_url format rule — an organization URL is a usable answer', () => {
     beforeEach(async () => configure());
 

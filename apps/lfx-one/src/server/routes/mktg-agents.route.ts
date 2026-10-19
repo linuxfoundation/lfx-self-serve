@@ -66,6 +66,15 @@ router.post(
 // POST /api/mktg-agents/foundation-message/answers - answer the session's questions turn (owner-token in body), on the same session
 router.post('/foundation-message/answers', (req, res, next) => mktgAgentsController.foundationMessageAnswers(req, res, next));
 
+// POST /api/mktg-agents/boilerplates/generate - start a Boilerplates draft from the form and the attached messaging framework
+router.post('/boilerplates/generate', (req, res, next) => mktgAgentsController.generateBoilerplates(req, res, next));
+
+// POST /api/mktg-agents/boilerplates/answers - answer the session's questions turn (owner-token in body), on the same session
+router.post('/boilerplates/answers', (req, res, next) => mktgAgentsController.boilerplatesAnswers(req, res, next));
+
+// POST /api/mktg-agents/boilerplates/result - poll a generation session for the validated boilerplates (or the agent's questions)
+router.post('/boilerplates/result', (req, res, next) => mktgAgentsController.boilerplatesResult(req, res, next));
+
 // POST /api/mktg-agents/icp/generate - start a one-shot form-mode ICP & Target Markets generation
 router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIcp(req, res, next));
 

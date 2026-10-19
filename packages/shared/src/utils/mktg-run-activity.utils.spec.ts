@@ -133,6 +133,33 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
       ['checking', 'Checking the document against the template', 'done'],
     ]);
   });
+
+  it('names a Boilerplates run by its own sentences, and a second finalize as the fix', () => {
+    const toolCall = (createdAt: string, name: string): string =>
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: createdAt,
+        body: `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_x","name":"${name}","input":{}}}`,
+      });
+    const boilerplatesRun = [
+      toolCall('2026-10-19T08:00:00Z', 'ask_requester'),
+      JSON.stringify({
+        type: 'agent_notification_message',
+        created_at: '2026-10-19T08:01:00Z',
+        content: { type: 'text', data: 'BOILERPLATES — QUESTIONS (boilerplates-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:02:00Z' }),
+      toolCall('2026-10-19T08:03:00Z', 'finalize_boilerplates'),
+      toolCall('2026-10-19T08:04:00Z', 'finalize_boilerplates'),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:05:00Z' }),
+    ];
+    expect(buildMktgRunActivity(boilerplatesRun).map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['questions', 'Preparing a few questions for you', 'done'],
+      ['writing', 'Writing the boilerplates', 'done'],
+      ['checking', 'Checking the boilerplates against their word limits', 'done'],
+      ['checking', 'Fixing what the check found', 'done'],
+    ]);
+  });
 });
 
 describe('mktgRunActivityReadingLabel', () => {

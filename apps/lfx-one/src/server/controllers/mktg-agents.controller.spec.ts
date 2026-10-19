@@ -16,6 +16,11 @@ const brandKitMocks = vi.hoisted(() => ({
   startGeneration: vi.fn(),
   sendAnswers: vi.fn(),
 }));
+const boilerplatesMocks = vi.hoisted(() => ({
+  getResult: vi.fn(),
+  startGeneration: vi.fn(),
+  sendAnswers: vi.fn(),
+}));
 const icpMocks = vi.hoisted(() => ({
   startGeneration: vi.fn(),
   getResult: vi.fn(),
@@ -54,14 +59,16 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const brandKit = await vi.importActual('../../../../../packages/shared/src/constants/brand-kit.constants');
   const artifact = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
-  return { ...agents, ...brandKit, ...artifact, ...foundationMessage };
+  const boilerplates = await vi.importActual('../../../../../packages/shared/src/constants/boilerplates.constants');
+  return { ...agents, ...brandKit, ...artifact, ...foundationMessage, ...boilerplates };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
-  // The Messaging Framework's and the Brand Kit's request validators and form builders run for real (pure, Angular-free); the rest are mocked.
+  // The Messaging Framework's, the Brand Kit's and the Boilerplates' request validators and form builders run for real (pure, Angular-free); the rest are mocked.
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/utils/foundation-message.utils');
   const brandKit = await vi.importActual('../../../../../packages/shared/src/utils/brand-kit.utils');
-  return { ...(foundationMessage as object), ...(brandKit as object), ...validatorMocks };
+  const boilerplates = await vi.importActual('../../../../../packages/shared/src/utils/boilerplates.utils');
+  return { ...(foundationMessage as object), ...(brandKit as object), ...(boilerplates as object), ...validatorMocks };
 });
 vi.mock('../services/mktg-source-text.service', () => ({
   MktgSourceTextService: class {
@@ -77,6 +84,13 @@ vi.mock('../services/brand-kit.service', () => ({
     public getResult = brandKitMocks.getResult;
     public startGeneration = brandKitMocks.startGeneration;
     public sendAnswers = brandKitMocks.sendAnswers;
+  },
+}));
+vi.mock('../services/boilerplates.service', () => ({
+  BoilerplatesService: class {
+    public getResult = boilerplatesMocks.getResult;
+    public startGeneration = boilerplatesMocks.startGeneration;
+    public sendAnswers = boilerplatesMocks.sendAnswers;
   },
 }));
 vi.mock('../services/foundation-message.service', () => ({
@@ -915,6 +929,137 @@ describe('MktgAgentsController', () => {
 
       expect(next).toHaveBeenCalledWith(failure);
       expect(foundationMessageMocks.getStoredFoundationMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('generateBoilerplates (POST /api/mktg-agents/boilerplates/generate)', () => {
+    /** The messaging framework as the run page attaches it: the latest stored revision's sidecar (the envelope, content back under `content`), serialized. */
+    const FRAMEWORK = JSON.stringify({
+      contract: 'messaging-framework-output/v1',
+      content: {
+        mf: { positioning: 'The open release toolkit.', tagline: 'Release, open.' },
+        icp: [],
+        mh: { umbrella: 'Open releases', line: 'Release, open.' },
+        nums: [],
+      },
+    });
+    const boilerplatesAnswers = (): Record<string, string> => ({
+      project_name: ' TestOrbit ',
+      website_url: 'https://testorbit.example.org',
+      notes: '  ',
+      messaging_framework: FRAMEWORK,
+    });
+    const path = '/api/mktg-agents/boilerplates/generate';
+
+    it('routes with the catalog handle, passes the trimmed answers and the project uid, and mints an owner token', async () => {
+      boilerplatesMocks.startGeneration.mockResolvedValue('sess-bp');
+      tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
+      const req = buildIcpReq(path, { answers: boilerplatesAnswers(), project: 'proj-uid-1' });
+      const res = buildRes();
+
+      await controller.generateBoilerplates(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      // Blank optionals are dropped so the renderer takes its "none" branch.
+      expect(boilerplatesMocks.startGeneration).toHaveBeenCalledWith(
+        req,
+        { project_name: 'TestOrbit', website_url: 'https://testorbit.example.org', messaging_framework: FRAMEWORK },
+        'proj-uid-1',
+        'boilerplates'
+      );
+      expect(res.json).toHaveBeenCalledWith({ sessionId: 'sess-bp', ownerToken: 'owner-token' });
+    });
+
+    it('refuses a form without the messaging framework, one whose framework is not one, feedback, documents and a malformed project', async () => {
+      const withoutFramework: Record<string, string> = boilerplatesAnswers();
+      delete withoutFramework['messaging_framework'];
+      await controller.generateBoilerplates(buildIcpReq(path, { answers: withoutFramework }), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect((next.mock.calls[0][0] as ServiceValidationError).validationErrors[0].message).toContain('a messaging framework first');
+
+      for (const body of [
+        // A legacy Messaging Document sidecar carries a voice, not the framework the boilerplates are written from.
+        { answers: { ...boilerplatesAnswers(), messaging_framework: '{"contract":"messaging-document-output/v1","fields":{}}' } },
+        { answers: boilerplatesAnswers(), feedback: 'Shorter' },
+        { answers: boilerplatesAnswers(), documents: [{ kind: 'link', title: 'Deck', url: 'https://x.example.org' }] },
+        { answers: boilerplatesAnswers(), project: '../other' },
+      ]) {
+        next.mockClear();
+        await controller.generateBoilerplates(buildIcpReq(path, body), buildRes(), next);
+        expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      }
+      expect(boilerplatesMocks.startGeneration).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('boilerplatesAnswers (POST /api/mktg-agents/boilerplates/answers)', () => {
+    const path = '/api/mktg-agents/boilerplates/answers';
+
+    it('sends the trimmed answers on the same session, routed by the catalog handle', async () => {
+      boilerplatesMocks.sendAnswers.mockResolvedValue(undefined);
+      const req = buildIcpReq(path, {
+        sessionId: 'sess-bp',
+        ownerToken: 'token-1',
+        answers: [{ key: 'domain', text: ' testorbit.example.org ', origin: 'edited' }],
+      });
+      const res = buildRes();
+
+      await controller.boilerplatesAnswers(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(boilerplatesMocks.sendAnswers).toHaveBeenCalledWith(
+        req,
+        'sess-bp',
+        [{ key: 'domain', text: 'testorbit.example.org', origin: 'edited' }],
+        'boilerplates'
+      );
+      expect(res.json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('refuses a skipped answer, and never posts when the owner token does not verify', async () => {
+      await controller.boilerplatesAnswers(
+        buildIcpReq(path, { sessionId: 'sess-bp', ownerToken: 'token-1', answers: [{ key: 'domain', text: 'skip', origin: 'requester' }] }),
+        buildRes(),
+        next
+      );
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+
+      next.mockClear();
+      tokenMocks.verifySessionOwnerToken.mockReturnValueOnce(false);
+      await controller.boilerplatesAnswers(
+        buildIcpReq(path, { sessionId: 'sess-bp', ownerToken: 'nope', answers: [{ key: 'domain', text: 'testorbit.example.org', origin: 'requester' }] }),
+        buildRes(),
+        next
+      );
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(boilerplatesMocks.sendAnswers).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('boilerplatesResult (POST /api/mktg-agents/boilerplates/result)', () => {
+    const path = '/api/mktg-agents/boilerplates/result';
+
+    it('passes the run’s project scope to the service so the write is entitlement-checked and partitioned', async () => {
+      boilerplatesMocks.getResult.mockResolvedValue({ status: 'pending' });
+      const req = buildIcpReq(path, { sessionId: 'sess-bp', ownerToken: 'token-1', project: ' proj-uid-1 ' });
+      const res = buildRes();
+
+      await controller.boilerplatesResult(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(boilerplatesMocks.getResult).toHaveBeenCalledWith(req, 'sess-bp', 'proj-uid-1');
+      expect(res.json).toHaveBeenCalledWith({ status: 'pending' });
+    });
+
+    it('never reaches the service without a session or when the owner token does not verify', async () => {
+      await controller.boilerplatesResult(buildIcpReq(path, { ownerToken: 'token-1' }), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+
+      next.mockClear();
+      tokenMocks.verifySessionOwnerToken.mockReturnValueOnce(false);
+      await controller.boilerplatesResult(buildIcpReq(path, { sessionId: 'sess-bp', ownerToken: 'nope' }), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(boilerplatesMocks.getResult).not.toHaveBeenCalled();
     });
   });
 });

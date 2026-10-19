@@ -96,6 +96,15 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     itemLabel: intakeDocumentName('icp'),
     legacyArtifactKey: 'icp',
   },
+  // Stored as JSON revisions from its first run: there is no pre-revision copy to read.
+  {
+    agentKey: 'boilerplates',
+    kind: 'living',
+    catalogAgentId: 'boilerplates',
+    agentName: catalogAgentName('boilerplates'),
+    label: intakeDocumentName('boilerplates'),
+    itemLabel: intakeDocumentName('boilerplates'),
+  },
   {
     agentKey: 'aeo-geo',
     kind: 'run',
