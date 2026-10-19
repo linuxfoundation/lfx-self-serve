@@ -151,4 +151,17 @@ describe('NavTooltipDirective', () => {
 
     expect(Number(tooltips()[0].style.zIndex)).toBeGreaterThan(0);
   });
+
+  it('keeps an interactive card open while one of its chips has focus, whatever the pointer does', () => {
+    host.items.set([{ key: 'k8s', label: 'Kubernetes' }]);
+    TestBed.tick();
+    first.click();
+    document.body.querySelector<HTMLElement>('[data-testid="nav-tooltip-chip-k8s"]')?.focus();
+
+    first.dispatchEvent(new MouseEvent('mouseleave'));
+    tooltips()[0].dispatchEvent(new MouseEvent('mouseleave'));
+    vi.advanceTimersByTime(NAV_TOOLTIP_HIDE_DELAY_MS * 2);
+
+    expect(tooltips()).toHaveLength(1);
+  });
 });

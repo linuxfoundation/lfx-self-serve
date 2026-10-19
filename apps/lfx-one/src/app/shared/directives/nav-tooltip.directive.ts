@@ -126,6 +126,9 @@ export class NavTooltipDirective {
       return;
     }
     this.cancelHide();
+    // Keyboard users who moved into the chips keep the card while focus is inside it; the pointer
+    // wandering off must not pull a focused chip out from under them (focusout / Escape close it).
+    if (this.tooltip?.contains(this.document.activeElement)) return;
     this.hideTimer = setTimeout(() => this.hide(), NAV_TOOLTIP_HIDE_DELAY_MS);
   }
 
