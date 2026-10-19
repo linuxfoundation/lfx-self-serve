@@ -1250,6 +1250,61 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).not.toBeNull();
     });
 
+    describe('opened from the remove-yourself link in an email or calendar event', () => {
+      // The link opens the page with `?action=leave`; the confirmation is handled before the fixture settles,
+      // so the dialog is taken over at the prototype instead of on the component's own service.
+      const confirmSpy = () =>
+        vi.spyOn(ConfirmationService.prototype, 'confirm').mockImplementation(function (this: ConfirmationService, options) {
+          options.accept?.();
+          return this;
+        });
+
+      afterEach(() => vi.restoreAllMocks());
+
+      it('asks the signed-in invitee to confirm, then removes them with the email-link source and drops the param', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = confirmSpy();
+
+        await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(removeMyMeetingRegistration).toHaveBeenCalledWith(MEETING_ID, 'email-link');
+        expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { action: null }, replaceUrl: true }));
+      });
+
+      it('does not remove anyone before the confirmation is accepted', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = vi.spyOn(ConfirmationService.prototype, 'confirm').mockImplementation(function (this: ConfirmationService) {
+          return this;
+        });
+
+        await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+      });
+
+      it('tells a viewer who is not registered, without offering to remove them', async () => {
+        queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+        const confirm = confirmSpy();
+
+        await createFixture(buildMeeting({ organizer: false, invited: false }));
+
+        expect(confirm).not.toHaveBeenCalled();
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: 'Not registered' }));
+      });
+
+      it('does nothing without the action param', async () => {
+        const confirm = confirmSpy();
+
+        await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        expect(confirm).not.toHaveBeenCalled();
+        expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+      });
+    });
+
     it('keeps the action and shows the BFF message when it rejected the request itself', async () => {
       removeMyMeetingRegistration.mockReturnValue(
         throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'The registration could not be removed.' } }))

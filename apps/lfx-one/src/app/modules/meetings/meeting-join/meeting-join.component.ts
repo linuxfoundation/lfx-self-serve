@@ -57,6 +57,7 @@ import {
   MeetingRescheduleOccurrenceResult,
   getMeetingSeriesUid,
   MeetingRegistrant,
+  MeetingRemovalSource,
   MeetingRsvp,
   OccurrenceNavItem,
   resolveOccurrenceRecurrence,
@@ -277,6 +278,8 @@ export class MeetingJoinComponent implements OnInit {
   // Set immediately on self-registration success so the UI responds before the meeting refetch
   // settles the invited flag (query-service indexing lag).
   private optimisticInvited = signal(false);
+  // Where a removal came from: the page itself, or the link in an invite email or calendar event.
+  private leaveSource = signal<MeetingRemovalSource>('meeting-join');
   // True once the user has removed themselves from the meeting on screen, so the UI responds before the meeting
   // refetch settles the invited flag (same query-service indexing lag, in the other direction). Keyed by meeting
   // id in the service, so a page that stays mounted across meetings never carries one meeting's removal to another.
@@ -530,6 +533,7 @@ export class MeetingJoinComponent implements OnInit {
     this.registrants = this.initializeRegistrants();
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
+    this.initializeLeaveFromLink();
     this.initializePublicMeetingPageviewTracking();
 
     // Runs after first render so the SSR skeleton hydrates before swapping to the timezone tag.
@@ -768,6 +772,7 @@ export class MeetingJoinComponent implements OnInit {
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => this.leaveMeeting(),
+      reject: () => this.leaveSource.set('meeting-join'),
     });
   }
 
@@ -1769,16 +1774,54 @@ export class MeetingJoinComponent implements OnInit {
     );
   }
 
+  /**
+   * Handles the "remove yourself" link in invite emails and calendar events (`?action=leave`).
+   * A signed-out visitor goes through login and comes back to the same link; a signed-in one gets the
+   * usual removal confirmation once the meeting has loaded. Removal itself never runs from the link,
+   * only from the confirmation, so a prefetched or forwarded link changes nothing.
+   */
+  private initializeLeaveFromLink(): void {
+    if (!isPlatformBrowser(this.platformId) || this.activatedRoute.snapshot.queryParamMap.get('action') !== 'leave') {
+      return;
+    }
+
+    if (!this.authenticated()) {
+      window.location.href = `/login?returnTo=${encodeURIComponent(this.router.url)}`;
+      return;
+    }
+
+    combineLatest([toObservable(this.meeting), toObservable(this.meetingMatchesRoute)])
+      .pipe(
+        filter(([meeting, matchesRoute]) => matchesRoute && !!meeting?.id),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        // Drop the param so a refresh or a later visit doesn't ask again.
+        this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
+
+        if (!this.canLeaveMeeting()) {
+          this.messageService.add({ severity: 'info', summary: 'Not registered', detail: 'You are not registered for this meeting.' });
+          return;
+        }
+        this.leaveSource.set('email-link');
+        this.confirmLeaveMeeting();
+      });
+  }
+
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
     const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
     this.leavingMeeting.set(true);
 
     this.meetingService
-      .removeMyMeetingRegistration(meetingId, 'meeting-join')
+      .removeMyMeetingRegistration(meetingId, this.leaveSource())
       .pipe(
         take(1),
-        finalize(() => this.leavingMeeting.set(false))
+        finalize(() => {
+          this.leavingMeeting.set(false);
+          this.leaveSource.set('meeting-join');
+        })
       )
       .subscribe({
         next: (result) => {
