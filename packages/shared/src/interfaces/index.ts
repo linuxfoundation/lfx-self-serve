@@ -427,3 +427,6 @@ export * from './insights-tokens.interface';
 
 // Server log scrubber walk state
 export * from './log-scrub.interface';
+
+// App navbar (sidebar v2)
+export * from './navbar.interface';

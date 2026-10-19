@@ -6,8 +6,7 @@ import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, model, signal } from '@angul
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
-import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
-import { SidebarComponent } from '@components/sidebar/sidebar.component';
+import { NavbarComponent } from '@components/navbar/navbar.component';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
 import { isProfileHubPath } from '@lfx-one/shared/utils';
@@ -22,7 +21,7 @@ import { distinctUntilChanged, filter, map } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ImpersonationBannerComponent],
+  imports: [NgClass, RouterModule, NavbarComponent, DrawerModule, ImpersonationBannerComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],

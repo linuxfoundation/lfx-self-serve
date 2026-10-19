@@ -4,6 +4,10 @@
 /* Google Fonts are linked from index.html (preconnect + stylesheet) so they start
    in parallel with this file instead of waiting on a CSS @import (GH-2290). */
 
+/* Navbar v2 — global because its body-level popovers/tooltips and the selectors' navbar variant sit
+   outside the component's view; see the note in the partial. */
+@use 'styles/navbar';
+
 @layer tailwind-base, primeng, tailwind-utilities;
 
 /* The Brand Kit book is the kit's PRINT rendering: on screen the kit is its web
@@ -526,4 +530,19 @@ html {
 // content falls outside the component's view encapsulation, so the shared class must live globally.
 .toast-action {
   @apply mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline;
+}
+
+// Brand marks used where a menu expects an icon class (e.g. SidebarMenuItem.icon). The SVG is a CSS
+// mask filled with `currentColor`, so it inherits the menu icon colour (default / hover / active)
+// exactly like a Font Awesome glyph, and sizes from font-size like one. The Akrites mark's viewBox is
+// cropped to its shape (83×71); it sits a touch under 1em tall because a solid mark reads heavier
+// than the light-weight outline glyphs beside it.
+.lfx-icon-akrites {
+  display: inline-block;
+  width: 1.11em;
+  height: 0.95em;
+  vertical-align: -0.1em;
+  background-color: currentColor;
+  -webkit-mask: url('/images/icons/akrites.svg') center / contain no-repeat;
+  mask: url('/images/icons/akrites.svg') center / contain no-repeat;
 }

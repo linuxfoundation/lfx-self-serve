@@ -36,6 +36,12 @@ export interface EnrichedPersonaProject {
   projectName: string | null;
   parentProjectUid: string | null;
   isFoundation: boolean;
+  /**
+   * True once enrichment merged this project's record, so `isFoundation` reflects its real tier.
+   * Absent on raw detection and on entries the metadata batch missed, where `isFoundation` is just
+   * the detection default (`false`) and must not be read as "not a foundation".
+   */
+  tierResolved?: boolean;
   logoUrl: string | null;
   description: string | null;
   detections: PersonaDetection[];
@@ -95,6 +101,18 @@ export interface PersonaApiResponse extends PersonaDetections {
    * Kept so the frontend contract is unchanged.
    */
   isCampaignManagerRootGrant: boolean;
+  /**
+   * True when either marketing grant is unverified ({@link marketingAuditorUnverified} /
+   * {@link campaignManagerUnverified}): a marketing grant check behind {@link isMarketingAuditor} / {@link isCampaignManager}
+   * (ROOT or project-scoped, including its slug lookup) failed upstream instead of answering. Those
+   * booleans still fail closed to `false`; this tells the client the `false` means "couldn't check",
+   * not "denied", so it can offer a retry. Absent on responses that never ran the checks.
+   */
+  marketingGrantCheckFailed?: boolean;
+  /** {@link isMarketingAuditor} is `false` only because its check failed upstream: unverified, not denied. */
+  marketingAuditorUnverified?: boolean;
+  /** {@link isCampaignManager} is `false` only because its check failed upstream: unverified, not denied. */
+  campaignManagerUnverified?: boolean;
 }
 
 export interface SsrPersonaResult {

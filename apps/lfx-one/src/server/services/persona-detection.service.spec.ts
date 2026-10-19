@@ -12,10 +12,14 @@ const { checkSingleAccess, checkAccess, getProjectIdBySlug, natsRequest, logger 
   logger: { warning: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), success: vi.fn(), startOperation: vi.fn(() => 0) },
 }));
 
+// The strict variants answer from the same stubs (a stub that rejects stands in for an upstream
+// failure), so tests read the same either way; only the service's handling of a rejection differs.
 vi.mock('./access-check.service', () => ({
   AccessCheckService: vi.fn().mockImplementation(() => ({
     checkSingleAccess,
     checkAccess,
+    checkSingleAccessStrict: (...args: unknown[]) => checkSingleAccess(...args),
+    checkAccessStrict: (...args: unknown[]) => checkAccess(...args),
   })),
 }));
 
@@ -305,6 +309,100 @@ describe('PersonaDetectionService', () => {
 
       expect(response.isCampaignManager).toBe(false);
       expect(logger.warning).toHaveBeenCalled();
+    });
+
+    it('reports a failed project grant check as unverified, not as a denial', async () => {
+      personaEnv();
+      checkSingleAccess.mockImplementation((_req: Request, args: { access: string }) =>
+        args.access === 'campaign_manager' ? Promise.reject(new Error('fga unavailable')) : Promise.resolve(false)
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas(req, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    it('reports a slug lookup that times out as unverified, asking the lookup not to read it as a missing project', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(false);
+      getProjectIdBySlug.mockRejectedValue(new Error('timeout'));
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'campaign_manager');
+
+      expect(getProjectIdBySlug).toHaveBeenCalledWith(expect.anything(), 'some-project', { unavailableAsMissing: false });
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    // Persona detection answers; only the ROOT slug -> uid lookup times out.
+    function rootLookupTimesOut(): void {
+      natsRequest.mockImplementation((subject: string) => {
+        if (subject.includes('personas')) {
+          return Promise.resolve({ data: JSON.stringify({ projects: [] }) });
+        }
+        return Promise.reject(new Error('timeout'));
+      });
+    }
+
+    it('reports a ROOT lookup timeout on the campaign path (global_marketing_ops) as unverified', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(true);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+      expect(checkAccess).not.toHaveBeenCalled();
+    });
+
+    it('treats a verified project grant as verified even when the ROOT check for the same relation failed', async () => {
+      natsRequest.mockImplementation((subject: string) => {
+        if (subject.includes('personas')) {
+          return Promise.resolve({ data: JSON.stringify({ projects: [] }) });
+        }
+        return Promise.reject(new Error('timeout'));
+      });
+      checkSingleAccess.mockImplementation((_req: Request, args: { id: string; access: string }) =>
+        Promise.resolve(args.id === 'uid-project' && args.access === 'marketing_auditor')
+      );
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'marketing_auditor');
+
+      expect(response.isMarketingAuditor).toBe(true);
+      expect(response.marketingGrantCheckFailed).toBe(false);
+    });
+
+    it('reports a ROOT lookup timeout on the marketing-auditor path as unverified', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(true);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'marketing_auditor');
+
+      expect(response.isMarketingAuditor).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(true);
+    });
+
+    it('does not count a failed ROOT lookup for a non-marketing check (auditor_guard) as a marketing failure', async () => {
+      rootLookupTimesOut();
+      checkSingleAccess.mockResolvedValue(false);
+
+      const response = await service.getPersonas({} as unknown as Request, undefined, 'none');
+
+      expect(response.isAuditor).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(false);
+    });
+
+    it('reports a plain denial as verified', async () => {
+      personaEnv();
+      checkSingleAccess.mockResolvedValue(false);
+      getProjectIdBySlug.mockResolvedValue({ uid: 'uid-project', slug: 'some-project', exists: true });
+
+      const response = await service.getPersonas({} as unknown as Request, 'some-project', 'campaign_manager');
+
+      expect(response.isCampaignManager).toBe(false);
+      expect(response.marketingGrantCheckFailed).toBe(false);
     });
   });
 

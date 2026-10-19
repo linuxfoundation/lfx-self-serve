@@ -97,7 +97,7 @@ function buildProjectStub(slug: string, writer: boolean) {
 }
 
 // ─── Sidebar testIds ───────────────────────────────────────────────────────────
-// Auto-generated pattern (sidebar.component.ts:91):
+// Auto-generated pattern (nav-menu-base.directive.ts `decorate`):
 //   testId = item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`
 // Explicit testIds defined in main-layout.component.ts are noted with (explicit).
 

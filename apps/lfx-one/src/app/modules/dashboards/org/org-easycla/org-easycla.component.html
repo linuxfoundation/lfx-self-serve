@@ -123,7 +123,7 @@
       <section class="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="org-easycla-grid">
         @for (claGroup of pagedClaGroups(); track claGroup.id) {
           <!--
-            Stretched link, matching the me-selector in sidebar.component.html: the anchor
+            Stretched link, as the former sidebar's me-selector used: the anchor
             overlays the card as a SIBLING rather than wrapping it.
 
             The card sits above the anchor but with pointer events off, so clicks fall through to

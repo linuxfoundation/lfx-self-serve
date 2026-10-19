@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Signal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   AKRITES_ENABLED_FLAG,
@@ -25,7 +25,7 @@ import {
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
-import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { PersonaApiResponse, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
@@ -38,7 +38,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
-import { map, of, startWith, switchMap } from 'rxjs';
+import { finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
 /**
  * Builds the lens-aware sidebar menu items. Extracted from MainLayoutComponent so both the main
@@ -122,6 +122,71 @@ export class SidebarNavService {
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
+
+  /** In flight while the foundation-lens auditor/root-writer probe (`foundationAuditorBootstrap`) runs. */
+  private readonly foundationAuditorProbePending = signal(false);
+  /**
+   * Scopes whose latest marketing probe failed rather than answered, tracked apart from the root
+   * lookup. Keyed by slug so a late result (a retry outliving a context switch) only touches its own
+   * scope, never the one now selected.
+   */
+  private readonly marketingProbeFailedSlugs = signal<ReadonlySet<string>>(new Set());
+  /**
+   * Latest marketing probe started per scope (automatic or retry). An outcome only lands while its probe
+   * is still the latest for its scope, so an older retry finishing late can't overwrite a newer result
+   * for the same scope (A → B → A while A's retry is still running).
+   */
+  private readonly marketingProbeGenerations = new Map<string, number>();
+  /**
+   * `retryMenuLookups()` runs still in flight, by the menu scope (lens + selected foundation / project)
+   * each started on → that run's id. Only a run's own finalizer clears its entry, so runs for several
+   * scopes can overlap and an older run settling late can't end a newer one.
+   */
+  private readonly activeRetries = signal<ReadonlyMap<string, number>>(new Map());
+  private retryRunId = 0;
+  /**
+   * True while a `retryMenuLookups()` run started on the scope still on screen is in flight, so its error
+   * card can stay up with a busy Retry. Scoped: after a context switch the new scope's menu is neither held
+   * pending by nor blocked from retrying behind a retry it didn't start.
+   */
+  public readonly menuRetryPending: Signal<boolean> = computed(() => this.activeRetries().has(this.menuScopeKey()));
+
+  /**
+   * True when a lookup that shapes the menu failed instead of answering — an empty menu then means
+   * "couldn't check", not "no access". Retry with `retryMenuLookups()`.
+   */
+  public readonly menuLookupFailed: Signal<boolean> = computed(
+    () =>
+      this.personaService.personaLookupFailed() ||
+      this.marketingProbeFailedSlugs().has(this.marketingScopeSlug()) ||
+      // A foundation writer grant can be what unlocks the foundation menu (see sidebarItemsPending).
+      (this.activeLens() === 'foundation' && this.writerGrantsService.lookupFailed())
+  );
+
+  /**
+   * True while `sidebarItems` is empty only because what decides its shape is still loading — the
+   * persona detection, the scoped marketing-grant probe, the writer-grant summary and auditor probe
+   * (foundation lens), or (formation flag on) the active project's stage. Consumers that read an
+   * empty list as "no access" must wait for this to clear.
+   */
+  public readonly sidebarItemsPending = computed((): boolean => {
+    if (!this.personaService.personaLoaded()) return true;
+    if (this.menuRetryPending()) return true;
+    // A scoped marketing grant can be the only thing that fills the menu; wait for its probe too.
+    if (this.marketingPersonaSlug() !== this.marketingScopeSlug()) return true;
+    // A foundation writer grant can be what unlocks the foundation menu: wait for the fast path only.
+    // The idle-deferred sweep (inherited access) is too slow to hold the menu for; if it widens later,
+    // the menu simply fills in.
+    if (this.activeLens() === 'foundation' && !this.writerGrantsService.summaryResolved()) return true;
+    // The auditor / root-writer probe can surface the Formations item on its own.
+    if (this.activeLens() === 'foundation' && this.foundationAuditorProbePending()) return true;
+    return (
+      this.activeLens() === 'project' &&
+      this.isFormationEnabled() &&
+      !this.formationOverviewAllowed() &&
+      !this.projectContextService.activeProjectStageResolved()
+    );
+  });
 
   // Lens-aware sidebar items
   public readonly sidebarItems = computed((): SidebarMenuItem[] => {
@@ -246,7 +311,7 @@ export class SidebarNavService {
         },
         {
           label: 'My ' + COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
+          icon: 'fa-light fa-users-between-lines',
           routerLink: '/groups',
         },
         {
@@ -281,7 +346,7 @@ export class SidebarNavService {
       items: [
         {
           label: 'Akrites Program',
-          icon: 'fa-light fa-shield-halved',
+          icon: 'lfx-icon-akrites',
           routerLink: '/akrites',
         },
       ],
@@ -327,17 +392,17 @@ export class SidebarNavService {
       items: [
         {
           label: 'Mentee',
-          icon: 'fa-solid fa-user-graduate',
+          icon: 'fa-light fa-user-graduate',
           routerLink: '/mentorship/mentee',
         },
         {
           label: 'Mentor',
-          icon: 'fa-solid fa-user-tie',
+          icon: 'fa-light fa-user-tie',
           routerLink: '/mentorship/mentor',
         },
         {
           label: 'Admin',
-          icon: 'fa-solid fa-shield-halved',
+          icon: 'fa-light fa-shield-halved',
           routerLink: '/mentorship/admin',
         },
       ],
@@ -383,7 +448,7 @@ export class SidebarNavService {
   // this same slug to look up grantsByScope for the active scope.
   // For project-lens-only marketing users, `selectedFoundation` is never populated because
   // foundation rows that the sidebar shows under the project lens are stored in `selectedProject`
-  // (sidebar.component.ts:188-200). Fall back to selectedProject so the scoped probe fires as soon
+  // (NavMenuBase.onItemSelected). Fall back to selectedProject so the scoped probe fires as soon
   // as they pick any context, bootstrapping their first-session foundation grant.
   // Always re-probes on a selectedProject change — a scope switch from a confirmed project A to an
   // unprobed project B must not leave the sidebar showing A's (possibly no-longer-relevant) grant for
@@ -393,24 +458,29 @@ export class SidebarNavService {
   // which marketingSectionItem no longer reads as its primary source. grantsByScope resolves each
   // relation to its own scope key (writeGrantForScope), so a denial for project B is written under
   // B's own key and cannot overwrite project A's already-confirmed entry.
+  /** The scope the marketing probe should cover; `marketingPersonaSlug` catches up once its fetch resolves. */
+  private readonly marketingScopeSlug: Signal<string> = computed(() => {
+    if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
+      return '';
+    }
+    const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
+    if (foundationSlug) {
+      return foundationSlug;
+    }
+    return this.projectContextService.selectedProject()?.slug ?? '';
+  });
+
   private readonly marketingPersonaSlug: Signal<string> = toSignal(
-    toObservable(
-      computed(() => {
-        if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
-          return '';
-        }
-        const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
-        if (foundationSlug) {
-          return foundationSlug;
-        }
-        return this.projectContextService.selectedProject()?.slug ?? '';
-      })
-    ).pipe(
+    toObservable(this.marketingScopeSlug).pipe(
       switchMap((slug) => {
         if (!slug) {
           return of('');
         }
-        return this.personaService.refreshEnrichedPersonas(false, slug).pipe(map(() => slug));
+        const generation = this.startMarketingProbe(slug);
+        return this.personaService.refreshEnrichedPersonas(false, slug).pipe(
+          tap((response) => this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(response))),
+          map(() => slug)
+        );
       })
     ),
     { initialValue: '' }
@@ -425,7 +495,12 @@ export class SidebarNavService {
    */
   private readonly foundationAuditorBootstrap: Signal<unknown> = toSignal(
     toObservable(computed(() => this.userService.authenticated() && this.activeLens() === 'foundation')).pipe(
-      switchMap((shouldProbe) => (shouldProbe ? this.personaService.refreshEnrichedPersonas() : of(null)))
+      switchMap((shouldProbe) => {
+        if (!shouldProbe) return of(null);
+        this.foundationAuditorProbePending.set(true);
+        // Settles whichever way the probe ends (or is switched away), so a failure never pins "pending".
+        return this.personaService.refreshEnrichedPersonas().pipe(finalize(() => this.foundationAuditorProbePending.set(false)));
+      })
     ),
     { initialValue: null }
   );
@@ -459,7 +534,7 @@ export class SidebarNavService {
       if (this.foundationHasProjects()) {
         items.push({
           label: 'Projects',
-          icon: 'fa-light fa-diagram-project',
+          icon: 'fa-light fa-folders',
           routerLink: '/foundation/projects',
           testId: 'sidebar-foundation-projects',
         });
@@ -490,7 +565,7 @@ export class SidebarNavService {
         },
         {
           label: COMMITTEE_LABEL.plural,
-          icon: 'fa-light fa-users-rectangle',
+          icon: 'fa-light fa-users-between-lines',
           routerLink: '/foundation/groups',
         },
         {
@@ -564,7 +639,7 @@ export class SidebarNavService {
           },
           {
             label: 'Social Listening',
-            icon: 'fa-light fa-ear-listen',
+            icon: 'fa-light fa-radar',
             routerLink: '/foundation/social-listening',
             testId: 'sidebar-metrics-social-listening',
           },
@@ -619,13 +694,22 @@ export class SidebarNavService {
   private readonly marketingSectionItem = computed((): SidebarMenuItem | null => {
     const slug = this.marketingPersonaSlug();
     const marketingItems: SidebarMenuItem[] = [];
+    // While the probe for the scope on screen is still in flight, `slug` names the previous scope, whose
+    // own grant must not show under the new one. What still counts: a ROOT grant (it covers every scope)
+    // and a grant already confirmed for the scope on screen on an earlier visit (A → B → A).
+    const hasCurrentScopeGrant = (relation: 'isMarketingAuditor' | 'isCampaignManager'): boolean => {
+      if (!this.isMarketingOpsFgaEnabled()) return false;
+      const scopeOnScreen = this.marketingScopeSlug();
+      if (slug === scopeOnScreen) return this.hasMarketingGrant(slug, relation);
+      const grants = this.personaService.grantsByScope();
+      return !!(grants.get(null)?.[relation] || (scopeOnScreen && grants.get(scopeOnScreen)?.[relation]));
+    };
 
-    const canSeeMarketingImpact =
-      this.personaService.canViewExecutiveDashboards() || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isMarketingAuditor'));
+    const canSeeMarketingImpact = this.personaService.canViewExecutiveDashboards() || hasCurrentScopeGrant('isMarketingAuditor');
     if (canSeeMarketingImpact) {
       marketingItems.push({
         label: 'Campaign Impact',
-        icon: 'fa-light fa-bullhorn',
+        icon: 'fa-light fa-bullseye-pointer',
         routerLink: '/foundation/marketing-impact',
         testId: 'sidebar-marketing-impact',
       });
@@ -634,8 +718,7 @@ export class SidebarNavService {
     // Campaigns needs ED, or — while marketing-ops-fga-enabled is on — a campaign_manager grant.
     // A campaign_manager-only user (no ED, no marketing_auditor, not LF Staff) must still see this
     // item, so it cannot be nested inside the Campaign Impact check above.
-    const canSeeCampaigns =
-      this.personaService.currentPersona() === 'executive-director' || (this.isMarketingOpsFgaEnabled() && this.hasMarketingGrant(slug, 'isCampaignManager'));
+    const canSeeCampaigns = this.personaService.currentPersona() === 'executive-director' || hasCurrentScopeGrant('isCampaignManager');
     if (canSeeCampaigns) {
       marketingItems.push({
         label: 'Campaigns',
@@ -672,7 +755,7 @@ export class SidebarNavService {
 
   private readonly projectGroupsNavItem: SidebarMenuItem = {
     label: COMMITTEE_LABEL.plural,
-    icon: 'fa-light fa-users-rectangle',
+    icon: 'fa-light fa-users-between-lines',
     routerLink: '/project/groups',
   };
 
@@ -839,7 +922,7 @@ export class SidebarNavService {
       },
       {
         label: 'Projects',
-        icon: 'fa-light fa-folder',
+        icon: 'fa-light fa-folders',
         routerLink: org('projects'),
       },
       // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
@@ -869,8 +952,8 @@ export class SidebarNavService {
             icon: 'fa-light fa-graduation-cap',
             routerLink: org('training'),
           },
-          { label: 'Meetings', icon: 'fa-light fa-video', routerLink: org('meetings') },
-          { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: org('groups') },
+          { label: 'Meetings', icon: 'fa-light fa-calendar', routerLink: org('meetings') },
+          { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-between-lines', routerLink: org('groups') },
         ],
       },
       // Org admin — divider only (no section label); Profile sits under it.
@@ -882,6 +965,78 @@ export class SidebarNavService {
       },
     ];
   });
+
+  /**
+   * Re-runs the lookups that shape the menu after one failed: the persona refresh (the scoped marketing
+   * probe when a scope is selected, else a forced root refresh; either refreshes root grants and auditor /
+   * root-writer) and, when it failed, the writer-grant summary.
+   * The menu stays pending until all settle, then shows the menu, the no-access state, or the error again.
+   */
+  public retryMenuLookups(): void {
+    // One retry per scope at a time; a retry still running for another scope doesn't block this one.
+    if (this.menuRetryPending()) return;
+    const scope = this.menuScopeKey();
+    const runId = ++this.retryRunId;
+    this.activeRetries.update((runs) => new Map(runs).set(scope, runId));
+    const slug = this.marketingScopeSlug();
+    const generation = slug ? this.startMarketingProbe(slug) : 0;
+    // The lookups re-run together and the menu stays pending until all settle, so none can resolve
+    // the menu (or clear the error) while another is still in flight.
+    // With a scope, only the scoped persona request runs: it refreshes personas and the ROOT writer /
+    // auditor checks too, and a parallel ROOT-only answer would write its ROOT-only marketing grants
+    // over the scoped ones before the scoped answer lands.
+    forkJoin([
+      slug ? this.personaService.refreshEnrichedPersonas(false, slug) : this.personaService.refreshEnrichedPersonas(true),
+      this.writerGrantsService.lookupFailed() ? this.writerGrantsService.retrySummary() : of(null),
+    ])
+      .pipe(
+        finalize(() =>
+          this.activeRetries.update((runs) => {
+            if (runs.get(scope) !== runId) return runs;
+            const next = new Map(runs);
+            next.delete(scope);
+            return next;
+          })
+        )
+      )
+      .subscribe(([persona]) => {
+        if (slug) this.recordMarketingProbe(slug, generation, this.marketingProbeFailed(persona));
+      });
+  }
+
+  /**
+   * A scoped marketing probe failed when it got no answer, an upstream `error`, or an answer whose grant
+   * checks couldn't be verified — its `false` grants then mean "couldn't check", not "denied".
+   */
+  private marketingProbeFailed(response: PersonaApiResponse | null): boolean {
+    return !response || !!response.error || !!response.marketingGrantCheckFailed;
+  }
+
+  /** Identifies the menu on screen: the active lens plus the selected foundation and project. */
+  private menuScopeKey(): string {
+    const foundation = this.projectContextService.selectedFoundation()?.slug ?? '';
+    const project = this.projectContextService.selectedProject()?.slug ?? '';
+    return `${this.activeLens()}|${foundation}|${project}`;
+  }
+
+  /** Marks a new marketing probe for `slug` as the latest, returning its generation. */
+  private startMarketingProbe(slug: string): number {
+    const generation = (this.marketingProbeGenerations.get(slug) ?? 0) + 1;
+    this.marketingProbeGenerations.set(slug, generation);
+    return generation;
+  }
+
+  /** Records one scope's marketing-probe outcome — only while it is that scope's latest probe, never touching another scope's. */
+  private recordMarketingProbe(slug: string, generation: number, failed: boolean): void {
+    if (this.marketingProbeGenerations.get(slug) !== generation) return;
+    this.marketingProbeFailedSlugs.update((slugs) => {
+      if (slugs.has(slug) === failed) return slugs;
+      const next = new Set(slugs);
+      if (failed) next.add(slug);
+      else next.delete(slug);
+      return next;
+    });
+  }
 
   private withEasyclaSection(items: SidebarMenuItem[]): SidebarMenuItem[] {
     const profileIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('profile'));

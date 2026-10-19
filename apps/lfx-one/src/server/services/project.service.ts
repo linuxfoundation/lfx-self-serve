@@ -4087,7 +4087,16 @@ export class ProjectService {
     }
   }
 
-  public async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
+  /**
+   * Resolves a project slug to its uid over NATS. By default a timeout or 503 is reported as a missing
+   * project (`exists: false`); pass `unavailableAsMissing: false` to have it throw instead, for a
+   * caller that must tell "couldn't check" apart from "no such project".
+   */
+  public async getProjectIdBySlug(
+    req: Request,
+    slug: string,
+    { unavailableAsMissing = true }: { unavailableAsMissing?: boolean } = {}
+  ): Promise<ProjectSlugToIdResponse> {
     const codec = this.natsService.getCodec();
 
     try {
@@ -4122,8 +4131,8 @@ export class ProjectService {
         slug,
       });
 
-      // If it's a timeout or no responder error, treat as not found
-      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+      // If it's a timeout or no responder error, treat as not found (unless the caller opted out)
+      if (unavailableAsMissing && error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
           uid: '',
           slug,
