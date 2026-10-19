@@ -156,7 +156,7 @@ describe('SidebarNavService', () => {
           },
         },
         { provide: UserService, useValue: { authenticated } },
-        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false), resolved: writerGrantsResolved } },
+        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false), summaryResolved: writerGrantsResolved } },
         {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },

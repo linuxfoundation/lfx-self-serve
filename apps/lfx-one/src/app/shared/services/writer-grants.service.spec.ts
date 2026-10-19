@@ -63,7 +63,7 @@ describe('WriterGrantsService', () => {
     expect(service.hasWriterProject()).toBe(false);
   });
 
-  describe('resolved', () => {
+  describe('summaryResolved', () => {
     afterEach(() => vi.useRealTimers());
 
     it('is resolved at once when there is no session', () => {
@@ -72,39 +72,28 @@ describe('WriterGrantsService', () => {
 
       TestBed.inject(ApplicationRef).tick();
 
-      expect(service.resolved()).toBe(true);
+      expect(service.summaryResolved()).toBe(true);
     });
 
-    it('stays pending through the fast path and resolves only once the deferred sweep settles', () => {
+    it('resolves when the fast path settles, without waiting for the deferred sweep', () => {
       vi.useFakeTimers();
-      const sweep = new Subject<never[]>();
-      getProjects.mockReturnValue(sweep);
+      const summary = new Subject<WriterSummary>();
+      getWriterSummary.mockReturnValue(summary);
+      getProjects.mockReturnValue(new Subject<never[]>());
       userService.authenticated.set(true);
       const service = TestBed.inject(WriterGrantsService);
 
       TestBed.inject(ApplicationRef).tick();
-      expect(service.resolved()).toBe(false);
+      expect(service.summaryResolved()).toBe(false);
 
+      summary.next({ hasWriterFoundation: false, hasWriterProject: false } as WriterSummary);
+      summary.complete();
+      expect(service.summaryResolved()).toBe(true);
+
+      // The sweep still runs afterwards (and is left in flight here) — it no longer gates resolution.
       vi.runAllTimers();
       expect(getProjects).toHaveBeenCalledTimes(1);
-      expect(service.resolved()).toBe(false);
-
-      sweep.next([]);
-      sweep.complete();
-      expect(service.resolved()).toBe(true);
-    });
-
-    it('resolves without the sweep when the fast path already granted both', () => {
-      vi.useFakeTimers();
-      getWriterSummary.mockReturnValue(of({ hasWriterFoundation: true, hasWriterProject: true } as WriterSummary));
-      userService.authenticated.set(true);
-      const service = TestBed.inject(WriterGrantsService);
-
-      TestBed.inject(ApplicationRef).tick();
-      vi.runAllTimers();
-
-      expect(getProjects).not.toHaveBeenCalled();
-      expect(service.resolved()).toBe(true);
+      expect(service.summaryResolved()).toBe(true);
     });
   });
 });

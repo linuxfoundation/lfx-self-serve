@@ -63,14 +63,14 @@ export class WriterGrantsService {
   /** True once a writer-held non-foundation project is known — fast path first, deferred sweep may widen later. */
   public readonly hasWriterProject: Signal<boolean> = this.hasWriterProjectInternal.asReadonly();
 
-  private readonly resolvedInternal: WritableSignal<boolean> = signal(false);
+  private readonly summaryResolvedInternal: WritableSignal<boolean> = signal(false);
 
   /**
-   * True once both signals are final: the fast path and the deferred sweep have settled (or the sweep
-   * was skipped), or there is no session to ask about. Until then a `false` may still widen, so a
-   * consumer that reads `false` as "no access" should wait for this.
+   * True once the fast path has settled (granted, denied or failed closed), or there is no session to
+   * ask about. The deferred sweep can still widen afterwards (inherited access), but it is idle-deferred
+   * and slow, so a consumer that must decide "no access" waits for this rather than for the sweep.
    */
-  public readonly resolved: Signal<boolean> = this.resolvedInternal.asReadonly();
+  public readonly summaryResolved: Signal<boolean> = this.summaryResolvedInternal.asReadonly();
 
   public constructor() {
     // Runs browser-only, once the first render is committed — see the class doc for why both
@@ -79,7 +79,7 @@ export class WriterGrantsService {
       // Anonymous/public routes have no session — both signals' default `false` is already the
       // correct answer, so skip the calls rather than let them 401 (LFXV2-3266).
       if (!this.userService.authenticated()) {
-        this.resolvedInternal.set(true);
+        this.summaryResolvedInternal.set(true);
         return;
       }
 
@@ -90,7 +90,10 @@ export class WriterGrantsService {
           // torn down early by destroy. Scheduling it eagerly in this same tick would instead race
           // the HTTP round trip, so runDeferredSweep's "skip if both already true" check would
           // almost never see a `true`. runWhenIdle itself no-ops the destroy case (see below).
-          finalize(() => this.runWhenIdle(() => this.runDeferredSweep())),
+          finalize(() => {
+            this.summaryResolvedInternal.set(true);
+            this.runWhenIdle(() => this.runDeferredSweep());
+          }),
           takeUntilDestroyed(this.destroyRef)
         )
         .subscribe((summary) => this.widen(summary));
@@ -106,18 +109,12 @@ export class WriterGrantsService {
   private runDeferredSweep(): void {
     // Signals only ever widen — with both already true, the sweep's result can't change anything.
     if (this.hasWriterFoundationInternal() && this.hasWriterProjectInternal()) {
-      this.resolvedInternal.set(true);
       return;
     }
 
     this.projectService
       .getProjects()
-      .pipe(
-        map(summarizeWriterGrants),
-        // Resolved whichever way the sweep ends — a failure fails closed, it doesn't stay pending.
-        finalize(() => this.resolvedInternal.set(true)),
-        takeUntilDestroyed(this.destroyRef)
-      )
+      .pipe(map(summarizeWriterGrants), takeUntilDestroyed(this.destroyRef))
       .subscribe((summary) => this.widen(summary));
   }
 
