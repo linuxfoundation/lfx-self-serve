@@ -17,6 +17,7 @@ import {
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
   PROJECT_LENS_PARTICIPATING_ORGS_FLAG,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -29,7 +30,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarNavService } from './sidebar-nav.service';
@@ -59,6 +60,10 @@ describe('SidebarNavService', () => {
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
+  const personaLoaded = signal(true);
+  const marketingOpsEnabled = signal(false);
+  const authenticated = signal(false);
+  let refreshEnrichedPersonas = vi.fn((): Observable<unknown> => of({}));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -93,6 +98,10 @@ describe('SidebarNavService', () => {
     selectedOrgUid.set(null);
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
+    personaLoaded.set(true);
+    marketingOpsEnabled.set(false);
+    authenticated.set(false);
+    refreshEnrichedPersonas = vi.fn((): Observable<unknown> => of({}));
 
     TestBed.configureTestingModule({
       providers: [
@@ -109,6 +118,7 @@ describe('SidebarNavService', () => {
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
               if (key === CROWDFUNDING_ATTRIBUTION_STEP_FLAG) return crowdfundingAttributionEnabled;
+              if (key === MARKETING_OPS_FGA_ENABLED_FLAG) return marketingOpsEnabled;
               return signal(false);
             }),
           },
@@ -127,7 +137,9 @@ describe('SidebarNavService', () => {
             isMarketingAuditor: signal(false),
             isCampaignManager: signal(false),
             isAuditor,
-            refreshEnrichedPersonas: vi.fn(() => of({})),
+            personaLoaded,
+            // Late-bound so a case can swap in a probe that stays in flight.
+            refreshEnrichedPersonas: () => refreshEnrichedPersonas(),
           },
         },
         {
@@ -141,7 +153,7 @@ describe('SidebarNavService', () => {
             formationOverviewAllowedSlug,
           },
         },
-        { provide: UserService, useValue: { authenticated: signal(false) } },
+        { provide: UserService, useValue: { authenticated } },
         { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false) } },
         {
           provide: AnalyticsService,
@@ -798,6 +810,32 @@ describe('SidebarNavService', () => {
       gatewazeEmbedEnabled.set(true);
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+  });
+
+  describe('sidebarItemsPending', () => {
+    it('is pending until persona detection has loaded', () => {
+      personaLoaded.set(false);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.sidebarItemsPending()).toBe(true);
+      personaLoaded.set(true);
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('waits for the scoped marketing-grant probe of the selected foundation', () => {
+      const probe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => probe);
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      probe.next({});
+      expect(service.sidebarItemsPending()).toBe(false);
     });
   });
 });

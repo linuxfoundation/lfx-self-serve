@@ -125,11 +125,13 @@ export class SidebarNavService {
 
   /**
    * True while `sidebarItems` is empty only because what decides its shape is still loading — the
-   * persona detection, or (formation flag on) the active project's stage. Consumers that read an
-   * empty list as "no access" must wait for this to clear.
+   * persona detection, the scoped marketing-grant probe, or (formation flag on) the active project's
+   * stage. Consumers that read an empty list as "no access" must wait for this to clear.
    */
   public readonly sidebarItemsPending = computed((): boolean => {
     if (!this.personaService.personaLoaded()) return true;
+    // A scoped marketing grant can be the only thing that fills the menu; wait for its probe too.
+    if (this.marketingPersonaSlug() !== this.marketingScopeSlug()) return true;
     return (
       this.activeLens() === 'project' &&
       this.isFormationEnabled() &&
@@ -408,19 +410,20 @@ export class SidebarNavService {
   // which marketingSectionItem no longer reads as its primary source. grantsByScope resolves each
   // relation to its own scope key (writeGrantForScope), so a denial for project B is written under
   // B's own key and cannot overwrite project A's already-confirmed entry.
+  /** The scope the marketing probe should cover; `marketingPersonaSlug` catches up once its fetch resolves. */
+  private readonly marketingScopeSlug: Signal<string> = computed(() => {
+    if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
+      return '';
+    }
+    const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
+    if (foundationSlug) {
+      return foundationSlug;
+    }
+    return this.projectContextService.selectedProject()?.slug ?? '';
+  });
+
   private readonly marketingPersonaSlug: Signal<string> = toSignal(
-    toObservable(
-      computed(() => {
-        if (!this.isMarketingOpsFgaEnabled() || !this.userService.authenticated()) {
-          return '';
-        }
-        const foundationSlug = this.projectContextService.selectedFoundation()?.slug;
-        if (foundationSlug) {
-          return foundationSlug;
-        }
-        return this.projectContextService.selectedProject()?.slug ?? '';
-      })
-    ).pipe(
+    toObservable(this.marketingScopeSlug).pipe(
       switchMap((slug) => {
         if (!slug) {
           return of('');

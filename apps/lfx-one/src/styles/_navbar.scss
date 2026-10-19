@@ -558,7 +558,9 @@
     background: #12354d;
     color: var(--lfxn-role-ink);
     box-shadow: 0 0 0 2px #12354d;
-    cursor: default;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
 
     & + & {
       margin-left: -3px;
@@ -1077,6 +1079,9 @@
   top: 56px !important;
   left: 16px !important;
   margin-top: 0 !important;
+  // Fixed panels can't be reached by scrolling the page: cap to the viewport and scroll inside.
+  max-height: calc(100dvh - 64px);
+  overflow-y: auto;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   box-shadow:
@@ -1087,6 +1092,7 @@
 // Under the impersonation banner the navbar sits 48px lower. Classes stacked so this wins on specificity.
 .lfxn-brand-popover.lfxn-brand-popover--banner-offset.p-popover {
   top: 104px !important;
+  max-height: calc(100dvh - 112px);
 }
 
 .lfxn-brand-menu {

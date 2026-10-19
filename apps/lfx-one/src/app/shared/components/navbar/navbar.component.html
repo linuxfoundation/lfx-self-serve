@@ -118,10 +118,10 @@
           @if (roleMarks().length > 0) {
             <span class="lfxn__me-roles">
               @for (role of roleMarks(); track role.persona; let i = $index) {
-                <span
+                <!-- A native button: Enter/Space toggle the project chips, ArrowDown moves into them. -->
+                <button
+                  type="button"
                   class="lfxn__me-role"
-                  tabindex="0"
-                  role="img"
                   [attr.aria-label]="role.ariaLabel"
                   [style.--lfxn-role-ink]="role.ink"
                   [style.z-index]="roleMarks().length - i"
@@ -131,7 +131,7 @@
                   [lfxNavTooltipItems]="role.chips"
                   (lfxNavTooltipItemSelected)="openRoleProject(role, $event)">
                   <i [ngClass]="role.icon" aria-hidden="true"></i>
-                </span>
+                </button>
               }
             </span>
           }
