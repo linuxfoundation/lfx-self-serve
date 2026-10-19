@@ -90,6 +90,12 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
   });
 
+  it('moves the focus onto the selected tab once it has rendered when a shortcut opens it', async () => {
+    query('mktg-faq-view-unanswered-chip')?.click();
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(query('mktg-faq-view-tab-unanswered'));
+  });
+
   it('shows the sources read, the failed ones, the gaps and the checks', async () => {
     query('mktg-faq-view-tab-sources')?.click();
     await fixture.whenStable();

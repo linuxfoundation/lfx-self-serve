@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { FAQ_MODE_LABELS, FAQ_NEEDS_ANSWER_LABEL, FAQ_VIEW_TABS } from '@lfx-one/shared/constants';
 import { FaqGroupView, FaqViewTab, MktgFaqAsset, MktgFaqViewTab } from '@lfx-one/shared/interfaces';
 import { faqGroupViews } from '@lfx-one/shared/utils';
@@ -20,6 +20,7 @@ import { faqGroupViews } from '@lfx-one/shared/utils';
 })
 export class MktgFaqViewComponent {
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly injector = inject(Injector);
 
   // === Inputs ===
   /** The project the FAQ is for. */
@@ -78,14 +79,15 @@ export class MktgFaqViewComponent {
    * A shortcut into a tab from outside the tablist (the header's "need an
    * answer" chip, the FAQ tab's callout): the button that was clicked may go
    * with the panel it sat in, so focus moves onto the selected tab once it
-   * has rendered, as on the framework view.
+   * has rendered. afterNextRender is bound to this component's injector, so
+   * the hook is dropped with the component and never fires after it is gone.
    */
   protected onGoToTab(id: FaqViewTab): void {
     this.selectedTab.set(id);
     if (isPlatformBrowser(this.platformId)) {
       const tab = this.tabs().find((entry) => entry.id === id);
       if (tab) {
-        setTimeout(() => document.getElementById(tab.tabId)?.focus());
+        afterNextRender(() => document.getElementById(tab.tabId)?.focus(), { injector: this.injector });
       }
     }
   }
