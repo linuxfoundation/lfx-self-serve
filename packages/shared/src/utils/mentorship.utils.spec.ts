@@ -30,6 +30,8 @@ import {
   MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
+  MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
+  MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES,
 } from '../constants/mentorship-mentee.constants';
 import {
   createEmptyMentorshipMentorForm,
@@ -152,7 +154,20 @@ import {
   toMentorshipUtcEndOfDayInstant,
   toMentorshipUtcInstant,
   buildMentorshipGraduateTaskWarning,
+  mentorshipMenteeApplyBlockedState,
 } from './mentorship.utils';
+
+describe('mentorshipMenteeApplyBlockedState', () => {
+  it('picks the state for the rule named in the upstream message, ignoring case', () => {
+    expect(
+      mentorshipMenteeApplyBlockedState('closed', 'Eligibility criteria not met: Create a mentee profile, confirming the eligibility criteria, before applying')
+    ).toBe(MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES[0].state);
+  });
+
+  it.each([undefined, null, '', 'conflict', 'not found'])("falls back to the status's state for %j", (message) => {
+    expect(mentorshipMenteeApplyBlockedState('already-applied', message)).toBe(MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES['already-applied']);
+  });
+});
 
 describe('getMentorshipEnrollStepErrors', () => {
   /** Creates a form with all details-step fields filled to valid values. Override only the field under test. */

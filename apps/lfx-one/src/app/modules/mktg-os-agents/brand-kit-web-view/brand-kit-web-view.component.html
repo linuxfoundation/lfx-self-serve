@@ -34,16 +34,17 @@
         ariaLabel="Download the brand kit as a PDF (prints the 16-page book)"
         data-testid="brand-kit-web-view-download-pdf"
         (onClick)="onDownloadPdf()" />
-      <!-- The slideshow is the Google Slides export, a later item: shown so the kit's outputs are visible, inert until it ships. -->
+      <!-- The kit as a deck: the panel below the header shows the export. -->
       <lfx-button
         label="Export to Google Slides"
         icon="fa-light fa-presentation-screen"
         [outlined]="true"
         size="small"
-        [disabled]="true"
-        badge="coming soon"
-        ariaLabel="Export to Google Slides — coming soon"
-        data-testid="brand-kit-web-view-export-slides" />
+        [loading]="slidesExport.busy()"
+        [disabled]="!slidesExport.canExport()"
+        ariaLabel="Export the brand kit to Google Slides"
+        data-testid="brand-kit-web-view-export-slides"
+        (onClick)="slidesExport.onExport()" />
       <lfx-button
         label="Report"
         icon="fa-light fa-clipboard-list"
@@ -55,6 +56,9 @@
         (onClick)="onGoToTab('sources')" />
     </div>
   </div>
+
+  <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
+  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" data-testid="brand-kit-web-view-slides-export" />
 
   <!-- Tabs: the overview, the six chapters, the run's report -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Brand kit" data-testid="brand-kit-web-view-tabs" (keydown)="onTabKeydown($event)">
@@ -702,10 +706,10 @@
     }
   }
 
-  <!-- Footer: what Download PDF gives you -->
+  <!-- Footer: what Download PDF and the Google Slides export give you -->
   <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
-    Download PDF prints the kit as a 16-page book, landscape: choose “Save as PDF” in the print dialog. The Google Slides export, the kit as a slideshow, is
-    coming.
+    Download PDF prints the kit as a 16-page book, landscape: choose “Save as PDF” in the print dialog. Export to Google Slides builds the kit as a deck in the
+    Marketing OS folder in Google Drive, in the kit’s colours, typeface and logo.
   </p>
 
   <!-- The book, the kit's print rendering: never shown on screen (styles.scss), shown alone while Download PDF prints. -->

@@ -71,6 +71,7 @@
         [class.hidden]="isMeLens() && myVotesError()"
         [votes]="isMeLens() ? filteredMyVotes() : votes()"
         [hasPMOAccess]="!isMeLens() && canWrite()"
+        [showParticipationProgress]="!isMeLens()"
         [loading]="isMeLens() ? myVotesLoading() || myVotesError() : loading()"
         [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
         [paginationLoading]="!isMeLens() && (loading() || (!managementClosingOnly() && !totalCountReady()))"

@@ -50,7 +50,7 @@ export class MktgDocumentStoreService {
       .pipe(catchError((error) => this.logAndRethrow('Failed to load a Marketing OS document revision', error)));
   }
 
-  /** Make an older revision the latest, as a new revision. */
+  /** Make a revision current without adding history; `/restore` is the compatibility URL. */
   public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
     const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
     return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));

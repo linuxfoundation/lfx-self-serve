@@ -2,17 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { computed, signal } from '@angular/core';
+import { computed, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { BRAND_KIT_CONTRACT_ID, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, throwError } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -53,6 +56,9 @@ describe('MktgDocumentViewComponent', () => {
     getRevision: ReturnType<typeof vi.fn>;
     restoreRevision: ReturnType<typeof vi.fn>;
   };
+  let resolveBrandKit: ReturnType<typeof vi.fn>;
+  let activeContext: WritableSignal<ProjectContext | null>;
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
     return harness.routeNativeElement?.querySelector(`[data-testid="${testId}"]`) ?? null;
@@ -70,50 +76,10 @@ describe('MktgDocumentViewComponent', () => {
     harness.detectChanges();
   }
 
-  beforeEach(async () => {
-    store = {
-      getDocument: vi.fn(() => of(detail)),
-      getRevision: vi.fn((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
-        of(revisionResponse([LATEST, OLDER, RESTORED].find((candidate) => candidate.id === revisionId) ?? LATEST))
-      ),
-      restoreRevision: vi.fn(() => of({ ...detail, revision: RESTORED })),
-    };
-    const activeContext = signal<ProjectContext | null>(PROJECT);
-
-    await TestBed.configureTestingModule({
-      providers: [
-        provideRouter([{ path: 'documents/:agentKey/:documentId', component: MktgDocumentViewComponent }]),
-        provideNoopAnimations(),
-        { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
-        { provide: MktgDocumentStoreService, useValue: store },
-      ],
-    }).compileComponents();
-  });
-
-  it('opens the latest revision when no revision is asked for', async () => {
-    await render('/documents/brand-kit/living');
-
-    expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living');
-    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', LATEST.id);
-    expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Brand Kit');
-    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 2 of 2');
-    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('latest');
-    expect(query('mktg-document-view-restore-current')).toBeNull();
-  });
-
-  it('opens the revision in ?revision= and offers to restore it', async () => {
-    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
-
-    expect(store.getDocument).not.toHaveBeenCalled();
-    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
-    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
-    expect(query('mktg-document-view-restore-current')?.textContent).toContain('Restore revision 1');
-    expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
-  });
-
-  it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
+  /** A Brand Kit revision's sidecar, as the store serves it: the kit's envelope without its Markdown. */
+  function kitSidecar(): Record<string, unknown> {
     const kit = brandKitTestRevision();
-    const sidecar = {
+    return {
       contract: BRAND_KIT_CONTRACT_ID,
       project_name: kit.projectName,
       project: kit.project,
@@ -126,20 +92,10 @@ describe('MktgDocumentViewComponent', () => {
       generated_at: kit.generatedAt,
       agent: { agent_version: kit.agentVersion },
     };
-    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar }));
+  }
 
-    await render('/documents/brand-kit/living');
-
-    expect(query('mktg-document-view-brand-kit')).not.toBeNull();
-    expect(query('mktg-document-view-framework')).toBeNull();
-    expect(query('mktg-document-view-document')).toBeNull();
-    expect(query('mktg-document-view-brand-kit')?.parentElement?.className).toContain('basis-full');
-    expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
-    expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
-    expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
-  });
-
-  it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
+  /** A Messaging Framework document whose latest revision is the framework's JSON, as the store serves it. */
+  function useFrameworkRevision(): void {
     const FRAMEWORK = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') as MktgDocumentType;
     const content = {
       mf: {
@@ -199,6 +155,96 @@ describe('MktgDocumentViewComponent', () => {
         },
       })
     );
+  }
+
+  beforeEach(async () => {
+    store = {
+      getDocument: vi.fn(() => of(detail)),
+      getRevision: vi.fn((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
+        of(revisionResponse([LATEST, OLDER, RESTORED].find((candidate) => candidate.id === revisionId) ?? LATEST))
+      ),
+      restoreRevision: vi.fn(() => of({ ...detail, revision: RESTORED })),
+    };
+    resolveBrandKit = vi.fn(() => of(null));
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of()),
+      poll: vi.fn(() => of()),
+    };
+    activeContext = signal<ProjectContext | null>(PROJECT);
+
+    await TestBed.configureTestingModule({
+      providers: [
+        provideRouter([{ path: 'documents/:agentKey/:documentId', component: MktgDocumentViewComponent }]),
+        provideNoopAnimations(),
+        { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
+        { provide: MktgDocumentStoreService, useValue: store },
+        // The Boilerplates view says a failed copy through the app's toasts.
+        MessageService,
+        { provide: MktgDependencyService, useValue: { resolveBrandKit } },
+        provideMktgSlidesExportStub(slidesExport),
+      ],
+    }).compileComponents();
+  });
+
+  it('opens the latest revision when no revision is asked for', async () => {
+    await render('/documents/brand-kit/living');
+
+    expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living');
+    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', LATEST.id);
+    expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Brand Kit');
+    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 2 of 2');
+    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('latest');
+    expect(query('mktg-document-view-restore-current')).toBeNull();
+  });
+
+  it('opens the revision in ?revision= and offers to restore it', async () => {
+    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+
+    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
+    expect(query('mktg-document-view-restore-current')?.textContent).toContain('Restore revision 1');
+    expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
+  });
+
+  it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
+
+    await render('/documents/brand-kit/living');
+
+    expect(query('mktg-document-view-brand-kit')).not.toBeNull();
+    expect(query('mktg-document-view-framework')).toBeNull();
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-document-view-brand-kit')?.parentElement?.className).toContain('basis-full');
+    expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
+    expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
+    expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
+    // Only a framework's print reads the project's kit: the kit is its own brand.
+    expect(resolveBrandKit).not.toHaveBeenCalled();
+    // Export to Google Slides reads this revision of the document, and its last export is looked up.
+    expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
+    expect(slidesExport.last).toHaveBeenCalledWith(
+      expect.objectContaining({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: expect.any(String) })
+    );
+  });
+
+  it('exports the older revision in ?revision=, never the latest: the last export is read and the export started for exactly that revision', async () => {
+    store.getRevision.mockImplementation((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
+      of({ ...revisionResponse([LATEST, OLDER].find((candidate) => candidate.id === revisionId) ?? LATEST), sidecar: kitSidecar() })
+    );
+
+    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    query('brand-kit-web-view-export-slides')?.querySelector('button')?.click();
+    await settle();
+
+    expect(slidesExport.last).toHaveBeenCalledTimes(1);
+    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: OLDER.id });
+    expect(slidesExport.start).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: OLDER.id, mode: 'create' });
+  });
+
+  it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
+    useFrameworkRevision();
 
     await render('/documents/foundation-message/living');
 
@@ -216,6 +262,75 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view-sources-read')?.textContent).toContain('testorbit.example.org');
     // The revisions panel is as built: open and restore any other revision.
     expect(query('mktg-document-view-revisions')).not.toBeNull();
+    // Download PDF prints the framework in the LF look: the project has no Brand Kit.
+    expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
+    expect(slidesExport.last).toHaveBeenCalledWith(
+      expect.objectContaining({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', revisionId: expect.any(String) })
+    );
+    expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
+    expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
+  });
+
+  it('renders a Boilerplates revision (JSON content) on the Boilerplates view, full width, with the sidecar’s report and word counts', async () => {
+    const BOILERPLATES = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'boilerplates') as MktgDocumentType;
+    const content = {
+      bp: [
+        { l: 'One-liner', max: 15, t: 'TestOrbit is the open release toolkit.' },
+        { l: '25 words', max: 25, t: 'TestOrbit, a Linux Foundation project, is the open release toolkit.' },
+        { l: '50 words', max: 50, t: 'TestOrbit, a Linux Foundation project, is the open release toolkit for platform teams.' },
+        { l: '100 words', max: 100, t: 'TestOrbit, a Linux Foundation project. Learn more at testorbit.example.org.' },
+      ],
+    };
+    const jsonRevision = revision(3, { latest: true, format: 'json', status: '' });
+    store.getDocument.mockReturnValue(of({ ...detail, type: BOILERPLATES, revisions: [jsonRevision] }));
+    store.getRevision.mockReturnValue(
+      of({
+        ...detail,
+        type: BOILERPLATES,
+        revisions: [jsonRevision],
+        revision: jsonRevision,
+        markdown: JSON.stringify(content),
+        sidecar: {
+          report: { sources_read: ['https://testorbit.example.org'], sources_failed: [], gaps: ['No launch year.'], notes: '' },
+          checks: { word_counts: [6, 10, 13, 9], findings: [] },
+          mode: 'draft',
+        },
+      })
+    );
+
+    await render('/documents/boilerplates/living');
+
+    expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Boilerplates');
+    expect(query('mktg-document-view-document')).toBeNull();
+    expect(query('mktg-framework-view')).toBeNull();
+    expect(query('mktg-boilerplates-view-title')?.textContent).toContain('TestOrbit Boilerplates');
+    expect(query('mktg-boilerplates-view-version')?.textContent).toContain('v3');
+    expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
+    expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');
+    expect(harness.routeNativeElement?.querySelector('main')?.className).toContain('basis-full');
+
+    harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-boilerplates-view-tab-sources"]')?.click();
+    await settle();
+    expect(query('mktg-boilerplates-view-gaps')?.textContent).toContain('No launch year.');
+  });
+
+  it('drops the previous project’s Brand Kit from the print the moment the project changes', async () => {
+    useFrameworkRevision();
+    // Project 1 has a kit; project 2's kit never resolves while the print is open.
+    resolveBrandKit.mockImplementation((uid: string) => (uid === 'proj-1' ? of(brandKitTestRevision()) : NEVER));
+    await render('/documents/foundation-message/living');
+    await settle();
+    const brand = (): string | null | undefined => query('mktg-framework-print')?.getAttribute('data-brand');
+    expect(brand()).not.toBe('lf');
+
+    activeContext.set({ uid: 'proj-2', name: 'Other', slug: 'other' });
+    await settle();
+    expect(resolveBrandKit).toHaveBeenCalledWith('proj-2');
+    // Until project 2's kit arrives, the print is in the LF look — never project 1's brand.
+    expect(brand() ?? 'lf').toBe('lf');
   });
 
   it('says the document has no such revision on a 404', async () => {

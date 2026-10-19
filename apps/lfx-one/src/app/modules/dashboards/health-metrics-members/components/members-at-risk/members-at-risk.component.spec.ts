@@ -116,6 +116,8 @@ describe('MembersAtRiskComponent', () => {
 
     expect(getMembersAtRisk).toHaveBeenCalledWith({ foundationSlug: 'acme', bucket: 'all', offset: 0, pageSize: 10 });
     expect(text('members-at-risk-outstanding')).toBe('$120K');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-at-risk-hero')?.classList).not.toContain('border');
     expect(text('members-at-risk-high')).toBe('$90K');
     expect(text('members-at-risk-medium')).toBe('$30K');
     expect(text('members-at-risk-members')).toBe('3');

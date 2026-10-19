@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID } from '@angular/core';
+import { NgClass, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, inject, input } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { BrandKitBookView } from '@lfx-one/shared/interfaces';
+import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 
 // The Brand Kit of one revision, laid out as the reference kit's 16 letter
@@ -28,9 +29,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 })
 export class BrandKitViewComponent {
   // === Injections ===
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly document = inject(DOCUMENT);
-  private readonly platformId = inject(PLATFORM_ID);
+  private readonly printService = inject(MktgPrintService);
 
   // === Inputs ===
   /**
@@ -53,29 +52,14 @@ export class BrandKitViewComponent {
   private readonly fontUrl$ = toObservable(computed(() => this.view().fontUrl));
 
   public constructor() {
-    // The typeface comes from Google Fonts, loaded once per family in the
-    // browser; SSR renders the fallback and never touches the head.
-    if (isPlatformBrowser(this.platformId)) {
-      this.fontUrl$
-        .pipe(
-          filter((url): url is string => !!url),
-          distinctUntilChanged(),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        .subscribe((url) => this.ensureFontLink(url));
-    }
-  }
-
-  // === Private helpers ===
-  private ensureFontLink(url: string): void {
-    const id = `brand-kit-font-${encodeURIComponent(url)}`;
-    if (this.document.getElementById(id)) {
-      return;
-    }
-    const link = this.document.createElement('link');
-    link.id = id;
-    link.rel = 'stylesheet';
-    link.href = url;
-    this.document.head.appendChild(link);
+    // The typeface comes from Google Fonts, loaded once per stylesheet (the
+    // print service shares the link with the framework print).
+    this.fontUrl$
+      .pipe(
+        filter((url): url is string => !!url),
+        distinctUntilChanged(),
+        takeUntilDestroyed()
+      )
+      .subscribe((url) => this.printService.ensureFontStylesheet(url));
   }
 }

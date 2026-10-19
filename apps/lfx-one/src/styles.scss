@@ -72,6 +72,51 @@
   }
 }
 
+/* The Messaging Framework prints the same way: on screen it is its app page,
+   and its print document (lfx-mktg-framework-print) sits in a print-only
+   wrapper (FOUNDATION_MESSAGE_PRINT_ONLY_CLASS) never shown there. While the
+   body carries FOUNDATION_MESSAGE_PRINT_BODY_CLASS (set by Download PDF for
+   the print only) that document is the only thing on paper: letter pages,
+   portrait, its sections flowing from page to page. */
+.lfx-framework-print-only {
+  display: none;
+}
+
+@media print {
+  /* A named page, so only the framework prints on these margins — every other print keeps its own setup. */
+  @page mktg-framework {
+    size: letter portrait;
+    margin: 0.55in 0.6in;
+  }
+
+  body.lfx-print-framework {
+    height: 0 !important;
+    overflow: hidden !important;
+    page: mktg-framework;
+
+    & * {
+      visibility: hidden;
+    }
+
+    .lfx-framework-print-only {
+      display: block;
+    }
+
+    .lfx-framework-print,
+    .lfx-framework-print * {
+      visibility: visible;
+    }
+
+    /* The page area of a letter sheet on the margins above: 8.5 in less 2 × 0.6 in. */
+    .lfx-framework-print {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 7.3in;
+      margin: 0;
+    }
+  }
+}
+
 @layer tailwind-base {
   @tailwind base;
 

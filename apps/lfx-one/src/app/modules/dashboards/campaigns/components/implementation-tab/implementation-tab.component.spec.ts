@@ -181,7 +181,7 @@ describe('ImplementationTabComponent submit gate', () => {
 
   /**
    * A durable but unapproved brief. `saved` is honest — the write landed — but campaign-service
-   * refuses a create from it (`brief.go:439`, 400 "brief must be approved before creating
+   * refuses a create from it (`BriefService.CreateCampaigns`, 400 "brief must be approved before creating
    * campaigns"), so leaving Create enabled invited the user to discover that the hard way.
    */
   it('blocks submit when the brief saved but was not approved', async () => {
@@ -6080,6 +6080,75 @@ describe('ImplementationTabComponent google languages', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleLanguages']()).toEqual([code]);
+  });
+});
+
+/**
+ * Seeding the two extension editors from the brief the Planning tab generated.
+ *
+ * The gate is PRESENCE, not truthiness: a brief written before extension generation shipped — or
+ * one for an event whose page carried no linkable sections — has no list at all, and seeding `[]`
+ * for it would clear chips the operator typed on a re-mount. `fromBriefResponse` holds up the
+ * other end by restoring an absent stored list as `undefined` rather than as `[]`.
+ */
+describe('ImplementationTabComponent google extension seeding', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /** Re-mount the brief with `patch` merged in, driving the real `populateFromBrief` path. */
+  function remountBrief(patch: Record<string, unknown>): void {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      ...patch,
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  it('seeds both editors from a brief that carries the generated lists', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    remountBrief({
+      googleCallouts: ['Free To Attend'],
+      googleSitelinks: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    });
+
+    expect(c['googleCallouts']()).toEqual(['Free To Attend']);
+    expect(c['googleSitelinks']()).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
+  });
+
+  // The defect the presence gate exists to prevent: the operator types an entry, something
+  // re-mounts the brief, and what they just added is gone with no message.
+  //
+  // BOTH editors are exercised, not just callouts. Each `if` in `populateFromBrief` is its own
+  // guard, and a test that only adds a callout passes with the sitelink gate deleted — which is
+  // how this test was first written, and what the mutation run caught.
+  it('leaves hand-typed entries alone for a brief that carries no lists', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Hands-On Labs');
+    c['addGoogleSitelink']({ text: 'Venue & Travel', finalUrl: 'https://events.example.com/venue' });
+
+    remountBrief({});
+
+    expect(c['googleCallouts']()).toEqual(['Hands-On Labs']);
+    expect(c['googleSitelinks']()).toEqual([{ text: 'Venue & Travel', finalUrl: 'https://events.example.com/venue' }]);
+  });
+
+  // A brief that DID carry a list is copied, not shared: editing the chips must not reach back
+  // into the parent's array, which the Planning tab still holds and re-emits.
+  it('does not share the seeded arrays with the brief', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const sitelinks = [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }];
+    remountBrief({ googleCallouts: ['Free To Attend'], googleSitelinks: sitelinks });
+
+    expect(c['googleSitelinks']()[0]).not.toBe(sitelinks[0]);
+    expect(c['googleSitelinks']()[0]).toEqual(sitelinks[0]);
   });
 });
 

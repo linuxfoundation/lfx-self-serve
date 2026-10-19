@@ -283,6 +283,29 @@ describe('VoteService', () => {
     expect(http.put).toHaveBeenCalledWith('/api/votes/vote-1/enable', {});
   });
 
+  describe('reminders (#3769)', () => {
+    it('getReminderRecipients GETs the encoded reminder-recipients URL', () => {
+      const recipients = [{ uid: 'r-1' }];
+      http.get.mockReturnValue(of(recipients));
+      const next = vi.fn();
+
+      service.getReminderRecipients('vote/1').subscribe(next);
+
+      expect(http.get).toHaveBeenCalledWith('/api/votes/vote%2F1/reminder-recipients');
+      expect(next).toHaveBeenCalledWith(recipients);
+    });
+
+    it('sendReminders POSTs the recipient IDs to the encoded reminders URL', () => {
+      http.post.mockReturnValue(of({ recipient_count: 2 }));
+      const next = vi.fn();
+
+      service.sendReminders('vote/1', ['r-1', 'r-2']).subscribe(next);
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes/vote%2F1/reminders', { recipient_ids: ['r-1', 'r-2'] });
+      expect(next).toHaveBeenCalledWith({ recipient_count: 2 });
+    });
+  });
+
   // GH-2826 Design A: dialog-open fires the speculative create; accept chains the enable onto it. The
   // lifecycle lives on this root service so cancel/navigation cleanup and a confirmed open outlive the component.
   describe('speculative create lifecycle', () => {

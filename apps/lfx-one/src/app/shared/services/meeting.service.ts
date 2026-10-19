@@ -9,6 +9,7 @@ import {
   MEETING_DETAIL_CACHE_TTL_MS,
   MEETING_PASSWORD_HEADER,
   MEETING_REGISTRANT_CLIENT_CHUNK_SIZE,
+  MEETING_REMOVAL_SOURCE_HEADER,
   PAST_MEETING_RECORDING_CACHE_TTL_MS,
   PAST_MEETING_SORT,
   RECENTLY_CREATED_MEETING_WINDOW_MS,
@@ -33,6 +34,7 @@ import {
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
   MeetingRegistrantWithState,
+  MeetingRemovalSource,
   MeetingRsvp,
   PaginatedResponse,
   PastMeeting,
@@ -727,8 +729,10 @@ export class MeetingService {
     });
   }
 
-  public removeMyMeetingRegistration(meetingUid: string): Observable<MeetingRegistrationRemovalResult> {
-    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`).pipe(
+  public removeMyMeetingRegistration(meetingUid: string, source: MeetingRemovalSource): Observable<MeetingRegistrationRemovalResult> {
+    const headers = new HttpHeaders({ [MEETING_REMOVAL_SOURCE_HEADER]: source });
+
+    return this.http.delete<MeetingRegistrationRemovalResult>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self`, { headers }).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to remove current user from meeting ${meetingUid}:`, error);

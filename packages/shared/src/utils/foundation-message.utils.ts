@@ -75,7 +75,7 @@ import {
   FoundationMessageReport,
   FoundationMessageValidationResult,
 } from '../interfaces/foundation-message.interface';
-import { MktgIntakeDocument, MktgRunAnswer, MktgRunAnswerOrigin, MktgRunAsset, MktgRunQuestion } from '../interfaces/mktg-run.interface';
+import { MktgFrameworkAsset, MktgIntakeDocument, MktgRunAnswer, MktgRunAnswerOrigin, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
 
 const ONE_LINE = /^[^\r\n]+$/;
@@ -919,7 +919,7 @@ export function isFoundationMessageReport(value: unknown): value is FoundationMe
 }
 
 /** The run's asset out of a validated envelope: what the run page shows and the stored version keeps. */
-export function foundationMessageAsset(envelope: FoundationMessageEnvelope): MktgRunAsset {
+export function foundationMessageAsset(envelope: FoundationMessageEnvelope): MktgFrameworkAsset {
   return { kind: 'messaging-framework', content: envelope.content, report: envelope.report, checks: envelope.checks, mode: envelope.mode };
 }
 
@@ -929,7 +929,7 @@ export function foundationMessageAsset(envelope: FoundationMessageEnvelope): Mkt
  * framework. A sidecar without a report (never written by this BFF, but a
  * hand-copied record could lack one) reads as an empty report.
  */
-export function foundationMessageAssetOfRevision(text: string, sidecar: Record<string, unknown> | null): MktgRunAsset | null {
+export function foundationMessageAssetOfRevision(text: string, sidecar: Record<string, unknown> | null): MktgFrameworkAsset | null {
   const content = readFoundationMessageContent(text);
   if (!content) {
     return null;
@@ -945,7 +945,7 @@ export function foundationMessageAssetOfRevision(text: string, sidecar: Record<s
       isObject(checks) && Array.isArray(checks['findings'])
         ? { findings: checks['findings'].filter((finding): finding is string => typeof finding === 'string') }
         : { findings: [] },
-    mode: (FOUNDATION_MESSAGE_MODES as readonly string[]).includes(mode as string) ? (mode as MktgRunAsset['mode']) : 'draft',
+    mode: (FOUNDATION_MESSAGE_MODES as readonly string[]).includes(mode as string) ? (mode as MktgFrameworkAsset['mode']) : 'draft',
   };
 }
 

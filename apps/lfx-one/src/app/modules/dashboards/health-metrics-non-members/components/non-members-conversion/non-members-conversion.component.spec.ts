@@ -102,6 +102,14 @@ describe('NonMembersConversionComponent', () => {
     expect(text('non-members-conversion-footnote')).toBe('Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only.');
   });
 
+  it('shows the pipeline as a plain hero: no card, no tint, ink value', async () => {
+    await render();
+
+    const value = query('non-members-conversion-pipeline-value');
+    expect(value?.classList).toContain('text-gray-900');
+    expect(value?.closest('.bg-blue-50\\/40')).toBeNull();
+  });
+
   it('ranks the warmest organizations, sized by contributions', async () => {
     await render();
 

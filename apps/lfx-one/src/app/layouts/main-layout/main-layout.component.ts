@@ -14,6 +14,7 @@ import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
+import { TranscendService } from '@services/transcend.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
 import { distinctUntilChanged, filter, map } from 'rxjs';
@@ -32,6 +33,7 @@ export class MainLayoutComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly sidebarNavService = inject(SidebarNavService);
+  private readonly transcendService = inject(TranscendService);
   protected readonly userService = inject(UserService);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
@@ -106,6 +108,12 @@ export class MainLayoutComponent {
   /** Toggle the mobile sidebar drawer from the header control. */
   public toggleMobileSidebar(): void {
     this.appService.toggleMobileSidebar();
+  }
+
+  /** Opens the Transcend consent manager from the footer's "Cookie settings" link. */
+  public openCookieSettings(event: Event): void {
+    event.preventDefault();
+    this.transcendService.showPreferences();
   }
 
   /** Mirror the PrimeNG drawer's visibility back into app state when it closes itself (backdrop, Esc). */

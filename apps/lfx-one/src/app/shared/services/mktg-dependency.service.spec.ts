@@ -3,11 +3,12 @@
 
 import { HttpErrorResponse, HttpStatusCode } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_ANCHOR_QUESTIONS, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
+import { BRAND_KIT_CONTRACT_ID, BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_ANCHOR_QUESTIONS, FOUNDATION_MESSAGE_INTAKE } from '@lfx-one/shared/constants';
 import { FoundationMessageContent, MktgDependencyDocument, MktgRunAsset, MktgStoredAgentRun } from '@lfx-one/shared/interfaces';
 import { renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgArtifactService } from '@services/mktg-artifact.service';
+import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -469,6 +470,47 @@ describe('MktgDependencyService', () => {
       const resolved = await new Promise((resolve) => service.resolveDependencies('proj-1', []).subscribe(resolve));
 
       expect(resolved).toEqual({});
+      expect(getStored).not.toHaveBeenCalled();
+    });
+  });
+  describe('resolveBrandKit — the brand another asset’s print is set in', () => {
+    const kit = brandKitTestRevision();
+    const sidecar = {
+      contract: BRAND_KIT_CONTRACT_ID,
+      project_name: kit.projectName,
+      project: kit.project,
+      version: kit.version,
+      mode: kit.mode,
+      kit: kit.kit,
+      chapters: kit.chapters,
+      report: kit.report,
+      inputs: { website_url: kit.websiteUrl },
+      generated_at: kit.generatedAt,
+      agent: { agent_version: kit.agentVersion },
+    };
+
+    it('reads the project’s latest Brand Kit revision from its sidecar', async () => {
+      getStored.mockReturnValue(of({ documentMarkdown: '# Kit', receipt: { version: 1 }, revisionNumber: 2, sidecar }));
+
+      const resolved = await new Promise((resolve) => service.resolveBrandKit('proj-1').subscribe(resolve));
+
+      expect(getStored).toHaveBeenCalledWith(BRAND_KIT_INTAKE.endpoints.stored, 'proj-1', true);
+      expect(resolved).toEqual(expect.objectContaining({ projectName: kit.projectName, kit: kit.kit }));
+    });
+
+    it('is null — the LF look — when the project has no kit, when the read fails, and for a kit stored as Markdown alone', async () => {
+      getStored.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.NotFound })));
+      expect(await new Promise((resolve) => service.resolveBrandKit('proj-1').subscribe(resolve))).toBeNull();
+
+      getStored.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: HttpStatusCode.Forbidden })));
+      expect(await new Promise((resolve) => service.resolveBrandKit('proj-1').subscribe(resolve))).toBeNull();
+
+      getStored.mockReturnValueOnce(of({ documentMarkdown: '# Kit', receipt: { version: 1 } }));
+      expect(await new Promise((resolve) => service.resolveBrandKit('proj-1').subscribe(resolve))).toBeNull();
+    });
+
+    it('asks nothing without a project', async () => {
+      expect(await new Promise((resolve) => service.resolveBrandKit('').subscribe(resolve))).toBeNull();
       expect(getStored).not.toHaveBeenCalled();
     });
   });

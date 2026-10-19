@@ -91,7 +91,7 @@ import {
   REDDIT_VIDEO_GOALS,
   googleAdsToLower,
   googleAdsTrimSpace,
-  googleAdsUrlGoParseFlaw,
+  isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -1661,11 +1661,12 @@ export class ImplementationTabComponent implements OnInit {
     // `error` splits in two, and the brief id is what tells them apart — blocking the whole
     // status was too broad, blocking none of it was too narrow.
     //
-    //   error + a briefId  → a CONFLICT (`stale-brief`, `unverified-validator`,
-    //     `superseded-after-write`). That id is the STORED row's, which by definition is not the
-    //     brief on screen — the save was refused precisely because the two disagree. Creating
-    //     from it would launch paid campaigns off another writer's version while the user reads
-    //     their own unsaved copy. BLOCKED, and the id being present is what makes it dangerous.
+    //   error + a briefId  → the STORED row and the brief on screen are known to disagree, and
+    //     that id is the stored row's. A save conflict says so outright (`stale-brief`,
+    //     `unverified-validator`, `superseded-after-write`); so does a refused approval of a
+    //     restored brief, and so does a restore whose cached content predates a write this
+    //     session made. Creating from it would launch paid campaigns off a version the user is
+    //     not reading. BLOCKED, and the id being present is what makes it dangerous.
     //
     //   error + no briefId → the save simply FAILED. Its own banner says "You can continue
     //     setting up the campaign", and with the cutover dark the legacy create needs no brief id
@@ -1683,8 +1684,8 @@ export class ImplementationTabComponent implements OnInit {
     if (persistence.status === 'error' && persistence.briefId !== null) return false;
 
     // A durable but UNAPPROVED brief cannot create campaigns: campaign-service refuses outright —
-    // `internal/service/brief.go:439` returns 400 "brief must be approved before creating
-    // campaigns". The state is `saved` because the write genuinely landed, and its banner already
+    // campaign-service's `BriefService.CreateCampaigns` (`internal/service/brief.go`) returns 400
+    // "brief must be approved before creating campaigns". The state is `saved` because the write genuinely landed, and its banner already
     // says the brief is stored but not usable; leaving Create enabled invited the user to prove it
     // the hard way. Read from the explicit `approved` field rather than the banner prose, which
     // would break the first time the copy is edited.
@@ -3190,6 +3191,35 @@ export class ImplementationTabComponent implements OnInit {
       this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, true);
     }
 
+    // Seeded on PRESENCE, not unconditionally, and NOT dead the way the `linkedInCopy` guard below
+    // was. `applyDraft` runs after this and makes the same present-only distinction for both fields,
+    // so on a mount that HAS a draft this gate changes nothing. The mount that has none is what it
+    // is for: a brief generated before extension generation shipped — or restored from a row written
+    // then — carries neither field, and `set([])` for it is indistinguishable from "the generator
+    // produced nothing". On a re-mount where the operator has typed their own entries and no draft
+    // has been written yet (drafts are saved on tab LEAVE, and a brief can re-emit before one), this
+    // is their only protection. Mutation-tested one `if` at a time: replacing either with
+    // `if (true)` fails `leaves hand-typed entries alone for a brief that carries no lists`, which
+    // adds to BOTH editors for exactly that reason — it did not, and the sitelink gate could be
+    // deleted green.
+    //
+    // Capped and de-duplicated server-side already; the editors' own add-guards are what hold the
+    // line against everything the operator does after this point.
+    //
+    // Seeded regardless of the selected Google channel, deliberately, exactly as the draft restore
+    // below does: `googleCalloutsPayload` and `googleSitelinksPayload` both gate on
+    // `googleCalloutsAvailable`, so a list seeded under Performance Max is HELD and not sent, and
+    // is still there if the operator switches to Search. `googleCalloutsWithheldWarning` is what
+    // tells them that is happening.
+    if (brief.googleCallouts !== undefined) {
+      this.googleCallouts.set([...brief.googleCallouts]);
+    }
+    // Each entry copied as well as the array, for the reason the draft restore gives: a sitelink is
+    // an object, and a shallow spread would leave the brief's own entries reachable from the editor.
+    if (brief.googleSitelinks !== undefined) {
+      this.googleSitelinks.set(brief.googleSitelinks.map((s) => ({ ...s })));
+    }
+
     if (brief.linkedInCopy) {
       this.linkedInVariants.set(brief.linkedInCopy.variants);
       // Seeded UNCONDITIONALLY, and the ticket's premise that this needs a "only when the parent
@@ -4202,27 +4232,20 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Whether a destination URL is one the ad platforms will serve.
    *
-   * The same accept set as the BFF's sitelink guard and upstream's `validateServableURL`: absolute,
-   * http(s), with a hostname and no embedded credentials, and none of the Go parser flaws
-   * {@link googleAdsUrlGoParseFlaw} names. Three tiers hold this contract
-   * because none of them can call the others — so the rule for changing it is that all three move
-   * together, and this one must never be the strictest: a URL refused here never reaches the BFF
-   * guard that would have named the real reason.
+   * The accept set itself is {@link isGoogleAdsServableUrl}, which the brief-restore path
+   * (`asSitelinks` in `campaign-service.service.ts`) also calls. The controller's dispatch refusal,
+   * `googleSitelinkUrlRefusal`, does NOT: it goes through its own `describeDestinationUrl`, which
+   * judges brief destinations for all five platforms and reports WHICH refusal a URL hits so the
+   * error message can name it. That second copy of the accept set is kept in step BY HAND, and this
+   * tier must never be the stricter of the two — a URL this guard refuses and that one would accept
+   * is refused with no explanation at all, because the message that would have named the reason
+   * only exists on the path that never runs.
+   *
+   * The trim stays at this tier rather than moving into the shared predicate: the trimmed value is
+   * what {@link addGoogleSitelink} goes on to STORE, so this must judge exactly the string it keeps.
    */
   private isServableDestination(raw: string): boolean {
-    const value = googleAdsTrimSpace(raw);
-    if (value === '' || googleAdsUrlGoParseFlaw(value)) return false;
-
-    let parsed: URL;
-    try {
-      parsed = new URL(value);
-    } catch {
-      return false;
-    }
-
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    if (parsed.hostname === '') return false;
-    return parsed.username === '' && parsed.password === '';
+    return isGoogleAdsServableUrl(googleAdsTrimSpace(raw));
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */

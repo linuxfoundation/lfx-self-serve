@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
@@ -30,6 +30,7 @@ import {
   BriefMetrics,
   BulkKeywordActionRequest,
   BulkKeywordActionResponse,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
@@ -84,6 +85,7 @@ import type {
   CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaign,
+  CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceKeywordTargeting,
   CampaignServiceKeywordTargetingRemovals,
@@ -175,6 +177,33 @@ export class CampaignService {
       }
     }
     return this.http.post<CampaignBriefPersistResult>('/api/campaigns/brief/persist', brief, { params });
+  }
+
+  /**
+   * Approve a brief that is already stored in campaign-service, without re-saving it.
+   *
+   * The companion `persistBrief` could not be: a save APPROVES as its last step, but a save also
+   * rewrites the row, and the restore path exists precisely to avoid that — re-saving a restored
+   * brief would PUT the client's reconstruction over the stored event details, copy, keywords and
+   * targeting. So a restored brief that upstream holds as `draft` had no route to `approved`, and
+   * campaign creation refuses anything else.
+   *
+   * Takes NO body. The brief is the path, the foundation is `?project=` as on every other brief
+   * call, and the validator rides as `If-Match`, where a validator belongs — there is no body for
+   * it to travel in, and `approve-brief` upstream requires one.
+   *
+   * `knownEtag` must be the validator from the read that put the displayed brief on screen, and
+   * is REQUIRED rather than defaulted. A null one is accepted by the type and then refused by the
+   * BFF with `conflict: 'unverified-validator'` — `approveStoredBrief` reads nothing and approves
+   * nothing, because approving a row this page cannot prove is the one it restored is exactly the
+   * defect this path was built to close (#3801). The default argument this parameter used to
+   * carry made that refusal reachable by omission, so it is gone: a caller with no validator has
+   * to say so, and the honest answer for it is a fresh read, not an approval.
+   */
+  public approveBrief(projectSlug: string, briefId: string, knownEtag: string | null): Observable<CampaignBriefApproveResult> {
+    const params = new HttpParams().set('project', projectSlug);
+    const headers = knownEtag !== null && knownEtag !== '' ? new HttpHeaders({ 'If-Match': knownEtag }) : undefined;
+    return this.http.post<CampaignBriefApproveResult>(`/api/campaigns/brief/${encodeURIComponent(briefId)}/approve`, null, { params, headers });
   }
 
   /**
@@ -575,6 +604,35 @@ export class CampaignService {
       params = params.set('window', window);
     }
     return this.http.get<BriefMetrics>('/api/campaigns/brief/metrics', { params });
+  }
+
+  /**
+   * Reads campaign-service's live metrics for ONE campaign on a brief: impressions, clicks, cost (in
+   * micro-units: USD on LinkedIn, the ad account's own currency elsewhere; the response names neither) and CTR.
+   *
+   * Every read reaches the campaign's ad platform. The Optimize tab shows each row's counters from
+   * `getBriefMetrics` and calls this only for one row at a time: on Refresh, or for a row the
+   * brief-wide read could not measure. `window` is optional and not defaulted, for the reason
+   * `getBriefMetrics` gives. A failure is an HTTP error, not a row status: campaign-service's 400
+   * means the platform has no metrics read, 409 that the campaign cannot be measured yet (its
+   * sentence says why). The error is logged and rethrown; the caller decides what the row shows.
+   */
+  public getCampaignMetrics(
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    window?: CampaignMetricsWindow
+  ): Observable<CampaignServiceCampaignMetrics> {
+    let params = new HttpParams().set('project', projectSlug).set('briefId', briefId);
+    if (window !== undefined) {
+      params = params.set('window', window);
+    }
+    return this.http.get<CampaignServiceCampaignMetrics>(`/api/campaigns/${encodeURIComponent(campaignId)}/metrics`, { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to read campaign live metrics', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   public lookupHubSpotUtm(projectSlug: string, eventName: string): Observable<HubSpotUtmLookupResult> {

@@ -26,6 +26,11 @@ router.post('/brief/generate', (req, res, next) => campaignController.generateBr
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
+// Approves a brief that is already stored, and writes nothing to it. Two path segments after
+// `/brief`, so it cannot collide with the single-segment `/brief/persist` or `/brief/metrics`
+// routes, whichever order they are registered in. Empty body: the
+// brief is the path, the foundation is `?project=`, and the validator is the request's `If-Match`.
+router.post('/brief/:briefId/approve', (req, res, next) => campaignController.approveBrief(req, res, next));
 // campaign-service's OWN metrics and action items for one brief. Distinct from `/monitor` and its
 // per-platform siblings below, which read the ad platforms directly and derive action items from
 // four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
@@ -72,6 +77,12 @@ router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCa
 // campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
 // negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
+// One campaign's live counters (`get-campaign-metrics`): the Optimize tab's per-row Refresh, and the
+// precise reason for a row the brief-wide read could not measure. Takes `?project=&briefId=` and an
+// optional `?window=`. Behind LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS — 404 while it is off.
+// Order is safe because the only fixed `/<segment>/metrics` GET, `/brief/metrics`, is registered ABOVE
+// and so matches first; no fixed `/x/metrics` GET is registered after this one for it to shadow.
+router.get('/:campaignId/metrics', (req, res, next) => campaignController.getCampaignMetrics(req, res, next));
 
 // --- Optimize: campaign-service reads and levers ------------------------------
 //

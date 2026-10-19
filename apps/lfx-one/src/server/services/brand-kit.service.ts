@@ -194,9 +194,13 @@ export class BrandKitService {
    * ones included — which is what sibling agents attach (its Markdown
    * rendering). Falls back to the pre-revision read path when the document
    * has no revisions yet.
+   *
+   * `withSidecar`: the same latest revision with its envelope JSON (the
+   * stored sidecar) and date — what another asset's print reads the kit's
+   * colours, typeface and logo from. Null when the document has no revision.
    */
-  public async getStoredBrandKit(req: Request, project: string): Promise<BrandKitStoredResponse | null> {
-    return this.documentStore.readLatest(req, this.artifactSpec, project);
+  public async getStoredBrandKit(req: Request, project: string, withSidecar = false): Promise<BrandKitStoredResponse | null> {
+    return this.documentStore.readLatest(req, this.artifactSpec, project, { withSidecar });
   }
 
   /**

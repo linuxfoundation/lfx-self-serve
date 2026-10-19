@@ -4,6 +4,7 @@
 import type {
   MentorshipMenteeApplyBlockedReason,
   MentorshipMenteeApplyBlockedState,
+  MentorshipMenteeApplyUpstreamErrorState,
   MentorshipMenteeDemographicRow,
   MentorshipMenteeRegisterFieldErrors,
 } from '../interfaces/mentorship-mentee.interface';
@@ -572,9 +573,11 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES: Readonly<Record<MentorshipM
 /**
  * Upstream statuses on the apply-target read or the submit that mean the form cannot be used,
  * keyed by status. 400 is an id that is not a UUID, 403 a program the mentee cannot view, 404 a
- * term that is not in the program, 422 a term outside its application window, and 409 an existing
- * application for the term (pending, decided or declined; upstream does not say which). Any other
- * status keeps the form and reports the failure.
+ * term that is not in the program, 422 an applicant or term that fails an eligibility rule (the
+ * term is outside its application window, no mentee profile, reapply limit, ...), and 409 an
+ * existing application for the term (pending, decided or declined; upstream does not say which).
+ * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` refines the state when the message names the rule.
+ * Any other status keeps the form and reports the failure.
  */
 export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<number, MentorshipMenteeApplyBlockedReason>> = {
   400: 'not-found',
@@ -583,6 +586,91 @@ export const MENTORSHIP_MENTEE_APPLY_BLOCKED_REASON_BY_STATUS: Readonly<Record<n
   409: 'already-applied',
   422: 'closed',
 };
+
+/**
+ * Clearer copy for the specific rules the mentorship service refuses an application on, matched
+ * against its error message (`lfx-mentorship` `ApplicationService.Create` and the repository's
+ * `checkCanApply`). Upstream sends `{ error }` with the sentinel's text in front of the reason
+ * ("eligibility criteria not met: create a mentee profile, ..."), which is not written for a
+ * reader, so the page shows this copy instead. The first entry whose `match` the message contains
+ * wins; a message no entry matches keeps the status's state from `MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES`.
+ * Upstream's 409 currently answers with a bare "conflict", so its two entries only take effect once
+ * the service forwards the reason.
+ */
+export const MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES: readonly MentorshipMenteeApplyUpstreamErrorState[] = [
+  {
+    match: 'create a mentee profile',
+    state: {
+      icon: 'fa-light fa-user-pen',
+      title: 'Complete your mentee profile first',
+      subtitle: 'You need a mentee profile, with the eligibility criteria confirmed, before you can apply to a program.',
+    },
+  },
+  {
+    match: 'reapplication limit reached',
+    state: {
+      icon: 'fa-light fa-ban',
+      title: 'You can no longer apply to this term',
+      subtitle: 'You have withdrawn from this term too many times, so you cannot apply to it again.',
+    },
+  },
+  {
+    match: 'reapplication is not permitted from a declined application',
+    state: {
+      icon: 'fa-light fa-ban',
+      title: 'You cannot reapply to this term',
+      subtitle: 'Your earlier application to this term was declined, so you cannot apply to it again.',
+    },
+  },
+  {
+    match: 'an application for this term already exists',
+    state: {
+      icon: 'fa-light fa-circle-check',
+      title: 'You already applied to this term',
+      subtitle: 'You have an application for this term, so you cannot apply again. Your applications are on your overview.',
+    },
+  },
+  {
+    match: 'already holds an accepted mentorship',
+    state: {
+      icon: 'fa-light fa-user-check',
+      title: 'You are already in a mentorship',
+      subtitle: 'You have been accepted into a mentorship that has not ended yet, so you cannot apply to another one until it does.',
+    },
+  },
+  {
+    match: 'already graduated from a mentorship',
+    state: {
+      icon: 'fa-light fa-graduation-cap',
+      title: 'You have already graduated from a mentorship',
+      subtitle: 'Mentees who have graduated from a mentorship cannot apply to another one.',
+    },
+  },
+  {
+    match: 'application window has not opened yet',
+    state: {
+      icon: 'fa-light fa-calendar-clock',
+      title: 'Applications have not opened yet',
+      subtitle: 'The application window for this term has not opened yet. Please check back once it opens.',
+    },
+  },
+  {
+    match: 'application window has closed',
+    state: {
+      icon: 'fa-light fa-calendar-xmark',
+      title: 'Applications for this term have closed',
+      subtitle: 'The application window for this term has ended, so it is no longer taking applications.',
+    },
+  },
+  {
+    match: 'applications are not open for this program',
+    state: {
+      icon: 'fa-light fa-calendar-xmark',
+      title: 'This program is not accepting applications',
+      subtitle: 'The program is not open for applications right now.',
+    },
+  },
+];
 
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the

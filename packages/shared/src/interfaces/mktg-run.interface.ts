@@ -12,6 +12,7 @@
 
 import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-message.constants';
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
+import type { BoilerplatesChecks, BoilerplatesContent, BoilerplatesMode, BoilerplatesReport } from './boilerplates.interface';
 import type { BrandKitRevision } from './brand-kit.interface';
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
@@ -441,6 +442,15 @@ export interface MktgIntakeAttachment {
    * required `json` attachment.
    */
   incompleteNote?: string;
+  /**
+   * For a `json` messaging framework attachment: the consuming agent reads
+   * the framework's whole content (`{mf, icp, mh, nums}` — the Boilerplates
+   * carry its positioning, its proof and its avoid list), not only its voice
+   * (the Brand Kit). A revision then counts as the attachment only when its
+   * sidecar carries that content (`mktgJsonAttachmentUsable`), the rule the
+   * Boilerplates' BFF validator and the agent's own gate apply.
+   */
+  frameworkContent?: boolean;
 }
 
 /**
@@ -731,9 +741,10 @@ export interface MktgRunQuestionChip {
 
 /**
  * Receipt of an agent's server-side persistence write, returned on a `ready`
- * result by agents whose contract persists the validated document (the Brand
- * Kit's dec-brand-kit-storage-v2 write path today). The run shell reads only
- * its PRESENCE: a ready result WITHOUT a receipt means the object-store write
+ * result by every agent whose contract persists the validated document (the
+ * Brand Kit, the Messaging Framework and the ICP). The run shell keeps its
+ * `content_sha256` on the version (an export names the stored revision by
+ * it), and a ready result WITHOUT a receipt means the object-store write
  * did not happen — transient by default, and because the keys are
  * content-addressed the next poll re-runs the same write idempotently.
  * Field names are snake_case (unlike the camelCase enclosing response) on
@@ -790,7 +801,7 @@ export interface MktgRunResultResponse {
   documentMarkdown?: string;
   /**
    * The validated asset, for agents that write structured JSON instead of a
-   * document (the Messaging Framework). Present when ready; a ready result
+   * document (the Messaging Framework, the Boilerplates). Present when ready; a ready result
    * carries exactly one of `documentMarkdown` and `asset`.
    */
   asset?: MktgRunAsset;
@@ -825,24 +836,42 @@ export interface MktgRunResultResponse {
 
 /**
  * The asset views the run page and the Documents area know how to render,
- * besides a Markdown document. The Messaging Framework's is built inside the
- * mktg-os-agents module; a shared asset-view registry is later work.
+ * besides a Markdown document: the Messaging Framework's and the
+ * Boilerplates', both built inside the mktg-os-agents module; a shared
+ * asset-view registry is later work.
  */
-export type MktgAssetViewKind = 'messaging-framework';
+export type MktgAssetViewKind = 'messaging-framework' | 'boilerplates';
 
 /**
- * A validated structured output — what an agent that writes JSON returns
- * instead of a document: the Messaging Framework bundle with the report and
- * checks the view shows beside it. Stored with the run's version and, by the
- * BFF, as the revision's content.
+ * The Messaging Framework as a validated structured output: the bundle with
+ * the report and checks the framework view shows beside it.
  */
-export interface MktgRunAsset {
+export interface MktgFrameworkAsset {
   kind: 'messaging-framework';
   content: FoundationMessageContent;
   report: FoundationMessageReport;
   checks: FoundationMessageChecks;
   mode: FoundationMessageMode;
 }
+
+/**
+ * The Boilerplates as a validated structured output: the four lengths with
+ * the report and the word counts the Boilerplates view shows beside them.
+ */
+export interface MktgBoilerplatesAsset {
+  kind: 'boilerplates';
+  content: BoilerplatesContent;
+  report: BoilerplatesReport;
+  checks: BoilerplatesChecks;
+  mode: BoilerplatesMode;
+}
+
+/**
+ * A validated structured output — what an agent that writes JSON returns
+ * instead of a document, told apart by its `kind`. Stored with the run's
+ * version and, by the BFF, as the revision's content.
+ */
+export type MktgRunAsset = MktgFrameworkAsset | MktgBoilerplatesAsset;
 
 /** One kind of step in a run's live activity feed — also the header phase it belongs to. */
 export type MktgRunActivityKind = (typeof MKTG_RUN_ACTIVITY_KINDS)[number];
@@ -1030,6 +1059,12 @@ export interface MktgRunVersion {
   answers?: MktgRunAnswer[];
   /** The Brand Kit this version is, for the Brand Kit agent: what the kit view renders (the document is its Markdown rendering). */
   brandKit?: BrandKitRevision;
+  /**
+   * SHA-256 of the content the server stored for this version (its
+   * persistence receipt), which names the stored revision an export of this
+   * version reads; absent when the result carried no receipt.
+   */
+  contentSha256?: string;
   /** ISO-8601 creation timestamp. */
   createdAt: string;
 }
@@ -1135,7 +1170,10 @@ export interface MktgRunQuestionsPending {
  * copy is what dependency gating reads for every browser and user: a document
  * announced on `document` alone can leave consumers holding the previous
  * server version until a page reload, and this is the event that says the
- * shared copy has caught up.
+ * shared copy has caught up. It carries the stored run with the receipt's
+ * hash on the version it persisted, which is what names that version's
+ * stored revision (an export reads it), or null when this browser no longer
+ * holds the run: the shared copy has still caught up.
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }
@@ -1143,7 +1181,7 @@ export type MktgGenerateProgress =
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'refused'; reply: string }
   | { type: 'document'; run: MktgStoredAgentRun }
-  | { type: 'persisted' };
+  | { type: 'persisted'; run: MktgStoredAgentRun | null };
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {

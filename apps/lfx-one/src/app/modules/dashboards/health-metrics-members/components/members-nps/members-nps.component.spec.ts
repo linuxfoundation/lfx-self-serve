@@ -178,6 +178,8 @@ describe('MembersNpsComponent', () => {
 
     expect(query('members-nps-trend')).toBeNull();
     expect(query('members-nps-hero')).not.toBeNull();
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-nps-hero')?.classList).not.toContain('border');
   });
 
   it('withholds a score on too small a sample, explaining the gap instead of showing the side stats', async () => {

@@ -128,6 +128,36 @@ describe('EventsOrganizationsComponent', () => {
     expect(query('events-orgs-row-0014100000BetaAAAA-membership')?.textContent?.trim()).toBe('Non-member');
   });
 
+  it('links each name to Members or Non-Members, searched by name and named for where it opens', async () => {
+    await render(
+      response({ rows: [organization(), organization({ accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal', isMember: false })], totalRecords: 2 })
+    );
+
+    const member = query(`events-orgs-row-${ACCOUNT_ID}-name`);
+    const nonMember = query('events-orgs-row-0014100000BetaAAAA-name');
+    expect(member?.getAttribute('href')).toBe('/foundation/health-metrics/members?memSearch=Acme%20Motors#list');
+    expect(member?.getAttribute('aria-label')).toBe('Open Acme Motors in Members');
+    expect(nonMember?.getAttribute('href')).toBe('/foundation/health-metrics/non-members?nonSearch=Beta%20Coastal#orgs');
+    expect(nonMember?.getAttribute('aria-label')).toBe('Open Beta Coastal in Non-Members');
+    expect(query(`events-orgs-row-${ACCOUNT_ID}`)?.getAttribute('tabindex')).toBeNull();
+    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
+    expect(member?.classList).toContain('!text-gray-900');
+    expect(member?.classList).toContain('!no-underline');
+  });
+
+  it('opens the organization from anywhere on its row', async () => {
+    await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    query(`events-orgs-row-${ACCOUNT_ID}`)?.click();
+
+    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], {
+      fragment: 'list',
+      queryParams: { memSearch: 'Acme Motors', memTier: null, memNps: null, memPage: null },
+      queryParamsHandling: 'merge',
+    });
+  });
+
   it('re-reads from page 1 when the segment changes, and writes it to the URL with the fragment kept', async () => {
     await render(response({ totalRecords: 80, scopeTotal: 80 }), { orgPage: '3' });
     getEventsOrganizations.mockClear();

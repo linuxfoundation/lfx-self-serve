@@ -18,7 +18,7 @@ import {
   MktgRevisionSummary,
   MktgSelectedLivingDocument,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision } from '@lfx-one/shared/utils';
+import { describeMktgRevision, describeMktgRevisionAuthor } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
@@ -75,7 +75,13 @@ export class MktgDocumentsComponent {
   });
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const detail = this.detail();
-    return detail ? detail.revisions.map((revision) => ({ revision, how: describeMktgRevision(revision, detail.type) })) : [];
+    return detail
+      ? detail.revisions.map((revision) => ({
+          revision,
+          how: describeMktgRevision(revision, detail.type),
+          authorLabel: describeMktgRevisionAuthor(revision.author),
+        }))
+      : [];
   });
   protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions[0] ?? null);
 

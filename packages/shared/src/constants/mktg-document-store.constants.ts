@@ -42,7 +42,12 @@ export const MKTG_DOCUMENT_ID_REGEX = /^(living|run-[0-9a-f]{24})$/;
 export const MKTG_LEGACY_REVISION_ID_PREFIX = 'legacy-';
 
 /** Shape of a revision id: `{sequence}-{sha256}` for a stored revision, `legacy-{sha256}` for a not-yet-migrated one. */
-export const MKTG_REVISION_ID_REGEX = /^([0-9]{6}-[0-9a-f]{64}|legacy-[0-9a-f]{64})$/;
+export const MKTG_REVISION_ID_REGEX = /^((?!000000)[0-9]{6}-[0-9a-f]{64}|legacy-[0-9a-f]{64})$/;
+
+/** Bounded metadata fan-out and optimistic write attempts. */
+export const MKTG_DOCUMENT_READ_CONCURRENCY = 4;
+export const MKTG_DOCUMENT_WRITE_ATTEMPTS = 8;
+export const MKTG_DOCUMENT_CURRENT_KEY = 'current.json';
 
 /** The catalog's display name for an agent, so a rename in MKTG_AGENTS reaches the Documents area. */
 function catalogAgentName(catalogAgentId: string): string {
@@ -96,6 +101,15 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     itemLabel: intakeDocumentName('icp'),
     legacyArtifactKey: 'icp',
   },
+  // Stored as JSON revisions from its first run: there is no pre-revision copy to read.
+  {
+    agentKey: 'boilerplates',
+    kind: 'living',
+    catalogAgentId: 'boilerplates',
+    agentName: catalogAgentName('boilerplates'),
+    label: intakeDocumentName('boilerplates'),
+    itemLabel: intakeDocumentName('boilerplates'),
+  },
   {
     agentKey: 'aeo-geo',
     kind: 'run',
@@ -122,9 +136,15 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   },
 ];
 
+/** Collapsed document-view history keeps this many newest revisions, plus open/current rows. */
+export const MKTG_DOCUMENT_REVISION_PREVIEW_COUNT = 5;
+
+/** Historical attribution placeholder, shown only when the revision has no author record. */
+export const MKTG_REVISION_UNKNOWN_AUTHOR_LABEL = 'no name (stored before names were recorded)';
+
 /** "How it was made" for a generated revision, by intake mode. */
 export const MKTG_REVISION_GENERATED_LABEL: Record<MktgArtifactIntakeMode, string> = {
-  form: 'Generated from the form',
-  conversational: 'Generated in a conversation with the agent',
-  prefill: 'Generated from the form with your existing documents (pre-fill)',
+  form: 'generated from the form',
+  conversational: 'generated in a conversation with the agent',
+  prefill: 'generated from the form with your existing documents (pre-fill)',
 };

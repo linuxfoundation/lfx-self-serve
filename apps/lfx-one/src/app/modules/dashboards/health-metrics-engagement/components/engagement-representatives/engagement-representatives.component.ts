@@ -26,7 +26,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, debounceTime, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -123,6 +123,16 @@ export class EngagementRepresentativesComponent {
           takeUntilDestroyed()
         )
         .subscribe((filter) => this.syncUrl(filter));
+
+      // A link elsewhere on the tab (e.g. "Never attended") can set the filter after this section loaded.
+      this.route.queryParamMap
+        .pipe(
+          map((params) => this.toFilter(params.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter) ?? 'all')),
+          distinctUntilChanged(),
+          skip(1),
+          takeUntilDestroyed()
+        )
+        .subscribe((filter) => this.filter.set(filter));
 
       // The badge counts are per period, so a pill change re-reports them off the loaded response.
       toObservable(this.chrome.selectedRange)

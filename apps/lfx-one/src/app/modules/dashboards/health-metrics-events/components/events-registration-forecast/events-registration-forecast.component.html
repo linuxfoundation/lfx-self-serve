@@ -1,6 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
 <div class="flex flex-col gap-4" data-testid="events-registration-forecast">
   @if (closedPeriod()) {
     <lfx-empty-state
@@ -33,31 +34,36 @@
         (filterChange)="onEventChange($event)"
         data-testid="events-registration-forecast-event-pills" />
 
-      <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4" data-testid="events-registration-forecast-card">
-        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div class="flex flex-col gap-1" data-testid="events-registration-forecast-headline">
-            <span class="text-[13px] text-gray-500">Forecast final registrations</span>
-            <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-value">{{ forecastLabel() }}</span>
-            @if (rangeLabel()) {
-              <span class="text-[13px] tabular-nums text-gray-500" data-testid="events-registration-forecast-range">{{ rangeLabel() }} likely range</span>
-            }
+      <div class="flex flex-col gap-4" data-testid="events-registration-forecast-card">
+        <!-- The design's hero: forecast with its likely range inline, caption below, then label-over-value stats. -->
+        <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9">
+          <div class="flex flex-col gap-2" data-testid="events-registration-forecast-headline">
+            <div class="flex items-baseline gap-2">
+              <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-value">{{ forecastLabel() }}</span>
+              @if (rangeLabel()) {
+                <span class="text-[11.5px] font-medium tabular-nums text-gray-500" data-testid="events-registration-forecast-range"
+                  >{{ rangeLabel() }}<span class="sr-only"> likely range</span></span
+                >
+              }
+            </div>
+            <span class="text-[12.5px] text-gray-500">Forecast final registrations</span>
           </div>
-          <dl class="grid grid-cols-2 gap-4 sm:grid-cols-4" data-testid="events-registration-forecast-stats">
+          <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-registration-forecast-stats">
             <div class="flex flex-col gap-0.5">
-              <dt class="text-xs text-gray-500">Now</dt>
-              <dd class="text-sm font-medium tabular-nums text-gray-900" data-testid="events-registration-forecast-now">{{ nowLabel() }}</dd>
+              <dt class="text-[11.5px] text-gray-500">Now</dt>
+              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-now">{{ nowLabel() }}</dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-xs text-gray-500">Same point last year</dt>
-              <dd class="text-sm font-medium tabular-nums text-gray-900" data-testid="events-registration-forecast-last-year">{{ lastYearLabel() }}</dd>
+              <dt class="text-[11.5px] text-gray-500">Same point last year</dt>
+              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-last-year">{{ lastYearLabel() }}</dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-xs text-gray-500">Goal</dt>
-              <dd class="text-sm font-medium tabular-nums text-gray-900" data-testid="events-registration-forecast-goal">{{ goalLabel() }}</dd>
+              <dt class="text-[11.5px] text-gray-500">Goal</dt>
+              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-goal">{{ goalLabel() }}</dd>
             </div>
             <div class="flex flex-col gap-0.5">
-              <dt class="text-xs text-gray-500">Days left</dt>
-              <dd class="text-sm font-medium tabular-nums text-gray-900" data-testid="events-registration-forecast-days-left">{{ daysLeftLabel() }}</dd>
+              <dt class="text-[11.5px] text-gray-500">Days left</dt>
+              <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="events-registration-forecast-days-left">{{ daysLeftLabel() }}</dd>
             </div>
           </dl>
         </div>
@@ -155,7 +161,7 @@
         <h4 class="text-sm font-medium text-gray-900">Every upcoming event &middot; pace against goal</h4>
         <span class="text-xs text-gray-500">worst first</span>
       </div>
-      <lfx-table [value]="rowViews()" data-testid="events-registration-forecast-table">
+      <lfx-table [rowHover]="false" [value]="rowViews()" data-testid="events-registration-forecast-table">
         <ng-template #header>
           <tr>
             <th scope="col"><span class="text-xs font-medium text-gray-500">Event</span></th>

@@ -655,6 +655,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount(meeting, options);
 
     expect(component.canLeaveMeeting()).toBe(false);
+    expect(component.isRegisteredAttendee()).toBe(false);
   });
 
   it.each([
@@ -664,6 +665,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount({ ...INVITEE, organizer: true, ...extra } as Meeting);
 
     expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.isRegisteredAttendee()).toBe(true);
 
     component.confirmLeaveMeeting();
 
@@ -738,7 +740,7 @@ describe('MeetingCardComponent — remove myself', () => {
 
     expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
     confirm.mock.calls[0][0].accept();
-    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1');
+    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'meeting-card');
   });
 
   it('stops offering the action and tells the list to refresh once removed', async () => {

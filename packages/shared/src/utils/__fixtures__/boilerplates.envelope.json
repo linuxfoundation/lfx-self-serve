@@ -1,0 +1,78 @@
+{
+  "contract": "boilerplates-output/v1",
+  "kind": "boilerplates",
+  "project": "acme-mesh",
+  "project_name": "Acme Mesh",
+  "version": 1,
+  "mode": "draft",
+  "content": {
+    "bp": [
+      {
+        "l": "One-liner",
+        "max": 15,
+        "t": "Acme Mesh is the open service mesh for regulated industries."
+      },
+      {
+        "l": "25 words",
+        "max": 25,
+        "t": "Acme Mesh, a Linux Foundation project, is the open service mesh that 40 member companies use to run regulated workloads."
+      },
+      {
+        "l": "50 words",
+        "max": 50,
+        "t": "Acme Mesh, a Linux Foundation project, is the open service mesh for regulated industries. Platform teams at banks and hospitals use it to secure traffic between services. More than 40 member companies back it, and its conformance program certifies distributions."
+      },
+      {
+        "l": "100 words",
+        "max": 100,
+        "t": "Acme Mesh, a Linux Foundation project, is the open service mesh for regulated industries. Platform teams at banks, insurers and hospitals use it to secure, observe and control traffic between services without rewriting them. More than 40 member companies back the project, and a technical steering committee elected by its contributors sets its direction. Its conformance program certifies distributions, and its training program prepares engineers to run it in production. The project publishes its roadmap and security audits in the open. Learn more at acme-mesh.example."
+      }
+    ]
+  },
+  "content_sha256": "87df27e2dd176663f9b5a27b9b9fde1544137e15da469ac98058522763035af4",
+  "report": {
+    "sources_read": ["https://acme-mesh.example"],
+    "sources_failed": [
+      {
+        "name": "https://acme-mesh.example/members",
+        "reason": "404"
+      }
+    ],
+    "gaps": ["The launch year is not stated."],
+    "notes": ""
+  },
+  "checks": {
+    "word_counts": [10, 20, 40, 85],
+    "findings": []
+  },
+  "inputs_record": {
+    "date_read": "2026-10-19",
+    "website": {
+      "url": "https://acme-mesh.example",
+      "read": true
+    },
+    "notes_given": false,
+    "framework_supplied": true,
+    "domain": "acme-mesh.example",
+    "lfx_records": [],
+    "questions_asked": [],
+    "answers": [],
+    "web_searches": [],
+    "fetched": []
+  },
+  "intake": {
+    "mode": "form",
+    "completed_at": "2026-10-19T12:00:00Z"
+  },
+  "revision": null,
+  "capabilities": {
+    "web_fetch": true,
+    "lfx_mcp": false
+  },
+  "generated_at": "2026-10-19T12:00:00Z",
+  "agent": {
+    "identifier": "linux-foundation~boilerplates",
+    "agent_version": "1.0.0",
+    "prompt_manifest_sha256": "b611db0875218e2d09fb41c88f0ebcd9466d4ccdd6e123b868aa4b4f64760b67"
+  }
+}

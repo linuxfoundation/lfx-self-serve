@@ -14,6 +14,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -105,6 +106,7 @@ describe('VotesDashboardComponent personal summary', () => {
         { provide: LensService, useValue: { activeLens } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true), hasBoardRole: signal(true), hasProjectRole: signal(true) } },
         { provide: ProjectContextService, useValue: { activeContext, canWrite: signal(false) } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
       ],
     });
     // Keep the real dashboard, summary and table; unrelated drawers never participate in these scenarios.
@@ -130,6 +132,15 @@ describe('VotesDashboardComponent personal summary', () => {
     await settle();
     table = fixture.debugElement.query(By.directive(VotesTableComponent)).componentInstance;
   }
+
+  it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
+    await management(lens);
+    expect(table.showParticipationProgress()).toBe(true);
+  });
+
+  it('keeps the raw response count in the Me lens', () => {
+    expect(table.showParticipationProgress()).toBe(false);
+  });
 
   it.each<Lens>(['project', 'foundation'])('shows %s totals for the entire Group scope, independent of search/status/page', async (lens) => {
     const service = TestBed.inject(VoteService);

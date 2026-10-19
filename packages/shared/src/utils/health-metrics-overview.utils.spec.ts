@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '../constants/health-metrics-engagement.constants';
+import { HEALTH_METRICS_ENGAGEMENT_SECTIONS, HEALTH_METRICS_TABS } from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '../constants/health-metrics-events.constants';
 import { HEALTH_METRICS_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_MEMBERS_SECTIONS } from '../constants/health-metrics-members.constants';
 import { HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
@@ -19,6 +19,7 @@ import {
 import { HEALTH_METRICS_TRAINING_QUERY_PARAMS, HEALTH_METRICS_TRAINING_SECTIONS } from '../constants/health-metrics-training.constants';
 
 import {
+  buildHealthMetricsOverviewAreaTabRoute,
   buildHealthMetricsOverviewEngagementRoute,
   buildHealthMetricsOverviewEventsRoute,
   buildHealthMetricsOverviewMembersRoute,
@@ -89,58 +90,25 @@ describe('buildHealthMetricsOverviewTiles', () => {
     expect(tiles.find((tile) => tile.area === 'code')?.insightsUrl).toBe('https://insights.example/foundation');
   });
 
-  it('links the eng tile into the Engagement tab group attendance view', () => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'eng' })], undefined);
-    expect(tiles[0].route).toEqual({
-      commands: ['/foundation/health-metrics', 'engagement'],
-      fragment: 'committees',
-      queryParams: { groupType: null, groupPage: null },
-    });
-    expect(tiles[0].routeLabel).toBe('View groups');
+  it.each([
+    ['eng', 'engagement'],
+    ['evt', 'events'],
+    ['mem', 'members'],
+    ['non', 'non-members'],
+    ['trn', 'training'],
+  ] as const)('links the %s tile to the top of the %s tab', (area, tab) => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area })], undefined);
+    expect(tiles[0].tabRoute).toEqual(['/foundation/health-metrics', tab]);
   });
 
-  it('links the evt tile into the Events tab forecast', () => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'evt', statValue: '81%' })], undefined);
-    expect(tiles[0].route).toEqual({ commands: ['/foundation/health-metrics', 'events'], fragment: 'forecast', queryParams: { event: null } });
-    expect(tiles[0].routeLabel).toBe('View forecast');
+  it('links a tile with no figure to its tab too', () => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'mem', statValue: '—' })], undefined);
+    expect(tiles[0].tabRoute).toEqual(['/foundation/health-metrics', 'members']);
   });
 
-  it('links the mem tile into the Members tab all members list', () => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'mem', statValue: '$250K' })], undefined);
-    expect(tiles[0].route).toEqual({
-      commands: ['/foundation/health-metrics', 'members'],
-      fragment: 'list',
-      queryParams: { memTier: null, memNps: null, memSearch: null, memPage: null },
-    });
-    expect(tiles[0].routeLabel).toBe('View members');
-  });
-
-  it('links the non tile into the Non-Members tab on the High fit organizations', () => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'non', statValue: '$75K' })], undefined);
-    expect(tiles[0].route).toEqual({
-      commands: ['/foundation/health-metrics', 'non-members'],
-      fragment: 'orgs',
-      queryParams: { nonFit: 'high-fit', nonSearch: null, nonPage: null },
-    });
-    expect(tiles[0].routeLabel).toBe('View organizations');
-  });
-
-  it('links the trn tile into the Training tab enrollment section', () => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'trn', statValue: '1,240' })], undefined);
-    expect(tiles[0].route).toEqual({ commands: ['/foundation/health-metrics', 'training'], fragment: 'enroll', queryParams: {} });
-    expect(tiles[0].routeLabel).toBe('View enrollment');
-  });
-
-  it('links no tile outside eng, evt, mem, non and trn', () => {
+  it('gives the code tile no tab link', () => {
     const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'code' })], undefined);
-    expect(tiles[0].route).toBeUndefined();
-    expect(tiles[0].routeLabel).toBeUndefined();
-  });
-
-  it.each(['eng', 'evt', 'mem', 'non', 'trn'] as const)('drops the %s tile link when the tile has no figure to drill into', (area) => {
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area, statValue: '—' })], undefined);
-    expect(tiles[0].route).toBeUndefined();
-    expect(tiles[0].routeLabel).toBeUndefined();
+    expect(tiles[0].tabRoute).toBeUndefined();
   });
 
   it('carries showStatus through to the tile view model', () => {
@@ -151,6 +119,19 @@ describe('buildHealthMetricsOverviewTiles', () => {
     const statDetail = { text: '3 of 7 unsecured · $185K', tone: 'watch' as const };
     const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'mem', statDetail })], undefined);
     expect(tiles[0].statDetail).toEqual(statDetail);
+  });
+});
+
+describe('buildHealthMetricsOverviewAreaTabRoute', () => {
+  it('points every area with a tab at a real Health Metrics tab', () => {
+    const tabRoutes = HEALTH_METRICS_TABS.filter((tab) => tab.route).map((tab) => ['/foundation/health-metrics', tab.route]);
+    for (const area of ['eng', 'evt', 'mem', 'non', 'trn'] as const) {
+      expect(tabRoutes).toContainEqual(buildHealthMetricsOverviewAreaTabRoute(area));
+    }
+  });
+
+  it('returns undefined for code, which has no tab', () => {
+    expect(buildHealthMetricsOverviewAreaTabRoute('code')).toBeUndefined();
   });
 });
 

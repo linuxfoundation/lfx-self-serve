@@ -1435,8 +1435,9 @@
         @for (program of [selectedProgramType()]; track program) {
           <lfx-planning-tab
             [programTypeConfig]="activeProgramTypeConfig()"
+            [savedBriefRefreshToken]="savedBriefRefreshToken()"
             (proceedToImplementation)="onProceedToImplementation($event)"
-            (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved)"
+            (restoreSavedBriefRequested)="onRestoreSavedBrief($event.brief, $event.briefId, $event.etag, $event.approved, $event.readAt)"
             data-testid="campaigns-planning-tab" />
         }
       </div>

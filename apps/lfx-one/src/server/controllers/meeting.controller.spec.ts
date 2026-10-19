@@ -69,13 +69,15 @@ vi.mock('@lfx-one/shared/enums', async (importOriginal) => ({
 }));
 // Literals rather than the consts above: `vi.mock` factories are hoisted, so they can't close over
 // module-level bindings. Kept in sync with `MEETING_AGENDA_*`, `MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH`,
-// `MEETING_REGISTRANT_BATCH_*` and `*_CUSTOM_DURATION` in the shared constants barrel.
+// `MEETING_REGISTRANT_BATCH_*`, `MEETING_REMOVAL_SOURCE*` and `*_CUSTOM_DURATION` in the shared constants barrel.
 vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_AGENDA_MAX_LENGTH: 2000,
   MEETING_AGENDA_PROMPT_MAX_LENGTH: 1000,
   MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH: 4000,
   MEETING_REGISTRANT_BATCH_MAX: 100,
   MEETING_REGISTRANT_BATCH_CONCURRENCY: 5,
+  MEETING_REMOVAL_SOURCE_HEADER: 'x-lfx-removal-source',
+  MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join'],
   MIN_CUSTOM_DURATION: 5,
   MAX_CUSTOM_DURATION: 480,
 }));
@@ -1384,6 +1386,46 @@ describe('MeetingController', () => {
       expect(meetingSvc.removeMeetingRegistrantSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ removed_registrant_ids: ['reg-1'], remaining_registrant_ids: [] });
+    });
+
+    it('logs the UI surface named in the removal-source header on start and success', async () => {
+      const req = buildReq({}, { 'x-lfx-removal-source': 'meeting-card' });
+
+      await controller.removeMyMeetingRegistration(req, buildRes(), next);
+
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source: 'meeting-card' }));
+      expect(logger.success).toHaveBeenCalledWith(
+        req,
+        'remove_my_meeting_registration',
+        expect.anything(),
+        expect.objectContaining({ source: 'meeting-card', removed_count: 1, remaining_count: 0 })
+      );
+    });
+
+    it("logs the removed registrant IDs on success without the removing user's username or email", async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+      const req = buildReq();
+
+      await controller.removeMyMeetingRegistration(req, buildRes(), next);
+
+      expect(logger.success).toHaveBeenCalledWith(
+        req,
+        'remove_my_meeting_registration',
+        expect.anything(),
+        expect.objectContaining({ removed_registrant_ids: ['reg-1'] })
+      );
+      const logged = vi.mocked(logger.success).mock.calls[0][3];
+      expect(logged).not.toHaveProperty('username');
+      expect(logged).not.toHaveProperty('email');
+    });
+
+    it.each([[undefined], ['some-other-page'], ['']])('logs an unrecognised or missing removal source (%s) as unknown', async (header) => {
+      const req = buildReq({}, header === undefined ? {} : { 'x-lfx-removal-source': header });
+
+      await controller.removeMyMeetingRegistration(req, buildRes(), next);
+
+      expect(logger.startOperation).toHaveBeenCalledWith(req, 'remove_my_meeting_registration', expect.objectContaining({ source: 'unknown' }));
+      expect(next).not.toHaveBeenCalled();
     });
 
     it('answers 200 with both removed and remaining registration IDs after partial success', async () => {

@@ -75,6 +75,13 @@
       <router-outlet />
     </div>
     <!-- Footer Component -->
-    <lfx-footer class="md:ml-8 p-8 mt-auto" cookie-tracking="true"></lfx-footer>
+    <lfx-footer class="md:ml-8 p-8 mt-auto"></lfx-footer>
+    <a
+      href="#"
+      (click)="openCookieSettings($event)"
+      class="block md:ml-8 px-8 pb-8 -mt-6 text-xs text-gray-700 hover:underline"
+      data-testid="main-layout-footer-cookie-settings">
+      Cookie settings
+    </a>
   </main>
 </div>
