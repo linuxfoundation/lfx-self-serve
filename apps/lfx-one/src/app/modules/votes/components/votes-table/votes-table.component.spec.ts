@@ -409,11 +409,11 @@ describe('VotesTableComponent — participation progress', () => {
     expect(summaries.length).toBe(0);
   });
 
-  it('summarises an ended vote the same way', async () => {
+  it('keeps the participation summary for an ended vote without a progress bar', async () => {
     await render();
 
     expect(text('votes-participation-label-ended')).toBe('8 of 12 responded · 67%');
-    expect(el('votes-participation-bar-ended')).not.toBeNull();
+    expect(el('votes-participation-bar-ended')).toBeNull();
   });
 
   it('shows a draft as not open, without counts or a bar', async () => {

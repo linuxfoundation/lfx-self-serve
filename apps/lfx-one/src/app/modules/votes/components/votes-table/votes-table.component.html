@@ -135,16 +135,18 @@
                       <span class="text-sm text-gray-700 tabular-nums whitespace-nowrap" [attr.data-testid]="'votes-participation-label-' + vote.uid">
                         {{ vote.participation.label }}
                       </span>
-                      <div
-                        class="h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-gray-200"
-                        role="progressbar"
-                        [attr.aria-valuenow]="vote.participation.percent"
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                        [attr.aria-label]="vote.participation.ariaLabel"
-                        [attr.data-testid]="'votes-participation-bar-' + vote.uid">
-                        <div class="h-full rounded-full bg-blue-500" [style.width.%]="vote.participation.percent"></div>
-                      </div>
+                      @if (vote.status === PollStatus.ACTIVE) {
+                        <div
+                          class="h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-gray-200"
+                          role="progressbar"
+                          [attr.aria-valuenow]="vote.participation.percent"
+                          aria-valuemin="0"
+                          aria-valuemax="100"
+                          [attr.aria-label]="vote.participation.ariaLabel"
+                          [attr.data-testid]="'votes-participation-bar-' + vote.uid">
+                          <div class="h-full rounded-full bg-blue-500" [style.width.%]="vote.participation.percent"></div>
+                        </div>
+                      }
                     } @else if (vote.participation.state === VoteRowParticipationState.COUNT_ONLY) {
                       <span class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
                         <span class="text-sm text-gray-700 tabular-nums whitespace-nowrap" [attr.data-testid]="'votes-participation-label-' + vote.uid">
