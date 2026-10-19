@@ -20,6 +20,7 @@ import {
 import {
   boilerplatesAssetOfRevision,
   describeMktgRevision,
+  describeMktgRevisionAuthor,
   foundationMessageAssetOfRevision,
   isMktgSlidesExportAgentKey,
   readBrandKitRevision,
@@ -83,7 +84,13 @@ export class MktgDocumentViewComponent {
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
-    return view ? view.revisions.map((revision) => ({ revision, how: describeMktgRevision(revision, view.type) })) : [];
+    return view
+      ? view.revisions.map((revision) => ({
+          revision,
+          how: describeMktgRevision(revision, view.type),
+          authorLabel: describeMktgRevisionAuthor(revision.author),
+        }))
+      : [];
   });
   protected readonly shortHash: Signal<string> = computed(() => {
     const sha = this.view()?.revision.contentSha256 ?? '';

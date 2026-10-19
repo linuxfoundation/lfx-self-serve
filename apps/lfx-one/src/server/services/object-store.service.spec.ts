@@ -81,6 +81,31 @@ describe('ObjectStoreService', () => {
     service = new ObjectStoreService();
   });
 
+  it('passes S3 preconditions and only treats contention as a failed comparison', async () => {
+    sendMock.mockResolvedValue({});
+    const input = { body: Buffer.from('{}'), contentType: 'application/json', cacheControl: 'private', ifNoneMatch: '*' as const };
+    await expect(service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', input)).resolves.toBe(true);
+    expect(sendMock.mock.calls.at(-1)?.[0].input).toMatchObject({ IfNoneMatch: '*' });
+    sendMock.mockRejectedValue({ $metadata: { httpStatusCode: 412 } });
+    await expect(
+      service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', { ...input, ifNoneMatch: undefined, ifMatch: 'observed' })
+    ).resolves.toBe(false);
+    expect(sendMock.mock.calls.at(-1)?.[0].input).toMatchObject({ IfMatch: 'observed' });
+    sendMock.mockRejectedValue(buildForbiddenError());
+    await expect(service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', input)).rejects.toThrow('Forbidden');
+  });
+
+  it('rejects absent or conflicting conditional-write preconditions with a typed validation error', async () => {
+    const input = { body: Buffer.from('{}'), contentType: 'application/json', cacheControl: 'private' };
+    for (const invalid of [input, { ...input, ifMatch: 'token', ifNoneMatch: '*' as const }]) {
+      await expect(service.putConditionalObject(buildReq(), 'marketing-os-artifacts', 'current.json', invalid)).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VALIDATION_ERROR',
+      });
+    }
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   afterEach(async () => {
     await rm(localDir, { recursive: true, force: true });
   });
@@ -642,7 +667,8 @@ describe('ObjectStoreService', () => {
       expect(objects[0].key).toBe(key);
       expect(objects[0].lastModified).toBeInstanceOf(Date);
 
-      await expect(service.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toEqual({
+      await expect(service.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toMatchObject({
+        etag: expect.any(String),
         body: '# doc',
         metadata: { version: '2', 'intake-mode': 'form' },
       });
@@ -655,7 +681,11 @@ describe('ObjectStoreService', () => {
 
       const restarted = new ObjectStoreService();
 
-      await expect(restarted.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toEqual({ body: '# doc', metadata: { version: '1' } });
+      await expect(restarted.getObject(buildReq(), 'marketing-os-artifacts', key)).resolves.toMatchObject({
+        body: '# doc',
+        metadata: { version: '1' },
+        etag: expect.any(String),
+      });
     });
 
     it('keeps the content-addressed no-op and the strictly-newer metadata refresh', async () => {
