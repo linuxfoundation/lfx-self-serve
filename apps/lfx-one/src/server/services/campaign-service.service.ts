@@ -30,9 +30,9 @@ import {
   googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  isCreativeAssetMimeType,
   isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
-  isCreativeAssetMimeType,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
