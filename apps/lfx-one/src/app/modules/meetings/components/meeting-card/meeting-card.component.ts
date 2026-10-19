@@ -51,6 +51,7 @@ import {
   getPastMeetingTranscriptUrl,
   getUpcomingMeetingStartTime,
   isPastMeetingSummaryAwaitingApproval,
+  isPastMeetingSummaryReadOnly,
   isPastMeetingSummaryVisible,
   Meeting,
   MeetingAttachment,
@@ -591,7 +592,8 @@ export class MeetingCardComponent implements OnInit {
     // Keep the action guard identical to the banner's render condition
     // (hasSummary() === !!summaryContent()) so the "Review Summary" button is
     // never visible-but-inert. The modal only needs content to open; the summary
-    // uid is required solely for the edit/approve write path.
+    // uid is required solely for the edit/approve write path, and whether that
+    // path is offered at all is decided by `readOnly` below.
     if (!this.summaryContent()) {
       return;
     }
@@ -610,9 +612,10 @@ export class MeetingCardComponent implements OnInit {
         pastMeetingUid: getPastMeetingResourceId(this.meeting()),
         meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
-        // Edit/Approve write back via the summary uid; without one the modal
-        // opens read-only so its actions are never visible-but-inert.
-        readOnly: !summaryUid,
+        // Read-only unless the viewer is an organizer with a summary uid to write
+        // to: Edit/Approve are only offered to the viewer the upstream write accepts,
+        // so a non-organizer who can view the summary never sees inert actions.
+        readOnly: isPastMeetingSummaryReadOnly(this.meeting(), this.summary()),
         // Sync the card the moment an edit/approve succeeds — not on dialog close.
         // The dialog's onClose payload is only built by the "Close" button, so an
         // X or backdrop dismiss left the card stale (e.g. approved summary kept
