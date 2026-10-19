@@ -217,6 +217,16 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('View details');
   });
 
+  it('stacks the row link above a positioned band visual, so the band still opens the finding', async () => {
+    await render({
+      sortRank: 9,
+      linkRoute: { commands: ['/foundation/health-metrics', 'events'], fragment: 'forecast', queryParams: { event: null } },
+      visual: { kind: 'band', low: 55, high: 70, goal: 100, pred: 62 },
+    });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-9"]').classList).toContain('z-[1]');
+  });
+
   it('opens an LFX Insights finding in a new tab and says so in its label', async () => {
     await render({ sortRank: 6, linkHref: 'https://insights.lfx.dev/foundation-slug', linkIsExternal: true });
 

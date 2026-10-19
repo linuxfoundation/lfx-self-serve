@@ -9,14 +9,14 @@
   [class.border-b]="!isLast()"
   [class.border-gray-200]="!isLast()">
   <!-- Whole-row link ("stretched link", as in public-foundation-groups): a separate absolute <a> so the
-       area eyebrow can stay its own link above it instead of nesting one link inside another. -->
+       area eyebrow can stay its own link above it (z-10). z-[1] keeps it over the positioned band visual. -->
   @if (finding().linkRoute; as linkRoute) {
     <a
       [routerLink]="linkRoute.commands"
       [fragment]="linkRoute.fragment"
       [queryParams]="linkRoute.queryParams"
       queryParamsHandling="merge"
-      class="peer absolute inset-0 focus-visible:outline-none"
+      class="peer absolute inset-0 z-[1] focus-visible:outline-none"
       [attr.aria-label]="finding().title"
       [attr.data-testid]="'health-metrics-overview-finding-link-' + finding().sortRank"></a>
   } @else if (finding().linkHref; as linkHref) {
@@ -24,7 +24,7 @@
       [href]="linkHref"
       [target]="finding().linkIsExternal ? '_blank' : '_self'"
       [rel]="finding().linkIsExternal ? 'noopener noreferrer' : null"
-      class="peer absolute inset-0 focus-visible:outline-none"
+      class="peer absolute inset-0 z-[1] focus-visible:outline-none"
       [attr.aria-label]="finding().linkIsExternal ? finding().title + ' (opens LFX Insights in a new tab)' : finding().title"
       [attr.data-testid]="'health-metrics-overview-finding-link-' + finding().sortRank"></a>
   }
