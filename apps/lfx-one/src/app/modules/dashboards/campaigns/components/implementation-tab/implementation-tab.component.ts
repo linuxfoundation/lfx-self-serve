@@ -3005,8 +3005,10 @@ export class ImplementationTabComponent implements OnInit {
     this.redditImageUploadSub?.unsubscribe();
     this.redditImageUploadSub = null;
     // Aborted, not just detached: a replaced or removed upload would otherwise run on, compete
-    // with the next one for campaign-service's upload budget, and store an asset nobody uses.
-    if (this.redditImageUploadStatus() === 'uploading') {
+    // with the next one for campaign-service's upload budget, and store an asset nobody uses. A
+    // parked upload (another brief's, kept across a foundation switch) is replaced the same way: a
+    // new pick replaces the previous upload outright, so it is cancelled, not left running unowned.
+    if (this.redditImageUploadStatus() === 'uploading' || this.redditImageUploadPendingName() !== '') {
       this.campaignService.cancelCreativeAssetUpload();
     }
     this.redditImageUploadPendingName.set('');

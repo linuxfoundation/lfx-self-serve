@@ -7905,6 +7905,24 @@ describe('ImplementationTabComponent reddit image upload', () => {
     expect(at(back.fixture).redditImageAssetId()).toBe(ASSET_ID);
   });
 
+  // A new pick replaces the previous upload outright, a parked one included, so it is cancelled
+  // rather than left running with nothing in the draft pointing at it.
+  it('cancels a parked upload when another file is picked, even one that is refused', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026', redditImageUploadPendingBriefId: 'another-brief' };
+    first.fixture.destroy();
+    cancelCreativeAssetUpload.mockClear();
+
+    const second = await mount(true, true, draft);
+    expect(at(second.fixture).redditImageUploadStatus()).toBe('idle');
+    choose(second.fixture, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+
+    expect(cancelCreativeAssetUpload).toHaveBeenCalled();
+    expect(second.latest()?.redditImageUploadPendingName).toBe('');
+  });
+
   it('says the upload was interrupted when there is nothing left to resume', async () => {
     uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
     const first = await mount(true);
