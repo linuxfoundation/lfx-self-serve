@@ -129,6 +129,13 @@ export class MktgAgentRunComponent {
   private readonly effectiveUser$ = toObservable(this.userService.user);
   /** In-flight generation — cancelled when the active project changes so a run can never land on another project. */
   private generationSub: Subscription | null = null;
+  /**
+   * In-flight "Try again" dependency check. Only one may run, and it is
+   * cancelled when the active project changes: a late result (or a late
+   * failure, which sets `dependencyCheckFailed`) must never overwrite the
+   * newer check's record or land on another project.
+   */
+  private dependencyRetrySub: Subscription | null = null;
   /** The existing-documents section, when the intake has one and the form is on screen: its file reads are cancelled with the generation. */
   private readonly documentsSection = viewChild(MktgIntakeDocumentsComponent);
   /** The logo-files section, when the intake has one and the form is on screen: its file reads are cancelled the same way. */
@@ -645,7 +652,8 @@ export class MktgAgentRunComponent {
     if (!projectUid) {
       return;
     }
-    this.resolveDependenciesForGate(projectUid)
+    this.dependencyRetrySub?.unsubscribe();
+    this.dependencyRetrySub = this.resolveDependenciesForGate(projectUid)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((dependencies) => this.dependencyDocs.set(dependencies));
   }
@@ -1220,6 +1228,8 @@ export class MktgAgentRunComponent {
 
     this.generationSub?.unsubscribe();
     this.generationSub = null;
+    this.dependencyRetrySub?.unsubscribe();
+    this.dependencyRetrySub = null;
     // The answers POST was cut with it: its callbacks will never clear the flag, so the next questions step must not inherit it.
     this.answersSending.set(false);
     this.run.set(null);

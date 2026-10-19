@@ -924,6 +924,47 @@ describe('MktgAgentRunComponent', () => {
         expect(component['submitDisabled']()).toBe(false);
       });
 
+      it('lets only the latest Try again land: a slower, earlier retry that fails afterwards does not clear its result', async () => {
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        const slowRetry = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(slowRetry.asObservable());
+        component['onRetryDependencies']();
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        component['onRetryDependencies']();
+        slowRetry.error(new Error('503 from the BFF'));
+        await fixture.whenStable();
+
+        expect(component['dependencyCheckFailed']()).toBe(false);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
+        expect(component['submitDisabled']()).toBe(false);
+      });
+
+      it('drops a Try again still in flight when the project changes, so it cannot land on the new project', async () => {
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        const retry = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(retry.asObservable());
+        component['onRetryDependencies']();
+        dependencyDocs = { 'proj-2:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_2);
+        await fixture.whenStable();
+        retry.error(new Error('503 from the BFF'));
+        await fixture.whenStable();
+
+        expect(retry.observed).toBe(false);
+        expect(component['dependencyCheckFailed']()).toBe(false);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
+      });
+
       it('reports a check that fails at submit time as such, not as a failed run', async () => {
         dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
         activeContext.set(PROJECT_1);
