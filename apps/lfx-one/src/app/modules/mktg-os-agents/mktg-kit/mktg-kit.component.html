@@ -64,7 +64,14 @@
           [attr.data-testid]="'mktg-kit-family-' + card.family.id">
           <div class="flex items-start justify-between gap-2">
             <h2 class="text-lg font-bold">
-              {{ card.family.name }}
+              <a
+                [attr.data-testid]="'mktg-kit-family-link-' + card.family.id"
+                [routerLink]="['families', card.family.id]"
+                [queryParams]="kit.projectQueryParams()"
+                queryParamsHandling="merge"
+                class="text-gray-900 hover:text-blue-700 focus-visible:outline-blue-600"
+                >{{ card.family.name }}</a
+              >
             </h2>
             <span
               class="shrink-0 rounded-full px-2 py-1 text-xs"
