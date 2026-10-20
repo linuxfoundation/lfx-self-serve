@@ -111,39 +111,32 @@ export class MeetingDetailsStateService {
   private readonly optimisticInvitedId = signal<string | null>(null);
   /** RSVPs saved from this page (E2-05), applied ahead of the indexer; see {@link setMyRsvp}. */
   private readonly myRsvpUpdates$ = new Subject<MeetingRsvp>();
-  /** Set while the last `myRsvp` fetch failed, so the request is retried on the clock. */
-  private readonly myRsvpFailed = signal(false);
   /**
    * What `myRsvp` is fetched for, derived synchronously from the route: `null` when it is not
-   * fetched. `retry` is `0` normally and the clock's time while the last fetch failed, so a failure
-   * is retried once straight away and then on each clock tick, instead of sticking for the rest of
-   * the visit.
+   * fetched.
    */
-  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; allDatesOnly: boolean; retry: number } | null> = computed(
-    () => {
-      const meeting = this.meeting();
-      const eligible =
-        !!meeting &&
-        this.matchesRoute() &&
-        this.userService.authenticated() &&
-        this.isInvited(meeting) &&
-        isMeetingInviteResponsesEnabled(meeting) &&
-        !this.loadedViaPastMeetingId() &&
-        this.timeState() !== 'ended';
-      if (!eligible || !meeting) {
-        return null;
-      }
-      const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() });
-      return {
-        meetingId: meeting.id,
-        occurrenceId,
-        // As V1 (#3458): a recurring meeting with no resolved occurrence reads only its series-wide answer,
-        // so a newer single-date or this-and-following answer is never shown as the answer for the series.
-        allDatesOnly: !!meeting.recurrence && !occurrenceId,
-        retry: this.myRsvpFailed() ? this.now().getTime() : 0,
-      };
+  private readonly myRsvpRequest: Signal<{ meetingId: string; occurrenceId: string | undefined; allDatesOnly: boolean } | null> = computed(() => {
+    const meeting = this.meeting();
+    const eligible =
+      !!meeting &&
+      this.matchesRoute() &&
+      this.userService.authenticated() &&
+      this.isInvited(meeting) &&
+      isMeetingInviteResponsesEnabled(meeting) &&
+      !this.loadedViaPastMeetingId() &&
+      this.timeState() !== 'ended';
+    if (!eligible || !meeting) {
+      return null;
     }
-  );
+    const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() });
+    return {
+      meetingId: meeting.id,
+      occurrenceId,
+      // As V1 (#3458): a recurring meeting with no resolved occurrence reads only its series-wide answer,
+      // so a newer single-date or this-and-following answer is never shown as the answer for the series.
+      allDatesOnly: !!meeting.recurrence && !occurrenceId,
+    };
+  });
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -187,8 +180,8 @@ export class MeetingDetailsStateService {
   /**
    * The viewer's own answer for the selected occurrence (E2-04, FR-023): `null` when they have not
    * answered, `undefined` while unknown. It is only fetched for a signed-in viewer on the invite list
-   * of an upcoming or live meeting with RSVP tracking on; everyone else stays `undefined`, and so
-   * does a failed fetch, which the pill reads as the time state rather than "Awaiting your RSVP".
+   * of an upcoming or live meeting with RSVP tracking on; everyone else stays `undefined`. As V1, a
+   * failed fetch reads as not answered (`null`): the BFF and the client both answer `null` for it.
    */
   public readonly myRsvp: Signal<RsvpResponse | null | undefined> = this.initMyRsvp();
   /**
@@ -301,9 +294,6 @@ export class MeetingDetailsStateService {
     if (!key || key.meetingId !== meetingId || key.occurrenceId !== occurrenceId) {
       return;
     }
-    // A saved answer settles an earlier failed fetch: stop retrying, or the next retry could put an
-    // index-lagged answer back over it. The key's drop to `retry: 0` does not refetch.
-    this.myRsvpFailed.set(false);
     this.myRsvpUpdates$.next(rsvp);
   }
 
@@ -480,8 +470,7 @@ export class MeetingDetailsStateService {
     // Deduplicated on its values: the occurrence is re-selected on each clock tick, and a re-lookup
     // hands out a new meeting object, neither of which should refetch over a saved answer.
     const request = toObservable(this.myRsvpRequest).pipe(
-      // A retry tick refetches; the drop back to `retry: 0` after a success does not.
-      distinctUntilChanged((a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId && (b?.retry === 0 || a?.retry === b?.retry))
+      distinctUntilChanged((a, b) => a?.meetingId === b?.meetingId && a?.occurrenceId === b?.occurrenceId && a?.allDatesOnly === b?.allDatesOnly)
     );
 
     return toSignal(
@@ -493,15 +482,11 @@ export class MeetingDetailsStateService {
           if (!event.key) {
             return of(undefined);
           }
-          return this.meetingService.getMeetingRsvpForCurrentUserOrFail(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
+          // As V1: the BFF and the client both read a failed lookup as "not answered" (`null`).
+          return this.meetingService.getMeetingRsvpForCurrentUser(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
-            tap(() => this.myRsvpFailed.set(false)),
-            // Unknown, not "not answered": the pill falls back to the time state, and the request is
-            // retried (see `myRsvpRequest`).
-            catchError(() => {
-              this.myRsvpFailed.set(true);
-              return of<RsvpResponse | null | undefined>(undefined);
-            }),
+            // Defensive: the client already reads a failure as `null`; an error must never end the signal.
+            catchError(() => of<RsvpResponse | null | undefined>(null)),
             startWith<RsvpResponse | null | undefined>(undefined)
           );
         })

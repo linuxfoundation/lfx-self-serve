@@ -284,26 +284,20 @@ export interface MeetingRosterState {
 
 /**
  * One past-meeting artifact as the V2 Recording & Transcript section knows it (E4-01): `available`
- * with somewhere to open it, `none` when the meeting has no such artifact, `no-access` when the
- * viewer may not open it, `error` when it could not be read, or `session-expired` when the read
- * answered 401 (the section then asks the viewer to sign in). `sign-in`: an anonymous viewer whose
- * public route refused this one artifact (#3528), which signing in may open.
+ * with somewhere to open it, `none` when the meeting has no such artifact or the read failed (as V1),
+ * `no-access` when the viewer may not open it, or `session-expired` when the read answered 401 (the
+ * section then asks the viewer to sign in).
  */
 export interface MeetingArtifactState {
-  status: 'available' | 'none' | 'no-access' | 'error' | 'session-expired' | 'sign-in';
+  status: 'available' | 'none' | 'no-access' | 'session-expired';
   /** The recording's share URL (`getLargestSessionShareUrl`); unset for the transcript, which opens in a modal. */
   url?: string;
-  /** The recording's length as shown (`formatRecordingDuration`, E4-02); unset when it could not be measured. */
-  duration?: string;
-  /** The same length for a screen reader (`formatRecordingDurationSpoken`), e.g. "58 minutes 24 seconds". */
-  durationLabel?: string;
 }
 
 /**
- * The V2 Recording & Transcript section's load (E4-01). `sign-in`: an anonymous viewer the public
- * artifact routes (E4-04) give nothing to (no artifact access, or no artifact of this meeting is
- * public). `pending`: an ended meeting opened by its series id, which has no occurrence record to
- * read artifacts from yet.
+ * The V2 Recording & Transcript section's load (E4-01). `sign-in`: an anonymous viewer, or a session
+ * that lapsed (the artifact routes need one, as V1's). `pending`: an ended meeting opened by its series id, which has no
+ * occurrence record to read artifacts from yet.
  */
 export interface MeetingRecordingSectionState {
   status: 'loading' | 'ready' | 'sign-in' | 'pending';
@@ -321,12 +315,11 @@ export interface MeetingRecordingSectionState {
 export type PastMeetingSummaryApprovalState = 'approved' | 'pending' | 'not-required';
 
 /**
- * The AI summary as the V2 Recording & Transcript section knows it (E4-03). `awaiting-review` is an
- * unapproved summary held back from a viewer who is not an organizer: they learn it exists, not what
- * it says. `available` carries the markdown and its approval state.
+ * The AI summary as the V2 Recording & Transcript section knows it (E4-03). `available` carries the
+ * markdown and its approval state; as V1, a summary awaiting approval is shown, marked Pending.
  */
 export interface MeetingSummaryArtifactState {
-  status: MeetingArtifactState['status'] | 'awaiting-review';
+  status: MeetingArtifactState['status'];
   /** The summary's markdown (edited content first), when `available`. */
   content?: string;
   approval?: PastMeetingSummaryApprovalState;

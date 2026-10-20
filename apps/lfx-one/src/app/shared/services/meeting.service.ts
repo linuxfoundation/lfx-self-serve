@@ -628,27 +628,6 @@ export class MeetingService {
     return this.http.get<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary`);
   }
 
-  /**
-   * The past meeting's artifacts on the public routes (E4-04, #3528), by the id `getPublicPastMeeting`
-   * loaded it with (the BFF resolves it, composite id included). For a viewer with no session: the BFF gives only an artifact whose own level is `public`,
-   * else a 401. Not cached, unlike the signed-in recording read, since the answer depends on the session.
-   */
-  public getPublicPastMeetingRecording(pastMeetingId: string): Observable<PastMeetingRecording> {
-    return this.http.get<PastMeetingRecording>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/recording`);
-  }
-
-  public getPublicPastMeetingTranscript(pastMeetingId: string): Observable<PastMeetingTranscript> {
-    return this.http.get<PastMeetingTranscript>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/transcript`);
-  }
-
-  public getPublicPastMeetingTranscriptContent(pastMeetingId: string): Observable<PastMeetingTranscriptContent> {
-    return this.http.get<PastMeetingTranscriptContent>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/transcript/content`);
-  }
-
-  public getPublicPastMeetingSummary(pastMeetingId: string): Observable<PastMeetingSummary> {
-    return this.http.get<PastMeetingSummary>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/summary`);
-  }
-
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
     return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/attachments`);
   }
@@ -850,16 +829,6 @@ export class MeetingService {
   }
 
   public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
-    return this.getMeetingRsvpForCurrentUserOrFail(meetingUid, occurrenceId, allDatesOnly).pipe(catchError(() => of(null)));
-  }
-
-  /**
-   * The caller's own RSVP, or `null` when they have not answered — like
-   * {@link getMeetingRsvpForCurrentUser}, but a failure is logged and rethrown rather than read as
-   * `null`, for a caller that must not mistake "could not load" for "has not answered" (the V2
-   * status pill, E2-04). `allDatesOnly`, without an occurrence, asks for series-wide answers only.
-   */
-  public getMeetingRsvpForCurrentUserOrFail(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
     const options: { params?: Record<string, string> } = {};
     if (occurrenceId) {
       options.params = { occurrenceId };
@@ -869,7 +838,7 @@ export class MeetingService {
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
         console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);
-        return throwError(() => error);
+        return of(null);
       })
     );
   }
