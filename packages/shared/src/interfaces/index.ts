@@ -15,6 +15,7 @@ export * from './org-cache-compact.interface';
 
 // Member interfaces
 export * from './member.interface';
+export * from './member-import.interface';
 
 // Organization interfaces
 export * from './organization.interface';

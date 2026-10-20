@@ -57,6 +57,7 @@ export * from './search.utils';
 export * from './email.utils';
 export * from './email-domain.utils';
 export * from './invitation.utils';
+export * from './member-import.utils';
 export * from './join-application.utils';
 export * from './lens.utils';
 export * from './nav-default-selection.utils';

@@ -4,7 +4,7 @@ description: Frequently asked questions about committees in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Committees
 tags: [committees, faq, governance]
-last_updated: 2026-08-17
+last_updated: 2026-10-20
 intercom_collection: Committees
 ---
 
@@ -21,6 +21,12 @@ Two things cause this: either you're not currently on that group's list, or you 
 ## How do I add members to a committee?
 
 Open the group from the **My Groups** page, navigate to the members section, and use the add member option to search and add by name or email.
+
+## Can I add many members at once?
+
+Yes. If you can manage the group's members, use **Import Members CSV** on the group's **Members** tab to add up to 500 people from a CSV file, including each person's name, organization, role, and voting details. The import adds people directly as members after you review a preview — it does not send invitations, change anyone's permissions, or create groups. See [Import members from a CSV](../manage-committees/#import-members-from-a-csv).
+
+**Add Member** is quicker for a few people: you can paste email addresses or import a meeting's registrants, but groups that require an organization need one person at a time there. Members who can only send invitations see **Invite Someone** instead and cannot import a CSV.
 
 ## Can I have the same person in multiple committees?
 

@@ -116,6 +116,15 @@
               (onClick)="openAddMemberDialog()"
               data-testid="add-member-btn">
             </lfx-button>
+            <lfx-button
+              icon="fa-light fa-file-csv"
+              label="Import Members CSV"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="openImportMembersDialog()"
+              data-testid="import-members-csv-btn">
+            </lfx-button>
           } @else if (canSendMemberInvites()) {
             <lfx-button
               icon="fa-light fa-paper-plane"

@@ -42,6 +42,8 @@ import {
   CommitteeUser,
   FilterPillOption,
   JoinMode,
+  MemberImportDialogData,
+  MemberImportDialogResult,
   TagSeverity,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -66,6 +68,7 @@ import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, map
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
+import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 import { RejectApplicationDialogComponent } from '../reject-application-dialog/reject-application-dialog.component';
 
@@ -369,6 +372,46 @@ export class CommitteeMembersComponent implements OnInit {
       if (typeof result === 'number' && result > 0) {
         this.refreshMembers();
         this.pollUntilMemberAdded(countBeforeAdd, result);
+      }
+    });
+  }
+
+  /**
+   * Opens the CSV member import (GH-3849). Writers only — the authenticated member route still
+   * enforces access on every row. The dialog pins this committee; on close the roster refreshes
+   * (and polls for the cumulative added count) only if the page still shows the same group.
+   */
+  public openImportMembersDialog(): void {
+    const committee = this.committee();
+    if (!committee?.uid || !this.canManageMembers()) {
+      return;
+    }
+    const committeeUid = committee.uid;
+    const countBeforeImport = this.members().length;
+    const data: MemberImportDialogData = { committee, existingMembers: this.members(), existingInvites: this.invites() };
+
+    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
+      header: 'Import Members from CSV',
+      width: '960px',
+      breakpoints: { '1024px': '95vw' },
+      modal: true,
+      // Closing is only possible through the dialog's own Cancel/Close, which returns the
+      // cumulative result and is disabled while rows are being written.
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data,
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((result: MemberImportDialogResult | undefined) => {
+      if (!result || this.committee()?.uid !== committeeUid) {
+        return;
+      }
+      if (result.added > 0) {
+        this.refreshMembers();
+        this.pollUntilMemberAdded(countBeforeImport, result.added);
+      } else if (result.conflicts > 0) {
+        this.refreshMembers();
       }
     });
   }
