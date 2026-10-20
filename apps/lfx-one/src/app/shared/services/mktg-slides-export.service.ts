@@ -3,10 +3,11 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { MKTG_SLIDES_EXPORT_API_PATH, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
+import { MKTG_SLIDES_EXPORT_API_PATH } from '@lfx-one/shared/constants';
 import {
   MktgSlidesExportLastResponse,
   MktgSlidesExportMode,
+  MktgSlidesExportRecord,
   MktgSlidesExportResultRequest,
   MktgSlidesExportResultResponse,
   MktgSlidesExportRunUpdate,
@@ -14,27 +15,8 @@ import {
   MktgSlidesExportStartResponse,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
-import { mktgSlidesExportFailed } from '@lfx-one/shared/utils';
-import { isTransientHttpError } from '@shared/utils/http-error.utils';
-import {
-  catchError,
-  defer,
-  exhaustMap,
-  finalize,
-  map,
-  Observable,
-  of,
-  shareReplay,
-  startWith,
-  switchMap,
-  take,
-  takeLast,
-  takeWhile,
-  tap,
-  throwError,
-  timer,
-  TimeoutError,
-} from 'rxjs';
+import { pollMktgSlidesExport } from '@shared/utils/mktg-slides-export-poll.util';
+import { catchError, finalize, map, Observable, shareReplay, startWith, switchMap, take, throwError } from 'rxjs';
 
 /**
  * Export to Google Slides for the Marketing OS asset pages. The BFF reads
@@ -137,39 +119,10 @@ export class MktgSlidesExportService {
       sessionId: started.sessionId,
       ownerToken: started.ownerToken,
     };
-    return defer(() => {
-      const deadline = Date.now() + MKTG_SLIDES_EXPORT_POLL.timeoutMs;
-      return timer(MKTG_SLIDES_EXPORT_POLL.intervalMs, MKTG_SLIDES_EXPORT_POLL.intervalMs).pipe(
-        tap(() => {
-          if (Date.now() > deadline) {
-            throw new TimeoutError();
-          }
-        }),
-        exhaustMap(() =>
-          this.http.post<MktgSlidesExportResultResponse>(`${MKTG_SLIDES_EXPORT_API_PATH}/result`, body).pipe(
-            catchError((error: unknown) => {
-              if (isTransientHttpError(error)) {
-                console.warn('[mktg-slides-export] poll failed, retrying', { sessionId: started.sessionId, error });
-                return of<MktgSlidesExportResultResponse>({ status: 'pending' });
-              }
-              console.error('[mktg-slides-export] poll refused', { sessionId: started.sessionId, error });
-              return throwError(() => error);
-            })
-          )
-        ),
-        take(MKTG_SLIDES_EXPORT_POLL.maxAttempts),
-        takeWhile((result) => result.status === 'pending', true),
-        takeLast(1),
-        map((result) => (result.status === 'pending' ? mktgSlidesExportFailed('timeout') : result)),
-        catchError((error: unknown) => {
-          if (error instanceof TimeoutError) {
-            console.warn('[mktg-slides-export] poll ran past its deadline', { sessionId: started.sessionId });
-            return of(mktgSlidesExportFailed('timeout'));
-          }
-          return throwError(() => error);
-        })
-      );
-    });
+    return pollMktgSlidesExport<MktgSlidesExportRecord>(
+      () => this.http.post<MktgSlidesExportResultResponse>(`${MKTG_SLIDES_EXPORT_API_PATH}/result`, body),
+      started.sessionId
+    );
   }
 
   private documentKey(target: MktgSlidesExportTarget): string {

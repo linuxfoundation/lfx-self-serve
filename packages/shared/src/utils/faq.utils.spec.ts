@@ -16,6 +16,7 @@ import {
   faqFrameworkContent,
   faqGroupViews,
   faqUnansweredOf,
+  faqSlidesExportQuestions,
   findFaqContentErrors,
   readFaqQuestions,
   renderFaqAnswersText,
@@ -271,6 +272,35 @@ describe('the stored revision and the view models', () => {
     expect(asset?.checks.unanswered).toEqual(ENVELOPE.checks.unanswered);
     expect(faqAssetOfRevision('{"mf":{}}', sidecar)).toBeNull();
     expect(faqAssetOfRevision(text, null)?.mode).toBe('draft');
+  });
+
+  it('exports answered objects in group order, never grouped tuples, sources or non-answers', () => {
+    expect(
+      faqSlidesExportQuestions({
+        faq: [
+          [
+            'First group',
+            [
+              [' First question? ', ' First answer. ', 'Source'],
+              ['Missing?', null, null],
+              ['Pending?', 'TBD', null],
+            ],
+          ],
+          [
+            'Second group',
+            [
+              ['Second question?', 'Second answer.', null],
+              ['Empty?', ' ', null],
+              ['Unavailable?', 'n/a', null],
+            ],
+          ],
+        ],
+      })
+    ).toEqual([
+      { q: 'First question?', a: 'First answer.' },
+      { q: 'Second question?', a: 'Second answer.' },
+    ]);
+    expect(faqSlidesExportQuestions({ faq: [['Unanswered', [['Question?', null, null]]]] })).toEqual([]);
   });
 
   it('lists the unanswered questions as the agent does', () => {
