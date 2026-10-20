@@ -53,7 +53,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
 8. Select **Add _N_ members**.
 
-**What the CSV needs**
+### What the CSV needs
 
 - `email` is always required and must contain one valid email address, not a comma- or semicolon-separated list. Names, job title, LinkedIn profile, role and its dates, and appointed by are optional.
 - Groups with voting or a business email requirement need `organization_name` and a full `https://` `organization_website` for every row. In any group, if you give one of the two you must give both.
@@ -62,7 +62,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 - A file can have up to 500 member rows and be up to 5 MB. Split larger lists into several files.
 - Usernames, member status, and group permissions can't be set from a CSV. Imported people get standard member access; change permissions afterwards from the member's **Edit** option.
 
-**Skipped rows, failures, and retry**
+### Skipped rows, failures, and retry
 
 - People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
 - After the import, each row shows **Added**, **Skipped**, or **Failed** with the reason. Select **Retry _N_ failed** to send only the failed rows again — added and skipped rows are never resubmitted.
