@@ -126,7 +126,6 @@
   // ── Elevation ─────────────────────────────────────────────────────────────
   --md-shadow-color: rgb(15 20 25 / 9%); // derived from --md-text-heading
   --md-shadow-pop: 0 6px 18px var(--md-shadow-color); // hover/raised cards and tiles
-  --md-shadow-raise: 0 2px 6px var(--md-shadow-color); // small round icon buttons (occurrence strip)
   // A11Y: rings on the solid accent, not its 9% tint. The tint composites to roughly
   // #e9f2ff over a card — 1.13:1 against that card, an invisible focus indicator, where
   // WCAG 2.2 SC 1.4.11 wants 3:1. Resolving `var(--md-accent)` also means the ring

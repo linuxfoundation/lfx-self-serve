@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import type {
   BatchRegistrantOperationResponse,
@@ -196,39 +196,6 @@ describe('MeetingService public meeting passcode transport', () => {
     service.getPublicMeeting(MEETING_UID, null).subscribe();
 
     expect(get.mock.calls[0][1].headers).toBeUndefined();
-  });
-
-  // E6-03: the occurrence strip's paged read.
-  it('reads an occurrences page with the passcode in the header and the paging in the params', () => {
-    service.getPublicMeetingOccurrencesPage(MEETING_UID, 'SUPER_SECRET', { pageSize: 12, direction: 'past', cursor: '1784323800000' }).subscribe();
-
-    const [url, options] = get.mock.calls[0];
-    expect(url).toBe(`/public/api/meetings/${MEETING_UID}/occurrences`);
-    expect((options.headers as HttpHeaders).get('x-meeting-password')).toBe('SUPER_SECRET');
-    expect((options.params as HttpParams).toString()).toBe('page_size=12&direction=past&cursor=1784323800000');
-  });
-
-  it('sends only the page size for the window, and no header without a passcode', () => {
-    service.getPublicMeetingOccurrencesPage(MEETING_UID, null, { pageSize: 12 }).subscribe();
-
-    const [, options] = get.mock.calls[0];
-    expect(options.headers).toBeUndefined();
-    expect((options.params as HttpParams).toString()).toBe('page_size=12');
-  });
-
-  it('passes a refusal on to the caller without logging it, and logs any other failure', () => {
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const errors: unknown[] = [];
-
-    get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
-    service.getPublicMeetingOccurrencesPage(MEETING_UID, null, { pageSize: 12 }).subscribe({ error: (error) => errors.push(error) });
-    expect(consoleError).not.toHaveBeenCalled();
-
-    get.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
-    service.getPublicMeetingOccurrencesPage(MEETING_UID, null, { pageSize: 12 }).subscribe({ error: (error) => errors.push(error) });
-    expect(consoleError).toHaveBeenCalledTimes(1);
-
-    expect(errors.map((error) => (error as HttpErrorResponse).status)).toEqual([403, 500]);
   });
 });
 

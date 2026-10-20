@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
-import { Meeting, MeetingJoinPageState, MeetingOccurrenceStripItem, MeetingRsvp, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingJoinPageState, MeetingRsvp, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
@@ -317,128 +317,6 @@ describe('MeetingDetailsStateService', () => {
       await settle();
 
       expect(getPublicMeeting).toHaveBeenCalledWith(MEETING_ID, null);
-    });
-  });
-
-  // E6-03: the occurrence strip moves the page through navigateToOccurrence, on the URL contract.
-  describe('occurrence navigation', () => {
-    let historyState: unknown;
-    const startMs = Date.UTC(2026, 6, 16, 9, 30);
-    const item = (overrides: Partial<MeetingOccurrenceStripItem> = {}): MeetingOccurrenceStripItem => ({
-      startMs,
-      startTime: new Date(startMs).toISOString(),
-      duration: 30,
-      occurrenceId: String(startMs / 1000),
-      isPast: false,
-      cancelled: false,
-      ...overrides,
-    });
-
-    beforeEach(() => {
-      historyState = null;
-      vi.spyOn(history, 'state', 'get').mockImplementation(() => historyState);
-    });
-
-    it('moves to an upcoming occurrence as ?occurrence=<start ms> on the series', async () => {
-      const state = create();
-      await settle();
-
-      state.navigateToOccurrence(item());
-
-      expect(navigate).toHaveBeenCalledWith(['/meetings', MEETING_ID], { queryParams: { occurrence: String(startMs) } });
-    });
-
-    it('moves to a past record by its composite id, and to an ended one without a record by ?occurrence=', async () => {
-      const state = create();
-      await settle();
-
-      state.navigateToOccurrence(item({ isPast: true, pastResourceId: `99152950841-${startMs}` }));
-      expect(navigate).toHaveBeenLastCalledWith(['/meetings', `99152950841-${startMs}`], { queryParams: {} });
-
-      // No record yet: its composite id would 404 and send the viewer to not-found.
-      state.navigateToOccurrence(item({ isPast: true }));
-      expect(navigate).toHaveBeenLastCalledWith(['/meetings', MEETING_ID], { queryParams: { occurrence: String(startMs) } });
-    });
-
-    it('keeps a URL password in the URL, and hands a navigation-state one on in state, never the URL', async () => {
-      queryParamMap$.next(convertToParamMap({ password: 'from-url' }));
-      const fromUrl = create();
-      await settle();
-      fromUrl.navigateToOccurrence(item());
-      expect(navigate).toHaveBeenLastCalledWith(['/meetings', MEETING_ID], { queryParams: { password: 'from-url', occurrence: String(startMs) } });
-
-      TestBed.resetTestingModule();
-      queryParamMap$.next(convertToParamMap({}));
-      historyState = { password: 'from-composer' };
-      const fromState = create();
-      await settle();
-      fromState.navigateToOccurrence(item());
-      expect(navigate).toHaveBeenLastCalledWith(['/meetings', MEETING_ID], {
-        queryParams: { occurrence: String(startMs) },
-        state: { password: 'from-composer' },
-      });
-    });
-
-    it('never moves to a cancelled occurrence', async () => {
-      const state = create();
-      await settle();
-      navigate.mockClear();
-
-      state.navigateToOccurrence(item({ cancelled: true }));
-
-      expect(navigate).not.toHaveBeenCalled();
-    });
-
-    it("selects a past composite page's own start for the strip, and treats it as part of a series", async () => {
-      paramMap$.next(convertToParamMap({ id: `99152950841-${startMs}` }));
-      getPublicPastMeeting.mockReturnValue(
-        of({ meeting: { ...buildMeeting(), id: 'past-uuid', meeting_id: '99152950841', recurrence: undefined }, project, full_access: true })
-      );
-      const state = create();
-      await settle();
-
-      expect(state.selectedOccurrenceStartMs()).toBe(startMs);
-      expect(state.seriesUid()).toBe('99152950841');
-      expect(state.visibleSections()?.occurrences).toBe(true);
-    });
-  });
-
-  describe('a past occurrence opened by its plain id (E6-03)', () => {
-    const startMs = Date.UTC(2026, 6, 16, 9, 30);
-
-    beforeEach(() => {
-      paramMap$.next(convertToParamMap({ id: 'past-uuid' }));
-      getPublicMeeting.mockReturnValue(throwError(() => ({ status: 404 })));
-    });
-
-    it("selects the record's composite start with full access", async () => {
-      getPublicPastMeeting.mockReturnValue(
-        of({
-          meeting: { ...buildMeeting('past-uuid'), meeting_id: '99152950841', meeting_and_occurrence_id: `99152950841-${startMs}` },
-          project,
-          full_access: true,
-        })
-      );
-      const state = create();
-      await settle();
-
-      expect(state.loadedViaPastMeetingId()).toBe(true);
-      expect(state.selectedOccurrenceStartMs()).toBe(startMs);
-    });
-
-    it('selects the scheduled start from the limited response, which has no composite id', async () => {
-      getPublicPastMeeting.mockReturnValue(
-        of({
-          meeting: { ...buildMeeting('past-uuid'), meeting_id: '99152950841', scheduled_start_time: new Date(startMs).toISOString() },
-          project,
-          full_access: false,
-        })
-      );
-      const state = create();
-      await settle();
-
-      expect(state.selectedOccurrenceStartMs()).toBe(startMs);
-      expect(state.visibleSections()?.occurrences).toBe(true);
     });
   });
 

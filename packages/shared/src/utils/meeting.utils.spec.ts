@@ -45,12 +45,10 @@ import {
   buildMeetingOrganizerMailto,
   buildMeetingUpdateRequest,
   buildOccurrenceNavTimeline,
-  buildOccurrenceStripItems,
   buildRecurrenceNeverEndDate,
   buildRecurrenceSummary,
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
-  compositeIdToStartMs,
   convertRecurrenceToPattern,
   countMeetingDatesBefore,
   extractRegistrantEmails,
@@ -77,7 +75,6 @@ import {
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
-  occurrenceIdToStartMs,
   reconcileOptimisticPad,
   resolveMeetingCalendarColors,
   resolveMeetingOrganizer,
@@ -92,7 +89,6 @@ import {
   selectNextUpcomingMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
-  startMsToOccurrenceId,
   toMeetingApiVotingStatuses,
 } from './meeting.utils';
 
@@ -1421,118 +1417,6 @@ describe('getMeetingSeriesUid', () => {
     const past = pastMeeting({ id: 'series-1', meeting_id: '' });
 
     expect(getMeetingSeriesUid(past)).toBe('series-1');
-  });
-});
-
-describe('occurrence id conversions (E6-03)', () => {
-  const startMs = Date.UTC(2026, 6, 16, 9, 30);
-
-  it('converts a 10-digit seconds id and a 13-digit millisecond start both ways', () => {
-    expect(startMsToOccurrenceId(startMs)).toBe(String(startMs / 1000));
-    expect(startMsToOccurrenceId(startMs)).toMatch(/^\d{10}$/);
-    expect(occurrenceIdToStartMs(startMsToOccurrenceId(startMs))).toBe(startMs);
-  });
-
-  it('refuses an id that is not 10 digits', () => {
-    expect(occurrenceIdToStartMs(String(startMs))).toBeNull();
-    expect(occurrenceIdToStartMs('abc')).toBeNull();
-  });
-
-  it('reads the 13-digit start of a composite past id, and nothing else', () => {
-    expect(compositeIdToStartMs(`99152950841-${startMs}`)).toBe(startMs);
-    expect(compositeIdToStartMs('99152950841')).toBeNull();
-    expect(compositeIdToStartMs(`99152950841-${startMs / 1000}`)).toBeNull();
-  });
-});
-
-describe('buildOccurrenceStripItems (E6-03)', () => {
-  const now = new Date(Date.UTC(2026, 6, 20, 12, 0));
-  const at = (day: number): number => Date.UTC(2026, 6, day, 9, 30);
-  const occurrence = (day: number, extra: Partial<MeetingOccurrence> = {}): MeetingOccurrence => ({
-    occurrence_id: String(at(day) / 1000),
-    start_time: new Date(at(day)).toISOString(),
-    duration: 30,
-    ...extra,
-  });
-
-  it('merges past records and upcoming occurrences into one ascending list, one chip per start', () => {
-    const items = buildOccurrenceStripItems(
-      [occurrence(23)],
-      {
-        past: [{ meeting_and_occurrence_id: `99152950841-${at(16)}`, scheduled_start_time: new Date(at(16)).toISOString() }],
-        future: [occurrence(23), occurrence(30)],
-      },
-      30,
-      now
-    );
-
-    expect(items.map((item) => item.startMs)).toEqual([at(16), at(23), at(30)]);
-    expect(items[0]).toEqual(expect.objectContaining({ isPast: true, pastResourceId: `99152950841-${at(16)}`, occurrenceId: String(at(16) / 1000) }));
-    expect(items[1]).toEqual(expect.objectContaining({ isPast: false, cancelled: false }));
-  });
-
-  it('gives an ended occurrence the live list still carries its past record id, but not one still in progress', () => {
-    const ended = Date.UTC(2026, 6, 16, 9, 0);
-    const running = Date.UTC(2026, 6, 20, 11, 45);
-    const live = (ms: number): MeetingOccurrence => ({ occurrence_id: String(ms / 1000), start_time: new Date(ms).toISOString(), duration: 30 });
-    const record = (ms: number) => ({ meeting_and_occurrence_id: `99152950841-${ms}`, scheduled_start_time: new Date(ms).toISOString() });
-    // `now` is 2026-07-20 12:00 UTC: the 16th has ended; the 20th at 11:45 is still in progress, and its
-    // record is already forming.
-    const items = buildOccurrenceStripItems([], { past: [record(ended), record(running)], future: [live(ended), live(running)] }, 30, now);
-
-    expect(items).toHaveLength(2);
-    expect(items[0]).toEqual(expect.objectContaining({ isPast: true, pastResourceId: `99152950841-${ended}` }));
-    const inProgress = items.find((item) => item.startMs === running);
-    expect(inProgress).toEqual(expect.objectContaining({ isPast: false }));
-    expect(inProgress?.pastResourceId).toBeUndefined();
-  });
-
-  it("gives an occurrence with a zero duration the series' duration", () => {
-    // 50 minutes into a 60-minute meeting: still running, though a zero duration plus the 40-minute
-    // end buffer alone would call it ended.
-    const start = now.getTime() - 50 * 60_000;
-    const [item] = buildOccurrenceStripItems(
-      [],
-      { past: [], future: [{ occurrence_id: String(Math.floor(start / 1000)), start_time: new Date(start).toISOString(), duration: 0 }] },
-      60,
-      now
-    );
-
-    expect(item).toEqual(expect.objectContaining({ duration: 60, isPast: false }));
-  });
-
-  it('flags a past record whose id is listed as cancelled', () => {
-    const items = buildOccurrenceStripItems(
-      [],
-      {
-        past: [{ meeting_and_occurrence_id: `99152950841-${at(16)}`, scheduled_start_time: new Date(at(16)).toISOString() }],
-        future: [],
-        cancelled_occurrences: [String(at(16) / 1000)],
-      },
-      30,
-      now
-    );
-
-    expect(items).toEqual([expect.objectContaining({ startMs: at(16), pastResourceId: `99152950841-${at(16)}`, cancelled: true })]);
-  });
-
-  it('keeps cancelled occurrences, flagged, by status or by listed id, including one with no occurrence left', () => {
-    const items = buildOccurrenceStripItems(
-      [],
-      {
-        past: [],
-        future: [occurrence(23, { status: 'cancel' }), occurrence(30)],
-        cancelled_occurrences: [String(at(30) / 1000), String(at(27) / 1000)],
-      },
-      30,
-      now
-    );
-
-    expect(items.map((item) => [item.startMs, item.cancelled])).toEqual([
-      [at(23), true],
-      [at(27), true],
-      [at(30), true],
-    ]);
   });
 });
 

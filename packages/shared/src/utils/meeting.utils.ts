@@ -37,7 +37,6 @@ import type {
   MeetingOccurrence,
   MeetingOccurrenceOption,
   MeetingOccurrenceRoute,
-  MeetingOccurrenceStripItem,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
@@ -784,105 +783,6 @@ export function isVoteCalendarEventPast(vote: Pick<Vote, 'end_time' | 'status' |
     return true;
   }
   return isCalendarDeadlinePast(vote.early_end_time ?? vote.end_time, now);
-}
-
-/**
- * An occurrence id (Unix seconds, 10 digits, as `occurrence_id` and `cancelled_occurrences` carry it)
- * as the Unix-millisecond start the URL and the composite id use; `null` when it is not one.
- */
-export function occurrenceIdToStartMs(occurrenceId: string): number | null {
-  return /^\d{10}$/.test(occurrenceId) ? Number(occurrenceId) * 1000 : null;
-}
-
-/** A Unix-millisecond start as its occurrence id (Unix seconds, 10 digits). */
-export function startMsToOccurrenceId(startMs: number): string {
-  return String(Math.floor(startMs / 1000));
-}
-
-/**
- * The 13-digit millisecond start a past-meeting composite id (`{meetingId}-{13-digit ms}`) ends with;
- * `null` for any other id.
- */
-export function compositeIdToStartMs(compositeId: string): number | null {
-  return isPastMeetingCompositeId(compositeId) ? Number(compositeId.split('-').pop()) : null;
-}
-
-/**
- * The V2 occurrence strip's chips (E6-03, #3586): the live occurrences and the endpoint's pages merged
- * into one ascending list, one chip per start instant (live > endpoint future > past record, as
- * {@link buildOccurrenceNavTimeline}), except that an ended live entry takes its past record's composite
- * id, so it opens as the past meeting. Unlike that list it keeps cancelled occurrences, flagged, so
- * the strip shows them rather than dropping them (FR-044), including a cancelled id with no
- * occurrence left in either list, placed at its own start.
- */
-export function buildOccurrenceStripItems(
-  liveOccurrences: MeetingOccurrence[],
-  series: Pick<PublicMeetingOccurrencesResponse, 'past' | 'future' | 'cancelled_occurrences'>,
-  fallbackDuration = 0,
-  now = new Date()
-): MeetingOccurrenceStripItem[] {
-  const cancelledIds = new Set(series.cancelled_occurrences ?? []);
-  const byInstant = new Map<number, MeetingOccurrenceStripItem>();
-  const add = (item: MeetingOccurrenceStripItem): void => {
-    if (Number.isFinite(item.startMs) && !byInstant.has(item.startMs)) {
-      byInstant.set(item.startMs, item);
-    }
-  };
-  const fromOccurrence = (occurrence: MeetingOccurrence): MeetingOccurrenceStripItem => {
-    const startMs = new Date(occurrence.start_time).getTime();
-    // A zero (or missing) duration inherits the series', as the occurrence picker reads it.
-    const duration = occurrence.duration || fallbackDuration;
-    return {
-      startMs,
-      startTime: occurrence.start_time,
-      duration,
-      occurrenceId: occurrence.occurrence_id,
-      isPast: isOccurrencePast(occurrence.start_time, duration, now),
-      cancelled: occurrence.status === 'cancel' || cancelledIds.has(occurrence.occurrence_id),
-    };
-  };
-
-  liveOccurrences.forEach((occurrence) => add(fromOccurrence(occurrence)));
-  series.future.forEach((occurrence) => add(fromOccurrence(occurrence)));
-
-  for (const past of series.past) {
-    const startMs = compositeIdToStartMs(past.meeting_and_occurrence_id);
-    if (startMs === null) {
-      continue;
-    }
-    // An ended occurrence the live list still carries gets the record's composite id, its canonical URL;
-    // one still in progress keeps its live entry alone, as the page joins it from there.
-    const existing = byInstant.get(startMs);
-    if (existing) {
-      if (existing.isPast) {
-        byInstant.set(startMs, { ...existing, pastResourceId: past.meeting_and_occurrence_id });
-      }
-      continue;
-    }
-    const scheduled =
-      past.scheduled_end_time && past.scheduled_start_time
-        ? Math.round((new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000)
-        : 0;
-    add({
-      startMs,
-      startTime: new Date(startMs).toISOString(),
-      duration: scheduled > 0 ? scheduled : fallbackDuration,
-      occurrenceId: startMsToOccurrenceId(startMs),
-      pastResourceId: past.meeting_and_occurrence_id,
-      isPast: true,
-      cancelled: cancelledIds.has(startMsToOccurrenceId(startMs)),
-    });
-  }
-
-  for (const id of cancelledIds) {
-    const startMs = occurrenceIdToStartMs(id);
-    if (startMs !== null) {
-      const startTime = new Date(startMs).toISOString();
-      add({ startMs, startTime, duration: fallbackDuration, occurrenceId: id, isPast: isOccurrencePast(startTime, fallbackDuration, now), cancelled: true });
-    }
-  }
-
-  return [...byInstant.values()].sort((a, b) => a.startMs - b.startMs);
 }
 
 /** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */

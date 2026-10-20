@@ -98,11 +98,7 @@
       }
     </section>
     <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
-      <!-- E6-03: a recurring meeting's occurrence strip (FR-044); the strip itself hides on a refusal or a single occurrence. -->
-      @if (state.visibleSections()?.occurrences) {
-        <!-- empty:hidden: a hidden strip leaves no 64px gap, as the organizer block does. -->
-        <lfx-meeting-occurrence-strip class="empty:hidden" />
-      }
+      <p-skeleton height="109px" aria-hidden="true" data-testid="meeting-section-placeholder-occurrences" />
       <!-- E4-01: an ended meeting's recording and transcript, where the viewer has artifact access (FR-040). -->
       @if (state.visibleSections()?.tools) {
         <lfx-meeting-recording />

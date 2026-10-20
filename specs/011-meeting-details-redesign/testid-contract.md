@@ -109,7 +109,7 @@ own namespace; the two never share a value.
 | `meeting-occurrence-edit-button`            | Organizer's "Edit this occurrence" control                                                                                                                                                |
 | `meeting-occurrence-cancel-button`          | Organizer's "Cancel this occurrence" control                                                                                                                                              |
 
-`meeting-section-placeholder-${section}` (`discover`) marks
+`meeting-section-placeholder-${section}` (`occurrences`, `discover`) marks
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
 section deletes its placeholder and its row here. A test must never assert on one.
 
@@ -232,21 +232,11 @@ data-state: idle | loading | ready | error
 
 ## Occurrences
 
-| `data-testid`                     | Element                                                                              |
-| --------------------------------- | ------------------------------------------------------------------------------------ |
-| `occurrence-strip-section`        | The occurrence strip (E6-03); absent on a refusal, a failure, or a single occurrence |
-| `occurrence-strip-loading`        | Its placeholder, the strip's height, until the first page settles                    |
-| `occurrence-strip-position`       | "Occurrence N of M", only once the whole series is loaded                            |
-| `occurrence-strip-jump-next`      | "Jump to next meeting", when the page shows another occurrence than the next one     |
-| `occurrence-strip-prev`           | Previous occurrence (pages in older ones at a loaded end)                            |
-| `occurrence-strip-next`           | Next occurrence (pages in later ones at a loaded end)                                |
-| `occurrence-strip-chips`          | The scrolling row of chips                                                           |
-| `occurrence-chip-${occurrenceId}` | One occurrence chip; `occurrenceId` is the 10-digit seconds id                       |
-| `occurrence-browse-dialog`        | The browse-all-occurrences dialog (E6-04)                                            |
-
-Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | `false`), and
-`data-start-ms`, its 13-digit start. The selected one has `aria-current="date"`; a cancelled one is
-`aria-disabled` and never selected.
+| `data-testid`                     | Element                           |
+| --------------------------------- | --------------------------------- |
+| `occurrence-strip-section`        | The occurrence strip              |
+| `occurrence-chip-${occurrenceId}` | One occurrence chip               |
+| `occurrence-browse-dialog`        | The browse-all-occurrences dialog |
 
 ## Agenda and materials
 

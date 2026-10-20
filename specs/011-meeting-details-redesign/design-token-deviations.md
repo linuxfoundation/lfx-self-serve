@@ -126,15 +126,7 @@ because acceptance requires every radius and shadow to resolve through a token.
 | `--md-radius-circle` | `50%`                               | avatars, status dots                   |
 | `--md-shadow-color`  | `rgb(15 20 25 / 9%)`                | derived from `--md-text-heading`       |
 | `--md-shadow-pop`    | `0 6px 18px var(--md-shadow-color)` | hover/raised cards and tiles           |
-| `--md-shadow-raise`  | `0 2px 6px var(--md-shadow-color)`  | small round icon buttons               |
 | `--md-shadow-focus`  | `0 0 0 3px var(--md-accent)`        | focus ring — 4.82:1 light, 6.25:1 dark |
-
-The occurrence strip (E6-03) maps the prototype onto these: its 12px chip radius is
-`--md-radius-chip` (13px), its 32px round buttons `--md-radius-circle`, and their
-`rgba(15,20,25,.12)` lift `--md-shadow-raise` (9%). A past chip's date reads in `--md-text-muted`, not
-the prototype's `--faint`: that is `--md-glyph-faint`, which is under AA for text. "Jump to next
-meeting" is `--md-accent-ink` rather than the prototype's `--accent`, the link ink every V2 text
-action uses, since `--md-accent` is tuned for fills and borders.
 
 ### Feature (non-text)
 
