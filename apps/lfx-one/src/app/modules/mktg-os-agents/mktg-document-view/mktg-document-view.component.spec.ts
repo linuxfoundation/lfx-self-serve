@@ -39,6 +39,7 @@ describe('MktgDocumentViewComponent', () => {
       commentCount: 0,
       latest: false,
       author: null,
+      approval: null,
       ...overrides,
     };
   }
@@ -46,10 +47,10 @@ describe('MktgDocumentViewComponent', () => {
   const LATEST = revision(2, { latest: true });
   const OLDER = revision(1, { origin: 'legacy' });
   const RESTORED = { ...OLDER, latest: true };
-  const detail: MktgDocumentDetailResponse = { project: PROJECT.uid, type: BRAND_KIT, documentId: 'living', revisions: [LATEST, OLDER] };
+  const detail: MktgDocumentDetailResponse = { project: PROJECT.uid, type: BRAND_KIT, documentId: 'living', revisions: [LATEST, OLDER], approvedCurrent: null };
 
   function revisionResponse(current: MktgRevisionSummary): MktgRevisionResponse {
-    return { ...detail, revision: current, markdown: `# Revision ${current.number}\n`, sidecar: null };
+    return { ...detail, revision: current, approval: current.approval, markdown: `# Revision ${current.number}\n`, sidecar: null };
   }
 
   let harness: RouterTestingHarness;

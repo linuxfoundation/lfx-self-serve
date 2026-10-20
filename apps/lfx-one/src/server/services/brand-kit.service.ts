@@ -42,8 +42,8 @@ import { MktgDocumentStoreService } from './mktg-document-store.service';
  *    links the agent reads itself, the notes, and the uploaded logo files —
  *    an SVG as its text, a PNG or a ZIP as its base64 bytes, a link as the
  *    URL the agent fetches — and the project's messaging framework as its
- *    JSON (the latest stored revision, which the run page attaches and the
- *    controller requires; the Voice chapter comes from it and nothing is
+ *    JSON (the run page attaches approved current; the controller validates
+ *    the supplied JSON, without rechecking approval; the Voice chapter comes from it and nothing is
  *    drafted from the site in its place), in the shape the agent reads
  *    (brand-kit-output.md §2a). The agent inspects the artwork, reads the
  *    site's CSS and the brand page, and sources every colour. A run the
@@ -76,7 +76,7 @@ export class BrandKitService {
    * The Marketing OS document store over the SHARED agent-artifact
    * persistence layer: every validated kit is written through the artifact
    * layer and recorded as a revision of the project's Brand Kit document,
-   * whose latest revision is what the stored read serves.
+   * whose approved current is what plain and sidecar stored reads serve.
    */
   private readonly documentStore = new MktgDocumentStoreService();
 
@@ -190,14 +190,9 @@ export class BrandKitService {
   }
 
   /**
-   * The project's LATEST stored Brand Kit — its latest revision, restored
-   * ones included — which is what sibling agents attach (its Markdown
-   * rendering). Falls back to the pre-revision read path when the document
-   * has no revisions yet.
-   *
-   * `withSidecar`: the same latest revision with its envelope JSON (the
-   * stored sidecar) and date — what another asset's print reads the kit's
-   * colours, typeface and logo from. Null when the document has no revision.
+   * Approved current supplies plain and sidecar branding reads, or null
+   * when no approved selection exists. The sidecar carries kit tokens,
+   * chapters and artwork. Only true pre-revision plain fallback remains.
    */
   public async getStoredBrandKit(req: Request, project: string, withSidecar = false): Promise<BrandKitStoredResponse | null> {
     return this.documentStore.readLatest(req, this.artifactSpec, project, { withSidecar });

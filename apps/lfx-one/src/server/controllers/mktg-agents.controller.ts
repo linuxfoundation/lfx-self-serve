@@ -5,6 +5,7 @@ import {
   BOILERPLATES_FRAMEWORK_ANSWER_KEY,
   BRAND_KIT_FRAMEWORK_ANSWER_KEY,
   FAQ_FRAMEWORK_ANSWER_KEY,
+  BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
   FOUNDATION_MESSAGE_DOCUMENT_MAX_CHARS,
   FOUNDATION_MESSAGE_DOCUMENT_TITLE_MAX_CHARS,
   FOUNDATION_MESSAGE_FILE_NAME_HEADER,
@@ -70,7 +71,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { BoilerplatesService } from '../services/boilerplates.service';
 import { BrandKitService } from '../services/brand-kit.service';
 import { FaqService } from '../services/faq.service';
@@ -254,8 +255,9 @@ export class MktgAgentsController {
    * POST /api/mktg-agents/brand-kit/generate
    * Starts a Brand Kit draft from the intake form: the project name, the
    * website and the brand page as URLs (the agent reads them itself), the
-   * notes, the project's messaging framework (required — the latest
-   * stored revision's JSON, serialized, at most
+   * notes, the browser-attached messaging framework (the attach path reads
+   * approved current; this endpoint validates JSON but does not re-check
+   * approval), serialized, at most
    * `BRAND_KIT_MAX_FRAMEWORK_CHARS` characters, carrying the umbrella message
    * or brand line the Voice chapter comes from), the LFX project uid, and
    * the uploaded logo files — an SVG as its text, a PNG or a ZIP as its
@@ -480,14 +482,9 @@ export class MktgAgentsController {
 
   /**
    * GET /api/mktg-agents/brand-kit/stored?project=<uid>[&sidecar=true]
-   * Returns the project's LATEST server-persisted Brand Kit document with its
-   * receipt metadata (the dec-agent-dependency-gating read path), or 404 when
-   * nothing is stored for the project.
-   * With `sidecar=true`, the same latest revision with its envelope JSON (the
-   * stored sidecar: the kit's tokens, chapters and logo files) and date, as
-   * the Messaging Framework's read offers — what another asset's print
-   * (Download PDF) sets itself in: the kit's colours, typeface and logo; 404
-   * when the document has no revision.
+   * Returns approved-current branding bytes and receipt metadata, or 404
+   * when none is approved. `sidecar=true` includes tokens, chapters, artwork
+   * and date. Only a true pre-revision plain read retains legacy fallback.
    *
    * AUTHZ — this is the read boundary for the persisted partition: the caller
    * must hold writer entitlement on the requested project (the
@@ -836,7 +833,7 @@ export class MktgAgentsController {
    * Starts a Boilerplates draft from the intake form: the project name, the
    * website as a URL (the agent reads it, and its host is the domain the
    * 100-word version ends on), the notes, the project's messaging framework
-   * (required — the latest stored revision's JSON, serialized, at most
+   * (required — the run page attaches approved-current JSON, serialized, at most
    * `BOILERPLATES_MAX_FRAMEWORK_CHARS` characters, carrying the framework's
    * content, which the boilerplates' positioning and proof come from) and the
    * LFX project uid. Every submission is a fresh draft — comments per length
@@ -1241,17 +1238,10 @@ export class MktgAgentsController {
 
   /**
    * GET /api/mktg-agents/foundation-message/stored?project=<uid>[&sidecar=true]
-   * Returns the project's LATEST stored Messaging Framework (the latest
-   * revision of its foundation-message document, as the JSON text of its
-   * content) with its receipt metadata (the dec-agent-dependency-gating read
-   * path), or 404 when nothing is stored for the project. This is what lets
-   * a sibling agent — or the same user in a different browser — reach a
-   * framework it did not generate.
-   * With `sidecar=true`, the same latest revision with its envelope JSON (the
-   * stored sidecar, the framework back under `content`) and date (the Brand
-   * Kit's messaging framework — the latest regardless of its review status,
-   * since LFX One has no Approve action yet); 404 when the document has no
-   * revision.
+   * Plain and sidecar responses return approved current, never a newer Draft.
+   * No approved selection returns 404; a true pre-revision plain fallback
+   * remains server-owned. With `sidecar=true`, the response also carries
+   * envelope JSON and date for consumers such as the Brand Kit.
    *
    * AUTHZ — the same read boundary as `storedBrandKit`, deliberately
    * identical: the caller must hold writer entitlement on the requested
@@ -1301,11 +1291,17 @@ export class MktgAgentsController {
       const stored: FoundationMessageStoredResponse | null = await this.foundationMessageService.getStoredFoundationMessage(req, project.uid, withSidecar);
       if (!stored) {
         next(
-          new ResourceNotFoundError('Stored Messaging Framework', project.uid, {
-            operation: 'foundation_message_stored',
-            service: 'mktg_agents_controller',
-            path: req.path,
-          })
+          withSidecar
+            ? new MicroserviceError(BRAND_KIT_APPROVAL_REQUIRED_MESSAGE, 404, 'MKTG_FRAMEWORK_NOT_APPROVED', {
+                operation: 'foundation_message_stored',
+                service: 'mktg_agents_controller',
+                path: req.path,
+              })
+            : new ResourceNotFoundError('Stored Messaging Framework', project.uid, {
+                operation: 'foundation_message_stored',
+                service: 'mktg_agents_controller',
+                path: req.path,
+              })
         );
         return;
       }

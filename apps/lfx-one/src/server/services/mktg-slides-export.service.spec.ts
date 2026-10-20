@@ -55,6 +55,7 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/brand-kit.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-slides-export.constants')),
 }));
@@ -128,7 +129,7 @@ import type { Request } from 'express';
 
 import { brandKitTestRevision } from '../../app/shared/testing/brand-kit-test-data';
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
-import { ConflictError, ResourceNotFoundError } from '../errors';
+import { ConflictError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgSlidesExportService } from './mktg-slides-export.service';
 
@@ -155,6 +156,12 @@ function pngSize(bytes: Buffer): { width: number; height: number } | null {
 }
 
 /** Store a Brand Kit revision as the brand-kit run does: its Markdown, the rest of the envelope as the sidecar. */
+async function approveNewest(documentStore: MktgDocumentStoreService, type: MktgDocumentType): Promise<void> {
+  const revision = (await documentStore.getDocument(req, PROJECT, type, 'living'))?.revisions[0];
+  if (!revision) throw new Error('Missing synthetic revision');
+  await documentStore.approveRevision(req, PROJECT, type, 'living', revision.id);
+}
+
 async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?: string | null; placeholder?: boolean } = {}): Promise<void> {
   const kit = brandKitTestRevision();
   if (options.svg !== undefined) {
@@ -188,10 +195,11 @@ async function seedKit(documentStore: MktgDocumentStoreService, options: { svg?:
     `kit-session-${store.clock}`
   );
   expect(receipt).toMatchObject({ project: PROJECT, content_sha256: sha(markdown) });
+  await approveNewest(documentStore, BRAND_KIT);
 }
 
 /** Store a Messaging Framework revision; returns its content hash. */
-async function seedFramework(documentStore: MktgDocumentStoreService, tagline = 'Search, open.'): Promise<string> {
+async function seedFramework(documentStore: MktgDocumentStoreService, tagline = 'Search, open.', approved = true): Promise<string> {
   const content = { mf: { tagline }, icp: [], mh: { umbrella: 'Open search.', pillars: [] }, nums: [] };
   const contentSha = sha(JSON.stringify(content));
   const receipt = await documentStore.persistJsonGeneration(
@@ -202,6 +210,7 @@ async function seedFramework(documentStore: MktgDocumentStoreService, tagline = 
     `framework-session-${tagline}`
   );
   expect(receipt).toMatchObject({ project: PROJECT, content_sha256: contentSha });
+  if (approved) await approveNewest(documentStore, FRAMEWORK);
   return contentSha;
 }
 
@@ -407,7 +416,7 @@ describe('MktgSlidesExportService', () => {
 
     it('exports the older revision a page names after a newer one is stored — by its hash or its id — and keeps the deck with it', async () => {
       const olderSha = await seedFramework(documentStore, 'Older.');
-      await seedFramework(documentStore, 'Newer.');
+      await seedFramework(documentStore, 'Newer.', false);
       const assetsSent = (): Record<string, Record<string, unknown>> =>
         JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]) as Record<string, Record<string, unknown>>;
 
@@ -437,12 +446,34 @@ describe('MktgSlidesExportService', () => {
       await seedFramework(documentStore);
 
       await expect(service.startExport(req, input({ mode: 'update' }))).rejects.toBeInstanceOf(ConflictError);
-      await expect(service.startExport(req, input({ selector: { contentSha256: 'e'.repeat(64) } }))).rejects.toBeInstanceOf(ResourceNotFoundError);
+      await expect(service.startExport(req, input({ selector: { contentSha256: 'e'.repeat(64) } }))).rejects.toMatchObject({
+        code: 'MKTG_APPROVED_CURRENT_CHANGED',
+      });
       expect(guildMocks.createSession).not.toHaveBeenCalled();
     });
   });
 
   describe('getResult and getLast', () => {
+    it.each([true, false])('keeps the built deck after current moves to an approved/Draft revision (approved=%s)', async (approved) => {
+      await seedFramework(documentStore);
+      const started = await service.startExport(req, input());
+      await seedFramework(documentStore, 'New current.', approved);
+      if (!approved) {
+        const draft = (await documentStore.getDocument(req, PROJECT, FRAMEWORK, 'living'))?.revisions[0];
+        if (!draft) throw new Error('Missing synthetic Draft');
+        await documentStore.restoreRevision(req, PROJECT, FRAMEWORK, 'living', draft.id);
+      }
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      const result = await service.getResult(req, 'session-1', {
+        project: PROJECT,
+        type: FRAMEWORK,
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        revisionId: started.revision.id,
+      });
+      expect(result).toMatchObject({ status: 'ready', record: { revisionId: started.revision.id, deckId: DECK_ID } });
+      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last?.deckId).toBe(DECK_ID);
+    });
     it('keeps a ready deck with the revision it came from, once however often it is polled, and updates that deck next time', async () => {
       await seedFramework(documentStore);
       const started = await service.startExport(req, input());

@@ -17,6 +17,7 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
   MKTG_DOCUMENT_TYPES,
+  MKTG_HOST_ASSET_STATES,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_INTAKE_ONE_LINE_ERROR,
   MKTG_LIVING_DOCUMENT_ID,
@@ -180,14 +181,9 @@ export class MktgAgentRunComponent {
     ...new Set([...(this.agent?.dependsOn ?? []), ...(this.intake?.attachments ?? []).map((attachment) => attachment.sourceAgentId)]),
   ];
   /**
-   * The attachment sources submitted as JSON — resolved from the server's
-   * LATEST stored revision with its sidecar (the newest revision that passes
-   * its integrity checks; a restore is itself the newest revision), never a
-   * browser-stored run. The latest regardless of its
-   * review status: LFX One has no Approve action yet (product decision,
-   * 17 Oct 2026; Approve is a later item). A revision the agent can read
-   * nothing from (`mktgJsonAttachmentUsable`) counts as unmet, not as the
-   * attachment.
+   * JSON attachment sources use the server sidecar read: the Brand Kit's
+   * approved current framework, never a browser-stored run. A revision the
+   * agent cannot read still counts as unmet, not as an attachment.
    */
   private readonly sidecarSourceIds: string[] = (this.intake?.attachments ?? [])
     .filter((attachment) => attachment.format === 'json')
@@ -262,7 +258,7 @@ export class MktgAgentRunComponent {
    * True when the last dependency resolution FAILED (a 403, a 5xx, the
    * network) rather than found nothing: `dependencyDocs` stays null, submit
    * stays disabled, and the page says the check could not be made — never
-   * "Run the messaging framework first", which would read a failed read as
+   * "Approve a messaging framework first", which would read a failed read as
    * a measured absence. Try again re-resolves.
    */
   protected readonly dependencyCheckFailed = signal(false);
@@ -357,7 +353,7 @@ export class MktgAgentRunComponent {
   protected readonly frameworkState: Signal<MktgFrameworkViewState> = computed(() => {
     const phase = this.phase();
     if (phase === 'running') {
-      return 'generating';
+      return MKTG_HOST_ASSET_STATES.drafting;
     }
     if (phase === 'questions') {
       return 'questions';
@@ -412,15 +408,15 @@ export class MktgAgentRunComponent {
    * Non-interactive "Using <project>'s <document> (vN)" chips for the
    * intake's auto-attached dependency documents (dec-agent-dependency-gating)
    * — there is no choice UI; the stored document is always what is submitted.
-   * A `json` attachment's chip names the latest revision and links to the
-   * page it is made on ("Uses the latest messaging framework · v3 · 16 Oct").
+   * The Brand Kit's `json` attachment names the approved current revision
+   * and links to its page ("Uses the approved messaging framework · v3 · 16 Oct").
    */
   protected readonly attachmentChips: Signal<MktgAttachmentChip[]> = this.initAttachmentChips();
   /**
    * The required `json` attachment the project cannot satisfy, once
-   * resolution has completed: no stored revision at all (the Brand Kit on a
-   * project that never ran the messaging framework), or — `incomplete` —
-   * a latest revision the agent can read nothing from (positioning and
+   * resolution has completed: no approved selection (absent framework or
+   * stored but unapproved draft), or — `incomplete` —
+   * an approved revision the agent can read nothing from (positioning and
    * tagline both still "tbd", a restored revision without its sidecar),
    * which the BFF validator would refuse with a 400 no retry could clear.
    * Null while resolving and when satisfied.
@@ -447,8 +443,8 @@ export class MktgAgentRunComponent {
   /**
    * Honest note shown when a dependency has no stored output for the active
    * project (deep-link case — the marketplace card is disabled then), or
-   * when a required attachment has no stored revision at all ("Run the
-   * messaging framework first") or one the agent cannot read (the
+   * when a required attachment has no approved selection (the configured
+   * approval-required message) or one the agent cannot read (the
    * attachment's `incompleteNote`), with the link below it. Empty while
    * dependency resolution is still in flight and when all are met.
    */
@@ -461,7 +457,7 @@ export class MktgAgentRunComponent {
       return unmet.attachment.incompleteNote ?? `Finish the ${unmet.attachment.documentName.toLowerCase()} first.`;
     }
     if (unmet) {
-      return `Run the ${unmet.attachment.documentName.toLowerCase()} first.`;
+      return unmet.attachment.missingNote ?? `Run the ${unmet.attachment.documentName.toLowerCase()} first.`;
     }
     const names = this.missingDependencyNames();
     if (names.length === 0) {
@@ -941,17 +937,15 @@ export class MktgAgentRunComponent {
             if (!mktgJsonAttachmentUsable(attachment, doc.sidecar)) {
               // A revision the agent can read nothing from is not what the
               // run uses: the gate's note names it (an optional one is
-              // simply not sent), so a "Uses the latest …" chip would
+              // simply not sent), so a "Uses the approved current …" chip would
               // contradict the stop beside it.
               continue;
             }
-            // A JSON attachment names the latest revision it is — its version
-            // and the date it was stored — and links to the page it is made
-            // on. Latest, not approved: Approve is a later item.
+            // The sidecar read supplies the approved current framework and its date.
             const storedOn = doc.storedAt ? ` · ${formatDate(doc.storedAt, 'd MMM', 'en-US')}` : '';
             chips.push({
               key: attachment.sourceAgentId,
-              label: `Uses the latest ${attachment.documentName.toLowerCase()} · v${doc.version}${storedOn}`,
+              label: `Uses the approved ${attachment.documentName.toLowerCase()} · v${doc.version}${storedOn}`,
               linkAgentId: attachment.sourceAgentId,
               ...this.attachmentChipStyle.present,
             });

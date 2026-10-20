@@ -8,6 +8,7 @@ import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it reaches
@@ -48,7 +49,7 @@ router.post('/brand-kit/answers', (req, res, next) => mktgAgentsController.brand
 // POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated kit
 router.post('/brand-kit/result', (req, res, next) => mktgAgentsController.brandKitResult(req, res, next));
 
-// GET /api/mktg-agents/brand-kit/stored - the project's latest persisted document (writer-entitled callers only); ?sidecar=true - the same latest revision with its envelope JSON and date (what another asset's print is branded from)
+// GET /api/mktg-agents/brand-kit/stored - approved current plain/sidecar bytes or 404; true pre-revision plain fallback only (writer-entitled).
 router.get('/brand-kit/stored', (req, res, next) => mktgAgentsController.storedBrandKit(req, res, next));
 
 // POST /api/mktg-agents/foundation-message/generate - start a Messaging Framework draft
@@ -92,7 +93,7 @@ router.post('/faq/answers', (req, res, next) => mktgAgentsController.faqAnswers(
 // POST /api/mktg-agents/faq/result - poll a generation session for the validated FAQ (or the agent's questions, or the reply that ended the run)
 router.post('/faq/result', (req, res, next) => mktgAgentsController.faqResult(req, res, next));
 
-// GET /api/mktg-agents/foundation-message/stored - the project's latest stored framework (writer-entitled callers only); ?sidecar=true - the same latest revision with its envelope JSON and date (the Brand Kit's messaging framework)
+// GET /api/mktg-agents/foundation-message/stored - approved current plain/sidecar bytes or 404; true pre-revision plain fallback only (writer-entitled).
 router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
 
 // GET /api/mktg-agents/documents?project=<uid> - every stored Marketing OS document of the project, grouped by type (writer-entitled callers only)
@@ -104,6 +105,11 @@ router.get('/documents/:agentKey/:documentId', (req, res, next) => mktgDocuments
 // GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid> - one revision with its Markdown
 router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, next) => mktgDocumentsController.getRevision(req, res, next));
 
+// POST /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/approve?project=<uid>
+router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', blockDuringImpersonation, (req, res, next) =>
+  mktgDocumentsController.approveRevision(req, res, next)
+);
+
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
@@ -113,7 +119,7 @@ router.post('/slides-export/start', (req, res, next) => mktgSlidesExportControll
 // POST /api/mktg-agents/slides-export/result - poll an export (owner-token in body); a ready deck is kept with the revision it was made from
 router.post('/slides-export/result', (req, res, next) => mktgSlidesExportController.result(req, res, next));
 
-// GET /api/mktg-agents/slides-export/last?project=<uid>&agentKey=&documentId= - the document's last export and its latest revision
+// GET /api/mktg-agents/slides-export/last - last export plus newest identity for freshness, not byte selection.
 router.get('/slides-export/last', (req, res, next) => mktgSlidesExportController.last(req, res, next));
 
 export default router;

@@ -199,7 +199,7 @@ export interface MktgRevisionSummary {
   commentCount: number;
   /** Current, not necessarily newest (kept for existing consumers). */
   latest: boolean;
-  approval?: MktgRevisionApproval | null;
+  approval: MktgRevisionApproval | null;
   author?: MktgRevisionAuthor | null;
   draftVersion?: number;
   basedOnNumber?: number | null;
@@ -212,7 +212,7 @@ export interface MktgDocumentListItem {
   revisionCount: number;
   /** Current revision id, not necessarily the newest revision. */
   latestRevisionId: string;
-  approvedCurrent?: MktgApprovedCurrent | null;
+  approvedCurrent: MktgApprovedCurrent | null;
   currentRevisionNumber?: number;
   /** When the current revision was stored (not when it was made current). */
   updatedAt: string | null;
@@ -239,7 +239,7 @@ export interface MktgDocumentDetailResponse {
   type: MktgDocumentType;
   documentId: string;
   revisions: MktgRevisionSummary[];
-  approvedCurrent?: MktgApprovedCurrent | null;
+  approvedCurrent: MktgApprovedCurrent | null;
   /** Absent/null for documents whose newest revision is current by default. */
   current?: MktgDocumentCurrentSelection | null;
 }
@@ -247,7 +247,7 @@ export interface MktgDocumentDetailResponse {
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
-  approval?: MktgRevisionApproval | null;
+  approval: MktgRevisionApproval | null;
   /** The content text: the Markdown document, or the JSON text of the asset when `revision.format` is `json`. */
   markdown: string;
   /**
