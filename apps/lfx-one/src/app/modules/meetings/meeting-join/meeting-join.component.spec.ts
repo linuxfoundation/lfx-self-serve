@@ -4,7 +4,7 @@
 import { Clipboard } from '@angular/cdk/clipboard';
 import { HttpClient, HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState } from '@angular/core';
+import { ApplicationRef, makeStateKey, PLATFORM_ID, signal, TransferState, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -205,6 +205,10 @@ describe('MeetingJoinComponent', () => {
           useValue: {
             authenticated,
             user: signal<User | null>({ email: 'me@example.com' } as unknown as User),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
             impersonating: signal(false),
             impersonator: signal(null),
             viewerUsername: signal<string | null>('me'),
@@ -1330,6 +1334,24 @@ describe('MeetingJoinComponent', () => {
           await createFixture(joinableMeeting());
 
           expect(open).toHaveBeenCalledTimes(1);
+        });
+
+        it("joins as the impersonator — their email and display name, never the impersonation target's", async () => {
+          const open = vi.spyOn(window, 'open').mockReturnValue(null);
+          getPublicMeetingJoinUrl.mockReturnValue(of({ link: JOIN_LINK }));
+          const userService = TestBed.inject(UserService);
+          (userService.user as WritableSignal<User | null>).set({ name: 'Rashad Mohammed', email: 'rashad@acme-motors.example' } as User);
+          Object.defineProperty(userService, 'meetingJoinIdentity', {
+            value: signal({ name: 'Andres Tobon', email: 'andres@acme-motors.example' }),
+          });
+
+          await createFixture(joinableMeeting());
+
+          expect(getPublicMeetingJoinUrl).toHaveBeenCalledWith(expect.any(String), null, { email: 'andres@acme-motors.example' });
+          expect(open).toHaveBeenCalledTimes(1);
+          const openedUrl = String(open.mock.calls[0][0]);
+          expect(openedUrl).toContain('uname=Andres%20Tobon');
+          expect(openedUrl).not.toContain('Rashad');
         });
 
         it('does not open Zoom behind the prompt, even when the join URL arrives after the param is dropped', async () => {

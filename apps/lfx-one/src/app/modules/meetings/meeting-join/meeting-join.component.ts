@@ -197,6 +197,8 @@ export class MeetingJoinComponent implements OnInit {
   // Class variables with types
   public authenticated: WritableSignal<boolean>;
   public user: Signal<User | null> = this.userService.user;
+  // The identity the join link is built for — the real viewer, never the impersonation target.
+  public joinIdentity: Signal<Pick<User, 'name' | 'email'> | null> = this.userService.meetingJoinIdentity;
   public joinForm: FormGroup;
   public project: WritableSignal<PublicMeetingProject | null> = signal<PublicMeetingProject | null>(null);
   public meeting: Signal<Meeting & { project: PublicMeetingProject }>;
@@ -837,7 +839,7 @@ export class MeetingJoinComponent implements OnInit {
         // Only auto-join for authenticated users using their own email (not guest form)
         filter(([url, zoomRedirectDisabled]) => {
           const authenticated = this.authenticated();
-          const user = this.user();
+          const user = this.joinIdentity();
           const canJoin = this.canJoinMeeting();
           const alreadyJoined = this.hasAutoJoined();
           const usingGuestForm = this.showGuestForm();
@@ -1337,7 +1339,7 @@ export class MeetingJoinComponent implements OnInit {
         switchMap(([canJoin, formStatus]) => {
           const meeting = this.meeting();
           const authenticated = this.authenticated();
-          const user = this.user();
+          const user = this.joinIdentity();
 
           // Reset error state
           this.joinUrlError.set(null);
@@ -1396,7 +1398,7 @@ export class MeetingJoinComponent implements OnInit {
           // For authenticated users, use the user object
           // For guests, pass name and organization from form
           if (this.authenticated()) {
-            return buildJoinUrlWithParams(res.link, this.user());
+            return buildJoinUrlWithParams(res.link, this.joinIdentity());
           }
 
           return buildJoinUrlWithParams(res.link, null, {
