@@ -331,13 +331,13 @@ describe('MeetingHeaderComponent', () => {
     }
 
     it('offers Edit and Cancel this occurrence only when the state service allows it', () => {
-      expect(query('meeting-header-edit-occurrence')).toBeNull();
-      expect(query('meeting-header-cancel-occurrence')).toBeNull();
+      expect(query('meeting-occurrence-edit-button')).toBeNull();
+      expect(query('meeting-occurrence-cancel-button')).toBeNull();
 
       manage();
 
-      expect(query('meeting-header-edit-occurrence')).not.toBeNull();
-      expect(query('meeting-header-cancel-occurrence')).not.toBeNull();
+      expect(query('meeting-occurrence-edit-button')).not.toBeNull();
+      expect(query('meeting-occurrence-cancel-button')).not.toBeNull();
       expect(query('meeting-header-copy-link')).not.toBeNull();
     });
 
@@ -348,7 +348,7 @@ describe('MeetingHeaderComponent', () => {
       meetingsV2Enabled.set(v2);
       manage();
 
-      query('meeting-header-edit-occurrence')?.querySelector('button')?.click();
+      query('meeting-occurrence-edit-button')?.querySelector('button')?.click();
 
       expect(openDialog).toHaveBeenCalledWith(
         RescheduleOccurrenceDialogComponent,
@@ -358,7 +358,7 @@ describe('MeetingHeaderComponent', () => {
 
     it("follows an edited occurrence to its new start, with V1's confirmation toast", () => {
       manage();
-      query('meeting-header-edit-occurrence')?.querySelector('button')?.click();
+      query('meeting-occurrence-edit-button')?.querySelector('button')?.click();
 
       dialogClose.next({ confirmed: true, start_time: '2026-11-04T16:00:00Z' });
 
@@ -368,7 +368,7 @@ describe('MeetingHeaderComponent', () => {
 
     it('changes nothing when the edit dialog closes without a confirmed new start', () => {
       manage();
-      query('meeting-header-edit-occurrence')?.querySelector('button')?.click();
+      query('meeting-occurrence-edit-button')?.querySelector('button')?.click();
 
       dialogClose.next(undefined);
 
@@ -379,7 +379,7 @@ describe('MeetingHeaderComponent', () => {
     it("moves to the cancelled occurrence's successor after a confirmed cancel", () => {
       nextLiveOccurrenceStartMs.mockReturnValue(1_800_000_000_000);
       manage();
-      query('meeting-header-cancel-occurrence')?.querySelector('button')?.click();
+      query('meeting-occurrence-cancel-button')?.querySelector('button')?.click();
 
       expect(openDialog).toHaveBeenCalledWith(
         CancelOccurrenceConfirmationComponent,
@@ -394,7 +394,7 @@ describe('MeetingHeaderComponent', () => {
 
     it("reports a failed cancel with V1's error toast and stays put", () => {
       manage();
-      query('meeting-header-cancel-occurrence')?.querySelector('button')?.click();
+      query('meeting-occurrence-cancel-button')?.querySelector('button')?.click();
 
       dialogClose.next({ confirmed: false, error: 'Upstream refused the cancel' });
 

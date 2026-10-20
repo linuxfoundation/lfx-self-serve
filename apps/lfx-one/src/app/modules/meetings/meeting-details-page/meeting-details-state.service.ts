@@ -160,6 +160,13 @@ export class MeetingDetailsStateService {
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly occurrencesRefresh$ = new BehaviorSubject<void>(undefined);
   /**
+   * The occurrence on screen when an edit or cancel moved `?occurrence=`, held until the meeting is
+   * read again: the payload still has the old start, so the new one cannot match yet, and the page
+   * would otherwise jump to the series' first upcoming date meanwhile (V1 re-selects only when the
+   * meeting changes).
+   */
+  private readonly heldOccurrence = signal<MeetingOccurrence | null>(null);
+  /**
    * Emits when the series timeline must be read again (after an occurrence edit or cancel), as V1's
    * `seriesOccurrencesRefresh$`; the occurrence navigation re-fetches on it.
    */
@@ -329,6 +336,7 @@ export class MeetingDetailsStateService {
    * unchanged URL, which the router treats as a no-op.
    */
   public showOccurrenceAfterChange(startMs: number | null): void {
+    this.heldOccurrence.set(this.selectedOccurrence());
     void this.router.navigate([], {
       relativeTo: this.activatedRoute,
       queryParams: { occurrence: startMs === null ? null : String(startMs) },
@@ -380,6 +388,11 @@ export class MeetingDetailsStateService {
         const match = active.find((occurrence) => new Date(occurrence.start_time).getTime() === requested);
         if (match) {
           return match;
+        }
+        // An edit moved it: keep showing it until the meeting is read again (see `heldOccurrence`).
+        const held = this.heldOccurrence();
+        if (held) {
+          return held;
         }
       }
       // A series with none current or next left has ended: its last occurrence, not the series'
@@ -627,6 +640,7 @@ export class MeetingDetailsStateService {
         this.loadFailed.set(false);
         this.failureCount.set(0);
         this.retrying.set(false);
+        this.heldOccurrence.set(null);
         this.resolvedRouteId.set(this.routeId());
         if (isPlatformServer(this.platformId)) {
           this.transferState.set(this.stateKey, {

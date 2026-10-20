@@ -514,8 +514,6 @@ describe('MeetingDetailsStateService', () => {
     });
   });
 
-  // The resolver's own table is in `meeting-view-model.utils.spec.ts`; these check the inputs the
-  // service feeds it.
   describe("V1's occurrence actions and Add to calendar", () => {
     const DAY = 24 * 60 * 60 * 1000;
     const first = new Date(Date.now() + 2 * DAY);
@@ -601,6 +599,32 @@ describe('MeetingDetailsStateService', () => {
       expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(lookups);
     });
 
+    it('keeps the edited occurrence on screen until the meeting is read again with its new start', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      const state = await load(series());
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+
+      const moved = new Date(second.getTime() + 60 * 60 * 1000);
+      const refetched = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetched.asObservable());
+      navigate.mockImplementation((_commands: unknown[], extras: { queryParams: Record<string, string | null> }) => {
+        queryParamMap$.next(convertToParamMap({ occurrence: extras.queryParams['occurrence'] }));
+        return Promise.resolve(true);
+      });
+
+      state.showOccurrenceAfterChange(moved.getTime());
+      await settle();
+
+      // The held payload has only the old start: still the edited occurrence, not the series' first date.
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+
+      const updated = series();
+      (updated.occurrences ?? [])[1].start_time = moved.toISOString();
+      refetched.next({ meeting: updated, project });
+
+      expect(state.selectedOccurrence()?.start_time).toBe(moved.toISOString());
+    });
+
     it('drops ?occurrence= after a cancel with no successor', async () => {
       const state = await load(series());
 
@@ -631,6 +655,8 @@ describe('MeetingDetailsStateService', () => {
     });
   });
 
+  // The resolver's own table is in `meeting-view-model.utils.spec.ts`; these check the inputs the
+  // service feeds it.
   describe('action slot', () => {
     const live = (overrides: Partial<Meeting> = {}) =>
       ({

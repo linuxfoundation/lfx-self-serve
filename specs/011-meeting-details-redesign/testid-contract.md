@@ -83,6 +83,7 @@ own namespace; the two never share a value.
 | `meeting-guest-join-button`                 | Its Join control (see below)                                                                                          |
 | `meeting-guest-join-error`                  | Its error message (`role="alert"`)                                                                                    |
 | `meeting-action-register-button`            | `register`'s "Register for meeting" control, for a signed-in outsider                                                 |
+| `meeting-action-add-to-calendar`            | V1's Add to calendar under the slot, for an organizer or invitee before the join window (FR-050)                      |
 | `meeting-action-message`                    | The slot's line of copy: a finished kind's explanation, or the one line for a kind whose full design is still to come |
 | `meeting-rsvp-card`                         | The `rsvp` kind's "Will you attend?" card; carries `data-my-rsvp`                                                     |
 | `meeting-rsvp-card-${response}`             | One answer button, `accepted` / `maybe` / `declined`; `aria-pressed` once it is the answer                            |

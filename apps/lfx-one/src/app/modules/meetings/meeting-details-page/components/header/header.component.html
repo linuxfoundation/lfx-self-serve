@@ -151,7 +151,7 @@
           tooltip="Edit this occurrence"
           [styleClass]="iconButtonClass"
           (onClick)="rescheduleOccurrence()"
-          data-testid="meeting-header-edit-occurrence" />
+          data-testid="meeting-occurrence-edit-button" />
         <lfx-button
           icon="fa-light fa-ban"
           [rounded]="true"
@@ -162,7 +162,7 @@
           tooltip="Cancel this occurrence"
           [styleClass]="iconButtonClass"
           (onClick)="cancelOccurrence()"
-          data-testid="meeting-header-cancel-occurrence" />
+          data-testid="meeting-occurrence-cancel-button" />
       }
       <lfx-button
         icon="fa-light fa-copy"
