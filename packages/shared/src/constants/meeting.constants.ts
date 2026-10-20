@@ -596,12 +596,6 @@ export const DEFAULT_MEETING_TOOL = 'Zoom';
  */
 export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
 
-/**
- * Where a past meeting's attendance rate changes band (E4-05), in percent: below `medium` is `low`,
- * below `high` is `medium`, the rest `high`. One set for the public and the admin page.
- */
-export const PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS = { medium: 25, high: 70 } as const;
-
 /** The past-meeting field holding each artifact's own access level (E4-04). */
 export const PAST_MEETING_ARTIFACT_ACCESS_FIELDS: Record<PastMeetingArtifactKind, 'recording_access' | 'transcript_access' | 'ai_summary_access'> = {
   recording: 'recording_access',

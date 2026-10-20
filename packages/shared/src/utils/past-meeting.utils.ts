@@ -5,7 +5,6 @@ import {
   MEETING_RECORDING_MEDIA_FILE_TYPES,
   MEETING_RECORDING_SESSION_TOLERANCE_MS,
   PAST_MEETING_ARTIFACT_ACCESS_FIELDS,
-  PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS,
 } from '../constants/meeting.constants';
 import { ArtifactVisibility, MeetingVisibility } from '../enums';
 import {
@@ -13,9 +12,6 @@ import {
   Meeting,
   PastMeeting,
   PastMeetingArtifactKind,
-  PastMeetingAttendanceCounts,
-  PastMeetingAttendanceFigures,
-  PastMeetingAttendanceTone,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingTranscript,
@@ -333,41 +329,4 @@ export function filterPastMeetingParticipants(
 
     return matchesSearch && matchesAttendance && matchesInvitation && matchesGroup;
   });
-}
-
-/**
- * A past meeting's participant counts (E4-05), as the BFF puts them on the meeting: every record, the
- * ones who attended, and the ones who were invited. The one place they are counted.
- */
-export function countPastMeetingAttendance(participants: Pick<PastMeetingParticipant, 'is_attended' | 'is_invited'>[]): PastMeetingAttendanceCounts {
-  return {
-    participant_count: participants.length,
-    attended_count: participants.filter((participant) => participant.is_attended).length,
-    individual_registrants_count: participants.filter((participant) => participant.is_invited).length,
-  };
-}
-
-/** The band an attendance rate falls in (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`). */
-export function getPastMeetingAttendanceTone(rate: number): PastMeetingAttendanceTone {
-  if (rate < PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS.medium) {
-    return 'low';
-  }
-  return rate < PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS.high ? 'medium' : 'high';
-}
-
-/**
- * The attendance figures both pages show (E4-05), from the BFF's counts on the meeting. Null when the
- * counts are absent (not loaded, or the read failed), so a page can tell "unknown" from a real zero; a
- * meeting with no participants gives zero figures with no rate.
- */
-export function getPastMeetingAttendanceFigures(
-  counts: Partial<Pick<PastMeetingAttendanceCounts, 'participant_count' | 'attended_count'>> | null | undefined
-): PastMeetingAttendanceFigures | null {
-  if (counts?.participant_count == null || counts.attended_count == null) {
-    return null;
-  }
-  const total = counts.participant_count;
-  const attended = Math.min(counts.attended_count, total);
-  const rate = total > 0 ? Math.round((attended / total) * 100) : null;
-  return { total, attended, absent: total - attended, rate, tone: rate === null ? null : getPastMeetingAttendanceTone(rate) };
 }

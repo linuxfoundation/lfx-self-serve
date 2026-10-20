@@ -20,15 +20,12 @@ import {
   EnrichedPastMeetingParticipant,
   compareMeetingPeopleByHostThenName,
   EntityWithProject,
-  getPastMeetingAttendanceFigures,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
   isPastMeetingSummaryAwaitingApproval,
   MEETING_TYPE_CONFIGS,
   PastMeeting,
   PastMeetingAttachment,
-  PastMeetingAttendanceFigures,
-  PastMeetingAttendanceTone,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
@@ -47,6 +44,7 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
+import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take, tap, timer } from 'rxjs';
 
 @Component({
@@ -64,6 +62,7 @@ import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filte
     DynamicDialogModule,
     TableComponent,
     AvatarComponent,
+    TooltipModule,
     MeetingMaterialsDrawerComponent,
     MeetingOrganizerComponent,
     AttendanceReconciliationDrawerComponent,
@@ -122,10 +121,18 @@ export class PastMeetingDetailsComponent {
       is_foundation: meeting.is_foundation ?? null,
     };
   });
+  public attendeeCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_attended).length);
+  public absenteeCount: Signal<number> = computed(() => this.participants().filter((p) => !p.is_attended).length);
+  public invitedCount: Signal<number> = computed(() => this.participants().filter((p) => p.is_invited).length);
+  public uninvitedCount: Signal<number> = computed(() => this.participants().filter((p) => !p.is_invited).length);
+  public votingRepCount: Signal<number> = computed(
+    () => this.participants().filter((p) => p.committee_voting_status === 'Voting Rep' || p.committee_voting_status === 'Alternate Voting Rep').length
+  );
   public hasVotingCommittees: Signal<boolean> = computed(() => {
     const meeting = this.meeting();
     return meeting?.committees?.some((c) => c.allowed_voting_statuses && c.allowed_voting_statuses.length > 0) ?? false;
   });
+  public isRecurring: Signal<boolean> = computed(() => !!this.meeting()?.recurrence);
   public filteredParticipants: Signal<EnrichedPastMeetingParticipant[]> = computed(() => {
     let result = this.participants();
     const invitation = this.invitationFilter();
@@ -141,10 +148,8 @@ export class PastMeetingDetailsComponent {
     return [...result].sort((a, b) => compareMeetingPeopleByHostThenName(a, b));
   });
   public meetingTypeBadge = this.initMeetingTypeBadge();
-  /** The BFF's counts through the shared figures helper (E4-05), the one place they are worked out. Null while unknown. */
-  public attendanceFigures: Signal<PastMeetingAttendanceFigures | null> = computed(() => getPastMeetingAttendanceFigures(this.meeting()));
-  /** The rate bar's colour per band (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`). */
-  protected readonly attendanceBarClass: Record<PastMeetingAttendanceTone, string> = { low: 'bg-amber-500', medium: 'bg-blue-500', high: 'bg-emerald-500' };
+  public attendancePercentage = this.initAttendancePercentage();
+  public attendanceBarColor = this.initAttendanceBarColor();
   public hasRecording = this.initHasRecording();
   public hasTranscript = this.initHasTranscript();
   public recordingShareUrl = this.initRecordingShareUrl();
@@ -368,6 +373,25 @@ export class PastMeetingDetailsComponent {
       const type = meetingType.toLowerCase();
       const config = MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG;
       return { severity: 'secondary' as TagSeverity, styleClass: config.tagStyleClass, icon: config.icon, text: meetingType };
+    });
+  }
+
+  private initAttendancePercentage(): Signal<number> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting) return 0;
+      const total = meeting.participant_count || 0;
+      const attended = meeting.attended_count || 0;
+      return total > 0 ? Math.round((attended / total) * 100) : 0;
+    });
+  }
+
+  private initAttendanceBarColor(): Signal<string> {
+    return computed(() => {
+      const pct = this.attendancePercentage();
+      if (pct < 25) return 'bg-amber-500';
+      if (pct < 70) return 'bg-blue-500';
+      return 'bg-emerald-500';
     });
   }
 

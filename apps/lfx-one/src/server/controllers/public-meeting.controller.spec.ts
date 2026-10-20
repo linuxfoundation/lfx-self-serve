@@ -91,7 +91,6 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // the barrel needs the Angular JIT compiler (loaded at the top of this spec) in plain Node.
   isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
   getPastMeetingResourceId: (await import('@lfx-one/shared/utils/past-meeting.utils')).getPastMeetingResourceId,
-  countPastMeetingAttendance: (await import('@lfx-one/shared/utils/past-meeting.utils')).countPastMeetingAttendance,
   // Real, so the E4-04 gate assertions run the actual access rules and roster projection.
   isPastMeetingArtifactPublic: (await import('@lfx-one/shared/utils/past-meeting.utils')).isPastMeetingArtifactPublic,
   toPublicPastMeetingRoster: (await import('@lfx-one/shared/utils/past-meeting.utils')).toPublicPastMeetingRoster,

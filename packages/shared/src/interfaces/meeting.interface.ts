@@ -1193,33 +1193,6 @@ export interface PublicPastMeetingParticipant {
   is_invited: boolean;
 }
 
-/** How well a past meeting was attended, by its rate (E4-05): the band its rate bar is coloured by. */
-export type PastMeetingAttendanceTone = 'low' | 'medium' | 'high';
-
-/** The participant counts a past meeting carries, as the BFF counts them (`countPastMeetingAttendance`). */
-export interface PastMeetingAttendanceCounts {
-  /** Every participant record: each was invited, attended, or both. */
-  participant_count: number;
-  attended_count: number;
-  /** Participants who were invited. */
-  individual_registrants_count: number;
-}
-
-/**
- * A past meeting's attendance as both the public page and the admin page show it (E4-05): one source
- * of truth, `getPastMeetingAttendanceFigures` over the BFF's counts. `rate` and `tone` are null when
- * there is nobody to count (no participants), so a page shows the row without inventing a percentage.
- */
-export interface PastMeetingAttendanceFigures {
-  total: number;
-  attended: number;
-  /** Participants who did not attend (`total - attended`). */
-  absent: number;
-  /** Attended as a whole percentage of `total`. */
-  rate: number | null;
-  tone: PastMeetingAttendanceTone | null;
-}
-
 /**
  * The public past-meeting roster: the verified identities (invitees, and attendees whose identity is
  * verified), plus how many attendees are not verified (unknown, needs review, auto-matched or

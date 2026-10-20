@@ -15,9 +15,6 @@ import {
   getRecordingDurationSeconds,
   isPastMeetingArtifactPublic,
   isPastMeetingCalendarRow,
-  countPastMeetingAttendance,
-  getPastMeetingAttendanceFigures,
-  getPastMeetingAttendanceTone,
   toPublicPastMeetingRecording,
   toPublicPastMeetingRoster,
   toPublicPastMeetingTranscript,
@@ -497,42 +494,5 @@ describe('public recording and transcript allowlists (E4-04)', () => {
 
     expect(result.recording_files).toEqual([file]);
     expect(JSON.stringify(result)).not.toMatch(/host@example.com|creator@example.com|h-1/);
-  });
-});
-
-describe('past-meeting attendance figures (E4-05)', () => {
-  it('counts every record, the attended and the invited', () => {
-    expect(
-      countPastMeetingAttendance([
-        { is_attended: true, is_invited: true },
-        { is_attended: true, is_invited: false },
-        { is_attended: false, is_invited: true },
-      ])
-    ).toEqual({ participant_count: 3, attended_count: 2, individual_registrants_count: 2 });
-  });
-
-  it.each([
-    [0, 'low'],
-    [24, 'low'],
-    [25, 'medium'],
-    [69, 'medium'],
-    [70, 'high'],
-    [100, 'high'],
-  ] as const)('puts a %i%% rate in the %s band', (rate, tone) => {
-    expect(getPastMeetingAttendanceTone(rate)).toBe(tone);
-  });
-
-  it('derives total, attended, absent, rate and tone from the counts', () => {
-    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6 })).toEqual({ total: 8, attended: 6, absent: 2, rate: 75, tone: 'high' });
-  });
-
-  // The admin page used to hide its whole stats row here.
-  it('gives zero figures with no rate for a meeting with no participants', () => {
-    expect(getPastMeetingAttendanceFigures({ participant_count: 0, attended_count: 0 })).toEqual({ total: 0, attended: 0, absent: 0, rate: null, tone: null });
-  });
-
-  it('is null when the counts are unknown, so unknown never reads as zero', () => {
-    expect(getPastMeetingAttendanceFigures(undefined)).toBeNull();
-    expect(getPastMeetingAttendanceFigures({ participant_count: 5 })).toBeNull();
   });
 });

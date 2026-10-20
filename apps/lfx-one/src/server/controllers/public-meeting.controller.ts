@@ -25,7 +25,6 @@ import {
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
 import {
-  countPastMeetingAttendance,
   getPastMeetingResourceId,
   isPastMeetingArtifactPublic,
   isPastMeetingSummaryAwaitingApproval,
@@ -326,8 +325,9 @@ export class PublicMeetingController {
       if (fullAccess && !isOrganizer && isAuthenticated && originalToken !== undefined) {
         try {
           const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting), true);
-          // The same counts the admin page reads (E4-05).
-          Object.assign(meeting, countPastMeetingAttendance(participants));
+          meeting.participant_count = participants.length;
+          meeting.attended_count = participants.filter((p) => p.is_attended).length;
+          meeting.individual_registrants_count = participants.filter((p) => p.is_invited).length;
         } catch (error) {
           logger.warning(req, 'get_public_past_meeting_by_id', 'Participant counts unavailable', { past_meeting_id: id, err: error });
         }
