@@ -432,7 +432,8 @@ function isRealDate(value: string): boolean {
 }
 
 function isAbsoluteHttpUrl(value: string, protocols: string[]): boolean {
-  if (/\s/.test(value)) {
+  // Match the upstream HTTP(S) spelling before WHATWG parsing can repair missing slashes or backslashes.
+  if (!/^https?:\/\/[^\s/$.?#][^\s]*$/.test(value) || value.includes('\\')) {
     return false;
   }
   try {

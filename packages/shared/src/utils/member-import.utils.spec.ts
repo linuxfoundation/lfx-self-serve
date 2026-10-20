@@ -171,6 +171,7 @@ describe('validateMemberImportRow', () => {
 
   it('requires an absolute linkedin.com URL', () => {
     expect(messages({ email: 'ada@example.com', linkedin_profile: 'https://www.linkedin.com/in/ada-example' })).toEqual([]);
+    expect(messages({ email: 'ada@example.com', linkedin_profile: 'http://www.linkedin.com/in/example-person' })).toEqual([]);
     expect(messages({ email: 'ada@example.com', linkedin_profile: 'linkedin.com/in/ada-example' })).toHaveLength(1);
     expect(messages({ email: 'ada@example.com', linkedin_profile: 'https://profiles.example/ada' })).toHaveLength(1);
   });
@@ -189,6 +190,21 @@ describe('validateMemberImportRow', () => {
     expect(messages({ email: 'ada@example.com', organization_name: 'o'.repeat(201), organization_website: 'https://acme-motors.example' })).toEqual([
       'organization_name: Organization name must be 200 characters or fewer.',
     ]);
+  });
+
+  it.each(['https:org.example', 'https:/org.example', 'https:///org.example', 'https:\\\\org.example', 'https://\\org.example', 'https://org.example\\team'])(
+    'rejects an organization website whose spelling URL parsing repairs: %s',
+    (website) => {
+      expect(messages({ email: 'ada@example.com', organization_name: 'Example Org', organization_website: website }, BUSINESS_EMAIL)).toEqual([
+        'organization_website: Organization website must be a full https:// address.',
+      ]);
+    }
+  );
+
+  it('preserves an accepted HTTPS website including its path, query and fragment', () => {
+    const cells = { email: 'ada@example.com', organization_name: 'Example Org', organization_website: 'https://org.example/team?lang=en#people' };
+    expect(messages(cells, BUSINESS_EMAIL)).toEqual([]);
+    expect(buildMemberImportPayload(cells).organization?.website).toBe(cells.organization_website);
   });
 
   it('requires an organization for business-email and voting groups', () => {

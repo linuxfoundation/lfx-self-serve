@@ -147,6 +147,60 @@ describe('ImportMembersDialogComponent', () => {
       expect(query('import-members-remove-2')?.querySelector('button')?.getAttribute('aria-label')).toBe('Remove row 2');
     });
 
+    it.each(['', 'not-a-url'])('promotes the next occurrence after removing the first, whose LinkedIn is "%s"', async (linkedin) => {
+      await upload(
+        [
+          'email,first_name,linkedin_profile',
+          `ada@example.com,First,${linkedin}`,
+          'ADA@example.com,Survivor,https://www.linkedin.com/in/example-person',
+          'existing@example.com,,',
+          'EXISTING@example.com,,',
+          'ada@example.com,Later,',
+        ].join('\n')
+      );
+      await render();
+      expect(component.rows()[0].status).toBe(linkedin ? 'invalid' : 'ready');
+      expect(component.rows()[1].status).toBe('skipped');
+
+      query('import-members-remove-2')?.querySelector('button')?.click();
+      await render();
+
+      expect(component.rows().map((row) => [row.rowNumber, row.status])).toEqual([
+        [3, 'ready'],
+        [4, 'skipped'],
+        [5, 'skipped'],
+        [6, 'skipped'],
+      ]);
+      expect(component.rows()[1].reason).toBe('Already a member of this group.');
+      expect(component.rows()[2].reason).toBe('Already a member of this group.');
+      expect(component.rows()[3].reason).toBe('Duplicate of row 3.');
+      expect(component.canImport()).toBe(true);
+      expect(query('import-members-row-2')).toBeNull();
+
+      query('import-members-submit-btn')?.querySelector('button')?.click();
+      expect(pending).toHaveLength(1);
+      expect(pending[0].body).toEqual({
+        email: 'ada@example.com',
+        first_name: 'Survivor',
+        linkedin_profile: 'https://www.linkedin.com/in/example-person',
+      });
+      succeed(0);
+      await render();
+      expect(component.addedCount()).toBe(1);
+      expect(component.skippedCount()).toBe(3);
+    });
+
+    it('blocks malformed organization websites in preview without sending a create request', async () => {
+      await upload('email,organization_name,organization_website\nada@example.com,Example Org,https:org.example');
+      await render();
+
+      expect(component.invalidCount()).toBe(1);
+      expect(component.canImport()).toBe(false);
+      expect(query('import-members-row-issues-2')?.textContent).toContain('Organization website must be a full https:// address.');
+      component.startImport();
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+    });
+
     it('recovers from a rejected file when a corrected file is chosen', async () => {
       await upload('email,permission\nada@example.com,manage');
       await render();

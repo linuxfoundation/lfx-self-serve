@@ -154,7 +154,14 @@ export class ImportMembersDialogComponent {
     if (this.phase() !== 'preview') {
       return;
     }
-    this.rows.update((rows) => rows.filter((row) => row.rowNumber !== rowNumber));
+    // Removing the retained occurrence releases the next duplicate, keeping original source row numbers.
+    this.rows.update((rows) =>
+      prepareMemberImportRows(
+        rows.filter((row) => row.rowNumber !== rowNumber).map(({ rowNumber, cells }) => ({ rowNumber, cells })),
+        this.rules,
+        this.existingMemberEmails
+      )
+    );
   }
 
   public startImport(): void {
