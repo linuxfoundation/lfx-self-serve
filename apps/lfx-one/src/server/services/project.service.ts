@@ -9250,8 +9250,7 @@ export class ProjectService {
     const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
     const contributorsCount = row.CONTRIBUTORS_COUNT;
     const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
-    // NON_MEMBERS_PIPELINE_VALUE_USD is always NULL pending upstream ticket DL-1383 — render blank
-    // rather than a misleading "$0" until that data lands.
+    // NON_MEMBERS_PIPELINE_VALUE_USD can be NULL for a foundation — render blank rather than a misleading "$0".
     const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
 
     // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
