@@ -187,10 +187,10 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
     ]);
   });
 
-  it('sizes the warmest bars by contributions, labelled with meetings', () => {
+  it('lists the warmest organizations with contributions, labelled with meetings', () => {
     expect(buildHealthMetricsNonMembersConversionView(CONVERSION).warmest).toEqual([
-      { accountId: '0014100000AcmeAAAA', label: 'Acme Motors · 12 meetings', valueLabel: '400 contributions', widthPct: 100 },
-      { accountId: '0014100000VendAAAA', label: 'Vendor Corp · 1 meeting', valueLabel: '100 contributions', widthPct: 25 },
+      { accountId: '0014100000AcmeAAAA', label: 'Acme Motors · 12 meetings', valueLabel: '400 contributions' },
+      { accountId: '0014100000VendAAAA', label: 'Vendor Corp · 1 meeting', valueLabel: '100 contributions' },
     ]);
   });
 
@@ -218,10 +218,10 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
 
     expect(view.summary).toBe('Organizations tracked not available');
     expect(view.side.map((stat) => stat.value)).toEqual(['0', 'not available']);
-    expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available', widthPct: 0 }]);
+    expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available' }]);
   });
 
-  it('marks the unmeasured value as not measured with no bars', () => {
+  it('marks the unmeasured value as not measured', () => {
     const view = buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
 
     expect(view.measured).toBe(false);

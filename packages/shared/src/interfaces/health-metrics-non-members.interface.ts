@@ -149,11 +149,10 @@ export interface HealthMetricsNonMembersConversionStatView {
   value: string;
 }
 
-export interface HealthMetricsNonMembersWarmOrgBarView {
+export interface HealthMetricsNonMembersWarmOrgRowView {
   accountId: string;
   label: string;
   valueLabel: string;
-  widthPct: number;
 }
 
 /** The Conversion opportunity section as it renders. */
@@ -164,7 +163,7 @@ export interface HealthMetricsNonMembersConversionView {
   pipelineLabel: string;
   hasEstimate: boolean;
   side: HealthMetricsNonMembersConversionStatView[];
-  warmest: HealthMetricsNonMembersWarmOrgBarView[];
+  warmest: HealthMetricsNonMembersWarmOrgRowView[];
   footnote: readonly HealthMetricsFootnotePart[];
 }
 

@@ -112,15 +112,13 @@ describe('NonMembersConversionComponent', () => {
     expect(value?.closest('.bg-blue-50\\/40')).toBeNull();
   });
 
-  it('ranks the warmest organizations, sized by contributions', async () => {
+  it('lists the warmest organizations as name and value, with no bar', async () => {
     await render();
 
     expect(text('non-members-conversion-warm-0')).toContain('Acme Motors · 12 meetings');
     expect(text('non-members-conversion-warm-0-value')).toBe('400 contributions');
     expect(text('non-members-conversion-warm-1')).toContain('Vendor Corp · 1 meeting');
-    const bars = fixture.nativeElement.querySelectorAll('[data-testid^="non-members-conversion-warm-"] .bg-blue-600');
-    expect(bars.length).toBe(2);
-    expect((bars[1] as HTMLElement).style.width).toBe('25%');
+    expect(fixture.nativeElement.querySelector('[data-testid^="non-members-conversion-warm-"] [style*="width"]')).toBeNull();
   });
 
   it('never shows a bare figure when the estimate is missing, and says a NULL count is not available', async () => {

@@ -9,7 +9,6 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import {
   HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
   HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS,
   HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED,
   lfxColors,
@@ -55,7 +54,6 @@ export class TrainingEnrollComponent {
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
-  protected readonly barClass = HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS;
   protected readonly metric = signal<HealthMetricsTrainingEnrollmentMetric>(HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS[0].id);
   protected readonly metricOptions: FilterPillOption[] = [...HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS];
 

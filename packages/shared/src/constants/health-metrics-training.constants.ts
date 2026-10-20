@@ -116,9 +116,6 @@ export const HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES: Readonly<Record<Heal
   revenue: ['edX'],
 };
 
-/** Fill for the by-type bars — applied via `[class]`, so it is safelisted in Tailwind. */
-export const HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS = 'bg-blue-600';
-
 /** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero courses. */
 export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null };
 

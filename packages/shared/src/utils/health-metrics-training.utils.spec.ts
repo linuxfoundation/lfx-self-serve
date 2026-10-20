@@ -143,27 +143,26 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
       ['Certification exams', '620'],
       ['Instructor-led', '330'],
     ]);
-    expect(enrollments.byType[0].barWidthPct).toBe(100);
 
     const revenue = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'revenue');
-    expect(revenue.byType.map((row) => [row.label, row.value, row.barWidthPct])).toEqual([
-      ['Certification exams', '$70K', 100],
-      ['Instructor-led', '$30K', (30000 / 70000) * 100],
-      ['eLearning', '$0', 0],
+    expect(revenue.byType.map((row) => [row.label, row.value])).toEqual([
+      ['Certification exams', '$70K'],
+      ['Instructor-led', '$30K'],
+      ['eLearning', '$0'],
     ]);
   });
 
-  it('sorts a type with unmeasured revenue last with no bar', () => {
+  it('sorts a type with unmeasured revenue last', () => {
     const view = buildHealthMetricsTrainingEnrollmentView(
       withPeriod({ byType: [{ deliveryType: 'MicroCourse', enrollments: 40, revenueUsd: null }, ...PERIOD.byType] }),
       'YTD',
       'revenue'
     );
 
-    expect(view.byType.at(-1)).toEqual({ deliveryType: 'MicroCourse', label: 'Microcourses', value: 'not available', barWidthPct: 0 });
+    expect(view.byType.at(-1)).toEqual({ deliveryType: 'MicroCourse', label: 'Microcourses', value: 'not available' });
   });
 
-  it('keeps the model order for the enrollment bars rather than re-sorting', () => {
+  it('keeps the model order for the enrollment rows rather than re-sorting', () => {
     const byType = [PERIOD.byType[2], PERIOD.byType[0], PERIOD.byType[1]];
 
     const view = buildHealthMetricsTrainingEnrollmentView(withPeriod({ byType }), 'YTD', 'enrollments');

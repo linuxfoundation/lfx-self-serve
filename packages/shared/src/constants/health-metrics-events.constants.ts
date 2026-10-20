@@ -174,11 +174,11 @@ export const HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED: HealthMetricsEvent
 
 /** Outcome chips for a closed event. A missed goal splits on the model's pace band at close; `unmeasured` has no outcome read. */
 export const HEALTH_METRICS_EVENTS_PAST_STATUSES = {
-  hit: { label: 'Hit goal', badgeClass: 'bg-emerald-50 text-emerald-700', progressClass: 'bg-emerald-500' },
-  'near-miss': { label: 'Just missed', badgeClass: 'bg-amber-50 text-amber-700', progressClass: 'bg-amber-500' },
-  missed: { label: 'Missed goal', badgeClass: 'bg-red-50 text-red-700', progressClass: 'bg-red-400' },
-  'no-goal': { label: 'No goal set', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
-  unmeasured: { label: 'Not tracked', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
+  hit: { label: 'Hit goal', badgeClass: 'bg-emerald-50 text-emerald-700' },
+  'near-miss': { label: 'Just missed', badgeClass: 'bg-amber-50 text-amber-700' },
+  missed: { label: 'Missed goal', badgeClass: 'bg-red-50 text-red-700' },
+  'no-goal': { label: 'No goal set', badgeClass: 'bg-gray-100 text-gray-600' },
+  unmeasured: { label: 'Not tracked', badgeClass: 'bg-gray-100 text-gray-600' },
 } as const;
 
 /** The model's pace band for an event that finished within reach of its goal. */
@@ -273,15 +273,12 @@ export const HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS = 5;
 /** Recent proposals listed per period and tab. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS = 10;
 
-/** Status groups as the view names them, with each group's badge and status-bar fill. */
+/** Status groups as the view names them, with each group's badge. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS = {
-  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700', barClass: 'bg-emerald-500' },
-  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700', barClass: 'bg-amber-500' },
-  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600', barClass: 'bg-gray-400' },
+  accepted: { label: 'Accepted', viewValue: 'Accepted', badgeClass: 'bg-emerald-50 text-emerald-700' },
+  'in-review': { label: 'In review', viewValue: 'In review', badgeClass: 'bg-amber-50 text-amber-700' },
+  declined: { label: 'Declined', viewValue: 'Declined', badgeClass: 'bg-gray-100 text-gray-600' },
 } as const;
-
-/** Fill for the top-organizations bars. */
-export const HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS = 'bg-blue-500';
 
 /** Badge for a proposal whose status the view left ungrouped. */
 export const HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS = 'bg-gray-100 text-gray-600';
@@ -334,14 +331,11 @@ export const HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES: readonly HealthM
 /** Stands in for a goal that is not set, so it never reads as a goal of zero. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET = 'not set';
 
-/** Fill for the tier bars and the progress-to-goal bar. */
+/** Fill for the progress-to-goal bar. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS = 'bg-blue-600';
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeography = { periods: [] };
 
-/** Countries ranked in the bars; the rest collapse into a `+N more` line. */
+/** Countries ranked in the list; the rest collapse into a `+N more` line. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;
-
-/** Fill for the country bars. */
-export const HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS = 'bg-blue-600';
