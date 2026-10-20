@@ -8,6 +8,7 @@ import {
   CommitteeMember,
   GroupsIOMailingList,
   Project,
+  PublicGroupCallerState,
   PublicGroupContext,
   PublicGroupDetail,
   PublicGroupDirectoryResponse,
@@ -229,6 +230,8 @@ export class PublicGroupsController {
     const startTime = logger.startOperation(req, 'get_public_groups_by_foundation', { identifier });
 
     try {
+      // Kept for the caller's own membership lookup, which must run as the caller, not the app.
+      const userToken = req.bearerToken;
       // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
@@ -254,6 +257,8 @@ export class PublicGroupsController {
       if (!foundation) {
         throw this.projectNotFoundError(identifier);
       }
+      // Runs alongside the directory fan-out below; never rejects.
+      const callerStatePromise = this.resolveCallerGroupState(req, userToken, 'get_public_groups_by_foundation');
       const childUids = await this.projectService.getFoundationProjectUids(req, foundationUid);
 
       // KNOWN LIMITATION: getFoundationProjectUids now resolves the full nested sub-foundation tree
@@ -289,14 +294,16 @@ export class PublicGroupsController {
 
       const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids);
       const projects = await this.resolveContextProjects(req, allCommittees);
+      const callerState = await callerStatePromise;
 
       // Drop committees whose owning child project is hidden or unconfirmed, so a confidential child
       // project's name can never surface as group context (lfx-self-serve-ops#437).
       const groups = allCommittees
         .filter((c) => c.project_uid === foundationUid || projects.get(c.project_uid))
-        .map((c) => this.buildGroupSummary(c, projects, foundation, null));
+        .map((c) => this.buildGroupSummary(c, projects, foundation, null, callerState));
 
       const response: PublicGroupDirectoryResponse = { groups, total: groups.length, ...(truncated ? { truncated: true } : {}) };
+      this.markPersonalized(res, callerState);
 
       logger.success(req, 'get_public_groups_by_foundation', startTime, {
         foundation_uid: foundationUid,
@@ -314,6 +321,8 @@ export class PublicGroupsController {
     const startTime = logger.startOperation(req, 'get_public_groups_by_project', { identifier });
 
     try {
+      // Kept for the caller's own membership lookup, which must run as the caller, not the app.
+      const userToken = req.bearerToken;
       // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
       const m2mToken = await generateM2MToken(req);
       req.bearerToken = m2mToken;
@@ -337,6 +346,9 @@ export class PublicGroupsController {
         throw this.projectNotFoundError(identifier);
       }
 
+      // Runs alongside the parent and committee lookups below; never rejects.
+      const callerStatePromise = this.resolveCallerGroupState(req, userToken, 'get_public_groups_by_project');
+
       let parentFoundation = null;
       if (project.parent_uid) {
         // A hidden parent, or a failed lookup, leaves the project top-level.
@@ -349,12 +361,14 @@ export class PublicGroupsController {
 
       const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${projectUid}` }, { skipMailingListEnrichment: true });
       const publicCommittees = committees.filter((c) => c.public);
+      const callerState = await callerStatePromise;
 
       const groups = publicCommittees
-        .map((c) => this.buildGroupSummary(c, new Map([[projectUid, project]]), parentFoundation ?? project, project.parent_uid ? project : null))
+        .map((c) => this.buildGroupSummary(c, new Map([[projectUid, project]]), parentFoundation ?? project, project.parent_uid ? project : null, callerState))
         .sort((a, b) => a.name.localeCompare(b.name, 'en'));
 
       const response: PublicGroupDirectoryResponse = { groups, total: groups.length };
+      this.markPersonalized(res, callerState);
 
       logger.success(req, 'get_public_groups_by_project', startTime, {
         project_uid: projectUid,
@@ -473,7 +487,53 @@ export class PublicGroupsController {
     return map;
   }
 
-  private buildGroupSummary(committee: Committee, projectMap: Map<string, any>, foundation: any, project: any): PublicGroupSummary {
+  /**
+   * Resolves the signed-in caller's membership and pending applications once for a whole directory
+   * — one membership query and one application query, run together, as the caller's own token
+   * (never the M2M token: these are the caller's own records). Returns null for anonymous callers,
+   * so their summaries carry no membership fields at all. A failed lookup leaves its set null and
+   * its flag omitted rather than answering `false`, and never fails the directory.
+   */
+  private async resolveCallerGroupState(req: Request, userToken: string | undefined, operation: string): Promise<PublicGroupCallerState | null> {
+    if (!req.oidc?.isAuthenticated() || !userToken) {
+      return null;
+    }
+
+    const requestOptions = { bearerToken: userToken };
+    const [members, applications] = await Promise.allSettled([
+      // No username means no membership row can be matched: unknown, not "member of nothing".
+      getEffectiveUsername(req) ? this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true }, requestOptions) : Promise.resolve(null),
+      // Applications are indexed by verified email only; without one the answer is unknown too.
+      getEffectiveEmail(req) ? this.committeeService.getMyPendingApplicationCommitteeUids(req, requestOptions) : Promise.resolve(null),
+    ]);
+
+    if (members.status === 'rejected') {
+      logger.warning(req, operation, 'Caller membership lookup failed; omitting is_member', { err: members.reason });
+    }
+    if (applications.status === 'rejected') {
+      logger.warning(req, operation, 'Caller application lookup failed; omitting has_pending_application', { err: applications.reason });
+    }
+
+    return {
+      memberUids: members.status === 'fulfilled' ? members.value : null,
+      pendingApplicationUids: applications.status === 'fulfilled' ? applications.value : null,
+    };
+  }
+
+  /** A response carrying the caller's membership state must never be stored by a shared cache. */
+  private markPersonalized(res: Response, callerState: PublicGroupCallerState | null): void {
+    if (callerState) {
+      res.setHeader('Cache-Control', 'private, no-store');
+    }
+  }
+
+  private buildGroupSummary(
+    committee: Committee,
+    projectMap: Map<string, any>,
+    foundation: any,
+    project: any,
+    callerState: PublicGroupCallerState | null
+  ): PublicGroupSummary {
     const proj = project ?? projectMap.get(committee.project_uid) ?? null;
     const isFoundationScope = !proj || proj.uid === foundation?.uid;
 
@@ -492,8 +552,13 @@ export class PublicGroupsController {
         }),
     };
 
+    const isMember = callerState?.memberUids ? callerState.memberUids.has(committee.uid) : undefined;
+    // A member has nothing left to apply for, whatever the application index still says.
+    const hasPendingApplication = callerState?.pendingApplicationUids ? isMember !== true && callerState.pendingApplicationUids.has(committee.uid) : undefined;
+
     return {
       uid: committee.uid,
+      slug: committee.sso_group_name || undefined,
       name: committee.name,
       display_name: committee.display_name,
       description: committee.description ?? undefined,
@@ -504,6 +569,8 @@ export class PublicGroupsController {
       total_members: committee.total_members,
       website: committee.website,
       has_public_calendar: committee.calendar?.public ?? false,
+      ...(isMember !== undefined && { is_member: isMember }),
+      ...(hasPendingApplication !== undefined && { has_pending_application: hasPendingApplication }),
     };
   }
 }

@@ -46,7 +46,7 @@ export type PublicGroupExternalSource = CommitteeExternalSource;
 /** Public-safe group summary returned by the directory endpoints. */
 export interface PublicGroupSummary {
   uid: string;
-  /** URL-safe slug for the group (may be absent if upstream does not return one). */
+  /** Vanity slug (the committee's `sso_group_name`) that `/groups/:slug` resolves; absent when the group has none. */
   slug?: string;
   name: string;
   display_name?: string;
@@ -59,9 +59,30 @@ export interface PublicGroupSummary {
   join_mode?: JoinMode;
   total_members?: number;
   website?: string | null;
-  mailing_list?: string | null;
   has_public_calendar?: boolean;
-  external_sources?: PublicGroupExternalSource[];
+  /**
+   * Whether the signed-in caller is a member, resolved from one username-tagged membership query
+   * for the whole directory. Absent for anonymous callers and when the lookup failed, so absence
+   * means "unknown", never "not a member".
+   */
+  is_member?: boolean;
+  /**
+   * Whether the signed-in caller has a pending join application, resolved from one
+   * `applicant_email`-tagged application query for the whole directory. Absent for anonymous
+   * callers and when the lookup failed; `false` when the caller is a member. The query index lags
+   * a fresh submission, so a client that just applied should keep its own pending state too.
+   */
+  has_pending_application?: boolean;
+}
+
+/**
+ * The signed-in caller's membership state across one directory response, resolved once per request
+ * by the BFF and folded into each {@link PublicGroupSummary}. A `null` set means that lookup did
+ * not run or failed, so the matching flag is omitted rather than reported as `false`.
+ */
+export interface PublicGroupCallerState {
+  memberUids: ReadonlySet<string> | null;
+  pendingApplicationUids: ReadonlySet<string> | null;
 }
 
 /** Response envelope returned by `GET /public/api/foundations/:uid/groups` and `GET /public/api/projects/:uid/groups`. */

@@ -1404,8 +1404,16 @@ export class CommitteeService {
    * Lightweight alternative to {@link getMyCommittees} for callers that only need
    * membership UIDs (e.g. cross-project access filtering). Skips the per-committee
    * count and project enrichment fan-out performed by the full method.
+   *
+   * @param requestOptions Per-call overrides, e.g. `bearerToken` to query as the caller from a
+   *   route that holds an M2M token on `req.bearerToken` (the public groups directory).
    */
-  public async getMyCommitteeUids(req: Request, projectUid?: string, fetchOptions: FetchAllQueryResourcesOptions = {}): Promise<Set<string>> {
+  public async getMyCommitteeUids(
+    req: Request,
+    projectUid?: string,
+    fetchOptions: FetchAllQueryResourcesOptions = {},
+    requestOptions?: ApiRequestOptions
+  ): Promise<Set<string>> {
     const username = await getUsernameFromAuth(req);
     if (!username) {
       return new Set();
@@ -1419,11 +1427,20 @@ export class CommitteeService {
     const memberships = await fetchAllQueryResources<CommitteeMember>(
       req,
       (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'committee_member',
-          tags_all: tagsAll,
-          ...(pageToken && { page_token: pageToken }),
-        }),
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'committee_member',
+            tags_all: tagsAll,
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          undefined,
+          requestOptions
+        ),
       fetchOptions
     );
 
@@ -1586,6 +1603,45 @@ export class CommitteeService {
     const pending = applications.filter((a) => a.status === 'pending').sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
     return pending[0] ?? null;
+  }
+
+  /**
+   * Returns the UIDs of every committee the caller has a pending join application for.
+   *
+   * Lean sibling of {@link getMyApplications} for callers that only need the set (the public
+   * groups directory): one paginated `applicant_email`-tagged query, no per-committee enrichment.
+   * Throws on a partial read so a caller never mistakes a missing page for "no application".
+   *
+   * @param requestOptions Per-call overrides, e.g. `bearerToken` to query as the caller.
+   */
+  public async getMyPendingApplicationCommitteeUids(req: Request, requestOptions?: ApiRequestOptions): Promise<Set<string>> {
+    // committee_application records are indexed by applicant_email (lowercased), not by username.
+    const email = getEffectiveEmail(req);
+    if (!email) {
+      return new Set();
+    }
+
+    const applications = await fetchAllQueryResources<CommitteeJoinApplication>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeJoinApplication>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'committee_application',
+            tags_all: [`applicant_email:${email}`],
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          undefined,
+          requestOptions
+        ),
+      { failOnPartial: true }
+    );
+
+    return new Set(applications.filter((a) => a.status === 'pending' && a.committee_uid).map((a) => a.committee_uid));
   }
 
   /**

@@ -18,6 +18,10 @@ const {
   getCommitteeMembersMock,
   getMeetingsMock,
   proxyRequestMock,
+  getMyCommitteeUidsMock,
+  getMyPendingApplicationCommitteeUidsMock,
+  getEffectiveEmailMock,
+  getEffectiveUsernameMock,
 } = vi.hoisted(() => ({
   getFoundationProjectUidsMock: vi.fn(),
   getPubliclyDiscoverableProjectMock: vi.fn(),
@@ -28,6 +32,10 @@ const {
   getCommitteeMembersMock: vi.fn(),
   getMeetingsMock: vi.fn(),
   proxyRequestMock: vi.fn(),
+  getMyCommitteeUidsMock: vi.fn(),
+  getMyPendingApplicationCommitteeUidsMock: vi.fn(),
+  getEffectiveEmailMock: vi.fn(),
+  getEffectiveUsernameMock: vi.fn(),
 }));
 
 vi.mock('../services/project.service', () => ({
@@ -47,6 +55,8 @@ vi.mock('../services/committee.service', () => ({
       resolveCommitteeUid: resolveCommitteeUidMock,
       getCommitteeById: getCommitteeByIdMock,
       getCommitteeMembers: getCommitteeMembersMock,
+      getMyCommitteeUids: getMyCommitteeUidsMock,
+      getMyPendingApplicationCommitteeUids: getMyPendingApplicationCommitteeUidsMock,
     };
   }),
 }));
@@ -61,6 +71,11 @@ vi.mock('../services/microservice-proxy.service', () => ({
   MicroserviceProxyService: vi.fn(function () {
     return { proxyRequest: proxyRequestMock };
   }),
+}));
+
+vi.mock('../utils/auth-helper', () => ({
+  getEffectiveEmail: getEffectiveEmailMock,
+  getEffectiveUsername: getEffectiveUsernameMock,
 }));
 
 vi.mock('../utils/m2m-token.util', () => ({
@@ -652,5 +667,151 @@ describe('PublicGroupsController.getPublicGroupById — discoverability (lfx-sel
 
     expect(next).not.toHaveBeenCalled();
     expect(res.json.mock.calls[0][0].context).toMatchObject({ scope: 'foundation', foundation_uid: PROJECT_UID });
+  });
+});
+
+describe('PublicGroupsController directory — caller membership state (#3595)', () => {
+  const USER_TOKEN = 'user-token';
+  let controller: PublicGroupsController;
+
+  /** A signed-in request carrying the caller's own bearer token, as the optional-auth middleware leaves it. */
+  function signedIn(identifier: string): ReturnType<typeof buildReqRes> {
+    const ctx = buildReqRes(identifier);
+    Object.assign(ctx.req, { bearerToken: USER_TOKEN, oidc: { isAuthenticated: () => true } });
+    return ctx;
+  }
+
+  function groupsOf(res: Response & { json: Mock }): Record<string, unknown>[] {
+    return res.json.mock.calls[0][0].groups;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicGroupsController();
+    getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
+    getCommitteesMock.mockResolvedValue([committee('a-member', PROJECT_UID), committee('b-pending', PROJECT_UID), committee('c-other', PROJECT_UID)]);
+    getEffectiveUsernameMock.mockReturnValue('ada');
+    getEffectiveEmailMock.mockReturnValue('ada@example.org');
+    getMyCommitteeUidsMock.mockResolvedValue(new Set(['a-member', 'elsewhere']));
+    getMyPendingApplicationCommitteeUidsMock.mockResolvedValue(new Set(['a-member', 'b-pending']));
+  });
+
+  it('gives anonymous callers the same shape with no membership fields, no lookups and no private cache header', async () => {
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    for (const group of groupsOf(res)) {
+      expect(group).not.toHaveProperty('is_member');
+      expect(group).not.toHaveProperty('has_pending_application');
+    }
+    expect(getMyCommitteeUidsMock).not.toHaveBeenCalled();
+    expect(getMyPendingApplicationCommitteeUidsMock).not.toHaveBeenCalled();
+    expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+
+  it('resolves every group from one membership query and one application query, run together as the caller', async () => {
+    // Hold both lookups open: if the controller awaited one before starting the other, the second
+    // would never be called while the first is pending.
+    let releaseMembers!: (uids: Set<string>) => void;
+    let releaseApplications!: (uids: Set<string>) => void;
+    getMyCommitteeUidsMock.mockReturnValue(new Promise((resolve) => (releaseMembers = resolve)));
+    getMyPendingApplicationCommitteeUidsMock.mockReturnValue(new Promise((resolve) => (releaseApplications = resolve)));
+    const { req, res, next } = signedIn(PROJECT_UID);
+
+    const pending = controller.getPublicGroupsByProject(req, res, next);
+    await vi.waitFor(() => {
+      expect(getMyCommitteeUidsMock).toHaveBeenCalledTimes(1);
+      expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledTimes(1);
+    });
+    releaseMembers(new Set(['a-member']));
+    releaseApplications(new Set(['a-member', 'b-pending']));
+    await pending;
+
+    expect(next).not.toHaveBeenCalled();
+    // One query each for three groups — no per-group fan-out — and both under the caller's token.
+    expect(getMyCommitteeUidsMock).toHaveBeenCalledTimes(1);
+    expect(getMyCommitteeUidsMock).toHaveBeenCalledWith(req, undefined, { failOnPartial: true }, { bearerToken: USER_TOKEN });
+    expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledTimes(1);
+    expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledWith(req, { bearerToken: USER_TOKEN });
+    expect(getCommitteeMembersMock).not.toHaveBeenCalled();
+
+    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
+    // A member is never also "pending", whatever the application index still says.
+    expect(byUid['a-member']).toMatchObject({ is_member: true, has_pending_application: false });
+    expect(byUid['b-pending']).toMatchObject({ is_member: false, has_pending_application: true });
+    expect(byUid['c-other']).toMatchObject({ is_member: false, has_pending_application: false });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+
+  it('carries the same flags on the foundation directory', async () => {
+    getFoundationProjectUidsMock.mockResolvedValue([FOUNDATION_UID]);
+    getCommitteesMock.mockResolvedValue([committee('a-member', FOUNDATION_UID), committee('c-other', FOUNDATION_UID)]);
+    const { req, res, next } = signedIn(FOUNDATION_UID);
+
+    await controller.getPublicGroupsByFoundation(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getMyCommitteeUidsMock).toHaveBeenCalledTimes(1);
+    expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledTimes(1);
+    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
+    expect(byUid['a-member']).toMatchObject({ is_member: true, has_pending_application: false });
+    expect(byUid['c-other']).toMatchObject({ is_member: false, has_pending_application: false });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+
+  it('omits a flag whose lookup failed instead of answering false, and still serves the directory', async () => {
+    getMyCommitteeUidsMock.mockRejectedValue(new MicroserviceError('query down', 503, 'UPSTREAM', { operation: 'x', service: 'y' }));
+    const { req, res, next } = signedIn(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    for (const group of groupsOf(res)) {
+      expect(group).not.toHaveProperty('is_member');
+    }
+    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
+    expect(byUid['b-pending']).toMatchObject({ has_pending_application: true });
+  });
+
+  it('treats a missing username or verified email as unknown rather than "not a member"', async () => {
+    getEffectiveUsernameMock.mockReturnValue(null);
+    getEffectiveEmailMock.mockReturnValue(null);
+    const { req, res, next } = signedIn(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getMyCommitteeUidsMock).not.toHaveBeenCalled();
+    expect(getMyPendingApplicationCommitteeUidsMock).not.toHaveBeenCalled();
+    for (const group of groupsOf(res)) {
+      expect(group).not.toHaveProperty('is_member');
+      expect(group).not.toHaveProperty('has_pending_application');
+    }
+  });
+
+  it('populates slug from the vanity group name and exposes no mailing list or external sources', async () => {
+    getCommitteesMock.mockResolvedValue([
+      {
+        ...committee('tsc', PROJECT_UID),
+        sso_group_name: 'tsc-slug',
+        mailing_list: 'private-list@lists.example.org',
+        external_sources: [{ provider: 'ocg', entity_type: 'group', label: 'OCG', url: 'https://example.org' }],
+      },
+      committee('no-slug', PROJECT_UID),
+    ]);
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
+    expect(byUid['tsc']['slug']).toBe('tsc-slug');
+    expect(byUid['no-slug']['slug']).toBeUndefined();
+    for (const group of groupsOf(res)) {
+      expect(group).not.toHaveProperty('mailing_list');
+      expect(group).not.toHaveProperty('external_sources');
+    }
   });
 });

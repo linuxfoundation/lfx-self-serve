@@ -146,6 +146,48 @@ describe('CommitteeService.getMyCommitteeUids', () => {
     expect(await new CommitteeService().getMyCommitteeUids(req, undefined, { failOnPartial: true })).toEqual(new Set());
     expect(proxyRequest).not.toHaveBeenCalled();
   });
+
+  it('scopes a per-call bearer token override to every page', async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a' } }], page_token: 'next' })
+      .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'b' } }] });
+    await new CommitteeService().getMyCommitteeUids(req, undefined, { failOnPartial: true }, { bearerToken: 'user-token' });
+    expect(proxyRequest.mock.calls.map((call) => call[7])).toEqual([{ bearerToken: 'user-token' }, { bearerToken: 'user-token' }]);
+  });
+});
+
+describe('CommitteeService.getMyPendingApplicationCommitteeUids', () => {
+  beforeEach(async () => {
+    proxyRequest.mockReset();
+    getEffectiveEmail.mockReset().mockReturnValue('user@example.com');
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+  });
+
+  it('returns pending application committee UIDs from one paginated applicant_email query, as the given token', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a', status: 'pending' } }], page_token: 'next' }).mockResolvedValueOnce({
+      resources: [{ data: { committee_uid: 'b', status: 'approved' } }, { data: { committee_uid: 'c', status: 'pending' } }, { data: { status: 'pending' } }],
+    });
+
+    const uids = await new CommitteeService().getMyPendingApplicationCommitteeUids(req, { bearerToken: 'user-token' });
+
+    expect(uids).toEqual(new Set(['a', 'c']));
+    expect(proxyRequest.mock.calls[0][4]).toEqual({ type: 'committee_application', tags_all: ['applicant_email:user@example.com'] });
+    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next' });
+    expect(proxyRequest.mock.calls.map((call) => call[7])).toEqual([{ bearerToken: 'user-token' }, { bearerToken: 'user-token' }]);
+  });
+
+  it('throws on a later-page failure rather than reporting a partial set', async () => {
+    const error = new Error('later application page failed');
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a', status: 'pending' } }], page_token: 'next' }).mockRejectedValueOnce(error);
+    await expect(new CommitteeService().getMyPendingApplicationCommitteeUids(req)).rejects.toBe(error);
+  });
+
+  it('returns an empty set without querying when the caller has no verified email', async () => {
+    getEffectiveEmail.mockReturnValue(null);
+    expect(await new CommitteeService().getMyPendingApplicationCommitteeUids(req)).toEqual(new Set());
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
 });
 
 function pageOf(committees: Partial<Committee>[], pageToken?: string): QueryServiceResponse<Committee> {
