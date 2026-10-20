@@ -171,9 +171,12 @@ export class MeetingRsvpCardComponent {
     // flight, the card's state is the new view's, which the save must not touch.
     const key = this.rsvpKey();
     const current = (): boolean => !this.destroyed && this.rsvpKey() === key;
-    // A removal while the save is in flight (`rsvpReset`) means the registration it answered for may be
-    // gone: its answer must not land on the page after the removal re-selected (or cleared) the answer.
-    const removalsAtStart = this.state.rsvpReset();
+    // V1's acknowledgement check (`rsvp-button-group`): the registration generation at submit time, so a
+    // removal while the save is in flight rejects the answer of a registration it deleted, while a
+    // surviving registration's answer still lands.
+    const user = this.userService.user();
+    const subject = user?.sub || this.userService.viewerUsername() || user?.email || '';
+    const generation = this.userService.meetingRegistrationGeneration(meeting.id, subject);
 
     this.saving.set(response);
     this.announcement.set('');
@@ -192,11 +195,12 @@ export class MeetingRsvpCardComponent {
       )
       .subscribe({
         next: (rsvp: MeetingRsvp) => {
-          if (this.state.rsvpReset() !== removalsAtStart) {
+          const answer = this.userService.recordConfirmedMeetingRsvp(rsvp, subject, generation) ?? rsvp;
+          if (!this.userService.isMeetingRsvpCurrent(answer, meeting, subject)) {
             return;
           }
           // Guards itself against a meeting or occurrence the page has left.
-          this.state.setMyRsvp(meeting.id, occurrenceId, rsvp);
+          this.state.setMyRsvp(meeting.id, occurrenceId, answer);
           // Announced once (#3260): inline (the confirmation and its status line) while the card still shows
           // this meeting; a toast only when the page has moved on and nothing else would say it landed.
           if (!current()) {
