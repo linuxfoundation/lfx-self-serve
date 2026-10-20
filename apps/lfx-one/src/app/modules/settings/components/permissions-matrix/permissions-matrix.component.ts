@@ -35,5 +35,16 @@ export class PermissionsMatrixComponent {
         severity: 'success',
       },
     },
+    {
+      scope: 'Project',
+      level: 'Meeting Coordinator',
+      description: 'Manage meetings for the project',
+      capabilities: ['Create, update and delete meetings and past meetings, including registrants, attachments and recordings'],
+      badge: {
+        color: 'text-purple-800',
+        bgColor: 'bg-purple-100',
+        severity: 'secondary',
+      },
+    },
   ];
 }

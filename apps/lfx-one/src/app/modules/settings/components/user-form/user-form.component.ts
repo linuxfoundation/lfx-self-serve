@@ -43,7 +43,7 @@ export class UserFormComponent {
   public user = computed(() => (this.config.data?.user as ProjectPermissionUser) || null);
   public project = computed(() => this.projectContextService.activeContext());
 
-  // Permission options - simplified to only View/Manage
+  // A user holds exactly one role
   public permissionLevelOptions = PROJECT_PERMISSION_ROLE_OPTIONS;
 
   public constructor() {

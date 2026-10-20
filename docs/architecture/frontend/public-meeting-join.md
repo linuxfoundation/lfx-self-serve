@@ -180,6 +180,7 @@ Key signals and their gating:
 - Validates join-time window (`isWithinJoinWindow`).
 - For restricted meetings: `restrictedMeetingCheck` looks up the registrant by email then username. Returns the registrant's stored email for the upstream join-link call.
 - Returns `{ link: string }` — the Zoom join URL.
+- **While impersonating**, the viewer joins as themselves, never as the impersonation target: the server ignores the body `email` and resolves the real session's email and username (`getRealEmail` / `getRealUsername`). On the client, `UserService.meetingJoinIdentity` supplies the email sent in the body and the display name (`uname`/`un`) that `buildJoinUrlWithParams` appends to the link — the operator's while impersonating, the signed-in user's otherwise. Don't pass `UserService.user()` to those, since it is the target during impersonation.
 
 ### GET `/public/api/meetings/past/:id`
 

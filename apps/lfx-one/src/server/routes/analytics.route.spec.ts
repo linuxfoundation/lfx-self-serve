@@ -132,6 +132,7 @@ describe.each([
   ['/health-overview-revenue', 'foundationSlug'],
   ['/health-overview-kpis', 'foundationSlug'],
   ['/health-overview-signals', 'foundationSlug'],
+  ['/engagement-attendance-trend', 'foundationSlug'],
   ['/engagement-group-attendance', 'foundationSlug'],
   ['/engagement-meeting-participation', 'foundationSlug'],
   ['/engagement-non-member-participation', 'foundationSlug'],

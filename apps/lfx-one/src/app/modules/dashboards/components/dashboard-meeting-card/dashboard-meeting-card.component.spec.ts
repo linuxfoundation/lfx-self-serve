@@ -55,7 +55,17 @@ describe('DashboardMeetingCardComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: UserService, useValue: { user: signal(null), authenticated: signal(false) } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
+            authenticated: signal(false),
+          },
+        },
         {
           provide: MeetingService,
           useValue: { getPublicMeetingJoinUrl: vi.fn(() => of(null)), getPastMeetingRecording },

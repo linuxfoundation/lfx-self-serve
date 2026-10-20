@@ -8,7 +8,7 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { MenuComponent } from '@components/menu/menu.component';
 import { TableComponent } from '@components/table/table.component';
 import { PROJECT_PERMISSION_ROLE_COLOR, PROJECT_PERMISSION_ROLE_OPTIONS } from '@lfx-one/shared/constants';
-import { FilterPillOption, ProjectPermissionUser } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, ProjectPermissionRole, ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -42,7 +42,7 @@ export class UserPermissionsTableComponent {
   }));
 
   // A null selection means "all roles"
-  public readonly selectedRole: WritableSignal<ProjectPermissionUser['role'] | null> = signal(null);
+  public readonly selectedRole: WritableSignal<ProjectPermissionRole | null> = signal(null);
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
 
@@ -56,7 +56,7 @@ export class UserPermissionsTableComponent {
 
   // Event handlers
   protected onRoleFilterToggle(role: string): void {
-    this.selectedRole.update((current) => (current === role ? null : (role as ProjectPermissionUser['role'])));
+    this.selectedRole.update((current) => (current === role ? null : (role as ProjectPermissionRole)));
   }
 
   protected onEditUser(user: ProjectPermissionUser): void {

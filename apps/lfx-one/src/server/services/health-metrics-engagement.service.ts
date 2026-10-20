@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
@@ -21,12 +22,16 @@ import {
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
 } from '@lfx-one/shared/constants';
 import type {
+  HealthMetricsEngagementAttendanceMonth,
+  HealthMetricsEngagementAttendanceMonthRow,
+  HealthMetricsEngagementAttendanceTrend,
+  HealthMetricsEngagementAttendanceTrendQuery,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementMeetingParticipation,
-  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberPeriod,
   HealthMetricsEngagementNonMemberQuery,
@@ -55,6 +60,7 @@ import { SnowflakeService } from './snowflake.service';
 import type { Request } from 'express';
 import type { Bind } from 'snowflake-sdk';
 
+const ATTENDANCE_MONTHLY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ATTENDANCE_MONTHLY';
 const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE';
 const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION';
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
@@ -128,7 +134,6 @@ interface NonMemberParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_STATUS: string | null;
-  SCOPE_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
 }
 
@@ -361,6 +366,47 @@ export class HealthMetricsEngagementService {
   }
 
   /**
+   * The trailing twelve months of all-meeting attendance, oldest first. The view zero-fills every
+   * month of the window, so a quiet month arrives as a row with a null rate rather than a missing one.
+   */
+  public async getAttendanceTrend(req: Request, query: HealthMetricsEngagementAttendanceTrendQuery): Promise<HealthMetricsEngagementAttendanceTrend> {
+    const sql = `
+      SELECT
+        month_start_date,
+        meetings_held_count,
+        invited_count,
+        attended_count,
+        attendance_pct,
+        attendance_pct_change_pp
+      FROM ${ATTENDANCE_MONTHLY_VIEW}
+      WHERE foundation_slug = ?
+        AND ${PROJECT_SCOPE_PREDICATE}
+      ORDER BY month_start_date ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<HealthMetricsEngagementAttendanceMonthRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.foundationSlug, query.projectSlug, query.projectSlug],
+      {
+        view: ATTENDANCE_MONTHLY_VIEW,
+        operation: 'get_engagement_attendance_trend',
+        clientMessage: 'Attendance trend is unavailable right now.',
+      }
+    );
+
+    logger.debug(req, 'get_engagement_attendance_trend', 'Fetched attendance trend', {
+      foundation_slug: query.foundationSlug,
+      project_slug: query.projectSlug,
+      row_count: result.rows.length,
+    });
+
+    const months = result.rows.map(mapAttendanceMonth).filter((month): month is HealthMetricsEngagementAttendanceMonth => month !== null);
+    return months.length > 0 ? { months } : HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED;
+  }
+
+  /**
    * Every organization in one read, with all four periods on each row: search, the lapsed cut and
    * the period pill all resolve client-side, so none of them costs a request.
    */
@@ -432,14 +478,13 @@ export class HealthMetricsEngagementService {
     // periods; the sentinel parks an org the view left unranked behind every ranked one.
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
-    // `scope_orgs_count` is denormalized onto every row and covers the whole scope, so it is read
-    // off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
+    // `scope_orgs_count_<period>` is denormalized onto every row and covers the whole scope, so it is
+    // read off a row rather than counted here — the unsuffixed column is all time, not a period caption.
     const sql = `
       SELECT
         account_id,
         account_name,
         membership_status,
-        scope_orgs_count,
         ${periodColumns}
       FROM ${NON_MEMBER_PARTICIPATION_VIEW}
       WHERE foundation_slug = ?
@@ -639,7 +684,7 @@ function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCount
 }
 
 function nonMemberSelectList(suffix: string): string {
-  return ['meetings_attended_count', 'distinct_people_count', 'sort_rank'].map((column) => `${column}_${suffix}`).join(', ');
+  return ['scope_orgs_count', 'meetings_attended_count', 'distinct_people_count', 'sort_rank'].map((column) => `${column}_${suffix}`).join(', ');
 }
 
 function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberRow {
@@ -665,14 +710,18 @@ function mapNonMemberPeriod(row: NonMemberParticipationRow, range: SupportedEnga
 }
 
 /**
- * The count is period-agnostic and identical on every row, so any row answers for the scope. A null
- * count over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ * Each period's count is identical on every row, so any row answers for the scope. A null count
+ * over rows that exist is unmeasured — reporting 0 there would caption a full table.
  */
-function mapNonMemberCounts(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberCounts | null {
-  const orgs = toNullableNumber(row.SCOPE_ORGS_COUNT);
-  if (orgs === null) return null;
+function mapNonMemberCounts(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberPeriodCounts[] | null {
+  const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => ({
+    range,
+    orgs: toNullableNumber(row[`SCOPE_ORGS_COUNT_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase()}`]),
+  }));
 
-  return { orgs };
+  if (counts.some((count) => count.orgs === null)) return null;
+
+  return counts.map((count) => ({ range: count.range, orgs: count.orgs ?? 0 }));
 }
 
 function participationSelectList(suffix: string): string {
@@ -768,8 +817,8 @@ function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange):
 }
 
 /**
- * Unlike the org and non-member captions, this view counts its scope per period, so every period
- * ships its own pair. A null anywhere is unmeasured — reporting 0 there would caption a full table.
+ * Unlike the org caption, this view counts its scope per period, so every period ships its own pair.
+ * A null anywhere is unmeasured — reporting 0 there would caption a full table.
  */
 function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriodCounts[] | null {
   const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => {
@@ -785,6 +834,21 @@ function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriod
   if (counts.some((count) => count.reps === null || count.neverAttendedReps === null)) return null;
 
   return counts.map((count) => ({ range: count.range, reps: count.reps ?? 0, neverAttendedReps: count.neverAttendedReps ?? 0 }));
+}
+
+/** A row without a month cannot be placed on the axis, so it is dropped rather than guessed. */
+function mapAttendanceMonth(row: HealthMetricsEngagementAttendanceMonthRow): HealthMetricsEngagementAttendanceMonth | null {
+  const monthStartDate = toIsoDate(row.MONTH_START_DATE);
+  if (!monthStartDate) return null;
+
+  return {
+    monthStartDate,
+    meetingsHeld: toNullableNumber(row.MEETINGS_HELD_COUNT),
+    invited: toNullableNumber(row.INVITED_COUNT),
+    attended: toNullableNumber(row.ATTENDED_COUNT),
+    attendancePct: toNullableNumber(row.ATTENDANCE_PCT),
+    attendanceChangePp: toNullableNumber(row.ATTENDANCE_PCT_CHANGE_PP),
+  };
 }
 
 function toNullableNumber(value: unknown): number | null {

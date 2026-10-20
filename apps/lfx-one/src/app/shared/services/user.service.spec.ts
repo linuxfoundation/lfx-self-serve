@@ -642,4 +642,31 @@ describe('UserService', () => {
     expect(service.uploadedAvatarUrl()).toBeNull();
     expect(service.effectiveAvatarUrl()).toBe('https://cdn.auth0.com/bob.png');
   });
+
+  describe('meetingJoinIdentity', () => {
+    const target = { name: 'Rashad Mohammed', email: 'rashad@acme-motors.example' } as User;
+    const operator = { sub: 'auth0|operator', name: 'Andres Tobon', email: 'andres@acme-motors.example' };
+
+    it('is the signed-in user when not impersonating', () => {
+      service.user.set(target);
+
+      expect(service.meetingJoinIdentity()).toBe(target);
+    });
+
+    it("is the operator's name and email — never the impersonation target's — while impersonating", () => {
+      service.user.set(target);
+      service.impersonating.set(true);
+      service.impersonator.set(operator);
+
+      expect(service.meetingJoinIdentity()).toEqual({ name: 'Andres Tobon', email: 'andres@acme-motors.example' });
+    });
+
+    it('is null while impersonating without a known operator, rather than falling back to the target', () => {
+      service.user.set(target);
+      service.impersonating.set(true);
+      service.impersonator.set(null);
+
+      expect(service.meetingJoinIdentity()).toBeNull();
+    });
+  });
 });

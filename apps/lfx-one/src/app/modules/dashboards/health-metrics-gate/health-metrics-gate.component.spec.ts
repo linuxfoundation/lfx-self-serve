@@ -144,6 +144,25 @@ describe('HealthMetricsGateComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-tab-training"]').getAttribute('href')).toBe('/foundation/health-metrics/training');
   });
 
+  // The same wrapper and title type as the Meetings and Events headers.
+  it('styles the page header like the other foundation pages', async () => {
+    await render(signal(true));
+
+    expect(query('health-metrics-page')?.classList).toContain('container');
+    for (const cls of ['font-display', 'font-light', 'text-2xl']) expect(query('health-metrics-title')?.classList).toContain(cls);
+    for (const cls of ['text-sm', 'text-gray-500']) expect(query('health-metrics-subtitle')?.classList).toContain(cls);
+  });
+
+  // One accent for the selected tab: label and underline both in blue-500, as the design's `.tab.on`.
+  it('marks the selected tab in the accent blue, label and underline alike', async () => {
+    await render(signal(true), '/foundation/health-metrics');
+
+    const selected = fixture.nativeElement.querySelector('[aria-current="page"]') as HTMLElement;
+    expect(selected?.getAttribute('data-testid')).toBe('health-metrics-tab-overview');
+    expect(selected.classList).toContain('!text-blue-500');
+    expect(selected.classList).toContain('!border-blue-500');
+  });
+
   it('measures the sticky header via ResizeObserver and publishes it as the shared sticky offset', async () => {
     let observedCallback: ResizeObserverCallback | undefined;
     vi.stubGlobal(

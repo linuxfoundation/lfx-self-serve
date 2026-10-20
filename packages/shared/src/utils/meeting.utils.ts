@@ -861,7 +861,7 @@ export interface BuildJoinUrlOptions {
  * The display name is built from: options.name > user.name > user.email
  * If organization is provided, it's appended as "Name (Organization)"
  */
-export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, options?: BuildJoinUrlOptions): string {
+export function buildJoinUrlWithParams(joinUrl: string, user?: Pick<User, 'name' | 'email'> | null, options?: BuildJoinUrlOptions): string {
   if (!joinUrl) {
     return joinUrl;
   }

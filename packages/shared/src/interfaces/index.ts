@@ -380,6 +380,7 @@ export * from './activity-event.internal.interface';
 // Committee member engagement/attendance rollup (LFXV2-1705)
 export * from './committee-engagement.interface';
 export * from './committee-engagement.internal.interface';
+export * from './health-metrics-engagement.internal.interface';
 
 // Weekly Brief interfaces
 export * from './weekly-brief.interface';
@@ -433,3 +434,4 @@ export * from './log-scrub.interface';
 export * from './navbar.interface';
 export * from './mktg-asset.interface';
 export * from './mktg-kit.interface';
+export * from './linkedin-post.interface';

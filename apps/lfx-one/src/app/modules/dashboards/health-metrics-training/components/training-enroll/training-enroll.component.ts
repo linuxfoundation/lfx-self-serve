@@ -151,7 +151,7 @@ export class TrainingEnrollComponent {
 
   /** Enrollments per year; the open year is drawn lighter, as it will always look short until it ends. */
   private buildChart(trend: HealthMetricsTrainingEnrollmentYearView[]): ChartData<'bar'> {
-    const color = lfxColors.blue[600];
+    const color = lfxColors.blue[500];
 
     return {
       labels: trend.map((year) => String(year.year)),

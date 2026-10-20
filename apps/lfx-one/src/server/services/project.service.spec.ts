@@ -3085,6 +3085,75 @@ describe('ProjectService.updateProjectPermissions', () => {
     expect(result.auditors).toEqual([member]);
   });
 
+  describe('meeting coordinator role', () => {
+    const kim = { name: 'Kim Park', email: 'kim.park@partner-corp.example' };
+
+    it('adds a user as a meeting coordinator only', async () => {
+      mockFetch({ writers: [], auditors: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'add', kim.email, 'meeting_coordinator', kim);
+
+      expect(result.meeting_coordinators).toEqual([kim]);
+      expect(result.writers).toEqual([]);
+      expect(result.auditors).toEqual([]);
+    });
+
+    it('moves a writer to meeting coordinator, leaving no writer entry', async () => {
+      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'meeting_coordinator');
+
+      expect(result.writers).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([member]);
+    });
+
+    it('moves a meeting coordinator to view, leaving no coordinator entry', async () => {
+      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view');
+
+      expect(result.auditors).toEqual([member]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('normalizes a user held in several lists to the one chosen role', async () => {
+      mockFetch({ writers: [member], auditors: [member], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'manage');
+
+      expect(result.writers).toEqual([member]);
+      expect(result.auditors).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('re-files a coordinator held only by a duplicate (email-only) entry under the surviving username entry', async () => {
+      const emailOnlyCoordinator = { name: 'Sam Chen', email: 'sam.chen.dup@cascade-data.example' };
+      mockFetch({ writers: [], auditors: [member], meeting_coordinators: [emailOnlyCoordinator] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'meeting_coordinator', undefined, [
+        'sam.chen.dup@cascade-data.example',
+      ]);
+
+      expect(result.auditors).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([member]);
+    });
+
+    it('removes the coordinator entry along with any writer and auditor entries', async () => {
+      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen');
+
+      expect(result.writers).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('refuses to re-add a coordinator already on the project', async () => {
+      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
+
+      await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'sam.chen', 'view')).rejects.toMatchObject({ statusCode: 409 });
+    });
+  });
+
   // GH-3276: a collapsed dual-role row (#3218) is removed/role-changed in one ETag-guarded
   // write that also clears its other backend entries, instead of a second client-issued
   // call racing the first (Copilot #3244) or resolving a duplicate email through the NATS

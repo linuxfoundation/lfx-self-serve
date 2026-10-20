@@ -67,6 +67,7 @@ export class FilterPillsComponent {
         default: { selected: 'bg-blue-500 text-white', idle: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
         green: { selected: 'bg-emerald-600 text-white', idle: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
         red: { selected: 'bg-red-600 text-white', idle: 'bg-red-50 text-red-700 hover:bg-red-100' },
+        purple: { selected: 'bg-purple-600 text-white', idle: 'bg-purple-50 text-purple-700 hover:bg-purple-100' },
       };
 
       return Object.fromEntries(
