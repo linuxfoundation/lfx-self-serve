@@ -42,6 +42,11 @@ describe('Member 360 ranking policy', () => {
     expect(rankMember360Rows(rows, { tier: 'At Risk', owner: 'Sales', search: 'ACME' })).toHaveLength(1);
     expect(rankMember360Rows(rows, undefined, 'priority', 'ascending')[0].priority).toBe('High');
   });
+  it('sorts names with the same explicit English collation on server and browser', () => {
+    expect(rankMember360Rows([member('Zulu', 1, null), member('álpha', 1, null)], undefined, 'member_organization', 'ascending')[0].member_organization).toBe(
+      'álpha'
+    );
+  });
   it.each(['ascending', 'descending'] as const)('keeps unknown renewals last when %s', (direction) => {
     expect(rankMember360Rows(rows, undefined, 'days_to_renewal', direction)[1].days_to_renewal).toBeNull();
   });

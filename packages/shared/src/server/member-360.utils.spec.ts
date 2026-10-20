@@ -50,6 +50,19 @@ describe('Member 360 form-only contract', () => {
     expect(text).toContain('| a b c d |');
     expect(text).not.toMatch(/[\r\u2028\u2029]/);
   });
+  it('rejects multiline or overlong scope names', () => {
+    for (const project_name of ['Sample\nOther scope', 'Sample\rOther scope', 'Sample\u2028Other scope', 'Sample\u2029Other scope', 'a'.repeat(201)]) {
+      expect(formInputSchema.safeParse({ type: 'member_360_intake_form', project_name }).success).toBe(false);
+    }
+  });
+  it('renders missing prototype-named tracker cells as empty', () => {
+    const text = renderMember360FormMessage({
+      type: 'member_360_intake_form',
+      project_name: 'Sample Foundation',
+      trackers: [{ filename: 'tracker.csv', rows: [{ constructor: 'cell', toString: 'text' }, {}] }],
+    });
+    expect(text).toContain('| constructor | toString |\n|---|---|\n| cell | text |\n|  |  |');
+  });
   it('uses the shared tracker count limit for Generate', () => {
     const tracker = { filename: 'tracker.csv', rows: [{ company: 'Acme Motors' }] };
     expect(member360GenerateSchema.safeParse({ project: 'sample-project', trackers: Array(MEMBER_360_MAX_TRACKERS).fill(tracker) }).success).toBe(true);

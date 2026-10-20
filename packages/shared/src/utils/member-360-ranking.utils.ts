@@ -23,7 +23,8 @@ export function rankMember360Rows(
       const right = b[key];
       if (left === null) return right === null ? 0 : 1;
       if (right === null) return -1;
-      let result = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right));
+      let result =
+        typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right), 'en', { sensitivity: 'base' });
       if (key === 'priority') result = PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority);
       if (key === 'engagement_tier') result = ENGAGEMENT_TIERS.indexOf(a.engagement_tier) - ENGAGEMENT_TIERS.indexOf(b.engagement_tier);
       return direction === 'ascending' ? result : -result;

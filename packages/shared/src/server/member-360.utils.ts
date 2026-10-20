@@ -88,7 +88,12 @@ export const priorRunSchema = z
 export const formInputSchema = z
   .object({
     type: z.literal('member_360_intake_form'),
-    project_name: z.string().min(1).describe("The entitlement-checked project's display name (verbatim)"),
+    project_name: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[^\r\n\u2028\u2029]+$/)
+      .describe("The entitlement-checked project's display name (verbatim)"),
     project_uid: z.string().min(1).optional().describe('The LFX project UID (authoritative when present)'),
     project_slug: z.string().min(1).optional().describe('The LFX project slug for semantic-layer queries'),
     window_start: isoDay.optional().describe("Analysis window start (inclusive); omit with window_end for Paul's trailing-twelve-months default"),
@@ -152,8 +157,8 @@ export function renderMember360FormMessage(input: Member360FormInput): string {
     'trackers (they are attached below or there are none). Proceed to Step 2.',
     '',
     'SCOPE — the ONLY project this run may cover (entitlement-checked by LFX One):',
-    `  Project: ${input.project_name}`,
-    `  (pass this exact string, "${input.project_name}", as project_name to score_member_360 and finalize_member_360 — it is the storage key; the LFX record's own display name, if different, goes in lfx_project_name)`,
+    `  Project: ${normalizeFormLines(input.project_name)}`,
+    `  (pass this exact string, "${normalizeFormLines(input.project_name)}", as project_name to score_member_360 and finalize_member_360 — it is the storage key; the LFX record's own display name, if different, goes in lfx_project_name)`,
     input.project_uid !== undefined
       ? `  LFX project UID: ${input.project_uid} (authoritative — use it directly; do not re-resolve by name)`
       : '  LFX project UID: not supplied — resolve the project by name with lfx_mcp_search_projects and confirm the match is this project before pulling anything',
@@ -196,7 +201,7 @@ export function renderMember360FormMessage(input: Member360FormInput): string {
       lines.push(
         ...mdTable(
           headers,
-          t.rows.map((r) => headers.map((h) => r[h] ?? ''))
+          t.rows.map((r) => headers.map((h) => (Object.hasOwn(r, h) ? r[h] : '')))
         )
       );
       lines.push(`===== END TRACKER ${i + 1} =====`, '');

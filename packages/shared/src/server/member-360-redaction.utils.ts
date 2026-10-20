@@ -4,16 +4,54 @@
 import { MEMBER_360_CONTACT_PLACEHOLDERS } from '../constants/member-360.constants';
 import type { Member360Tabs } from '../interfaces/member-360.interface';
 
+/** Scan each side of @ once; never retry a local-part regex at every character. */
+function markEmailSpans(text: string, ends: Uint32Array): void {
+  for (let at = text.indexOf('@'); at !== -1; at = text.indexOf('@', at + 1)) {
+    let start = at;
+    while (start > 0 && /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]/i.test(text[start - 1])) start--;
+    let end = at + 1;
+    let labels = 0;
+    let validEnd = end;
+    while (end < text.length) {
+      const labelStart = end;
+      while (end < text.length && /[A-Z0-9-]/i.test(text[end])) end++;
+      if (end === labelStart) break;
+      labels++;
+      if (labels > 1) validEnd = end;
+      if (text[end] !== '.') break;
+      end++;
+    }
+    if (start === at || labels < 2) continue;
+    ends[start] = Math.max(ends[start], validEnd);
+  }
+}
+
 /** Exact known contacts only, never guessed names or fragments inside other words. */
 export function createMember360Redactor(contacts: (string | null)[]): (text: string) => string {
   const patterns = [...new Set(contacts.filter((value): value is string => value !== null).map((value) => value.trim()))]
     .filter((value) => value.length >= 3 && !MEMBER_360_CONTACT_PLACEHOLDERS.some((placeholder) => placeholder === value.toLowerCase()))
-    .sort((a, b) => b.length - a.length)
     .map((value) => new RegExp(`(?<![\\p{L}\\p{N}_])${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}_])`, 'gu'));
-  return (text) =>
-    patterns
-      .reduce((value, pattern) => value.replace(pattern, '[contact redacted]'), text)
-      .replace(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9-]+(?:\.[A-Z0-9-]+)+/gi, '[contact redacted]');
+  return (text) => {
+    // Both detectors see original bytes. Index by start to union spans in linear time,
+    // without sorting or allowing one replacement to hide another contact/email.
+    const ends = new Uint32Array(text.length);
+    markEmailSpans(text, ends);
+    for (const pattern of patterns) {
+      for (const match of text.matchAll(pattern)) ends[match.index] = Math.max(ends[match.index], match.index + match[0].length);
+    }
+    const chunks: string[] = [];
+    let copied = 0;
+    let end = 0;
+    for (let start = 0; start < text.length; start++) {
+      if (ends[start] <= start) continue;
+      if (start >= end) {
+        chunks.push(text.slice(copied, start), '[contact redacted]');
+      }
+      end = Math.max(end, ends[start]);
+      copied = end;
+    }
+    return chunks.join('') + text.slice(copied);
+  };
 }
 
 /** Walk only the contract's known free-text fields; leave dates, enums and scores intact. */
