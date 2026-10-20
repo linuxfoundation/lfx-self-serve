@@ -1,0 +1,181 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): a 16px bold
+     heading over a 12px subtitle; each group an uppercase 11.5px label over a 14px-radius card of
+     rows padded 14px by 16px, a 38px icon tile on each; Add material and the pills are 30px. -->
+<section class="flex flex-col" aria-labelledby="meeting-materials-heading" data-testid="materials-section">
+  <div class="mb-[6px] flex items-center justify-between gap-[12px]">
+    <div class="flex items-center gap-[9px]">
+      <i class="fa-light fa-folder-open text-[var(--md-text-muted)]" aria-hidden="true"></i>
+      <h2 id="meeting-materials-heading" class="m-0 text-[16px] font-bold text-[var(--md-text-heading)]">Materials</h2>
+      @if (materials().status === 'ready' && recentlyUpdated()) {
+        <span
+          class="rounded-full bg-[var(--md-status-good-bg)] px-[9px] py-[2px] text-[11.5px] font-semibold text-[var(--md-status-good)]"
+          data-testid="materials-section-updated"
+          >Updated</span
+        >
+      }
+    </div>
+    @if (canManage()) {
+      <lfx-button
+        label="Add material"
+        icon="fa-light fa-plus"
+        ariaHaspopup="dialog"
+        [styleClass]="pillButtonClass"
+        (onClick)="openDrawer()"
+        data-testid="materials-section-add" />
+    }
+  </div>
+  <p class="m-0 mb-[16px] text-[12px] leading-[1.5] text-[var(--md-text-muted)]">
+    Documents provided to support meeting preparation, discussion, and the governance record.
+  </p>
+
+  @switch (materials().status) {
+    @case ('loading') {
+      <div class="flex flex-col gap-[10px]" aria-busy="true" data-testid="materials-section-loading">
+        <p-skeleton height="66px" borderRadius="14px" aria-hidden="true" />
+        <p-skeleton height="66px" borderRadius="14px" aria-hidden="true" />
+        <span class="sr-only">Loading the meeting materials</span>
+      </div>
+    }
+    @case ('sign-in') {
+      <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
+      <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="materials-section-sign-in">
+        <a
+          class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          [href]="signInHref()"
+          data-dd-privacy="mask"
+          data-testid="materials-section-sign-in-link"
+          >Sign in</a
+        >
+        to view the materials for this meeting.
+      </p>
+    }
+    @case ('error') {
+      <div class="flex flex-wrap items-center justify-between gap-[12px]" role="alert" data-testid="materials-section-error">
+        <p class="m-0 text-[14px] text-[var(--md-text-body)]">We couldn't load the materials.</p>
+        <lfx-button label="Try again" [styleClass]="pillButtonClass" (onClick)="retry()" data-testid="materials-section-retry" />
+      </div>
+    }
+    @default {
+      @if (attachments().length === 0) {
+        <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="materials-section-empty">No materials have been added to this meeting yet.</p>
+      } @else {
+        <div class="flex flex-col gap-[18px]">
+          @if (files().length > 0) {
+            <div class="flex flex-col gap-[8px]" data-testid="materials-section-files">
+              <div>
+                <h3 class="m-0 text-[11.5px] font-bold uppercase tracking-[.05em] text-[var(--md-text-muted)]">Primary materials</h3>
+                <p class="m-0 mt-[2px] text-[12.5px] text-[var(--md-text-muted)]">Files attached to this meeting.</p>
+              </div>
+              <ul class="m-0 list-none overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)] p-0">
+                @for (file of visibleFiles(); track file.uid; let first = $first) {
+                  @let fileType = file | fileTypeDisplay;
+                  <li class="border-[var(--md-divider)]" [class.border-t]="!first">
+                    <button
+                      type="button"
+                      class="flex w-full cursor-pointer items-center gap-[14px] border-0 bg-transparent px-[16px] py-[14px] text-left hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+                      (click)="download(file)"
+                      [attr.data-testid]="'materials-file-' + file.uid">
+                      <span class="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-[var(--md-accent-bg)] text-[var(--md-accent)]">
+                        <i [class]="fileType.icon" aria-hidden="true"></i>
+                      </span>
+                      <span class="flex min-w-0 flex-1 flex-col">
+                        <span class="break-words text-[14px] font-semibold text-[var(--md-text-heading)]">{{ file.name }}</span>
+                        <span class="text-[12.5px] text-[var(--md-text-muted)]">
+                          @if (file.category && file.category !== 'Other') {
+                            {{ file.category }} ·
+                          }
+                          {{ fileType.label }}
+                          @if (file.file_size !== undefined && file.file_size !== null) {
+                            · {{ file.file_size | fileSize }}
+                          }
+                        </span>
+                      </span>
+                      <span class="inline-flex flex-none items-center gap-[6px] text-[12.5px] font-semibold text-[var(--md-text-muted)]">
+                        Open <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span>
+                      </span>
+                    </button>
+                  </li>
+                }
+              </ul>
+              @if (files().length > previewLimit) {
+                <lfx-button
+                  class="self-start"
+                  [label]="showAllFiles() ? 'Show less' : 'Show ' + (files().length - previewLimit) + ' more'"
+                  [text]="true"
+                  [styleClass]="toggleButtonClass"
+                  [ariaExpanded]="showAllFiles()"
+                  (onClick)="showAllFiles.set(!showAllFiles())"
+                  data-testid="materials-section-files-toggle" />
+              }
+            </div>
+          }
+
+          @if (links().length > 0) {
+            <div class="flex flex-col gap-[8px]" data-testid="materials-section-links">
+              <div>
+                <h3 class="m-0 text-[11.5px] font-bold uppercase tracking-[.05em] text-[var(--md-text-muted)]">Supporting materials</h3>
+                <p class="m-0 mt-[2px] text-[12.5px] text-[var(--md-text-muted)]">Links to related pages and documents.</p>
+              </div>
+              <ul class="m-0 list-none overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)] p-0">
+                @for (row of visibleLinks(); track row.attachment.uid; let first = $first) {
+                  <li class="border-[var(--md-divider)]" [class.border-t]="!first">
+                    <!-- Only a link safe to open is a link; anything else is shown as text (toSafeExternalHref). -->
+                    @if (row.href; as href) {
+                      <a
+                        class="flex items-center gap-[14px] px-[16px] py-[14px] no-underline hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+                        [href]="href"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        [attr.data-testid]="'materials-link-' + row.attachment.uid">
+                        <ng-container *ngTemplateOutlet="linkBody; context: { $implicit: row }" />
+                        <span class="inline-flex flex-none items-center gap-[6px] text-[12.5px] font-semibold text-[var(--md-text-muted)]">
+                          Open <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span>
+                        </span>
+                      </a>
+                    } @else {
+                      <div class="flex items-center gap-[14px] px-[16px] py-[14px]" [attr.data-testid]="'materials-link-' + row.attachment.uid">
+                        <ng-container *ngTemplateOutlet="linkBody; context: { $implicit: row }" />
+                      </div>
+                    }
+                  </li>
+                }
+              </ul>
+              @if (links().length > previewLimit) {
+                <lfx-button
+                  class="self-start"
+                  [label]="showAllLinks() ? 'Show less' : 'Show ' + (links().length - previewLimit) + ' more'"
+                  [text]="true"
+                  [styleClass]="toggleButtonClass"
+                  [ariaExpanded]="showAllLinks()"
+                  (onClick)="showAllLinks.set(!showAllLinks())"
+                  data-testid="materials-section-links-toggle" />
+              }
+            </div>
+          }
+        </div>
+      }
+    }
+  }
+</section>
+
+@if (canManage()) {
+  <!-- V1's materials drawer behaviour (add, edit and remove files and links) in V2's own variant, a named dialog that moves focus in and back. -->
+  <lfx-meeting-v2-materials-drawer
+    [(visible)]="drawerVisible"
+    [meetingId]="drawerMeetingId()"
+    [pastMeetingId]="drawerPastMeetingId()"
+    (materialsChanged)="onMaterialsChanged($event)" />
+}
+
+<ng-template #linkBody let-row>
+  <span class="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-[var(--md-surface-hover)] text-[var(--md-text-muted)]">
+    <i class="fa-light fa-link" aria-hidden="true"></i>
+  </span>
+  <span class="flex min-w-0 flex-1 flex-col">
+    <span class="break-words text-[14px] font-semibold text-[var(--md-text-heading)]">{{ row.attachment.name }}</span>
+    <span class="text-[12.5px] text-[var(--md-text-muted)]">{{ row.caption }}</span>
+  </span>
+</ng-template>

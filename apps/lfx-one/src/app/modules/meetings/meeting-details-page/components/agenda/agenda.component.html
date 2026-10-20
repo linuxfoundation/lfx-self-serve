@@ -1,0 +1,25 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): a 16px bold
+     heading 12px above 15px body copy, at most 660px wide. -->
+<section class="flex flex-col gap-[12px]" aria-labelledby="meeting-agenda-heading" data-testid="agenda-section">
+  <div class="flex items-center gap-[9px]">
+    <i class="fa-light fa-list-check text-[var(--md-text-muted)]" aria-hidden="true"></i>
+    <h2 id="meeting-agenda-heading" class="m-0 text-[16px] font-bold text-[var(--md-text-heading)]">Agenda</h2>
+  </div>
+
+  @if (description(); as agendaText) {
+    <div class="max-w-[660px] text-[15px] leading-[1.65] text-[var(--md-text-body)]" data-testid="agenda-section-description">
+      <!-- lfx-meeting-v2-expandable-text measures its content once, on first render: tracking by the text remounts
+           it whenever the description changes (e.g. another occurrence), so See more is never stale. -->
+      @for (text of [agendaText]; track text) {
+        <lfx-meeting-v2-expandable-text [maxHeight]="collapsedHeight">
+          <div class="[&_a]:text-[var(--md-accent-ink)] [&_a]:underline" [innerHTML]="text | linkify"></div>
+        </lfx-meeting-v2-expandable-text>
+      }
+    </div>
+  } @else {
+    <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="agenda-section-empty">No agenda has been added for this meeting yet.</p>
+  }
+</section>

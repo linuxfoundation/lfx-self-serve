@@ -1,0 +1,11 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+@use './meeting-details-page.tokens';
+
+// Points PrimeNG's skeleton at the V2 tokens, inside the scope wrapper only, so the shell's
+// `<p-skeleton>` blocks match the prototype without touching the app-wide skeleton.
+.meeting-details-v2 {
+  --p-skeleton-background: var(--md-surface-hover);
+  --p-skeleton-border-radius: var(--md-radius-lg);
+}

@@ -259,3 +259,30 @@ export interface PendingAttachment {
   /** Error message if upload failed */
   uploadError?: string;
 }
+
+/**
+ * The V2 materials section's load (E3-02). `sign-in` is a viewer who must sign in to see this
+ * meeting's materials (anonymous, as on V1, or a session the past route refused), told apart from
+ * `ready` with none attached.
+ */
+export interface MeetingMaterialsState {
+  status: 'loading' | 'ready' | 'sign-in' | 'error';
+  attachments: MeetingAttachment[];
+}
+
+/** What the V2 materials section fetches (E3-02): a past occurrence's own list, or the meeting's (V1's signed-in routes). */
+export interface MeetingMaterialsRequest {
+  /** `past` for a page loaded by a past occurrence's id; `upcoming` reads `/api/meetings/:id/attachments`. */
+  mode: 'upcoming' | 'past';
+  /** The meeting id, or for `past` the occurrence's resource id (`getPastMeetingResourceId`). */
+  id: string;
+}
+
+/** One supporting-materials row of the V2 materials section (E3-02), display-ready. */
+export interface MeetingMaterialLink {
+  attachment: MeetingAttachment;
+  /** The link made safe for an `href` (`toSafeExternalHref`); `null` renders the row as text. */
+  href: string | null;
+  /** "Link · host", or "Link" without a recognisable host. */
+  caption: string;
+}

@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div>
+  <div
+    #contentElement
+    [id]="contentId"
+    class="expandable-content text-base text-gray-600 overflow-hidden transition-all duration-300 ease-in-out motion-reduce:transition-none break-words relative whitespace-pre-wrap"
+    [class.expanded]="isExpanded()"
+    [class.collapsed]="!isExpanded() && needsExpansion()"
+    [style.height]="getContentHeight()"
+    data-testid="expandable-content">
+    <ng-content></ng-content>
+  </div>
+
+  @if (needsExpansion() && isInitialized()) {
+    <div>
+      <!-- One toggle that stays in place, so keyboard focus is not lost when it flips (#3260).
+           relative z-10: keeps the toggle clickable above stretched card overlays (e.g. mention-card .card-link). -->
+      <button
+        type="button"
+        class="relative z-10 rounded text-xs text-black hover:text-gray-600 hover:underline font-semibold transition-colors motion-reduce:transition-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+        [attr.aria-expanded]="isExpanded()"
+        [attr.aria-controls]="contentId"
+        (click)="toggleExpanded()"
+        [attr.data-testid]="isExpanded() ? 'see-less-button' : 'read-more-button'">
+        @if (isExpanded()) {
+          <i class="fa-light fa-chevron-up mr-1" aria-hidden="true"></i>
+          See less
+        } @else {
+          <i class="fa-light fa-chevron-down mr-1" aria-hidden="true"></i>
+          Show more
+        }
+      </button>
+    </div>
+  }
+</div>

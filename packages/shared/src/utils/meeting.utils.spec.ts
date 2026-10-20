@@ -36,15 +36,15 @@ import type {
 } from '../interfaces';
 import {
   buildCommitteeCadenceSummary,
+  buildImportSummary,
+  buildMeetingEditCommands,
+  buildMeetingEditQueryParams,
   buildMeetingOccurrenceOptions,
   buildMeetingOccurrenceRoute,
-  buildOccurrenceNavTimeline,
-  formatMeetingOccurrenceLabel,
   getMeetingSelfRemovalMessage,
-  getMeetingSeriesUid,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
-  buildImportSummary,
+  buildOccurrenceNavTimeline,
   buildRecurrenceNeverEndDate,
   buildRecurrenceSummary,
   collectMeetingOrganizers,
@@ -53,8 +53,12 @@ import {
   countMeetingDatesBefore,
   extractRegistrantEmails,
   filterUnlistedEmails,
+  formatMeetingMailtoDate,
+  formatMeetingOccurrenceLabel,
   fromMeetingApiVotingStatuses,
   getMeetingOrganizerDisplayName,
+  getMeetingSeriesUid,
+  isBatchRegistrantOperationResponse,
   isCalendarDeadlinePast,
   isMeetingAccepted,
   isMeetingDeclinedForAllOccurrences,
@@ -65,28 +69,27 @@ import {
   isOccurrencePast,
   isPastMeetingCompositeId,
   isUnresolvableParticipantName,
-  isBatchRegistrantOperationResponse,
   isVoteCalendarEventPast,
+  meetingSelectionHasVotingFilter,
   mergeBatchRegistrantResponses,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
   reconcileOptimisticPad,
+  resolveMeetingCalendarColors,
   resolveMeetingOrganizer,
   resolveMeetingOwner,
-  resolveMeetingCalendarColors,
   resolveOccurrenceRecurrence,
   resolveRsvpOccurrenceId,
   resolveSurveyCalendarColors,
   resolveVoteCalendarColors,
-  sanitizeMeetingCommittees,
   sanitizeMeetingCommitteeUids,
+  sanitizeMeetingCommittees,
   selectCommitteeCadenceMeeting,
   selectNextUpcomingMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
   toMeetingApiVotingStatuses,
-  meetingSelectionHasVotingFilter,
 } from './meeting.utils';
 
 /**
@@ -158,6 +161,28 @@ function occurrence(overrides: Partial<MeetingOccurrence> = {}): MeetingOccurren
 }
 
 const ids = (meetings: PastMeeting[]): string[] => meetings.map((m) => m.id);
+
+describe('buildMeetingEditCommands', () => {
+  it.each([
+    [true, ['/', 'foundation', 'meetings', 'm1', 'edit']],
+    [false, ['/', 'project', 'meetings', 'm1', 'edit']],
+    [undefined, ['/meetings', 'm1', 'edit']],
+  ] as [boolean | undefined, string[]][])('routes the edit page by is_foundation %s', (isFoundation, commands) => {
+    expect(buildMeetingEditCommands({ id: 'm1', is_foundation: isFoundation } as Meeting)).toEqual(commands);
+  });
+});
+
+describe('buildMeetingEditQueryParams', () => {
+  it("passes the meeting's own project slug and first committee", () => {
+    const meeting = { project_slug: 'own', committees: [{ uid: 'c1' }, { uid: 'c2' }] } as Meeting;
+    expect(buildMeetingEditQueryParams(meeting, 'fallback')).toEqual({ project: 'own', committee_uid: 'c1' });
+  });
+
+  it('falls back to the given project slug, and omits what is unknown', () => {
+    expect(buildMeetingEditQueryParams({} as Meeting, 'fallback')).toEqual({ project: 'fallback' });
+    expect(buildMeetingEditQueryParams({} as Meeting)).toEqual({});
+  });
+});
 
 describe('sortPastMeetingsDescending', () => {
   it('orders past meetings most-recent-first by scheduled_start_time', () => {
@@ -889,6 +914,25 @@ describe('collectMeetingOrganizers', () => {
     });
 
     expect(collectMeetingOrganizers(meetingFixture)).toEqual([{ name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' }]);
+  });
+});
+
+describe('formatMeetingMailtoDate', () => {
+  it('formats a timestamp as a medium en-US date, in UTC by default', () => {
+    expect(formatMeetingMailtoDate('2026-10-09T00:30:00Z')).toBe('Oct 9, 2026');
+  });
+
+  // The same instant is a different day in another zone; the caller's zone decides, never the runtime's.
+  it('formats in the given timezone', () => {
+    expect(formatMeetingMailtoDate('2026-10-09T00:30:00Z', 'America/Los_Angeles')).toBe('Oct 8, 2026');
+  });
+
+  it('falls back to UTC for an invalid timezone', () => {
+    expect(formatMeetingMailtoDate('2026-10-09T00:30:00Z', 'Not/AZone')).toBe('Oct 9, 2026');
+  });
+
+  it.each([[undefined], [null], [''], ['not a date'], ['0001-01-01T00:00:00Z']])('returns an empty string for %s', (value) => {
+    expect(formatMeetingMailtoDate(value)).toBe('');
   });
 });
 

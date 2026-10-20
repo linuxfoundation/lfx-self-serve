@@ -954,3 +954,61 @@ export function isMentorshipMentorInvitePath(url: string): boolean {
   const normalized = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   return normalized === '/mentorship/mentor/invites';
 }
+
+/**
+ * The hostname of an absolute http(s) URL without a leading `www.`, for a link's caption (e.g. the
+ * materials section's "Link · github.com"); `null` for anything else.
+ */
+export function getUrlHostname(url: string | null | undefined): string | null {
+  if (!url) {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    return parsed.hostname.replace(/^www\./, '') || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A user-entered link made safe to put in an `href`: an absolute http(s) URL as it is, or a bare
+ * `host/path` or `host:port/path` (no scheme, as organizers often paste) given `https://`. Anything else (another
+ * scheme, no recognisable host, or a private / loopback host) is `null`, and is rendered as text
+ * rather than a link.
+ */
+export function toSafeExternalHref(link: string | null | undefined): string | null {
+  const trimmed = link?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  // `host:port/path` looks like a scheme to the pattern, but is a bare host with a port.
+  const bareHostWithPort = /^[^/:]+:\d+(\/|$)/.test(trimmed);
+  const hasScheme = !bareHostWithPort && /^[a-z][a-z0-9+.-]*:/i.test(trimmed);
+  const candidate = hasScheme ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    // A recognisable host: a dotted name or an IPv4 address, or a bracketed IPv6 literal.
+    const recognisableHost = parsed.hostname.includes('.') || parsed.hostname.startsWith('[');
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || !recognisableHost) {
+      return null;
+    }
+    // No userinfo: a bare email (`someone@vendor.example`) is not a link, and `https://trusted@evil.example`
+    // is a link that hides where it goes.
+    if (parsed.username || parsed.password) {
+      return null;
+    }
+    // A link must not point at the viewer's own network (a router, an internal service, loopback):
+    // the click would carry that service's ambient credentials. Same guard as the app's other
+    // outbound URLs (`isPrivateHost`).
+    if (isPrivateHost(parsed.hostname)) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}

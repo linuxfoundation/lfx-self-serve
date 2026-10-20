@@ -13,6 +13,7 @@ The system exposes public endpoints that bypass user authentication:
 - **Public API Endpoint**: `/public/api/meetings/:id` - Returns meeting and project data
 - **Public Past-Meeting Endpoint**: `/public/api/meetings/past/:id` - Tiered `full_access` past-meeting detail
 - **Self-Registration Endpoint**: `POST /public/api/meetings/register` - Registers the caller for a public, non-restricted meeting. Mounted on the same optional-auth router, but the handler requires a session of its own — see [Self-Registration Contract](#self-registration-contract-post-publicapimeetingsregister)
+- **Past-Meeting Artifacts**: no public route. The recording, transcript, AI summary and participants of a past meeting are read on `/api/past-meetings/:uid/*` with a session, as V1 reads them; the V2 page does the same (E4-04 withdrawn in the 2026-10-20 scope reset)
 - **Frontend Route**: `/meetings/:id` - Displays the meeting page without authentication
 - **Access Control**: Meeting visibility levels and optional passcode protection
 

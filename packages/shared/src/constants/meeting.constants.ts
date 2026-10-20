@@ -5,8 +5,10 @@ import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRe
 import type {
   AttachmentCategory,
   CardSelectorOption,
-  MeetingTypeConfig,
   MeetingComposerPreviewFeature,
+  MeetingStatusKind,
+  MeetingTypeConfig,
+  PastMeetingSummaryApprovalState,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -69,6 +71,21 @@ export const HOST_KEY_EARLY_MINUTES = 70;
  * Mirrors PCC's showHostKey() logic.
  */
 export const HOST_KEY_LATE_MINUTES = 40;
+
+/**
+ * How long after the host-key window opens the V2 join details section reads the meeting a second time
+ * (E7-02), should the first read, timed by the browser's clock, come back without the key (a clock
+ * ahead of the server's, or a failed read). After that the section stops waiting.
+ */
+export const MEETING_HOST_KEY_RETRY_MS = 90_000;
+
+/**
+ * How far ahead of the host-key window's opening, by the browser's clock, the V2 join details section
+ * still shows a key the server returned (E7-02): the server authorized it by its own clock, which a
+ * browser running slow would otherwise contradict. Wide enough for clock skew, far narrower than the
+ * days between a series' occurrences, so today's key never shows on a later occurrence's page.
+ */
+export const MEETING_HOST_KEY_CLOCK_SKEW_MS = 10 * 60_000;
 
 /**
  * Available meeting platforms and their configurations
@@ -1075,6 +1092,32 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
  */
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
 
+/**
+ * Display label for each meeting status on the meeting details V2 page
+ * @description Shared by the status pill (E1-05) and the sticky identity bar's subtitle (E1-02), so
+ * the two never disagree about what a meeting is called. Resolve the status with
+ * `resolveMeetingStatus`. The join window (`canJoinMeeting`) opens a few minutes before the scheduled
+ * start: that part reads "Starting soon", and from the start through the end buffer "In progress".
+ */
+export const MEETING_STATUS_LABELS = {
+  upcoming: 'Upcoming',
+  'starting-soon': 'Starting soon',
+  live: 'In progress',
+  ended: 'Ended',
+  'awaiting-rsvp': 'Awaiting your RSVP',
+  going: "You're going",
+  maybe: 'Maybe',
+  'cant-attend': "Can't attend",
+} as const satisfies Record<MeetingStatusKind, string>;
+
+/**
+ * TransferState key for the public meeting page's SSR-resolved `MeetingJoinPageState`
+ * @description V1 (`meeting-join-v1/meeting-join.component.ts`) declares the same literal inline
+ * and stays byte-identical, so it does not import this; the meeting details gate and V2 do. The
+ * two must stay equal, or V2 silently loses its seed.
+ */
+export const MEETING_JOIN_STATE_KEY = 'meetingJoinState';
+
 // ============================================================================
 // Pre-v2 Meeting Wizard Constants
 // ============================================================================
@@ -1168,3 +1211,50 @@ export const MEETING_DURATION_OPTIONS = [
   { label: '120 minutes', value: 120 },
   { label: 'Custom...', value: 'custom' },
 ];
+
+/**
+ * Collapsed height, in px, of a meeting's description before "See more" (V2 agenda, E3-01): the
+ * public join page's 200, so the V2 page reads the same as the page it replaces (the past-meeting
+ * details page uses 300, and is not part of this redesign).
+ */
+export const MEETING_AGENDA_COLLAPSED_HEIGHT_PX = 200;
+
+/**
+ * The people section's RSVP labels (E3-04), for each row's chip and the tallies above the rows.
+ * Same words as the V1 guest drawer's filter.
+ */
+export const MEETING_PEOPLE_ATTENDANCE_LABELS: Record<RsvpResponse | 'pending', string> = {
+  accepted: 'Accepted',
+  maybe: 'Maybe',
+  declined: 'Declined',
+  pending: 'Pending',
+};
+
+/** The people section's row order after the organizers (E3-04): coming, undecided, no reply, declined. */
+export const MEETING_PEOPLE_ATTENDANCE_ORDER: Record<RsvpResponse | 'pending', number> = { accepted: 0, maybe: 1, pending: 2, declined: 3 };
+
+/** Items each materials group shows before "Show N more" (E3-02), as V1's materials card caps its files. */
+export const MEETING_MATERIALS_PREVIEW_LIMIT = 5;
+
+/** How recent an attachment change earns the materials section its "Updated" pill (E3-02), as on V1. */
+export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * When the V2 materials section refetches after the drawer changes the list (E3-02): at once, then
+ * after each of these delays, since the query service indexes a change some time after the write.
+ */
+export const MEETING_MATERIALS_REFETCH_DELAYS_MS: readonly number[] = [1000, 5000, 15000];
+
+/** What each summary approval state reads as (E4-03); `not-required` shows no status. */
+export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryApprovalState, string | null> = {
+  approved: 'Approved',
+  pending: 'Pending',
+  'not-required': null,
+};
+
+/**
+ * The V2 details page's scroll padding under its sticky identity bar (#3260, WCAG 2.4.11), in px: the
+ * 83px bar plus a margin, and the same with the 42px impersonation banner above it. Keep in step with
+ * the bar's and the banner's heights.
+ */
+export const MEETING_DETAILS_SCROLL_PADDING_PX = { default: 100, impersonating: 142 } as const;

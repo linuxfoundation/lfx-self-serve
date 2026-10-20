@@ -1,0 +1,147 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities): a 16px bold
+     heading 14px above a 14px-radius card; a 172px poster with a 60px play disc; 38px pill actions
+     in a row padded 16px by 18px. The poster's gradient is the --md-video-still-* tokens. -->
+<section class="flex flex-col gap-[14px]" aria-labelledby="meeting-recording-heading" data-testid="tools-section">
+  <h2 id="meeting-recording-heading" class="m-0 text-[16px] font-bold text-[var(--md-text-heading)]">Recording &amp; Transcript</h2>
+
+  @switch (section().status) {
+    @case ('loading') {
+      <div class="overflow-hidden rounded-[14px] border border-[var(--md-border)]" aria-busy="true" data-testid="tools-loading">
+        <p-skeleton height="172px" borderRadius="0" aria-hidden="true" />
+        <span class="sr-only">Loading the recording and transcript</span>
+      </div>
+    }
+    @case ('sign-in') {
+      <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="tools-sign-in">
+        <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
+        <a
+          class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
+          [href]="signInHref()"
+          data-dd-privacy="mask"
+          data-testid="tools-sign-in-link"
+          >Sign in</a
+        >
+        to watch the recording and read the transcript.
+      </p>
+    }
+    @case ('pending') {
+      <p class="m-0 text-[14px] text-[var(--md-text-muted)]" data-testid="tools-pending">The recording and transcript appear here once they are ready.</p>
+    }
+    @default {
+      @let recording = section().recording;
+      @let transcript = section().transcript;
+      <div class="overflow-hidden rounded-[14px] border border-[var(--md-border)] bg-[var(--md-surface-card)]">
+        @if (recording.status === 'available' && recording.url) {
+          <!-- Decorative: Watch recording below is the control, so the still is neither a link nor focusable. -->
+          <div
+            class="relative flex h-[172px] items-center justify-center bg-[linear-gradient(135deg,var(--md-video-still-from),var(--md-video-still-to))]"
+            aria-hidden="true"
+            data-testid="tools-recording-poster">
+            <span
+              class="flex h-[60px] w-[60px] items-center justify-center rounded-full border-[1.5px] border-[var(--md-video-still-disc-border)] bg-[var(--md-video-still-disc)] backdrop-blur-sm">
+              <i class="fa-solid fa-play text-[22px] text-[var(--md-video-still-glyph)]"></i>
+            </span>
+          </div>
+        }
+        <div class="flex flex-wrap items-center gap-[10px] px-[18px] py-[16px]">
+          @switch (recording.status) {
+            @case ('available') {
+              <lfx-button
+                label="Watch recording"
+                ariaLabel="Watch recording (opens in a new tab)"
+                icon="fa-light fa-play"
+                [href]="recording.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                [styleClass]="primaryButtonClass"
+                data-testid="tools-recording-link" />
+            }
+            @case ('no-access') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="no-access">
+                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the recording
+              </span>
+            }
+            @case ('none') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="none">
+                <i class="fa-light fa-video-slash mr-[6px]" aria-hidden="true"></i>No recording for this meeting
+              </span>
+            }
+          }
+          @switch (transcript.status) {
+            @case ('available') {
+              <lfx-button
+                label="Transcript"
+                icon="fa-light fa-file-lines"
+                [styleClass]="secondaryButtonClass"
+                ariaHaspopup="dialog"
+                (onClick)="openTranscript()"
+                data-testid="tools-transcript-btn" />
+            }
+            @case ('no-access') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="no-access">
+                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the transcript
+              </span>
+            }
+            @case ('none') {
+              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="none">
+                <i class="fa-light fa-file-slash mr-[6px]" aria-hidden="true"></i>No transcript for this meeting
+              </span>
+            }
+          }
+        </div>
+        @let summary = section().summary;
+        <!-- E4-03: the AI summary, under the actions as in the prototype. -->
+        <div class="flex flex-col gap-[12px] border-t border-[var(--md-divider)] px-[18px] py-[16px]" data-testid="tools-summary">
+          <div class="flex items-center gap-[8px]">
+            <i class="fa-light fa-sparkles text-[15px] text-[var(--md-feature-ai)]" aria-hidden="true"></i>
+            <h3 class="m-0 text-[12px] font-bold uppercase tracking-[.03em] text-[var(--md-text-muted)]">AI summary</h3>
+            <!-- V1's pill: Approved, or Pending while awaiting approval; none when approval was never required. -->
+            @if (summary.status === 'available' && summary.approval === 'approved') {
+              <span
+                class="rounded-full bg-[var(--md-status-good-bg)] px-[9px] py-[2px] text-[11.5px] font-semibold text-[var(--md-status-good)]"
+                data-testid="tools-summary-approved"
+                >{{ approvalLabels.approved }}</span
+              >
+            } @else if (summary.status === 'available' && summary.approval === 'pending') {
+              <span
+                class="rounded-full bg-[var(--md-status-warn-bg)] px-[9px] py-[2px] text-[11.5px] font-semibold text-[var(--md-text-heading)]"
+                data-testid="tools-summary-pending"
+                >{{ approvalLabels.pending }}</span
+              >
+            }
+          </div>
+          @switch (summary.status) {
+            @case ('available') {
+              <lfx-meeting-v2-expandable-text [maxHeight]="summaryCollapsedHeight">
+                <div class="text-[14px] leading-[1.55] text-[var(--md-text-body)]" data-testid="tools-summary-content">
+                  <lfx-markdown-renderer [content]="summary.content ?? ''" [restricted]="true" />
+                </div>
+              </lfx-meeting-v2-expandable-text>
+              <lfx-button
+                class="self-start"
+                label="Read full summary"
+                [styleClass]="secondaryButtonClass"
+                ariaHaspopup="dialog"
+                (onClick)="openSummary()"
+                [attr.data-approval]="summary.approval"
+                data-testid="tools-summary-btn" />
+            }
+            @case ('no-access') {
+              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="no-access">
+                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the AI summary
+              </p>
+            }
+            @case ('none') {
+              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="none">
+                No AI summary for this meeting
+              </p>
+            }
+          }
+        </div>
+      </div>
+    }
+  }
+</section>

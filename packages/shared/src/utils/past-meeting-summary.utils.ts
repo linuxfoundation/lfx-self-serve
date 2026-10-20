@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import type { Meeting, PastMeetingSummary } from '../interfaces';
+import type { Meeting, PastMeetingSummary, PastMeetingSummaryApprovalState } from '../interfaces';
 
 /**
  * AI summary approval gating, kept free of Angular imports so the pure logic can
@@ -43,6 +43,25 @@ export function isPastMeetingSummaryVisible(summary: SummaryApprovalFlags | null
 export function isPastMeetingSummaryAwaitingApproval(summary: SummaryApprovalFlags | null | undefined): boolean {
   if (!summary) return false;
   return summary.requires_approval && !summary.approved;
+}
+
+/**
+ * The one approval state of a summary (E4-03), for every surface that shows one: `approved`;
+ * `pending` while it requires approval and has none; `not-required` when the meeting never required
+ * approval. A summary that never needed approval is no longer read as "Pending Review".
+ */
+export function getPastMeetingSummaryApprovalState(summary: SummaryApprovalFlags): PastMeetingSummaryApprovalState {
+  if (summary.approved) return 'approved';
+  return summary.requires_approval ? 'pending' : 'not-required';
+}
+
+/**
+ * A summary's markdown: the organizer's edit first, else the generated content. Each is trimmed
+ * before the fallback, so an unedited (`''`) or blanked (whitespace-only) edit falls back to the
+ * generated text. `''` when both are blank, so an empty-but-present record surfaces no affordance.
+ */
+export function getPastMeetingSummaryContent(summary: Pick<PastMeetingSummary, 'summary_data'> | null | undefined): string {
+  return summary?.summary_data?.edited_content?.trim() || summary?.summary_data?.content?.trim() || '';
 }
 
 /**

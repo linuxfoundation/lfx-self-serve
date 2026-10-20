@@ -22,6 +22,7 @@ import {
 import { lfxColors } from '../constants/colors.constants';
 import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
+import { getEntityCommands } from './entity-route.utils';
 import { isSameOccurrenceId, selectApplicableRsvp } from './rsvp-calculator.util';
 import type {
   BatchRegistrantOperationResponse,
@@ -62,6 +63,17 @@ import { normalizePollStatus } from './poll.utils';
 
 const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
 const FIFTY_YEARS_MS = 50 * 365.25 * 24 * 60 * 60 * 1000;
+
+/**
+ * Post-meeting grace period. A meeting stays joinable, and is not yet "ended", until this long
+ * after its scheduled end.
+ *
+ * Declared above every consumer because {@link getCurrentOrNextOccurrence}, {@link canJoinMeeting},
+ * {@link hasMeetingEnded} and {@link isOccurrencePast} must agree on it: the first three each
+ * inlined the same forty-minute literal, so changing the grace period took four independent edits
+ * and missing any one of them would silently split the join window from the "has ended" boundary.
+ */
+export const MEETING_END_BUFFER_MS = 40 * 60_000;
 
 /**
  * Produces an ISO string ~100 years from `now`, used as the "never ends"
@@ -390,7 +402,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const joinableOccurrence = activeOccurrences.find((occurrence) => {
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   });
@@ -614,21 +626,22 @@ export function resolveUpcomingMeetingDurationMinutes(meeting: Meeting, occurren
  * Check if a meeting can be joined based on current time
  * @param meeting The meeting object
  * @param occurrence Optional specific occurrence (for recurring meetings)
+ * @param now Clock override — defaults to the real current time; pass an explicit `Date` from
+ *   callers that must be deterministic (the meeting-details view model, tests)
  * @returns True if the meeting can be joined, false otherwise
  * @description
  * A meeting can be joined when:
  * - Current time is after (start time - early join time)
- * - Current time is before (start time + duration + 40 minute buffer)
+ * - Current time is before (start time + duration + {@link MEETING_END_BUFFER_MS})
  */
-export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null): boolean {
+export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null, now = new Date()): boolean {
   const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
   // If we have an occurrence, use its timing
   if (occurrence) {
-    const now = new Date();
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   }
@@ -638,10 +651,9 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
     return false;
   }
 
-  const now = new Date();
   const startTime = new Date(meeting.start_time);
   const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
+  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
 
   return now >= earliestJoinTime && now <= latestJoinTime;
 }
@@ -650,20 +662,19 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
  * Check if a meeting has ended (including 40-minute buffer)
  * @param meeting The meeting object
  * @param occurrence Optional occurrence for recurring meetings
- * @returns True if meeting has ended (current time > start time + duration + 40 minutes)
+ * @param now Clock override — defaults to the real current time; pass an explicit `Date` from
+ *   callers that must be deterministic (the meeting-details view model, tests)
+ * @returns True if meeting has ended (current time > start time + duration + {@link MEETING_END_BUFFER_MS})
  * @description
  * Determines if a meeting should be filtered from upcoming meetings list.
  * For recurring meetings, checks the specific occurrence.
  * For one-time meetings, checks the meeting start time.
  */
-export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
-  const now = new Date();
-  const buffer = 40 * 60000; // 40 minutes in milliseconds
-
+export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence, now = new Date()): boolean {
   // For recurring meetings with occurrence
   if (occurrence) {
     const startTime = new Date(occurrence.start_time);
-    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
     return now > endTime;
   }
 
@@ -673,12 +684,9 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   }
 
   const startTime = new Date(meeting.start_time);
-  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
   return now > endTime;
 }
-
-/** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
-export const MEETING_END_BUFFER_MS = 40 * 60_000;
 
 /**
  * Picks the meeting a "Next Meeting" card should show: the one whose upcoming start is soonest.
@@ -1395,6 +1403,57 @@ export function collectMeetingOrganizers(
   // registrant-derived data than the owner/created_by record) so the alphabetical sort can't
   // demote the owner out of the chip's primary slot.
   return [hostOrganizers[primaryHostIndex], ...hostOrganizers.filter((_, index) => index !== primaryHostIndex)];
+}
+
+/**
+ * The meeting date for an organizer `mailto:` subject (`buildMeetingOrganizerMailto`'s
+ * `meetingDate`): a medium `en-US` date, e.g. `Oct 9, 2026`, in an explicit timezone, so a server
+ * render and the browser always produce the same subject. Callers pass the meeting's own timezone,
+ * the day the organizer scheduled; an absent or invalid zone falls back to UTC. Returns an empty
+ * string for a missing or unparseable timestamp and for Go's zero date (`0001-01-01…`), which past
+ * records can carry, so the subject never reads "Jan 1, 1".
+ */
+export function formatMeetingMailtoDate(iso: string | null | undefined, timeZone?: string | null): string {
+  if (!iso || iso.startsWith('0001-01-01')) {
+    return '';
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  try {
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: timeZone || 'UTC' }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+  }
+}
+
+/**
+ * The route to a meeting's edit page: under its project's tier (`/foundation` or `/project`, from the
+ * meeting's `is_foundation`, not the viewer's lens), else the flat `/meetings/:id/edit` that
+ * `lensRedirectGuard` resolves when the tier is not enriched. Shared by the meeting cards and the V2
+ * page's Edit agenda, so the two always open the same editor.
+ */
+export function buildMeetingEditCommands(meeting: Pick<Meeting, 'id' | 'is_foundation'>): string[] {
+  return getEntityCommands('meetings', meeting.id, meeting.is_foundation, 'edit') ?? ['/meetings', meeting.id, 'edit'];
+}
+
+/**
+ * The query params a meeting's edit page needs: `?project=` (which `writerGuard` resolves write
+ * access from) and, for a committee meeting, `?committee_uid=` (which the editor reads for the
+ * committee scope). `fallbackProjectSlug` is for a payload that carries its project elsewhere, as the
+ * public detail payload's `project.slug` does.
+ */
+export function buildMeetingEditQueryParams(
+  meeting: Pick<Meeting, 'project_slug' | 'committees'>,
+  fallbackProjectSlug?: string | null
+): Record<string, string> {
+  const params: Record<string, string> = {};
+  const projectSlug = meeting.project_slug || fallbackProjectSlug;
+  if (projectSlug) params['project'] = projectSlug;
+  const committeeUid = meeting.committees?.[0]?.uid;
+  if (committeeUid) params['committee_uid'] = committeeUid;
+  return params;
 }
 
 /**

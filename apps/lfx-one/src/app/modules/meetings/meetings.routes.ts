@@ -4,6 +4,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from '@shared/guards/auth.guard';
 import { meetingsV2Guard } from '@shared/guards/meetings-v2.guard';
+import { pastMeetingOrganizerGuard } from '@shared/guards/past-meeting-organizer.guard';
 import { writerGuard } from '@shared/guards/writer.guard';
 
 export const MEETING_ROUTES: Routes = [
@@ -58,5 +59,7 @@ export const MEETING_ROUTES: Routes = [
     path: ':id/details',
     title: 'Meeting Details',
     loadComponent: () => import('./past-meeting-details/past-meeting-details.component').then((m) => m.PastMeetingDetailsComponent),
+    // Organizers only (N-03): everyone else is sent to the public page. See the guard for every outcome.
+    canActivate: [authGuard, pastMeetingOrganizerGuard],
   },
 ];

@@ -210,8 +210,8 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  * together and live side by side: this flag decides which one a given user renders, so the pre-v2
  * wizard stays fully functional and is what everyone sees until the flag is turned on for them.
  *
- * Scoped to meetings v2 rather than to the composer specifically — later meetings-v2 work is
- * expected to sit behind the same gate.
+ * Scoped to the composer and its entry points. The meeting details V2 page (`/meetings/:id`) has its
+ * own flag, `MEETING_DETAILS_V2_FLAG` (#3576), so the two roll out independently.
  *
  * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
  * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new
@@ -224,6 +224,20 @@ export const FORMATION_ENABLED_FLAG = 'formation-enabled';
  * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
  */
 export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';
+
+/**
+ * Gates the meeting details V2 page (epic #1765, #3576) — the redesigned `/meetings/:id` that
+ * `MeetingDetailsGateComponent` renders in place of the pre-v2 page for a targeted, signed-in viewer.
+ * Its own flag rather than `MEETING_V2_ENABLED_FLAG`, so the page can be trialled with users
+ * independently of the meeting composer. Everything in the V2 details project sits behind it.
+ *
+ * Default false so an unevaluated flag renders the pre-v2 page. LaunchDarkly targeting is the rollout
+ * switch, never the code default (`specs/011-meeting-details-redesign/rollout.md`).
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. It gates no endpoint: the
+ * BFF serves both pages the same routes with the same authorization.
+ */
+export const MEETING_DETAILS_V2_FLAG = 'meeting-details-v2';
 /**
  * What {@link MEETING_V2_ENABLED_FLAG} reads as in the browser when LaunchDarkly has not answered (unready
  * or unreachable). Every read of the flag — components and `meetingsV2Guard` — uses this one value, so

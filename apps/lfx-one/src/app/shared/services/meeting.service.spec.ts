@@ -199,6 +199,45 @@ describe('MeetingService public meeting passcode transport', () => {
   });
 });
 
+// "Could not load" and "has not answered" are different answers for the V2 status pill (E2-04).
+describe('MeetingService own RSVP', () => {
+  let service: MeetingService;
+  let get: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get } }] });
+    service = TestBed.inject(MeetingService);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
+  it('scopes the request to an occurrence when one is given', async () => {
+    get.mockReturnValue(of(null));
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID, '1760000000'));
+
+    expect(get).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
+  });
+
+  it('asks for series-wide answers only with allDatesOnly and no occurrence, the occurrence winning otherwise', async () => {
+    get.mockReturnValue(of(null));
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID, undefined, true));
+    expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { rsvp_scope: 'all' } });
+
+    await firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID, '1760000000', true));
+    expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
+  });
+
+  it('reads a failure as null, as V1 does', async () => {
+    get.mockReturnValue(throwError(() => ({ status: 500 })));
+
+    await expect(firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID))).resolves.toBeNull();
+    expect(console.error).toHaveBeenCalled();
+  });
+});
+
 describe('MeetingService.removeMyMeetingRegistration', () => {
   let service: MeetingService;
   let del: ReturnType<typeof vi.fn>;
