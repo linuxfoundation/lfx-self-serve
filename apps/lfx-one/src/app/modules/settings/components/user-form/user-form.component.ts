@@ -7,6 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
+import { PROJECT_PERMISSION_ROLE_OPTIONS } from '@lfx-one/shared/constants';
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -43,10 +44,7 @@ export class UserFormComponent {
   public project = computed(() => this.projectContextService.activeContext());
 
   // Permission options - simplified to only View/Manage
-  public permissionLevelOptions = [
-    { label: 'View', value: 'view' },
-    { label: 'Manage', value: 'manage' },
-  ];
+  public permissionLevelOptions = PROJECT_PERMISSION_ROLE_OPTIONS;
 
   public constructor() {
     // Initialize form with data when component is created

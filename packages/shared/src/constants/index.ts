@@ -106,6 +106,7 @@ export * from './mktg-run-activity.constants';
 export * from './project-context.constants';
 export * from './project-formation.constants';
 export * from './project-staff.constants';
+export * from './project-permissions.constants';
 export * from './org-lens-project-detail.constants';
 export * from './org-leaderboard-detail-drawer.constants';
 export * from './create-artifact.constants';

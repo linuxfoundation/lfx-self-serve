@@ -1,11 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
+import { PROJECT_PERMISSION_ROLE_OPTIONS } from '@lfx-one/shared/constants';
 import { ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -19,7 +23,7 @@ import { UserFormComponent } from '../user-form/user-form.component';
 
 @Component({
   selector: 'lfx-user-permissions-table',
-  imports: [TableComponent, TooltipModule, CardComponent, ConfirmDialogModule, ButtonComponent, MenuComponent],
+  imports: [TableComponent, TooltipModule, CardComponent, ConfirmDialogModule, ButtonComponent, MenuComponent, SelectComponent],
   templateUrl: './user-permissions-table.component.html',
 })
 export class UserPermissionsTableComponent {
@@ -33,6 +37,10 @@ export class UserPermissionsTableComponent {
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
   public canWrite = input<boolean>(false);
+  public readonly roleOptions = [{ label: 'All Roles', value: null }, ...PROJECT_PERMISSION_ROLE_OPTIONS];
+  public readonly filterForm = new FormGroup({ role: new FormControl<string | null>(null) });
+  private readonly selectedRole: Signal<string | null> = this.initSelectedRole();
+  public readonly filteredUsers: Signal<ProjectPermissionUser[]> = this.initFilteredUsers();
   public project = computed(() => this.projectContextService.activeContext());
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
@@ -149,6 +157,18 @@ export class UserPermissionsTableComponent {
           });
         },
       });
+  }
+
+  private initSelectedRole(): Signal<string | null> {
+    return toSignal(this.filterForm.controls.role.valueChanges, { initialValue: null });
+  }
+
+  // A null selection means "all roles"
+  private initFilteredUsers(): Signal<ProjectPermissionUser[]> {
+    return computed(() => {
+      const role = this.selectedRole();
+      return role ? this.users().filter((user) => user.role === role) : this.users();
+    });
   }
 
   private initializeUserActionMenuItems(): MenuItem[] {
