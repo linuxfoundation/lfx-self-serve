@@ -40,6 +40,13 @@ class MeetingParticipationStubComponent {
   public readonly settled = output<void>();
 }
 
+// Same stand-in for Attendance trend: it reports its reads and nothing else.
+@Component({ selector: 'lfx-engagement-attendance-trend', template: '' })
+class AttendanceTrendStubComponent {
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
 // Same stand-in for Organization participation.
 @Component({ selector: 'lfx-engagement-org-participation', template: '' })
 class OrgParticipationStubComponent {
@@ -75,6 +82,10 @@ describe('HealthMetricsEngagementComponent', () => {
     return fixture.debugElement.query(By.directive(MeetingParticipationStubComponent)).componentInstance as MeetingParticipationStubComponent;
   }
 
+  function trendChild(): AttendanceTrendStubComponent {
+    return fixture.debugElement.query(By.directive(AttendanceTrendStubComponent)).componentInstance as AttendanceTrendStubComponent;
+  }
+
   function orgChild(): OrgParticipationStubComponent {
     return fixture.debugElement.query(By.directive(OrgParticipationStubComponent)).componentInstance as OrgParticipationStubComponent;
   }
@@ -98,6 +109,7 @@ describe('HealthMetricsEngagementComponent', () => {
   > = {
     participation: participationChild,
     committees: stubChild,
+    trend: trendChild,
     orgs: orgChild,
     reps: repChild,
     nonmem: nonMemberChild,
@@ -129,6 +141,7 @@ describe('HealthMetricsEngagementComponent', () => {
       .overrideComponent(HealthMetricsEngagementComponent, {
         set: {
           imports: [
+            AttendanceTrendStubComponent,
             GroupAttendanceStubComponent,
             HealthMetricsL2SectionDirective,
             HealthMetricsL2ShellComponent,
@@ -247,6 +260,7 @@ describe('HealthMetricsEngagementComponent', () => {
     const emitters: Record<HealthMetricsEngagementSectionKey, (() => void) | undefined> = {
       participation: () => participationChild().settled.emit(),
       committees: () => stubChild().settled.emit(),
+      trend: () => trendChild().settled.emit(),
       orgs: () => orgChild().settled.emit(),
       reps: () => repChild().settled.emit(),
       nonmem: () => nonMemberChild().settled.emit(),

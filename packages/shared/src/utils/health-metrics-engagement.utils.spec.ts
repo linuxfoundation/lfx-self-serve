@@ -16,6 +16,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '../constants/health-metrics-engagement.constants';
 import {
+  HealthMetricsEngagementAttendanceMonth,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgRow,
@@ -25,6 +26,8 @@ import {
   HealthMetricsEngagementSubNavCounts,
 } from '../interfaces/health-metrics-engagement.interface';
 import {
+  buildHealthMetricsEngagementAttendanceTrendPoints,
+  buildHealthMetricsEngagementAttendanceTrendSummary,
   buildHealthMetricsEngagementGroupTrend,
   buildHealthMetricsEngagementRepLabels,
   buildHealthMetricsEngagementSparkBars,
@@ -675,5 +678,103 @@ describe('buildHealthMetricsEngagementRepLabels', () => {
     });
 
     expect(labels).toEqual({ displayName: 'Unresolved identity', orgLabel: '—', lastAttendedLabel: '—' });
+  });
+});
+
+describe('attendance trend rules', () => {
+  // The view's window ends with the current month, so "today" decides which month is still collecting meetings.
+  const today = new Date('2026-10-20T12:00:00Z');
+
+  function month(
+    monthStartDate: string,
+    attendancePct: number | null,
+    overrides: Partial<HealthMetricsEngagementAttendanceMonth> = {}
+  ): HealthMetricsEngagementAttendanceMonth {
+    return { monthStartDate, meetingsHeld: 10, invited: 100, attended: 50, attendancePct, attendanceChangePp: null, ...overrides };
+  }
+
+  /** Twelve months ending October 2026, every one rated at 40% + 1pp per month. */
+  function fullYear(): HealthMetricsEngagementAttendanceMonth[] {
+    return Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(Date.UTC(2025, 10 + index, 1)).toISOString().slice(0, 10);
+      return month(date, 0.4 + index * 0.01, { attendanceChangePp: index === 0 ? null : 0.01 });
+    });
+  }
+
+  it('labels each point and marks the current month as to date', () => {
+    const points = buildHealthMetricsEngagementAttendanceTrendPoints(fullYear(), today);
+
+    expect(points[0]).toMatchObject({ label: 'Nov 25', monthLabel: 'November 2025', rateLabel: '40%', meetingsLabel: '10 meetings', isInProgress: false });
+    expect(points[0]?.rate).toBeCloseTo(40);
+    expect(points[11]).toMatchObject({ label: 'Oct 26', monthLabel: 'October 2026 (to date)', isInProgress: true });
+  });
+
+  // A gap, not a collapse to 0%: no invited population and a thin month both leave the line.
+  it('gaps a month with no invited population, and one with too few meetings to report a rate', () => {
+    const months = [
+      month('2026-08-01', null, { meetingsHeld: 0 }),
+      month('2026-09-01', 0.8, { meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 }),
+    ];
+    const points = buildHealthMetricsEngagementAttendanceTrendPoints(months, today);
+
+    expect(points.map((point) => point.rate)).toEqual([null, null]);
+    expect(points.map((point) => point.rateLabel)).toEqual(['—', 'No data']);
+    expect(points[0]?.meetingsLabel).toBe('0 meetings');
+  });
+
+  it('reads the headline off the latest full month, with its change from the view', () => {
+    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(fullYear(), today);
+
+    // October is in progress, so September (50%) leads and the range runs November to September.
+    expect(summary).toMatchObject({
+      state: 'trend',
+      ratedMonths: 12,
+      latestLabel: '50%',
+      latestCaption: 'September 2026',
+      deltaLabel: '+1.0pp',
+      deltaDirection: 'up',
+      rangeChangeLabel: '+10.0pp',
+      rangeHighLabel: '50%',
+      rangeLowLabel: '40%',
+      isLowConfidence: false,
+    });
+  });
+
+  // The view's change is measured against a rate the hero hides, so it must not headline.
+  it('drops the change when the previous month has no reportable rate', () => {
+    const months = fullYear();
+    months[9] = month('2026-08-01', 0.9, { meetingsHeld: 1 });
+
+    expect(buildHealthMetricsEngagementAttendanceTrendSummary(months, today)).toMatchObject({ deltaLabel: '—', deltaDirection: 'neutral' });
+  });
+
+  it('reports no rated month as empty, and one as too little to chart', () => {
+    const quiet = fullYear().map((entry) => ({ ...entry, attendancePct: null, meetingsHeld: 0 }));
+    expect(buildHealthMetricsEngagementAttendanceTrendSummary(quiet, today)).toMatchObject({
+      state: 'empty',
+      ratedMonths: 0,
+      latestLabel: '—',
+      rangeHighLabel: '—',
+    });
+
+    const single = quiet.map((entry, index) => (index === 6 ? month(entry.monthStartDate, 0.5) : entry));
+    expect(buildHealthMetricsEngagementAttendanceTrendSummary(single, today)).toMatchObject({ state: 'insufficient', ratedMonths: 1 });
+  });
+
+  // Short history still draws the line, under a banner, so two points do not read as a pattern.
+  it('flags fewer than six rated months as low confidence, with the count in the note', () => {
+    const months = fullYear().map((entry, index) => (index < 8 ? { ...entry, attendancePct: null, meetingsHeld: 0 } : entry));
+    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(months, today);
+
+    expect(summary).toMatchObject({ state: 'trend', ratedMonths: 4, isLowConfidence: true });
+    expect(summary.lowConfidenceNote).toBe('Only 4 of the last 12 months have attendance from 3 or more meetings, so the trend is indicative, not reliable.');
+  });
+
+  // The month in progress counts toward having a trend, but never toward the full-month headline.
+  it('leaves the headline unset when the only rated full month is missing', () => {
+    const months = [month('2026-09-01', null, { meetingsHeld: 0 }), month('2026-10-01', 0.6)];
+    const summary = buildHealthMetricsEngagementAttendanceTrendSummary(months, today);
+
+    expect(summary).toMatchObject({ state: 'insufficient', latestLabel: '—', latestCaption: 'No full month with attendance yet', rangeChangeLabel: '—' });
   });
 });

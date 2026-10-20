@@ -191,6 +191,66 @@ export interface HealthMetricsEngagementParticipationQuery {
   range: HealthMetricsRange;
 }
 
+/** One month of the trailing twelve-month attendance trend, as the view reports it. */
+export interface HealthMetricsEngagementAttendanceMonth {
+  /** ISO date of the month's first day. */
+  monthStartDate: string;
+  meetingsHeld: number | null;
+  invited: number | null;
+  attended: number | null;
+  /** 0-1 fraction; `null` in a month with no invited population. */
+  attendancePct: number | null;
+  /** The view's change against the previous month, as a 0-1 fraction of a point. */
+  attendanceChangePp: number | null;
+}
+
+/** `GET /api/analytics/engagement-attendance-trend` — the trailing twelve months, oldest first. */
+export interface HealthMetricsEngagementAttendanceTrend {
+  months: HealthMetricsEngagementAttendanceMonth[];
+}
+
+/** Wire query for `GET /api/analytics/engagement-attendance-trend`. The trend always covers the last
+ * twelve months, so the period selector never reaches the wire. */
+export interface HealthMetricsEngagementAttendanceTrendQuery {
+  foundationSlug: string;
+  /** `null` reads the view's all-projects roll-up rows. */
+  projectSlug: string | null;
+}
+
+/** One chart point. `rate` is a percent (0-100), `null` for a gap in the line. */
+export interface HealthMetricsEngagementAttendanceTrendPointView {
+  monthStartDate: string;
+  /** Axis label, e.g. `Oct 25`. */
+  label: string;
+  /** Long label for the tooltip and the screen-reader table, e.g. `October 2025 (to date)`. */
+  monthLabel: string;
+  rate: number | null;
+  rateLabel: string;
+  meetingsLabel: string;
+  /** The current month, still collecting meetings: plotted, but kept out of the headline and stats. */
+  isInProgress: boolean;
+}
+
+/** Which body the Attendance trend renders: nothing rated, a single rated month, or a line. */
+export type HealthMetricsEngagementAttendanceTrendState = 'empty' | 'insufficient' | 'trend';
+
+/** The Attendance trend headline, side stats and low-confidence note. */
+export interface HealthMetricsEngagementAttendanceTrendSummaryView {
+  state: HealthMetricsEngagementAttendanceTrendState;
+  /** Months with a reportable rate, the month in progress included. */
+  ratedMonths: number;
+  latestLabel: string;
+  /** The month the headline describes, e.g. `September 2026`. */
+  latestCaption: string;
+  deltaLabel: string;
+  deltaDirection: 'up' | 'down' | 'neutral';
+  rangeChangeLabel: string;
+  rangeHighLabel: string;
+  rangeLowLabel: string;
+  isLowConfidence: boolean;
+  lowConfidenceNote: string;
+}
+
 /** One participation table row with its selected-period numbers resolved. */
 export interface HealthMetricsEngagementParticipationRowView {
   row: HealthMetricsEngagementParticipationRow;

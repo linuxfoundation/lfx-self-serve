@@ -26,6 +26,7 @@ vi.mock('./logger.service', () => ({
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
@@ -1132,6 +1133,102 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
     await expect(service.getRepresentatives(req, { foundationSlug: 'acme', projectSlug: null })).rejects.toThrow('connection reset');
+  });
+});
+
+describe('HealthMetricsEngagementService.getAttendanceTrend', () => {
+  const service = new HealthMetricsEngagementService();
+
+  /** One warehouse month; Snowflake returns NUMBER(38,6) columns as strings. */
+  function monthRow(overrides: Record<string, unknown> = {}) {
+    return {
+      MONTH_START_DATE: '2026-09-01',
+      MEETINGS_HELD_COUNT: 70,
+      INVITED_COUNT: 2946,
+      ATTENDED_COUNT: 460,
+      ATTENDANCE_PCT: '0.156144',
+      ATTENDANCE_PCT_CHANGE_PP: '0.014512',
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [monthRow()] });
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+  });
+
+  // A null slug reads the foundation roll-up; summing project rows would double-count shared meetings.
+  it('reads the foundation roll-up oldest first when no project is selected', async () => {
+    await service.getAttendanceTrend(req, { foundationSlug: 'acme', projectSlug: null });
+
+    expect(lastSql()).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ATTENDANCE_MONTHLY');
+    expect(lastSql()).toContain('((? IS NULL AND is_all_projects = TRUE) OR project_slug = ?)');
+    expect(lastSql()).toContain('ORDER BY month_start_date ASC');
+    expect(lastBinds()).toEqual(['acme', null, null]);
+  });
+
+  it('scopes to the selected project', async () => {
+    await service.getAttendanceTrend(req, { foundationSlug: 'acme', projectSlug: 'acme-core' });
+
+    expect(lastBinds()).toEqual(['acme', 'acme-core', 'acme-core']);
+  });
+
+  it('maps each month, converting the string decimals and keeping a null rate null', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        monthRow({
+          MONTH_START_DATE: new Date('2026-08-01T00:00:00Z'),
+          MEETINGS_HELD_COUNT: 0,
+          INVITED_COUNT: 0,
+          ATTENDED_COUNT: 0,
+          ATTENDANCE_PCT: null,
+          ATTENDANCE_PCT_CHANGE_PP: null,
+        }),
+        monthRow(),
+      ],
+    });
+
+    const response = await service.getAttendanceTrend(req, { foundationSlug: 'acme', projectSlug: null });
+
+    expect(response.months).toEqual([
+      { monthStartDate: '2026-08-01', meetingsHeld: 0, invited: 0, attended: 0, attendancePct: null, attendanceChangePp: null },
+      { monthStartDate: '2026-09-01', meetingsHeld: 70, invited: 2946, attended: 460, attendancePct: 0.156144, attendanceChangePp: 0.014512 },
+    ]);
+  });
+
+  it('drops a row with no month rather than placing it on the axis', async () => {
+    execute.mockResolvedValue({ rows: [monthRow({ MONTH_START_DATE: null }), monthRow()] });
+
+    const response = await service.getAttendanceTrend(req, { foundationSlug: 'acme', projectSlug: null });
+
+    expect(response.months.map((month) => month.monthStartDate)).toEqual(['2026-09-01']);
+  });
+
+  it('reports the unmeasured shape for a scope the view has no rows for', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    expect(await service.getAttendanceTrend(req, { foundationSlug: 'acme', projectSlug: 'unknown' })).toEqual(
+      HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED
+    );
+  });
+
+  it('sends its own client message for a missing view rather than the warehouse object name', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ATTENDANCE_MONTHLY' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service
+      .getAttendanceTrend(req, { foundationSlug: 'acme', projectSlug: null })
+      .catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Attendance trend is unavailable right now.');
   });
 });
 

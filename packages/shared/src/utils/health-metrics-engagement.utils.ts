@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
@@ -13,11 +14,15 @@ import {
   HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
+import { MONTH_NAMES } from '../constants/calendar.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
+  HealthMetricsEngagementAttendanceMonth,
   HealthMetricsEngagementAttendanceTone,
+  HealthMetricsEngagementAttendanceTrendPointView,
+  HealthMetricsEngagementAttendanceTrendSummaryView,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementNonMemberPeriod,
@@ -191,6 +196,70 @@ export function formatHealthMetricsEngagementPpDelta(pointChange: number | null)
 }
 
 /**
+ * The trend's chart points, oldest first. A month reports a rate only on the hero's own rule — an
+ * invited population and enough meetings — so the line gaps exactly where the hero reads "No data".
+ */
+export function buildHealthMetricsEngagementAttendanceTrendPoints(
+  months: readonly HealthMetricsEngagementAttendanceMonth[],
+  today: Date
+): HealthMetricsEngagementAttendanceTrendPointView[] {
+  return months.map((month) => {
+    const isInProgress = isCurrentAttendanceMonth(month, today);
+    const name = attendanceMonthName(month);
+
+    return {
+      monthStartDate: month.monthStartDate,
+      label: `${name.slice(0, 3)} ${month.monthStartDate.slice(2, 4)}`,
+      monthLabel: `${name} ${month.monthStartDate.slice(0, 4)}${isInProgress ? ' (to date)' : ''}`,
+      rate: isRatedAttendanceMonth(month) ? (month.attendancePct as number) * 100 : null,
+      rateLabel: formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld),
+      meetingsLabel:
+        month.meetingsHeld === null ? '—' : `${formatHealthMetricsEngagementCount(month.meetingsHeld)} ${month.meetingsHeld === 1 ? 'meeting' : 'meetings'}`,
+      isInProgress,
+    };
+  });
+}
+
+/**
+ * The trend's headline and side stats. They describe full months only: the month in progress is
+ * plotted but still collecting meetings, so the headline is the latest full month with a rate.
+ */
+export function buildHealthMetricsEngagementAttendanceTrendSummary(
+  months: readonly HealthMetricsEngagementAttendanceMonth[],
+  today: Date
+): HealthMetricsEngagementAttendanceTrendSummaryView {
+  const ratedMonths = months.filter(isRatedAttendanceMonth).length;
+  const full = months.map((month) => ({ month, rated: isRatedAttendanceMonth(month) && !isCurrentAttendanceMonth(month, today) }));
+  let latestIndex = full.length - 1;
+  while (latestIndex >= 0 && !full[latestIndex].rated) latestIndex--;
+  const latest = latestIndex >= 0 ? full[latestIndex].month : null;
+  // The view compares against the previous month even when that month's rate is one the hero hides.
+  const delta = latest && full[latestIndex - 1]?.rated ? latest.attendanceChangePp : null;
+  const rated = full.filter((entry) => entry.rated).map((entry) => entry.month);
+  const byRate = [...rated].sort((a, b) => (a.attendancePct as number) - (b.attendancePct as number));
+  const first = rated[0];
+  const last = rated[rated.length - 1];
+
+  let state: HealthMetricsEngagementAttendanceTrendSummaryView['state'] = 'trend';
+  if (ratedMonths === 0) state = 'empty';
+  else if (ratedMonths < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) state = 'insufficient';
+
+  return {
+    state,
+    ratedMonths,
+    latestLabel: latest ? formatHealthMetricsEngagementAttendance(latest.attendancePct, latest.meetingsHeld) : '—',
+    latestCaption: latest ? `${attendanceMonthName(latest)} ${latest.monthStartDate.slice(0, 4)}` : 'No full month with attendance yet',
+    deltaLabel: formatHealthMetricsEngagementPpDelta(delta),
+    deltaDirection: resolveHealthMetricsEngagementDeltaDirection(delta),
+    rangeChangeLabel: rated.length >= 2 ? formatHealthMetricsEngagementPpDelta((last.attendancePct as number) - (first.attendancePct as number)) : '—',
+    rangeHighLabel: formatRatedMonth(byRate[byRate.length - 1]),
+    rangeLowLabel: formatRatedMonth(byRate[0]),
+    isLowConfidence: state === 'trend' && ratedMonths < HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
+    lowConfidenceNote: `Only ${ratedMonths} of the last ${months.length} months have attendance from ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} or more meetings, so the trend is indicative, not reliable.`,
+  };
+}
+
+/**
  * The org row's numbers for one period. Same four-period fallback as the group and participation
  * tables.
  */
@@ -341,4 +410,23 @@ function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly
 /** The one decimal the delta label prints; the direction resolver reads the same value. */
 function roundDeltaForDisplay(fractionChange: number): number {
   return Number((fractionChange * 100).toFixed(1));
+}
+
+/** A month the trend can report a rate for: an invited population and enough meetings to mean something. */
+function isRatedAttendanceMonth(month: HealthMetricsEngagementAttendanceMonth): boolean {
+  return month.attendancePct !== null && month.meetingsHeld !== null && month.meetingsHeld >= HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE;
+}
+
+/** The view's window ends with the current UTC month, which is still collecting meetings. */
+function isCurrentAttendanceMonth(month: HealthMetricsEngagementAttendanceMonth, today: Date): boolean {
+  return month.monthStartDate.slice(0, 7) === today.toISOString().slice(0, 7);
+}
+
+function attendanceMonthName(month: HealthMetricsEngagementAttendanceMonth): string {
+  return MONTH_NAMES[Number(month.monthStartDate.slice(5, 7)) - 1] ?? month.monthStartDate.slice(0, 7);
+}
+
+/** A rated month's rate on the section's one display rule; "—" when the range holds none. */
+function formatRatedMonth(month: HealthMetricsEngagementAttendanceMonth | undefined): string {
+  return month ? formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld) : '—';
 }
