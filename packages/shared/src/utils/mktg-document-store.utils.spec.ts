@@ -32,6 +32,7 @@ describe('mktg-document-store utils', () => {
       'living:foundation-message',
       'living:icp',
       'living:boilerplates',
+      'living:faq',
       'run:aeo-geo',
       'run:linkedin-post',
       'run:member-360',

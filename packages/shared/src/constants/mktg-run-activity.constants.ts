@@ -4,6 +4,7 @@
 import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
 import { BOILERPLATES_FINALIZE_TOOL, BOILERPLATES_QUESTIONS_CONTRACT_ID } from './boilerplates.constants';
 import { BRAND_KIT_FINALIZE_TOOL, BRAND_KIT_INSPECT_LOGOS_TOOL, BRAND_KIT_QUESTIONS_CONTRACT_ID } from './brand-kit.constants';
+import { FAQ_FINALIZE_TOOL, FAQ_QUESTIONS_CONTRACT_ID } from './faq.constants';
 import { FOUNDATION_MESSAGE_ASK_TOOL, FOUNDATION_MESSAGE_FINALIZE_TOOL, FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID } from './foundation-message.constants';
 
 // The live activity feed of an agent run: what the agent is doing while it
@@ -38,17 +39,19 @@ export const MKTG_RUN_ACTIVITY_TOOLS = {
   finalize: FOUNDATION_MESSAGE_FINALIZE_TOOL,
   finalizeBrandKit: BRAND_KIT_FINALIZE_TOOL,
   finalizeBoilerplates: BOILERPLATES_FINALIZE_TOOL,
+  finalizeFaq: FAQ_FINALIZE_TOOL,
   inspectLogos: BRAND_KIT_INSPECT_LOGOS_TOOL,
 } as const;
 
 /** Every LFX MCP tool starts with this. */
 export const MKTG_RUN_ACTIVITY_LFX_TOOL_PREFIX = 'lfx_mcp_';
 
-/** The agents' finalize tools: the check of the document (the kit, the boilerplates) against its gates. */
+/** The agents' finalize tools: the check of the document (the kit, the boilerplates, the FAQ) against its gates. */
 export const MKTG_RUN_ACTIVITY_FINALIZE_TOOLS: readonly string[] = [
   MKTG_RUN_ACTIVITY_TOOLS.finalize,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBrandKit,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates,
+  MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq,
 ];
 
 /**
@@ -81,6 +84,8 @@ export const MKTG_RUN_ACTIVITY_LABELS = {
   writingBrandKit: 'Writing the document',
   checkingBoilerplates: 'Checking the boilerplates against their word limits',
   writingBoilerplates: 'Writing the boilerplates',
+  checkingFaq: 'Checking the FAQ',
+  writingFaq: 'Writing the FAQ',
 } as const;
 
 /** Platform task statuses that mean the tool finished, and those that mean it did not. */
@@ -115,6 +120,7 @@ export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS: readonly string[] = [
   FOUNDATION_MESSAGE_QUESTIONS_CONTRACT_ID,
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
   BOILERPLATES_QUESTIONS_CONTRACT_ID,
+  FAQ_QUESTIONS_CONTRACT_ID,
 ];
 
 /**

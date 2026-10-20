@@ -83,6 +83,15 @@ router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIc
 // POST /api/mktg-agents/icp/result - poll a generation session for the validated document
 router.post('/icp/result', (req, res, next) => mktgAgentsController.icpResult(req, res, next));
 
+// POST /api/mktg-agents/faq/generate - start an FAQ draft from the form, its documents and the attached messaging framework
+router.post('/faq/generate', (req, res, next) => mktgAgentsController.generateFaq(req, res, next));
+
+// POST /api/mktg-agents/faq/answers - answer the session's questions turn (owner-token in body), on the same session
+router.post('/faq/answers', (req, res, next) => mktgAgentsController.faqAnswers(req, res, next));
+
+// POST /api/mktg-agents/faq/result - poll a generation session for the validated FAQ (or the agent's questions, or the reply that ended the run)
+router.post('/faq/result', (req, res, next) => mktgAgentsController.faqResult(req, res, next));
+
 // GET /api/mktg-agents/foundation-message/stored - the project's latest stored framework (writer-entitled callers only); ?sidecar=true - the same latest revision with its envelope JSON and date (the Brand Kit's messaging framework)
 router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
 

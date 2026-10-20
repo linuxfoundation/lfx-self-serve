@@ -126,6 +126,13 @@
               [version]="current.revision.number"
               [note]="revisionNote()"
               data-testid="mktg-document-view-boilerplates" />
+          } @else if (faq(); as faqAsset) {
+            <lfx-mktg-faq-view
+              [projectName]="projectName()"
+              [asset]="faqAsset"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              data-testid="mktg-document-view-faq" />
           } @else if (brandKit(); as kit) {
             <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
             <lfx-brand-kit-web-view

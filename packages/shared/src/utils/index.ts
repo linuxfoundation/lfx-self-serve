@@ -82,6 +82,7 @@ export * from './mentorship-lfx-profile-card.utils';
 export * from './boilerplates.utils';
 export * from './brand-kit-book.utils';
 export * from './brand-kit.utils';
+export * from './faq.utils';
 export * from './foundation-message.utils';
 export * from './icp.utils';
 export * from './mktg-artifact.utils';

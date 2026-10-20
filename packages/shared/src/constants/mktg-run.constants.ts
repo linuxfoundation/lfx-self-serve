@@ -14,6 +14,17 @@ import {
   BRAND_KIT_REQUIRED_HEADINGS,
 } from './brand-kit.constants';
 import {
+  FAQ_ANSWERS_ENDPOINT,
+  FAQ_DEFAULT_DOCUMENT_KIND,
+  FAQ_DESCRIPTION_KEY,
+  FAQ_DOCUMENT_KIND_OPTIONS,
+  FAQ_FRAMEWORK_ANSWER_KEY,
+  FAQ_GITHUB_KEY,
+  FAQ_MAX_DOCUMENTS,
+  FAQ_NOTES_KEY,
+  FAQ_WEBSITE_KEY,
+} from './faq.constants';
+import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
   FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
@@ -468,6 +479,143 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
 };
 
 /**
+ * FAQ intake (marketing-os-agents agents/faq 1.0.0, faq-output/v1;
+ * wi-faq-intake-and-run), built like the Messaging Framework's:
+ *
+ * - Project: the name and the one-line description, both from LFX.
+ * - Sources: the website (the one required field) and the GitHub
+ *   repository or README, both prefilled from LFX when the project has them.
+ *   The repository reaches the agent as the first of its `links`.
+ * - Other links and documents: links and uploads in one section (an
+ *   existing FAQ page, the members page, the docs, a press release, a deck,
+ *   the plan), each tagged press, deck, document or plan. An upload is read
+ *   to text by the BFF; a link goes as its URL and the agent reads it.
+ * - Notes, last: who asks what, words to avoid — data, not instructions.
+ *
+ * The approved messaging framework is attached automatically: the project's
+ * LATEST stored framework revision, as on the Brand Kit page (LFX One has no
+ * Approve action yet, so the latest stands in for the approved one; Approve
+ * is a later item). The agent refuses a run without one, so a project with no
+ * framework revision cannot run: the page says to run the messaging framework
+ * first and links to it, and the chip names the revision it uses.
+ *
+ * After reading and researching, the agent asks only the questions the
+ * sources leave open (at most six, each with a suggested answer), one at a
+ * time on their own page, and the answers go back to the same session. The
+ * output is the FAQ's JSON, not a document, so the run lands on the FAQ view
+ * (`assetView`), where the questions the sources did not answer are flagged
+ * for the team. Every submission is a fresh draft (`freshRunPerSubmission`:
+ * a redraft from comments and a check of a hand-edited version are later
+ * work), stored as a new revision of the project's FAQ document.
+ */
+export const FAQ_INTAKE: MktgAgentIntake = {
+  agentId: 'faq',
+  formTitleAction: 'Build',
+  documentName: 'FAQ',
+  intro:
+    'Give the agent its sources. It reads them, searches the web and LFX for the rest, and asks you only for what is still missing, with a suggested answer each time. Your latest messaging framework is attached automatically: the questions and their wording come from it. Only the website is required. You get an FAQ of eight to ten questions in groups, each answer naming its source, saved as a new revision in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
+  fields: [
+    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name', oneLine: true },
+    {
+      key: FAQ_DESCRIPTION_KEY,
+      question: 'One-line description',
+      kind: 'text',
+      optional: true,
+      oneLine: true,
+      prefill: 'project-description',
+      placeholder: 'What the project does, in one line',
+      missingPrefillHint: 'Not set on your LFX project — describe it in one line, or leave it to the sources.',
+    },
+    {
+      key: FAQ_WEBSITE_KEY,
+      question: 'Website',
+      kind: 'text',
+      prefill: 'website-url',
+      placeholder: 'https://aaif.io',
+      hint: 'The project’s public site. The agent starts here and follows what it finds.',
+      format: 'source-url',
+    },
+    {
+      key: FAQ_GITHUB_KEY,
+      question: 'GitHub repository or README',
+      kind: 'text',
+      optional: true,
+      prefill: 'repository-url',
+      placeholder: 'https://github.com/…',
+      hint: 'The project’s repository or its README: how to contribute, the licence, who maintains it. Leave it empty and the agent looks for it itself.',
+      format: 'source-url',
+    },
+    {
+      key: FAQ_NOTES_KEY,
+      question: 'Anything the agent should know',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'Who asks what, the questions people already ask, words to avoid',
+      hint: 'Read as information about the project, never as instructions.',
+    },
+  ],
+  fieldGroups: [
+    { id: 'project', title: 'Project', fieldKeys: ['project_name', FAQ_DESCRIPTION_KEY] },
+    {
+      id: 'sources',
+      title: 'Sources',
+      hint: 'the website is required; the rest is optional',
+      footnote:
+        'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. An existing FAQ page, the members page and the docs are worth adding below.',
+      fieldKeys: [FAQ_WEBSITE_KEY, FAQ_GITHUB_KEY],
+    },
+    { id: 'notes', title: 'Notes', hint: 'optional', fieldKeys: [FAQ_NOTES_KEY], afterDocuments: true },
+  ],
+  documents: {
+    title: 'Other links and documents',
+    hint: 'An existing FAQ, the members page, the docs, a press release, a deck, the marketing plan. Add a link or upload a file, then tag it.',
+    footnote: `Accepted: PDF, Word (.docx), PowerPoint (.pptx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link is sent as is; the agent reads it. Up to ${FAQ_MAX_DOCUMENTS} links and documents.`,
+    maxDocuments: FAQ_MAX_DOCUMENTS,
+    maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
+    fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
+    // The same reader as the Messaging Framework's: turning an upload into text is the same for every agent.
+    endpoints: { ...FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS },
+    tags: FAQ_DOCUMENT_KIND_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+    defaultTag: FAQ_DEFAULT_DOCUMENT_KIND,
+  },
+  // The approved messaging framework, required: the LATEST stored revision
+  // of the project's messaging framework, submitted under the agent's own
+  // form key and unwrapped to its content by the BFF. Usable only when it
+  // carries the framework itself (`mf` or `mh`), the agent's own rule.
+  attachments: [
+    {
+      sourceAgentId: 'foundation-setup',
+      answerKey: FAQ_FRAMEWORK_ANSWER_KEY,
+      documentName: 'Messaging Framework',
+      format: 'json',
+      frameworkContent: true,
+      incompleteNote: 'The latest messaging framework revision carries no framework the FAQ can read — run the messaging framework again.',
+    },
+  ],
+  requiredNote: '* required — everything else is optional',
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  submitsProject: true,
+  fullWidth: true,
+  assetView: 'faq',
+  // The FAQ view shows the questions themselves; there is no section checklist to tick.
+  sections: [],
+  endpoints: {
+    generate: '/api/mktg-agents/faq/generate',
+    result: '/api/mktg-agents/faq/result',
+    answers: FAQ_ANSWERS_ENDPOINT,
+  },
+  // The result endpoint stores every validated FAQ as a revision of the
+  // project's FAQ document and reports the receipt, so a receipt-less ready
+  // result is a failed write the run shell must retry.
+  persistsDocument: true,
+};
+
+/**
  * ICP & Target Markets batch intake (wi-icp-lfx-selfserve). Fixed question
  * wording is quoted VERBATIM from the agent's own `src/questions.ts`
  * (marketing-os-agents `agents/icp-ts`), never paraphrased — every question
@@ -560,6 +708,7 @@ export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [FOUNDATION_MESSAGE_INTAKE.agentId]: FOUNDATION_MESSAGE_INTAKE,
   [BOILERPLATES_INTAKE.agentId]: BOILERPLATES_INTAKE,
   [ICP_INTAKE.agentId]: ICP_INTAKE,
+  [FAQ_INTAKE.agentId]: FAQ_INTAKE,
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */

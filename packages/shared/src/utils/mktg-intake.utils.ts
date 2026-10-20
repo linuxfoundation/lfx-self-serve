@@ -30,7 +30,7 @@ export function mktgAgentDocumentName(agentId: string): string {
  * server instead of earning a 400 no retry could clear:
  *
  * - a messaging framework the consuming agent reads whole
- *   (`frameworkContent`, the Boilerplates) is usable only when the sidecar
+ *   (`frameworkContent`, the Boilerplates and the FAQ) is usable only when the sidecar
  *   carries the framework's content ({@link boilerplatesFrameworkContentOf}):
  *   a legacy Messaging Document revision, or one restored without its
  *   sidecar, is not;

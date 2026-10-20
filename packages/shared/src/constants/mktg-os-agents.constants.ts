@@ -31,7 +31,8 @@ export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 // `@handle` mention on text messages, and composes the Guild-resolvable
 // agent identifier as `<GUILD_WORKSPACE_OWNER>~<handle>` for the explicit
 // `agent_id` (the bare name is not a Guild identifier — it 404s).
-// `brand-kit` is live (Guild agent linux-foundation~brand-kit).
+// `brand-kit` is live (Guild agent linux-foundation~brand-kit), and so is `faq`
+// (linux-foundation~faq).
 export const MKTG_AGENTS: MktgAgent[] = [
   // Live Guild agent (linux-foundation~foundation-message), the Messaging
   // Framework Agent since 4.0.0 (messaging-framework-output/v1: one JSON
@@ -84,6 +85,23 @@ export const MKTG_AGENTS: MktgAgent[] = [
     accent: 'amber',
     guildAgentHandle: 'boilerplates',
   },
+  // Live Guild agent (linux-foundation~faq 1.0.0, faq-output/v1): one JSON
+  // FAQ, grouped questions each answered from the sources or flagged for the
+  // team. It runs after the messaging framework: the project's latest stored
+  // framework is a REQUIRED attachment on its intake (never `dependsOn`, so
+  // the card stays open and the page itself says to run the framework first).
+  {
+    id: 'faq',
+    number: 4,
+    name: 'FAQ Agent',
+    tags: ['FAQ', 'Messaging'],
+    status: 'active',
+    description:
+      'Eight to ten questions people ask about the project, in three or four groups, each answered in one to three sentences from your sources and worded from your messaging framework, every answer naming its source. A question the sources do not answer is flagged for your team.',
+    icon: 'fa-light fa-circle-question',
+    accent: 'amber',
+    guildAgentHandle: 'faq',
+  },
   // Live Guild agent (linux-foundation~icp) with its batch intake form
   // registered in MKTG_AGENT_INTAKES (wi-icp-lfx-selfserve). It CONSUMES the
   // Brand Kit and the Messaging Framework, but only when the project has them:
@@ -94,7 +112,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   // the agent does not require would lock out projects it can serve today.
   {
     id: 'icp',
-    number: 4,
+    number: 5,
     name: 'ICP & Target Markets Agent',
     tags: ['Personas', 'Research'],
     status: 'active',
@@ -106,7 +124,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'pitch-deck',
-    number: 5,
+    number: 6,
     name: 'Pitch Deck Agent',
     tags: ['Slides', 'Narrative'],
     status: 'coming-soon',
@@ -116,7 +134,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'qtrly-plan',
-    number: 6,
+    number: 7,
     name: 'Quarterly Plan Agent',
     tags: ['Planning'],
     status: 'coming-soon',
@@ -126,7 +144,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'linkedin-post',
-    number: 7,
+    number: 8,
     name: 'LinkedIn Post Agent',
     tags: ['Social', 'Copy'],
     status: 'coming-soon',
@@ -136,7 +154,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'website-builder',
-    number: 8,
+    number: 9,
     name: 'Website Builder Agent',
     tags: ['Web'],
     status: 'coming-soon',
@@ -146,7 +164,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'aeo-geo',
-    number: 9,
+    number: 10,
     name: 'AEO / GEO Agent',
     tags: ['Search', 'AI visibility'],
     status: 'coming-soon',

@@ -70,6 +70,8 @@
               @if (currentBoilerplatesAsset(); as boilerplates) {
                 <!-- The Boilerplates' own app page: the four lengths with their word counts, then the run's report. -->
                 <lfx-mktg-boilerplates-view [projectName]="projectName()" [asset]="boilerplates" [version]="assetVersion()" />
+              } @else if (currentFaqAsset(); as faq) {
+                <lfx-mktg-faq-view [projectName]="projectName()" [asset]="faq" [version]="assetVersion()" />
               } @else {
                 <lfx-mktg-framework-view
                   [projectName]="projectName()"
@@ -121,7 +123,7 @@
               }
 
               <!-- Every stored asset is a document with revisions in the Documents area. -->
-              <!-- Where the asset goes next: Documents, or a new run from edited inputs. The framework's Download PDF and Google Slides export sit in its own header, as on the Brand Kit's web view; the Boilerplates' are shown here but inert until they ship (hand test, 18 Oct). No raw-JSON download: nobody reads it. -->
+              <!-- Where the asset goes next: Documents, or a new run from edited inputs. The framework's Download PDF and Google Slides export sit in its own header, as on the Brand Kit's web view; the Boilerplates' and the FAQ's are shown here but inert until they ship (hand test, 18 Oct). No raw-JSON download: nobody reads it. -->
               <div
                 class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
                 data-testid="mktg-agent-run-new-run">
@@ -130,7 +132,7 @@
                   <span class="text-xs text-gray-500" data-testid="mktg-agent-run-change-note">{{ assetChangeNote() }}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  @if (currentBoilerplatesAsset()) {
+                  @if (currentBoilerplatesAsset() || currentFaqAsset()) {
                     <lfx-button
                       label="Download PDF"
                       icon="fa-light fa-file-pdf"
@@ -312,26 +314,31 @@
                   </div>
                 </ng-template>
 
+                <!-- One titled group of fields (e.g. the Messaging Framework's Sources) as a card. -->
+                <ng-template #groupTpl let-group>
+                  <section
+                    class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4"
+                    [attr.aria-labelledby]="'mktg-intake-group-' + group.id"
+                    [attr.data-testid]="'mktg-agent-run-group-' + group.id">
+                    <h2 class="text-base font-semibold text-gray-900" [id]="'mktg-intake-group-' + group.id">
+                      {{ group.title }}
+                      @if (group.hint) {
+                        <span class="ml-1 text-sm font-normal text-gray-500">{{ group.hint }}</span>
+                      }
+                    </h2>
+                    @for (field of group.fields; track field.key) {
+                      <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
+                    }
+                    @if (group.footnote) {
+                      <p class="max-w-prose text-xs text-gray-500">{{ group.footnote }}</p>
+                    }
+                  </section>
+                </ng-template>
+
                 @if (fieldGroups.length > 0) {
-                  <!-- Titled groups (e.g. the Messaging Framework's Sources), one card each. -->
-                  @for (group of fieldGroups; track group.id) {
-                    <section
-                      class="bg-white border border-gray-200 rounded-xl p-5 flex flex-col gap-4"
-                      [attr.aria-labelledby]="'mktg-intake-group-' + group.id"
-                      [attr.data-testid]="'mktg-agent-run-group-' + group.id">
-                      <h2 class="text-base font-semibold text-gray-900" [id]="'mktg-intake-group-' + group.id">
-                        {{ group.title }}
-                        @if (group.hint) {
-                          <span class="ml-1 text-sm font-normal text-gray-500">{{ group.hint }}</span>
-                        }
-                      </h2>
-                      @for (field of group.fields; track field.key) {
-                        <ng-container *ngTemplateOutlet="fieldTpl; context: { $implicit: field }" />
-                      }
-                      @if (group.footnote) {
-                        <p class="max-w-prose text-xs text-gray-500">{{ group.footnote }}</p>
-                      }
-                    </section>
+                  <!-- Titled groups, one card each; a group marked to follow the documents (the FAQ's notes) comes after them. -->
+                  @for (group of leadingFieldGroups; track group.id) {
+                    <ng-container *ngTemplateOutlet="groupTpl; context: { $implicit: group }" />
                   }
                 } @else {
                   @for (field of intake.fields; track field.key) {
@@ -342,6 +349,10 @@
                 <!-- Optional existing documents, last: a file is read to text by the BFF as it is added; a link goes to the agent as is. -->
                 @if (intake.documents) {
                   <lfx-mktg-intake-documents [config]="intake.documents" [(documents)]="documents" [(busy)]="documentsBusy" />
+                }
+
+                @for (group of trailingFieldGroups; track group.id) {
+                  <ng-container *ngTemplateOutlet="groupTpl; context: { $implicit: group }" />
                 }
 
                 <!-- The logo files (the Brand Kit): read in the browser as they are picked and sent with the form; a link goes to the agent as is. -->

@@ -110,6 +110,15 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
     label: intakeDocumentName('boilerplates'),
     itemLabel: intakeDocumentName('boilerplates'),
   },
+  // The FAQ was stored as revisions from its first run: it has no pre-revision partition.
+  {
+    agentKey: 'faq',
+    kind: 'living',
+    catalogAgentId: 'faq',
+    agentName: catalogAgentName('faq'),
+    label: intakeDocumentName('faq'),
+    itemLabel: intakeDocumentName('faq'),
+  },
   {
     agentKey: 'aeo-geo',
     kind: 'run',

@@ -33,6 +33,7 @@ import {
   MktgBoilerplatesAsset,
   MktgDependencyDocument,
   MktgDocumentStatusChip,
+  MktgFaqAsset,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgIntakeAttachment,
@@ -73,6 +74,7 @@ import { UserService } from '@services/user.service';
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
+import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
 import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
@@ -86,7 +88,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 // or replace, answered on the same run →) document result with versions and a
 // "Request changes" feedback box that regenerates as v+1 through the existing
 // chat/session BFF. An agent whose output is a structured asset (the Messaging
-// Framework, the Boilerplates: `intake.assetView`) lands on the asset's own view instead: the
+// Framework, the Boilerplates, the FAQ: `intake.assetView`) lands on the asset's own view instead: the
 // feed and the questions on their own while the run is live, then the
 // rendered asset. The Brand Kit, whose revision is a JSON kit, shows the kit
 // laid out as its 16-page book on the result. The page is driven entirely by
@@ -106,6 +108,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
     MessageComponent,
     BrandKitWebViewComponent,
     MktgBoilerplatesViewComponent,
+    MktgFaqViewComponent,
     MktgFrameworkViewComponent,
     MktgIntakeDocumentsComponent,
     MktgIntakeLogoFilesComponent,
@@ -337,10 +340,17 @@ export class MktgAgentRunComponent {
     const asset = this.currentVersion()?.asset;
     return asset?.kind === 'boilerplates' ? asset : null;
   });
-  /** How the result's footer says the asset is changed: a new run from edited inputs is a new revision. */
-  protected readonly assetChangeNote = computed(
-    () => `To change the ${(this.intake?.documentName ?? 'document').toLowerCase()}, edit the inputs and generate again; the result is a new revision.`
-  );
+  /** The FAQ of the version on screen, for the FAQ view. */
+  protected readonly currentFaqAsset: Signal<MktgFaqAsset | null> = computed(() => {
+    const asset = this.currentVersion()?.asset;
+    return asset?.kind === 'faq' ? asset : null;
+  });
+  /** How the result's footer says the asset is changed: a new run from edited inputs is a new revision. An acronym (the FAQ) keeps its capitals. */
+  protected readonly assetChangeNote = computed(() => {
+    const name = this.intake?.documentName ?? 'document';
+    const noun = name === name.toUpperCase() ? name : name.toLowerCase();
+    return `To change the ${noun}, edit the inputs and generate again; the result is a new revision.`;
+  });
   /** The project's stored Brand Kit, which the framework's print (Download PDF) is set in; null for the LF look. */
   protected readonly printKit: Signal<BrandKitRevision | null> = this.initPrintKit();
   /** Where the asset view stands: generating while the feed shows, questions while the stepper does, ready on the result. */
@@ -596,6 +606,10 @@ export class MktgAgentRunComponent {
   protected readonly pageClass: string = this.intake?.fullWidth ? 'w-full px-4 sm:px-6 lg:px-8 mt-3' : 'container mx-auto px-4 sm:px-6 lg:px-8 mt-3';
   /** The intake's titled field groups with their fields resolved, or empty for a flat form. */
   protected readonly fieldGroups: MktgResolvedFieldGroup[] = this.initFieldGroups();
+  /** The groups shown before the documents section. */
+  protected readonly leadingFieldGroups: MktgResolvedFieldGroup[] = this.fieldGroups.filter((group) => !group.afterDocuments);
+  /** The groups shown after it (the FAQ's notes). */
+  protected readonly trailingFieldGroups: MktgResolvedFieldGroup[] = this.fieldGroups.filter((group) => group.afterDocuments);
   /** The Documents area type this agent's output is stored as, when it has one. */
   protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
@@ -974,6 +988,7 @@ export class MktgAgentRunComponent {
       title: group.title,
       hint: group.hint ?? '',
       footnote: group.footnote ?? '',
+      afterDocuments: !!group.afterDocuments,
       fields: group.fieldKeys.map((key) => this.intake?.fields.find((field) => field.key === key)).filter((field): field is MktgIntakeField => !!field),
     }));
   }

@@ -395,6 +395,7 @@ export * from './boilerplates.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
+export * from './faq.interface';
 export * from './foundation-message.interface';
 export * from './icp.interface';
 

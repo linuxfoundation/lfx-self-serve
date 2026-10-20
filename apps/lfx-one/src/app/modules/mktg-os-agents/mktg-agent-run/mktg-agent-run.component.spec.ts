@@ -2292,6 +2292,108 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
+  describe('FAQ — the intake form, the framework gate, the run landing on the FAQ view', () => {
+    /** The latest stored Messaging Framework revision, as the sidecar read resolves it. */
+    const framework: MktgDependencyDocument = {
+      agentId: 'foundation-setup',
+      source: 'server',
+      version: 2,
+      document: '# Project One Messaging framework',
+      storedAt: '2026-10-17T09:00:00.000Z',
+      sidecar: { contract: 'messaging-framework-output/v1', version: 1, content: { mf: { tagline: 'Release, open.' }, icp: [], mh: {}, nums: [] } },
+    };
+    const FAQ: MktgRunAsset = {
+      kind: 'faq',
+      mode: 'draft',
+      content: { faq: [['About Project One', [['What is Project One?', 'An open release toolkit.', 'Website']]]] },
+      report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+      checks: { findings: [], unanswered: [] },
+    };
+
+    beforeEach(async () => configure('browser', 'faq'));
+
+    it('asks for the project, the sources, other links and documents, then the notes — on a full-width page', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-page')?.className).toContain('w-full');
+      expect(query('mktg-agent-run-form-title')?.textContent).toContain('Build the Project One FAQ');
+      const order = ['mktg-agent-run-group-project', 'mktg-agent-run-group-sources', 'mktg-intake-documents', 'mktg-agent-run-group-notes'].map((testId) =>
+        Array.from(host().querySelectorAll('[data-testid]')).indexOf(query(testId) as Element)
+      );
+      expect(order.every((position) => position >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(query('mktg-intake-documents')?.textContent).toContain('Other links and documents');
+      expect(host().textContent).not.toContain('Paul');
+    });
+
+    it('stops the run with "Run the messaging framework first" and a link to it when the project has none', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      await fixture.whenStable();
+
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], ['foundation-setup']);
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Run the messaging framework first');
+      expect(query('mktg-agent-run-missing-dependency-link')?.textContent).toContain('Open the Messaging Framework page');
+    });
+
+    it('refuses a latest revision that carries no framework, with its own note', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': { ...framework, sidecar: { contract: 'messaging-framework-output/v1', content: {} } } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('carries no framework the FAQ can read');
+    });
+
+    it('names the attached framework revision and submits it with the answers', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': framework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      component['intakeForm'].controls['notes'].setValue('Members ask about cost.');
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'Uses the latest messaging framework · v2 · 17 Oct'
+      );
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      const request = generate.mock.calls[0][0] as MktgGenerateRequest;
+      expect(request.answers).toEqual({
+        project_name: 'Project One',
+        website_url: 'https://one.example.org',
+        notes: 'Members ask about cost.',
+        messaging_framework: JSON.stringify(framework.sidecar),
+      });
+    });
+
+    it('lands the result on the FAQ view, with the asset card naming the FAQ', async () => {
+      storedRuns = {
+        'proj-1:faq': {
+          agentId: 'faq',
+          projectUid: 'proj-1',
+          sessionId: 'sess-faq',
+          ownerToken: 'token-faq',
+          answers: { project_name: 'Project One' },
+          versions: [{ version: 1, document: '', asset: FAQ, createdAt: '2026-10-19T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('result');
+      expect(query('mktg-faq-view-title')?.textContent).toContain('Project One FAQ');
+      expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
+      expect(query('mktg-framework-view')).toBeNull();
+      expect(query('mktg-agent-run-new-run')?.textContent).toContain('To change the FAQ, edit the inputs');
+    });
+  });
+
   describe('onDownload — SSR guard', () => {
     beforeEach(async () => configure('server'));
 

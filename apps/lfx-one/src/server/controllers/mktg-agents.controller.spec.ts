@@ -34,6 +34,11 @@ const foundationMessageMocks = vi.hoisted(() => ({
   startGeneration: vi.fn(),
   sendAnswers: vi.fn(),
 }));
+const faqMocks = vi.hoisted(() => ({
+  getResult: vi.fn(),
+  startGeneration: vi.fn(),
+  sendAnswers: vi.fn(),
+}));
 const sourceTextMocks = vi.hoisted(() => ({
   readFile: vi.fn(),
 }));
@@ -60,15 +65,17 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const artifact = await vi.importActual('../../../../../packages/shared/src/constants/mktg-artifact.constants');
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
   const boilerplates = await vi.importActual('../../../../../packages/shared/src/constants/boilerplates.constants');
-  return { ...agents, ...brandKit, ...artifact, ...foundationMessage, ...boilerplates };
+  const faq = await vi.importActual('../../../../../packages/shared/src/constants/faq.constants');
+  return { ...agents, ...brandKit, ...artifact, ...foundationMessage, ...boilerplates, ...faq };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
-  // The Messaging Framework's, the Brand Kit's and the Boilerplates' request validators and form builders run for real (pure, Angular-free); the rest are mocked.
+  // The Messaging Framework's, the Brand Kit's, the Boilerplates' and the FAQ's request validators and form builders run for real (pure, Angular-free); the rest are mocked.
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/utils/foundation-message.utils');
   const brandKit = await vi.importActual('../../../../../packages/shared/src/utils/brand-kit.utils');
   const boilerplates = await vi.importActual('../../../../../packages/shared/src/utils/boilerplates.utils');
-  return { ...(foundationMessage as object), ...(brandKit as object), ...(boilerplates as object), ...validatorMocks };
+  const faq = await vi.importActual('../../../../../packages/shared/src/utils/faq.utils');
+  return { ...(foundationMessage as object), ...(brandKit as object), ...(boilerplates as object), ...(faq as object), ...validatorMocks };
 });
 vi.mock('../services/mktg-source-text.service', () => ({
   MktgSourceTextService: class {
@@ -99,6 +106,13 @@ vi.mock('../services/foundation-message.service', () => ({
     public getResult = foundationMessageMocks.getResult;
     public startGeneration = foundationMessageMocks.startGeneration;
     public sendAnswers = foundationMessageMocks.sendAnswers;
+  },
+}));
+vi.mock('../services/faq.service', () => ({
+  FaqService: class {
+    public getResult = faqMocks.getResult;
+    public startGeneration = faqMocks.startGeneration;
+    public sendAnswers = faqMocks.sendAnswers;
   },
 }));
 vi.mock('../services/icp.service', () => ({
@@ -1079,6 +1093,87 @@ describe('MktgAgentsController', () => {
       await controller.boilerplatesResult(buildIcpReq(path, { sessionId: 'sess-bp', ownerToken: 'nope' }), buildRes(), next);
       expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
       expect(boilerplatesMocks.getResult).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the FAQ (POST /api/mktg-agents/faq/generate, /answers, /result)', () => {
+    const framework = JSON.stringify({ contract: 'messaging-framework-output/v1', content: { mf: { tagline: 'Release, open.' }, mh: {} } });
+    const faqAnswers = (): Record<string, string> => ({
+      project_name: ' TestOrbit ',
+      website_url: 'https://testorbit.example.org',
+      github_url: '',
+      notes: 'Members ask about cost.',
+      messaging_framework: framework,
+    });
+    const faqReq = (path: string, body: unknown): Request => ({ path: `/api/mktg-agents/faq/${path}`, body }) as unknown as Request;
+
+    it('starts a fresh draft with the trimmed answers, the attached framework and the tagged documents, routed by the catalog handle', async () => {
+      faqMocks.startGeneration.mockResolvedValue('sess-1');
+      tokenMocks.createSessionOwnerToken.mockReturnValue('owner-token');
+      const documents = [{ kind: 'link', title: 'https://testorbit.example.org/faq', url: 'https://testorbit.example.org/faq', tag: 'doc' }];
+      const res = buildRes();
+
+      await controller.generateFaq(faqReq('generate', { answers: faqAnswers(), documents, project: 'proj-uid-1' }), res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      const [, answers, sentDocuments, project, handle] = faqMocks.startGeneration.mock.calls[0];
+      expect(answers).toEqual({
+        project_name: 'TestOrbit',
+        website_url: 'https://testorbit.example.org',
+        notes: 'Members ask about cost.',
+        messaging_framework: framework,
+      });
+      expect(sentDocuments).toEqual(documents);
+      expect(project).toBe('proj-uid-1');
+      expect(handle).toBe('faq');
+      expect(res.json).toHaveBeenCalledWith({ sessionId: 'sess-1', ownerToken: 'owner-token' });
+    });
+
+    it('refuses a run without the messaging framework, a logo-tagged document, and a feedback regeneration', async () => {
+      const withoutFramework = faqAnswers();
+      delete withoutFramework['messaging_framework'];
+      await controller.generateFaq(faqReq('generate', { answers: withoutFramework }), buildRes(), next);
+      await controller.generateFaq(
+        faqReq('generate', { answers: faqAnswers(), documents: [{ kind: 'file', title: 'logo.zip', text: 'x', tag: 'logo' }] }),
+        buildRes(),
+        next
+      );
+      await controller.generateFaq(faqReq('generate', { answers: faqAnswers(), feedback: 'Shorter.', priorVersion: 1 }), buildRes(), next);
+
+      expect(next).toHaveBeenCalledTimes(3);
+      for (const [error] of next.mock.calls) {
+        expect(error).toBeInstanceOf(ServiceValidationError);
+      }
+      expect(faqMocks.startGeneration).not.toHaveBeenCalled();
+    });
+
+    it('sends the answers on the same session for its creator only', async () => {
+      faqMocks.sendAnswers.mockResolvedValue(undefined);
+      const body = { sessionId: 'sess-1', ownerToken: 'owner-token', answers: [{ key: 'membership-cost', text: ' Free. ', origin: 'requester' }] };
+      const res = buildRes();
+
+      await controller.faqAnswers(faqReq('answers', body), res, next);
+      expect(faqMocks.sendAnswers).toHaveBeenCalledWith(expect.anything(), 'sess-1', [{ key: 'membership-cost', text: 'Free.', origin: 'requester' }], 'faq');
+      expect(res.json).toHaveBeenCalledWith({ success: true });
+
+      tokenMocks.verifySessionOwnerToken.mockReturnValue(false);
+      await controller.faqAnswers(faqReq('answers', body), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(faqMocks.sendAnswers).toHaveBeenCalledTimes(1);
+    });
+
+    it('polls the result for the session’s creator with the run’s project, and refuses anyone else', async () => {
+      faqMocks.getResult.mockResolvedValue({ status: 'pending', activity: [] });
+      const res = buildRes();
+
+      await controller.faqResult(faqReq('result', { sessionId: 'sess-1', ownerToken: 'owner-token', project: ' proj-uid-1 ' }), res, next);
+      expect(faqMocks.getResult).toHaveBeenCalledWith(expect.anything(), 'sess-1', 'proj-uid-1');
+      expect(res.json).toHaveBeenCalledWith({ status: 'pending', activity: [] });
+
+      tokenMocks.verifySessionOwnerToken.mockReturnValue(false);
+      await controller.faqResult(faqReq('result', { sessionId: 'sess-1', ownerToken: 'forged' }), buildRes(), next);
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
+      expect(faqMocks.getResult).toHaveBeenCalledTimes(1);
     });
   });
 });

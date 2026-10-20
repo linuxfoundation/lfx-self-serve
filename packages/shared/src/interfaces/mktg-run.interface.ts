@@ -14,6 +14,7 @@ import { FOUNDATION_MESSAGE_ANSWER_ORIGINS } from '../constants/foundation-messa
 import type { MKTG_RUN_ACTIVITY_KINDS } from '../constants/mktg-run-activity.constants';
 import type { BoilerplatesChecks, BoilerplatesContent, BoilerplatesMode, BoilerplatesReport } from './boilerplates.interface';
 import type { BrandKitRevision } from './brand-kit.interface';
+import type { FaqChecks, FaqContent, FaqMode, FaqReport } from './faq.interface';
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
 
@@ -172,6 +173,11 @@ export interface MktgIntakeFieldGroup {
   footnote?: string;
   /** Keys of the intake fields in this group, in display order. */
   fieldKeys: string[];
+  /**
+   * The group comes after the documents section instead of before it (the
+   * FAQ's notes, last on the form). Without it a group renders before.
+   */
+  afterDocuments?: boolean;
 }
 
 /** A field group with its fields resolved, as the run page renders it. */
@@ -186,6 +192,8 @@ export interface MktgResolvedFieldGroup {
   footnote: string;
   /** The group's fields, in display order. */
   fields: MktgIntakeField[];
+  /** True when the group renders after the documents section. */
+  afterDocuments: boolean;
 }
 
 /**
@@ -445,10 +453,11 @@ export interface MktgIntakeAttachment {
   /**
    * For a `json` messaging framework attachment: the consuming agent reads
    * the framework's whole content (`{mf, icp, mh, nums}` — the Boilerplates
-   * carry its positioning, its proof and its avoid list), not only its voice
-   * (the Brand Kit). A revision then counts as the attachment only when its
-   * sidecar carries that content (`mktgJsonAttachmentUsable`), the rule the
-   * Boilerplates' BFF validator and the agent's own gate apply.
+   * carry its positioning, its proof and its avoid list; the FAQ answers
+   * from it), not only its voice (the Brand Kit). A revision then counts as
+   * the attachment only when its sidecar carries that content
+   * (`mktgJsonAttachmentUsable`), the rule the consuming agent's BFF
+   * validator and the agent's own gate apply.
    */
   frameworkContent?: boolean;
 }
@@ -801,7 +810,7 @@ export interface MktgRunResultResponse {
   documentMarkdown?: string;
   /**
    * The validated asset, for agents that write structured JSON instead of a
-   * document (the Messaging Framework, the Boilerplates). Present when ready; a ready result
+   * document (the Messaging Framework, the Boilerplates, the FAQ). Present when ready; a ready result
    * carries exactly one of `documentMarkdown` and `asset`.
    */
   asset?: MktgRunAsset;
@@ -836,11 +845,11 @@ export interface MktgRunResultResponse {
 
 /**
  * The asset views the run page and the Documents area know how to render,
- * besides a Markdown document: the Messaging Framework's and the
- * Boilerplates', both built inside the mktg-os-agents module; a shared
- * asset-view registry is later work.
+ * besides a Markdown document: the Messaging Framework's, the
+ * Boilerplates' and the FAQ's, all built inside the mktg-os-agents module; a
+ * shared asset-view registry is later work.
  */
-export type MktgAssetViewKind = 'messaging-framework' | 'boilerplates';
+export type MktgAssetViewKind = 'messaging-framework' | 'boilerplates' | 'faq';
 
 /**
  * The Messaging Framework as a validated structured output: the bundle with
@@ -866,12 +875,21 @@ export interface MktgBoilerplatesAsset {
   mode: BoilerplatesMode;
 }
 
+/** The FAQ with its report and checks — the unanswered questions among them — as the FAQ view shows it. */
+export interface MktgFaqAsset {
+  kind: 'faq';
+  content: FaqContent;
+  report: FaqReport;
+  checks: FaqChecks;
+  mode: FaqMode;
+}
+
 /**
  * A validated structured output — what an agent that writes JSON returns
  * instead of a document, told apart by its `kind`. Stored with the run's
  * version and, by the BFF, as the revision's content.
  */
-export type MktgRunAsset = MktgFrameworkAsset | MktgBoilerplatesAsset;
+export type MktgRunAsset = MktgFrameworkAsset | MktgBoilerplatesAsset | MktgFaqAsset;
 
 /** One kind of step in a run's live activity feed — also the header phase it belongs to. */
 export type MktgRunActivityKind = (typeof MKTG_RUN_ACTIVITY_KINDS)[number];
