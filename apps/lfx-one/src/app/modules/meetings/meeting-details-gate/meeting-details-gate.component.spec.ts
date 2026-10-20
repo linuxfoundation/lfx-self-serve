@@ -60,7 +60,8 @@ describe('MeetingDetailsGateComponent', () => {
       providers: [
         { provide: FeatureFlagService, useValue: { getBooleanFlag } },
         { provide: UserService, useValue: { authenticated } },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'meeting-1' }) } } },
+        // The seed service also reads `?action=leave` from the query string (Remove Myself links).
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'meeting-1' }), queryParamMap: convertToParamMap({}) } } },
       ],
     })
       .overrideComponent(MeetingDetailsGateComponent, {

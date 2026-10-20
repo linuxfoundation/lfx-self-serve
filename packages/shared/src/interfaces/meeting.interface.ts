@@ -1916,6 +1916,16 @@ export interface MeetingDetailsSeed {
   state: MeetingJoinPageState;
 }
 
+/**
+ * A `?action=leave` link (invite emails, calendar events) the meeting details V2 page has to handle:
+ * the meeting it names, and whether V1 already handled it on its first render (it was seeded with the
+ * meeting), in which case V1 has shown its own "Not registered" toast and V2 must not repeat it.
+ */
+export interface MeetingLeaveRequest {
+  meetingId: string;
+  handledByV1: boolean;
+}
+
 /** Which of the three top-level branches the meeting details V2 page renders. */
 export type MeetingDetailsLoadStatus = 'loading' | 'ready' | 'error';
 

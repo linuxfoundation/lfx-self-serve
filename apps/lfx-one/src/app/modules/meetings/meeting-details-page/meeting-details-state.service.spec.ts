@@ -41,6 +41,12 @@ describe('MeetingDetailsStateService', () => {
   let navigate: ReturnType<typeof vi.fn>;
   let seed: MeetingJoinPageState | null;
   let authenticated: WritableSignal<boolean>;
+  let removedRegistrationMeetingIds: WritableSignal<ReadonlySet<string>>;
+  let markRegistrationRemoved: ReturnType<typeof vi.fn>;
+  let leaveLinkFor: string | null;
+  let confirmedMeetingRsvps: ReturnType<typeof vi.fn>;
+  let isMeetingRsvpCurrent: ReturnType<typeof vi.fn>;
+  let clearRemovedRegistration: ReturnType<typeof vi.fn>;
 
   function create(platform: 'browser' | 'server' = 'browser'): MeetingDetailsStateService {
     TestBed.configureTestingModule({
@@ -63,9 +69,26 @@ describe('MeetingDetailsStateService', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
-        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp, getPublicMeetingOccurrences } },
-        { provide: UserService, useValue: { authenticated } },
-        { provide: MeetingDetailsSeedService, useValue: { take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null) } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getPublicMeeting,
+            getPublicPastMeeting,
+            getMeetingRsvpForCurrentUser: getMyRsvp,
+            removedRegistrationMeetingIds,
+            markRegistrationRemoved,
+            clearRemovedRegistration,
+            getPublicMeetingOccurrences,
+          },
+        },
+        { provide: UserService, useValue: { authenticated, confirmedMeetingRsvps, isMeetingRsvpCurrent } },
+        {
+          provide: MeetingDetailsSeedService,
+          useValue: {
+            take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null),
+            takeLeaveRequest: (routeId: string | null) => (routeId && routeId === leaveLinkFor ? { meetingId: routeId, handledByV1: true } : null),
+          },
+        },
       ],
     });
     return TestBed.inject(MeetingDetailsStateService);
@@ -81,6 +104,18 @@ describe('MeetingDetailsStateService', () => {
     navigate = vi.fn().mockResolvedValue(true);
     seed = null;
     authenticated = signal(true);
+    removedRegistrationMeetingIds = signal<ReadonlySet<string>>(new Set());
+    markRegistrationRemoved = vi.fn((id: string) => removedRegistrationMeetingIds.update((ids) => new Set(ids).add(id)));
+    leaveLinkFor = null;
+    confirmedMeetingRsvps = vi.fn().mockReturnValue([]);
+    isMeetingRsvpCurrent = vi.fn().mockReturnValue(true);
+    clearRemovedRegistration = vi.fn((id: string) =>
+      removedRegistrationMeetingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(id);
+        return next;
+      })
+    );
     // Lookup failures are logged on purpose; keep the test output readable.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -743,6 +778,315 @@ describe('MeetingDetailsStateService', () => {
 
       expect(state.timeState()).toBe('live');
       expect(state.showAddToCalendar()).toBe(false);
+    });
+  });
+
+  describe("V1's Remove Myself and the ?action=leave link", () => {
+    const upcoming = (overrides: Partial<Meeting> = {}) =>
+      ({
+        ...buildMeeting(),
+        start_time: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        duration: 60,
+        occurrences: [],
+        invited: true,
+        ...overrides,
+      }) as unknown as Meeting;
+
+    async function load(meeting: Meeting): Promise<MeetingDetailsStateService> {
+      getPublicMeeting.mockReturnValue(of({ meeting, project }));
+      const state = create();
+      await flush();
+      return state;
+    }
+
+    it('offers Remove Myself to an invitee before the join window', async () => {
+      const state = await load(upcoming());
+
+      expect(state.canLeaveMeeting()).toBe(true);
+      expect(state.showLeaveMeeting()).toBe(true);
+    });
+
+    it('offers no Remove Myself to someone not on the invite list, or inside the join window', async () => {
+      expect((await load(upcoming({ invited: false }))).canLeaveMeeting()).toBe(false);
+      TestBed.resetTestingModule();
+      const live = await load(upcoming({ start_time: new Date(Date.now() - 5 * 60 * 1000).toISOString() }));
+      expect(live.canLeaveMeeting()).toBe(true);
+      expect(live.showLeaveMeeting()).toBe(false);
+    });
+
+    it('takes the viewer off the invite list at once after a removal, ahead of the indexer', async () => {
+      const state = await load(upcoming());
+      const lookups = getPublicMeeting.mock.calls.length;
+
+      state.markLeft(MEETING_ID);
+      await flush();
+
+      expect(markRegistrationRemoved).toHaveBeenCalledWith(MEETING_ID);
+      expect(state.viewerRole()).toBe('outsider');
+      expect(state.canLeaveMeeting()).toBe(false);
+      expect(state.rosterRefresh()).toBe(1);
+      // The refetch still reports `invited: true` (indexer lag): the session's removal wins.
+      expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(lookups);
+      expect(state.canLeaveMeeting()).toBe(false);
+    });
+
+    it('keeps the viewer invited after an incomplete removal', async () => {
+      const state = await load(upcoming());
+
+      state.markLeaveIncomplete(MEETING_ID);
+
+      expect(state.canLeaveMeeting()).toBe(true);
+      expect(state.rosterRefresh()).toBe(1);
+    });
+
+    // As V1: the answer shown after a partial removal is the surviving registrations' one.
+    it('re-selects the surviving answer after an incomplete removal', async () => {
+      const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
+      const surviving = { id: 'rsvp-2', registrant_id: 'r-2', meeting_id: MEETING_ID, response_type: 'maybe', scope: 'all' } as unknown as MeetingRsvp;
+      getMyRsvp.mockReturnValue(of(removed));
+      confirmedMeetingRsvps.mockReturnValue([surviving]);
+      const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
+      await flush();
+      expect(state.myRsvp()).toBe('accepted');
+
+      // The removal ends r-1's registration (clearConfirmedMeetingRsvps records it).
+      isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
+      state.markLeaveIncomplete(MEETING_ID);
+
+      expect(state.myRsvp()).toBe('maybe');
+      expect(state.rsvpReset()).toBe(1);
+    });
+
+    // As V1: a later lookup (another occurrence) can still return the removed registration's answer.
+    it("does not restore a removed registration's answer from a later lookup", async () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      const first = new Date(Date.now() + 2 * DAY);
+      const second = new Date(Date.now() + 9 * DAY);
+      const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
+      getMyRsvp.mockReturnValue(of(removed));
+      const state = await load(
+        upcoming({
+          is_invite_responses_enabled: true,
+          recurrence: { type: 2 },
+          start_time: first.toISOString(),
+          occurrences: [
+            { occurrence_id: '1', start_time: first.toISOString(), duration: 60 },
+            { occurrence_id: '2', start_time: second.toISOString(), duration: 60 },
+          ],
+        } as unknown as Partial<Meeting>)
+      );
+      isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
+      state.markLeaveIncomplete(MEETING_ID);
+      expect(state.myRsvp()).toBeNull();
+
+      // Another occurrence: a new lookup, which the indexer still answers with the removed registration.
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      await flush();
+
+      expect(getMyRsvp).toHaveBeenCalledTimes(2);
+      expect(state.myRsvp()).toBeNull();
+    });
+
+    it("keeps the surviving answer when a later lookup still returns the removed registration's", async () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      const first = new Date(Date.now() + 2 * DAY);
+      const second = new Date(Date.now() + 9 * DAY);
+      const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
+      const surviving = { id: 'rsvp-2', registrant_id: 'r-2', meeting_id: MEETING_ID, response_type: 'maybe', scope: 'all' } as unknown as MeetingRsvp;
+      getMyRsvp.mockReturnValue(of(removed));
+      const state = await load(
+        upcoming({
+          is_invite_responses_enabled: true,
+          recurrence: { type: 2 },
+          start_time: first.toISOString(),
+          occurrences: [
+            { occurrence_id: '1', start_time: first.toISOString(), duration: 60 },
+            { occurrence_id: '2', start_time: second.toISOString(), duration: 60 },
+          ],
+        } as unknown as Partial<Meeting>)
+      );
+      confirmedMeetingRsvps.mockReturnValue([surviving]);
+      isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
+      state.markLeaveIncomplete(MEETING_ID);
+      expect(state.myRsvp()).toBe('maybe');
+
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      await flush();
+
+      expect(getMyRsvp).toHaveBeenCalledTimes(2);
+      expect(state.myRsvp()).toBe('maybe');
+    });
+
+    it('shows no answer after an incomplete removal when none survives', async () => {
+      const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
+      getMyRsvp.mockReturnValue(of(removed));
+      const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
+      await flush();
+      expect(state.myRsvp()).toBe('accepted');
+
+      isMeetingRsvpCurrent.mockReturnValue(false);
+      state.markLeaveIncomplete(MEETING_ID);
+
+      expect(state.myRsvp()).toBeNull();
+    });
+
+    it('drops the answer and resets the card after a complete removal', async () => {
+      getMyRsvp.mockReturnValue(of({ id: 'rsvp-1', registrant_id: 'r-1', response_type: 'accepted' } as unknown as MeetingRsvp));
+      const state = await load(upcoming({ is_invite_responses_enabled: true, organizer: true } as Partial<Meeting>));
+      await flush();
+
+      state.markLeft(MEETING_ID);
+
+      expect(state.myRsvp()).not.toBe('accepted');
+      expect(state.rsvpReset()).toBe(1);
+    });
+
+    // Registered here, removed after moving on: coming back must not read as invited.
+    it("clears this page's optimistic registration for a removal completed after the page moved on", async () => {
+      const state = await load(upcoming({ invited: false }));
+      state.markRegistered(MEETING_ID);
+      expect(state.canLeaveMeeting()).toBe(true);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ id: 'meeting-2', uid: 'meeting-2', invited: false } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await flush();
+      state.markLeft(MEETING_ID);
+      clearRemovedRegistration.mockClear();
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ invited: false }), project }));
+      paramMap$.next(convertToParamMap({ id: MEETING_ID }));
+      await flush();
+
+      expect(state.canLeaveMeeting()).toBe(false);
+    });
+
+    it('spins Remove Myself only for the meeting whose removal is in flight', async () => {
+      const state = await load(upcoming());
+
+      state.leavingFor.set('meeting-2');
+      expect(state.leaving()).toBe(false);
+      state.leavingFor.set(MEETING_ID);
+      expect(state.leaving()).toBe(true);
+    });
+
+    it('records a removal for a meeting the page has left, without touching the page', async () => {
+      const state = await load(upcoming());
+
+      state.markLeft('meeting-2');
+
+      expect(markRegistrationRemoved).toHaveBeenCalledWith('meeting-2');
+      expect(state.canLeaveMeeting()).toBe(true);
+      expect(state.rsvpReset()).toBe(0);
+    });
+
+    it('ignores a removal result for a meeting the page has left', async () => {
+      const state = await load(upcoming());
+
+      state.markLeft('meeting-2');
+      state.markLeaveIncomplete('meeting-2');
+
+      expect(state.rosterRefresh()).toBe(0);
+      expect(state.canLeaveMeeting()).toBe(true);
+    });
+
+    it('reads a ?action=leave link from the route, and keeps auto-join off for the visit', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
+      expect(state.claimAutoJoin(MEETING_ID)).toBe(false);
+    });
+
+    it("reads a ?action=leave link V1 has already dropped from the gate's snapshot", async () => {
+      leaveLinkFor = MEETING_ID;
+      const state = await load(upcoming());
+
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: true });
+    });
+
+    // V1 dropped the param already: nothing will clear a latch, so none is set, and a later link asks.
+    it('asks again for a later link after handling one V1 had already dropped from the URL', async () => {
+      leaveLinkFor = MEETING_ID;
+      const state = await load(upcoming());
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: true });
+
+      state.consumeLeaveRequest();
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await flush();
+
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
+    });
+
+    it('drops the param once the link is handled', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      state.consumeLeaveRequest();
+
+      expect(state.leaveRequest()).toBeNull();
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+    });
+
+    it('has no leave request without the link', async () => {
+      const state = await load(upcoming());
+
+      expect(state.leaveRequest()).toBeNull();
+      expect(state.claimAutoJoin(MEETING_ID)).toBe(true);
+    });
+
+    // The service outlives an in-app navigation, so the constructor never sees a later link.
+    it('raises a leave request for a ?action=leave link reached by an in-app navigation', async () => {
+      const state = await load(upcoming());
+      expect(state.leaveRequest()).toBeNull();
+
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await flush();
+
+      expect(state.leaveRequest()).toEqual({ meetingId: 'meeting-2', handledByV1: false });
+      expect(state.claimAutoJoin('meeting-2')).toBe(false);
+    });
+
+    it('asks once per link: a handled request is not raised again before the param is dropped', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      state.consumeLeaveRequest();
+      // A re-lookup before the navigation that drops the param lands.
+      state.reload();
+      await flush();
+      expect(state.leaveRequest()).toBeNull();
+
+      // Once the param is gone, a new link raises a new request.
+      queryParamMap$.next(convertToParamMap({}));
+      await flush();
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await flush();
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
+    });
+
+    it('drops a leave request when the route moves to another meeting before it is handled', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      // Navigating away, to a meeting with no leave link of its own.
+      queryParamMap$.next(convertToParamMap({}));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await flush();
+
+      expect(state.leaveRequest()).toBeNull();
+    });
+
+    // As V1 and the meeting card: a re-registration stops the session's removal from hiding the meeting.
+    it('clears the session-wide removal when the viewer registers again', async () => {
+      const state = await load(upcoming({ invited: false }));
+      state.markLeft(MEETING_ID);
+      expect(removedRegistrationMeetingIds().has(MEETING_ID)).toBe(true);
+
+      state.markRegistered(MEETING_ID);
+
+      expect(clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+      expect(removedRegistrationMeetingIds().has(MEETING_ID)).toBe(false);
     });
   });
 

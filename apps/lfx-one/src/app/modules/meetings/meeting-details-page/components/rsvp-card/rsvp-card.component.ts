@@ -75,7 +75,9 @@ export class MeetingRsvpCardComponent {
 
   protected readonly scopeForm = new FormGroup({ scope: new FormControl<RsvpScope>('all', { nonNullable: true }) });
 
-  /** The meeting and occurrence the card answers for; the step state below resets when it changes. */
+  /** The meeting and occurrence the card answers for. */
+  private readonly viewKey: Signal<string> = this.initViewKey();
+  /** `viewKey` plus the page's removal count: the step state below resets when either changes. */
   private readonly rsvpKey: Signal<string> = this.initRsvpKey();
   /** True while the viewer is changing an existing answer (Change). */
   protected readonly changing = linkedSignal({ source: this.rsvpKey, computation: () => false });
@@ -83,7 +85,11 @@ export class MeetingRsvpCardComponent {
   protected readonly pendingResponse = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
   /** The answer this card last saved, for a viewer whose own answer the state service does not load. */
   private readonly savedResponse = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
-  protected readonly saving = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
+  /**
+   * Keyed to the view, not the removal count: a removal resets the shown answer in place, but a save
+   * still in flight keeps the buttons locked, so a second save cannot race it.
+   */
+  protected readonly saving = linkedSignal<string, RsvpResponse | null>({ source: this.viewKey, computation: () => null });
   protected readonly error = linkedSignal<string, string | null>({ source: this.rsvpKey, computation: () => null });
   /** The live region's text: set after a save, so the result is announced once. */
   protected readonly announcement = linkedSignal({ source: this.rsvpKey, computation: () => '' });
@@ -144,11 +150,17 @@ export class MeetingRsvpCardComponent {
     this.focusAfterRender('[data-testid="meeting-rsvp-card-change"]');
   }
 
-  private initRsvpKey(): Signal<string> {
+  private initViewKey(): Signal<string> {
     return computed(() => {
       const meeting = this.state.meeting();
       return meeting ? `${meeting.id}|${resolveRsvpOccurrenceId(meeting, { occurrence: this.state.selectedOccurrence() }) ?? ''}` : '';
     });
+  }
+
+  private initRsvpKey(): Signal<string> {
+    // `rsvpReset` is bumped when the viewer removes themselves, so the card's saved answer (and its
+    // step state) never outlives the registration it belonged to.
+    return computed(() => `${this.viewKey()}|${this.state.rsvpReset()}`);
   }
 
   private save(response: RsvpResponse, scope: RsvpScope): void {
@@ -166,8 +178,15 @@ export class MeetingRsvpCardComponent {
 
     // The card this save belongs to: if the page moves to another meeting or occurrence while it is in
     // flight, the card's state is the new view's, which the save must not touch.
-    const key = this.rsvpKey();
-    const current = (): boolean => !this.destroyed && this.rsvpKey() === key;
+    // Still the same meeting and occurrence (a removal resets the card in place, not the view).
+    const key = this.viewKey();
+    const current = (): boolean => !this.destroyed && this.viewKey() === key;
+    // V1's acknowledgement check (`rsvp-button-group`): the registration generation at submit time, so a
+    // removal while the save is in flight rejects the answer of a registration it deleted, while a
+    // surviving registration's answer still lands.
+    const user = this.userService.user();
+    const subject = user?.sub || this.userService.viewerUsername() || user?.email || '';
+    const generation = this.userService.meetingRegistrationGeneration(meeting.id, subject);
 
     this.saving.set(response);
     this.announcement.set('');
@@ -186,8 +205,12 @@ export class MeetingRsvpCardComponent {
       )
       .subscribe({
         next: (rsvp: MeetingRsvp) => {
+          const answer = this.userService.recordConfirmedMeetingRsvp(rsvp, subject, generation) ?? rsvp;
+          if (!this.userService.isMeetingRsvpCurrent(answer, meeting, subject)) {
+            return;
+          }
           // Guards itself against a meeting or occurrence the page has left.
-          this.state.setMyRsvp(meeting.id, occurrenceId, rsvp);
+          this.state.setMyRsvp(meeting.id, occurrenceId, answer);
           // Announced once (#3260): inline (the confirmation and its status line) while the card still shows
           // this meeting; a toast only when the page has moved on and nothing else would say it landed.
           if (!current()) {

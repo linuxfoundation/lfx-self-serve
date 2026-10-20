@@ -12,6 +12,7 @@ import {
   Meeting,
   MeetingDetailsLoadStatus,
   MeetingJoinPageState,
+  MeetingLeaveRequest,
   MeetingOccurrence,
   MeetingPrivacyState,
   MeetingRosterRequest,
@@ -40,6 +41,7 @@ import {
   resolveTimeState,
   resolveViewerRole,
   resolveVisibleSections,
+  selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -112,7 +114,14 @@ export class MeetingDetailsStateService {
    */
   private readonly optimisticInvitedId = signal<string | null>(null);
   /** RSVPs saved from this page (E2-05), applied ahead of the indexer; see {@link setMyRsvp}. */
-  private readonly myRsvpUpdates$ = new Subject<MeetingRsvp>();
+  private readonly myRsvpUpdates$ = new Subject<MeetingRsvp | null>();
+  /** The viewer's last fetched answer as a record, for re-selecting one after a partial removal (V1's `currentUserRsvp`). */
+  private lastFetchedRsvp: MeetingRsvp | null = null;
+  /**
+   * Bumped when the viewer removes themselves: the RSVP card resets its locally saved answer, so a
+   * deleted registration's answer never stays on screen.
+   */
+  public readonly rsvpReset = signal(0);
   /**
    * What `myRsvp` is fetched for, derived synchronously from the route: `null` when it is not
    * fetched.
@@ -139,6 +148,26 @@ export class MeetingDetailsStateService {
       allDatesOnly: !!meeting.recurrence && !occurrenceId,
     };
   });
+  /**
+   * Bumped after the viewer removes themselves, so the people section refetches its roster (V1's
+   * `registrantsRefresh$`).
+   */
+  public readonly rosterRefresh = signal(0);
+  /** The meeting the viewer's own removal (Remove Myself) is in flight for, if any. */
+  public readonly leavingFor = signal<string | null>(null);
+  /** True while a removal is in flight for the meeting on screen: another meeting's never spins here. */
+  public readonly leaving: Signal<boolean> = computed(() => !!this.leavingFor() && this.leavingFor() === this.meeting()?.id);
+  /**
+   * A `?action=leave` link (invite emails, calendar events) until the page has handled it: the action
+   * slot then asks the viewer to confirm, as V1 does. Removal never runs from the link. Tied to the
+   * meeting the link named, and dropped when the route moves on, so it never prompts for another one.
+   */
+  public readonly leaveRequest = signal<MeetingLeaveRequest | null>(null);
+  /**
+   * The meeting whose `?action=leave` the page has handled, until the param is gone from the URL: the
+   * lookup re-runs before the navigation that drops it lands, and must not ask a second time.
+   */
+  private consumedLeaveFor: string | null = null;
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -267,6 +296,13 @@ export class MeetingDetailsStateService {
    * (inside it V1's rail is Join only).
    */
   public readonly showAddToCalendar: Signal<boolean> = this.initShowAddToCalendar();
+  /** V1's `canLeaveMeeting`: the viewer is on the invite list (an optimistic registration included). */
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => {
+    const meeting = this.meeting();
+    return !!meeting && this.isInvited(meeting);
+  });
+  /** Where V1 shows Remove Myself: an invitee (organizer or not) before the join window. */
+  public readonly showLeaveMeeting: Signal<boolean> = computed(() => this.timeState() === 'before' && this.canLeaveMeeting());
 
   public constructor() {
     const routeId = this.activatedRoute.snapshot.paramMap.get('id');
@@ -286,6 +322,76 @@ export class MeetingDetailsStateService {
     this.applyPassword(this.activatedRoute.snapshot.queryParamMap);
     this.meeting = this.initMeeting(seed);
     this.seriesOccurrences = this.initSeriesOccurrences();
+
+    // V1's `initializeLeaveFromLink`: V2 renders for signed-in viewers only, so it needs no login
+    // round trip. The param is read from the gate's snapshot (V1 has dropped it by now) or, on an
+    // in-app navigation, from the route. A new Zoom tab would bury the confirmation, so auto-join
+    // stays off for the visit.
+    if (isPlatformBrowser(this.platformId) && routeId) {
+      const fromRoute = this.activatedRoute.snapshot.queryParamMap.get('action') === 'leave' ? { meetingId: routeId, handledByV1: false } : null;
+      const request = this.seedService?.takeLeaveRequest(routeId) ?? fromRoute;
+      if (request) {
+        this.leaveRequest.set(request);
+        this.autoJoinedMeetingIds.add(routeId);
+      }
+    }
+  }
+
+  /**
+   * Marks the `?action=leave` link handled and drops the param, so a refresh or a later visit does
+   * not ask again.
+   */
+  public consumeLeaveRequest(): void {
+    // Latched only while the param is actually in the URL: a seeded request V1 already dropped has no
+    // param change coming to clear the latch, which would then swallow a later link to this meeting.
+    this.consumedLeaveFor = this.activatedRoute.snapshot.queryParamMap.get('action') === 'leave' ? (this.leaveRequest()?.meetingId ?? null) : null;
+    this.leaveRequest.set(null);
+    void this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  /**
+   * Records the viewer's completed removal from `meetingId` (V1's `leaveMeeting` success): off the
+   * invite list at once, through the session-wide removed set that bridges the indexer's lag, then
+   * the meeting and the roster are read again. Ignored when the page has moved to another meeting.
+   */
+  public markLeft(meetingId: string): void {
+    this.meetingService.markRegistrationRemoved(meetingId);
+    // Ahead of the page guard: a registration made here and removed after the page moved on must not
+    // read as invited when the viewer comes back to that meeting on the same page.
+    if (this.optimisticInvitedId() === meetingId) {
+      this.optimisticInvitedId.set(null);
+    }
+    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
+      return;
+    }
+    // As V1 (`rsvpUpdateTrigger$.next(null)`): the removed registrations' answer is gone.
+    this.myRsvpUpdates$.next(null);
+    this.rsvpReset.update((count) => count + 1);
+    this.rosterRefresh.update((count) => count + 1);
+    this.refresh$.next();
+  }
+
+  /**
+   * Records a removal that left some of the viewer's registrations in place (V1's "Removal
+   * incomplete"): they stay on the invite list, the answer shown is re-selected from the surviving
+   * registrations as V1 does (the session's saved answers and the last fetched one, minus the removed
+   * registrants, which `clearConfirmedMeetingRsvps` has just recorded), and the meeting and the roster
+   * are read again.
+   */
+  public markLeaveIncomplete(meetingId: string): void {
+    const meeting = this.meeting();
+    if (!this.matchesRoute() || !meeting || meeting.id !== meetingId) {
+      return;
+    }
+    this.optimisticInvitedId.set(meetingId);
+    const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() });
+    const candidates = [...this.userService.confirmedMeetingRsvps(meetingId), ...(this.lastFetchedRsvp ? [this.lastFetchedRsvp] : [])].filter(
+      (rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting) && (!meeting.recurrence || !!occurrenceId || rsvp.scope === 'all')
+    );
+    this.myRsvpUpdates$.next(selectApplicableRsvp(occurrenceId, candidates));
+    this.rsvpReset.update((count) => count + 1);
+    this.rosterRefresh.update((count) => count + 1);
+    this.refresh$.next();
   }
 
   /**
@@ -306,6 +412,9 @@ export class MeetingDetailsStateService {
    * Ignored when `meetingId` is no longer the page's meeting.
    */
   public markRegistered(meetingId: string): void {
+    // As V1 and the meeting card: the registration happened server-side either way, so the session's
+    // removed set (`markLeft`) must stop hiding this meeting everywhere, not only on this page.
+    this.meetingService.clearRemovedRegistration(meetingId);
     // A registration for a meeting the page has since left, or is leaving (the held meeting outlives
     // the route change until the next lookup resolves), says nothing about the current one.
     if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
@@ -605,13 +714,31 @@ export class MeetingDetailsStateService {
       merge(request.pipe(map((key) => ({ key }))), this.myRsvpUpdates$.pipe(map((rsvp) => ({ rsvp })))).pipe(
         switchMap((event): Observable<RsvpResponse | null | undefined> => {
           if ('rsvp' in event) {
-            return of(event.rsvp.response_type);
+            this.lastFetchedRsvp = event.rsvp;
+            return of(event.rsvp?.response_type ?? null);
           }
+          this.lastFetchedRsvp = null;
           if (!event.key) {
             return of(undefined);
           }
           // As V1: the BFF and the client both read a failed lookup as "not answered" (`null`).
           return this.meetingService.getMeetingRsvpForCurrentUser(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
+            // As V1: a fetched answer of a registration the viewer has removed (the indexer can still
+            // return it) is no answer, so a later lookup never undoes a removal's correction.
+            map((rsvp) => {
+              const meeting = this.meeting();
+              if (!rsvp || !meeting || this.userService.isMeetingRsvpCurrent(rsvp, meeting)) {
+                return rsvp ?? null;
+              }
+              // The lookup returned a registration the viewer has removed (indexer lag): fall back to
+              // the surviving answers this session holds, as a partial removal selected them.
+              const occurrenceId = event.key?.occurrenceId;
+              const surviving = this.userService
+                .confirmedMeetingRsvps(meeting.id)
+                .filter((saved) => this.userService.isMeetingRsvpCurrent(saved, meeting) && (!meeting.recurrence || !!occurrenceId || saved.scope === 'all'));
+              return selectApplicableRsvp(occurrenceId, surviving);
+            }),
+            tap((rsvp) => (this.lastFetchedRsvp = rsvp)),
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
             // Defensive: the client already reads a failure as `null`; an error must never end the signal.
             catchError(() => of<RsvpResponse | null | undefined>(null)),
@@ -645,13 +772,17 @@ export class MeetingDetailsStateService {
   private initMeeting(seed: MeetingJoinPageState | null): Signal<(Meeting & { project: PublicMeetingProject }) | undefined> {
     const meeting$ = combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refresh$]).pipe(
       // Before the lookup is scheduled, so `matchesRoute` turns false the instant the route changes.
-      tap(([params]) => {
+      tap(([params, queryParams]) => {
         const meetingId = params.get('id');
         if (meetingId !== this.routeId()) {
           this.loadFailed.set(false);
           this.failureCount.set(0);
+          if (this.leaveRequest() && this.leaveRequest()?.meetingId !== meetingId) {
+            this.leaveRequest.set(null);
+          }
         }
         this.routeId.set(meetingId);
+        this.captureLeaveRequest(meetingId, queryParams);
       }),
       // The one-tick timer coalesces the paramMap / queryParamMap emissions of one navigation into a
       // single lookup. It sits inside `switchMap`, not before it as a `debounceTime`, so a new
@@ -764,6 +895,23 @@ export class MeetingDetailsStateService {
     return typeof stated === 'string' && stated ? stated : null;
   }
 
+  /**
+   * A `?action=leave` link reached by an in-app navigation (the service outlives it, so the
+   * constructor never sees it): the same request as on a fresh load, once per link, with auto-join
+   * kept off for that meeting.
+   */
+  private captureLeaveRequest(meetingId: string | null, queryParams: ParamMap): void {
+    if (queryParams.get('action') !== 'leave') {
+      this.consumedLeaveFor = null;
+      return;
+    }
+    if (!isPlatformBrowser(this.platformId) || !meetingId || this.consumedLeaveFor === meetingId || this.leaveRequest()?.meetingId === meetingId) {
+      return;
+    }
+    this.leaveRequest.set({ meetingId, handledByV1: false });
+    this.autoJoinedMeetingIds.add(meetingId);
+  }
+
   private lastOccurrence(occurrences: MeetingOccurrence[]): MeetingOccurrence | null {
     return occurrences.reduce<MeetingOccurrence | null>(
       (last, occurrence) => (!last || new Date(occurrence.start_time) > new Date(last.start_time) ? occurrence : last),
@@ -771,9 +919,15 @@ export class MeetingDetailsStateService {
     );
   }
 
-  /** On the invite list, per the payload or a registration made from this page. */
+  /**
+   * On the invite list, per the payload or a registration made from this page, as V1's
+   * `effectivelyInvited`: a removal made this session (`removedRegistrationMeetingIds`) wins over a
+   * payload the indexer has not caught up on yet.
+   */
   private isInvited(meeting: Meeting): boolean {
-    return meeting.invited === true || this.optimisticInvitedId() === meeting.id;
+    // The session's removal wins over both sources; registering again (`markRegistered`) clears it.
+    const removed = this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
+    return !removed && (meeting.invited === true || this.optimisticInvitedId() === meeting.id);
   }
 
   /** The action slot this viewer gets at the given time state, or `null` before the meeting loads. */

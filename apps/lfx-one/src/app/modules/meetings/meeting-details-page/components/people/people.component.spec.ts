@@ -80,6 +80,7 @@ describe('MeetingPeopleComponent', () => {
   let rosterRequest: WritableSignal<MeetingRosterRequest | null>;
   let visibleSections: WritableSignal<Partial<MeetingSectionVisibility> | null>;
   let myRsvp: WritableSignal<RsvpResponse | null | undefined>;
+  let rosterRefresh: WritableSignal<number>;
   let getMyMeetingRegistrants: ReturnType<typeof vi.fn>;
 
   const setup = async (response: () => Observable<MeetingRegistrant[]>): Promise<void> => {
@@ -88,7 +89,10 @@ describe('MeetingPeopleComponent', () => {
       imports: [MeetingPeopleComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence: signal(null), viewerRole, rosterRequest, visibleSections, myRsvp } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: { meeting, selectedOccurrence: signal(null), viewerRole, rosterRequest, visibleSections, myRsvp, rosterRefresh },
+        },
         { provide: MeetingService, useValue: { getMyMeetingRegistrants } },
         { provide: UserService, useValue: { viewerUsername: signal('me'), user: signal({ email: 'me@vendor-corp.example' }) } },
       ],
@@ -109,6 +113,7 @@ describe('MeetingPeopleComponent', () => {
     rosterRequest = signal<MeetingRosterRequest | null>({ meetingId: 'meeting-1', occurrenceId: 'occ-1' });
     visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ people: true, rsvpSummary: true, rsvpAvatarBadges: true });
     myRsvp = signal<RsvpResponse | null | undefined>(undefined);
+    rosterRefresh = signal(0);
   });
 
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
@@ -244,6 +249,16 @@ describe('MeetingPeopleComponent', () => {
     getMyMeetingRegistrants.mockClear();
 
     fixture.componentInstance.onRosterChanged(-1);
+    fixture.detectChanges();
+
+    expect(getMyMeetingRegistrants).toHaveBeenCalledTimes(1);
+  });
+
+  it("refetches the roster after the viewer removes themselves (the page's rosterRefresh)", async () => {
+    await setup(() => of([registrant('a')]));
+    getMyMeetingRegistrants.mockClear();
+
+    rosterRefresh.update((count) => count + 1);
     fixture.detectChanges();
 
     expect(getMyMeetingRegistrants).toHaveBeenCalledTimes(1);

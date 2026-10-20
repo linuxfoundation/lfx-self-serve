@@ -146,6 +146,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   and V2 keeps V1's functionality and backend.
 - **FR-050**: V2 MUST keep V1's Add to calendar (Google, Outlook / Microsoft 365, `.ics`; this date
   or the entire series) where V1 offers it: a signed-in organizer or invitee, before the join window.
+  It MUST keep V1's Remove Myself for an invitee before the join window, and V1's `?action=leave`
+  link, which asks the same confirmation (removal never runs from the link itself).
   V2 MUST NOT add: share beyond copy-link, recording download, an inline video player,
   approve/edit of the AI summary, or attendance export. (Passcode
   and dial-in numbers are not on this list: they are planned E7 work, held back only until upstream

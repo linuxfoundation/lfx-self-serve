@@ -14,12 +14,16 @@ const stateKey = makeStateKey<MeetingJoinPageState>(MEETING_JOIN_STATE_KEY);
 const seeded: MeetingJoinPageState = { meeting: null, loadedViaPastMeetingId: false, pastMeetingFullAccess: false, meetingLoadFailed: true };
 
 describe('MeetingDetailsSeedService', () => {
-  function create(platform: 'browser' | 'server', state: MeetingJoinPageState | null): { service: MeetingDetailsSeedService; transferState: TransferState } {
+  function create(
+    platform: 'browser' | 'server',
+    state: MeetingJoinPageState | null,
+    query: Record<string, string> = {}
+  ): { service: MeetingDetailsSeedService; transferState: TransferState } {
     TestBed.configureTestingModule({
       providers: [
         MeetingDetailsSeedService,
         { provide: PLATFORM_ID, useValue: platform },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'meeting-1' }) } } },
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ id: 'meeting-1' }), queryParamMap: convertToParamMap(query) } } },
       ],
     });
     const transferState = TestBed.inject(TransferState);
@@ -67,5 +71,38 @@ describe('MeetingDetailsSeedService', () => {
     const { service } = create('server', seeded);
 
     expect(service.take('meeting-1')).toBeNull();
+  });
+
+  describe('?action=leave', () => {
+    // V1 mounts first and drops the param once it has handled the link, so V2 reads it from here.
+    it('captures the request for the meeting it was made on, and hands it over once', () => {
+      const { service } = create('browser', null, { action: 'leave' });
+
+      expect(service.takeLeaveRequest('meeting-1')).toEqual({ meetingId: 'meeting-1', handledByV1: false });
+      expect(service.takeLeaveRequest('meeting-1')).toBeNull();
+    });
+
+    // V1, seeded with the meeting, handles the link on its first render, before the swap to V2.
+    it('marks a request V1 has already handled, when the seed carried the meeting', () => {
+      const { service } = create(
+        'browser',
+        { ...seeded, meeting: { id: 'meeting-1' } as MeetingJoinPageState['meeting'], meetingLoadFailed: false },
+        { action: 'leave' }
+      );
+
+      expect(service.takeLeaveRequest('meeting-1')).toEqual({ meetingId: 'meeting-1', handledByV1: true });
+    });
+
+    it('withholds the request from another meeting', () => {
+      const { service } = create('browser', null, { action: 'leave' });
+
+      expect(service.takeLeaveRequest('meeting-2')).toBeNull();
+    });
+
+    it('captures nothing without the param, or on the server', () => {
+      expect(create('browser', null).service.takeLeaveRequest('meeting-1')).toBeNull();
+      TestBed.resetTestingModule();
+      expect(create('server', null, { action: 'leave' }).service.takeLeaveRequest('meeting-1')).toBeNull();
+    });
   });
 });
