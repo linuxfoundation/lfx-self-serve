@@ -15,14 +15,7 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared/interfaces';
-import {
-  MEETING_AGENDA_MAX_LENGTH,
-  MEETING_AGENDA_WARNING_LENGTH,
-  MEETING_DURATION_OPTIONS,
-  RECURRING_MEETING_FEATURE,
-  TIMEZONES,
-  YOUTUBE_MAX_MEETING_TITLE_LENGTH,
-} from '@lfx-one/shared/constants';
+import { MEETING_DURATION_OPTIONS, RECURRING_MEETING_FEATURE, TIMEZONES, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingUserInfo, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { composeFullName, formatUserLabel, getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -85,23 +78,6 @@ export class MeetingDetailsComponent implements OnInit {
   // Owner (organizer) picker signals
   public readonly ownerManualEntry = signal<boolean>(false);
 
-  /** The shared agenda limit and the counter's amber threshold (#3612). */
-  public readonly agendaMaxLength = MEETING_AGENDA_MAX_LENGTH;
-  public readonly agendaWarningLength = MEETING_AGENDA_WARNING_LENGTH;
-  /** The agenda's length, read once for the counter, its colour and the limit message. */
-  public readonly agendaLength = toSignal(
-    toObservable(this.form).pipe(
-      switchMap((f) => {
-        const ctrl = f.get('description');
-        if (!ctrl) return of(0);
-        return ctrl.valueChanges.pipe(
-          startWith(ctrl.value as string | null),
-          map((v: string | null) => v?.length ?? 0)
-        );
-      })
-    ),
-    { initialValue: 0 }
-  );
   public readonly youtubeTitleLimit = YOUTUBE_MAX_MEETING_TITLE_LENGTH;
   public readonly youtubeAmberThreshold = Math.floor(YOUTUBE_MAX_MEETING_TITLE_LENGTH * 0.9);
   public readonly titleLength = toSignal(
@@ -350,7 +326,7 @@ export class MeetingDetailsComponent implements OnInit {
       title,
       projectName: currentProject.name,
       context,
-      maxCharacters: MEETING_AGENDA_MAX_LENGTH,
+      maxCharacters: 2000,
     };
 
     this.isGeneratingAgenda.set(true);

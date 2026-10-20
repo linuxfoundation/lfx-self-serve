@@ -27,7 +27,6 @@ import { MeetingPeopleComponent } from './people.component';
 class RegistrantsDisplayStubComponent {
   public readonly meeting = input<unknown>();
   public readonly showAddRegistrant = input(false);
-  public readonly showEmail = input(false);
   public readonly openAddFormOnShow = input(false);
   public readonly occurrence = input<unknown>(null);
   public readonly myMeetingRegistrants = input(false);
@@ -35,7 +34,6 @@ class RegistrantsDisplayStubComponent {
   public readonly initialRegistrantsLoading = input(false);
   public readonly visible = input(false);
   public readonly refreshRequested = output<number>();
-  public readonly registrantsRemoved = output<string[]>();
 }
 
 type LoadedMeeting = Meeting & { project: PublicMeetingProject };
@@ -208,7 +206,7 @@ describe('MeetingPeopleComponent', () => {
       return calls === 1 ? of([registrant('a')]) : throwError(() => new Error('boom'));
     });
 
-    fixture.componentInstance.retry();
+    fixture.componentInstance.onRosterChanged(-1);
     fixture.detectChanges();
 
     expect(query('people-section-error')).toBeNull();
@@ -236,8 +234,6 @@ describe('MeetingPeopleComponent', () => {
       | RegistrantsDisplayStubComponent
       | undefined;
     expect(display?.showAddRegistrant()).toBe(true);
-    // Guest emails for the organizer only (O-04).
-    expect(display?.showEmail()).toBe(true);
     expect(display?.openAddFormOnShow()).toBe(true);
     expect(display?.visible()).toBe(true);
     expect(display?.initialRegistrants()?.map((r) => r.uid)).toEqual(['a']);
@@ -267,85 +263,6 @@ describe('MeetingPeopleComponent', () => {
     fixture.componentInstance.retry();
     fixture.detectChanges();
     expect(text('people-section-count')).toBe('4 invited');
-  });
-
-  // The index drops removed guests after the delete returns: the section does not wait for it (O-04).
-  const removeGuest = (uid: string): void => {
-    fixture.componentInstance.onRegistrantsRemoved([uid]);
-    fixture.componentInstance.onRosterChanged(-1);
-    fixture.detectChanges();
-  };
-
-  it('drops a removed guest from the rows and the count until the roster drops them too', async () => {
-    let roster = [registrant('a'), registrant('b'), registrant('c')];
-    await setup(() => of(roster));
-    expect(text('people-section-count')).toBe('3 invited');
-
-    removeGuest('c');
-    // The refetch still returns all three: the guest is already gone from the section.
-    expect(text('people-section-count')).toBe('2 invited');
-    expect(query('participant-row-c')).toBeNull();
-
-    roster = [registrant('a'), registrant('b')];
-    fixture.componentInstance.retry();
-    fixture.detectChanges();
-    expect(text('people-section-count')).toBe('2 invited');
-    expect(query('participant-row-a')).not.toBeNull();
-  });
-
-  it("keeps a removed guest out of the drawer's list when it is reopened before the roster catches up", async () => {
-    await setup(() => of([registrant('a'), registrant('b')]));
-    viewerRole.set('organizer');
-    fixture.detectChanges();
-    query('people-section-add')?.click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    removeGuest('a');
-    fixture.componentInstance.closeDrawer();
-    fixture.detectChanges();
-    query('people-section-add')?.click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    const display = fixture.debugElement.query((el) => el.componentInstance instanceof RegistrantsDisplayStubComponent)?.componentInstance as
-      | RegistrantsDisplayStubComponent
-      | undefined;
-    expect(display?.initialRegistrants()?.map((r) => r.uid)).toEqual(['b']);
-  });
-
-  it('says nobody is invited once the last guest is removed', async () => {
-    await setup(() => of([registrant('a')]));
-
-    removeGuest('a');
-
-    expect(query('people-section-empty')).not.toBeNull();
-    expect(query('participant-row-a')).toBeNull();
-  });
-
-  it('forgets removals on another meeting or occurrence', async () => {
-    await setup(() => of([registrant('a'), registrant('b')]));
-    removeGuest('a');
-    expect(query('participant-row-a')).toBeNull();
-
-    rosterRequest.set({ meetingId: 'meeting-1', occurrenceId: 'occ-2' });
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(query('participant-row-a')).not.toBeNull();
-  });
-
-  it('shows no guest emails to a viewer who is not the organizer', async () => {
-    await setup(() => of([registrant('a')]));
-    query('people-section-view-all')?.click();
-    fixture.detectChanges();
-    await fixture.whenStable();
-
-    const display = fixture.debugElement.query((el) => el.componentInstance instanceof RegistrantsDisplayStubComponent)?.componentInstance as
-      | RegistrantsDisplayStubComponent
-      | undefined;
-    expect(display?.showEmail() ?? false).toBe(false);
   });
 
   it('says added guests are on their way rather than that nobody is invited', async () => {

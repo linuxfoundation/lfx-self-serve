@@ -58,7 +58,6 @@ import type {
   V1PastMeetingSummary,
   V1SummaryDetail,
   Vote,
-  UpdateMeetingRequest,
 } from '../interfaces';
 import { normalizePollStatus } from './poll.utils';
 
@@ -1808,46 +1807,4 @@ export function isBatchRegistrantOperationResponse<T>(value: unknown): value is 
 
   const { total, successful, failed } = summary as Partial<Record<keyof BatchRegistrantOperationResponse<T>['summary'], unknown>>;
   return typeof total === 'number' && typeof successful === 'number' && typeof failed === 'number';
-}
-
-/**
- * The update body for a one-field edit of a stored meeting (O-01's agenda): `UpdateMeetingRequest`'s
- * own keys, taken from the full authenticated record, with the field changed. Built rather than spread,
- * so none of the record's read-only or sensitive fields (host key, passcode, occurrences, the viewer's
- * flags) travel back, and normalized at the save boundary as the composer does: committees sanitized
- * with legacy voting statuses mapped to the API's (GH-1796), no `owner` (omitting it keeps the stored
- * one), and no reminder time when the reminder is off (upstream's minimum would reject the stored value).
- */
-export function buildMeetingUpdateRequest(meeting: Meeting, changes: Partial<UpdateMeetingRequest> = {}): UpdateMeetingRequest {
-  const committees = sanitizeMeetingCommittees(meeting.committees).map((committee) => ({
-    uid: committee.uid,
-    allowed_voting_statuses: normalizeMeetingApiVotingStatuses(committee.allowed_voting_statuses),
-  }));
-  const request: UpdateMeetingRequest = {
-    project_uid: meeting.project_uid,
-    start_time: meeting.start_time,
-    duration: meeting.duration,
-    timezone: meeting.timezone,
-    title: meeting.title,
-    description: meeting.description,
-    platform: meeting.platform,
-    recurrence: meeting.recurrence,
-    committees,
-    meeting_type: meeting.meeting_type,
-    visibility: meeting.visibility,
-    restricted: meeting.restricted,
-    recording_enabled: meeting.recording_enabled,
-    transcript_enabled: meeting.transcript_enabled,
-    youtube_upload_enabled: meeting.youtube_upload_enabled,
-    show_meeting_attendees: meeting.show_meeting_attendees,
-    artifact_visibility: meeting.artifact_visibility,
-    cancel_on_committee_removal: meeting.cancel_on_committee_removal,
-    early_join_time_minutes: meeting.early_join_time_minutes,
-    organizers: meeting.organizers,
-    ai_summary_enabled: meeting.ai_summary_enabled,
-    require_ai_summary_approval: meeting.require_ai_summary_approval,
-    auto_email_reminder_enabled: meeting.auto_email_reminder_enabled,
-    ...(meeting.auto_email_reminder_enabled && { auto_email_reminder_time: meeting.auto_email_reminder_time }),
-  };
-  return { ...request, ...changes };
 }

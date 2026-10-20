@@ -28,86 +28,84 @@ own namespace; the two never share a value.
 
 ## Page shell and header
 
-| `data-testid`                               | Element                                                                                                                                                                                   |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `meeting-page-shell`                        | The V2 page container, present in every branch                                                                                                                                            |
-| `meeting-skeleton`                          | Loading state (`role="status"`)                                                                                                                                                           |
-| `meeting-content-column`                    | The content column                                                                                                                                                                        |
-| `meeting-rail`                              | The right-hand column (first, above the content, at ≤ 920px)                                                                                                                              |
-| `meeting-identity-bar`                      | The sticky identity bar (see below)                                                                                                                                                       |
-| `meeting-identity-bar-home`                 | Its LFX mark, linking home                                                                                                                                                                |
-| `meeting-identity-bar-meeting`              | Its meeting identity: date tile, title, subtitle                                                                                                                                          |
-| `meeting-identity-bar-title`                | The truncated meeting title                                                                                                                                                               |
-| `meeting-identity-bar-subtitle`             | `{group} · {status}`                                                                                                                                                                      |
-| `meeting-identity-bar-my-meetings`          | Signed in: My Meetings                                                                                                                                                                    |
-| `meeting-identity-bar-account`              | Signed in: the account menu button                                                                                                                                                        |
-| `meeting-identity-bar-signed-in-as`         | The account menu's first line, "Signed in as {email}": plain text above the items, not while impersonating (E10-03)                                                                       |
-| `meeting-identity-bar-manage-identities`    | Account menu item, by its `id` (PrimeNG menu items take an `id`, not a `data-testid`): Manage identities, to `/profile/identities`; not while impersonating; no account switcher (E10-03) |
-| `meeting-identity-bar-visitor-prompt`       | Visitor: the sign-in prompt                                                                                                                                                               |
-| `meeting-identity-bar-create-account`       | Visitor: Create LFX account                                                                                                                                                               |
-| `meeting-identity-bar-sign-in`              | Visitor: Sign in                                                                                                                                                                          |
-| `meeting-header-section`                    | The header region as a whole                                                                                                                                                              |
-| `meeting-header-project`                    | Project context: logo, name, foundation (a button opening the foundation, or plain when the parent is unresolved)                                                                         |
-| `meeting-header-foundation`                 | The foundation name under the project                                                                                                                                                     |
-| `meeting-header-badges`                     | The badge row                                                                                                                                                                             |
-| `meeting-header-badge-recurring`            | Recurring                                                                                                                                                                                 |
-| `meeting-header-badge-type`                 | Meeting type                                                                                                                                                                              |
-| `meeting-header-badge-committee-${uid}`     | One committee chip, linking to `/groups/${uid}` in a new tab                                                                                                                              |
-| `meeting-header-badge-recording`            | Recording enabled                                                                                                                                                                         |
-| `meeting-header-badge-transcripts`          | Transcripts enabled                                                                                                                                                                       |
-| `meeting-header-badge-youtube`              | YouTube upload enabled                                                                                                                                                                    |
-| `meeting-header-badge-ai-summary`           | AI summary enabled                                                                                                                                                                        |
-| `meeting-header-copy-link`                  | Copy meeting link                                                                                                                                                                         |
-| `meeting-header-admin-link`                 | Admin view: the organizer's link to `/details`, on an ended meeting's occurrence only (E4-05)                                                                                             |
-| `meeting-status-pill`                       | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                                                                                         |
-| `meeting-privacy-chip`                      | The single privacy chip (see below)                                                                                                                                                       |
-| `meeting-time-banner`                       | The time banner at the top of the rail card (see below)                                                                                                                                   |
-| `meeting-time-banner-date`                  | Its weekday and date, in the viewer's timezone                                                                                                                                            |
-| `meeting-time-banner-time`                  | Its start – end time                                                                                                                                                                      |
-| `meeting-time-banner-timezone`              | Its timezone name                                                                                                                                                                         |
-| `meeting-time-banner-skeleton`              | Its placeholder until the viewer's timezone resolves                                                                                                                                      |
-| `meeting-time-banner-message`               | Its one phase line (starts … / starting soon / in progress / ended)                                                                                                                       |
-| `meeting-time-banner-relative`              | Before the meeting, the ticking relative start (not announced)                                                                                                                            |
-| `meeting-time-banner-phase`                 | The phase sentence, a polite atomic live region that stays mounted                                                                                                                        |
-| `meeting-action-slot`                       | The action slot inside the rail (see below)                                                                                                                                               |
-| `meeting-action-join-button`                | The Join control in the `join` kind (see below)                                                                                                                                           |
-| `meeting-action-join-error`                 | Its error message (`role="alert"`)                                                                                                                                                        |
-| `meeting-action-join-retry`                 | Its error's "Try again" control                                                                                                                                                           |
-| `meeting-action-join-different-email`       | After `NOT_REGISTERED_FOR_MEETING`, the control that opens the guest form to join with another email                                                                                      |
-| `meeting-action-join-different-email-intro` | The line introducing the guest form on that path                                                                                                                                          |
-| `meeting-action-join-explainer`             | "Public meeting. Anyone with this link can join." under Join                                                                                                                              |
-| `meeting-action-join-hint`                  | Before the window, the early-join rule for a viewer who will be able to join                                                                                                              |
-| `meeting-action-sign-in`                    | The slot's sign-in control (`guest-join`, and `register` / `tools` for a visitor)                                                                                                         |
-| `meeting-guest-join-form`                   | The guest join form (`guest-join`, and the different-email path)                                                                                                                          |
-| `meeting-guest-join-name`                   | Its full-name field                                                                                                                                                                       |
-| `meeting-guest-join-email`                  | Its email field                                                                                                                                                                           |
-| `meeting-guest-join-email-hint`             | Its "Enter a valid email address." hint                                                                                                                                                   |
-| `meeting-guest-join-organization`           | Its organization field                                                                                                                                                                    |
-| `meeting-guest-join-button`                 | Its Join control (see below)                                                                                                                                                              |
-| `meeting-guest-join-error`                  | Its error message (`role="alert"`)                                                                                                                                                        |
-| `meeting-action-register-button`            | `register`'s "Register for meeting" control, for a signed-in outsider                                                                                                                     |
-| `meeting-action-message`                    | The slot's line of copy: a finished kind's explanation, or the one line for a kind whose full design is still to come                                                                     |
-| `meeting-rsvp-card`                         | The `rsvp` kind's "Will you attend?" card; carries `data-my-rsvp`                                                                                                                         |
-| `meeting-rsvp-card-${response}`             | One answer button, `accepted` / `maybe` / `declined`; `aria-pressed` once it is the answer                                                                                                |
-| `meeting-rsvp-card-confirmation`            | The given answer ("You're going" …)                                                                                                                                                       |
-| `meeting-rsvp-card-change`                  | Its Change control                                                                                                                                                                        |
-| `meeting-rsvp-card-keep`                    | While changing an answer, "Keep my answer" to back out                                                                                                                                    |
-| `meeting-rsvp-card-announcement`            | Its polite live region; announces a saved answer                                                                                                                                          |
-| `meeting-rsvp-card-scope`                   | On a series, the scope radio group                                                                                                                                                        |
-| `meeting-rsvp-card-scope-${scope}`          | One scope option, `all` / `single` / `this_and_following`                                                                                                                                 |
-| `meeting-rsvp-card-scope-save`              | Saves the answer with the chosen scope                                                                                                                                                    |
-| `meeting-rsvp-card-scope-cancel`            | Back to the answers, without saving                                                                                                                                                       |
-| `meeting-rsvp-card-error`                   | Its error message (`role="alert"`)                                                                                                                                                        |
-| `meeting-organizer`                         | "Organized by" in the rail card                                                                                                                                                           |
-| `meeting-organizer-name`                    | The organizer's display name                                                                                                                                                              |
-| `meeting-error-state`                       | Terminal error state                                                                                                                                                                      |
-| `meeting-error-retry-button`                | The error state's "Try again" control                                                                                                                                                     |
-| `meeting-invitation-required-state`         | The signed-in-outsider / invitation-required state                                                                                                                                        |
-| `meeting-invitation-required-contact`       | Its "Contact the organizer" `mailto:` control                                                                                                                                             |
-| `meeting-invitation-required-support`       | Its "Contact support" control, when the organizer has no usable email                                                                                                                     |
-| `meeting-rsvp-unavailable-state`            | The `rsvp-unavailable` state: an invitee on a meeting without RSVP tracking (N-01)                                                                                                        |
-| `meeting-occurrence-edit-button`            | Organizer's "Edit this occurrence" control                                                                                                                                                |
-| `meeting-occurrence-cancel-button`          | Organizer's "Cancel this occurrence" control                                                                                                                                              |
+| `data-testid`                               | Element                                                                                                               |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `meeting-page-shell`                        | The V2 page container, present in every branch                                                                        |
+| `meeting-skeleton`                          | Loading state (`role="status"`)                                                                                       |
+| `meeting-content-column`                    | The content column                                                                                                    |
+| `meeting-rail`                              | The right-hand column (first, above the content, at ≤ 920px)                                                          |
+| `meeting-identity-bar`                      | The sticky identity bar (see below)                                                                                   |
+| `meeting-identity-bar-home`                 | Its LFX mark, linking home                                                                                            |
+| `meeting-identity-bar-meeting`              | Its meeting identity: date tile, title, subtitle                                                                      |
+| `meeting-identity-bar-title`                | The truncated meeting title                                                                                           |
+| `meeting-identity-bar-subtitle`             | `{group} · {status}`                                                                                                  |
+| `meeting-identity-bar-my-meetings`          | Signed in: My Meetings                                                                                                |
+| `meeting-identity-bar-account`              | Signed in: the account menu button                                                                                    |
+| `meeting-identity-bar-visitor-prompt`       | Visitor: the sign-in prompt                                                                                           |
+| `meeting-identity-bar-create-account`       | Visitor: Create LFX account                                                                                           |
+| `meeting-identity-bar-sign-in`              | Visitor: Sign in                                                                                                      |
+| `meeting-header-section`                    | The header region as a whole                                                                                          |
+| `meeting-header-project`                    | Project context: logo, name, foundation (a button opening the foundation, or plain when the parent is unresolved)     |
+| `meeting-header-foundation`                 | The foundation name under the project                                                                                 |
+| `meeting-header-badges`                     | The badge row                                                                                                         |
+| `meeting-header-badge-recurring`            | Recurring                                                                                                             |
+| `meeting-header-badge-type`                 | Meeting type                                                                                                          |
+| `meeting-header-badge-committee-${uid}`     | One committee chip, linking to `/groups/${uid}` in a new tab                                                          |
+| `meeting-header-badge-recording`            | Recording enabled                                                                                                     |
+| `meeting-header-badge-transcripts`          | Transcripts enabled                                                                                                   |
+| `meeting-header-badge-youtube`              | YouTube upload enabled                                                                                                |
+| `meeting-header-badge-ai-summary`           | AI summary enabled                                                                                                    |
+| `meeting-header-copy-link`                  | Copy meeting link                                                                                                     |
+| `meeting-header-admin-link`                 | Admin view: the organizer's link to `/details`, on an ended meeting's occurrence only (E4-05)                         |
+| `meeting-status-pill`                       | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                     |
+| `meeting-privacy-chip`                      | The single privacy chip (see below)                                                                                   |
+| `meeting-time-banner`                       | The time banner at the top of the rail card (see below)                                                               |
+| `meeting-time-banner-date`                  | Its weekday and date, in the viewer's timezone                                                                        |
+| `meeting-time-banner-time`                  | Its start – end time                                                                                                  |
+| `meeting-time-banner-timezone`              | Its timezone name                                                                                                     |
+| `meeting-time-banner-skeleton`              | Its placeholder until the viewer's timezone resolves                                                                  |
+| `meeting-time-banner-message`               | Its one phase line (starts … / starting soon / in progress / ended)                                                   |
+| `meeting-time-banner-relative`              | Before the meeting, the ticking relative start (not announced)                                                        |
+| `meeting-time-banner-phase`                 | The phase sentence, a polite atomic live region that stays mounted                                                    |
+| `meeting-action-slot`                       | The action slot inside the rail (see below)                                                                           |
+| `meeting-action-join-button`                | The Join control in the `join` kind (see below)                                                                       |
+| `meeting-action-join-error`                 | Its error message (`role="alert"`)                                                                                    |
+| `meeting-action-join-retry`                 | Its error's "Try again" control                                                                                       |
+| `meeting-action-join-different-email`       | After `NOT_REGISTERED_FOR_MEETING`, the control that opens the guest form to join with another email                  |
+| `meeting-action-join-different-email-intro` | The line introducing the guest form on that path                                                                      |
+| `meeting-action-join-explainer`             | "Public meeting. Anyone with this link can join." under Join                                                          |
+| `meeting-action-join-hint`                  | Before the window, the early-join rule for a viewer who will be able to join                                          |
+| `meeting-action-sign-in`                    | The slot's sign-in control (`guest-join`, and `register` / `tools` for a visitor)                                     |
+| `meeting-guest-join-form`                   | The guest join form (`guest-join`, and the different-email path)                                                      |
+| `meeting-guest-join-name`                   | Its full-name field                                                                                                   |
+| `meeting-guest-join-email`                  | Its email field                                                                                                       |
+| `meeting-guest-join-email-hint`             | Its "Enter a valid email address." hint                                                                               |
+| `meeting-guest-join-organization`           | Its organization field                                                                                                |
+| `meeting-guest-join-button`                 | Its Join control (see below)                                                                                          |
+| `meeting-guest-join-error`                  | Its error message (`role="alert"`)                                                                                    |
+| `meeting-action-register-button`            | `register`'s "Register for meeting" control, for a signed-in outsider                                                 |
+| `meeting-action-message`                    | The slot's line of copy: a finished kind's explanation, or the one line for a kind whose full design is still to come |
+| `meeting-rsvp-card`                         | The `rsvp` kind's "Will you attend?" card; carries `data-my-rsvp`                                                     |
+| `meeting-rsvp-card-${response}`             | One answer button, `accepted` / `maybe` / `declined`; `aria-pressed` once it is the answer                            |
+| `meeting-rsvp-card-confirmation`            | The given answer ("You're going" …)                                                                                   |
+| `meeting-rsvp-card-change`                  | Its Change control                                                                                                    |
+| `meeting-rsvp-card-keep`                    | While changing an answer, "Keep my answer" to back out                                                                |
+| `meeting-rsvp-card-announcement`            | Its polite live region; announces a saved answer                                                                      |
+| `meeting-rsvp-card-scope`                   | On a series, the scope radio group                                                                                    |
+| `meeting-rsvp-card-scope-${scope}`          | One scope option, `all` / `single` / `this_and_following`                                                             |
+| `meeting-rsvp-card-scope-save`              | Saves the answer with the chosen scope                                                                                |
+| `meeting-rsvp-card-scope-cancel`            | Back to the answers, without saving                                                                                   |
+| `meeting-rsvp-card-error`                   | Its error message (`role="alert"`)                                                                                    |
+| `meeting-organizer`                         | "Organized by" in the rail card                                                                                       |
+| `meeting-organizer-name`                    | The organizer's display name                                                                                          |
+| `meeting-error-state`                       | Terminal error state                                                                                                  |
+| `meeting-error-retry-button`                | The error state's "Try again" control                                                                                 |
+| `meeting-invitation-required-state`         | The signed-in-outsider / invitation-required state                                                                    |
+| `meeting-invitation-required-contact`       | Its "Contact the organizer" `mailto:` control                                                                         |
+| `meeting-invitation-required-support`       | Its "Contact support" control, when the organizer has no usable email                                                 |
+| `meeting-rsvp-unavailable-state`            | The `rsvp-unavailable` state: an invitee on a meeting without RSVP tracking (N-01)                                    |
+| `meeting-occurrence-edit-button`            | Organizer's "Edit this occurrence" control                                                                            |
+| `meeting-occurrence-cancel-button`          | Organizer's "Cancel this occurrence" control                                                                          |
 
 `meeting-section-placeholder-${section}` (`discover`) marks
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
@@ -245,37 +243,26 @@ browse-all dialog were withdrawn in the scope reset. V1 keeps its own `occurrenc
 
 ## Agenda and materials
 
-| `data-testid`                             | Element                                                                                              |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `agenda-section`                          | Agenda section                                                                                       |
-| `agenda-section-description`              | The description, links made clickable, collapsed past 200px                                          |
-| `agenda-section-empty`                    | Shown when the meeting has no description                                                            |
-| `agenda-section-edit`                     | Edit agenda (organizers, not ended): opens the edit-agenda dialog on the page (O-01)                 |
-| `edit-agenda-dialog`                      | The edit-agenda dialog (O-01): one free-text agenda for the series, or the selected occurrence's own |
-| `edit-agenda-scope`                       | What the edit applies to: this occurrence, every occurrence without its own agenda, or the meeting   |
-| `edit-agenda-input`                       | The agenda textarea (`lfx-textarea`), at most `MEETING_AGENDA_MAX_LENGTH`                            |
-| `edit-agenda-count`                       | Character count, amber from the warning length, red past the limit                                   |
-| `edit-agenda-empty-occurrence`            | An occurrence's own agenda emptied: it can't be removed, only changed                                |
-| `edit-agenda-conflict`                    | The agenda changed since the dialog opened; `edit-agenda-conflict-theirs` shows it                   |
-| `edit-agenda-use-theirs`                  | Keep the newer agenda; a second Save replaces it knowingly                                           |
-| `edit-agenda-moved`                       | The edited occurrence moved or was cancelled meanwhile; nothing is saved                             |
-| `edit-agenda-error`                       | The save failed; the dialog stays open                                                               |
-| `edit-agenda-save` / `edit-agenda-cancel` | Save (disabled until the agenda changes) and Cancel                                                  |
-| `materials-section`                       | Materials section                                                                                    |
-| `materials-file-${uid}`                   | One attached file                                                                                    |
-| `materials-link-${uid}`                   | One attached link                                                                                    |
-| `materials-section-add`                   | Add material (organizers; upcoming, or a past occurrence's page)                                     |
-| `materials-section-updated`               | The "Updated" pill: a change in the last seven days                                                  |
-| `materials-section-loading`               | The list's first load                                                                                |
-| `materials-section-sign-in`               | Sign in to view the materials (anonymous and refused)                                                |
-| `materials-section-sign-in-link`          | Its Sign in link                                                                                     |
-| `materials-section-error`                 | The list failed to load, with nothing to fall back on                                                |
-| `materials-section-retry`                 | Its Try again                                                                                        |
-| `materials-section-empty`                 | None attached                                                                                        |
-| `materials-section-files`                 | The files group ("Primary materials")                                                                |
-| `materials-section-links`                 | The links group ("Supporting materials")                                                             |
-| `materials-section-files-toggle`          | Show N more / Show less for files                                                                    |
-| `materials-section-links-toggle`          | Show N more / Show less for links                                                                    |
+| `data-testid`                    | Element                                                          |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `agenda-section`                 | Agenda section                                                   |
+| `agenda-section-description`     | The description, links made clickable, collapsed past 200px      |
+| `agenda-section-empty`           | Shown when the meeting has no description                        |
+| `materials-section`              | Materials section                                                |
+| `materials-file-${uid}`          | One attached file                                                |
+| `materials-link-${uid}`          | One attached link                                                |
+| `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page) |
+| `materials-section-updated`      | The "Updated" pill: a change in the last seven days              |
+| `materials-section-loading`      | The list's first load                                            |
+| `materials-section-sign-in`      | Sign in to view the materials (anonymous and refused)            |
+| `materials-section-sign-in-link` | Its Sign in link                                                 |
+| `materials-section-error`        | The list failed to load, with nothing to fall back on            |
+| `materials-section-retry`        | Its Try again                                                    |
+| `materials-section-empty`        | None attached                                                    |
+| `materials-section-files`        | The files group ("Primary materials")                            |
+| `materials-section-links`        | The links group ("Supporting materials")                         |
+| `materials-section-files-toggle` | Show N more / Show less for files                                |
+| `materials-section-links-toggle` | Show N more / Show less for links                                |
 
 Files and links are separate prefixes rather than one `materials-item-${uid}` because E3-05 groups
 attachments by category, and a test for the grouping needs to assert on type without first reading
@@ -283,38 +270,37 @@ the row's contents.
 
 ## People
 
-| `data-testid`                            | Element                                                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `people-section`                         | The roster section                                                                                                       |
-| `people-section-count`                   | "{n} invited": the roster's rows (less guests just removed) plus guests just added that the index has not caught up with |
-| `people-section-add`                     | Add guest (organizers, upcoming only)                                                                                    |
-| `people-section-loading`                 | The roster's first load                                                                                                  |
-| `people-section-error`                   | The roster failed to load, with nothing to fall back on                                                                  |
-| `people-section-retry`                   | Its Try again                                                                                                            |
-| `people-section-empty`                   | Nobody invited yet (upcoming); nobody listed (past)                                                                      |
-| `people-section-indexing`                | Added guests counted but not listed yet                                                                                  |
-| `people-section-tallies`                 | The RSVP tallies (RSVP tracking on only)                                                                                 |
-| `people-section-tally-${status}`         | One tally: `accepted`, `maybe`, `declined`, `pending`                                                                    |
-| `people-section-list`                    | The rows shown on the page (the first five; past: all of them after Show all)                                            |
-| `participant-row-${uid}`                 | One participant row                                                                                                      |
-| `people-section-view-all`                | Opens the full list (upcoming: the drawer; past: Show all / Show fewer inline, `aria-expanded`)                          |
-| `people-drawer`                          | The full list's drawer (V1's guest list inside)                                                                          |
-| `people-drawer-title`                    | Its title: Meeting Members (a committee meeting) or Meeting Guests                                                       |
-| `registrant-display-email-${uid}`        | In the drawer's guest list, a guest's email, wrapped: organizers only (O-04); never on V1's surfaces                     |
-| `people-drawer-count`                    | Its "{n} guests" / "{n} members" (a loaded roster only)                                                                  |
-| `people-drawer-close`                    | Its close button                                                                                                         |
-| `people-section-no-access`               | Past roster: the BFF refused it (403, E4-05)                                                                             |
-| `people-section-sign-in`                 | Past roster: the session lapsed (401), with `people-section-sign-in-link`                                                |
-| `people-past-attendance`                 | Past roster: the attendance figures (shared with the admin page)                                                         |
-| `people-past-rate`                       | Their rate, `—` when nobody is counted                                                                                   |
-| `people-past-rate-bar[data-tone]`        | The rate bar: `low`, `medium` or `high` (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`)                                      |
-| `people-past-attended`                   | "{n} of {total} attended"                                                                                                |
-| `people-past-absent`                     | "{n} absent"                                                                                                             |
-| `people-past-filter-invitation-${value}` | Invitation filter: `all`, `invited`, `not-invited` (`aria-pressed`)                                                      |
-| `people-past-filter-attendance-${value}` | Attendance filter: `all`, `attended`, `absent` (`aria-pressed`)                                                          |
-| `people-past-status`                     | Past roster: the screen-reader status line ("Showing n of m people." / no match)                                         |
-| `people-past-filter-empty`               | Nobody matches the filters                                                                                               |
-| `people-past-unidentified`               | Attendees counted but not listed (identity not verified, N-02)                                                           |
+| `data-testid`                            | Element                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `people-section`                         | The roster section                                                                              |
+| `people-section-count`                   | "{n} invited", the fetched roster's length                                                      |
+| `people-section-add`                     | Add guest (organizers, upcoming only)                                                           |
+| `people-section-loading`                 | The roster's first load                                                                         |
+| `people-section-error`                   | The roster failed to load, with nothing to fall back on                                         |
+| `people-section-retry`                   | Its Try again                                                                                   |
+| `people-section-empty`                   | Nobody invited yet (upcoming); nobody listed (past)                                             |
+| `people-section-indexing`                | Added guests counted but not listed yet                                                         |
+| `people-section-tallies`                 | The RSVP tallies (RSVP tracking on only)                                                        |
+| `people-section-tally-${status}`         | One tally: `accepted`, `maybe`, `declined`, `pending`                                           |
+| `people-section-list`                    | The rows shown on the page (the first five; past: all of them after Show all)                   |
+| `participant-row-${uid}`                 | One participant row                                                                             |
+| `people-section-view-all`                | Opens the full list (upcoming: the drawer; past: Show all / Show fewer inline, `aria-expanded`) |
+| `people-drawer`                          | The full list's drawer (V1's guest list inside)                                                 |
+| `people-drawer-title`                    | Its title: Meeting Members (a committee meeting) or Meeting Guests                              |
+| `people-drawer-count`                    | Its "{n} guests" / "{n} members" (a loaded roster only)                                         |
+| `people-drawer-close`                    | Its close button                                                                                |
+| `people-section-no-access`               | Past roster: the BFF refused it (403, E4-05)                                                    |
+| `people-section-sign-in`                 | Past roster: the session lapsed (401), with `people-section-sign-in-link`                       |
+| `people-past-attendance`                 | Past roster: the attendance figures (shared with the admin page)                                |
+| `people-past-rate`                       | Their rate, `—` when nobody is counted                                                          |
+| `people-past-rate-bar[data-tone]`        | The rate bar: `low`, `medium` or `high` (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`)             |
+| `people-past-attended`                   | "{n} of {total} attended"                                                                       |
+| `people-past-absent`                     | "{n} absent"                                                                                    |
+| `people-past-filter-invitation-${value}` | Invitation filter: `all`, `invited`, `not-invited` (`aria-pressed`)                             |
+| `people-past-filter-attendance-${value}` | Attendance filter: `all`, `attended`, `absent` (`aria-pressed`)                                 |
+| `people-past-status`                     | Past roster: the screen-reader status line ("Showing n of m people." / no match)                |
+| `people-past-filter-empty`               | Nobody matches the filters                                                                      |
+| `people-past-unidentified`               | Attendees counted but not listed (identity not verified, N-02)                                  |
 
 Upcoming and past rows come from different data, so they carry different state attributes. An
 upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP

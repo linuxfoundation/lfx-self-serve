@@ -2604,7 +2604,7 @@ export class MeetingController {
    * Out-of-range values fall back to the default rather than being pinned to the nearest bound: a cap
    * of 1 is honoured nonsense that guarantees a useless completion, and the caller still pays for it.
    * A caller that asked for an out-of-range cap gets no signal that it was substituted — acceptable
-   * because both callers in the app (the V1 wizard and the composer) send `MEETING_AGENDA_MAX_LENGTH`.
+   * because the only caller in the app sends `MEETING_AGENDA_MAX_LENGTH` itself.
    */
   private static resolveAgendaMaxCharacters(value: unknown): number {
     const parsed = typeof value === 'number' ? value : Number.NaN;

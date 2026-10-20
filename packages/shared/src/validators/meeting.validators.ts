@@ -3,8 +3,6 @@
 
 import { AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 
-import { MEETING_AGENDA_MAX_LENGTH } from '../constants/meeting.constants';
-
 import { combineDateTime, isDateTimeInFutureForTimezone } from '../utils/date-time.utils';
 
 /**
@@ -143,9 +141,9 @@ export function meetingAgendaValidator(): ValidatorFn {
       return { minLength: { requiredLength: 10, actualLength: value.trim().length } };
     }
 
-    // The shared agenda limit, as every agenda input enforces it (#3612)
-    if (value.length > MEETING_AGENDA_MAX_LENGTH) {
-      return { maxLength: { requiredLength: MEETING_AGENDA_MAX_LENGTH, actualLength: value.length } };
+    // Check maximum length
+    if (value.length > 5000) {
+      return { maxLength: { requiredLength: 5000, actualLength: value.length } };
     }
 
     return null;

@@ -867,17 +867,14 @@ export const COMPOSER_ATTENDEE_LOCK: ShowMeetingAttendeesLockOptions = { allowRe
 // Meeting Duration Options
 // ============================================================================
 
-/**
- * Character limit for the meeting agenda (`description`), the one every agenda input and validator uses
- * (#3612): upstream's own cap on the field.
- */
+/** Character limit for the meeting agenda (`description`) */
 export const MEETING_AGENDA_MAX_LENGTH = 2000;
 
 /** Character limit for the note sent with a cancelled occurrence (matches the upstream ITX cap) */
 export const MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH = 4000;
 
-/** Agenda length at which the character counter turns amber: 90% of the limit */
-export const MEETING_AGENDA_WARNING_LENGTH = Math.round(MEETING_AGENDA_MAX_LENGTH * 0.9);
+/** Agenda length at which the character counter turns amber */
+export const MEETING_AGENDA_WARNING_LENGTH = 1800;
 
 /**
  * Character limit for each free-text descriptor fed to the AI agenda helper — the goal and the

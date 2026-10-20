@@ -42,16 +42,11 @@ export class MeetingIdentityBarComponent {
   /** Whether the account menu is open, for the trigger's `aria-expanded`. */
   protected readonly accountMenuOpen = signal(false);
 
-  /**
-   * The account menu (E10-03, #3603): Manage identities, Profile and Logout, under a plain line saying
-   * who is signed in (the menu's start, not a menu item, so it is read and never skipped as disabled).
-   * No account switcher and no credential input: an identity links to one LFX account, so the remedy
-   * for a second address is linking it on the identities page, and sign-in stays with Auth0. While
-   * impersonating, the banner says whose account it is, and identity changes are blocked: neither the
-   * line nor Manage identities shows.
-   */
-  protected readonly userMenuItems: Signal<MenuItem[]> = this.initUserMenuItems();
-  protected readonly accountLabel: Signal<string> = this.initAccountLabel();
+  protected readonly userMenuItems: MenuItem[] = [
+    { label: 'Profile', icon: 'fa-light fa-user', routerLink: '/profile' },
+    { separator: true },
+    { label: 'Logout', icon: 'fa-light fa-sign-out', url: '/logout', target: '_self' },
+  ];
 
   protected readonly meeting = computed(() => (this.state.status() === 'ready' ? this.state.meeting() : undefined));
   /** Start of the page's selected occurrence (the state service's), else of the meeting itself. */
@@ -82,27 +77,6 @@ export class MeetingIdentityBarComponent {
       // The state service's status, which the header's pill shows too (E1-05).
       const label = MEETING_STATUS_LABELS[status];
       return [meeting.project?.name, label].filter(Boolean).join(' · ');
-    });
-  }
-
-  private initUserMenuItems(): Signal<MenuItem[]> {
-    return computed(() => [
-      // Not while impersonating: every identity change is blocked then, and the page would be someone else's.
-      ...(this.userService.impersonating()
-        ? []
-        : [{ label: 'Manage identities', icon: 'fa-light fa-id-card', routerLink: '/profile/identities', id: 'meeting-identity-bar-manage-identities' }]),
-      { label: 'Profile', icon: 'fa-light fa-user', routerLink: '/profile' },
-      { separator: true },
-      { label: 'Logout', icon: 'fa-light fa-sign-out', url: '/logout', target: '_self' },
-    ]);
-  }
-
-  /** The trigger's accessible name: whose account, with the email the narrow layout hides. */
-  private initAccountLabel(): Signal<string> {
-    return computed(() => {
-      const user = this.userService.user();
-      const name = user?.name || 'your account';
-      return user?.email ? `Account menu for ${name}, ${user.email}` : `Account menu for ${name}`;
     });
   }
 }

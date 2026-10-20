@@ -26,8 +26,6 @@ describe('MeetingIdentityBarComponent', () => {
   let setLens: ReturnType<typeof vi.fn>;
   let meetingStatus: WritableSignal<MeetingStatusKind | null>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
-  let impersonating: WritableSignal<boolean>;
-  let user: WritableSignal<User | null>;
 
   // A start a year out, so the subtitle's status is "Upcoming" whatever day the suite runs.
   const start = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
@@ -54,8 +52,8 @@ describe('MeetingIdentityBarComponent', () => {
           provide: UserService,
           useValue: {
             authenticated,
-            impersonating,
-            user,
+            impersonating: signal(false),
+            user: signal({ name: 'Ada Example', email: 'ada@acme-motors.example' } as User),
             effectiveAvatarUrl: signal(''),
           },
         },
@@ -83,8 +81,6 @@ describe('MeetingIdentityBarComponent', () => {
   const query = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
 
   beforeEach(() => {
-    impersonating = signal(false);
-    user = signal<User | null>({ name: 'Ada Example', email: 'ada@acme-motors.example' } as User);
     authenticated = signal(true);
     status = signal<MeetingDetailsLoadStatus>('ready');
     queryParamMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({}));
@@ -98,8 +94,7 @@ describe('MeetingIdentityBarComponent', () => {
       await create();
 
       expect(query('meeting-identity-bar-my-meetings')).not.toBeNull();
-      // The email too: the narrow layout hides it on the trigger.
-      expect(query('meeting-identity-bar-account')?.getAttribute('aria-label')).toBe('Account menu for Ada Example, ada@acme-motors.example');
+      expect(query('meeting-identity-bar-account')?.getAttribute('aria-label')).toBe('Account menu for Ada Example');
       expect(query('meeting-identity-bar-sign-in')).toBeNull();
     });
 
@@ -114,43 +109,6 @@ describe('MeetingIdentityBarComponent', () => {
       fixture.detectChanges();
 
       expect(account?.getAttribute('aria-expanded')).toBe('true');
-    });
-
-    const openMenu = async (): Promise<HTMLElement> => {
-      await create();
-      query('meeting-identity-bar-account')?.click();
-      await fixture.whenStable();
-      fixture.detectChanges();
-      return fixture.nativeElement.querySelector('[data-testid="meeting-identity-bar"]');
-    };
-
-    it('says who is signed in as plain text, and links to Manage identities, with no switcher or credential input', async () => {
-      const bar = await openMenu();
-
-      const signedIn = query('meeting-identity-bar-signed-in-as');
-      expect(signedIn?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Signed in as ada@acme-motors.example');
-      // Read with the menu, not skipped as a disabled item.
-      expect(signedIn?.closest('[role="menuitem"]')).toBeNull();
-      expect(bar.querySelector('#meeting-identity-bar-manage-identities a')?.getAttribute('href')).toBe('/profile/identities');
-      expect(bar.textContent).not.toMatch(/switch account/i);
-      expect(bar.querySelector('input[type="password"], input[type="email"]')).toBeNull();
-    });
-
-    it('shows neither while impersonating: the banner says whose account it is, and identity changes are blocked', async () => {
-      impersonating = signal(true);
-      const bar = await openMenu();
-
-      expect(query('meeting-identity-bar-signed-in-as')).toBeNull();
-      expect(bar.querySelector('#meeting-identity-bar-manage-identities')).toBeNull();
-      expect(bar.textContent).toContain('Profile');
-    });
-
-    it('omits the signed-in line for an account without an email', async () => {
-      user = signal<User | null>({ name: 'Ada Example' } as User);
-      await openMenu();
-
-      expect(query('meeting-identity-bar-signed-in-as')).toBeNull();
-      expect(query('meeting-identity-bar-account')?.getAttribute('aria-label')).toBe('Account menu for Ada Example');
     });
 
     it('sends My Meetings to the meetings list under the Me lens', async () => {

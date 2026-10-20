@@ -163,12 +163,6 @@
               </a>
             }
           </div>
-          @if (showEmail() && registrant.email) {
-            <!-- Wraps rather than truncates: the organizer must be able to read and copy the whole address. -->
-            <p class="text-gray-500 text-sm leading-relaxed tracking-tight break-all" [attr.data-testid]="'registrant-display-email-' + registrant.uid">
-              {{ registrant.email }}
-            </p>
-          }
           @if (registrant.job_title || registrant.org_name) {
             <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
               @if (registrant.job_title && registrant.org_name) {

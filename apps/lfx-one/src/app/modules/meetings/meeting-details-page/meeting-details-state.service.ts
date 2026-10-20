@@ -13,7 +13,6 @@ import {
   MeetingDetailsLoadStatus,
   MeetingJoinPageState,
   MeetingOccurrence,
-  MeetingAgendaOverride,
   MeetingPrivacyState,
   MeetingRosterRequest,
   MeetingRsvp,
@@ -183,11 +182,6 @@ export class MeetingDetailsStateService {
    * by its composite id, where the meeting payload is the occurrence itself.
    */
   public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
-  /**
-   * An agenda the organizer just saved (O-01), shown until the next read of the meeting replaces it, so
-   * the section updates at once rather than after the round trip.
-   */
-  public readonly agendaOverride = signal<MeetingAgendaOverride | null>(null);
   /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
   public readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
   /**
@@ -573,8 +567,6 @@ export class MeetingDetailsStateService {
         this.loadFailed.set(false);
         this.failureCount.set(0);
         this.retrying.set(false);
-        // A fresh read carries any saved agenda itself.
-        this.agendaOverride.set(null);
         this.resolvedRouteId.set(this.routeId());
         if (isPlatformServer(this.platformId)) {
           this.transferState.set(this.stateKey, {
