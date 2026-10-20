@@ -12,6 +12,11 @@ export const IMPERSONATION_USER_NOT_FOUND_MESSAGE =
 
 export const IMPERSONATION_START_FAILED_MESSAGE = 'We could not start impersonation. Please try again.';
 
+/** Error code for a switch request that names the user already being impersonated. */
+export const IMPERSONATION_ALREADY_TARGET_CODE = 'ALREADY_IMPERSONATING_TARGET';
+
+export const IMPERSONATION_ALREADY_TARGET_MESSAGE = 'You are already impersonating this user. Choose a different user to switch to.';
+
 /**
  * Rendered height of the fixed impersonation banner. `styles.scss` sets the root font size to
  * 14px, so Tailwind's rem-based `h-12`/`min-h-12` (`3rem`) undershoots to 42px, not 48px — see

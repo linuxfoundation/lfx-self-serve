@@ -58,6 +58,18 @@ describe('ImpersonationController.startImpersonation', () => {
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ impersonating: true }));
   });
 
+  it('rejects switching to the user already being impersonated', async () => {
+    decodeJwtPayload.mockImplementation((token: string) =>
+      token === 'target-token' ? { sub: 'auth0|target' } : { 'http://lfx.dev/claims/can_impersonate': true }
+    );
+    const req = buildReq({ impersonationToken: 'old-target-token', impersonationUser: { sub: 'auth0|target' } });
+
+    await controller.startImpersonation(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409, code: 'ALREADY_IMPERSONATING_TARGET' }));
+    expect(startImpersonation).not.toHaveBeenCalled();
+  });
+
   it('fails closed when the real session token cannot be resolved', async () => {
     resolveRealAccessToken.mockResolvedValue(null);
 

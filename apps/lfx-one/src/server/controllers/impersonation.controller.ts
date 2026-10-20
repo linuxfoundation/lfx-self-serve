@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALID_PERSONAS } from '@lfx-one/shared/constants';
+import { IMPERSONATION_ALREADY_TARGET_CODE, IMPERSONATION_ALREADY_TARGET_MESSAGE, VALID_PERSONAS } from '@lfx-one/shared/constants';
 import { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { ImpersonationService } from '../services/impersonation.service';
 import { decodeJwtPayload, resolveRealAccessToken } from '../utils/auth-helper';
@@ -65,6 +65,17 @@ export class ImpersonationController {
 
       if (!targetClaims) {
         throw new Error('Failed to decode target user claims from CTE response');
+      }
+
+      const currentTargetSub = req.appSession?.['impersonationUser']?.sub;
+      if (req.appSession?.['impersonationToken'] && currentTargetSub && currentTargetSub === targetClaims['sub']) {
+        next(
+          new MicroserviceError(IMPERSONATION_ALREADY_TARGET_MESSAGE, 409, IMPERSONATION_ALREADY_TARGET_CODE, {
+            operation: 'start_impersonation',
+            service: 'impersonation',
+          })
+        );
+        return;
       }
 
       const profile = await this.impersonationService.fetchTargetUserProfile(req, targetClaims['sub']);
