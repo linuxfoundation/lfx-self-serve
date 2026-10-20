@@ -190,7 +190,7 @@ const { MeetingController } = await import('./meeting.controller');
 // The stubbed logger, imported after the mock is registered, so the metadata assertions read the same
 // object the controller writes to.
 const { logger } = await import('../services/logger.service');
-const { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth } = await import('../utils/auth-helper');
+const { getEffectiveEmail, getEffectiveUsername, getRealEmail, getRealUsername, isImpersonating, getUsernameFromAuth } = await import('../utils/auth-helper');
 const { buildMeetingCalendarEvents, buildVCalendar } = await import('../helpers/ics.helper');
 
 function buildRes(): Response {
@@ -1358,6 +1358,22 @@ describe('MeetingController', () => {
 
       expect(meetingSvc.getMeetingRegistrantsByUsername).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'alice');
       expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'alice@example.com');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("resolves a restricted meeting's join link from the impersonator's own identity, not the impersonation target's", async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(isImpersonating).mockReturnValueOnce(true);
+      vi.mocked(getRealUsername).mockReturnValueOnce('operator');
+      vi.mocked(getRealEmail).mockReturnValueOnce('operator@example.com');
+      meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([{ email: 'operator-invite@example.com' }]);
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(meetingSvc.getMeetingRegistrantsByUsername).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'operator');
+      expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'operator-invite@example.com');
+      expect(getEffectiveEmail).not.toHaveBeenCalled();
+      expect(getEffectiveUsername).not.toHaveBeenCalled();
       expect(next).not.toHaveBeenCalled();
     });
 

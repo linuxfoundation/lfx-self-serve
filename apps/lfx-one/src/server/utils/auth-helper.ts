@@ -122,16 +122,17 @@ export function getRawEffectiveEmail(req: Request): string | null {
 }
 
 /**
- * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — the one
- * identity getter in this file that does NOT resolve to the impersonation target. `req.oidc.user`
- * is always the actual authenticated user's OIDC session, impersonation or not (impersonation is
- * layered on top via `req.appSession`, never by replacing `req.oidc.user`), so this is just
- * `getEffectiveEmail`'s non-impersonating branch, unconditionally — including its null for an
- * unverified email.
+ * Gets the REAL (impersonator's own) email, deliberately ignoring impersonation state — one of
+ * the real-identity getters in this file (with `getRealUsername`) that do NOT resolve to the
+ * impersonation target. `req.oidc.user` is always the actual authenticated user's OIDC session,
+ * impersonation or not (impersonation is layered on top via `req.appSession`, never by replacing
+ * `req.oidc.user`), so this is just `getEffectiveEmail`'s non-impersonating branch,
+ * unconditionally — including its null for an unverified email.
  *
- * Use this only where the real actor's identity — not the target's — must be attributed for a
- * genuinely externally-visible, hard-to-retract action (e.g. weekly-brief mailing-list share,
- * LFXV2-3093). Most callers want `getEffectiveEmail` instead.
+ * Use this only where the real actor — not the target — must be attributed or must act as
+ * themselves: a genuinely externally-visible, hard-to-retract action (e.g. weekly-brief
+ * mailing-list share, LFXV2-3093), or joining a meeting. Most callers want `getEffectiveEmail`
+ * instead.
  */
 export function getRealEmail(req: Request): string | null {
   return getVerifiedOidcEmail(req)?.toLowerCase() || null;
