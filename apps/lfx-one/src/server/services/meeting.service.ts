@@ -50,7 +50,6 @@ import {
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
-  maskEmailForLogs,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   selectApplicableRsvp,
@@ -1015,10 +1014,10 @@ export class MeetingService {
       page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
-    // Masked, not raw: the address is the viewer's verified email (PII), and `params` carries it too.
-    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email', {
+    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', {
       meeting_id: meetingUid,
-      email: maskEmailForLogs(normalizedEmail),
+      email: normalizedEmail,
+      params,
     });
 
     const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
@@ -2366,7 +2365,7 @@ export class MeetingService {
    * Fetches committee names for all unique committees referenced in meetings.
    * Returns a Map of committee UID -> committee name for merging into meeting data.
    */
-  private async getCommitteeNameMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, string>> {
+  private async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
     const uniqueCommitteeUids = [
       ...new Set(
         meetings
@@ -2399,20 +2398,11 @@ export class MeetingService {
         fetchAllQueryResources<Committee>(
           req,
           (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
-              req,
-              'LFX_V2_SERVICE',
-              '/query/resources',
-              'GET',
-              {
-                type: 'committee',
-                filters_or: batch.map((uid) => `uid:${uid}`),
-                ...(pageToken && { page_token: pageToken }),
-              },
-              undefined,
-              undefined,
-              options
-            ),
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'committee',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
           { failOnPartial: true }
         )
       )

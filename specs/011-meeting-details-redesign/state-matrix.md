@@ -122,7 +122,7 @@ parity · `fix` V2 deliberately repairs a V1 dead end · `D-n` the row a decisio
 | outsider   | public/private-restricted (pw) | —   | **empty column, no copy**                                     | `invitation-required` | fix                        |
 | outsider   | private-open (pw)              | —   | empty column                                                  | `none`                | = (D-3)                    |
 | registrant | any                            | on  | RSVP (+ scope modal on series)                                | `rsvp`                | =                          |
-| registrant | any                            | off | **empty column** (Register needs `!invited`)                  | `rsvp-unavailable`    | fix (N-01)                 |
+| registrant | any                            | off | **empty column** (Register needs `!invited`)                  | `rsvp-unavailable`    | = (empty rail)             |
 | organizer  | any                            | on  | organizer card: RSVP aggregate, Set/Update My RSVP if invited | `rsvp`                | =                          |
 | organizer  | any                            | off | organizer card: "N invited" only                              | `none`                | = (count stays in content) |
 
