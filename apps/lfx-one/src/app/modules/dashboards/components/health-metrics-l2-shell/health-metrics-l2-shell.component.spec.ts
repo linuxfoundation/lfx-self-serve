@@ -138,6 +138,7 @@ class FakeResizeObserver implements ResizeObserver {
 describe('HealthMetricsL2ShellComponent', () => {
   // Both are patched onto objects this suite does not own, so they are restored after every test.
   const originalScrollIntoView = Element.prototype.scrollIntoView;
+  const originalInnerHeight = window.innerHeight;
   let fixture: ComponentFixture<TestHostComponent>;
   let chrome: HealthMetricsChromeService;
   let fragment: BehaviorSubject<string | null>;
@@ -228,9 +229,16 @@ describe('HealthMetricsL2ShellComponent', () => {
     await setup(initialFragment, platformId, dataSections);
   }
 
-  /** Stubs the document's `scrollHeight`, which `pageScrolls()` reads to decide whether the page needs to scroll. */
-  function stubDocumentHeight(px: number): void {
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: px });
+  // jsdom lays out nothing, so the end sentinel's page-relative top is stubbed: below the fold, only
+  // scrolling can reach it and both sentinels are observed; above it, neither is.
+  let endSentinelTop = 0;
+  function stubEndSentinelTop(px: number): void {
+    endSentinelTop = px;
+  }
+
+  /** The heading band's bottom margin: everything below the top 30% of the viewport left under the header. */
+  function bandBottomPx(offset: number): number {
+    return Math.round(Math.max(window.innerHeight - offset, 0) * 0.7);
   }
 
   beforeEach(async () => {
@@ -238,9 +246,11 @@ describe('HealthMetricsL2ShellComponent', () => {
     FakeResizeObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
     vi.stubGlobal('ResizeObserver', FakeResizeObserver);
-    // jsdom reports a zero-height document, which would read as a page that needs no scrolling and
-    // skip the end sentinel entirely.
-    stubDocumentHeight(window.innerHeight + 50);
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const top = this.matches('[data-testid$="-scroll-end-sentinel"]') ? endSentinelTop : 0;
+      return { top, bottom: top, left: 0, right: 0, width: 0, height: 0, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+    stubEndSentinelTop(window.innerHeight + 50);
     // Not implemented in jsdom, and the deep-link path calls it on a real section element.
     Element.prototype.scrollIntoView = vi.fn();
 
@@ -251,7 +261,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     vi.unstubAllGlobals();
     // The getElementById spies below would otherwise survive into the next TestBed render.
     vi.restoreAllMocks();
-    delete (document.documentElement as unknown as { scrollHeight?: number }).scrollHeight;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight });
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
@@ -320,11 +330,11 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
   });
 
-  it('leaves the scroll spy alone when a document resize keeps the page scrolling', async () => {
+  it('leaves the scroll spy alone when a document resize keeps the sections below the fold', async () => {
     const spyBefore = spyObserver();
 
-    // Sections settling after first paint; still past the innerHeight+1 threshold pageScrolls() checks.
-    stubDocumentHeight(window.innerHeight + 90);
+    // Sections settling after first paint; the end sentinel still starts below the first screen.
+    stubEndSentinelTop(window.innerHeight + 90);
     FakeResizeObserver.instances[0].trigger();
     // The debounced subscriber runs on a real timer; 200ms clears the 150ms debounceTime with margin.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -333,22 +343,22 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(spyObserver()).toBe(spyBefore);
   });
 
-  it('rebuilds the scroll spy when a document resize makes the page newly scrollable', async () => {
-    // Starts with nothing to scroll, so pageScrolls() is false and only the heading observer exists.
-    stubDocumentHeight(0);
+  it('rebuilds the scroll spy when a document resize pushes the sections past the fold', async () => {
+    // Starts with the sections ending above the fold, so only the heading observer exists.
+    stubEndSentinelTop(0);
     await resetup();
 
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
     const spyBefore = spyObserver();
 
-    stubDocumentHeight(window.innerHeight * 3);
+    stubEndSentinelTop(window.innerHeight * 3);
     FakeResizeObserver.instances[0].trigger();
     // 200ms clears the 150ms debounceTime with margin.
     await new Promise((resolve) => setTimeout(resolve, 200));
     await flush();
 
     // The rebuild tears down the heading observer and creates a new heading observer plus the start
-    // and end sentinel observers, now that the page genuinely overflows.
+    // and end sentinel observers, now that only scrolling can reach the end.
     expect(spyObserver()).not.toBe(spyBefore);
     expect(FakeIntersectionObserver.instances).toHaveLength(4);
   });
@@ -357,7 +367,22 @@ describe('HealthMetricsL2ShellComponent', () => {
     const observer = spyObserver();
 
     expect(observer.observed).toHaveLength(SECTIONS.length);
-    expect(observer.rootMargin).toBe(`-${chrome.stickyTopPx()}px 0px -70% 0px`);
+    expect(observer.rootMargin).toBe(`-${chrome.stickyTopPx()}px 0px -${bandBottomPx(chrome.stickyTopPx())}px 0px`);
+  });
+
+  // A percentage bottom margin is of the whole viewport, so on a short window it would close the band
+  // below the header entirely; a pixel band keeps the top 30% of what is left open.
+  it('keeps the band open on a short window, and resizes it with the viewport', async () => {
+    const offset = chrome.stickyTopPx();
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    const before = spyObserver();
+
+    window.dispatchEvent(new Event('resize'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await flush();
+
+    expect(before.disconnected).toBe(true);
+    expect(spyObserver().rootMargin).toBe(`-${offset}px 0px -${Math.round((400 - offset) * 0.7)}px 0px`);
   });
 
   it('rebuilds the observer when the gate re-measures the sticky header', () => {
@@ -367,7 +392,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     fixture.detectChanges();
 
     expect(before.disconnected).toBe(true);
-    expect(spyObserver().rootMargin).toBe('-136px 0px -70% 0px');
+    expect(spyObserver().rootMargin).toBe(`-136px 0px -${bandBottomPx(136)}px 0px`);
   });
 
   it('lights exactly one item, the topmost intersecting heading', () => {
@@ -462,11 +487,12 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(activeKey()).toBe('alpha');
   });
 
-  it('skips the end sentinel when there is nothing to scroll', async () => {
-    stubDocumentHeight(0);
+  // The page can still scroll here, on the footer alone; the sentinels are skipped all the same.
+  it('skips the sentinels while the sections end above the fold', async () => {
+    stubEndSentinelTop(window.innerHeight - 100);
     await resetup();
 
-    // Otherwise the sentinel intersects from first paint and pins the rail to the last section.
+    // Otherwise the end sentinel intersects from first paint and pins the rail to the last section.
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
   });
 
@@ -483,14 +509,14 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(scrollIntoView()).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
   });
 
-  it('observes the end sentinel once a settled section makes the area scroll', async () => {
-    // Short placeholder sections can leave the first pass with nothing to scroll.
-    stubDocumentHeight(0);
+  it('observes the end sentinel once a settled section pushes it past the fold', async () => {
+    // Short placeholder sections can leave the first pass ending above the fold.
+    stubEndSentinelTop(0);
     await resetup();
 
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
 
-    stubDocumentHeight(window.innerHeight * 3);
+    stubEndSentinelTop(window.innerHeight * 3);
     child('beta').settled.emit();
     await flush();
 
