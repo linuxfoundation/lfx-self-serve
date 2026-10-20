@@ -619,6 +619,42 @@ export class VoteController {
   }
 
   /**
+   * GET /votes/:uid/voters — every invited voter with their status and current ballot (#3911).
+   * Gated on `vote#writer` before any read: every vote auditor can read the underlying
+   * `vote_response` rows. The service refuses drafts and pseudo-anonymous votes before reading them.
+   */
+  public async getVoteVoters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_voters', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_voters',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertVoteWrite(req, uid, 'get_vote_voters');
+
+      const voters = await this.voteService.getVoteVoters(req, uid);
+
+      logger.success(req, 'get_vote_voters', startTime, {
+        vote_uid: uid,
+        voter_count: voters.length,
+      });
+
+      res.json(voters);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /votes/:uid/reminders — resends the vote email to the selected recipients (#3769).
    * The service writer-checks before re-reading eligible non-voters; a stale selection rejects
    * the whole batch. Upstream additionally validates membership and active state.

@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
+import type {
+  IndexedVoteResponseStatus,
+  IndividualVoteStatus,
+  PollStatus,
+  PollType,
+  VoteResponseStatus,
+  VoteRowParticipationState,
+  VoteVoterStatus,
+} from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
 import type { CommitteeReference } from './committee.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
@@ -117,6 +125,14 @@ export interface PollAnswer {
   ranked_user_choice: UserChoice[];
   /** Total voters for this question */
   total_voters?: number;
+}
+
+/** Indexed answer wire format: upstream omits empty choice arrays. */
+export interface IndexedPollAnswer extends Omit<PollAnswer, 'user_choice' | 'ranked_user_choice'> {
+  /** Selected choices for non-ranked questions; omitted when empty */
+  user_choice?: UserChoice[];
+  /** Ranked choices for ranked questions; omitted when empty */
+  ranked_user_choice?: UserChoice[];
 }
 
 /**
@@ -387,8 +403,18 @@ export interface IndexedVoteResponse {
   user_role?: string;
   /** Invitee's voting eligibility status (e.g. `'Voting Rep'`) */
   user_voting_status?: string;
-  /** When the ballot was cast — empty until the invitee votes */
+  /** When the ballot was cast — empty until the invitee votes; ITX rewrites it on every ballot change */
   vote_creation_time?: string;
+  /** Whether the submitted ballot was an abstention */
+  abstained?: boolean;
+  /** The invitee's answers to the poll questions — empty until the invitee votes */
+  poll_answers?: IndexedPollAnswer[];
+  /** The invitee's free-text responses to comment prompts — may be present on an abstention */
+  comment_responses?: CommentResponseInput[];
+  /** Invitee's organization identifier */
+  user_org_id?: string;
+  /** URL of the invitee's profile picture */
+  profile_picture?: string;
 }
 
 /**
@@ -409,6 +435,40 @@ export interface VoteReminderRecipient {
   user_role?: string;
   /** Invitee's voting eligibility status */
   user_voting_status?: string;
+}
+
+/**
+ * Invited voter with their participation status and current ballot, returned by
+ * GET /api/votes/:uid/voters (#3911) to vote writers on named votes.
+ * @description A projection of an `IndexedVoteResponse` row. The ballot fields (`submitted_at`,
+ * `poll_answers`, `comment_responses`) are optional so a participation-only mode for
+ * pseudo-anonymous votes (#3916) can omit them without changing the response shape.
+ */
+export interface VoteVoter {
+  /** Vote response row identifier */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+  /** Invitee's LFID username — empty when the invitation was email-only */
+  username?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role */
+  user_role?: string;
+  /** Invitee's voting eligibility status */
+  user_voting_status?: string;
+  /** URL of the invitee's profile picture */
+  profile_picture?: string;
+  /** Whether the invitee has voted, abstained or not voted yet */
+  status: VoteVoterStatus;
+  /** When the current ballot was last submitted — absent until the invitee votes */
+  submitted_at?: string;
+  /** The invitee's current answers to the poll questions */
+  poll_answers?: PollAnswer[];
+  /** The invitee's current responses to comment prompts */
+  comment_responses?: CommentResponseInput[];
 }
 
 /** Request body for POST /api/votes/:uid/reminders (#3769) */

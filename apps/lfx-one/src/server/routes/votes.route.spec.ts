@@ -6,11 +6,12 @@ import type { Response } from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const { summary, statusCounts, byId, reminderRecipients, sendReminders, voteWriteRateLimiter } = vi.hoisted(() => ({
+const { summary, statusCounts, byId, reminderRecipients, voters, sendReminders, voteWriteRateLimiter } = vi.hoisted(() => ({
   summary: vi.fn((_req: unknown, res: Response) => res.json({ active_votes: 2, closing_soon: 1 })),
   statusCounts: vi.fn((_req: unknown, res: Response) => res.json({ all: 3, active: 1, disabled: 1, ended: 1 })),
   byId: vi.fn(),
   reminderRecipients: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'r-1' }])),
+  voters: vi.fn((_req: unknown, res: Response) => res.json([{ uid: 'b-1', status: 'voted' }])),
   sendReminders: vi.fn((_req: unknown, res: Response) => res.json({ recipient_count: 1 })),
   voteWriteRateLimiter: vi.fn((_req: unknown, _res: unknown, next: () => void) => next()),
 }));
@@ -20,6 +21,7 @@ vi.mock('../controllers/vote.controller', () => ({
     public getVoteStatusCounts = statusCounts;
     public getVoteById = byId;
     public getVoteReminderRecipients = reminderRecipients;
+    public getVoteVoters = voters;
     public sendVoteReminders = sendReminders;
   },
 }));
@@ -77,5 +79,17 @@ describe('vote reminder route dispatch (#3769)', () => {
     expect(await response.json()).toEqual({ recipient_count: 1 });
     expect(voteWriteRateLimiter).toHaveBeenCalledOnce();
     expect(sendReminders).toHaveBeenCalledOnce();
+  });
+});
+
+describe('vote voters route dispatch (#3911)', () => {
+  it('dispatches GET /:uid/voters to its handler, not the vote UID handler, without the write limiter', async () => {
+    voteWriteRateLimiter.mockClear();
+    const response = await fetch(`${baseUrl}/api/votes/vote-1/voters`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([{ uid: 'b-1', status: 'voted' }]);
+    expect(voters).toHaveBeenCalledOnce();
+    expect(byId).not.toHaveBeenCalled();
+    expect(voteWriteRateLimiter).not.toHaveBeenCalled();
   });
 });
