@@ -18,8 +18,10 @@ import type {
   MeetingSectionVisibility,
   MeetingTimeState,
   MeetingViewerRole,
+  PublicCalendarMeeting,
 } from '../interfaces';
 import {
+  listOtherGroupMeetings,
   resolveActionSlot,
   resolveMeetingStatus,
   resolvePrivacy,
@@ -812,4 +814,110 @@ describe('resolvers: remaining edges (#3261)', () => {
       }
     }
   );
+});
+
+describe('listOtherGroupMeetings (E8-02)', () => {
+  const now = new Date('2026-10-20T12:00:00Z');
+
+  function feedRow(over: Partial<PublicCalendarMeeting> = {}): PublicCalendarMeeting {
+    return {
+      id: 'series-a',
+      title: 'Technical Steering Committee',
+      start_time: '2026-10-22T15:00:00Z',
+      duration: 60,
+      timezone: 'UTC',
+      committee_uids: ['11111111-1111-4111-8111-111111111111'],
+      ...over,
+    };
+  }
+
+  it('lists one-off meetings that have not ended, soonest first', () => {
+    const items = listOtherGroupMeetings(
+      [feedRow({ id: 'later', start_time: '2026-10-30T15:00:00Z' }), feedRow({ id: 'sooner', start_time: '2026-10-21T15:00:00Z', timezone: 'Europe/Lisbon' })],
+      'current',
+      now
+    );
+
+    expect(items).toEqual([
+      { meetingId: 'sooner', title: 'Technical Steering Committee', startTime: '2026-10-21T15:00:00Z', durationMinutes: 60, timezone: 'Europe/Lisbon' },
+      { meetingId: 'later', title: 'Technical Steering Committee', startTime: '2026-10-30T15:00:00Z', durationMinutes: 60, timezone: 'UTC' },
+    ]);
+  });
+
+  it('never lists the current meeting', () => {
+    const items = listOtherGroupMeetings([feedRow({ id: 'current' }), feedRow({ id: 'other' })], 'current', now);
+
+    expect(items.map((item) => item.meetingId)).toEqual(['other']);
+  });
+
+  it('drops ended one-offs and past-meeting rows, but keeps a meeting in progress', () => {
+    const items = listOtherGroupMeetings(
+      [
+        feedRow({ id: 'ended', start_time: '2026-10-19T15:00:00Z' }),
+        feedRow({ id: 'past-row', start_time: '2026-10-20T11:30:00Z', meeting_and_occurrence_id: 'past-row-1792501200000' }),
+        feedRow({ id: 'live', start_time: '2026-10-20T11:30:00Z' }),
+      ],
+      'current',
+      now
+    );
+
+    expect(items.map((item) => item.meetingId)).toEqual(['live']);
+  });
+
+  it('shows a series once, at its next occurrence that is neither cancelled nor ended', () => {
+    const items = listOtherGroupMeetings(
+      [
+        feedRow({
+          id: 'weekly',
+          occurrences: [
+            { occurrence_id: '1792407600', start_time: '2026-10-13T15:00:00Z', duration: 60, status: 'available' },
+            { occurrence_id: '1793012400', start_time: '2026-10-27T15:00:00Z', duration: 45, status: 'available' },
+            { occurrence_id: '1792731600', start_time: '2026-10-24T03:00:00Z', duration: 60, status: 'available' },
+            { occurrence_id: '1792666800', start_time: '2026-10-23T09:00:00Z', duration: 60, status: 'cancel' },
+          ] as PublicCalendarMeeting['occurrences'],
+          cancelled_occurrences: ['1792731600'],
+        }),
+        feedRow({ id: 'weekly', start_time: '2026-10-21T15:00:00Z' }),
+      ],
+      'current',
+      now
+    );
+
+    expect(items).toEqual([
+      { meetingId: 'weekly', title: 'Technical Steering Committee', startTime: '2026-10-27T15:00:00Z', durationMinutes: 45, timezone: 'UTC' },
+    ]);
+  });
+
+  it("falls back to the series' duration for an occurrence without its own", () => {
+    const items = listOtherGroupMeetings(
+      [
+        feedRow({
+          duration: 90,
+          occurrences: [{ occurrence_id: '1792681200', start_time: '2026-10-23T13:00:00Z', status: 'available' }] as PublicCalendarMeeting['occurrences'],
+        }),
+      ],
+      'current',
+      now
+    );
+
+    expect(items[0].durationMinutes).toBe(90);
+  });
+
+  it('drops a series whose remaining occurrences are all cancelled or ended', () => {
+    const items = listOtherGroupMeetings(
+      [
+        feedRow({
+          occurrences: [
+            { occurrence_id: '1792407600', start_time: '2026-10-13T15:00:00Z', duration: 60, status: 'available' },
+            { occurrence_id: '1793012400', start_time: '2026-10-27T15:00:00Z', duration: 60, status: 'available' },
+          ] as PublicCalendarMeeting['occurrences'],
+          cancelled_occurrences: ['1793012400'],
+        }),
+      ],
+      'current',
+      now
+    );
+
+    expect(items).toEqual([]);
+  });
 });

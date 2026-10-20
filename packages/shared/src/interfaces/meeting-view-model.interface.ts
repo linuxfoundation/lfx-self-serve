@@ -10,6 +10,7 @@ import type {
   PublicPastMeetingRoster,
   RsvpResponse,
 } from './meeting.interface';
+import type { PublicGroupSummary } from './public-group.interface';
 
 /**
  * Where the viewer sits relative to the meeting's schedule.
@@ -531,4 +532,36 @@ export interface MeetingAgendaOverride {
   /** `null` for the series' agenda */
   occurrenceId: string | null;
   description: string;
+}
+
+/**
+ * One entry of the V2 page's "Other meetings in this group" data (E8-02, FR-045): another public
+ * meeting of the group, at its next occurrence that has not ended. Only fields the public project
+ * meetings feed carries; the section builds its link with `buildMeetingOccurrenceRoute`.
+ */
+export interface MeetingGroupMeetingItem {
+  /** Series uid */
+  meetingId: string;
+  title: string;
+  /** Start of the next occurrence that has not ended (RFC3339) */
+  startTime: string;
+  /** Minutes */
+  durationMinutes: number;
+  /** IANA timezone of the series */
+  timezone: string;
+}
+
+/**
+ * The load of the V2 page's "Other meetings in this group" data (E8-02, FR-045). `none`: no committee
+ * of the meeting is in the project's public group directory, so there is no group to show meetings
+ * for (the section hides). `error`: the directory or the meetings feed could not be read.
+ */
+export interface MeetingGroupMeetingsState {
+  status: 'loading' | 'ready' | 'none' | 'error';
+  /** The group, once `ready`: from the public group directory, the only source of its name */
+  group: PublicGroupSummary | null;
+  /** At most `MEETING_GROUP_MEETINGS_LIMIT` entries, soonest first, never the current meeting */
+  meetings: MeetingGroupMeetingItem[];
+  /** More entries exist than `meetings` holds: the section links to the public calendar for them */
+  hasMore: boolean;
 }

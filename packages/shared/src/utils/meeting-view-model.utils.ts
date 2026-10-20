@@ -6,6 +6,7 @@ import type {
   ActionSlotInput,
   ActionSlotKind,
   Meeting,
+  MeetingGroupMeetingItem,
   MeetingOccurrence,
   MeetingPrivacyState,
   MeetingSectionVisibility,
@@ -15,9 +16,10 @@ import type {
   MeetingTimeState,
   MeetingViewerContext,
   MeetingViewerRole,
+  PublicCalendarMeeting,
 } from '../interfaces';
 import { getMeetingPrivacyIcon, getMeetingPrivacyLabel } from './meeting-privacy.utils';
-import { canJoinMeeting, hasMeetingEnded } from './meeting.utils';
+import { canJoinMeeting, hasMeetingEnded, isMeetingOccurrenceCancelled, isOccurrencePast } from './meeting.utils';
 
 /**
  * Pure resolvers behind the meeting details V2 view model.
@@ -287,4 +289,54 @@ function resolveUpcomingActionSlot(input: ActionSlotInput): ActionSlotKind {
   // the window opens, and the time banner already says when. They cannot register (the BFF only
   // registers for public meetings), and they need no invitation, so there is nothing to offer yet.
   return input.privacy.restricted ? 'invitation-required' : 'none';
+}
+
+/**
+ * The other meetings of a group, from the public project meetings feed scoped to it (E8-02, FR-045):
+ * one entry per series at its next occurrence that has not ended, soonest first, without the current
+ * meeting. The caller bounds the list for display.
+ *
+ * Past-meeting rows (`meeting_and_occurrence_id` set) are skipped: they are records of occurrences
+ * that already ran, and an in-progress one duplicates its live series. Cancelled occurrences are
+ * skipped, so a series whose remaining occurrences are all cancelled drops out. `currentMeetingUid`
+ * is the series uid (`getMeetingSeriesUid`), which is what the feed's live rows carry as `id`.
+ */
+export function listOtherGroupMeetings(meetings: readonly PublicCalendarMeeting[], currentMeetingUid: string, now: Date): MeetingGroupMeetingItem[] {
+  const items: MeetingGroupMeetingItem[] = [];
+  const seen = new Set<string>([currentMeetingUid]);
+
+  for (const meeting of meetings) {
+    if (meeting.meeting_and_occurrence_id || seen.has(meeting.id)) {
+      continue;
+    }
+    const next = nextOpenOccurrence(meeting, now);
+    if (!next) {
+      continue;
+    }
+    seen.add(meeting.id);
+    items.push({ meetingId: meeting.id, title: meeting.title, timezone: meeting.timezone, ...next });
+  }
+
+  return items.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+}
+
+/** The earliest occurrence of a feed row that is neither cancelled nor ended, or `null`. */
+function nextOpenOccurrence(meeting: PublicCalendarMeeting, now: Date): Pick<MeetingGroupMeetingItem, 'startTime' | 'durationMinutes'> | null {
+  const occurrences = meeting.occurrences ?? [];
+  if (occurrences.length === 0) {
+    return isOccurrencePast(meeting.start_time, meeting.duration, now) ? null : { startTime: meeting.start_time, durationMinutes: meeting.duration };
+  }
+
+  let next: Pick<MeetingGroupMeetingItem, 'startTime' | 'durationMinutes'> | null = null;
+  for (const occurrence of occurrences) {
+    // Indexed occurrences omit `duration` when there is no per-occurrence override.
+    const duration = occurrence.duration ?? meeting.duration;
+    if (isMeetingOccurrenceCancelled(occurrence, meeting.cancelled_occurrences) || isOccurrencePast(occurrence.start_time, duration, now)) {
+      continue;
+    }
+    if (!next || new Date(occurrence.start_time).getTime() < new Date(next.startTime).getTime()) {
+      next = { startTime: occurrence.start_time, durationMinutes: duration };
+    }
+  }
+  return next;
 }

@@ -866,6 +866,28 @@ describe('ProjectController.getProjectMeetings', () => {
     expect(response.meetings).toHaveLength(0);
   });
 
+  it('filters PRIVATE meetings from a committee-scoped feed for an anonymous caller, upcoming and past (E8-02)', async () => {
+    // The V2 page's "Other meetings in this group" reads this feed scoped to a public group, with no
+    // session; a PRIVATE meeting of that group must never reach it, whichever resource type it is.
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: [
+          buildMeeting({ id: `${resourceType}-public`, committees: [{ uid: 'committee-uid-1234', name: 'Board' }] }),
+          buildMeeting({ id: `${resourceType}-private`, visibility: 'private' as any, committees: [{ uid: 'committee-uid-1234', name: 'Board' }] }),
+        ],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes(PROJECT_UID, { committee: 'committee-uid-1234' });
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const response = res.json.mock.calls[0][0];
+    expect(response.meetings.map((m: { id: string }) => m.id)).toEqual(['v1_meeting-public', 'v1_past_meeting-public']);
+    expect(JSON.stringify(response)).not.toContain('-private');
+  });
+
   it('resolves a slug identifier to a UID before querying meetings', async () => {
     isUuidMock.mockReturnValue(false);
     projectSvc.getProjectIdBySlug.mockResolvedValue({ uid: PROJECT_UID, slug: SLUG, exists: true });
