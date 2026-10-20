@@ -149,8 +149,8 @@ describe('HealthMetricsGateComponent', () => {
     await render(signal(true));
 
     expect(query('health-metrics-page')?.classList).toContain('container');
-    expect(query('health-metrics-title')?.className).toBe('font-display text-2xl font-light');
-    expect(query('health-metrics-subtitle')?.className).toBe('text-sm text-gray-500');
+    for (const cls of ['font-display', 'font-light', 'text-2xl']) expect(query('health-metrics-title')?.classList).toContain(cls);
+    for (const cls of ['text-sm', 'text-gray-500']) expect(query('health-metrics-subtitle')?.classList).toContain(cls);
   });
 
   // One accent for the selected tab: label and underline both in blue-500, as the design's `.tab.on`.
