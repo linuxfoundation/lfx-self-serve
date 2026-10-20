@@ -118,6 +118,7 @@ import type {
   CampaignCapabilityReadState,
   CampaignCreateRequest,
   CampaignCreateResult,
+  CampaignGoogleExtensionsCapabilityBlock,
   CampaignImplementationDraft,
   CampaignJobOutcome,
   CampaignKeyword,
@@ -362,14 +363,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
 
   /**
-   * Where the read behind `biddingEnabled` stands — what tells "still checking" from "the check
-   * failed" while `biddingEnabled` is `null`. Read only when a retained Manual choice needs the
-   * answer; see `biddingCapabilityBlock`.
+   * Where the create-capability read stands — what tells "still checking" from "the check failed"
+   * while a capability is `null`.
+   *
+   * The state of the WHOLE read, not of one capability: the parent's `loadCreateCapabilitiesFor`
+   * sets `biddingEnabled`, `googleCreativeEnabled` and the rest from ONE response and moves this one
+   * signal for all of them. Read by `biddingCapabilityBlock` and by
+   * `googleExtensionsCapabilityBlock`, and correct for any capability that joins them later.
    */
-  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('unknown');
+  public readonly createCapabilityRead = input<CampaignCapabilityReadState>('unknown');
 
-  /** Asks the parent to re-read the create capabilities after a failed read. */
-  public readonly retryBiddingCapability = output<void>();
+  /** Asks the parent to re-read the create capabilities after a failed read. Raised by either capability block. */
+  public readonly retryCreateCapabilities = output<void>();
 
   /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
@@ -1730,6 +1735,13 @@ export class ImplementationTabComponent implements OnInit {
     if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
     // A retained Manual choice the deployment has not (yet) confirmed it can send: never dropped.
     if (this.biddingCapabilityBlock() !== null) return false;
+    // `googleExtensionsCapabilityBlock` is its sibling on the SAME capability read and is
+    // deliberately NOT a gate here. The difference is what the withholding costs. A withheld Manual
+    // bid changes what the campaign does — it would be created automatic and spend differently from
+    // the choice on screen — so that create waits for the answer. Withheld callouts and sitelinks
+    // cost only the extensions: the campaign created is still the one that was asked for, and the
+    // lists stay in the brief for a later edit. Blocking a create on a stalled capability read for
+    // that is the worse failure, so the create goes ahead and the block says what was left out.
     // Likewise a retained Reddit image upload: never silently left out of the request.
     if (this.redditImageAssetBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
@@ -1823,6 +1835,18 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
   protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
+  /**
+   * Why generated callouts and sitelinks are being withheld because the CAPABILITY is not an
+   * explicit yes, or `null`. The two warnings above cover the other reason — the channel takes no
+   * extensions — and the two readers partition every withholding between them, so none is silent.
+   *
+   * Without this one the capability case had no reader at all: the section hides, both payload
+   * helpers return `{}`, and `canSubmit` does not ask for the answer, so the create succeeded,
+   * shipped no extensions and said nothing.
+   */
+  protected readonly googleExtensionsCapabilityBlock: Signal<CampaignGoogleExtensionsCapabilityBlock | null> = this.initGoogleExtensionsCapabilityBlock();
+  /** The always-mounted live region's text for `googleExtensionsCapabilityBlock`; `''` when nothing is withheld. */
+  protected readonly googleExtensionsCapabilityMessage = computed(() => this.googleExtensionsCapabilityBlock()?.message ?? '');
   protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
   protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
@@ -2893,6 +2917,27 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
+   * Which channel a Google create would carry, resolved the way `buildGoogleAdsConfig` resolves it:
+   * Search whenever Search is ticked, otherwise the first ticked channel. Null when Google is
+   * unselected or no channel is ticked — there is no default channel to fall back on.
+   *
+   * Deliberately knows nothing about the CREATIVE capability. {@link initGoogleBiddingChannel} adds
+   * that gate on top, because every field it owns rides the `googleAdsConfig` envelope the legacy
+   * creator ignores. {@link initGoogleExtensionsCapabilityBlock} cannot: it exists to report on that
+   * very gate, so it has to see the channel underneath it. One resolution with two readers, so the
+   * two can never drift apart on which channel they mean — the rule
+   * {@link initGoogleLanguagesChannel} already follows by reading the bidding channel rather than
+   * re-deriving it.
+   */
+  private resolveGoogleChannel(): GoogleCampaignChannel | null {
+    void this.campaignFormRevision();
+    if (!this.showGoogleSection()) return null;
+    const channels = this.selectedGoogleChannels();
+    if (channels.length === 0) return null;
+    return channels.includes('search') ? 'search' : channels[0];
+  }
+
+  /**
    * The Reddit image field the create request carries: the uploaded asset, else the pasted URL.
    *
    * Exactly one, because campaign-service refuses `imageAssetId` alongside `imageUrl` (or
@@ -2949,7 +2994,7 @@ export class ImplementationTabComponent implements OnInit {
       }
       // The same create-capability read answers this and the bidding capability, so its state says
       // whether a read is out; see `initBiddingCapabilityBlock` for why `unknown` gets a Retry.
-      if (this.biddingCapabilityRead() === 'pending') {
+      if (this.createCapabilityRead() === 'pending') {
         return { kind: 'pending', message: 'Checking Reddit image upload support…' };
       }
       if (!this.briefPersistence().briefId) {
@@ -3548,7 +3593,8 @@ export class ImplementationTabComponent implements OnInit {
     // below does: `googleCalloutsPayload` and `googleSitelinksPayload` both gate on
     // `googleCalloutsAvailable`, so a list seeded under Performance Max is HELD and not sent, and
     // is still there if the operator switches to Search. `googleCalloutsWithheldWarning` is what
-    // tells them that is happening.
+    // tells them that is happening — or `googleExtensionsCapabilityBlock`, when what withheld the
+    // list is the unanswered capability rather than the channel.
     if (brief.googleCallouts !== undefined) {
       this.googleCallouts.set([...brief.googleCallouts]);
     }
@@ -3943,12 +3989,8 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initGoogleBiddingChannel(): Signal<GoogleCampaignChannel | null> {
     return computed(() => {
-      void this.campaignFormRevision();
-      if (!this.showGoogleSection()) return null;
       if (!this.googleCreativeAvailable()) return null;
-      const channels = this.selectedGoogleChannels();
-      if (channels.length === 0) return null;
-      return channels.includes('search') ? 'search' : channels[0];
+      return this.resolveGoogleChannel();
     });
   }
 
@@ -4006,27 +4048,107 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The sentence saying callouts are held back, or null when none are. Set when the dispatched
-   * channel is known, takes no callouts, and the operator added some — in practice callouts typed
+   * The sentence saying callouts are held back, or null when none are. Set when the channel a
+   * create would carry takes no callouts and the operator added some — in practice callouts typed
    * under Search and left behind by a switch to another channel. Held is not silent: the section
    * disappears with the switch, so without this the operator would not know the campaign is created
    * without them. One string feeds both the visible notice and its live region.
+   *
+   * Asks {@link resolveGoogleChannel}, NOT `googleBiddingChannel`, and tests the channel directly
+   * rather than reading `googleCalloutsAvailable`. Both changes say the same thing: this sentence is
+   * about the CHANNEL alone. `googleBiddingChannel` is null whenever the create capability is
+   * unanswered, which would mute this warning on a Demand Gen create merely because a capability
+   * read had not come back — and `googleCalloutsAvailable` is false for either reason, which on
+   * Search with an unanswered capability would put the words "Search campaigns do not take callouts"
+   * on screen. Read the channel, state the channel's truth, and leave the capability reason to
+   * {@link initGoogleExtensionsCapabilityBlock}. Between them no withholding is now silent.
    */
   private initGoogleCalloutsWithheldWarning(): Signal<string | null> {
     return computed(() => {
-      const channel = this.googleBiddingChannel();
+      const channel = this.resolveGoogleChannel();
       const count = this.googleCallouts().length;
-      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
-  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same Search gate. */
+  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same channel gate. */
   private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
     return computed(() => {
-      const channel = this.googleBiddingChannel();
+      const channel = this.resolveGoogleChannel();
       const count = this.googleSitelinks().length;
-      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      if (!channel || (GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel) || count === 0) return null;
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
+
+  /**
+   * Why the generated callouts and sitelinks are being withheld for want of a capability answer.
+   *
+   * The sibling of {@link initBiddingCapabilityBlock}, on the SAME read — `loadCreateCapabilitiesFor`
+   * sets `googleCreativeEnabled` and `biddingEnabled` from one response, so `createCapabilityRead`
+   * is that whole read's state and either block may report on it.
+   *
+   * It differs from that sibling in one way on purpose: it does not block Create. A withheld manual
+   * bid would create the campaign automatic, spending differently from the choice on screen, so
+   * that one waits. Withheld extensions cost only the extensions, and holding a demo's create
+   * hostage to a stalled capability read is worse than creating and saying what was left out.
+   *
+   * Says nothing about the CHANNEL reason — {@link initGoogleCalloutsWithheldWarning} and its
+   * sitelink twin own that, on every channel that takes no extensions and whatever the capability
+   * says. The two divide the ground exactly: this block speaks only where an answer could change
+   * the outcome, which is only on a channel that takes extensions, and those warnings speak
+   * everywhere else. Nothing is withheld in silence and nothing is explained twice.
+   */
+  private initGoogleExtensionsCapabilityBlock(): Signal<CampaignGoogleExtensionsCapabilityBlock | null> {
+    return computed(() => {
+      if (this.googleCreativeAvailable()) return null;
+
+      // `resolveGoogleChannel`, not `googleBiddingChannel`: the latter's capability gate is the very
+      // thing being reported on here, so reading it would always give null.
+      //
+      // The channel matters because the capability is not the only reason a list is withheld. On a
+      // channel that takes no extensions the list is not going anywhere whatever the capability
+      // answers, so "Retry the check to send them" would be a promise this code cannot keep. Stay
+      // silent there instead: nothing is lost that the answer could recover, and
+      // `googleCalloutsWithheldWarning` is already saying the true reason — it reads the same
+      // resolved channel, so it does not wait for the capability either.
+      const channel = this.resolveGoogleChannel();
+      if (channel === null || !(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(channel)) return null;
+
+      const callouts = this.googleCallouts().length;
+      const sitelinks = this.googleSitelinks().length;
+      if (callouts + sitelinks === 0) return null;
+
+      // "N callouts and M sitelinks", dropping whichever half is empty. The counts are the point:
+      // they are what the operator is about to lose, and they are the only way to tell this notice
+      // from a generic capability warning.
+      const parts: string[] = [];
+      if (callouts > 0) parts.push(`${callouts} callout${callouts === 1 ? '' : 's'}`);
+      if (sitelinks > 0) parts.push(`${sitelinks} sitelink${sitelinks === 1 ? '' : 's'}`);
+      const lost = parts.join(' and ');
+
+      if (this.googleCreativeEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Google ad extensions are not available on this deployment, so the ${lost} generated for this brief will not be sent. The campaign is created without them.`,
+        };
+      }
+      // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
+      // foundation switch — is treated like a failure, for the reason the bidding block records:
+      // nothing else will start the read.
+      if (this.createCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking whether Google ad extensions can be sent…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: `Google ad extension support can't be checked until this brief is saved, so the ${lost} generated for it will not be sent. Save the brief to send them.`,
+        };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that Google ad extensions can be sent, so the ${lost} generated for this brief will not be sent. Retry the check to send them.`,
+      };
     });
   }
 
@@ -4043,6 +4165,15 @@ export class ImplementationTabComponent implements OnInit {
    * preflight, BEFORE the budget mutate — so a callout sent on a Performance Max create yields no
    * campaign at all. The section hides and the payload holds the list rather than forwarding it;
    * the operator's typed callouts survive in the draft and come back if they re-tick Search.
+   *
+   * False for TWO reasons, not one: the channel takes no extensions, or `googleBiddingChannel` is
+   * null because the create capability is not an explicit yes. Because this signal cannot tell which,
+   * nothing that has to NAME the reason may read it. Each reason has its own reader, and each asks
+   * the question it can answer: {@link initGoogleCalloutsWithheldWarning} and its sitelink twin read
+   * the resolved channel and speak for the channel reason;
+   * {@link initGoogleExtensionsCapabilityBlock} reads the capability and speaks for that one. The
+   * two are mutually exclusive by construction — the block stays silent on a channel that takes no
+   * extensions — so exactly one of them speaks whenever a list is withheld.
    */
   private initGoogleCalloutsAvailable(): Signal<boolean> {
     return computed(() => {
@@ -4134,7 +4265,7 @@ export class ImplementationTabComponent implements OnInit {
       // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
       // foundation switch — is treated like a failure: it gets a Retry, because nothing else will
       // start the read the block is waiting for.
-      if (this.biddingCapabilityRead() === 'pending') {
+      if (this.createCapabilityRead() === 'pending') {
         return { kind: 'pending', message: 'Checking bidding support…' };
       }
       // No read out and no brief id to read against (none saved yet, or a save in flight): a Retry
