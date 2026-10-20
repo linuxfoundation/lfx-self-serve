@@ -130,7 +130,7 @@ describe('MembersDirectoryComponent', () => {
     expect(cell('tier')).toBe('Gold Membership');
     expect(cell('dues')).toBe('$89.5K');
     // Pill and dues sit inline on one line, as the design draws them.
-    expect(query(`members-directory-row-${ACCOUNT_ID}-dues`)?.parentElement?.classList).toContain('whitespace-nowrap');
+    expect(query(`members-directory-row-${ACCOUNT_ID}-dues`)?.parentElement?.classList).toContain('lg:whitespace-nowrap');
     expect(query(`members-directory-row-${ACCOUNT_ID}-dues`)?.classList).toContain('text-gray-400');
     expect(cell('engagement')).toBe('Low');
     expect(cell('score')).toBe('2.3');

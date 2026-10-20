@@ -136,14 +136,10 @@ interface RepresentativesRow {
   REP_KEY: string | null;
   PERSON_DISPLAY_NAME: string | null;
   IS_IDENTITY_UNRESOLVED: boolean | null;
-  PERSON_ROLE: string | null;
-  PERSON_JOB_TITLE: string | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_TIER: string | null;
   COMMITTEE_NAME: string | null;
   LAST_ATTENDED_DATE: Date | string | null;
-  DAYS_SINCE_LAST_ATTENDED: number | null;
-  IS_LAPSED_180D: boolean | null;
   [periodColumn: string]: unknown;
 }
 
@@ -206,7 +202,8 @@ export class HealthMetricsEngagementService {
     const typePredicate = typeCondition ? `WHERE ${typeCondition}` : '';
     const totalsColumns = [
       'COUNT(*) AS scope_groups',
-      // The view's own dormancy flag. Any further metric definition belongs in dbt, not here.
+      // The view's own dormancy flag. Prefer new metric definitions in dbt; the "below 50%" count below is
+      // an app-side exception, kept here so its threshold stays in step with the rate tone.
       `COUNT_IF(is_dormant_${suffix}) AS dormant_groups`,
       lowAttendanceColumn,
       ...typeCountColumns,
@@ -491,14 +488,10 @@ export class HealthMetricsEngagementService {
         _key AS rep_key,
         person_display_name,
         is_identity_unresolved,
-        person_role,
-        person_job_title,
         account_name,
         membership_tier,
         committee_name,
         last_attended_date,
-        days_since_last_attended,
-        is_lapsed_180d,
         ${periodColumns}
       FROM ${REPRESENTATIVES_VIEW}
       WHERE foundation_slug = ?
@@ -753,14 +746,10 @@ function mapRepRow(row: RepresentativesRow): HealthMetricsEngagementRepRow {
     key: row.REP_KEY ?? '',
     personName: row.PERSON_DISPLAY_NAME ?? '',
     identityUnresolved: row.IS_IDENTITY_UNRESOLVED === true,
-    personRole: row.PERSON_ROLE,
-    jobTitle: row.PERSON_JOB_TITLE,
     accountName: row.ACCOUNT_NAME ?? '',
     membershipTier: row.MEMBERSHIP_TIER,
     committeeName: row.COMMITTEE_NAME ?? '',
     lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
-    daysSinceLastAttended: toNullableNumber(row.DAYS_SINCE_LAST_ATTENDED),
-    lapsed180d: row.IS_LAPSED_180D === true,
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapRepPeriod(row, range)),
   };
 }

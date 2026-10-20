@@ -88,7 +88,7 @@
             <!-- The design's `.pill`: 12px with 2px 8px padding, exact px for the 14px root. -->
             @if (row.membershipTier) {
               <span
-                class="whitespace-nowrap rounded-full px-[8px] py-[2px] text-[12px] leading-[16px]"
+                class="rounded-full px-[8px] lg:whitespace-nowrap py-[2px] text-[12px] leading-[16px]"
                 [class]="view.tierPillClass"
                 [attr.data-testid]="'engagement-org-participation-row-' + row.accountId + '-tier'"
                 >{{ row.membershipTier }}</span

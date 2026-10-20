@@ -940,14 +940,10 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       REP_KEY: 'r-1',
       PERSON_DISPLAY_NAME: 'Dana Fields',
       IS_IDENTITY_UNRESOLVED: false,
-      PERSON_ROLE: 'Voting Rep',
-      PERSON_JOB_TITLE: 'Engineer',
       ACCOUNT_NAME: 'Acme Motors',
       MEMBERSHIP_TIER: 'Gold',
       COMMITTEE_NAME: 'Technical Steering Committee',
       LAST_ATTENDED_DATE: new Date('2026-08-14T00:00:00.000Z'),
-      DAYS_SINCE_LAST_ATTENDED: 54,
-      IS_LAPSED_180D: false,
       ...periods,
       ...overrides,
     };
@@ -973,21 +969,17 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       key: 'r-1',
       personName: 'Dana Fields',
       identityUnresolved: false,
-      personRole: 'Voting Rep',
-      jobTitle: 'Engineer',
       accountName: 'Acme Motors',
       membershipTier: 'Gold',
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
-      daysSinceLastAttended: 54,
-      lapsed180d: false,
     });
     expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false, sortRank: 1 });
   });
 
   // Without the roll-up guard, all-projects scope would read the roll-up and every project row together.
   it('binds the selected project, and reads each row caption for the scope that row belongs to', async () => {
-    execute.mockResolvedValue({ rows: [repWarehouseRow({ IS_IDENTITY_UNRESOLVED: true, DAYS_SINCE_LAST_ATTENDED: null })] });
+    execute.mockResolvedValue({ rows: [repWarehouseRow({ IS_IDENTITY_UNRESOLVED: true })] });
 
     const response = await service.getRepresentatives(req, { foundationSlug: 'acme', projectSlug: 'acme-core' });
 
@@ -997,7 +989,7 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
     expect(lastSql()).toContain(
       'IFF(is_all_projects, scope_never_attended_reps_count_all_projects_ytd, scope_never_attended_reps_count_ytd) AS scope_never_attended_reps_count_ytd'
     );
-    expect(response.rows[0]).toMatchObject({ identityUnresolved: true, daysSinceLastAttended: null });
+    expect(response.rows[0]).toMatchObject({ identityUnresolved: true });
   });
 
   // A null invited/attended column is unmeasured, not zero — coercing it would report a real "never invited".

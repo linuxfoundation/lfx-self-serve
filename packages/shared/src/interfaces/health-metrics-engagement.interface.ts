@@ -344,17 +344,12 @@ export interface HealthMetricsEngagementRepRow {
   personName: string;
   /** True when the view could not resolve the person, so the name is not a trustworthy identity. */
   identityUnresolved: boolean;
-  personRole: string | null;
-  jobTitle: string | null;
   /** The row's organization, shown under the name with its tier; not a second identity. */
   accountName: string;
   membershipTier: string | null;
   committeeName: string;
   /** All-time, not per period: ISO date this person last attended this group under this project. */
   lastAttendedDate: string | null;
-  daysSinceLastAttended: number | null;
-  /** The view's all-time `IS_LAPSED_180D`, distinct from the per-period `lapsed` flag. */
-  lapsed180d: boolean;
   periods: HealthMetricsEngagementRepPeriod[];
 }
 

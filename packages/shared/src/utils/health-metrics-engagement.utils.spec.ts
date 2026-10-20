@@ -490,14 +490,10 @@ describe('representatives rules', () => {
       key: `${personName}|${accountName}`.toLowerCase(),
       personName,
       identityUnresolved: false,
-      personRole: null,
-      jobTitle: null,
       accountName,
       membershipTier: null,
       committeeName: 'Technical Steering Committee',
       lastAttendedDate: '2026-08-14',
-      daysSinceLastAttended: 54,
-      lapsed180d: false,
       // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
         { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false, sortRank: null },
@@ -625,14 +621,10 @@ describe('buildHealthMetricsEngagementRepLabels', () => {
     key: 'rep-1',
     personName: 'Dana Fields',
     identityUnresolved: false,
-    personRole: 'Voting Rep',
-    jobTitle: 'Engineer',
     accountName: 'Acme Motors',
     membershipTier: 'Gold',
     committeeName: 'Governing Board',
     lastAttendedDate: '2026-08-14',
-    daysSinceLastAttended: 12,
-    lapsed180d: false,
     periods: [],
   };
 
