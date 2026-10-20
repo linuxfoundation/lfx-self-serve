@@ -631,6 +631,18 @@ describe('MeetingDetailsStateService', () => {
       expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
     });
 
+    it('drops the previous series timeline when the route moves to another meeting', async () => {
+      getPublicMeetingOccurrences.mockReturnValue(of({ past: [], future: [{ occurrence_id: '9', start_time: third.toISOString(), duration: 60 }] }));
+      const state = await load(series());
+      expect(state.seriesOccurrences().future.length).toBe(1);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2', recurrence: null } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await settle();
+
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+    });
+
     it("never reads a one-off meeting's series", async () => {
       await load(series({ recurrence: null }));
 
