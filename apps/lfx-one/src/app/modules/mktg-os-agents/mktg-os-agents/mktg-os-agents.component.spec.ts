@@ -86,6 +86,16 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     await fixture.whenStable();
   });
 
+  it('keeps the relocated grid usable: selecting an active card targets the sibling run route', () => {
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelector('[data-testid="mktg-kit-tabs"]')?.querySelectorAll('a')).toHaveLength(4);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const button = root.querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]');
+    expect(button).not.toBeNull();
+    button?.click();
+    expect(navigate).toHaveBeenCalledWith(['../', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+  });
+
   it('shows the badge once the context resolves AFTER the first render — a one-shot load would never badge at all', async () => {
     // First render with no context yet (activeContextUid was empty at
     // afterNextRender time in the regressed one-shot implementation).
@@ -201,12 +211,13 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       expect(requiresTag()).toBeNull();
     });
 
-    it('enables the card from the browser-stored fallback when server persistence has none', async () => {
-      dependencyDocs = { 'proj-1:foundation-setup': kitDoc('browser') };
+    it('keeps the card locked when the approved-only service omits browser Drafts', async () => {
+      dependencyDocs = {};
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(mfTile()?.disabled).toBe(false);
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], [], true);
+      expect(mfTile()?.disabled).toBe(true);
     });
 
     it('gives every card an accessible name that states the reason it is inert', async () => {

@@ -622,7 +622,7 @@ export class MktgAgentRunComponent {
     });
     // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+      this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
       return;
     }
     // Stored runs + LFX prefill read browser state (localStorage, HTTP-backed
@@ -675,7 +675,7 @@ export class MktgAgentRunComponent {
 
   // === Protected methods ===
   protected onBack(): void {
-    this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   /** Only a canonical receipt key can identify this run's revision; never infer it from content. */

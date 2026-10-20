@@ -1,0 +1,19 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section
+  class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
+  aria-labelledby="family-export-title"
+  data-testid="family-export-actions">
+  <h2 id="family-export-title" class="text-base font-bold">Export the whole family</h2>
+  <span class="self-start rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-500">Coming soon</span>
+  <p class="text-sm text-gray-500">
+    Everything is rendered in the app; a file exists only when you ask for one. Each asset has the same two actions on its own page.
+  </p>
+  <lfx-button label="Download PDF" [disabled]="true" [outlined]="true" [fluid]="true" data-testid="family-export-pdf" />
+  <lfx-button label="Export to Google Slides" [disabled]="true" [fluid]="true" data-testid="family-export-slides" />
+  <p class="text-xs text-gray-500">
+    PDF is the family as one document in the project's brand. Slides builds a native deck on the LF template in the project's Marketing OS folder on Drive and
+    gives you the link.
+  </p>
+</section>

@@ -3,20 +3,8 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mktg-os-agents-page">
   <div class="flex flex-col gap-5">
-    <!-- Page Header -->
-    <div class="flex items-start justify-between mt-3">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="mktg-os-agents-title">{{ labels.marketplaceTitle }}</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="mktg-os-agents-description">{{ labels.marketplaceDescription }}</p>
-      </div>
-      <lfx-button
-        label="Documents"
-        icon="fa-light fa-folder-open"
-        [outlined]="true"
-        size="small"
-        data-testid="mktg-os-agents-documents-link"
-        (onClick)="onOpenDocuments()" />
-    </div>
+    <lfx-mktg-kit-header [projectName]="projectName()" titleTestId="mktg-os-agents-title" />
+    <lfx-mktg-kit-tabs />
 
     <!-- Search -->
     <div data-testid="mktg-os-agents-search">
@@ -53,9 +41,6 @@
             </div>
 
             <div class="flex flex-wrap gap-1.5">
-              @for (tag of tile.agent.tags; track tag) {
-                <lfx-tag [value]="tag" severity="secondary" [outlined]="true" />
-              }
               @if (tile.agent.status !== 'active') {
                 <lfx-tag value="Coming soon" severity="secondary" [attr.data-testid]="'mktg-os-agents-coming-soon-' + tile.agent.id" />
               }
