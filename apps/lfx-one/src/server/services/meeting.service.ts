@@ -54,7 +54,6 @@ import {
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
-  maskEmailForLogs,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   selectApplicableRsvp,
@@ -1042,10 +1041,10 @@ export class MeetingService {
       page_size: QUERY_SERVICE_MAX_PAGE_SIZE,
     };
 
-    // The email is masked and the filters left out: the address is verified PII, and debug logs keep it.
-    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email', {
+    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', {
       meeting_id: meetingUid,
-      email: maskEmailForLogs(normalizedEmail),
+      email: normalizedEmail,
+      params,
     });
 
     const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;

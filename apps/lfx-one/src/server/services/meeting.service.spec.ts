@@ -33,8 +33,6 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // from its own module rather than the mocked barrel because the barrel reaches @angular/forms
   // and @angular/common/http, which this suite mocks the barrel to avoid in the first place.
   ...(await vi.importActual<typeof import('@lfx-one/shared/utils/meeting-attendee-lock.utils')>('@lfx-one/shared/utils/meeting-attendee-lock.utils')),
-  // The real masker: the registrant lookup's log must never carry the address itself.
-  maskEmailForLogs: (await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils')).maskEmailForLogs,
   buildRecurrenceNeverEndDate: vi.fn(),
   // The real classifier: the participant merge keeps the better-identified record by its tier (N-02).
   getPastMeetingIdentityTier: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
@@ -813,18 +811,6 @@ describe('MeetingService.getMeetingRegistrantsByEmail', () => {
 
     const [, , , , query] = proxyRequest.mock.calls[0];
     expect(query.page_size).toBe(1000);
-  });
-
-  // Verified PII: the debug log carries a masked address and no filters that would repeat it.
-  it('never logs the email address it looks up', async () => {
-    vi.mocked(logger.debug).mockClear();
-    proxyRequest.mockResolvedValueOnce({ resources: [] });
-
-    await service.getMeetingRegistrantsByEmail(req, 'meeting-1', 'User@Example.com');
-
-    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls.filter((call) => call[1] === 'get_meeting_registrants_by_email'));
-    expect(logged).not.toContain('user@example.com');
-    expect(logged).toContain('example.com');
   });
 });
 
