@@ -98,7 +98,7 @@
             <span class="sr-only">(opens in a new tab)</span>
           </a>
         }
-        @if (meeting.recording_enabled && showArtifactChips()) {
+        @if (showRecordingBadge()) {
           <lfx-tag
             value="Recording"
             icon="fa-light fa-video text-[var(--md-status-live)]"
@@ -107,7 +107,7 @@
             [styleClass]="chipClass"
             data-testid="meeting-header-badge-recording" />
         }
-        @if (meeting.transcript_enabled && showArtifactChips()) {
+        @if (meeting.transcript_enabled) {
           <lfx-tag
             value="Transcripts"
             icon="fa-light fa-file-lines text-[var(--md-accent)]"
@@ -125,7 +125,7 @@
             [styleClass]="chipClass"
             data-testid="meeting-header-badge-youtube" />
         }
-        @if (meeting.ai_summary_enabled && showArtifactChips()) {
+        @if (meeting.ai_summary_enabled) {
           <lfx-tag
             value="AI Summary"
             icon="fa-light fa-sparkles text-[var(--md-feature-ai)]"

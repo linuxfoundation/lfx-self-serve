@@ -201,6 +201,8 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-summary-content')?.querySelectorAll('li').length).toBe(2);
     expect(query('tools-summary-btn')?.getAttribute('data-approval')).toBe('approved');
     expect(query('tools-summary-pending')).toBeNull();
+    // V1's Approved pill.
+    expect(query('tools-summary-approved')?.textContent?.trim()).toBe('Approved');
 
     query('tools-summary-btn')?.querySelector('button')?.click();
     expect(dialogService.open).toHaveBeenCalledWith(
@@ -229,6 +231,7 @@ describe('MeetingRecordingComponent', () => {
 
     expect(query('tools-summary-btn')?.getAttribute('data-approval')).toBe('not-required');
     expect(query('tools-summary-pending')).toBeNull();
+    expect(query('tools-summary-approved')).toBeNull();
   });
 
   // As V1 (meeting-join): a summary awaiting approval is shown to everyone who can read the summary, marked Pending.

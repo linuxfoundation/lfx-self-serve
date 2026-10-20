@@ -98,7 +98,14 @@
           <div class="flex items-center gap-[8px]">
             <i class="fa-light fa-sparkles text-[15px] text-[var(--md-feature-ai)]" aria-hidden="true"></i>
             <h3 class="m-0 text-[12px] font-bold uppercase tracking-[.03em] text-[var(--md-text-muted)]">AI summary</h3>
-            @if (summary.status === 'available' && summary.approval === 'pending') {
+            <!-- V1's pill: Approved, or Pending while awaiting approval; none when approval was never required. -->
+            @if (summary.status === 'available' && summary.approval === 'approved') {
+              <span
+                class="rounded-full bg-[var(--md-status-good-bg)] px-[9px] py-[2px] text-[11.5px] font-semibold text-[var(--md-status-good)]"
+                data-testid="tools-summary-approved"
+                >{{ approvalLabels.approved }}</span
+              >
+            } @else if (summary.status === 'available' && summary.approval === 'pending') {
               <span
                 class="rounded-full bg-[var(--md-status-warn-bg)] px-[9px] py-[2px] text-[11.5px] font-semibold text-[var(--md-text-heading)]"
                 data-testid="tools-summary-pending"
