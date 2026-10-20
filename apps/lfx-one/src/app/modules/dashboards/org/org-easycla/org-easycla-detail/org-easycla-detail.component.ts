@@ -7,8 +7,8 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import type {
+  OrgClaAttestationClose,
   OrgClaCoverageChip,
-  OrgClaDesigneeNextStep,
   OrgClaDesigneeRefusal,
   OrgClaDetailTab,
   OrgClaDetailTabView,
@@ -16,12 +16,10 @@ import type {
   OrgClaGroupList,
   OrgClaGroupPickerResult,
   OrgClaIdentifyManagerResult,
-  OrgClaManagerQuestionResult,
   OrgClaSignAttestations,
   OrgClaSignHandoffDialogData,
   OrgClaSignSelection,
   OrgClaStatusDisplay,
-  OrgClaAttestationClose,
 } from '@lfx-one/shared/interfaces';
 import {
   CCLA_SIGN_COPY,
@@ -666,11 +664,6 @@ export class OrgEasyclaDetailComponent {
     return reason ? `${this.startLabel()} — ${reason}` : this.startLabel();
   });
 
-  protected readonly identifySomeoneElseAriaLabel = computed(() => {
-    const reason = this.startDisabledReason();
-    return reason ? `${this.notStartedCopy.identifySomeoneElseLabel} — ${reason}` : this.notStartedCopy.identifySomeoneElseLabel;
-  });
-
   protected readonly signedOnLabel = computed(() => this.initSignedOnLabel());
 
   protected readonly signedByName = computed(() => this.initSignedByName());
@@ -893,21 +886,7 @@ export class OrgEasyclaDetailComponent {
     if (!context) return;
 
     this.signingOpen.set(true);
-    this.continueAsManager(context.orgUid, context.chosen, 'attest');
-  }
-
-  /**
-   * Opens the send-by-email path from the unsigned Overview, skipping attestation (#2365).
-   *
-   * Same guards as Start: the page already named the CLA Group, and a race click against the
-   * wrong organization must not mail a signature request for it.
-   */
-  protected identifySomeoneElse(): void {
-    const context = this.requireSignableContext();
-    if (!context) return;
-
-    this.signingOpen.set(true);
-    this.continueAsManager(context.orgUid, context.chosen, 'mail');
+    this.continueAsManager(context.orgUid, context.chosen);
   }
 
   protected onDownload(): void {
@@ -1059,9 +1038,6 @@ export class OrgEasyclaDetailComponent {
   /**
    * The organization and agreement to sign, or null when this click must be refused.
    *
-   * Shared by both entry points so a guard cannot be added to one and missed on the other,
-   * leaving the same agreement signable down one path and refused down the other.
-   *
    * The wrong-org refusal is not redundant with the disabled state: the mismatch redirect is
    * asynchronous, so a click can arrive during a brief window where the button is enabled against
    * a currently-selected organization the preview was not made for.
@@ -1076,33 +1052,27 @@ export class OrgEasyclaDetailComponent {
   }
 
   /** The Start lock stays held until whichever step ends the flow. */
-  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+  private continueAsManager(orgUid: string, chosen: OrgClaGroupPickerResult): void {
     if (this.alreadyDesignee()) {
-      this.openChosenStep(orgUid, chosen, next);
+      this.confirmThenHandOff(orgUid, chosen);
       return;
     }
 
     const questionRef = this.dialogService.open(
       OrgEasyclaManagerQuestionDialogComponent,
-      orgClaManagerQuestionDialogConfig({ onYes: () => this.assignDesignee(orgUid, chosen, next, questionRef) })
+      orgClaManagerQuestionDialogConfig({ onYes: () => this.assignDesignee(orgUid, chosen, questionRef) })
     ) as DynamicDialogRef;
     nameDynamicDialog(this.dialogService, questionRef, OrgEasyclaManagerQuestionDialogComponent.headingId);
     this.uncommittedSigningDialog = questionRef;
 
-    this.whenSigningDialogEnds(questionRef, (result: OrgClaManagerQuestionResult) => {
+    this.whenSigningDialogEnds(questionRef, () => {
       // Torn down first for the reason `confirmThenHandOff` gives, and re-checked after, because
       // the result names no organization or agreement.
       this.afterDialogTornDown(questionRef, () => {
         if (!this.signingContextHeld(orgUid, chosen)) return;
-        if (result === 'assigned') this.openSendByEmailIfContextHeld(orgUid, chosen);
-        else this.openIdentifyManager(orgUid, chosen);
+        this.openIdentifyManager(orgUid, chosen);
       });
     });
-  }
-
-  private openChosenStep(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
-    if (next === 'attest') this.confirmThenHandOff(orgUid, chosen);
-    else this.openSendByEmailIfContextHeld(orgUid, chosen);
   }
 
   /** Whether the page is still on this organization and signing pair; releases Start when it is not. */
@@ -1120,7 +1090,7 @@ export class OrgEasyclaDetailComponent {
     return false;
   }
 
-  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep, questionRef: DynamicDialogRef): void {
+  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, questionRef: DynamicDialogRef): void {
     // A dismissed question stays clickable through its leave animation, still `asking`.
     if (this.uncommittedSigningDialog !== questionRef) return;
     if (!this.signingContextHeld(orgUid, chosen)) {
@@ -1132,13 +1102,8 @@ export class OrgEasyclaDetailComponent {
     this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
       next: () => {
         this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
-        // Closed on every branch: the dialog cannot be dismissed while configuring, so a write that
-        // no longer owns the flow must still take it down.
-        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) {
-          questionRef.close();
-          return;
-        }
-        questionRef.close(next === 'mail' ? ('assigned' satisfies OrgClaManagerQuestionResult) : undefined);
+        this.releaseDesigneeWrite(write);
+        questionRef.close();
       },
       error: (error: unknown) => {
         questionRef.close();
@@ -1390,7 +1355,7 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * Why Start and Identify someone else are refused, or '' when they are not.
+   * Why Start is refused, or '' when it is not.
    *
    * Ordered most-general first, so the reason names the outermost cause: an account without Org
    * Lens at all is told that, not that it has yet to select an organization.

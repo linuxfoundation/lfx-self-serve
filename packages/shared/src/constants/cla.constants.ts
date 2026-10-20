@@ -212,7 +212,6 @@ export const ORG_CLA_NOT_STARTED_COPY = {
   ],
   downloadLabel: 'Download a copy of the CCLA for review (non-executable)',
   startLabel: 'Start the CLA process',
-  identifySomeoneElseLabel: 'Not the right person to sign? Identify someone else →',
 } as const;
 
 /**
