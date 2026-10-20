@@ -41,6 +41,7 @@ import {
   resolveTimeState,
   resolveViewerRole,
   resolveVisibleSections,
+  selectApplicableRsvp,
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -113,7 +114,14 @@ export class MeetingDetailsStateService {
    */
   private readonly optimisticInvitedId = signal<string | null>(null);
   /** RSVPs saved from this page (E2-05), applied ahead of the indexer; see {@link setMyRsvp}. */
-  private readonly myRsvpUpdates$ = new Subject<MeetingRsvp>();
+  private readonly myRsvpUpdates$ = new Subject<MeetingRsvp | null>();
+  /** The viewer's last fetched answer as a record, for re-selecting one after a partial removal (V1's `currentUserRsvp`). */
+  private lastFetchedRsvp: MeetingRsvp | null = null;
+  /**
+   * Bumped when the viewer removes themselves: the RSVP card resets its locally saved answer, so a
+   * deleted registration's answer never stays on screen.
+   */
+  public readonly rsvpReset = signal(0);
   /**
    * What `myRsvp` is fetched for, derived synchronously from the route: `null` when it is not
    * fetched.
@@ -344,19 +352,32 @@ export class MeetingDetailsStateService {
     if (this.optimisticInvitedId() === meetingId) {
       this.optimisticInvitedId.set(null);
     }
+    // As V1 (`rsvpUpdateTrigger$.next(null)`): the removed registrations' answer is gone.
+    this.myRsvpUpdates$.next(null);
+    this.rsvpReset.update((count) => count + 1);
     this.rosterRefresh.update((count) => count + 1);
     this.refresh$.next();
   }
 
   /**
    * Records a removal that left some of the viewer's registrations in place (V1's "Removal
-   * incomplete"): they stay on the invite list, and the meeting and the roster are read again.
+   * incomplete"): they stay on the invite list, the answer shown is re-selected from the surviving
+   * registrations as V1 does (the session's saved answers and the last fetched one, minus the removed
+   * registrants, which `clearConfirmedMeetingRsvps` has just recorded), and the meeting and the roster
+   * are read again.
    */
   public markLeaveIncomplete(meetingId: string): void {
-    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
+    const meeting = this.meeting();
+    if (!this.matchesRoute() || !meeting || meeting.id !== meetingId) {
       return;
     }
     this.optimisticInvitedId.set(meetingId);
+    const occurrenceId = resolveRsvpOccurrenceId(meeting, { occurrence: this.selectedOccurrence() });
+    const candidates = [...this.userService.confirmedMeetingRsvps(meetingId), ...(this.lastFetchedRsvp ? [this.lastFetchedRsvp] : [])].filter(
+      (rsvp) => this.userService.isMeetingRsvpCurrent(rsvp, meeting) && (!meeting.recurrence || !!occurrenceId || rsvp.scope === 'all')
+    );
+    this.myRsvpUpdates$.next(selectApplicableRsvp(occurrenceId, candidates));
+    this.rsvpReset.update((count) => count + 1);
     this.rosterRefresh.update((count) => count + 1);
     this.refresh$.next();
   }
@@ -681,13 +702,16 @@ export class MeetingDetailsStateService {
       merge(request.pipe(map((key) => ({ key }))), this.myRsvpUpdates$.pipe(map((rsvp) => ({ rsvp })))).pipe(
         switchMap((event): Observable<RsvpResponse | null | undefined> => {
           if ('rsvp' in event) {
-            return of(event.rsvp.response_type);
+            this.lastFetchedRsvp = event.rsvp;
+            return of(event.rsvp?.response_type ?? null);
           }
+          this.lastFetchedRsvp = null;
           if (!event.key) {
             return of(undefined);
           }
           // As V1: the BFF and the client both read a failed lookup as "not answered" (`null`).
           return this.meetingService.getMeetingRsvpForCurrentUser(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
+            tap((rsvp) => (this.lastFetchedRsvp = rsvp ?? null)),
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
             // Defensive: the client already reads a failure as `null`; an error must never end the signal.
             catchError(() => of<RsvpResponse | null | undefined>(null)),

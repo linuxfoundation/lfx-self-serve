@@ -37,6 +37,8 @@ describe('MeetingDetailsStateService', () => {
   let removedRegistrationMeetingIds: WritableSignal<ReadonlySet<string>>;
   let markRegistrationRemoved: ReturnType<typeof vi.fn>;
   let leaveLinkFor: string | null;
+  let confirmedMeetingRsvps: ReturnType<typeof vi.fn>;
+  let isMeetingRsvpCurrent: ReturnType<typeof vi.fn>;
   let clearRemovedRegistration: ReturnType<typeof vi.fn>;
 
   function create(platform: 'browser' | 'server' = 'browser'): MeetingDetailsStateService {
@@ -72,7 +74,7 @@ describe('MeetingDetailsStateService', () => {
             getPublicMeetingOccurrences,
           },
         },
-        { provide: UserService, useValue: { authenticated } },
+        { provide: UserService, useValue: { authenticated, confirmedMeetingRsvps, isMeetingRsvpCurrent } },
         {
           provide: MeetingDetailsSeedService,
           useValue: {
@@ -98,6 +100,8 @@ describe('MeetingDetailsStateService', () => {
     removedRegistrationMeetingIds = signal<ReadonlySet<string>>(new Set());
     markRegistrationRemoved = vi.fn((id: string) => removedRegistrationMeetingIds.update((ids) => new Set(ids).add(id)));
     leaveLinkFor = null;
+    confirmedMeetingRsvps = vi.fn().mockReturnValue([]);
+    isMeetingRsvpCurrent = vi.fn().mockReturnValue(true);
     clearRemovedRegistration = vi.fn((id: string) =>
       removedRegistrationMeetingIds.update((ids) => {
         const next = new Set(ids);
@@ -798,6 +802,46 @@ describe('MeetingDetailsStateService', () => {
 
       expect(state.canLeaveMeeting()).toBe(true);
       expect(state.rosterRefresh()).toBe(1);
+    });
+
+    // As V1: the answer shown after a partial removal is the surviving registrations' one.
+    it('re-selects the surviving answer after an incomplete removal', async () => {
+      const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
+      const surviving = { id: 'rsvp-2', registrant_id: 'r-2', meeting_id: MEETING_ID, response_type: 'maybe', scope: 'all' } as unknown as MeetingRsvp;
+      getMyRsvp.mockReturnValue(of(removed));
+      confirmedMeetingRsvps.mockReturnValue([surviving]);
+      isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
+      const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
+      await settle();
+      expect(state.myRsvp()).toBe('accepted');
+
+      state.markLeaveIncomplete(MEETING_ID);
+
+      expect(state.myRsvp()).toBe('maybe');
+      expect(state.rsvpReset()).toBe(1);
+    });
+
+    it('shows no answer after an incomplete removal when none survives', async () => {
+      const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
+      getMyRsvp.mockReturnValue(of(removed));
+      isMeetingRsvpCurrent.mockReturnValue(false);
+      const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
+      await settle();
+
+      state.markLeaveIncomplete(MEETING_ID);
+
+      expect(state.myRsvp()).toBeNull();
+    });
+
+    it('drops the answer and resets the card after a complete removal', async () => {
+      getMyRsvp.mockReturnValue(of({ id: 'rsvp-1', registrant_id: 'r-1', response_type: 'accepted' } as unknown as MeetingRsvp));
+      const state = await load(upcoming({ is_invite_responses_enabled: true, organizer: true } as Partial<Meeting>));
+      await settle();
+
+      state.markLeft(MEETING_ID);
+
+      expect(state.myRsvp()).not.toBe('accepted');
+      expect(state.rsvpReset()).toBe(1);
     });
 
     it('ignores a removal result for a meeting the page has left', async () => {

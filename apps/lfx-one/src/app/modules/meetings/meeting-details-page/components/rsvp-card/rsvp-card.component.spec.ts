@@ -24,6 +24,7 @@ describe('MeetingRsvpCardComponent', () => {
   let setMyRsvp: ReturnType<typeof vi.fn>;
   let createMeetingRsvp: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
+  let rsvpReset: WritableSignal<number>;
 
   const saved = (response: RsvpResponse): MeetingRsvp => ({ id: 'rsvp-1', meeting_id: 'meeting-1', response_type: response }) as unknown as MeetingRsvp;
 
@@ -31,6 +32,7 @@ describe('MeetingRsvpCardComponent', () => {
     meeting = signal<Meeting | undefined>({ id: 'meeting-1', title: 'Acme Weekly Sync' } as Meeting);
     myRsvp = signal<RsvpResponse | null | undefined>(null);
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
+    rsvpReset = signal(0);
     setMyRsvp = vi.fn();
     createMeetingRsvp = vi.fn((_id: string, request: { response: RsvpResponse }) => of(saved(request.response)));
     add = vi.fn();
@@ -47,6 +49,7 @@ describe('MeetingRsvpCardComponent', () => {
             myRsvpAttr: signal<string | null>(null),
             selectedOccurrence,
             setMyRsvp,
+            rsvpReset,
           },
         },
         { provide: MeetingService, useValue: { createMeetingRsvp } },
@@ -120,6 +123,20 @@ describe('MeetingRsvpCardComponent', () => {
     expect(add).not.toHaveBeenCalled();
     expect(text('meeting-rsvp-card-announcement')).toContain('RSVP saved.');
     expect(query('meeting-rsvp-card-scope')).toBeNull();
+  });
+
+  // A viewer whose own answer the page does not load (e.g. an invited organizer) keeps the card's saved
+  // answer: removing themselves must not leave that deleted registration's answer on screen.
+  it('drops the answer it saved once the viewer removes themselves', () => {
+    myRsvp.set(undefined);
+    click('meeting-rsvp-card-accepted');
+    fixture.detectChanges();
+    expect(text('meeting-rsvp-card-confirmation')).toContain("You're going");
+
+    rsvpReset.update((count) => count + 1);
+    fixture.detectChanges();
+
+    expect(query('meeting-rsvp-card-confirmation')).toBeNull();
   });
 
   // The live region stays mounted, so the save is announced; focus moves to the confirmation's Change.
