@@ -353,6 +353,13 @@ describe('MeetingHeaderComponent', () => {
       expect(query('meeting-header-badge-recording')).not.toBeNull();
     });
 
+    it('shows no Recording for a share URL the recording section would not open', async () => {
+      getPastMeetingRecording.mockReturnValue(of({ sessions: [{ share_url: 'javascript:alert(1)', total_size: 10 }] }));
+      await showPast();
+
+      expect(query('meeting-header-badge-recording')).toBeNull();
+    });
+
     it('shows no Recording when there is no recording, or it cannot be read', async () => {
       getPastMeetingRecording.mockReturnValue(throwError(() => ({ status: 404 })));
       await showPast();

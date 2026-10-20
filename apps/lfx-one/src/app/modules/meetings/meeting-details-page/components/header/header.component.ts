@@ -29,7 +29,7 @@ import {
   ProjectContext,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
-import { getLargestSessionShareUrl, getPastMeetingResourceId, resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
+import { getLargestSessionShareUrl, getPastMeetingResourceId, resolveOccurrenceRecurrence, toSafeExternalHref } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
@@ -277,7 +277,8 @@ export class MeetingHeaderComponent {
         switchMap((id) =>
           id
             ? this.meetingService.getPastMeetingRecording(id).pipe(
-                map((recording) => getLargestSessionShareUrl(recording)),
+                // Vetted as the recording section vets it, so the chip and the section never disagree.
+                map((recording) => toSafeExternalHref(getLargestSessionShareUrl(recording))),
                 // Silent on purpose, as V1's: this is the recording section's cached read, and that
                 // section logs its failures (`artifactFailure`). A failed read only hides the chip.
                 catchError(() => of(null))
