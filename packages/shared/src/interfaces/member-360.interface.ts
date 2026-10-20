@@ -39,7 +39,9 @@ export interface Member360PendingRun {
   startedAt: number;
 }
 export interface Member360Result {
-  status: 'pending' | 'ready' | 'needs_input';
+  status: 'pending' | 'ready' | 'needs_input' | 'failed';
+  /** Ephemeral, redacted terminal agent text; never stored as a document. */
+  message?: string;
   /** Plain activity sentences from trusted session events while the run is pending. */
   activity?: MktgRunActivity[];
   documentId?: string;

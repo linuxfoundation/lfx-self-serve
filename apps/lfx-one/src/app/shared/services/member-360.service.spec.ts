@@ -86,6 +86,19 @@ describe('Member360Service workbook transport', () => {
     expect(stored).toHaveBeenCalledTimes(1);
     expect(api.pendingStartedAt('sample-project', 'run-0123456789abcdef01234567')).toBeNull();
   });
+  it('emits a failed run once, forgets its capability and never polls it again', () => {
+    const received = vi.fn();
+    const completed = vi.fn();
+    startPending().subscribe({ next: received, complete: completed });
+    vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+    const result = { status: 'failed', message: 'No entitled project was found for this session.' };
+    http.expectOne('/api/mktg-agents/member-360/result').flush(result);
+    expect(received).toHaveBeenCalledExactlyOnceWith(result);
+    expect(completed).toHaveBeenCalledTimes(1);
+    expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(false);
+    vi.advanceTimersByTime(MKTG_RUN_POLL.timeoutMs);
+    http.expectNone('/api/mktg-agents/member-360/result');
+  });
   it('stops polling on needs_input without forgetting the open run', () => {
     const received = vi.fn();
     startPending().subscribe(received);

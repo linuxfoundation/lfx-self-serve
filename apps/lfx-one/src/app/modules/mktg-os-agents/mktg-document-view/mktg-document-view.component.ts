@@ -60,8 +60,8 @@ import { LinkedinPostOptionsComponent } from '../components/linkedin-post-option
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
-import { MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
+import { MEMBER_360_FAILURE_MESSAGE, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { Member360Result, MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360Service } from '@services/member-360.service';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
@@ -130,6 +130,7 @@ export class MktgDocumentViewComponent {
   protected readonly loading = signal(true);
   protected readonly generating = signal(false);
   protected readonly needsInput = signal(false);
+  protected readonly runFailed = signal(false);
   protected readonly runActivity = signal<MktgRunActivity[]>([]);
   protected readonly runStartedAt = signal(0);
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
@@ -338,6 +339,7 @@ export class MktgDocumentViewComponent {
             this.historyError.set('');
             this.runActivity.set([]);
             this.needsInput.set(false);
+            this.runFailed.set(false);
           }),
           switchMap((request) => {
             if (!request.project || !request.agentKey || !request.documentId) {
@@ -347,11 +349,17 @@ export class MktgDocumentViewComponent {
             const typedPending = request.agentKey === 'member-360' && !!request.user && this.member360.isPending(request.project, request.documentId);
             this.generating.set(typedPending);
             this.runStartedAt.set(typedPending ? (this.member360.pendingStartedAt(request.project, request.documentId) ?? Date.now()) : 0);
-            const ready$: Observable<unknown> = typedPending
+            const ready$: Observable<Member360Result | null> = typedPending
               ? this.member360
                   .waitForStored(request.project, request.documentId, (activity) => this.runActivity.set(activity))
                   .pipe(
-                    tap((result) => this.needsInput.set(result.status === 'needs_input')),
+                    tap((result) => {
+                      this.needsInput.set(result.status === 'needs_input');
+                      if (result.status === 'failed') {
+                        this.runFailed.set(true);
+                        this.errorText.set(result.message || MEMBER_360_FAILURE_MESSAGE);
+                      }
+                    }),
                     filter((result) => result.status !== 'needs_input')
                   )
               : of(null);
@@ -373,9 +381,9 @@ export class MktgDocumentViewComponent {
                     )
             );
             return ready$.pipe(
-              switchMap(() => revision$),
+              switchMap((result) => (result?.status === 'failed' ? of(null) : revision$)),
               switchMap((view) => {
-                if (!view.member360) return of(view);
+                if (!view?.member360) return of(view);
                 return this.documentStore.listDocuments(request.project).pipe(
                   tap((listing) => this.runHistory.set(listing.groups.find((group) => group.type.agentKey === 'member-360')?.documents ?? [])),
                   map(() => view),
