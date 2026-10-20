@@ -79,7 +79,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_REMOVAL_SOURCE_HEADER: 'x-lfx-removal-source',
   MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join'],
   MIN_CUSTOM_DURATION: 5,
-  MAX_CUSTOM_DURATION: 480,
+  MAX_CUSTOM_DURATION: 600,
 }));
 // `truncateToUtf16Units` is the real implementation: the truncation assertions below are about what
 // the controller sends upstream, so stubbing it would test the stub. `string.utils` has no imports of
@@ -1258,7 +1258,7 @@ describe('MeetingController', () => {
       });
     });
 
-    it.each([[0], [4], [481], [30.5], ['30'], [undefined]])('rejects duration %s', async (duration) => {
+    it.each([[0], [4], [601], [30.5], ['30'], [undefined]])('rejects duration %s', async (duration) => {
       await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration }), buildRes(), next);
 
       expect(meetingSvc.updateOccurrence).not.toHaveBeenCalled();

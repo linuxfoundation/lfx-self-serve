@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { YOUTUBE_MAX_MEETING_TITLE_LENGTH, MAX_CUSTOM_DURATION } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -164,7 +164,7 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     expect(component.canSave()).toBe(false);
   });
 
-  it.each([0, 4, 481])('blocks a duration of %s minutes', async (duration) => {
+  it.each([0, 4, MAX_CUSTOM_DURATION + 1])('blocks a duration of %s minutes', async (duration) => {
     const component = await mount();
 
     component.form.patchValue({ duration });
@@ -293,7 +293,7 @@ describe('RescheduleOccurrenceDialogComponent', () => {
   });
 
   it('shows the duration error up front when the existing occurrence is longer than the form allows', async () => {
-    occurrence = { ...OCCURRENCE, duration: 600 };
+    occurrence = { ...OCCURRENCE, duration: MAX_CUSTOM_DURATION + 1 };
     const component = await mount();
 
     expect(component.showDurationError()).toBe(true);
