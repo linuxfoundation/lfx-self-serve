@@ -10,7 +10,7 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { PROJECT_PERMISSION_ROLE_OPTIONS } from '@lfx-one/shared/constants';
-import { ProjectPermissionUser } from '@lfx-one/shared/interfaces';
+import { FilterOption, ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -37,13 +37,18 @@ export class UserPermissionsTableComponent {
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
   public canWrite = input<boolean>(false);
-  public readonly roleOptions = [{ label: 'All Roles', value: null }, ...PROJECT_PERMISSION_ROLE_OPTIONS];
-  public readonly filterForm = new FormGroup({ role: new FormControl<string | null>(null) });
-  private readonly selectedRole: Signal<string | null> = this.initSelectedRole();
-  public readonly filteredUsers: Signal<ProjectPermissionUser[]> = this.initFilteredUsers();
-  public project = computed(() => this.projectContextService.activeContext());
+  public readonly roleOptions: FilterOption<ProjectPermissionUser['role'] | null>[] = [{ label: 'All Roles', value: null }, ...PROJECT_PERMISSION_ROLE_OPTIONS];
+
+  // Forms
+  public readonly filterForm = new FormGroup({ role: new FormControl<ProjectPermissionUser['role'] | null>(null) });
+
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
+
+  // Complex computed/toSignal signals
+  private readonly selectedRole: Signal<ProjectPermissionUser['role'] | null> = this.initSelectedRole();
+  public readonly filteredUsers: Signal<ProjectPermissionUser[]> = this.initFilteredUsers();
+  public project = computed(() => this.projectContextService.activeContext());
   public userActionMenuItems: MenuItem[] = this.initializeUserActionMenuItems();
 
   // Output events
@@ -159,7 +164,7 @@ export class UserPermissionsTableComponent {
       });
   }
 
-  private initSelectedRole(): Signal<string | null> {
+  private initSelectedRole(): Signal<ProjectPermissionUser['role'] | null> {
     return toSignal(this.filterForm.controls.role.valueChanges, { initialValue: null });
   }
 
