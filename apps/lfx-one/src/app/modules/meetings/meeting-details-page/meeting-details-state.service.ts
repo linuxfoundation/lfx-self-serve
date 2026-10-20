@@ -405,7 +405,8 @@ export class MeetingDetailsStateService {
    * The upcoming roster's gate, V1's (`canViewGuests` and `!isPastMeeting`): the section's
    * `people` flag, narrowed to an organizer, or a registrant (an optimistic one included) of a
    * meeting whose organizer shares the guest list (`isMeetingAttendeeListShared`, which the BFF also
-   * enforces by returning `[]`). Never on an ended meeting: the past roster is N-02's. Every other
+   * enforces by returning `[]`). Never on an ended meeting, which shows V1's attendance figures
+   * (`MeetingAttendanceComponent`) instead. Every other
    * viewer has no roster, and so no count source either (GH-1731), so the section is absent rather
    * than showing a number it cannot back.
    */

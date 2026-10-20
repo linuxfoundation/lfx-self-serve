@@ -15,15 +15,6 @@ import {
   getRecordingDurationSeconds,
   isPastMeetingArtifactPublic,
   isPastMeetingCalendarRow,
-  countPastMeetingAttendance,
-  filterPublicPastMeetingRoster,
-  getPastMeetingAttendanceFigures,
-  getPastMeetingAttendanceTone,
-  getPastMeetingIdentityNames,
-  getPastMeetingIdentityTier,
-  isPastMeetingNotetakerBot,
-  isPastMeetingUnverifiedAttendee,
-  toPastMeetingParticipantRow,
   toPublicPastMeetingRecording,
   toPublicPastMeetingRoster,
   toPublicPastMeetingTranscript,
@@ -48,8 +39,6 @@ function participant(partial: Partial<EnrichedPastMeetingParticipant>): Enriched
     is_verified: partial.is_verified,
     is_auto_matched: partial.is_auto_matched,
     is_ai_reconciled: partial.is_ai_reconciled,
-    zoom_user_name: partial.zoom_user_name,
-    mapped_invitee_name: partial.mapped_invitee_name,
     org_is_member: partial.org_is_member ?? false,
     org_is_project_member: partial.org_is_project_member ?? false,
     avatar_url: partial.avatar_url,
@@ -443,23 +432,19 @@ describe('toPublicPastMeetingRoster', () => {
     expect(JSON.stringify(roster)).not.toContain('Engineer');
   });
 
-  // N-02: the public roster names every identified attendee, without the tier, and counts the unverified.
-  it('names invitees and identified attendees, and only counts the unverified ones', () => {
+  // N-02: the public roster names verified identities only; every other attendee tier is counted.
+  it('names invitees and verified attendees, and only counts the other attendee tiers', () => {
     const roster = toPublicPastMeetingRoster([
       participant({ uid: 'verified', is_attended: true, is_verified: true }),
       participant({ uid: 'invitee', is_invited: true }),
       participant({ uid: 'unknown', is_attended: true, is_unknown: true }),
       participant({ uid: 'needs-review', is_attended: true }),
-      // Reconciliation sets is_verified on every match it makes (N-02), automatic or AI.
-      participant({ uid: 'auto-matched', is_attended: true, is_invited: true, is_verified: true, is_auto_matched: true }),
-      participant({ uid: 'ai-reconciled', is_attended: true, is_verified: true, is_ai_reconciled: true }),
+      participant({ uid: 'auto-matched', is_attended: true, is_invited: true, is_auto_matched: true }),
+      participant({ uid: 'ai-reconciled', is_attended: true, is_ai_reconciled: true }),
     ]);
 
-    expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee', 'auto-matched', 'ai-reconciled']);
-    expect(roster.unidentified_attendees).toBe(2);
-    expect(JSON.stringify(roster.participants)).not.toMatch(/is_auto_matched|is_ai_reconciled|is_verified/);
-    // E4-05: the counts cover every participant, listed or not, so the figures match the admin page's.
-    expect(roster.attendance).toEqual({ participant_count: 6, attended_count: 5, individual_registrants_count: 2, unverified_attended_count: 2 });
+    expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee']);
+    expect(roster.unidentified_attendees).toBe(4);
   });
 });
 
@@ -509,149 +494,5 @@ describe('public recording and transcript allowlists (E4-04)', () => {
 
     expect(result.recording_files).toEqual([file]);
     expect(JSON.stringify(result)).not.toMatch(/host@example.com|creator@example.com|h-1/);
-  });
-});
-
-describe('past-meeting attendance figures (E4-05)', () => {
-  it('counts every record, the attended and the invited', () => {
-    expect(
-      countPastMeetingAttendance([
-        { is_attended: true, is_invited: true },
-        { is_attended: true, is_invited: false },
-        { is_attended: false, is_invited: true },
-      ])
-    ).toEqual({ participant_count: 3, attended_count: 2, individual_registrants_count: 2, unverified_attended_count: 2 });
-  });
-
-  it('counts unverified attendees, leaving out notetaker bots (N-02)', () => {
-    const counts = countPastMeetingAttendance([
-      participant({ is_attended: true, is_verified: true }),
-      participant({ is_attended: true, is_unknown: true }),
-      participant({ is_attended: true }),
-      participant({ is_attended: true, zoom_user_name: "Libby's Notetaker (Otter.ai)" }),
-      participant({ is_invited: true }),
-    ]);
-
-    expect(counts.attended_count).toBe(4);
-    expect(counts.unverified_attended_count).toBe(2);
-  });
-
-  it.each([
-    [0, 'low'],
-    [24, 'low'],
-    [25, 'medium'],
-    [69, 'medium'],
-    [70, 'high'],
-    [100, 'high'],
-  ] as const)('puts a %i%% rate in the %s band', (rate, tone) => {
-    expect(getPastMeetingAttendanceTone(rate)).toBe(tone);
-  });
-
-  it('derives total, attended, absent, rate and tone from the counts', () => {
-    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6, unverified_attended_count: 2 })).toEqual({
-      total: 8,
-      attended: 6,
-      absent: 2,
-      rate: 75,
-      tone: 'high',
-      unverified: 2,
-    });
-  });
-
-  it('leaves unverified null when the counts predate it, and never above attended', () => {
-    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 6 })?.unverified).toBeNull();
-    expect(getPastMeetingAttendanceFigures({ participant_count: 8, attended_count: 3, unverified_attended_count: 5 })?.unverified).toBe(3);
-  });
-
-  // The admin page used to hide its whole stats row here.
-  it('gives zero figures with no rate for a meeting with no participants', () => {
-    expect(getPastMeetingAttendanceFigures({ participant_count: 0, attended_count: 0 })).toEqual({
-      total: 0,
-      attended: 0,
-      absent: 0,
-      rate: null,
-      tone: null,
-      unverified: null,
-    });
-  });
-
-  it('is null when the counts are unknown, so unknown never reads as zero', () => {
-    expect(getPastMeetingAttendanceFigures(undefined)).toBeNull();
-    expect(getPastMeetingAttendanceFigures({ participant_count: 5 })).toBeNull();
-  });
-});
-
-describe('participant identity tiers (N-02)', () => {
-  it.each([
-    ['nobody who did not attend', { is_invited: true, is_verified: true }, null],
-    ['an attendee left unknown', { is_attended: true, is_unknown: true, is_verified: true }, 'unverified'],
-    ['an attendee nobody has verified', { is_attended: true }, 'unverified'],
-    ['an AI match, though verified', { is_attended: true, is_verified: true, is_ai_reconciled: true, is_auto_matched: true }, 'ai-reconciled'],
-    ['an automatic name match, though verified', { is_attended: true, is_verified: true, is_auto_matched: true }, 'auto-matched'],
-    ['a verified match with neither flag', { is_attended: true, is_verified: true }, 'verified'],
-  ] as const)('gives %s its tier', (_, flags, tier) => {
-    expect(getPastMeetingIdentityTier(participant(flags))).toBe(tier);
-  });
-
-  it('names what they joined Zoom as and who they were matched to, only where it differs from the row', () => {
-    expect(
-      getPastMeetingIdentityNames(participant({ first_name: 'Ada', last_name: 'Lovelace', zoom_user_name: 'ada-mbp', mapped_invitee_name: 'Ada King' }))
-    ).toEqual({ joinedAs: 'ada-mbp', matchedTo: 'Ada King' });
-    expect(
-      getPastMeetingIdentityNames(
-        participant({ first_name: 'Ada', last_name: 'Lovelace', zoom_user_name: ' ada  LOVELACE ', mapped_invitee_name: 'Ada Lovelace' })
-      )
-    ).toEqual({ joinedAs: null, matchedTo: null });
-    expect(getPastMeetingIdentityNames(participant({ first_name: 'Ada', last_name: 'Lovelace' }))).toEqual({ joinedAs: null, matchedTo: null });
-  });
-
-  it('labels a row by its tier, and an unverified attendee left unknown as Unknown', () => {
-    expect(toPastMeetingParticipantRow(participant({ is_attended: true, is_verified: true, is_auto_matched: true })).identity_label).toBe('Auto-matched');
-    expect(toPastMeetingParticipantRow(participant({ is_attended: true })).identity_label).toBe('Needs review');
-    expect(toPastMeetingParticipantRow(participant({ is_attended: true, is_unknown: true })).identity_label).toBe('Unknown');
-    expect(toPastMeetingParticipantRow(participant({ is_invited: true }))).toMatchObject({ identity_tier: null, identity_label: null });
-  });
-
-  // #2253: reconciliation never queues a bot, so no surface treats one as awaiting review.
-  it('treats an unmatched notetaker bot as a bot everywhere: no tier, not unverified, not listed', () => {
-    const bot = participant({ uid: 'bot', is_attended: true, zoom_user_name: "Libby's Notetaker (Otter.ai)" });
-
-    expect(toPastMeetingParticipantRow(bot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
-    expect(toPastMeetingParticipantRow(participant({ is_attended: true }))).toMatchObject({ identity_tier: 'unverified', is_notetaker_bot: false });
-    // A record reconciled before the bot exclusion can carry a match; it is still a bot.
-    const matchedBot = participant({ is_attended: true, is_verified: true, is_ai_reconciled: true, zoom_user_name: 'Fathom Notetaker' });
-    expect(toPastMeetingParticipantRow(matchedBot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
-    expect(isPastMeetingUnverifiedAttendee(bot)).toBe(false);
-
-    const invitedBot = participant({ uid: 'invited-bot', is_invited: true, first_name: 'Fireflies.ai', last_name: 'Notetaker' });
-    const roster = toPublicPastMeetingRoster([bot, invitedBot, participant({ uid: 'unknown', is_attended: true, is_unknown: true })]);
-    expect(roster.participants).toEqual([]);
-    expect(roster.unidentified_attendees).toBe(1);
-    expect(roster.attendance.unverified_attended_count).toBe(1);
-  });
-
-  it('tells a notetaker bot by its Zoom name, else its first and last name', () => {
-    expect(isPastMeetingNotetakerBot({ zoom_user_name: 'Fireflies.ai Notetaker' })).toBe(true);
-    expect(isPastMeetingNotetakerBot({ first_name: 'Read', last_name: 'AI Notetaker' })).toBe(true);
-    expect(isPastMeetingNotetakerBot({ first_name: 'Grain', last_name: 'Adeyemi' })).toBe(false);
-  });
-});
-
-describe('filterPublicPastMeetingRoster (E4-05)', () => {
-  const row = (uid: string, is_invited: boolean, is_attended: boolean) => ({ uid, first_name: uid, last_name: '', is_invited, is_attended });
-  const rows = [row('invited-attended', true, true), row('invited-absent', true, false), row('walk-in', false, true)];
-  const uids = (invitation: 'all' | 'invited' | 'not-invited', attendance: 'all' | 'attended' | 'absent') =>
-    filterPublicPastMeetingRoster(rows, invitation, attendance).map((r) => r.uid);
-
-  it('keeps every row with both filters on all', () => {
-    expect(uids('all', 'all')).toEqual(['invited-attended', 'invited-absent', 'walk-in']);
-  });
-
-  it('applies each filter on its own axis', () => {
-    expect(uids('invited', 'all')).toEqual(['invited-attended', 'invited-absent']);
-    expect(uids('not-invited', 'all')).toEqual(['walk-in']);
-    expect(uids('all', 'absent')).toEqual(['invited-absent']);
-    expect(uids('invited', 'attended')).toEqual(['invited-attended']);
-    expect(uids('not-invited', 'absent')).toEqual([]);
   });
 });

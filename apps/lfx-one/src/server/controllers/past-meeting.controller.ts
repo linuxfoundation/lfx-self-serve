@@ -9,7 +9,6 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   PastMeeting,
   PastMeetingAttachment,
-  PastMeetingAttendanceCounts,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
@@ -19,7 +18,6 @@ import {
   PresignAttachmentResponse,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { countPastMeetingAttendance } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ServiceValidationError } from '../errors';
@@ -139,16 +137,10 @@ export class PastMeetingController {
       meeting.organizer = await this.isPastMeetingOrganizer(req, meeting, uid);
 
       const counts = await this.addParticipantsCount(req, uid);
-      if (counts) {
-        Object.assign(meeting, counts, { committee_members_count: 0 });
-      } else {
-        // Unknown, not zero: none of the counts goes out (E4-05).
-        delete meeting.individual_registrants_count;
-        delete meeting.committee_members_count;
-        delete meeting.participant_count;
-        delete meeting.attended_count;
-        delete meeting.unverified_attended_count;
-      }
+      meeting.individual_registrants_count = counts.individual_registrants_count;
+      meeting.committee_members_count = counts.committee_members_count;
+      meeting.participant_count = counts.participant_count;
+      meeting.attended_count = counts.attended_count;
 
       // Webhook-created past meeting lacks a human created_by — join back to the live
       // v1_meeting index by meeting_id to resolve the organizer name.
@@ -1010,32 +1002,52 @@ export class PastMeetingController {
    * Helper method to add participant and registrant counts to a past meeting
    * @param req - Express request object
    * @param pastMeetingUid - UID of the past meeting
-   * @returns The counts (`countPastMeetingAttendance`), or null when the participants could not all be read
+   * @returns Promise with registrant and participant counts or defaults to 0 on error
    */
-  private async addParticipantsCount(req: Request, pastMeetingUid: string): Promise<PastMeetingAttendanceCounts | null> {
+  private async addParticipantsCount(
+    req: Request,
+    pastMeetingUid: string
+  ): Promise<{ individual_registrants_count: number; committee_members_count: number; participant_count: number; attended_count: number }> {
     const startTime = logger.startOperation(req, 'add_participant_counts', {
       past_meeting_id: pastMeetingUid,
     });
 
     try {
-      // Every participant (each was invited, attended, or both). A partial page walk fails the read,
-      // so a short list never understates the counts.
-      const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid, true);
-      const counts = countPastMeetingAttendance(participants);
+      // Get all participants (contains both invited and attended information)
+      const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid).catch(() => []);
+
+      // Calculate counts based on participant data
+      const invitedCount = participants.filter((p) => p.is_invited).length;
+      const attendedCount = participants.filter((p) => p.is_attended).length;
+      const totalParticipantCount = participants.length;
+
+      const result = {
+        individual_registrants_count: invitedCount, // Count of people who were formally invited
+        committee_members_count: 0, // Not available in participant data, set to 0
+        participant_count: totalParticipantCount, // Total count of all participants
+        attended_count: attendedCount, // Count of people who actually attended
+      };
 
       logger.success(req, 'add_participant_counts', startTime, {
         past_meeting_id: pastMeetingUid,
-        invited_count: counts.individual_registrants_count,
-        attended_count: counts.attended_count,
-        total_count: counts.participant_count,
+        invited_count: invitedCount,
+        attended_count: attendedCount,
+        total_count: totalParticipantCount,
       });
 
-      return counts;
+      return result;
     } catch (error) {
-      // The meeting still loads; its counts are left out, so a page shows them as unknown rather than
-      // as a real zero (E4-05).
-      logger.error(req, 'add_participant_counts', startTime, error, { past_meeting_id: pastMeetingUid });
-      return null;
+      // Log error but don't fail - default to 0 counts
+      logger.error(req, 'add_participant_counts', startTime, error, {
+        past_meeting_id: pastMeetingUid,
+      });
+
+      return {
+        individual_registrants_count: 0,
+        committee_members_count: 0,
+        participant_count: 0,
+        attended_count: 0,
+      };
     }
   }
 

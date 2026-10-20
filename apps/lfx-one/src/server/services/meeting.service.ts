@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { IMPORT_REGISTRANTS_MAX, PAST_MEETING_IDENTITY_TIER_RANK, QUERY_SERVICE_MAX_PAGE_SIZE, RSVP_RESPONSES } from '@lfx-one/shared/constants';
+import { IMPORT_REGISTRANTS_MAX, QUERY_SERVICE_MAX_PAGE_SIZE, RSVP_RESPONSES } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiRequestOptions,
@@ -46,10 +46,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
-  getPastMeetingIdentityTier,
   getPastMeetingTranscriptUrl,
   getRecordingDurationSeconds,
-  isPastMeetingNotetakerBot,
   isMeetingAttendeeListShared,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
@@ -2648,11 +2646,6 @@ export class MeetingService {
   }
 
   private isSamePerson(a: PastMeetingParticipant, b: PastMeetingParticipant): boolean {
-    // A notetaker bot is never the same person as a human, even on a shared email (N-02, #2253):
-    // merged, its Zoom name would make the person read as a bot, depending on query order.
-    if (isPastMeetingNotetakerBot(a) !== isPastMeetingNotetakerBot(b)) {
-      return false;
-    }
     if (a.username && b.username) {
       return a.username === b.username;
     }
@@ -2696,32 +2689,9 @@ export class MeetingService {
   }
 
   /** Folds a connected group of identity-matched participant records into one merged record. */
-  /**
-   * Whether `candidate` should supply a merged participant's record over `current`: an attended
-   * record over one that did not attend, and between two attended records the better-identified
-   * one (`PAST_MEETING_IDENTITY_TIER_RANK`, N-02), so the identity flags and names the merge keeps
-   * do not depend on the order the query returns the duplicates in. Between equals, a record an
-   * organizer left unknown wins; any other tie keeps `current`.
-   */
-  private isPreferredPastMeetingRecord(candidate: PastMeetingParticipant, current: PastMeetingParticipant): boolean {
-    if (candidate.is_attended !== current.is_attended) {
-      return candidate.is_attended;
-    }
-    if (!candidate.is_attended) {
-      return false;
-    }
-    const rank = (participant: PastMeetingParticipant): number => PAST_MEETING_IDENTITY_TIER_RANK[getPastMeetingIdentityTier(participant) ?? 'unverified'];
-    if (rank(candidate) !== rank(current)) {
-      return rank(candidate) > rank(current);
-    }
-    // Between two unverified records, an organizer's explicit "Leave unknown" wins: reconciliation
-    // skips is_unknown, so keeping the other record would queue an attendee already reviewed.
-    return !!candidate.is_unknown && !current.is_unknown;
-  }
-
   private mergePastMeetingParticipantGroup(group: PastMeetingParticipant[]): PastMeetingParticipant {
     const merged = group.reduce((merged, participant) => {
-      const preferred = this.isPreferredPastMeetingRecord(participant, merged) ? participant : merged;
+      const preferred = participant.is_attended && !merged.is_attended ? participant : merged;
       const other = preferred === participant ? merged : participant;
       return {
         ...preferred,
@@ -2735,10 +2705,6 @@ export class MeetingService {
         org_name: this.pickNonBlank(preferred.org_name, other.org_name),
         username: this.pickNonBlank(preferred.username, other.username),
         email: this.pickNonBlank(preferred.email, other.email),
-        // N-02: the names behind an attendee row survive the merge, whichever record supplied them.
-        // A bot is never grouped with a person (`isSamePerson`), so this never borrows a bot's name.
-        zoom_user_name: this.pickNonBlank(preferred.zoom_user_name, other.zoom_user_name),
-        mapped_invitee_name: this.pickNonBlank(preferred.mapped_invitee_name, other.mapped_invitee_name),
       };
     });
 
