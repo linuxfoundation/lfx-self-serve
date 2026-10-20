@@ -6,17 +6,19 @@ import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angul
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
-import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
+import { MKTG_AGENTS } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgAgentAccent, MktgAgentTile, MktgDependencyDocument, ProjectContext } from '@lfx-one/shared/interfaces';
 import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
+
+import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
+import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
 
 // Marketplace landing for the Marketing OS marketplace (approved form-first
 // design): catalog grid with client-side search, "Coming soon" tags on
@@ -29,7 +31,7 @@ import { distinctUntilChanged, filter, map, merge, Observable, of, switchMap } f
 // run shell that replaced the earlier in-page chat-panel approach.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, InputTextComponent, TagComponent, EmptyStateComponent],
+  imports: [NgClass, ReactiveFormsModule, InputTextComponent, TagComponent, EmptyStateComponent, MktgKitTabsComponent, MktgKitHeaderComponent],
   templateUrl: './mktg-os-agents.component.html',
 })
 export class MktgOsAgentsComponent {
@@ -46,7 +48,7 @@ export class MktgOsAgentsComponent {
   private readonly activeContext$ = toObservable(this.projectContext.activeContext);
 
   // === Constants ===
-  protected readonly labels = MKTG_OS_AGENTS_LABEL;
+  protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
 
   // === Forms ===
   protected readonly searchForm = new FormGroup({
@@ -59,8 +61,8 @@ export class MktgOsAgentsComponent {
   protected readonly storedVersions = signal<Record<string, number>>({});
   /**
    * Resolved stored output per DEPENDENCY agent id for the active project
-   * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
-   * run fallback. Starts empty and clears on every project switch, so
+   * (dec-agent-dependency-gating): server-approved current only, never browser Drafts.
+   * Starts empty and clears on every project switch, so
    * dependent cards are disabled (fail-closed) until resolution lands — on
    * SSR they stay disabled, matching the badge-free SSR output.
    */
@@ -148,28 +150,16 @@ export class MktgOsAgentsComponent {
     if (tile.disabled) {
       return;
     }
-    this.router.navigate([tile.agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
-  }
-
-  /** The Documents area: every stored output of the active project, with revisions. */
-  protected onOpenDocuments(): void {
-    this.router.navigate(['documents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['../', tile.agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   // === Private initializers ===
   /**
-   * When the marketplace must re-resolve its dependency gating for the active
-   * project, beyond the resolution it does on arrival:
-   *
-   * 1. **A run completed.** Generating a Brand Kit stores the very document
-   *    its dependents are gated on — leaving the grid on the old answer would
-   *    keep the Message Foundation card locked over a document that exists.
-   * 2. **The marketplace became active again.** Returning from a run page is
-   *    the ordinary way a user reaches the grid after generating something,
-   *    and it is exactly then that the gating is most likely stale. Navigation
-   *    events cover it whether this instance is rebuilt or kept alive by the
-   *    router's reuse strategy; the navigation that mounted us is excluded, so
-   *    first load still resolves exactly once.
+   * Refresh the Agents tab's snapshot after a run completes or on return from
+   * a run page. The existing snapshot stays visible during a same-project
+   * refresh; a project change clears it and resolves from a neutral state.
+   * Excluding the navigation that mounted this component avoids a duplicate
+   * first fetch even when the router retains the tab instance.
    */
   private refreshTriggers(projectUid: string): Observable<string> {
     const runCompleted$ = this.dependencyService.documentsChanged$.pipe(filter((changedUid) => changedUid === projectUid));

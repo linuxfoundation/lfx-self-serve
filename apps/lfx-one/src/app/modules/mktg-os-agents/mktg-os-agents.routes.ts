@@ -7,7 +7,29 @@ import { authGuard } from '@shared/guards/auth.guard';
 export const MKTG_OS_AGENTS_ROUTES: Routes = [
   {
     path: '',
+    pathMatch: 'full',
+    title: 'Marketing kit',
+    loadComponent: () => import('./mktg-kit/mktg-kit.component').then((m) => m.MktgKitComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'agents',
+    title: 'Marketing agents',
     loadComponent: () => import('./mktg-os-agents/mktg-os-agents.component').then((m) => m.MktgOsAgentsComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'requests',
+    title: 'Marketing requests',
+    data: { title: 'Requests' },
+    loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'access',
+    title: 'Marketing access',
+    data: { title: 'Access' },
+    loadComponent: () => import('./mktg-kit-placeholder/mktg-kit-placeholder.component').then((m) => m.MktgKitPlaceholderComponent),
     canActivate: [authGuard],
   },
   {
