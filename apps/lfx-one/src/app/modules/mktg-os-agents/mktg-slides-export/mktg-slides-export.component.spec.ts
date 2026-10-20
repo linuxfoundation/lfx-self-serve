@@ -137,7 +137,7 @@ describe('MktgSlidesExportComponent', () => {
     expect(open.href).toBe(DECK_LINK);
     expect(open.target).toBe('_blank');
     expect(open.rel).toContain('noopener');
-    expect(query('mktg-slides-export-detail')?.textContent).toContain('17 slides · a new deck in the Marketing OS folder');
+    expect(query('mktg-slides-export-detail')?.textContent).toContain('17 slides · a new deck in Google Drive');
     expect(query('mktg-slides-export-brand')?.textContent).toContain('In the kit’s colours and typeface.');
     expect(query('mktg-slides-export-logo-note')?.textContent).toContain(MKTG_SLIDES_EXPORT_LOGO_NOTES['not-public']);
   });

@@ -34,7 +34,7 @@ import { catchError, distinctUntilChanged, Observable, of, startWith, Subject, S
 // tab), its slide count and what was branded — or a plain message with a
 // retry. When the last export cannot be read it says so and offers to check
 // again rather than Create, and a panel that comes back to a document whose
-// export is still under way in this browser shows that export instead of
+// export is still under way in this tab shows that export instead of
 // offering a second deck. Slides are only an export: the asset itself stays
 // the app page.
 @Component({
@@ -96,7 +96,7 @@ export class MktgSlidesExportComponent {
       return '';
     }
     const slides = record.slideCount === 1 ? '1 slide' : `${record.slideCount} slides`;
-    return record.mode === 'update' ? `${slides} · the same deck, refreshed in place` : `${slides} · a new deck in the Marketing OS folder`;
+    return record.mode === 'update' ? `${slides} · the same deck, refreshed in place` : `${slides} · a new deck in Google Drive`;
   });
   /** The last export's line shows while nothing newer is on the panel. */
   protected readonly showLast = computed(() => this.last() !== null && this.phase() !== 'running' && this.phase() !== 'done');
@@ -114,7 +114,7 @@ export class MktgSlidesExportComponent {
       // the page names another, the panel stops watching the export under way
       // (it keeps running, and the server keeps its record either way), the
       // last export is read again for the new one, and an export of the new
-      // target's document still under way in this browser is shown again.
+      // target's document still under way in this tab is shown again.
       toObservable(this.target)
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
@@ -181,7 +181,7 @@ export class MktgSlidesExportComponent {
     this.watch(this.exportService.run(target, mode));
   }
 
-  /** Show an export of the target's document still under way in this browser (started before the panel last left it). */
+  /** Show an export of the target's document still under way in this tab (started before the panel last left it). */
   private attach(target: MktgSlidesExportTarget | null): void {
     const running = target ? this.exportService.running(target) : null;
     if (running) {
