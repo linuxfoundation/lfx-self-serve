@@ -966,14 +966,21 @@ export class VoteManageComponent {
   /** Reads committee_uid from queryParams and pre-populates the committee field (locked).
    *  Reactive rather than one-shot: the rail's Create Vote dialog can navigate this reused component
    *  to a new ?committee_uid= (e.g. after leaving a clone) without a full reload — a `take(1)` read
-   *  would leave the group unlocked and unpopulated for every change after the first (GH-3781). */
+   *  would leave the group unlocked and unpopulated for every change after the first (GH-3781).
+   *  A `?clone=` value folds to a null uid here (rather than being filtered out before `map`) so that
+   *  entering a clone still reaches this switchMap and clears any lock left over from a prior
+   *  activation, instead of leaving it stuck behind the clone's own (unlocked) committee prefill
+   *  (GH-3781 review round 3: dealako/greptile/Copilot/cursor — stale lock across a clone transition). */
   private initCommitteeContext(): void {
     this.route.queryParamMap
       .pipe(
-        filter((params) => !params.get('clone')), // clone's own committee prefill stays editable; locking it here would fight that
-        map((params) => params.get('committee_uid')),
+        map((params) => (params.get('clone') ? null : params.get('committee_uid'))),
         distinctUntilChanged(),
         switchMap((uid) => {
+          // A group switch (including into/out of a clone) invalidates whatever confirmation dialog
+          // and speculative vote belonged to the previous form state — see
+          // resetOpenConfirmationIfPending (GH-3781 review round 3: dealako).
+          this.resetOpenConfirmationIfPending();
           if (!uid || this.route.snapshot.paramMap.has('id')) {
             return of(null);
           }
@@ -987,19 +994,37 @@ export class VoteManageComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((committee) => {
-        const committeeControl = this.form().get('committee');
-        if (!committee) {
-          // committee_uid removed (or never applicable) on a reused component — unlock the field
-          // rather than leaving it stuck disabled/prefilled from a prior activation.
-          this.committeeContext.set(null);
-          committeeControl?.enable();
-          return;
-        }
+        // committee_uid removed/cleared (or never applicable) on a reused component — unlock the
+        // field rather than leaving it stuck disabled/prefilled from a prior activation.
         this.committeeContext.set(committee);
-        const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
-        committeeControl?.setValue(ref);
-        committeeControl?.disable();
+        this.applyCommitteeLock(committee);
       });
+  }
+
+  /** Locks (or unlocks) the committee control on the CURRENT form. Extracted so both a synchronous
+   *  committee-cache replay (above) and the clone-transition form swap (initCloneFromQuery, below) can
+   *  target whichever form instance is actually current, instead of racing to apply a lock to a form
+   *  that's about to be replaced (GH-3781 review round 3: dealako — cache-hit race). */
+  private applyCommitteeLock(committee: Committee | null): void {
+    const committeeControl = this.form().get('committee');
+    if (!committee) {
+      committeeControl?.enable();
+      return;
+    }
+    const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
+    committeeControl?.setValue(ref);
+    committeeControl?.disable();
+  }
+
+  /** Tears down an open confirmation dialog and discards its speculative vote. Shared between the
+   *  clone and committee transition handlers so navigating away mid-confirmation always cleans up,
+   *  regardless of which query param drove the navigation (GH-3781 review round 3: dealako). */
+  private resetOpenConfirmationIfPending(): void {
+    if (this.confirmingOpenVote()) {
+      this.confirmingOpenVote.set(false);
+      this.confirmationService.close();
+      this.voteService.discardSpeculativeVote();
+    }
   }
 
   /** Reads ?clone=<uid> from queryParams and prefills the create form from the source vote (create mode only).
@@ -1019,11 +1044,7 @@ export class VoteManageComponent {
           // this clone-param change — e.g. clone X -> start a regular vote via the rail -> open its
           // confirmation -> browser Back to X. Left alone, accepting the surviving dialog would open
           // the earlier pending speculative record instead of the newly-selected vote (GH-3781).
-          if (this.confirmingOpenVote()) {
-            this.confirmingOpenVote.set(false);
-            this.confirmationService.close();
-            this.voteService.discardSpeculativeVote();
-          }
+          this.resetOpenConfirmationIfPending();
 
           if (!cloneId || this.route.snapshot.paramMap.has('id')) {
             // Clone removed (or never applicable) on a reused component — drop any stale source/form/step
@@ -1069,6 +1090,11 @@ export class VoteManageComponent {
       .subscribe((vote) => {
         this.loading.set(false);
         this.form().enable();
+        // Re-apply whatever committee lock is currently in effect — initCommitteeContext() may have
+        // already resolved (possibly synchronously, from its 10s committee cache) against the form
+        // instance this just replaced/re-enabled, and the blanket enable() above would otherwise strip
+        // a lock that's still supposed to be in effect (GH-3781 review round 3: dealako — cache-hit race).
+        this.applyCommitteeLock(this.committeeContext());
         if (!vote) return;
         // This form has no poll-type/num-winners UI and can only represent a generic, non-anonymous
         // ballot — prefilling from a ranked-choice or pseudo-anonymous source would silently submit a

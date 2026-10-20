@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, PLATFORM_ID, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
@@ -582,7 +582,7 @@ describe('VoteManageComponent', () => {
       // Accepting the dialog still routes through submitVote()'s own resolution — surface the error there.
       (capturedConfirmation as Confirmation | null)?.accept?.();
 
-      expect(voteServiceMock.createVote).not.toHaveBeenCalled();
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No project selected' }));
     });
 
@@ -772,6 +772,83 @@ describe('VoteManageComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Cannot clone' }));
       expect(fixture.componentInstance.form().get('title')?.value).toBe('');
       expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
+
+    // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywE, dealako; pins the uAPFY/vote.utils.ts SSR fix):
+    // cloning an ended vote resets its deadline through getUserTimezone() unless running on the
+    // server, matching every other getUserTimezone() call site's isPlatformBrowser guard. Pins that
+    // an SSR render (PLATFORM_ID: 'server') resolves the reset timezone to 'UTC' instead of calling
+    // getUserTimezone(), which would otherwise diverge from the client's hydrated render.
+    it('resets an ended clone source deadline to UTC during SSR instead of calling getUserTimezone()', async () => {
+      TestBed.configureTestingModule({ providers: [{ provide: PLATFORM_ID, useValue: 'server' }] });
+      fetchVote.mockReturnValue(of(sourceVote({ committee_uid: COMMITTEE_UID, end_time: '2000-01-01T00:00:00Z' })));
+      const fixture = await createComponent();
+
+      expect(fixture.componentInstance.form().get('timezone')?.value).toBe('UTC');
+    });
+  });
+
+  describe('committee context (?committee_uid=<uid>) reuse', () => {
+    beforeEach(() => {
+      setRouteMode(null); // create mode — committee_uid lock only applies on the create route
+    });
+
+    // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywE, dealako): initCommitteeContext reacts to the
+    // live committee_uid query param (not a one-shot take(1) read) so the rail's Create Vote dialog
+    // can retarget a reused instance from one group to another without a full reload. Pins that a
+    // plain committee_uid A -> B transition re-locks the form to B, rather than leaving it stuck on
+    // A's lock or unlocked.
+    it('re-locks the committee field to the newly selected group on a committee_uid A -> B transition', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      const COMMITTEE_A_UID = 'committee-uid-a';
+      const COMMITTEE_B_UID = 'committee-uid-b';
+      getCommittee.mockImplementation((uid: string) =>
+        of(uid === COMMITTEE_A_UID ? { uid: COMMITTEE_A_UID, name: 'Committee A' } : { uid: COMMITTEE_B_UID, name: 'Committee B' })
+      );
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({ committee_uid: COMMITTEE_A_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.committeeContext()?.uid).toBe(COMMITTEE_A_UID);
+      let committeeControl = fixture.componentInstance.form().get('committee');
+      expect(committeeControl?.value).toEqual({ uid: COMMITTEE_A_UID, name: 'Committee A' });
+      expect(committeeControl?.disabled).toBe(true);
+
+      queryParams$.next(convertToParamMap({ committee_uid: COMMITTEE_B_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.committeeContext()?.uid).toBe(COMMITTEE_B_UID);
+      committeeControl = fixture.componentInstance.form().get('committee');
+      expect(committeeControl?.value).toEqual({ uid: COMMITTEE_B_UID, name: 'Committee B' });
+      expect(committeeControl?.disabled).toBe(true);
+    });
+
+    // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywA, copilot; PRRT_kwDOPMiRQ86uDywE, dealako):
+    // resetOpenConfirmationIfPending now runs from both initCommitteeContext and initCloneFromQuery,
+    // so a committee_uid change (not just a ?clone change) tears down a stale open confirmation and
+    // its pending speculative vote instead of leaving them dangling against a form that's about to
+    // be relocked to a different group.
+    it('dismisses an open confirmation and discards its speculative vote when the committee_uid changes underneath it', async () => {
+      const queryParams$ = new Subject<ParamMap>();
+      routeMock.queryParamMap = queryParams$.asObservable();
+      getCommittee.mockReturnValue(of({ uid: COMMITTEE_UID, name: 'Committee A' }));
+      const fixture = await createComponent();
+
+      queryParams$.next(convertToParamMap({}));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const confirmationService = TestBed.inject(ConfirmationService);
+      const closeSpy = vi.spyOn(confirmationService, 'close');
+      fixture.componentInstance.confirmingOpenVote.set(true);
+
+      queryParams$.next(convertToParamMap({ committee_uid: COMMITTEE_UID }));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.confirmingOpenVote()).toBe(false);
+      expect(closeSpy).toHaveBeenCalled();
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
     });
   });
 

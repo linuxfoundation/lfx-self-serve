@@ -185,9 +185,11 @@ function computeParticipationPercent(responses: number, invited: number): number
  * @param nowMs - Current time in epoch ms, injectable for deterministic tests (defaults to Date.now())
  * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
  * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
- * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`) — the
- * server and the browser otherwise resolve different zones for the same clone, so the server-rendered
- * and client-hydrated form values diverge (GH-3781)
+ * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-results-drawer,
+ * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
+ * hydration — this does not prevent a server/client difference, it just makes the server side
+ * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
  * @returns VoteFormValue to patch into the create form
  */
 export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), fallbackTimezone: string = getUserTimezone()): VoteFormValue {
