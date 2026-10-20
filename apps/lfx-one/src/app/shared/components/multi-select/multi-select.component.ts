@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, contentChild, ElementRef, inject, input, output, PLATFORM_ID, TemplateRef } from '@angular/core';
+import { Component, computed, contentChild, ElementRef, inject, input, output, PLATFORM_ID, Signal, TemplateRef } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectModule } from 'primeng/multiselect';
+import { map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-multi-select',
@@ -64,6 +66,19 @@ export class MultiSelectComponent {
   /** Id applied to the focusable input — pair with an external `<label for>` (PrimeNG `inputId`). */
   public readonly inputId = input<string | undefined>(undefined);
   public readonly filterChange = output<string>();
+
+  /**
+   * Whether the bound control holds any value — the same test PrimeNG uses before appending its own
+   * placeholder after a `#selecteditems` template. Read off the control rather than the template's
+   * `selectedOptions`, which drops values missing from `options` (still loading, or no longer listed).
+   */
+  protected readonly hasValue: Signal<boolean> = toSignal(
+    toObservable(computed(() => this.form().get(this.control()))).pipe(
+      switchMap((control) => (control ? control.valueChanges.pipe(startWith(control.value)) : of(null))),
+      map((value) => Array.isArray(value) && value.length > 0)
+    ),
+    { initialValue: false }
+  );
 
   /** Optional custom option template (mirrors `lfx-select`'s `itemTemplate`) for richer rows — project as `<ng-template let-option #item>`; takes precedence over the built-in layout. */
   public readonly itemTemplate = contentChild<TemplateRef<unknown>>('item');

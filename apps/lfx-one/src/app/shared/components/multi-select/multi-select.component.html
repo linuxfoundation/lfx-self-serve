@@ -32,8 +32,8 @@
          renders what is selected elsewhere (e.g. as removable chips below the field). With nothing picked,
          PrimeNG appends its own placeholder after this template, so it is only rendered here over a selection. -->
     @if (placeholderOnly()) {
-      <ng-template #selecteditems let-selected>
-        @if (selected?.length) {
+      <ng-template #selecteditems>
+        @if (hasValue()) {
           <span class="text-gray-400">{{ placeholder() }}</span>
         }
       </ng-template>

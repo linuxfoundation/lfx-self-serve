@@ -55,4 +55,11 @@ describe('MultiSelectComponent — placeholderOnly', () => {
     const text: string = fixture.nativeElement.querySelector('.p-multiselect-label').textContent;
     expect(text.match(/Select group\(s\)/g)).toHaveLength(1);
   });
+
+  it('still shows the placeholder once when the value holds an id missing from the options', async () => {
+    await render(true, ['not-listed']);
+
+    const text: string = fixture.nativeElement.querySelector('.p-multiselect-label').textContent;
+    expect(text.match(/Select group\(s\)/g)).toHaveLength(1);
+  });
 });
