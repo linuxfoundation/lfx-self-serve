@@ -78,7 +78,7 @@
             class="flex max-w-[260px] flex-none items-center gap-[11px] rounded-full border border-[var(--md-border)] bg-[var(--md-surface-card)] py-[5px] pl-[6px] pr-[6px] text-left hover:border-[var(--md-border-strong)] hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none min-[641px]:pr-[14px]"
             aria-haspopup="menu"
             [attr.aria-expanded]="accountMenuOpen()"
-            [attr.aria-label]="accountLabel()"
+            [attr.aria-label]="'Account menu for ' + (userService.user()?.name || 'your account')"
             [attr.title]="userService.user()?.email"
             data-testid="meeting-identity-bar-account">
             <lfx-avatar [image]="userService.effectiveAvatarUrl()" icon="fa-light fa-user" [label]="userService.user()?.name" shape="circle" />
@@ -91,23 +91,12 @@
           <!-- Appended inside the bar, so the overlay stays within the V2 token scope (styling-system.md). -->
           <lfx-menu
             #userMenu
-            [model]="userMenuItems()"
+            [model]="userMenuItems"
             [popup]="true"
             [appendTo]="bar"
             ariaLabel="Account"
             (onShow)="accountMenuOpen.set(true)"
-            (onHide)="accountMenuOpen.set(false)">
-            <!-- Who is signed in: plain text above the items, read with the menu, never a disabled item. -->
-            <ng-template #start>
-              @if (!userService.impersonating() && userService.user()?.email; as email) {
-                <p
-                  class="m-0 border-b border-[var(--md-divider)] px-[14px] py-[10px] text-[12.5px] text-[var(--md-text-muted)]"
-                  data-testid="meeting-identity-bar-signed-in-as">
-                  Signed in as <span class="font-semibold text-[var(--md-text-heading)]">{{ email }}</span>
-                </p>
-              }
-            </ng-template>
-          </lfx-menu>
+            (onHide)="accountMenuOpen.set(false)" />
         } @else {
           <span
             class="mr-[4px] hidden whitespace-nowrap text-[12px] text-[var(--md-text-muted)] transition-opacity duration-200 motion-reduce:transition-none min-[641px]:inline"
