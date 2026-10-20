@@ -75,13 +75,30 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(current[0].getAttribute('data-testid')).toBe('engagement-sub-nav-committees');
   });
 
-  it('highlights the active item with type colour alone, not a block or edge indicator', () => {
+  it('highlights the active item as a pale blue block in semibold, with a hover background on the others', () => {
     const active = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
     const inactive = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]');
 
-    expect(active.className).toContain('text-blue-600');
-    expect(active.className).not.toMatch(/border-l|bg-blue/);
-    expect(inactive.className).toContain('text-gray-600');
+    expect(active.className).toContain('bg-blue-100');
+    expect(active.className).toContain('font-semibold');
+    expect(active.className).not.toContain('border-l');
+    expect(inactive.className).toContain('text-gray-700');
+    expect(inactive.className).toContain('hover:bg-gray-100');
+    expect(inactive.className).not.toContain('font-semibold');
+  });
+
+  it('shows a count as a pill, blue on the active item, and a note after a red dot', () => {
+    const activeCount = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees-count"]');
+    const inactiveCount = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs-count"]');
+    const note = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees-note"]');
+
+    expect(activeCount.textContent.trim()).toBe('12');
+    expect(activeCount.className).toContain('bg-blue-200');
+    expect(inactiveCount.className).toContain('bg-gray-100');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-participation-count"]')).toBeNull();
+    expect(note.textContent.trim()).toBe('2 dormant');
+    expect(note.querySelector('.bg-red-500')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs-note"]')).toBeNull();
   });
 
   it('pins the rail at the offset the page measured', () => {
