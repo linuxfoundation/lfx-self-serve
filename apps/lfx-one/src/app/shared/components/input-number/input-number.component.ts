@@ -29,4 +29,8 @@ export class InputNumberComponent {
   public describedBy = input<string | null>();
   /** Marks the control invalid for assistive tech; the visible error text is the caller's. */
   public invalid = input<boolean>(false);
+  /** Native `min` — bounds the spinner arrows and arrow keys. Validation stays the caller's (`Validators.min`). */
+  public min = input<number>();
+  /** Native `max` — the spinner arrows and arrow keys stop here. Validation stays the caller's (`Validators.max`). */
+  public max = input<number>();
 }

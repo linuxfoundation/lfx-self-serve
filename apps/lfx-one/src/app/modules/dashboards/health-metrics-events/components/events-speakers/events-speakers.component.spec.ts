@@ -141,10 +141,12 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-loading')).toBeNull();
   });
 
-  it("renders the period's headline, side stats and status bars", async () => {
+  it("renders the period's headline, side stats and status rows", async () => {
     await render();
 
     expect(text('events-speakers-headline-value')).toBe('300');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-speakers-hero')?.classList).not.toContain('border');
     expect(text('events-speakers-side-total-value')).toBe('1,200');
     expect(text('events-speakers-side-acceptance-rate-value')).toBe('25%');
     expect(text('events-speakers-side-speakers-delta')).toBe('−35%');

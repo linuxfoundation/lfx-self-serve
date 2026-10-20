@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mktg-documents-page">
+<div class="container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-documents-page">
   <div class="flex flex-col gap-5 mt-3">
     <!-- Page header -->
     <div class="flex flex-col gap-1">
@@ -19,9 +19,10 @@
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-documents-notice" />
     }
 
-    <div class="flex flex-wrap gap-6 items-start">
+    <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
+    <div class="grid min-w-0 grid-cols-1 items-start gap-6 @[800px]:grid-cols-[18rem_minmax(0,1fr)]">
       <!-- Navigation: living documents in run order, then the one-off runs -->
-      <nav aria-label="Documents by agent" class="flex flex-col gap-1.5 grow-0 shrink basis-72 min-w-60" data-testid="mktg-documents-nav">
+      <nav aria-label="Documents by agent" class="flex min-w-0 flex-col gap-1.5" data-testid="mktg-documents-nav">
         <div class="px-3 py-1 font-mono text-xs uppercase tracking-wider text-gray-500">Living documents, in run order</div>
         @for (item of livingNav(); track item.type.agentKey) {
           <a
@@ -58,8 +59,8 @@
         <p class="mx-3 mt-3 text-xs text-gray-500">Living documents get revisions. Runs are one-off documents: a new run is a new document.</p>
       </nav>
 
-      <!-- Exact pixel widths (basis-[560px], the table's min-w-[640px]) are the design of record's; see styling.md on arbitrary values. -->
-      <main class="flex flex-col gap-5 min-w-0 grow shrink basis-[560px]">
+      <!-- The table's 640px minimum is the design's; zero-min grid tracks keep its overflow inside the card. -->
+      <section aria-label="Documents and revisions" class="flex min-w-0 flex-col gap-5">
         @if (loading()) {
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-loading">
             Loading documents…
@@ -72,7 +73,7 @@
         } @else if (selectedLiving(); as living) {
           <!-- A living document: its header and its Revisions table -->
           <section
-            class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5"
+            class="flex min-w-0 flex-col gap-4 rounded-xl border border-gray-200 bg-white px-6 py-5"
             [attr.data-testid]="'mktg-documents-document-' + living.type.agentKey">
             @if (living.document && latestRevision(); as latest) {
               <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
@@ -94,10 +95,18 @@
                 </a>
               </div>
 
-              <div class="flex flex-col gap-2">
+              <div class="flex min-w-0 flex-col gap-2">
                 <h3 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h3>
-                <div class="overflow-x-auto">
-                  <table class="w-full min-w-[640px] border-collapse text-sm" data-testid="mktg-documents-revisions">
+                <div class="relative min-w-0 max-w-full overflow-x-auto" data-testid="mktg-documents-revisions-scroll">
+                  <!-- In the desktop two-column card, wrap content within fixed shares so actions stay visible; mobile keeps the inner 640px scroller. -->
+                  <table class="w-full min-w-[640px] border-collapse text-sm @[800px]:min-w-0 @[800px]:table-fixed" data-testid="mktg-documents-revisions">
+                    <colgroup>
+                      <col class="@[800px]:w-[8%]" />
+                      <col class="@[800px]:w-[18%]" />
+                      <col class="@[800px]:w-[32%]" />
+                      <col class="@[800px]:w-[20%]" />
+                      <col class="@[800px]:w-[22%]" />
+                    </colgroup>
                     <thead>
                       <tr class="text-left text-gray-500">
                         <th scope="col" class="border-b border-gray-200 px-2.5 py-2 font-semibold">Rev</th>
@@ -111,12 +120,26 @@
                       @for (row of revisionRows(); track row.revision.id) {
                         <tr [ngClass]="row.revision.latest ? 'bg-blue-50' : ''" [attr.data-testid]="'mktg-documents-revision-' + row.revision.number">
                           <td class="border-b border-gray-200 p-2.5 font-mono">v{{ row.revision.number }}</td>
-                          <td class="border-b border-gray-200 p-2.5 whitespace-nowrap">{{ row.revision.createdAt | date: 'd MMM y, HH:mm' }}</td>
-                          <td class="border-b border-gray-200 p-2.5">{{ row.how }}</td>
-                          <td class="border-b border-gray-200 p-2.5">{{ row.revision.status || '—' }}</td>
-                          <td class="border-b border-gray-200 p-2.5 text-right whitespace-nowrap">
+                          <td
+                            class="border-b border-gray-200 p-2.5 @[800px]:break-words"
+                            [attr.data-testid]="'mktg-documents-revision-when-' + row.revision.number">
+                            <span [textContent]="row.revision.createdAt | date: 'd MMM y, HH:mm'"></span>
+                          </td>
+                          <td
+                            class="border-b border-gray-200 p-2.5 @[800px]:break-words"
+                            [attr.data-testid]="'mktg-documents-revision-how-' + row.revision.number"
+                            [textContent]="row.how + ' · ' + row.authorLabel"></td>
+                          <td class="border-b border-gray-200 p-2.5 @[800px]:break-words">{{ row.revision.status || '—' }}</td>
+                          <td
+                            class="border-b border-gray-200 p-2.5 text-right whitespace-nowrap @[800px]:whitespace-normal"
+                            [attr.data-testid]="'mktg-documents-revision-actions-' + row.revision.number">
                             @if (row.revision.latest) {
-                              <span class="text-gray-500">latest</span>
+                              <!-- The design specifies 12px pill type; use LFX's blue scale, not a literal brand hex. -->
+                              <span
+                                class="inline-flex items-center rounded-full bg-blue-700 px-2 py-px text-[12px] font-bold text-white"
+                                [attr.data-testid]="'mktg-documents-current-' + row.revision.number"
+                                >Current</span
+                              >
                             } @else {
                               <a
                                 [routerLink]="[living.type.agentKey, living.document.documentId]"
@@ -131,10 +154,10 @@
                                 type="button"
                                 class="text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
                                 [disabled]="restoringId() !== null"
-                                [attr.aria-label]="'Restore revision ' + row.revision.number"
+                                [attr.aria-label]="'Make revision ' + row.revision.number + ' current'"
                                 [attr.data-testid]="'mktg-documents-restore-' + row.revision.number"
                                 (click)="onRestore(row.revision)">
-                                {{ restoringId() === row.revision.id ? 'Restoring…' : 'Restore' }}
+                                {{ restoringId() === row.revision.id ? 'Saving…' : 'Make current' }}
                               </button>
                             }
                           </td>
@@ -143,10 +166,7 @@
                     </tbody>
                   </table>
                 </div>
-                <p class="text-xs text-gray-500">
-                  Restoring makes the chosen revision the latest; nothing is deleted. Agents that read this document always get the latest revision, restored
-                  ones included.
-                </p>
+                <p class="text-xs text-gray-500">Make current selects the revision agents read. No revision is added or deleted.</p>
               </div>
             } @else if (living.document) {
               <div class="py-6 text-sm text-gray-500" role="status">{{ detailLoading() ? 'Loading revisions…' : 'The revisions could not be loaded.' }}</div>
@@ -200,7 +220,7 @@
             }
           </section>
         }
-      </main>
+      </section>
     </div>
   </div>
 </div>

@@ -2,17 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { ObjectStoreBackend, ObjectStoreFileSidecar, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { OBJECT_STORE_FILE_METADATA_SUFFIX, OBJECT_STORE_FILE_PARTIAL_SUFFIX } from '../constants';
-import { ServiceValidationError } from '../errors';
+import { PreconditionFailedError, ServiceValidationError } from '../errors';
 
 /**
  * The file-backed backend of the object store — one folder per purpose,
- * used when no bucket is configured (local hand tests, unit tests). Mirrors
- * the S3 backend's observable behaviour so every caller runs unchanged:
+ * used when no bucket is configured (local hand tests, unit tests). Serves
+ * the S3 object contract with the filesystem divergences documented below:
  *
  * - An object key is a relative path under the purpose folder
  *   (`brand-kit/<project>/<sha>.md` → `<root>/brand-kit/<project>/<sha>.md`);
@@ -21,8 +21,8 @@ import { ServiceValidationError } from '../errors';
  *   metadata) lives in a `<key>.meta.json` sidecar next to the body. An
  *   object with no sidecar reads back with empty metadata, like an S3 object
  *   written without any.
- * - A put is all-or-nothing as observed, as an S3 PUT is: body and sidecar
- *   are each written whole to a `.partial` neighbour and renamed into place,
+ * - Body and sidecar are individually atomic, not an atomic pair as S3 headers
+ *   and body are: each is written whole to a `.partial` neighbour and renamed,
  *   so a reader — or a crash — never meets a half-written file. The sidecar
  *   lands first and the body last, and a key reports an object only once its
  *   body is a file, so a put interrupted between the two is invisible until
@@ -44,6 +44,13 @@ import { ServiceValidationError } from '../errors';
  * `ServiceValidationError` on `key` instead of a raw fs error, and reading a
  * key that names a folder reports no object, as S3 would. Today's keys are
  * content-addressed (`<kind>/<project>/<sha>.<ext>`) and never nest this way.
+ *
+ * Unlike S3, every put (including unconditional puts) takes an exclusive per-key
+ * directory lock. Overlapping puts fail with PreconditionFailedError instead of
+ * last-writer-wins, so unconditional writers cannot bypass a conditional compare.
+ * A crashed writer leaves the lock and blocks further writes until an operator
+ * confirms no writer is active and removes `<key>.lock.partial` (a directory).
+ * Locks are never stolen based on age.
  *
  * Keys are resolved and then checked to still sit inside the purpose folder,
  * so no key — however it was built — can read or write outside the store.
@@ -98,39 +105,35 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
 
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
     const bodyPath = this.resolveKey(key);
-    const sidecarPath = `${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`;
-    const sidecar: ObjectStoreFileSidecar = {
-      contentType: input.contentType,
-      cacheControl: input.cacheControl,
-      metadata: input.metadata ?? {},
-    };
+    const lock = `${bodyPath}.lock${OBJECT_STORE_FILE_PARTIAL_SUFFIX}`;
     try {
       await mkdir(dirname(bodyPath), { recursive: true });
-      // Sidecar first, body last. `headObject` and `getObject` report an object only once its
-      // body is a regular file, so a put that stops between the two leaves nothing a reader can
-      // see, and the next put of the key lands both. The reverse order would leave a readable
-      // body with no labels, which the caller's version check takes for the oldest draft — so a
-      // first draft would keep its empty labels for good. The sidecar also carries the
-      // `lastModified` stamp, so a refresh of an existing object that stops after it has landed
-      // is complete in every observable way: new labels, new stamp, and the same body bytes.
-      await writeWhole(sidecarPath, JSON.stringify(sidecar, null, 2));
-      try {
-        await writeWhole(bodyPath, input.body);
-      } catch (error) {
-        // A sidecar with no body to describe is removed. One next to an existing body stays:
-        // the key already held an object, which the fresh labels describe.
-        if (!(await isRegularFile(bodyPath))) {
-          await rm(sidecarPath, { force: true });
-        }
-        throw error;
-      }
     } catch (error) {
       if (isNestedKeyCollision(error)) {
-        throw ServiceValidationError.forField('key', `Object key collides with a stored object that is its path prefix or extension: "${key}"`, {
-          operation: 'object_store_put_object',
-        });
+        throw ServiceValidationError.forField('key', `Object key collides with a stored object: "${key}"`, { operation: 'object_store_put_object' });
       }
       throw error;
+    }
+    try {
+      // mkdir is exclusive across backend instances AND processes. Never steal a
+      // lock: a crashed local writer needs operator recovery, not a lost update.
+      await mkdir(lock);
+    } catch (error) {
+      if (fsErrorCode(error) === 'EEXIST') {
+        throw new PreconditionFailedError('An object write is already in flight');
+      }
+      throw error;
+    }
+    try {
+      if (input.ifMatch || input.ifNoneMatch) {
+        const stored = await this.getObject(key);
+        if ((input.ifNoneMatch && stored) || (input.ifMatch && stored?.etag !== input.ifMatch)) {
+          throw new PreconditionFailedError();
+        }
+      }
+      await this.writeObject(key, input);
+    } finally {
+      await rm(lock, { recursive: true, force: true });
     }
   }
 
@@ -145,7 +148,7 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
       }
       throw error;
     }
-    return { body, metadata: (await this.readSidecar(bodyPath)).metadata };
+    return { body, metadata: (await this.readSidecar(bodyPath)).metadata, etag: `"${createHash('sha256').update(body).digest('hex')}"` };
   }
 
   public async listObjects(prefix: string): Promise<ObjectStoreListEntry[]> {
@@ -175,6 +178,29 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
       objects.push({ key, lastModified: await lastModifiedOf(bodyPath) });
     }
     return objects;
+  }
+
+  /** Publish labels before the atomic body rename, preserving legacy file-store behaviour. */
+  private async writeObject(key: string, input: ObjectStorePutInput): Promise<void> {
+    const bodyPath = this.resolveKey(key);
+    const sidecarPath = `${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`;
+    const sidecar: ObjectStoreFileSidecar = { contentType: input.contentType, cacheControl: input.cacheControl, metadata: input.metadata ?? {} };
+    try {
+      await writeWhole(sidecarPath, JSON.stringify(sidecar, null, 2));
+      try {
+        await writeWhole(bodyPath, input.body);
+      } catch (error) {
+        if (!(await isRegularFile(bodyPath))) {
+          await rm(sidecarPath, { force: true });
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (isNestedKeyCollision(error)) {
+        throw ServiceValidationError.forField('key', `Object key collides with a stored object: "${key}"`, { operation: 'object_store_put_object' });
+      }
+      throw error;
+    }
   }
 
   /**

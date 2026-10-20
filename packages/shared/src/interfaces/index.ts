@@ -237,11 +237,11 @@ export * from './stat-card.interface';
 // Download-card (PNG export) interfaces
 export * from './download-card.interface';
 
+// Transcend consent-manager (CMP) interfaces
+export * from './transcend.interface';
+
 // Intercom interfaces
 export * from './intercom.interface';
-
-// Osano cookie-consent (CMP) interfaces
-export * from './osano.interface';
 
 // Org involvement interfaces (cross-foundation org overview)
 export * from './org-involvement.interface';
@@ -259,9 +259,11 @@ export * from './marketing-impact.interface';
 export * from './github-url.interface';
 export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
-export * from './mktg-document-store.interface';
 export * from './mktg-chat.interface';
+export * from './mktg-document-store.interface';
+export * from './mktg-print.interface';
 export * from './mktg-run.interface';
+export * from './mktg-slides-export.interface';
 
 // Enrollment interfaces
 export * from './enrollment.interface';
@@ -389,11 +391,16 @@ export * from './profile-visibility.interface';
 export * from './org-lens-roi.interface';
 export * from './org-lens-roi.internal.interface';
 // Brand Kit generation contract interfaces
+export * from './boilerplates.interface';
 export * from './brand-kit.interface';
 
 // Message Foundation generation contract interfaces
 export * from './foundation-message.interface';
 export * from './icp.interface';
+
+// Marketing OS asset print documents (Download PDF)
+
+// Marketing OS Export to Google Slides (slides-export-output/v1)
 
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';
@@ -420,3 +427,6 @@ export * from './insights-tokens.interface';
 
 // Server log scrubber walk state
 export * from './log-scrub.interface';
+
+// App navbar (sidebar v2)
+export * from './navbar.interface';

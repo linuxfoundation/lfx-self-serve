@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { HEALTH_METRICS_NON_MEMBERS_ORGS_FILTERS, HEALTH_METRICS_NON_MEMBERS_SECTIONS } from '../constants/health-metrics-non-members.constants';
-import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `N2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsNonMembersSectionKey = (typeof HEALTH_METRICS_NON_MEMBERS_SECTIONS)[number]['key'];
@@ -149,11 +149,10 @@ export interface HealthMetricsNonMembersConversionStatView {
   value: string;
 }
 
-export interface HealthMetricsNonMembersWarmOrgBarView {
+export interface HealthMetricsNonMembersWarmOrgRowView {
   accountId: string;
   label: string;
   valueLabel: string;
-  widthPct: number;
 }
 
 /** The Conversion opportunity section as it renders. */
@@ -164,8 +163,8 @@ export interface HealthMetricsNonMembersConversionView {
   pipelineLabel: string;
   hasEstimate: boolean;
   side: HealthMetricsNonMembersConversionStatView[];
-  warmest: HealthMetricsNonMembersWarmOrgBarView[];
-  footnote: string;
+  warmest: HealthMetricsNonMembersWarmOrgRowView[];
+  footnote: readonly HealthMetricsFootnotePart[];
 }
 
 /** Each section's filter and page state in the URL; `null` clears a param the URL already carries. */

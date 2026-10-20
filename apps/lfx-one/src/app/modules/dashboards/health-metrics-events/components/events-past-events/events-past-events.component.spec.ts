@@ -126,6 +126,25 @@ describe('EventsPastEventsComponent', () => {
     expect(text('events-past-events-revenue-past-2')).toBe('$0');
   });
 
+  it('shows each goal cell as the bold count with a grey "/ goal", or "no goal set", and no bar', async () => {
+    await render();
+
+    expect(text('events-past-events-goal-past-1')).toBe('1,200 / 1,000');
+    expect(query('events-past-events-goal-past-1')?.querySelector('b')?.textContent).toBe('1,200');
+    expect(query('events-past-events-goal-past-2')?.querySelector('b')?.textContent).toBe('300');
+    expect(text('events-past-events-goal-past-2')).toContain('no goal set');
+    expect(text('events-past-events-goal-past-2')).not.toContain('/');
+    expect(query('events-past-events-row-past-1')?.querySelector('[style*="width"]')).toBeNull();
+  });
+
+  it('shows the total unboxed, captioned below, with Hit goal as a side stat', async () => {
+    await render();
+
+    expect(query('events-past-events-card')?.classList).not.toContain('border');
+    expect(query('events-past-events-headline')?.lastElementChild?.textContent?.trim()).toBe('Total registrations, past events');
+    expect(query('events-past-events-goal-met')?.querySelector('dt')?.textContent?.trim()).toBe('Hit goal');
+  });
+
   it('reports the period count for the badge and settles once the list lands', async () => {
     await render();
 

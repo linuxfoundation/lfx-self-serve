@@ -10,6 +10,8 @@ import type {
 } from '../constants/health-metrics-events.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
+import type { HealthMetricsMembersQueryParams } from './health-metrics-members.interface';
+import type { HealthMetricsNonMembersQueryParams } from './health-metrics-non-members.interface';
 
 /** Section key from the design's `E2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEventsSectionKey = (typeof HEALTH_METRICS_EVENTS_SECTIONS)[number]['key'];
@@ -105,9 +107,8 @@ export interface HealthMetricsEventsForecastRowView {
   dateLabel: string;
   registrationsLabel: string;
   goalLabel: string;
-  /** 0–100, `null` with no goal to fill against or no measured registration count. */
-  progressPct: number | null;
-  progressClass: string;
+  /** False reads "no goal set" in place of "/ goal". */
+  hasGoal: boolean;
 }
 
 /** Outcome chip for one closed event; see `resolveHealthMetricsEventsPastStatus` for the rule. */
@@ -161,10 +162,9 @@ export interface HealthMetricsEventsPastRowView {
   dateLabel: string;
   registrationsLabel: string;
   goalLabel: string;
+  /** False reads "no goal set" in place of "/ goal". */
+  hasGoal: boolean;
   revenueLabel: string;
-  /** 0–100, `null` with no goal to fill against or no measured registration count. */
-  progressPct: number | null;
-  progressClass: string;
 }
 
 /** The section for one period: the view's header figures and the events that closed in it. */
@@ -487,24 +487,18 @@ export interface HealthMetricsEventsSpeakers {
   proposals: HealthMetricsEventsSpeakersProposal[];
 }
 
-/** One bar before scaling; `null` is not available, never zero. */
-export interface HealthMetricsEventsSpeakersBarInput {
+/** One ranked-list row before formatting; `null` is not available, never zero. */
+export interface HealthMetricsEventsRankedRowInput {
   key: string;
   label: string;
   value: number | null;
-  /** The bar's fill, e.g. `bg-blue-500`. */
-  barClass: string;
 }
 
-/** One ranked bar, scaled against the longest in its list. */
-export interface HealthMetricsEventsSpeakersBarView {
+/** One ranked-list row as the design draws it: name and value, no bar. */
+export interface HealthMetricsEventsRankedRowView {
   key: string;
   label: string;
   valueLabel: string;
-  /** 0–100. */
-  widthPct: number;
-  /** The bar's fill, e.g. `bg-blue-500`; safelisted in `tailwind.config.js`. */
-  barClass: string;
 }
 
 /** One column of the proposals-per-year chart. */
@@ -537,8 +531,8 @@ export interface HealthMetricsEventsSpeakersView {
   countLabel: string;
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
-  statusBars: HealthMetricsEventsSpeakersBarView[];
-  organizations: HealthMetricsEventsSpeakersBarView[];
+  statusRows: HealthMetricsEventsRankedRowView[];
+  organizations: HealthMetricsEventsRankedRowView[];
   /** Individual speakers' proposals, e.g. `1,351 proposals submitted`; `null` when there are none. */
   individualLabel: string | null;
   proposals: HealthMetricsEventsSpeakersProposalRowView[];
@@ -611,6 +605,18 @@ export interface HealthMetricsEventsOrganizationRowView {
   proposalsLabel: string;
   speakersLabel: string;
   eventsLabel: string;
+  /** Where the row opens: the Members directory or Non-Members company participation, searched by the organization's name. */
+  link: HealthMetricsEventsOrganizationLink;
+  /** The name link's accessible name, e.g. `Open Acme Motors in Members`. */
+  linkLabel: string;
+}
+
+/** A row's in-app target: the name link's `routerLink` / `fragment` / `queryParams`, and what a row click navigates to. */
+export interface HealthMetricsEventsOrganizationLink {
+  commands: readonly string[];
+  fragment: 'list' | 'orgs';
+  /** Merged into the current query string; `null` clears a filter the URL already carries. */
+  queryParams: Readonly<HealthMetricsMembersQueryParams> | Readonly<HealthMetricsNonMembersQueryParams>;
 }
 
 /** Foundation scope for sponsorship; every period ships in one read, so the range stays client-side. */
@@ -667,7 +673,7 @@ export interface HealthMetricsEventsSponsorshipView {
   goalSet: boolean;
   /** `null` without a goal or a modelled progress, so a missing goal never renders as a full bar. */
   progress: HealthMetricsEventsSponsorshipProgressView | null;
-  tiers: HealthMetricsEventsSpeakersBarView[];
+  tiers: HealthMetricsEventsRankedRowView[];
 }
 
 /** Foundation scope for geography; every period ships in one read, so the range stays client-side. */
@@ -710,7 +716,7 @@ export interface HealthMetricsEventsGeographyView {
   /** e.g. `42 countries`; empty when unmeasured. */
   countriesLabel: string;
   headline: HealthMetricsEventsAtAGlanceStatView;
-  bars: HealthMetricsEventsSpeakersBarView[];
-  /** e.g. `+37 more`; empty when the bars show every country. */
+  topCountries: HealthMetricsEventsRankedRowView[];
+  /** e.g. `+37 more`; empty when the list shows every country. */
   moreLabel: string;
 }

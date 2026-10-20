@@ -143,6 +143,16 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('events-registration-forecast-days-left')?.textContent?.trim()).toBe('40');
   });
 
+  it('lays the forecast out flat, with its range inline and the stats as columns', async () => {
+    await render();
+
+    expect(query('events-registration-forecast-card')?.classList).not.toContain('border');
+    // Range sits on the value's line; the caption comes after it.
+    expect(query('events-registration-forecast-range')?.parentElement).toBe(query('events-registration-forecast-value')?.parentElement);
+    expect(query('events-registration-forecast-headline')?.lastElementChild?.textContent?.trim()).toBe('Forecast final registrations');
+    expect(query('events-registration-forecast-stats')?.classList).toContain('flex-wrap');
+  });
+
   it('reports the miss count for the sub-nav note and settles once the list lands', async () => {
     await render({ events: [event(), event({ eventId: 'evt-2', goal: 700 })] });
 
@@ -327,5 +337,17 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('events-registration-forecast-status-behind')?.textContent?.trim()).toBe('Action required');
     expect(query('events-registration-forecast-status-none')?.textContent?.trim()).toBe('No goal');
     expect(rows[1].textContent).toContain('400 / 450');
+  });
+
+  it('shows each goal cell as the bold count with a grey "/ goal", or "no goal set", and no bar', async () => {
+    await render({ events: [event({ eventId: 'set', registrationsNow: 400 }), event({ eventId: 'none', registrationsNow: 120, goal: null })] });
+    const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(text('events-registration-forecast-goal-set')).toBe('400 / 450');
+    expect(query('events-registration-forecast-goal-set')?.querySelector('b')?.textContent).toBe('400');
+    expect(query('events-registration-forecast-goal-none')?.querySelector('b')?.textContent).toBe('120');
+    expect(text('events-registration-forecast-goal-none')).toContain('no goal set');
+    expect(text('events-registration-forecast-goal-none')).not.toContain('/');
+    expect(query('events-registration-forecast-row-set')?.querySelector('[style*="width"]')).toBeNull();
   });
 });

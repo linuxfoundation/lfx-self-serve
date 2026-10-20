@@ -99,18 +99,26 @@ describe('NonMembersConversionComponent', () => {
     expect(text('non-members-conversion-side-high-fit-value')).toBe('2');
     expect(text('non-members-conversion-side-new-value')).toBe('37');
     expect(text('non-members-conversion-summary')).toBe('412 organizations tracked');
-    expect(text('non-members-conversion-footnote')).toBe('Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only.');
+    expect(text('non-members-conversion-footnote')).toBe(
+      'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only. The fit score is a model change, sequenced after the matching fix.'
+    );
   });
 
-  it('ranks the warmest organizations, sized by contributions', async () => {
+  it('shows the pipeline as a plain hero: no card, no tint, ink value', async () => {
+    await render();
+
+    const value = query('non-members-conversion-pipeline-value');
+    expect(value?.classList).toContain('text-gray-900');
+    expect(value?.closest('.bg-blue-50\\/40')).toBeNull();
+  });
+
+  it('lists the warmest organizations as name and value, with no bar', async () => {
     await render();
 
     expect(text('non-members-conversion-warm-0')).toContain('Acme Motors · 12 meetings');
     expect(text('non-members-conversion-warm-0-value')).toBe('400 contributions');
     expect(text('non-members-conversion-warm-1')).toContain('Vendor Corp · 1 meeting');
-    const bars = fixture.nativeElement.querySelectorAll('[data-testid^="non-members-conversion-warm-"] .bg-blue-600');
-    expect(bars.length).toBe(2);
-    expect((bars[1] as HTMLElement).style.width).toBe('25%');
+    expect(fixture.nativeElement.querySelector('[data-testid^="non-members-conversion-warm-"] [style*="width"]')).toBeNull();
   });
 
   it('never shows a bare figure when the estimate is missing, and says a NULL count is not available', async () => {

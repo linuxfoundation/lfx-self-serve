@@ -8,7 +8,6 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
-  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
@@ -18,15 +17,16 @@ import {
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
-  HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
-  HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET,
 } from '../constants/health-metrics-events.constants';
+import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH, HEALTH_METRICS_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-members.constants';
+import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
@@ -44,6 +44,7 @@ import type {
   HealthMetricsEventsGeography,
   HealthMetricsEventsGeographyView,
   HealthMetricsEventsOrganization,
+  HealthMetricsEventsOrganizationLink,
   HealthMetricsEventsOrganizationRowView,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
@@ -61,8 +62,8 @@ import type {
   HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSpeakers,
-  HealthMetricsEventsSpeakersBarInput,
-  HealthMetricsEventsSpeakersBarView,
+  HealthMetricsEventsRankedRowInput,
+  HealthMetricsEventsRankedRowView,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersProposalRowView,
   HealthMetricsEventsSpeakersStatusGroup,
@@ -106,6 +107,34 @@ export function buildHealthMetricsEventsOrganizationRowView(organization: Health
     proposalsLabel: organization.proposals ? formatHealthMetricsEventsCount(organization.proposals) : '—',
     speakersLabel: formatHealthMetricsEventsCount(organization.speakers),
     eventsLabel: formatHealthMetricsEventsCount(organization.events),
+    link: buildHealthMetricsEventsOrganizationLink(organization),
+    linkLabel: `Open ${organization.accountName} in ${organization.isMember ? 'Members' : 'Non-Members'}`,
+  };
+}
+
+/** A member opens the Members directory and a non-member opens Non-Members company participation, each searched by name with other filters cleared. */
+function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationLink {
+  if (organization.isMember) {
+    return {
+      commands: [HEALTH_METRICS_BASE_PATH, 'members'],
+      fragment: 'list',
+      queryParams: {
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directorySearch]: organization.accountName.slice(0, HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH),
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryTier]: null,
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryNps]: null,
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryPage]: null,
+      },
+    };
+  }
+
+  return {
+    commands: [HEALTH_METRICS_BASE_PATH, 'non-members'],
+    fragment: 'orgs',
+    queryParams: {
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch]: organization.accountName.slice(0, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH),
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsFilter]: null,
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsPage]: null,
+    },
   };
 }
 
@@ -190,8 +219,6 @@ export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsF
 export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastRowView[] {
   return sortHealthMetricsEventsForecastRows(events).map((event) => {
     const status = resolveHealthMetricsEventsForecastStatus(event);
-    const ratio = resolveProgressRatio(event);
-    const pct = ratio === null ? null : Math.round(ratio * 100);
 
     return {
       event,
@@ -201,8 +228,7 @@ export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEv
       dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
       registrationsLabel: formatHealthMetricsEventsCount(event.registrationsNow),
       goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
-      progressPct: pct === null ? null : Math.min(pct, 100),
-      progressClass: resolveProgressClass(pct),
+      hasGoal: hasHealthMetricsEventsGoal(event.goal),
     };
   });
 }
@@ -442,7 +468,6 @@ export function buildHealthMetricsEventsSpeakersView(
               label: organization.accountName,
               rank: entry.rank,
               value: entry.submitted,
-              barClass: HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
             },
           ]
         : [];
@@ -461,17 +486,16 @@ export function buildHealthMetricsEventsSpeakersView(
       stat('acceptance-rate', 'Acceptance rate', formatWholePercent(period?.acceptanceRate ?? null)),
       stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), changes ? formatAtAGlanceDelta(changes.speakers, 'pct') : undefined),
     ],
-    statusBars: buildSpeakersBars(
+    statusRows: buildRankedRows(
       (Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS) as HealthMetricsEventsSpeakersStatusGroup[])
         .map((group) => ({
           key: group,
           label: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].label,
           value: statusCounts[group],
-          barClass: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].barClass,
         }))
         .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
     ),
-    organizations: buildSpeakersBars(organizations),
+    organizations: buildRankedRows(organizations),
     individualLabel: individual ? `${formatProposalCount(individual)} submitted` : null,
     proposals: speakers.proposals
       .filter((proposal) => proposal.range === range && (tab === 'all' || proposal.statusGroup === tab))
@@ -534,9 +558,7 @@ export function buildHealthMetricsEventsSponsorshipView(
     ],
     goalSet: !!period?.goalUsd,
     progress: period?.goalUsd ? resolveSponsorshipProgress(period.progressToGoal) : null,
-    tiers: buildSpeakersBars(
-      (period?.tiers ?? []).map((tier) => ({ key: tier.name, label: tier.name, value: tier.packages, barClass: HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS }))
-    ),
+    tiers: buildRankedRows((period?.tiers ?? []).map((tier) => ({ key: tier.name, label: tier.name, value: tier.packages }))),
   };
 }
 
@@ -561,14 +583,7 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
       ...(changes ? formatAtAGlanceDelta(changes.countries, 'pct') : { delta: null, deltaDirection: 'neutral' }),
       warn: false,
     },
-    bars: buildSpeakersBars(
-      topCountries.map((country) => ({
-        key: country.country,
-        label: country.country,
-        value: country.registrations,
-        barClass: HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
-      }))
-    ),
+    topCountries: buildRankedRows(topCountries.map((country) => ({ key: country.country, label: country.country, value: country.registrations }))),
     moreLabel: hidden > 0 ? `+${hidden.toLocaleString('en-US')} more` : '',
   };
 }
@@ -661,17 +676,9 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
     dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
     registrationsLabel: formatHealthMetricsEventsCount(event.registrations),
     goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
+    hasGoal: hasHealthMetricsEventsGoal(event.goal),
     revenueLabel: formatHealthMetricsEventsRevenue(event.revenueUsd),
-    progressPct: resolvePastProgressPct(event),
-    progressClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].progressClass,
   };
-}
-
-/** Final registrations against goal, capped at 100; null when either is unmeasured, since null is not zero. */
-function resolvePastProgressPct(event: HealthMetricsEventsPastEvent): number | null {
-  if (!hasHealthMetricsEventsGoal(event.goal) || event.registrations === null) return null;
-
-  return Math.min(100, Math.round((event.registrations / event.goal) * 100));
 }
 
 /** Registrations now against goal; null when either is unmeasured, since null is not zero. */
@@ -679,13 +686,6 @@ function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number |
   if (!hasHealthMetricsEventsGoal(event.goal) || event.registrationsNow === null) return null;
 
   return event.registrationsNow / event.goal;
-}
-
-function resolveProgressClass(pct: number | null): string {
-  if (pct === null) return 'bg-gray-200';
-  if (pct >= 90) return 'bg-emerald-500';
-
-  return pct >= 45 ? 'bg-amber-500' : 'bg-red-400';
 }
 
 function buildRegistrationsGrowthRowView(
@@ -741,17 +741,9 @@ function formatWholePercent(fraction: number | null): string {
   return fraction === null ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : `${Math.round(fraction * 100)}%`;
 }
 
-/** Bars scaled against the longest; an unmeasured value draws no bar and reads as not available. */
-function buildSpeakersBars(items: HealthMetricsEventsSpeakersBarInput[]): HealthMetricsEventsSpeakersBarView[] {
-  const max = Math.max(0, ...items.map((item) => item.value ?? 0));
-
-  return items.map((item) => ({
-    key: item.key,
-    label: item.label,
-    valueLabel: formatAtAGlanceCount(item.value),
-    widthPct: max > 0 && item.value !== null ? (item.value / max) * 100 : 0,
-    barClass: item.barClass,
-  }));
+/** Ranked-list rows, name and value only; an unmeasured value reads as not available. */
+function buildRankedRows(items: HealthMetricsEventsRankedRowInput[]): HealthMetricsEventsRankedRowView[] {
+  return items.map((item) => ({ key: item.key, label: item.label, valueLabel: formatAtAGlanceCount(item.value) }));
 }
 
 /** `null` without a modelled progress; the width stops at full while the label keeps the real percent. */

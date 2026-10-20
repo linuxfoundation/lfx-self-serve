@@ -30,6 +30,8 @@ import { CampaignService } from '@services/campaign.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
 
+import { MetaAdSetAdsComponent } from '../meta-ad-set-ads/meta-ad-set-ads.component';
+
 /**
  * A Meta campaign's ad sets on the Optimize tab, with a pause/resume per ad set.
  *
@@ -42,10 +44,13 @@ import { catchError, EMPTY, map, of, switchMap } from 'rxjs';
  * Every action is disabled while any change to the campaign is in flight (`pending`) or the parent
  * has a reason to block it (`blockedReason`: a stale or unknown validator, another write). Only the
  * button whose action is actually running carries the spinner and `aria-busy`.
+ *
+ * Each ad set also expands into a read-only Ads section (`lfx-meta-ad-set-ads`), mounted only while
+ * expanded so its ads are read lazily, and re-read on the same `reloadToken`.
  */
 @Component({
   selector: 'lfx-meta-ad-sets-panel',
-  imports: [ButtonComponent, DatePipe, TagComponent],
+  imports: [ButtonComponent, DatePipe, MetaAdSetAdsComponent, TagComponent],
   templateUrl: './meta-ad-sets-panel.component.html',
   styleUrl: './meta-ad-sets-panel.component.scss',
 })
@@ -84,6 +89,8 @@ export class MetaAdSetsPanelComponent {
    * the list that was on screen before it.
    */
   protected readonly lastRead = signal<{ token: number; ok: boolean } | null>(null);
+  /** The ad sets whose Ads section is expanded. */
+  protected readonly expandedAdSets = signal<ReadonlySet<string>>(new Set());
 
   protected readonly rows: Signal<MetaAdSetPanelRow[]> = this.initRows();
   /** Whether no action may be pressed right now. */
@@ -141,6 +148,17 @@ export class MetaAdSetsPanelComponent {
     this.request(row, row.recordAction, 'record');
   }
 
+  /** Expands or collapses one ad set's read-only Ads section; expanding mounts it, which reads its ads. */
+  protected toggleAds(adSetId: string): void {
+    this.expandedAdSets.update((current) => {
+      const next = new Set(current);
+      if (!next.delete(adSetId)) {
+        next.add(adSetId);
+      }
+      return next;
+    });
+  }
+
   protected retry(): void {
     this.retryToken.update((n) => n + 1);
   }
@@ -179,6 +197,9 @@ export class MetaAdSetsPanelComponent {
         this.errorMessage.set(error);
         this.state.set(data !== null ? 'loaded' : 'error');
         this.lastRead.set({ token: reload, ok: data !== null });
+        if (data !== null) {
+          this.pruneExpandedAdSets(data);
+        }
       });
   }
 
@@ -192,6 +213,7 @@ export class MetaAdSetsPanelComponent {
       const eligibility = this.eligibility();
       const stateNoteId = `meta-ad-sets-campaign-state-${this.campaignId()}`;
       const blockedNoteId = this.blockedReason() !== '' ? `meta-ad-sets-blocked-${this.campaignId()}` : null;
+      const expanded = this.expandedAdSets();
       return (Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => {
         const row = toMetaAdSetDisplayRow(adSet, currency, eligibility);
         // The campaign-state reason first: it is why THIS action is refused; else the row-wide block.
@@ -199,6 +221,7 @@ export class MetaAdSetsPanelComponent {
           ...row,
           actionDescribedBy: row.actionBlockedReason !== '' ? stateNoteId : blockedNoteId,
           recordActionDescribedBy: row.recordActionBlockedReason !== '' ? stateNoteId : blockedNoteId,
+          adsExpanded: expanded.has(adSet.id),
         };
       });
     });
@@ -283,6 +306,15 @@ export class MetaAdSetsPanelComponent {
         ? `The re-read does not show ${name} as deliberately paused. Use ${fix} before resuming the campaign.`
         : `The re-read still shows ${name} as deliberately paused. Use ${fix} before resuming the campaign, or it will stay paused.`;
       return { advice, text, tone: 'font-medium text-red-600' };
+    });
+  }
+
+  /** Forgets an expansion whose ad set the latest read no longer lists, so it cannot reopen if the id returns. */
+  private pruneExpandedAdSets(data: CampaignServiceMetaAdSets): void {
+    const ids = new Set((Array.isArray(data.ad_sets) ? data.ad_sets : []).map((adSet) => adSet.id));
+    this.expandedAdSets.update((current) => {
+      const kept = [...current].filter((id) => ids.has(id));
+      return kept.length === current.size ? current : new Set(kept);
     });
   }
 

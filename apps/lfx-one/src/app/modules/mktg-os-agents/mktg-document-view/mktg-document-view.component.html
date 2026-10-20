@@ -1,12 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
+<div class="relative container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
+  <span class="sr-only" role="status" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
   <div class="flex flex-col gap-5 mt-3">
     <!-- Top bar: back to Documents, the document, and which revision this is -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
       <a
-        routerLink="../.."
+        routerLink="documents"
+        [relativeTo]="documentsRoute"
         [queryParams]="{ type: view()?.type?.agentKey ?? null, revision: null }"
         queryParamsHandling="merge"
         class="font-semibold text-blue-600 hover:text-blue-800"
@@ -20,7 +22,7 @@
         <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
           Revision {{ current.revision.number }} of {{ current.revisions.length }}
           @if (current.revision.latest) {
-            · latest
+            · Current
           }
           @if (current.revision.status) {
             · {{ current.revision.status }}
@@ -39,36 +41,153 @@
     @if (loading()) {
       <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</div>
     } @else if (view(); as current) {
-      <div class="flex flex-wrap items-start gap-6">
-        <!-- The revision's document, as the agent wrote it -->
-        <!-- basis-[640px]: the design of record's document column width (arbitrary value, see styling.md). -->
-        <main class="min-w-0 grow shrink basis-[640px]">
-          <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
-            <lfx-markdown-renderer [content]="current.markdown" />
-          </article>
-        </main>
+      <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
+      <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
+        <!-- Structured assets span the full page; Markdown retains its document column. -->
+        <section aria-label="Document content" class="flex min-w-0 flex-col gap-3" [ngClass]="fullWidth() ? '@[800px]:col-span-2' : ''">
+          @if (current.type.kind === 'living' && !current.revision.latest) {
+            @let active = currentRevision();
+            @let viewedAuthor = viewedAuthorLabel();
+            @let viewedDate = current.revision.createdAt | date: 'd MMM';
+            @let historySummary =
+              "You're viewing v" +
+              current.revision.number +
+              (viewedDate ? ' · ' + viewedDate : '') +
+              ' · ' +
+              viewedAuthor +
+              (active ? ' · v' + active.number + ' is current' : '');
+            <!-- The tester requested 32–36px height and 13px type. Below lg, clear the layout's sticky menu (h-10 + py-3 + border = 4rem + 1px). -->
+            <!-- Offsets target the standard layout; the impersonation banner is an accepted offset exception. -->
+            <div
+              class="sticky top-[calc(4rem+1px)] lg:top-0 z-10 flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
+              role="group"
+              aria-label="Revision navigation"
+              [attr.aria-busy]="restoringId() !== null"
+              data-testid="mktg-document-view-history-bar">
+              <span
+                class="hidden min-w-0 flex-1 truncate sm:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                tabindex="0"
+                role="note"
+                [textContent]="historySummary"
+                [attr.aria-label]="historySummary"
+                [pTooltip]="historySummary"
+                tooltipPosition="bottom"
+                tooltipEvent="both"
+                [escape]="true"
+                appendTo="body"
+                data-testid="mktg-document-view-history-bar-summary"></span>
+              <span
+                class="min-w-0 flex-1 sm:hidden"
+                [textContent]="'Viewing v' + current.revision.number"
+                data-testid="mktg-document-view-history-bar-mobile-summary"></span>
+              <span class="sm:hidden" aria-hidden="true">·</span>
+              <button
+                type="button"
+                class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
+                [disabled]="restoringId() !== null"
+                data-testid="mktg-document-view-history-bar-make-current"
+                (click)="onRestore(current.revision)">
+                @if (restoringId() === current.revision.id) {
+                  <span>Saving…</span>
+                } @else {
+                  <span class="hidden sm:inline" [textContent]="'Make v' + current.revision.number + ' current'"></span>
+                  <span class="sm:hidden">Make current</span>
+                }
+              </button>
+              @if (active) {
+                <span class="sm:hidden" aria-hidden="true">·</span>
+                <a
+                  class="shrink-0 text-blue-700 underline hover:text-blue-900"
+                  [routerLink]="[]"
+                  [queryParams]="{ revision: active.id }"
+                  queryParamsHandling="merge"
+                  data-testid="mktg-document-view-history-bar-back">
+                  <span class="hidden sm:inline" [textContent]="'Back to v' + active.number"></span>
+                  <span class="sm:hidden">Back</span>
+                </a>
+              }
+            </div>
+          }
+          @if (asset(); as framework) {
+            <lfx-mktg-framework-view
+              [projectName]="projectName()"
+              [asset]="framework"
+              state="ready"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              [kit]="printKit()"
+              [exportTarget]="exportTarget()"
+              data-testid="mktg-document-view-framework" />
+          } @else if (boilerplates(); as boilerplatesAsset) {
+            <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
+            <lfx-mktg-boilerplates-view
+              [projectName]="projectName()"
+              [asset]="boilerplatesAsset"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              data-testid="mktg-document-view-boilerplates" />
+          } @else if (brandKit(); as kit) {
+            <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
+            <lfx-brand-kit-web-view
+              [kit]="kit"
+              [version]="current.revision.number"
+              [note]="revisionNote()"
+              [exportTarget]="exportTarget()"
+              data-testid="mktg-document-view-brand-kit" />
+          } @else {
+            <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
+              @if (current.revision.format === 'json') {
+                <pre class="whitespace-pre-wrap break-all text-xs text-gray-700" data-testid="mktg-document-view-json">{{ current.markdown }}</pre>
+              } @else {
+                <lfx-markdown-renderer [content]="current.markdown" [headingLevelOffset]="1" />
+              }
+            </article>
+          }
+        </section>
 
-        <aside class="flex flex-col gap-4 grow-0 shrink basis-80 min-w-72">
+        <section aria-label="Revision details" class="flex min-w-0 flex-col gap-4" [ngClass]="fullWidth() ? '@[800px]:col-span-2' : ''">
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
-            <ol class="flex flex-col gap-2">
-              @for (row of revisionRows(); track row.revision.id) {
+            <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
+              @for (row of visibleRevisionRows(); track row.revision.id) {
                 <li
                   class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
                   [ngClass]="row.revision.id === current.revision.id ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
                   [attr.data-testid]="'mktg-document-view-revision-' + row.revision.number">
-                  <span class="min-w-0 flex-1">
-                    <span class="font-mono">v{{ row.revision.number }}</span> · {{ row.revision.createdAt | date: 'd MMM' }}
-                    @if (row.revision.latest) {
-                      · latest
+                  <div class="min-w-0 flex-1 break-words">
+                    <span [attr.data-testid]="'mktg-document-view-revision-label-' + row.revision.number">
+                      <span class="font-mono" [textContent]="'v' + row.revision.number"></span>
+                      @if (row.revision.createdAt) {
+                        <span [textContent]="' · ' + (row.revision.createdAt | date: 'd MMM')"></span>
+                      }
+                      @if (row.revision.latest) {
+                        <span [textContent]="' · '"></span>
+                        <!-- The design specifies 12px pill type; text-xs undershoots at the app's 14px root size. -->
+                        <span
+                          class="inline-flex items-center rounded-full bg-blue-700 px-2 py-px text-[12px] font-bold text-white"
+                          [attr.data-testid]="'mktg-document-view-current-' + row.revision.number"
+                          >Current</span
+                        >
+                      }
+                      <span [textContent]="' · ' + row.how + ' · ' + row.authorLabel"></span>
+                    </span>
+                    @if (row.revision.latest && current.current?.revisionId === row.revision.id) {
+                      @if (current.current; as selection) {
+                        <p class="mt-1 text-xs text-gray-500" [attr.data-testid]="'mktg-document-view-current-since-' + row.revision.number">
+                          <span [textContent]="'Current since ' + (selection.changedAt | date: 'd MMM y, HH:mm')"></span>
+                          <span [textContent]="' · ' + currentSelectorLabel()"></span>
+                        </p>
+                      }
                     }
-                    · <span class="font-normal text-gray-500">{{ row.how }}</span>
-                  </span>
+                  </div>
                   @if (row.revision.id === current.revision.id) {
                     <span class="shrink-0 text-gray-500">here</span>
                   } @else {
-                    <span class="flex shrink-0 items-center gap-3 font-normal">
+                    <!-- w-16 intentionally wraps Make current below Open in the design's narrow right-aligned actions column. -->
+                    <span
+                      class="flex w-16 shrink-0 flex-col items-end gap-1 text-right font-normal"
+                      [attr.data-testid]="'mktg-document-view-row-actions-' + row.revision.number">
                       <a
                         [routerLink]="[]"
                         [queryParams]="{ revision: row.revision.id }"
@@ -78,15 +197,15 @@
                         [attr.data-testid]="'mktg-document-view-open-' + row.revision.number"
                         >Open</a
                       >
-                      @if (!row.revision.latest) {
+                      @if (!row.revision.latest && current.type.kind === 'living') {
                         <button
                           type="button"
-                          class="text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
+                          class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
                           [disabled]="restoringId() !== null"
-                          [attr.aria-label]="'Restore revision ' + row.revision.number"
+                          [attr.aria-label]="'Make revision ' + row.revision.number + ' current'"
                           [attr.data-testid]="'mktg-document-view-restore-' + row.revision.number"
                           (click)="onRestore(row.revision)">
-                          {{ restoringId() === row.revision.id ? 'Restoring…' : 'Restore' }}
+                          {{ restoringId() === row.revision.id ? 'Saving…' : 'Make current' }}
                         </button>
                       }
                     </span>
@@ -94,17 +213,18 @@
                 </li>
               }
             </ol>
-            @if (!current.revision.latest) {
+            @if (showAllRevisions() || visibleRevisionRows().length < revisionRows().length) {
               <button
                 type="button"
-                class="mt-1 min-h-10 rounded-lg bg-blue-600 px-3.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
-                [disabled]="restoringId() !== null"
-                data-testid="mktg-document-view-restore-current"
-                (click)="onRestore(current.revision)">
-                {{ restoringId() === current.revision.id ? 'Restoring…' : 'Restore revision ' + current.revision.number }}
+                class="self-start text-sm text-blue-700 underline hover:text-blue-900"
+                aria-controls="mktg-document-view-revision-list"
+                [attr.aria-expanded]="showAllRevisions()"
+                data-testid="mktg-document-view-show-all-revisions"
+                (click)="onToggleAllRevisions()">
+                {{ showAllRevisions() ? 'Show fewer ▴' : 'Show all ' + revisionRows().length + ' ▾' }}
               </button>
             }
-            <p class="text-xs text-gray-500">Restoring makes the chosen revision the latest, as a new revision. Nothing is deleted.</p>
+            <p class="text-xs text-gray-500">Make current selects the revision agents read. No revision is added or deleted.</p>
           </div>
 
           <!-- About this document -->
@@ -116,14 +236,14 @@
               <dt class="text-gray-500">Stored</dt>
               <dd>{{ current.revision.createdAt | date: 'd MMM y, HH:mm' }}</dd>
               <dt class="text-gray-500">Content hash</dt>
-              <dd class="font-mono" data-testid="mktg-document-view-hash">
+              <dd class="relative font-mono" data-testid="mktg-document-view-hash">
                 <!-- The full hash is for screen readers; a title tooltip would be unreachable by keyboard on a <dd>. -->
                 <span aria-hidden="true">{{ shortHash() }}</span>
                 <span class="sr-only">{{ current.revision.contentSha256 }}</span>
               </dd>
             </dl>
           </div>
-        </aside>
+        </section>
       </div>
     }
   </div>

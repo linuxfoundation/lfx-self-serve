@@ -6,6 +6,7 @@
   @if (audienceOptions().length > 0) {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-nps-controls">
       <lfx-filter-pills
+        variant="track"
         [options]="audienceOptions()"
         [selectedFilter]="selectedAudience()?.audience ?? ''"
         (filterChange)="onAudienceChange($event)"
@@ -42,7 +43,7 @@
       </p>
     }
 
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-nps-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-nps-hero">
       <div class="flex flex-col gap-2">
         <span class="flex items-baseline gap-2">
           <span
@@ -69,11 +70,11 @@
       @if (!summary().isWithheld) {
         <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-nps-side">
           <div class="flex flex-col gap-0.5">
-            <dt class="text-[11.5px] text-gray-400">Responded</dt>
+            <dt class="text-[11.5px] text-gray-500">Responded</dt>
             <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-nps-responded">{{ summary().respondedLabel }}</dd>
           </div>
           <div class="flex flex-col gap-0.5">
-            <dt class="text-[11.5px] text-gray-400">Response rate</dt>
+            <dt class="text-[11.5px] text-gray-500">Response rate</dt>
             <dd
               class="text-[17px] font-semibold tabular-nums"
               [class.text-amber-600]="summary().isRateBelowFloor"

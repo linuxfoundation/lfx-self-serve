@@ -17,7 +17,7 @@
       data-testid="events-orgs-empty" />
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="events-orgs-controls">
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <div class="w-full sm:w-64">
           <label class="sr-only" for="events-orgs-search">Search organization</label>
           <lfx-input-text
@@ -30,7 +30,12 @@
             styleClass="w-full"
             dataTest="events-orgs-search" />
         </div>
-        <lfx-filter-pills [options]="segmentOptions" [selectedFilter]="segment()" (filterChange)="onSegmentChange($event)" data-testid="events-orgs-segments" />
+        <lfx-filter-pills
+          variant="track"
+          [options]="segmentOptions"
+          [selectedFilter]="segment()"
+          (filterChange)="onSegmentChange($event)"
+          data-testid="events-orgs-segments" />
       </div>
       <span class="text-[13px] text-gray-500" data-testid="events-orgs-count">
         @if (loading()) {
@@ -75,11 +80,23 @@
         </ng-template>
 
         <ng-template #body let-view>
-          <tr [attr.data-testid]="'events-orgs-row-' + view.accountId">
+          <!-- The name link is the control screen readers and keyboards use; a click anywhere else on the row does the same.
+               It reads as plain row text: the `!` utilities beat lfx-table's blue `td a` link style. -->
+          <tr class="cursor-pointer" (click)="openOrganization(view)" [attr.data-testid]="'events-orgs-row-' + view.accountId">
             <td>
               <div class="flex items-center gap-2.5">
                 <lfx-avatar [label]="view.accountName" [image]="view.logoUrl" size="normal" styleClass="shrink-0" [ariaLabel]="view.accountName + ' logo'" />
-                <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'events-orgs-row-' + view.accountId + '-name'">{{ view.accountName }}</span>
+                <a
+                  [routerLink]="view.link.commands"
+                  [fragment]="view.link.fragment"
+                  [queryParams]="view.link.queryParams"
+                  queryParamsHandling="merge"
+                  [attr.aria-label]="view.linkLabel"
+                  (click)="$event.stopPropagation()"
+                  class="!text-sm !font-medium !text-gray-900 !no-underline hover:!text-gray-900 hover:!no-underline rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                  [attr.data-testid]="'events-orgs-row-' + view.accountId + '-name'"
+                  >{{ view.accountName }}</a
+                >
               </div>
             </td>
             <td>

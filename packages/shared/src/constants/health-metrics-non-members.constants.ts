@@ -23,7 +23,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     heading: 'Company participation',
     description:
       'Organizations engaging without paying. Ranked by meetings attended first, not code — showing up to meetings means they are already spending staff time, which is the stronger buying signal.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -31,7 +31,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'People',
     heading: 'People',
     description: 'The individuals behind those organizations — the actual contact to reach out to. A company is a lead; a person is a conversation.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -39,7 +39,7 @@ export const HEALTH_METRICS_NON_MEMBERS_SECTIONS = [
     label: 'Conversion opportunity',
     heading: 'Conversion opportunity',
     description: 'What the pipeline is worth if the warmest organizations convert. Framed as upside — this section carries no risk badges, only opportunity.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
 ] as const;
@@ -145,6 +145,3 @@ export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 10;
 
 /** A NULL count or estimate is not zero; the section says so in words. */
 export const HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE = 'not available';
-
-/** Opportunity styling only: this section carries no risk colours. */
-export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS = 'bg-blue-600';

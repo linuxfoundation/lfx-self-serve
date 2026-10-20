@@ -7,7 +7,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_READ_REASONS,
@@ -17,12 +17,15 @@ import {
   MKTG_README_SKIP_NOTES,
 } from '@lfx-one/shared/constants';
 import {
+  MktgAgent,
+  MktgAgentIntake,
   MktgAnswerMemory,
   MktgDependencyDocument,
   MktgDocumentExtractResponse,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgRunAnswer,
+  MktgRunAsset,
   MktgRunQuestionsPending,
   MktgRunVersion,
   MktgStoredAgentRun,
@@ -34,16 +37,63 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { ProjectContextService } from '@services/project-context.service';
+import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { concat, from, NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { MktgIntakeDocumentsComponent } from '../mktg-intake-documents/mktg-intake-documents.component';
+import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-intake-logo-files.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 import { MktgAgentRunComponent } from './mktg-agent-run.component';
+
+/**
+ * A fixture agent for the shell's OWN logic — the LFX prefill sources, a
+ * format rule, the section checklist, the chat follow-up path — registered
+ * in the catalog for this spec only. No shipping intake carries every one of
+ * those shapes any more (the Brand Kit became a logo-upload form with a JSON
+ * kit for a result), and the shell's behaviour is what these cases lock, not
+ * any one agent's form.
+ */
+const SHELL_AGENT: MktgAgent = {
+  id: 'shell-fixture',
+  number: 99,
+  name: 'Shell Fixture Agent',
+  tags: ['Fixture'],
+  status: 'active',
+  description: 'A fixture.',
+  icon: 'fa-light fa-flask',
+  accent: 'gray',
+  guildAgentHandle: 'shell-fixture',
+};
+const SHELL_INTAKE: MktgAgentIntake = {
+  agentId: SHELL_AGENT.id,
+  formTitleAction: 'Develop',
+  documentName: 'Fixture Document',
+  intro: 'A fixture intake.',
+  batchPreamble: ['BATCH INTAKE SUBMISSION (fixture).'],
+  fields: [
+    { key: 'project_name', question: "What's the name of the LF project?", kind: 'text', prefill: 'project-name' },
+    { key: 'github_url', question: "What's the URL of the project's GitHub repo or README?", kind: 'text', prefill: 'repository-url', format: 'github-url' },
+    {
+      key: 'one_line_description',
+      question: 'One-line description — what does it do, beyond the name?',
+      kind: 'text',
+      prefill: 'project-description',
+      missingPrefillHint: 'Not set on your LFX project — describe it in your own words.',
+    },
+    { key: 'voice_adjectives', question: 'Three adjectives for the voice you want?', kind: 'textarea', rows: 2 },
+  ],
+  sections: ['Review Sheet', 'How to Use This Document', '1. Project Definition', '2. Positioning', 'Appendix A: Document Architecture'],
+  endpoints: { generate: '/api/mktg-agents/shell-fixture/generate', result: '/api/mktg-agents/shell-fixture/result' },
+};
+MKTG_AGENTS.push(SHELL_AGENT);
+MKTG_AGENT_INTAKES[SHELL_AGENT.id] = SHELL_INTAKE;
 
 /**
  * Locks the run page's own logic — the pieces the service spec cannot see:
@@ -74,12 +124,14 @@ describe('MktgAgentRunComponent', () => {
   let generate: ReturnType<typeof vi.fn>;
   let answerQuestions: ReturnType<typeof vi.fn>;
   let resolveDependencies: ReturnType<typeof vi.fn>;
+  let resolveBrandKit: ReturnType<typeof vi.fn>;
   let rememberAnswers: ReturnType<typeof vi.fn>;
   let notifyDocumentsChanged: ReturnType<typeof vi.fn>;
+  let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
   let readFile: ReturnType<typeof vi.fn>;
 
   const storedRun = (projectUid: string, document: string, answers: Record<string, string>): MktgStoredAgentRun => ({
-    agentId: 'brand-kit',
+    agentId: SHELL_AGENT.id,
     projectUid,
     sessionId: `sess-${projectUid}`,
     ownerToken: `token-${projectUid}`,
@@ -103,7 +155,7 @@ describe('MktgAgentRunComponent', () => {
     return { icon: row.querySelector('i')?.className ?? '', sr: row.querySelector('.sr-only')?.textContent?.trim() ?? '' };
   };
 
-  const configure = async (platformId: 'browser' | 'server' = 'browser', agentId = 'brand-kit'): Promise<void> => {
+  const configure = async (platformId: 'browser' | 'server' = 'browser', agentId = SHELL_AGENT.id): Promise<void> => {
     activeContext = signal<ProjectContext | null>(null);
     userSignal = signal<User | null>({ sub: 'auth0|user-1' } as User);
     storedRuns = {};
@@ -123,6 +175,12 @@ describe('MktgAgentRunComponent', () => {
     resolveDependencies = vi.fn((projectUid: string, agentIds: string[]) =>
       of(Object.fromEntries(agentIds.map((agentId) => [agentId, dependencyDocs[`${projectUid}:${agentId}`] ?? null])))
     );
+    resolveBrandKit = vi.fn(() => of(null));
+    slidesExport = {
+      last: vi.fn(() => of({ last: null, latestRevision: null })),
+      start: vi.fn(() => of({ sessionId: 's', ownerToken: 't', revision: { id: 'r', number: 1, contentSha256: 'a' }, mode: 'create', logoNote: null })),
+      poll: vi.fn(() => NEVER),
+    };
 
     await TestBed.configureTestingModule({
       imports: [MktgAgentRunComponent],
@@ -138,7 +196,8 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
         { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
-        { provide: MktgDependencyService, useValue: { resolveDependencies, notifyDocumentsChanged } },
+        { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
+        provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
         {
           provide: MktgAnswerMemoryService,
@@ -235,7 +294,7 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(priorRunChip('github_url')?.textContent).toContain('From your Messaging Document run');
+      expect(priorRunChip('github_url')?.textContent).toContain('From your Messaging framework run');
       expect(fromLfxChip('github_url')).toBeNull();
     });
 
@@ -262,7 +321,7 @@ describe('MktgAgentRunComponent', () => {
       rememberedAnswers = {
         'proj-1': {
           project_name: { value: 'Reused Name', agentId: 'foundation-setup', savedAt: '2026-08-20T00:00:00.000Z' },
-          voice_adjectives: { value: 'confident, technical', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' },
+          voice_adjectives: { value: 'confident, technical', agentId: SHELL_AGENT.id, savedAt: '2026-08-20T00:00:00.000Z' },
         },
       };
       activeContext.set(PROJECT_1);
@@ -281,7 +340,7 @@ describe('MktgAgentRunComponent', () => {
       // describe their project right next to the description it just filled.
       projects = { 'proj-one': { repository_url: '', description: '' } };
       rememberedAnswers = {
-        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: SHELL_AGENT.id, savedAt: '2026-08-20T00:00:00.000Z' } },
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
@@ -328,7 +387,7 @@ describe('MktgAgentRunComponent', () => {
     it('brings the LFX-empty hint back when the answer it stood down for is cleared', async () => {
       projects = { 'proj-one': { repository_url: '', description: '' } };
       rememberedAnswers = {
-        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: 'brand-kit', savedAt: '2026-08-20T00:00:00.000Z' } },
+        'proj-1': { one_line_description: { value: 'A runtime for agents.', agentId: SHELL_AGENT.id, savedAt: '2026-08-20T00:00:00.000Z' } },
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
@@ -374,7 +433,7 @@ describe('MktgAgentRunComponent', () => {
       const progress: MktgGenerateProgress[] = [
         { type: 'submitted' },
         { type: 'document', run: storedRun('proj-1', '# Kit v2', { project_name: 'TestOrbit' }) },
-        { type: 'persisted' },
+        { type: 'persisted', run: null },
       ];
       generate.mockImplementation(() => from(progress));
       activeContext.set(PROJECT_1);
@@ -404,7 +463,7 @@ describe('MktgAgentRunComponent', () => {
 
       expect(rememberAnswers).toHaveBeenCalledWith(
         'proj-1',
-        'brand-kit',
+        SHELL_AGENT.id,
         expect.objectContaining({ github_url: 'https://github.com/example-org/example-repo', project_name: 'answer for project_name' })
       );
     });
@@ -561,7 +620,7 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_2);
       await fixture.whenStable();
 
-      expect(loadRun).toHaveBeenCalledWith('proj-2', 'brand-kit');
+      expect(loadRun).toHaveBeenCalledWith('proj-2', SHELL_AGENT.id);
       expect(query('mktg-agent-run-result')).toBeNull();
       expect(query('mktg-agent-run-form')).not.toBeNull();
       expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Project Two' });
@@ -577,7 +636,643 @@ describe('MktgAgentRunComponent', () => {
    * GitHub URL at all is refused. The ICP block below keeps refusing the
    * same account URL, because its BFF needs a repository README.
    */
-  describe('Brand Kit — github_url accepts an organization URL', () => {
+  describe('Brand Kit — the logo files and the kit', () => {
+    /** The project's latest stored messaging framework revision — approved or not — as the dependency service resolves it. */
+    const latestFramework: MktgDependencyDocument = {
+      agentId: 'foundation-setup',
+      source: 'server',
+      version: 2,
+      document: '# Project One Messaging Framework',
+      storedAt: '2026-10-17T09:00:00.000Z',
+      sidecar: {
+        contract: 'messaging-document-output/v1',
+        fields: { 'md.tagline': { value: 'Open standards for orbital computing', source: 'Site', status: 'approved' } },
+      },
+    };
+
+    beforeEach(async () => configure('browser', 'brand-kit'));
+
+    it('asks for the project, the website, the brand page and notes, offers the logo-files section, and submits the files with the form', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(Object.keys(component['intakeForm'].controls)).toEqual(['project_name', 'website_url', 'brand_page_url', 'notes']);
+      expect(fixture.debugElement.query(By.directive(MktgIntakeLogoFilesComponent))).not.toBeNull();
+      expect(query('mktg-intake-documents')).toBeNull();
+      // The page spans the whole width: the result is laid out as pages.
+      expect(query('mktg-agent-run-page')?.className).toContain('w-full');
+      expect(query('mktg-agent-run-page')?.className).not.toContain('container');
+
+      component['intakeForm'].controls['website_url'].setValue('none');
+      await fixture.whenStable();
+      expect(fieldError('website_url')?.textContent).toContain('https://');
+      expect(component['submitDisabled']()).toBe(true);
+
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      component['logoFiles'].set([{ id: 'svg-1', file: { name: 'logo.svg', text: '<svg/>' }, badge: 'SVG', status: '1 KB, sent as text' }]);
+      component['logoFilesBusy'].set(true);
+      expect(component['submitDisabled']()).toBe(true);
+      component['logoFilesBusy'].set(false);
+      await fixture.whenStable();
+      expect(component['submitDisabled']()).toBe(false);
+
+      component['onSubmit']();
+      await fixture.whenStable();
+      const request = generate.mock.calls[0][0] as MktgGenerateRequest;
+      // The latest messaging framework always goes with the form, as its JSON.
+      expect(request.answers).toEqual({
+        project_name: 'Project One',
+        website_url: 'https://one.example.org',
+        messaging_framework: JSON.stringify(latestFramework.sidecar),
+      });
+      expect(request.logoFiles).toEqual([{ name: 'logo.svg', text: '<svg/>' }]);
+    });
+
+    it('fills the website from the LFX project, marked From LFX and editable, like the framework intake', async () => {
+      projects = { 'proj-one': { repository_url: '', website_url: 'https://one.example.org', description: '' } };
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://one.example.org');
+      expect(fromLfxChip('website_url')).not.toBeNull();
+      expect(fieldError('website_url')).toBeNull();
+
+      component['intakeForm'].controls['website_url'].setValue('https://www.one.example.org');
+      await fixture.whenStable();
+      expect(fromLfxChip('website_url')).toBeNull();
+    });
+
+    it('drops a logo file still being read when the project changes — the old project’s artwork never lands on the new form', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const section = fixture.debugElement.query(By.directive(MktgIntakeLogoFilesComponent)).componentInstance as MktgIntakeLogoFilesComponent;
+      const cancelReads = vi.spyOn(section, 'cancelReads');
+
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+
+      expect(cancelReads).toHaveBeenCalled();
+    });
+
+    it('shows the live feed, then the questions, on their own — no document title, status chip or kit until there is a kit', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      await fixture.whenStable();
+      const questions = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(
+        concat(
+          from<MktgGenerateProgress[]>([
+            { type: 'submitted' },
+            {
+              type: 'activity',
+              activity: [{ id: 'step-1', kind: 'reading', label: 'Inspecting the logo files', status: 'running', startedAt: '2026-10-18T08:00:00Z' }],
+            },
+          ]),
+          questions
+        )
+      );
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('running');
+      expect(query('mktg-agent-run-live')?.querySelector('[data-testid="mktg-run-activity-step-step-1"]')?.textContent).toContain('Inspecting the logo files');
+      expect(query('mktg-agent-run-doc-title')).toBeNull();
+      expect(query('mktg-agent-run-doc-status')).toBeNull();
+      expect(query('mktg-agent-run-brand-kit')).toBeNull();
+      expect(query('mktg-agent-run-result')).toBeNull();
+
+      questions.next({
+        type: 'questions',
+        pending: {
+          attempt: { session: { agentId: 'brand-kit', sessionId: 'sess-bk', ownerToken: 'token-bk' }, priorVersion: 0 },
+          questionsId: 'bk123456',
+          questions: [
+            { key: 'colors', label: 'Colors', question: 'Which colours are the brand’s?', why: 'The CSS names none.', suggestedAnswer: '#F37625', basis: [] },
+          ],
+        },
+      });
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('questions');
+      expect(query('mktg-agent-run-questions')).not.toBeNull();
+      expect(query('mktg-agent-run-live')).toBeNull();
+      expect(query('mktg-agent-run-doc-title')).toBeNull();
+      expect(query('mktg-agent-run-brand-kit')).toBeNull();
+    });
+
+    it('attaches a framework stored as JSON — the envelope the BFF serves, the framework under `content` — and submits it as is', async () => {
+      const jsonFramework: MktgDependencyDocument = {
+        agentId: 'foundation-setup',
+        source: 'server',
+        version: 3,
+        document: JSON.stringify({
+          mf: { positioning: 'For platform teams.', tagline: 'Release, open.' },
+          icp: [],
+          mh: { umbrella: 'For platform teams.', line: 'Release, open.' },
+          nums: [],
+        }),
+        storedAt: '2026-10-18T09:00:00.000Z',
+        sidecar: {
+          contract: 'messaging-framework-output/v1',
+          content: {
+            mf: { positioning: 'For platform teams.', tagline: 'Release, open.' },
+            icp: [],
+            mh: { umbrella: 'For platform teams.', line: 'Release, open.' },
+            nums: [],
+          },
+          report: { sources_read: [], sources_failed: [], gaps: [], notes: '' },
+        },
+      };
+      dependencyDocs = { 'proj-1:foundation-setup': jsonFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent?.replace(/\s+/g, ' ')).toContain('Uses the latest messaging framework · v3');
+      expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+      expect(component['submitDisabled']()).toBe(false);
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect((generate.mock.calls[0][0] as MktgGenerateRequest).answers['messaging_framework']).toBe(JSON.stringify(jsonFramework.sidecar));
+    });
+
+    describe('the latest messaging framework — the run order is the framework first, then the kit', () => {
+      const fillRequired = (): void => {
+        component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
+      };
+
+      it('resolves the framework from the server’s latest revision with its sidecar — approved or not, never this browser’s run', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], ['foundation-setup']);
+      });
+
+      it('shows the attached revision — "Uses the latest messaging framework · v2 · 17 Oct", linking to its page — and never asks for it on the form', async () => {
+        const router = TestBed.inject(Router);
+        const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        const chip = query('mktg-agent-run-attachment-foundation-setup');
+        expect(chip?.textContent?.replace(/\s+/g, ' ')).toContain('Uses the latest messaging framework · v2 · 17 Oct');
+        expect(chip?.textContent).not.toContain('approved');
+        expect(host().querySelector('[data-test="mktg-intake-messaging_framework"]')).toBeNull();
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-missing-dependency-link')).toBeNull();
+
+        (chip as HTMLButtonElement | null)?.click();
+
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      });
+
+      it('disables Run with "Run the messaging framework first" and links to the Messaging Framework page only when the project has no revision at all', async () => {
+        const router = TestBed.inject(Router);
+        const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Run the messaging framework first');
+        expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+        const link = query('mktg-agent-run-missing-dependency-link');
+        expect(link?.textContent).toContain('Open the Messaging Framework page');
+
+        link?.querySelector('button')?.click();
+
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      /**
+       * The latest revision exists but the agent can read no voice from it
+       * — the same rule the BFF validator applies, so the page stops here
+       * instead of submitting a run that would 400 on every retry.
+       */
+      const expectIncompleteFrameworkStop = (): void => {
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-submit-button')?.querySelector('button')?.disabled).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain(
+          'The messaging framework has no positioning or tagline yet — finish it first.'
+        );
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).not.toContain('Run the messaging framework first');
+        expect(query('mktg-agent-run-missing-dependency-link')?.textContent).toContain('Open the Messaging Framework page');
+        expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+        component['onSubmit']();
+        expect(generate).not.toHaveBeenCalled();
+      };
+
+      it('stops with "no positioning or tagline yet — finish it first" when the latest revision has both voice fields still tbd', async () => {
+        const tbd = { value: 'Needs input', source: 'Asked', status: 'tbd' };
+        dependencyDocs = {
+          'proj-1:foundation-setup': {
+            ...latestFramework,
+            sidecar: { contract: 'messaging-document-output/v1', fields: { 'md.positioning': tbd, 'md.tagline': tbd } },
+          },
+        };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expectIncompleteFrameworkStop();
+      });
+
+      it('stops the same way when the latest revision carries no sidecar at all (a restored legacy revision)', async () => {
+        dependencyDocs = {
+          'proj-1:foundation-setup': {
+            agentId: latestFramework.agentId,
+            source: latestFramework.source,
+            version: latestFramework.version,
+            document: latestFramework.document,
+            storedAt: latestFramework.storedAt,
+          },
+        };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expectIncompleteFrameworkStop();
+      });
+
+      it('shows a failed check with Try again — never "Run the messaging framework first" — when the read fails, and re-resolves from the button', async () => {
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Could not check the project’s Messaging Framework — try again.');
+        expect(query('mktg-agent-run-missing-dependency')?.textContent).not.toContain('Run the messaging framework');
+        expect(query('mktg-agent-run-missing-dependency-link')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        query('mktg-agent-run-dependency-retry')?.querySelector('button')?.click();
+        await fixture.whenStable();
+
+        expect(resolveDependencies).toHaveBeenCalledTimes(2);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-dependency-retry')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
+        expect(component['submitDisabled']()).toBe(false);
+      });
+
+      it('lets only the latest Try again land: a slower, earlier retry that fails afterwards does not clear its result', async () => {
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        const slowRetry = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(slowRetry.asObservable());
+        component['onRetryDependencies']();
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        component['onRetryDependencies']();
+        slowRetry.error(new Error('503 from the BFF'));
+        await fixture.whenStable();
+
+        expect(component['dependencyCheckFailed']()).toBe(false);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
+        expect(component['submitDisabled']()).toBe(false);
+      });
+
+      it('drops a Try again still in flight when the project changes, so it cannot land on the new project', async () => {
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+
+        const retry = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(retry.asObservable());
+        component['onRetryDependencies']();
+        dependencyDocs = { 'proj-2:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_2);
+        await fixture.whenStable();
+        retry.error(new Error('503 from the BFF'));
+        await fixture.whenStable();
+
+        expect(retry.observed).toBe(false);
+        expect(component['dependencyCheckFailed']()).toBe(false);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+        expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('messaging framework · v2');
+      });
+
+      it('reports a check that fails at submit time as such, not as a failed run', async () => {
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+        resolveDependencies.mockReturnValueOnce(throwError(() => new Error('503 from the BFF')));
+
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(generate).not.toHaveBeenCalled();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('Could not check the project’s Messaging Framework — try again.');
+        expect(query('mktg-agent-run-dependency-retry')).not.toBeNull();
+      });
+
+      it('stays disabled, with no note, while the framework is still resolving', async () => {
+        resolveDependencies.mockReturnValueOnce(new Subject<Record<string, MktgDependencyDocument | null>>().asObservable());
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+
+        expect(component['submitDisabled']()).toBe(true);
+        expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+      });
+
+      it('aborts the submit honestly when the revision is gone by submit time', async () => {
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+        dependencyDocs = {};
+
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(generate).not.toHaveBeenCalled();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('Run the messaging framework first');
+      });
+
+      it('shows the agent’s refusal reply as the run’s outcome — back on the form, nothing stored — should the agent still refuse', async () => {
+        dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillRequired();
+        await fixture.whenStable();
+        generate.mockReturnValue(
+          from<MktgGenerateProgress[]>([
+            { type: 'submitted' },
+            {
+              type: 'refused',
+              reply:
+                'The Brand Kit request for Project One has no approved messaging framework attached, so this run was not started: nothing was read, inspected or built.',
+            },
+          ])
+        );
+
+        component['onSubmit']();
+        await fixture.whenStable();
+
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('this run was not started');
+        expect(query('mktg-agent-run-result')).toBeNull();
+        expect(component['run']()).toBeNull();
+        expect(component['intakeForm'].controls['website_url'].value).toBe('https://one.example.org');
+      });
+    });
+
+    it('renders a stored version’s kit as the web view — the book kept for print only, no document card, no .md download, no section checklist', async () => {
+      storedRuns = {
+        'proj-1:brand-kit': {
+          agentId: 'brand-kit',
+          projectUid: 'proj-1',
+          sessionId: 'sess-bk',
+          ownerToken: 'token-bk',
+          answers: { project_name: 'Project One', website_url: 'https://one.example.org' },
+          versions: [
+            {
+              version: 1,
+              document: '# Project One Brand Kit',
+              brandKit: brandKitTestRevision(),
+              contentSha256: 'd'.repeat(64),
+              createdAt: '2026-10-17T00:00:00.000Z',
+            },
+          ],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-result')).not.toBeNull();
+      expect(query('mktg-agent-run-brand-kit')).not.toBeNull();
+      expect(fixture.debugElement.query(By.directive(BrandKitWebViewComponent))).not.toBeNull();
+      // The kit is an app page with its own header and actions: no document card around it.
+      expect(query('mktg-agent-run-doc-title')).toBeNull();
+      expect(query('mktg-agent-run-view-button')).toBeNull();
+      expect(query('mktg-agent-run-download-button')).toBeNull();
+      expect(query('mktg-agent-run-doc-preview')).toBeNull();
+      expect(query('mktg-agent-run-sections')).toBeNull();
+      expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
+      expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
+      expect(query('brand-kit-web-view-built-from')?.textContent).toContain('Built from the logo file logo.svg');
+      // The book is there for Download PDF only, in its print-only wrapper.
+      expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
+      expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
+      expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+      // Export to Google Slides reads the stored revision the version's hash names.
+      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
+      expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', contentSha256: 'd'.repeat(64) });
+      // A kit is revised from edited inputs, never from a feedback box.
+      expect(query('mktg-agent-run-regenerate-button')).toBeNull();
+      expect(query('mktg-agent-run-new-run')).not.toBeNull();
+    });
+
+    it('keeps Export to Google Slides off while the version names no stored revision, never exporting the latest in its place', async () => {
+      storedRuns = {
+        'proj-1:brand-kit': {
+          agentId: 'brand-kit',
+          projectUid: 'proj-1',
+          sessionId: 'sess-bk',
+          ownerToken: 'token-bk',
+          answers: { project_name: 'Project One', website_url: 'https://one.example.org' },
+          versions: [{ version: 1, document: '# Project One Brand Kit', brandKit: brandKitTestRevision(), createdAt: '2026-10-17T00:00:00.000Z' }],
+          savedAt: new Date().toISOString(),
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(slidesExport.last).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Boilerplates — a short form, the run, the questions, landing on the Boilerplates view', () => {
+    /** The project's latest stored messaging framework revision as the sidecar read rebuilds it: the envelope with the content back under `content`. */
+    const latestFramework: MktgDependencyDocument = {
+      agentId: 'foundation-setup',
+      source: 'server',
+      version: 3,
+      document: '# Project One Messaging framework',
+      storedAt: '2026-10-18T09:00:00.000Z',
+      sidecar: {
+        contract: 'messaging-framework-output/v1',
+        version: 1,
+        content: {
+          mf: { positioning: 'The open service mesh.', tagline: 'Mesh, open.' },
+          icp: [],
+          mh: { umbrella: 'Open mesh', line: 'Mesh, open.' },
+          nums: [],
+        },
+      },
+    };
+    const BOILERPLATES: MktgRunAsset = {
+      kind: 'boilerplates',
+      mode: 'draft',
+      content: {
+        bp: [
+          { l: 'One-liner', max: 15, t: 'Project One is the open service mesh.' },
+          { l: '25 words', max: 25, t: 'Project One, a Linux Foundation project, is the open service mesh.' },
+          { l: '50 words', max: 50, t: 'Project One, a Linux Foundation project, is the open service mesh for platform teams.' },
+          { l: '100 words', max: 100, t: 'Project One, a Linux Foundation project, is the open service mesh. Learn more at one.example.org.' },
+        ],
+      },
+      report: { sources_read: ['https://one.example.org'], sources_failed: [], gaps: ['The launch year is not stated.'], notes: '' },
+      checks: { word_counts: [7, 11, 14, 16], findings: [] },
+    };
+
+    beforeEach(async () => configure('browser', 'boilerplates'));
+
+    it('asks only for the project name, the website and notes — both prefilled from LFX — and spans the full width', async () => {
+      projects = { 'proj-one': { repository_url: '', website_url: 'https://one.example.org', description: '' } };
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(Object.keys(component['intakeForm'].controls)).toEqual(['project_name', 'website_url', 'notes']);
+      expect(component['intakeForm'].controls['project_name'].value).toBe('Project One');
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://one.example.org');
+      expect(fromLfxChip('project_name')).not.toBeNull();
+      expect(fromLfxChip('website_url')).not.toBeNull();
+      expect(query('mktg-agent-run-form-title')?.textContent).toContain('Write the Project One Boilerplates');
+      expect(host().querySelector('[data-test="mktg-intake-messaging_framework"]')).toBeNull();
+      expect(query('mktg-agent-run-page')?.className).toContain('w-full');
+      expect(query('mktg-agent-run-page')?.className).not.toContain('container');
+      // Nothing a user reads names the author of the reference material.
+      expect(host().textContent).not.toMatch(/\bPaul\b/);
+    });
+
+    it('attaches the latest messaging framework, says so with its version, and submits it with the form and the project', async () => {
+      projects = { 'proj-one': { repository_url: '', website_url: 'https://one.example.org', description: '' } };
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], ['foundation-setup']);
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'Uses the latest messaging framework · v3 · 18 Oct'
+      );
+      expect(component['submitDisabled']()).toBe(false);
+
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      const request = generate.mock.calls[0][0] as MktgGenerateRequest;
+      expect(request.intake).toBe(MKTG_AGENT_INTAKES['boilerplates']);
+      expect(request.projectUid).toBe('proj-1');
+      expect(request.answers).toEqual({
+        project_name: 'Project One',
+        website_url: 'https://one.example.org',
+        messaging_framework: JSON.stringify(latestFramework.sidecar),
+      });
+    });
+
+    it('cannot run without a framework: Run is disabled, the page says to run the framework first and links to it', async () => {
+      const router = TestBed.inject(Router);
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Run the messaging framework first');
+      const link = query('mktg-agent-run-missing-dependency-link');
+      expect(link?.textContent).toContain('Open the Messaging Framework page');
+      link?.querySelector('button')?.click();
+      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
+    });
+
+    it('stops on a latest revision that is not a framework (a legacy Messaging Document), with the link, instead of a run that would fail', async () => {
+      dependencyDocs = {
+        'proj-1:foundation-setup': {
+          ...latestFramework,
+          sidecar: { contract: 'messaging-document-output/v1', fields: { 'md.tagline': { value: 'Mesh, open.', source: 'Site', status: 'approved' } } },
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('could not be read as a framework');
+      expect(query('mktg-agent-run-missing-dependency-link')?.textContent).toContain('Open the Messaging Framework page');
+      expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
+    });
+
+    it('shows the live feed alone while the agent works, then lands on the Boilerplates view', async () => {
+      dependencyDocs = { 'proj-1:foundation-setup': latestFramework };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress.asObservable());
+
+      component['onSubmit']();
+      progress.next({ type: 'submitted' });
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-live')).not.toBeNull();
+      expect(query('mktg-boilerplates-view')).toBeNull();
+
+      vi.useFakeTimers();
+      try {
+        progress.next({
+          type: 'document',
+          run: {
+            agentId: 'boilerplates',
+            projectUid: 'proj-1',
+            sessionId: 'sess-bp',
+            ownerToken: 'token-bp',
+            answers: {},
+            versions: [{ version: 1, document: '', asset: BOILERPLATES, createdAt: '2026-10-19T09:00:00.000Z' }],
+            savedAt: '2026-10-19T09:00:00.000Z',
+          },
+        });
+        vi.advanceTimersByTime(600);
+      } finally {
+        vi.useRealTimers();
+      }
+      await fixture.whenStable();
+
+      expect(component['phase']()).toBe('result');
+      expect(query('mktg-boilerplates-view-title')?.textContent).toContain('Project One Boilerplates');
+      expect(query('mktg-boilerplates-view-version')?.textContent).toContain('v1');
+      expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('Project One is the open service mesh.');
+      expect(query('mktg-boilerplates-view-count-3')?.textContent).toContain('16 / 100 words');
+      expect(query('mktg-framework-view')).toBeNull();
+      expect(query('mktg-agent-run-change-note')?.textContent).toContain('To change the boilerplates, edit the inputs and generate again');
+      expect(query('mktg-agent-run-download-pdf')?.textContent).toContain('Download PDF');
+      expect(query('mktg-agent-run-export-slides')?.textContent).toContain('Export to Google Slides');
+      expect(notifyDocumentsChanged).toHaveBeenCalledWith('proj-1');
+    });
+  });
+
+  describe('github_url format rule — an organization URL is a usable answer', () => {
     beforeEach(async () => configure());
 
     const fillAll = (githubUrl: string): void => {
@@ -615,44 +1310,150 @@ describe('MktgAgentRunComponent', () => {
     });
   });
 
-  describe('Messaging Document — the form from the design canvas', () => {
+  describe('Messaging Framework — the intake form, the run on the asset view, the questions', () => {
     const fillRequired = (): void => {
       component['intakeForm'].controls['project_name'].setValue('TestOrbit');
+    };
+    const giveSource = (): void => {
+      component['intakeForm'].controls['website_url'].setValue('https://testorbit.example.org');
     };
     const submitted = (): MktgGenerateRequest => generate.mock.calls[0][0] as MktgGenerateRequest;
     const QUESTIONS = [
       {
-        key: 'audiences',
-        label: 'Audiences',
-        question: 'Who are the primary audiences?',
-        why: 'The site names platform teams only.',
-        suggestedAnswer: 'Platform teams; SREs.',
-        basis: ['https://testorbit.example.org', 'the README'],
+        key: 'ranked-goals',
+        label: 'Ranked goals',
+        question: 'Which goals matter most this year?',
+        why: 'The site lists no plan.',
+        suggestedAnswer: 'Adoption first.',
+        basis: ['https://testorbit.example.org/about', 'inferred'],
       },
-      { key: 'tagline_ctas_constraints', label: 'Tagline, CTAs and constraints', question: 'Is a tagline locked?', why: '', suggestedAnswer: '', basis: [] },
+      { key: 'words-to-avoid', label: 'Words to avoid', question: 'Which words should the framework avoid?', why: '', suggestedAnswer: '', basis: [] },
     ];
     const pendingQuestions = (): MktgRunQuestionsPending => ({
-      attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-md', ownerToken: 'token-md' }, priorVersion: 0 },
+      attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-mf', ownerToken: 'token-mf' }, priorVersion: 0 },
       questionsId: 'abc12345',
       questions: QUESTIONS,
+    });
+    const pair = (a: string, b: string): [string, string] => [a, b];
+    /** A framework as the result endpoint returns it: the run's asset. */
+    const ASSET: MktgRunAsset = {
+      kind: 'messaging-framework',
+      mode: 'draft',
+      content: {
+        mf: {
+          vision: 'A vision.',
+          mission: 'A mission.',
+          positioning: 'For platform teams, TestOrbit is the open release toolkit.',
+          tagline: 'Release, open.',
+          goals: [
+            {
+              id: 'adoption',
+              n: 1,
+              t: 'Adoption',
+              vp: 'VP.',
+              key: 'Key.',
+              proof: [pair('1,200 members', 'Website')],
+              bite: 'Adoption in the open',
+              icps: ['users'],
+            },
+          ],
+          crosscut: 'Every column grows the audience.',
+          say: ['open release'],
+          avoid: [pair('synergy', 'working together')],
+          anchor: ['Which goal does this serve?'],
+          notes: '',
+        },
+        icp: [
+          {
+            id: 'users',
+            name: 'End users',
+            kind: 'Individual',
+            who: 'Engineers.',
+            goals: ['adoption'],
+            need: 'Need.',
+            value: 'Value.',
+            lead: 'Ship with confidence.',
+            proof: [pair('A fact', 'Docs')],
+            cta: 'Try it.',
+            channels: ['Docs'],
+            objection: ['Too early?', null],
+            personas: [pair('SRE', 'uptime')],
+            basis: 'Website',
+          },
+        ],
+        mh: {
+          umbrella: 'Umbrella.',
+          line: 'Release, open.',
+          pillars: [{ t: 'Open', m: 'Open message.', p: [pair('Fact', 'Web')] }],
+          found: 'A Linux Foundation project.',
+          aud: [pair('End users', 'Ship with confidence.')],
+        },
+        nums: [pair('1,200', 'members')],
+      },
+      report: { sources_read: ['https://testorbit.example.org'], sources_failed: [], gaps: ['No member count.'], notes: '' },
+      checks: { findings: [] },
+    };
+    const assetRun = (versions: MktgRunVersion[]): MktgStoredAgentRun => ({
+      agentId: 'foundation-setup',
+      projectUid: 'proj-1',
+      sessionId: 'sess-mf',
+      ownerToken: 'token-mf',
+      answers: { project_name: 'TestOrbit', website_url: 'https://testorbit.example.org' },
+      versions,
+      savedAt: new Date().toISOString(),
     });
 
     beforeEach(async () => configure('browser', 'foundation-setup'));
 
-    it('renders the sources as links — the four, a GitHub repo or organization page, the other links — and the existing documents; no questions on the first form', async () => {
+    it('renders the guided form: the project, one labelled source field per thing the agent reads, in order, each with its explanation and example; other links and documents in one section', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
+      const project = query('mktg-agent-run-group-project');
+      expect(project?.querySelector('[data-test="mktg-intake-project_name"]')).not.toBeNull();
+      expect(project?.querySelector('[data-test="mktg-intake-description"]')).not.toBeNull();
       const sources = query('mktg-agent-run-group-sources');
-      for (const key of ['project_name', 'website_url', 'github_url', 'press_release_url', 'brand_page_url', 'other_links']) {
+      const labels = Array.from(sources?.querySelectorAll('label:not(.sr-only)') ?? []).map((label) => label.textContent?.replaceAll('*', '').trim());
+      expect(labels).toEqual([
+        'Website',
+        'GitHub repository or README',
+        'Launch press release or announcement',
+        'Members or partners page',
+        'Projects or products page',
+        'Existing deck or pitch',
+        'Marketing or strategy plan',
+        'Brand page',
+      ]);
+      for (const key of ['website_url', 'github_url', 'press_release_url', 'members_page_url', 'projects_page_url', 'deck_url', 'plan_url', 'brand_page_url']) {
         expect(sources?.querySelector(`[data-test="mktg-intake-${key}"]`)).not.toBeNull();
       }
+      // Each source says what it is for and shows an example value.
+      expect(sources?.textContent).toContain('searches the LF press archive itself');
+      expect(sources?.querySelector<HTMLInputElement>('[data-test="mktg-intake-members_page_url"]')?.placeholder).toBe('https://aaif.io/members');
+      expect(sources?.querySelector<HTMLInputElement>('[data-test="mktg-intake-website_url"]')?.placeholder).toBe('https://aaif.io');
+      // The GitHub field (hand test, 18 Oct) sits right after the website, optional, with its own hint.
+      expect(sources?.querySelector<HTMLInputElement>('[data-test="mktg-intake-github_url"]')?.placeholder).toBe('https://github.com/…');
+      expect(sources?.textContent).toContain('Leave it empty and the agent looks for it itself');
+      // The deck and the plan take an upload or a link; the pages take a link only.
+      expect(query('mktg-intake-deck_url-upload')).not.toBeNull();
+      expect(query('mktg-intake-plan_url-upload')).not.toBeNull();
+      expect(query('mktg-intake-members_page_url-upload')).toBeNull();
+      // No separate "Other links" list (hand test, 18 Oct): extra links and uploads share one section at the end.
+      expect(query('mktg-agent-run-list-links')).toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-links"]')).toBeNull();
+      // No notes field and no notes group (hand test, 18 Oct): audiences, goals and words to avoid come up as the agent's gap questions.
+      expect(query('mktg-agent-run-group-notes')).toBeNull();
+      expect(host().querySelector('[data-test="mktg-intake-notes"]')).toBeNull();
+      // The intro says what the agent does with the form and what is optional.
+      expect(host().textContent).toContain('Only the website is required');
+      // No questions on the form: the agent asks only the gaps afterwards.
       expect(query('mktg-agent-run-group-questions')).toBeNull();
-      expect(host().querySelectorAll('textarea').length).toBe(1);
       expect(query('mktg-intake-documents')).not.toBeNull();
+      expect(query('mktg-intake-documents')?.textContent).toContain('Other links and documents');
       // Runs first: no Brand Kit chip and no missing-dependency gate.
       expect(query('mktg-agent-run-attachments')).toBeNull();
       expect(query('mktg-agent-run-missing-dependency')).toBeNull();
+      expect(host().textContent).not.toContain('Messaging Document');
     });
 
     it('names no one anywhere the user sees — this is a product, not a proof of concept', async () => {
@@ -665,64 +1466,136 @@ describe('MktgAgentRunComponent', () => {
       }
     });
 
-    it('requires only the project name — every source is optional', async () => {
+    it('requires the project name and the website — a real page, never "none" — and says beside the button that the rest is optional', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      // Prefilled from the active project, so the form starts valid; clearing the one required field is what invalidates it.
-      expect(component['intakeForm'].valid).toBe(true);
-      component['intakeForm'].controls['project_name'].setValue('');
+      // The project name is prefilled; the website is the one field left to give.
       expect(component['intakeForm'].valid).toBe(false);
+      expect(component['submitDisabled']()).toBe(true);
+      expect(query('mktg-agent-run-submit-button')?.parentElement?.textContent).toContain('* required — everything else is optional');
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
 
-      fillRequired();
+      component['intakeForm'].controls['website_url'].setValue('none');
+      await fixture.whenStable();
+      expect(fieldError('website_url')?.textContent).toContain('https://');
+      expect(component['submitDisabled']()).toBe(true);
+
+      // A deck alone does not open the button: the website is the one gate, as the BFF's validator holds it.
+      component['intakeForm'].controls['website_url'].setValue('');
+      component['intakeForm'].controls['deck_url'].setValue('https://docs.google.com/presentation/d/x');
+      await fixture.whenStable();
+      expect(component['submitDisabled']()).toBe(true);
+
+      giveSource();
+      await fixture.whenStable();
+      expect(fieldError('website_url')).toBeNull();
       expect(component['intakeForm'].valid).toBe(true);
+      expect(component['submitDisabled']()).toBe(false);
+
+      component['intakeForm'].controls['project_name'].setValue('');
+      expect(component['submitDisabled']()).toBe(true);
     });
 
-    it('takes "none" or an https:// link for a source, a repository or an organization page for GitHub, one link per line for the rest, and blocks anything else, saying why', async () => {
+    it('takes "none" or an https:// link on the optional link fields, blocks anything else saying why', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillRequired();
+      giveSource();
 
       component['intakeForm'].controls['press_release_url'].setValue('None');
       await fixture.whenStable();
       expect(fieldError('press_release_url')).toBeNull();
-
-      component['intakeForm'].controls['website_url'].setValue('http://testorbit.example.org');
+      component['intakeForm'].controls['press_release_url'].setValue('http://press.example.org/launch');
       await fixture.whenStable();
-      expect(fieldError('website_url')?.textContent).toContain('https://');
+      expect(fieldError('press_release_url')?.textContent).toContain('https://');
       expect(component['submitDisabled']()).toBe(true);
-      component['intakeForm'].controls['website_url'].setValue('https://testorbit.example.org');
+      component['intakeForm'].controls['press_release_url'].setValue('https://press.example.org/launch');
       await fixture.whenStable();
-      expect(fieldError('website_url')).toBeNull();
-
-      // An organization page (https://github.com/aaif) is a usable GitHub source now that the agent reads it.
-      component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif');
-      await fixture.whenStable();
-      expect(fieldError('github_url')).toBeNull();
-      component['intakeForm'].controls['github_url'].setValue('https://gitlab.example.org/aaif');
-      await fixture.whenStable();
-      expect(fieldError('github_url')?.textContent).toContain('GitHub');
-      component['intakeForm'].controls['github_url'].setValue('https://github.com/aaif/spec');
-      await fixture.whenStable();
-      expect(fieldError('github_url')).toBeNull();
-
-      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/a\nnot a link');
-      await fixture.whenStable();
-      expect(fieldError('other_links')?.textContent).toContain('Every line');
-      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/a\n\nhttps://blog.example.org/b');
-      await fixture.whenStable();
-      expect(fieldError('other_links')).toBeNull();
-      expect(component['submitDisabled']()).toBe(false);
+      expect(fieldError('press_release_url')).toBeNull();
     });
 
-    it('submits the links and the documents — a link by its URL, a file by its text — and waits while a file is being read', async () => {
+    it('fills the website and the GitHub repository from the LFX project, marked From LFX, and leaves them editable', async () => {
+      // Hand test, 18 Oct: "it should get the github from the lfx ui. website too if it has it".
+      projects = { 'proj-one': { repository_url: 'https://github.com/testorbit/testorbit', website_url: 'https://testorbit.example.org', description: '' } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://testorbit.example.org');
+      expect(component['intakeForm'].controls['github_url'].value).toBe('https://github.com/testorbit/testorbit');
+      expect(fromLfxChip('website_url')).not.toBeNull();
+      expect(fromLfxChip('github_url')).not.toBeNull();
+      expect(fieldError('website_url')).toBeNull();
+
+      component['intakeForm'].controls['website_url'].setValue('https://www.testorbit.example.org');
+      await fixture.whenStable();
+      expect(fromLfxChip('website_url')).toBeNull();
+    });
+
+    it('fills the one-line description from a multi-paragraph LFX description as ONE line, and submits it as one line', async () => {
+      // An LFX project description with paragraph breaks: the input would hide
+      // them while the control kept them, and the BFF refuses a description
+      // that is not one line — the run would fail with a cause nobody can see.
+      projects = { 'proj-one': { repository_url: '', description: 'An open release toolkit.\n\nBuilt by platform teams.\r\n  For everyone.  ' } };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(component['intakeForm'].controls['description'].value).toBe('An open release toolkit. Built by platform teams. For everyone.');
+      expect(fromLfxChip('description')).not.toBeNull();
+      expect(fieldError('description')).toBeNull();
+
+      fillRequired();
+      giveSource();
+      component['onSubmit']();
+      await fixture.whenStable();
+
+      expect(submitted().answers['description']).toBe('An open release toolkit. Built by platform teams. For everyone.');
+      expect(submitted().answers['description']).not.toMatch(/[\r\n]/);
+    });
+
+    it('blocks a multi-line value in the one-line description on the form, saying why, instead of sending a run the BFF refuses', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fillRequired();
-      component['intakeForm'].controls['website_url'].setValue('https://testorbit.example.org');
-      component['intakeForm'].controls['other_links'].setValue('https://blog.example.org/launch');
+      giveSource();
+
+      // A paste, or a value restored into the control, that still holds its line breaks.
+      component['intakeForm'].controls['description'].setValue('An open release toolkit.\nBuilt by platform teams.');
+      await fixture.whenStable();
+
+      expect(fieldError('description')?.textContent).toContain('one line');
+      expect(component['intakeForm'].valid).toBe(false);
+      expect(component['submitDisabled']()).toBe(true);
+      component['onSubmit']();
+      expect(generate).not.toHaveBeenCalled();
+
+      component['intakeForm'].controls['description'].setValue('An open release toolkit. Built by platform teams.');
+      await fixture.whenStable();
+
+      expect(fieldError('description')).toBeNull();
+      expect(component['submitDisabled']()).toBe(false);
+    });
+
+    it('submits every source field given and the documents — a link by its URL, a file by its text, each with its tag — and waits while a file is being read', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fillRequired();
+      giveSource();
+      component['intakeForm'].controls['github_url'].setValue('https://github.com/testorbit/testorbit');
+      component['intakeForm'].controls['press_release_url'].setValue('https://press.example.org/launch');
+      component['intakeForm'].controls['members_page_url'].setValue('https://testorbit.example.org/members');
       component['documents'].set([
-        { id: 'link-1', kind: 'link', title: 'https://wiki.example.org/note', url: 'https://wiki.example.org/note', read: false, words: 0, truncated: false },
-        { id: 'file-1', kind: 'file', title: 'brand.md', text: 'Brand guide.', read: true, words: 2, truncated: false },
+        {
+          id: 'link-1',
+          kind: 'link',
+          title: 'https://wiki.example.org/positioning',
+          url: 'https://wiki.example.org/positioning',
+          tag: 'doc',
+          read: false,
+          words: 0,
+          truncated: false,
+        },
+        { id: 'file-1', kind: 'file', title: 'deck.pdf', text: 'Members deck.', tag: 'deck', read: true, words: 2, truncated: false },
       ]);
 
       component['documentsBusy'].set(true);
@@ -732,15 +1605,38 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       await fixture.whenStable();
 
+      // Blank optionals stay out; the BFF maps each key to the agent's contract (press → a press document, github and members → links).
       expect(submitted().answers).toEqual({
         project_name: 'TestOrbit',
         website_url: 'https://testorbit.example.org',
-        other_links: 'https://blog.example.org/launch',
+        github_url: 'https://github.com/testorbit/testorbit',
+        press_release_url: 'https://press.example.org/launch',
+        members_page_url: 'https://testorbit.example.org/members',
       });
       expect(submitted().documents).toEqual([
-        { kind: 'link', title: 'https://wiki.example.org/note', url: 'https://wiki.example.org/note' },
-        { kind: 'file', title: 'brand.md', text: 'Brand guide.' },
+        { kind: 'link', title: 'https://wiki.example.org/positioning', url: 'https://wiki.example.org/positioning', tag: 'doc' },
+        { kind: 'file', title: 'deck.pdf', text: 'Members deck.', tag: 'deck' },
       ]);
+    });
+
+    it('lists a file picked on the deck field under the documents, already tagged as a deck', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': {
+          ...assetRun([]),
+          answers: { project_name: 'TestOrbit', website_url: 'https://testorbit.example.org' },
+        },
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      readFile.mockReturnValue(of<MktgDocumentExtractResponse>({ title: 'board-deck.pptx', read: true, words: 3, truncated: false, text: 'Deck text here' }));
+      const deckField = component['intake']?.fields.find((field) => field.key === 'deck_url');
+      expect(deckField?.uploadTag).toBe('deck');
+      component['onFieldFilesSelected'](deckField!, { originalEvent: new Event('change'), files: [new File(['x'], 'board-deck.pptx')], currentFiles: [] });
+      await fixture.whenStable();
+
+      expect(component['documents']()).toEqual([expect.objectContaining({ kind: 'file', title: 'board-deck.pptx', text: 'Deck text here', tag: 'deck' })]);
+      expect(query('mktg-intake-documents-list')?.textContent).toContain('board-deck.pptx');
     });
 
     it('never attaches a file picked for one project to another: a project switch cancels the read still in flight', async () => {
@@ -749,13 +1645,13 @@ describe('MktgAgentRunComponent', () => {
       const response = new Subject<MktgDocumentExtractResponse>();
       readFile.mockReturnValue(response.asObservable());
       const section = fixture.debugElement.query(By.directive(MktgIntakeDocumentsComponent)).componentInstance as MktgIntakeDocumentsComponent;
-      section['onFilesSelected']({ originalEvent: new Event('change'), files: [new File(['Brand guide.'], 'brand.md')], currentFiles: [] });
+      section['onFilesSelected']({ originalEvent: new Event('change'), files: [new File(['Deck.'], 'deck.md')], currentFiles: [] });
       expect(component['documentsBusy']()).toBe(true);
 
       activeContext.set(PROJECT_2);
       await fixture.whenStable();
       // Project One's file answers after the switch.
-      response.next({ title: 'brand.md', read: true, words: 2, truncated: false, text: 'Brand guide.' });
+      response.next({ title: 'deck.md', read: true, words: 1, truncated: false, text: 'Deck.' });
       response.complete();
       await fixture.whenStable();
 
@@ -763,11 +1659,12 @@ describe('MktgAgentRunComponent', () => {
       expect(component['documentsBusy']()).toBe(false);
     });
 
-    describe('the live feed — what the agent does, in plain words, while it works', () => {
-      it('shows each step as it is reported, and switches to writing once the answers went back', async () => {
+    describe('the run lands on the asset view — the live feed inside it while the agent works', () => {
+      it('shows the framework shell in its generating state with each step as it is reported, and switches to writing once the answers went back', async () => {
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         fillRequired();
+        giveSource();
         generate.mockReturnValue(
           concat(
             from<MktgGenerateProgress[]>([
@@ -801,16 +1698,22 @@ describe('MktgAgentRunComponent', () => {
         await fixture.whenStable();
 
         expect(component['phase']()).toBe('running');
-        expect(query('mktg-run-activity-title')?.textContent).toContain('Researching');
+        expect(query('mktg-agent-run-asset')).not.toBeNull();
+        // The live page is the feed alone (hand test, 18 Oct): no document title, status chip or tabs until there is a document.
+        expect(query('mktg-framework-view')).toBeNull();
+        expect(query('mktg-framework-view-title')).toBeNull();
+        expect(query('mktg-framework-view-tabs')).toBeNull();
+        expect(query('mktg-agent-run-live')?.querySelector('[data-testid="mktg-run-activity-title"]')?.textContent).toContain('Researching');
         expect(query('mktg-run-activity-step-step-1')?.textContent).toContain('Reading testorbit.example.org');
         expect(query('mktg-run-activity-step-step-2')?.textContent).toContain('“TestOrbit adopters”');
         expect(query('mktg-run-activity-status')?.textContent).toContain('Searching the web');
-        // The old staged checklist is for agents without a feed.
+        // The old staged checklist and the document result card are for agents without an asset view.
         expect(query('mktg-agent-run-running')).toBeNull();
+        expect(query('mktg-agent-run-doc-title')).toBeNull();
       });
     });
 
-    describe('the questions step — after research, only the gaps, one at a time, each answer starting as the suggestion', () => {
+    describe('the questions step — after research, only the gaps, one at a time on their own page, each answer starting as the suggestion', () => {
       const stepper = (): MktgRunQuestionsComponent =>
         fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance as MktgRunQuestionsComponent;
       // An lfx-button carries the test id on its host; the click has to reach the button inside.
@@ -825,9 +1728,9 @@ describe('MktgAgentRunComponent', () => {
         stepper()['answersForm'].controls[key].setValue(text);
         await fixture.whenStable();
       };
-      const sendWith = async (taglineAnswer: string): Promise<void> => {
+      const sendWith = async (avoidAnswer: string): Promise<void> => {
         await click('mktg-run-questions-next');
-        await type('tagline_ctas_constraints', taglineAnswer);
+        await type('words-to-avoid', avoidAnswer);
         await click('mktg-run-questions-send');
       };
 
@@ -835,50 +1738,54 @@ describe('MktgAgentRunComponent', () => {
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         fillRequired();
+        giveSource();
         generate.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'questions', pending: pendingQuestions() }]));
         component['onSubmit']();
         await fixture.whenStable();
       });
 
-      it('asks one question at a time: the question, the why, the basis links, and one box holding the suggested answer', () => {
+      it('asks one question at a time on its own page: the question, the why, the basis links, and one box holding the suggested answer', () => {
         expect(component['phase']()).toBe('questions');
+        // The questions page stands alone too: no document shell around it.
+        expect(query('mktg-framework-view')).toBeNull();
+        expect(query('mktg-agent-run-questions')).not.toBeNull();
         expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 1 of 2');
-        expect(query('mktg-run-questions-card-audiences')?.textContent).toContain('Who are the primary audiences?');
-        expect(query('mktg-run-questions-card-tagline_ctas_constraints')).toBeNull();
-        expect(query('mktg-run-questions-why-audiences')?.textContent).toContain('platform teams only');
-        const basis = query('mktg-run-questions-basis-audiences');
-        expect(basis?.querySelector('a')?.getAttribute('href')).toBe('https://testorbit.example.org');
-        expect(basis?.textContent).toContain('the README');
-        expect(answerBox('audiences')?.value).toBe('Platform teams; SREs.');
-        expect(query('mktg-run-questions-hint-audiences')?.textContent).toContain('suggestion');
+        expect(query('mktg-run-questions-card-ranked-goals')?.textContent).toContain('Which goals matter most this year?');
+        expect(query('mktg-run-questions-card-words-to-avoid')).toBeNull();
+        expect(query('mktg-run-questions-why-ranked-goals')?.textContent).toContain('lists no plan');
+        const basis = query('mktg-run-questions-basis-ranked-goals');
+        expect(basis?.querySelector('a')?.getAttribute('href')).toBe('https://testorbit.example.org/about');
+        expect(basis?.textContent).toContain('inferred');
+        expect(answerBox('ranked-goals')?.value).toBe('Adoption first.');
+        expect(query('mktg-run-questions-hint-ranked-goals')?.textContent).toContain('suggestion');
         // One box, nothing to pick between, and no review step.
         expect(host().querySelectorAll('[role="radio"]').length).toBe(0);
         expect(host().querySelectorAll('textarea').length).toBe(1);
-        expect(query('mktg-run-questions-chip-audiences')?.textContent).toContain('Audiences');
-        expect(query('mktg-run-questions-chip-tagline_ctas_constraints')?.textContent).toContain('Tagline');
+        expect(query('mktg-run-questions-chip-ranked-goals')?.textContent).toContain('Ranked goals');
+        expect(query('mktg-run-questions-chip-words-to-avoid')?.textContent).toContain('Words to');
         expect(query('mktg-agent-run-regenerate-button')).toBeNull();
         expect(query('mktg-agent-run-form')).toBeNull();
       });
 
       it('needs a real answer where there is no suggestion — no skip, no TBD, no empty — and says so', async () => {
         await click('mktg-run-questions-next');
-        expect(answerBox('tagline_ctas_constraints')?.value).toBe('');
-        expect(query('mktg-run-questions-hint-tagline_ctas_constraints')?.textContent).toContain('nothing to suggest');
+        expect(answerBox('words-to-avoid')?.value).toBe('');
+        expect(query('mktg-run-questions-hint-words-to-avoid')?.textContent).toContain('nothing to suggest');
 
-        await type('tagline_ctas_constraints', 'TBD');
+        await type('words-to-avoid', 'TBD');
         await click('mktg-run-questions-send');
-        expect(query('mktg-run-questions-error-tagline_ctas_constraints')?.textContent).toContain('TBD');
+        expect(query('mktg-run-questions-error-words-to-avoid')?.textContent).toContain('TBD');
         expect(answerQuestions).not.toHaveBeenCalled();
       });
 
       it('refuses an answer longer than the answers turn takes before sending, naming the limit', async () => {
-        await type('audiences', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS + 1));
+        await type('ranked-goals', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS + 1));
         await click('mktg-run-questions-next');
-        expect(query('mktg-run-questions-error-audiences')?.textContent).toContain('4,000 characters');
+        expect(query('mktg-run-questions-error-ranked-goals')?.textContent).toContain('4,000 characters');
         expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 1 of 2');
 
         // Exactly the cap stands.
-        await type('audiences', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS));
+        await type('ranked-goals', 'a'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS));
         await click('mktg-run-questions-next');
         expect(query('mktg-run-questions-progress')?.textContent).toContain('Question 2 of 2');
         expect(answerQuestions).not.toHaveBeenCalled();
@@ -887,7 +1794,7 @@ describe('MktgAgentRunComponent', () => {
       it('lets the next run send its answers after a project switch cut the answers POST short', async () => {
         // The POST is still out: nothing has come back to clear the flag.
         answerQuestions.mockReturnValue(NEVER);
-        await sendWith('No tagline is locked.');
+        await sendWith('Avoid "synergy".');
         expect(component['answersSending']()).toBe(true);
 
         activeContext.set(PROJECT_2);
@@ -897,24 +1804,16 @@ describe('MktgAgentRunComponent', () => {
         expect(component['phase']()).toBe('form');
       });
 
-      it('sends every answer with its origin from the last question, on the same run, and shows the document with what was asked', async () => {
+      it('sends every answer with its origin from the last question, on the same run, and lands on the rendered framework with what was asked', async () => {
         const answers: MktgRunAnswer[] = [
-          { key: 'audiences', text: 'Platform teams; SREs.', origin: 'accepted' },
-          { key: 'tagline_ctas_constraints', text: 'No tagline is locked.', origin: 'requester' },
+          { key: 'ranked-goals', text: 'Adoption first.', origin: 'accepted' },
+          { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' },
         ];
-        const run: MktgStoredAgentRun = {
-          agentId: 'foundation-setup',
-          projectUid: 'proj-1',
-          sessionId: 'sess-md',
-          ownerToken: 'token-md',
-          answers: { project_name: 'TestOrbit' },
-          versions: [{ version: 1, document: '# TestOrbit Messaging Document', questions: QUESTIONS, answers, createdAt: '2026-10-15T00:00:00.000Z' }],
-          savedAt: new Date().toISOString(),
-        };
+        const run = assetRun([{ version: 1, document: '', asset: ASSET, questions: QUESTIONS, answers, createdAt: '2026-10-17T00:00:00.000Z' }]);
         answerQuestions.mockReturnValue(from<MktgGenerateProgress[]>([{ type: 'submitted' }, { type: 'document', run }]));
 
         await click('mktg-run-questions-next');
-        await type('tagline_ctas_constraints', 'No tagline is locked.');
+        await type('words-to-avoid', 'Avoid "synergy".');
         // The result lands after a short pause; fake timers only from the send on.
         vi.useFakeTimers();
         try {
@@ -932,58 +1831,53 @@ describe('MktgAgentRunComponent', () => {
         expect(generate).toHaveBeenCalledTimes(1);
 
         expect(component['phase']()).toBe('result');
+        expect(query('mktg-agent-run-result')).not.toBeNull();
+        expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
+        expect(query('mktg-framework-view-version')?.textContent).toContain('v1');
         expect(query('mktg-agent-run-asked-toggle')?.textContent).toContain('asked 2 question(s)');
         query('mktg-agent-run-asked-toggle')?.click();
         await fixture.whenStable();
-        expect(query('mktg-agent-run-asked-audiences')?.textContent).toContain('Platform teams; SREs.');
-        expect(query('mktg-agent-run-asked-audiences')?.textContent).toContain('Suggested by the agent, accepted');
-        expect(query('mktg-agent-run-asked-tagline_ctas_constraints')?.textContent).toContain('Your answer');
+        expect(query('mktg-agent-run-asked-ranked-goals')?.textContent).toContain('Adoption first.');
+        expect(query('mktg-agent-run-asked-ranked-goals')?.textContent).toContain('Suggested by the agent, accepted');
+        expect(query('mktg-agent-run-asked-words-to-avoid')?.textContent).toContain('Your answer');
       });
 
       it('marks an edited suggestion as edited, goes back with Back, and shows the writing feed once sent', async () => {
         answerQuestions.mockReturnValue(concat(of<MktgGenerateProgress>({ type: 'submitted' }), NEVER));
 
-        await type('audiences', 'Platform teams only.');
+        await type('ranked-goals', 'Adoption, then community.');
         await click('mktg-run-questions-next');
         await click('mktg-run-questions-back');
-        expect(answerBox('audiences')?.value).toBe('Platform teams only.');
-        await sendWith('No tagline is locked.');
+        expect(answerBox('ranked-goals')?.value).toBe('Adoption, then community.');
+        await sendWith('Avoid "synergy".');
 
         const sent = answerQuestions.mock.calls[0][2] as MktgRunAnswer[];
-        expect(sent[0]).toEqual({ key: 'audiences', text: 'Platform teams only.', origin: 'edited' });
+        expect(sent[0]).toEqual({ key: 'ranked-goals', text: 'Adoption, then community.', origin: 'edited' });
         expect(component['phase']()).toBe('running');
-        expect(query('mktg-run-activity-title')?.textContent).toContain('Writing your Messaging Document');
+        expect(query('mktg-run-activity-title')?.textContent).toContain('Writing your Messaging framework');
       });
 
       it('keeps the answers and returns to the questions step when the answers could not be sent', async () => {
         answerQuestions.mockReturnValue(throwError(() => new Error('network')));
 
-        await sendWith('No tagline is locked.');
+        await sendWith('Avoid "synergy".');
 
         expect(component['phase']()).toBe('questions');
         expect(component['errorText']()).toContain('kept');
-        expect(stepper()['answersForm'].controls['tagline_ctas_constraints'].value).toBe('No tagline is locked.');
+        expect(stepper()['answersForm'].controls['words-to-avoid'].value).toBe('Avoid "synergy".');
       });
     });
 
-    it('offers no "Request changes" box on the result — edit the inputs and generate a new revision instead', async () => {
-      storedRuns = {
-        'proj-1:foundation-setup': {
-          agentId: 'foundation-setup',
-          projectUid: 'proj-1',
-          sessionId: 'sess-md',
-          ownerToken: 'token-md',
-          answers: { project_name: 'TestOrbit' },
-          versions: [{ version: 1, document: '# TestOrbit Messaging Document', createdAt: '2026-10-15T00:00:00.000Z' }],
-          savedAt: new Date().toISOString(),
-        },
-      };
+    it('shows a stored framework on the asset view with no "Request changes" box — edit the inputs and generate a new revision instead', async () => {
+      storedRuns = { 'proj-1:foundation-setup': assetRun([{ version: 1, document: '', asset: ASSET, createdAt: '2026-10-17T00:00:00.000Z' }]) };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
       expect(query('mktg-agent-run-result')).not.toBeNull();
+      expect(query('mktg-framework-view-vision')?.textContent).toContain('A vision.');
       expect(query('mktg-agent-run-regenerate-button')).toBeNull();
       expect(query('mktg-agent-run-new-run')).not.toBeNull();
+      expect(query('mktg-agent-run-documents-link')).not.toBeNull();
       // A version written without a questions round shows nothing about questions.
       expect(query('mktg-agent-run-asked')).toBeNull();
 
@@ -993,153 +1887,113 @@ describe('MktgAgentRunComponent', () => {
       expect(component['intakeForm'].controls['project_name'].value).toBe('TestOrbit');
     });
 
-    it('surfaces the five derivative chips as copyable values on the result', async () => {
+    it('prints the framework in the project’s Brand Kit and exports the version on screen: Download PDF and Export to Google Slides in the framework’s header', async () => {
+      resolveBrandKit.mockReturnValue(of(brandKitTestRevision()));
       storedRuns = {
-        'proj-1:foundation-setup': {
-          agentId: 'foundation-setup',
-          projectUid: 'proj-1',
-          sessionId: 'sess-mf',
-          ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit' },
-          versions: [
-            {
-              version: 1,
-              document: '# Doc',
-              derivatives: { summary_25: 'Twenty-five words.', llms_txt: '# TestOrbit' },
-              createdAt: '2026-08-19T00:00:00.000Z',
-            },
-          ],
-          savedAt: new Date().toISOString(),
-        },
+        'proj-1:foundation-setup': assetRun([{ version: 1, document: '', asset: ASSET, contentSha256: 'c'.repeat(64), createdAt: '2026-10-17T00:00:00.000Z' }]),
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
+      expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
+      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
+      expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
+      // The export names this version's stored revision by the hash of its content.
+      query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+      expect(slidesExport.start).toHaveBeenCalledWith({
+        project: 'proj-1',
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        contentSha256: 'c'.repeat(64),
+        mode: 'create',
+      });
+      expect(query('mktg-agent-run-download-pdf')).toBeNull();
+      expect(query('mktg-agent-run-export-slides')).toBeNull();
+    });
+
+    it('exports the older version picked on the chips, never the newest: its own stored revision, by the hash of its content', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': assetRun([
+          { version: 1, document: '', asset: ASSET, contentSha256: '1'.repeat(64), createdAt: '2026-10-16T00:00:00.000Z' },
+          { version: 2, document: '', asset: ASSET, contentSha256: '2'.repeat(64), createdAt: '2026-10-17T00:00:00.000Z' },
+        ]),
+      };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(slidesExport.last).toHaveBeenLastCalledWith(expect.objectContaining({ contentSha256: '2'.repeat(64) }));
+
+      query('mktg-agent-run-version-chip-1')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(slidesExport.last).toHaveBeenLastCalledWith({
+        project: 'proj-1',
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        contentSha256: '1'.repeat(64),
+      });
+
+      query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+      expect(slidesExport.start).toHaveBeenCalledTimes(1);
+      expect(slidesExport.start).toHaveBeenCalledWith({
+        project: 'proj-1',
+        agentKey: 'foundation-message',
+        documentId: 'living',
+        contentSha256: '1'.repeat(64),
+        mode: 'create',
+      });
+    });
+
+    it('restores a run the earlier Markdown form saved to the form, its answers kept — never an empty generating shell', async () => {
+      storedRuns = {
+        'proj-1:foundation-setup': assetRun([{ version: 1, document: '# An earlier Messaging Document', createdAt: '2026-10-01T00:00:00.000Z' }]),
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(query('mktg-agent-run-result')).not.toBeNull();
-      // Only derivatives the envelope actually carried render as chips.
-      expect(query('mktg-agent-run-derivative-summary_25')?.textContent).toContain('25-word summary');
-      expect(query('mktg-agent-run-derivative-llms_txt')).not.toBeNull();
-      expect(query('mktg-agent-run-derivative-boilerplate')).toBeNull();
-
-      // Copy flashes the chip to "Copied" and writes the derivative VALUE.
-      const writeText = vi.fn(() => Promise.resolve());
-      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
-      try {
-        query('mktg-agent-run-derivative-summary_25')?.click();
-        await fixture.whenStable();
-        expect(writeText).toHaveBeenCalledWith('Twenty-five words.');
-        expect(query('mktg-agent-run-derivative-summary_25')?.textContent).toContain('Copied');
-      } finally {
-        vi.unstubAllGlobals();
-      }
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-result')).toBeNull();
+      expect(component['versions']()).toEqual([]);
+      expect(component['intakeForm'].controls['website_url'].value).toBe('https://testorbit.example.org');
     });
 
-    it('surfaces a copy failure as an error toast instead of a silently dead button', async () => {
-      storedRuns = {
-        'proj-1:foundation-setup': {
-          agentId: 'foundation-setup',
-          projectUid: 'proj-1',
-          sessionId: 'sess-mf',
-          ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit' },
-          versions: [{ version: 1, document: '# Doc', derivatives: { summary_25: 'Twenty-five words.' }, createdAt: '2026-08-19T00:00:00.000Z' }],
-          savedAt: new Date().toISOString(),
-        },
-      };
+    it('downloads the framework as its JSON', async () => {
+      storedRuns = { 'proj-1:foundation-setup': assetRun([{ version: 2, document: '', asset: ASSET, createdAt: '2026-10-17T00:00:00.000Z' }]) };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-
-      const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
-
-      // Clipboard API unavailable (insecure context / unsupported browser).
-      vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
+      const blobs: Blob[] = [];
+      const createObjectURL = vi.fn((blob: Blob) => {
+        blobs.push(blob);
+        return 'blob:framework';
+      });
+      vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL: vi.fn() });
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
       try {
-        query('mktg-agent-run-derivative-summary_25')?.click();
-        await fixture.whenStable();
-        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Copy not supported' }));
-        expect(query('mktg-agent-run-derivative-summary_25')?.textContent).not.toContain('Copied');
+        component['onDownload']();
+        expect(blobs[0]?.type).toBe('application/json');
+        expect(await blobs[0]?.text()).toContain('"tagline": "Release, open."');
+        // The blob URL is revoked on a deferred tick; let it run against the stub.
+        await new Promise((resolve) => setTimeout(resolve, 0));
       } finally {
-        vi.unstubAllGlobals();
-      }
-
-      // Write rejected (permission denied) — also surfaced, chip never flashes.
-      toast.mockClear();
-      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(() => Promise.reject(new Error('denied'))) } });
-      try {
-        query('mktg-agent-run-derivative-summary_25')?.click();
-        await fixture.whenStable();
-        expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Copy failed' }));
-        expect(query('mktg-agent-run-derivative-summary_25')?.textContent).not.toContain('Copied');
-      } finally {
+        click.mockRestore();
         vi.unstubAllGlobals();
       }
     });
 
-    describe('README outcome on the result — a thin document is never a silent mystery', () => {
-      /** A stored Messaging Document run whose single version carries the given README outcome. */
-      const runWithReadme = (readme: MktgRunVersion['readme']): MktgStoredAgentRun => ({
-        agentId: 'foundation-setup',
-        projectUid: 'proj-1',
-        sessionId: 'sess-mf',
-        ownerToken: 'token-mf',
-        answers: { project_name: 'TestOrbit', github_url: 'https://github.com/aaif' },
-        versions: [{ version: 1, document: '# Doc', readme, createdAt: '2026-08-19T00:00:00.000Z' }],
-        savedAt: new Date().toISOString(),
-      });
-
-      it('states that the document was generated WITHOUT a README, and why', async () => {
-        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: false, skipReason: 'not-a-repo-url' }) };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('Generated without a README');
-        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('didn’t resolve to a readable repository');
-      });
-
-      it('distinguishes an absent README from GitHub being unreachable', async () => {
-        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: false, skipReason: 'no-readme' }) };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('has no README');
-
-        storedRuns = { 'proj-2:foundation-setup': { ...runWithReadme({ fetched: false, skipReason: 'fetch-failed' }), projectUid: 'proj-2' } };
-        activeContext.set(PROJECT_2);
-        await fixture.whenStable();
-        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('couldn’t be reached');
-      });
-
-      it('says a repository was not publicly readable rather than claiming it has no README', async () => {
-        // Different remedy: the repo may well HAVE a README — what failed was
-        // access, and telling the user to fix the URL sends them nowhere.
-        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: false, skipReason: 'not-public' }) };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        expect(query('mktg-agent-run-readme-note')?.textContent).toContain('isn’t publicly readable');
-        expect(query('mktg-agent-run-readme-note')?.textContent).not.toContain('has no README');
-      });
-
-      it('says nothing when a README WAS used, or when the run predates the outcome being recorded', async () => {
-        storedRuns = { 'proj-1:foundation-setup': runWithReadme({ fetched: true, source: 'repository' }) };
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-        expect(query('mktg-agent-run-readme-note')).toBeNull();
-
-        storedRuns = { 'proj-2:foundation-setup': { ...runWithReadme(undefined), projectUid: 'proj-2' } };
-        activeContext.set(PROJECT_2);
-        await fixture.whenStable();
-        expect(query('mktg-agent-run-readme-note')).toBeNull();
-      });
-    });
-
-    it('restores a run stored by the previous Message Foundation form cleanly — its retired answer keys are ignored', async () => {
+    it('restores a run stored by the previous Messaging Document form cleanly — its retired answer keys are ignored, its repository URL is kept', async () => {
       storedRuns = {
         'proj-1:foundation-setup': {
           agentId: 'foundation-setup',
           projectUid: 'proj-1',
           sessionId: 'sess-mf',
           ownerToken: 'token-mf',
-          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', brand_kit_markdown: '# Kit', gap_fill_notes: 'Old' },
+          answers: { project_name: 'TestOrbit', github_url: 'https://github.com/example-org/testorbit', other_links: 'https://blog.example.org/launch' },
           versions: [{ version: 1, document: '# Doc', createdAt: '2026-08-19T00:00:00.000Z' }],
           savedAt: new Date().toISOString(),
         },
@@ -1152,9 +2006,68 @@ describe('MktgAgentRunComponent', () => {
 
       const restored = component['intakeForm'].getRawValue();
       expect(restored['project_name']).toBe('TestOrbit');
+      // The GitHub field is back on the form (hand test, 18 Oct), so the old form's repository URL fills it.
       expect(restored['github_url']).toBe('https://github.com/example-org/testorbit');
-      expect(restored).not.toHaveProperty('brand_kit_markdown');
-      expect(restored).not.toHaveProperty('gap_fill_notes');
+      expect(restored).not.toHaveProperty('other_links');
+    });
+  });
+
+  describe('README outcome on the result — a thin document is never a silent mystery', () => {
+    /** A stored ICP run whose single version carries the given README outcome. */
+    const runWithReadme = (readme: MktgRunVersion['readme']): MktgStoredAgentRun => ({
+      agentId: 'icp',
+      projectUid: 'proj-1',
+      sessionId: 'sess-icp',
+      ownerToken: 'token-icp',
+      answers: { project_name: 'TestOrbit', github_url: 'https://github.com/aaif', business_outcome: 'Membership growth' },
+      versions: [{ version: 1, document: '# Doc', readme, createdAt: '2026-08-19T00:00:00.000Z' }],
+      savedAt: new Date().toISOString(),
+    });
+
+    beforeEach(async () => configure('browser', 'icp'));
+
+    it('states that the document was generated WITHOUT a README, and why', async () => {
+      storedRuns = { 'proj-1:icp': runWithReadme({ fetched: false, skipReason: 'not-a-repo-url' }) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-readme-note')?.textContent).toContain('Generated without a README');
+      expect(query('mktg-agent-run-readme-note')?.textContent).toContain('didn’t resolve to a readable repository');
+    });
+
+    it('distinguishes an absent README from GitHub being unreachable', async () => {
+      storedRuns = { 'proj-1:icp': runWithReadme({ fetched: false, skipReason: 'no-readme' }) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-readme-note')?.textContent).toContain('has no README');
+
+      storedRuns = { 'proj-2:icp': { ...runWithReadme({ fetched: false, skipReason: 'fetch-failed' }), projectUid: 'proj-2' } };
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-readme-note')?.textContent).toContain('couldn’t be reached');
+    });
+
+    it('says a repository was not publicly readable rather than claiming it has no README', async () => {
+      // Different remedy: the repo may well HAVE a README — what failed was
+      // access, and telling the user to fix the URL sends them nowhere.
+      storedRuns = { 'proj-1:icp': runWithReadme({ fetched: false, skipReason: 'not-public' }) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+
+      expect(query('mktg-agent-run-readme-note')?.textContent).toContain('isn’t publicly readable');
+      expect(query('mktg-agent-run-readme-note')?.textContent).not.toContain('has no README');
+    });
+
+    it('says nothing when a README WAS used, or when the run predates the outcome being recorded', async () => {
+      storedRuns = { 'proj-1:icp': runWithReadme({ fetched: true, source: 'repository' }) };
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-readme-note')).toBeNull();
+
+      storedRuns = { 'proj-2:icp': { ...runWithReadme(undefined), projectUid: 'proj-2' } };
+      activeContext.set(PROJECT_2);
+      await fixture.whenStable();
+      expect(query('mktg-agent-run-readme-note')).toBeNull();
     });
   });
 
@@ -1206,7 +2119,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
 
       expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('No Brand Kit stored for Project One');
-      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Messaging Document stored for Project One');
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Messaging framework stored for Project One');
     });
 
     it('attaches whichever stored documents the project has, and labels the rest honestly', async () => {
@@ -1215,7 +2128,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
 
       expect(query('mktg-agent-run-attachment-brand-kit')?.textContent).toContain('Using Project One’s Brand Kit (v2)');
-      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Messaging Document stored');
+      expect(query('mktg-agent-run-attachment-foundation-setup')?.textContent).toContain('No Messaging framework stored');
 
       fillRequired();
       component['onSubmit']();
@@ -1244,7 +2157,8 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', expect.arrayContaining(['brand-kit', 'foundation-setup']));
+      // Neither optional attachment is approved-only: both resolve to the latest stored document.
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', expect.arrayContaining(['brand-kit', 'foundation-setup']), []);
     });
 
     it('omits the four optional gap-fill answers when left blank', async () => {

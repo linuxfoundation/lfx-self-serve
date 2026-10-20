@@ -9,11 +9,16 @@ import {
   CAMPAIGN_ADOPT_FAILURE_COPY,
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
   CAMPAIGN_ADOPT_UNCONFIRMED_TITLE,
+  CAMPAIGN_LIVE_METRICS_READ_CONFLICT_FALLBACK,
+  CAMPAIGN_LIVE_METRICS_READ_ERRORS,
+  CAMPAIGN_LIVE_METRICS_READ_FALLBACK,
+  CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE,
   CAMPAIGN_SETTINGS_READ_CONFLICT_FALLBACK,
   CAMPAIGN_SETTINGS_READ_ERRORS,
   CAMPAIGN_SETTINGS_READ_FALLBACK,
+  ERROR_CODES,
 } from '@lfx-one/shared/constants';
-import type { CampaignAdoptFailure } from '@lfx-one/shared/interfaces';
+import type { CampaignAdoptFailure, CampaignLiveMetricsState } from '@lfx-one/shared/interfaces';
 
 import { classifyCampaignWriteFailure, isBffErrorEnvelope, readCampaignWriteErrorMessage } from './campaign-write-error.utils';
 
@@ -30,6 +35,34 @@ export function campaignSettingsReadErrorMessage(error: unknown): string {
     return (isBffErrorEnvelope(body) ? readCampaignWriteErrorMessage(body) : undefined) ?? CAMPAIGN_SETTINGS_READ_CONFLICT_FALLBACK;
   }
   return Object.prototype.hasOwnProperty.call(CAMPAIGN_SETTINGS_READ_ERRORS, status) ? CAMPAIGN_SETTINGS_READ_ERRORS[status] : CAMPAIGN_SETTINGS_READ_FALLBACK;
+}
+
+/**
+ * A row's live counters state when the read fails. A 400 from campaign-service says the platform has
+ * no metrics read (or cannot serve the window): `unsupported`, a property of the row, not an error.
+ * A 400 that is the BFF's OWN validation (`code: VALIDATION_ERROR`) says nothing about the platform,
+ * so it is an `error` the operator can retry, worded with the BFF's own field message.
+ * A 409's reasons (not created on the platform yet, no data in the window, another account, unknown
+ * provenance) only campaign-service's own sentence tells apart, so it is kept, taken only from the
+ * BFF's `{ error, code }` envelope; every other status maps to a fixed sentence.
+ */
+export function campaignLiveMetricsFailureState(error: unknown): CampaignLiveMetricsState {
+  const status = error instanceof HttpErrorResponse ? error.status : 0;
+  const body: unknown = error instanceof HttpErrorResponse ? error.error : undefined;
+  if (status === 400) {
+    if ((body as { code?: unknown } | null)?.code === ERROR_CODES.VALIDATION_ERROR) {
+      return { status: 'error', counters: null, message: readCampaignWriteErrorMessage(body) ?? CAMPAIGN_LIVE_METRICS_READ_FALLBACK };
+    }
+    return { status: 'unsupported', counters: null, message: CAMPAIGN_LIVE_METRICS_UNSUPPORTED_MESSAGE };
+  }
+  if (status === 409) {
+    const message = (isBffErrorEnvelope(body) ? readCampaignWriteErrorMessage(body) : undefined) ?? CAMPAIGN_LIVE_METRICS_READ_CONFLICT_FALLBACK;
+    return { status: 'error', counters: null, message };
+  }
+  const message = Object.prototype.hasOwnProperty.call(CAMPAIGN_LIVE_METRICS_READ_ERRORS, status)
+    ? CAMPAIGN_LIVE_METRICS_READ_ERRORS[status]
+    : CAMPAIGN_LIVE_METRICS_READ_FALLBACK;
+  return { status: 'error', counters: null, message };
 }
 
 /**

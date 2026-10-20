@@ -61,6 +61,7 @@ import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form
 import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
 import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
+import { CampaignLiveMetricsComponent } from '../campaign-live-metrics/campaign-live-metrics.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
 import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
@@ -4891,5 +4892,159 @@ describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
 
     const panel = fixture.debugElement.query(By.directive(MetaAdSetsPanelComponent)).componentInstance as MetaAdSetsPanelComponent;
     expect(panel.campaignId()).toBe('c-1');
+  });
+});
+
+/**
+ * Live counters on each campaign row (#3299): rendered from the brief-wide metrics read the tab
+ * already makes, so opening the tab adds no per-campaign read; a row reads campaign-service for
+ * itself only on Refresh, or when clicked after the brief-wide read could not measure it.
+ */
+describe('OptimizationTabComponent — live counters (#3299)', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let getCampaignMetrics: ReturnType<typeof vi.fn>;
+
+  const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'meta-ads',
+    platform_campaign_id: '1234567890',
+    campaign_name: 'KubeCon EU',
+    status: 'created',
+    version: 3,
+    etag: '"3"',
+    ...over,
+  });
+
+  const briefMetrics: BriefMetrics = {
+    brief_id: 'b-1',
+    window: 'last_30_days',
+    rows: [
+      {
+        campaign_id: 'c-1',
+        platform: 'meta-ads',
+        status: 'ok',
+        metrics: {
+          campaign_id: 'c-1',
+          platform_campaign_id: '1234567890',
+          window: 'last_30_days',
+          impressions: 1000,
+          clicks: 40,
+          cost_micros: 5000000,
+          ctr: 0.04,
+        },
+        pacing: { label: 'normal', pct: 100 },
+      },
+      { campaign_id: 'c-2', platform: 'twitter-ads', status: 'failed', reason: 'the platform read failed' },
+    ],
+    ok_count: 1,
+    action_items: [],
+  };
+
+  beforeEach(async () => {
+    getCampaignMetrics = vi
+      .fn()
+      .mockReturnValue(
+        of({ campaign_id: 'c-2', platform_campaign_id: '99', window: 'last_7_days', impressions: 500, clicks: 25, cost_micros: 12500000, ctr: 0.05 })
+      );
+
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getCampaignMetrics,
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getBriefMetrics: vi.fn().mockReturnValue(of(briefMetrics)),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.componentRef.setInput('briefCampaigns', [doc(), doc({ id: 'c-2', platform: 'twitter-ads', campaign_name: 'OSS Summit' })]);
+    fixture.detectChanges();
+  });
+
+  const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it("hands every row its brief-wide row and shows an ok row's counters without a read of its own", () => {
+    const panels = fixture.debugElement.queryAll(By.directive(CampaignLiveMetricsComponent)).map((de) => de.componentInstance as CampaignLiveMetricsComponent);
+
+    expect(panels.map((p) => [p.projectSlug(), p.briefId(), p.campaignId(), p.campaignName(), p.platform(), p.briefRow()?.status])).toEqual([
+      ['tlf', 'b-1', 'c-1', 'KubeCon EU', 'meta-ads', 'ok'],
+      ['tlf', 'b-1', 'c-2', 'OSS Summit', 'twitter-ads', 'failed'],
+    ]);
+    expect(q('optimization-campaign-row-c-1')!.contains(q('optimization-campaign-live-counters-c-1'))).toBe(true);
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('40');
+    expect(q('optimization-campaign-live-counters-c-2')).toBeNull();
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+  });
+
+  it('reads one campaign only when its row is clicked, for the precise answer', () => {
+    (q('optimization-campaign-live-load-c-2') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+    expect(getCampaignMetrics).toHaveBeenCalledWith('tlf', 'b-1', 'c-2');
+    expect(q('optimization-campaign-live-counters-c-2')).not.toBeNull();
+    expect(q('optimization-campaign-live-window-c-2')!.textContent).toContain('the last 7 days');
+  });
+
+  // The tab's Refresh clears its brief-wide read first; a failed re-read must not take a row's own answer with it.
+  it("keeps a row's own refreshed counters through a tab Refresh whose brief-wide read fails", () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+
+    service.getBriefMetrics.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' })));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(service.getBriefMetrics).toHaveBeenCalledTimes(2);
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the fresh brief-wide counters once a tab Refresh succeeds after a row Refresh', () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const fresh = structuredClone(briefMetrics);
+    fresh.rows[0].metrics!.clicks = 77;
+    service.getBriefMetrics.mockReturnValue(of(fresh));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('77');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the row read-only: refreshing counters calls no write', () => {
+    const service = TestBed.inject(CampaignService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const called = Object.entries(service)
+      .filter(([, fn]) => fn.mock.calls.length > 0)
+      .map(([name]) => name);
+    expect(called).not.toContain('updateCampaignStatus');
+    expect(called).not.toContain('updateCampaignBudget');
+    expect(called).toContain('getCampaignMetrics');
   });
 });

@@ -22,18 +22,16 @@
       view().summary
     }}</span>
 
-    <div
-      class="flex flex-col gap-4 rounded-lg border border-blue-100 bg-blue-50/40 p-4 md:flex-row md:items-start md:gap-9"
-      data-testid="non-members-conversion-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="non-members-conversion-hero">
       <div class="flex flex-col gap-2" data-testid="non-members-conversion-pipeline">
-        <span class="text-3xl font-semibold tabular-nums text-blue-700" data-testid="non-members-conversion-pipeline-value">{{ view().pipelineValue }}</span>
+        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="non-members-conversion-pipeline-value">{{ view().pipelineValue }}</span>
         <span class="text-[12.5px] text-gray-500" data-testid="non-members-conversion-pipeline-label">{{ view().pipelineLabel }}</span>
       </div>
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="non-members-conversion-side">
         @for (stat of view().side; track stat.key) {
           <div class="flex flex-col gap-0.5" [attr.data-testid]="'non-members-conversion-side-' + stat.key">
-            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
             <dd class="text-[17px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-side-' + stat.key + '-value'">
               {{ stat.value }}
             </dd>
@@ -50,24 +48,19 @@
       @if (view().warmest.length === 0) {
         <p class="text-sm text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
       } @else {
-        <ul class="flex flex-col gap-2.5">
-          @for (bar of view().warmest; track bar.accountId; let index = $index) {
-            <li class="flex flex-col gap-1" [attr.data-testid]="'non-members-conversion-warm-' + index">
-              <div class="flex items-baseline justify-between gap-2 text-[13px]">
-                <span class="min-w-0 break-words text-gray-700">{{ bar.label }}</span>
-                <span class="shrink-0 tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-warm-' + index + '-value'">{{
-                  bar.valueLabel
-                }}</span>
-              </div>
-              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
-                <div class="h-full rounded-full" [class]="barClass" [style.width.%]="bar.widthPct"></div>
-              </div>
+        <ul class="flex flex-col gap-[8px]">
+          @for (row of view().warmest; track row.accountId; let index = $index) {
+            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'non-members-conversion-warm-' + index">
+              <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
+              <span class="shrink-0 tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-warm-' + index + '-value'">{{
+                row.valueLabel
+              }}</span>
             </li>
           }
         </ul>
       }
     </div>
 
-    <p class="text-[12px] text-gray-500" data-testid="non-members-conversion-footnote">{{ view().footnote }}</p>
+    <lfx-health-metrics-footnote [parts]="view().footnote" data-testid="non-members-conversion-footnote" />
   }
 </div>

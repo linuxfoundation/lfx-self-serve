@@ -25,6 +25,26 @@ describe('FileObjectStoreBackend', () => {
     await rm(scratch, { recursive: true, force: true });
   });
 
+  it('serializes conditional writes across independent backend instances', async () => {
+    const other = new FileObjectStoreBackend(root);
+    const input = { body: Buffer.from('first'), contentType: 'text/plain', cacheControl: 'private', ifNoneMatch: '*' as const };
+    const results = await Promise.allSettled([backend.putObject('current.json', input), other.putObject('current.json', input)]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const stored = await backend.getObject('current.json');
+    expect(stored?.etag).toBeTruthy();
+    await backend.putObject('current.json', { ...input, body: Buffer.from('second'), ifNoneMatch: undefined, ifMatch: stored!.etag });
+    await expect(other.putObject('current.json', { ...input, ifNoneMatch: undefined, ifMatch: stored!.etag })).rejects.toMatchObject({ statusCode: 412 });
+    expect((await backend.getObject('current.json'))?.body).toBe('second');
+  });
+
+  it('keeps abandoned locks until operator recovery, including for unconditional writes', async () => {
+    await mkdir(join(root, 'current.json.lock.partial'), { recursive: true });
+    const input = { body: Buffer.from('current'), contentType: 'application/json', cacheControl: 'private' };
+    await expect(backend.putObject('current.json', input)).rejects.toMatchObject({ statusCode: 412 });
+    await rm(join(root, 'current.json.lock.partial'), { recursive: true });
+    await expect(backend.putObject('current.json', input)).resolves.toBeUndefined();
+  });
+
   describe('bucket (folder) lifecycle', () => {
     it('reports the folder path as its location', () => {
       expect(backend.kind).toBe('file');
@@ -96,7 +116,7 @@ describe('FileObjectStoreBackend', () => {
 
       await backend.putObject(key, { body: Buffer.from('# doc'), contentType: 'text/markdown', cacheControl: 'private', metadata: { version: '1' } });
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: '# doc', metadata: { version: '1' } });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: '# doc', metadata: { version: '1' }, etag: expect.any(String) });
     });
 
     it('headObject returns the stored metadata, and null for a missing object', async () => {
@@ -112,21 +132,21 @@ describe('FileObjectStoreBackend', () => {
 
       await backend.putObject(key, { body: Buffer.from('# doc ünïcödé'), contentType: 'text/markdown', cacheControl: 'private', metadata: { version: '3' } });
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: '# doc ünïcödé', metadata: { version: '3' } });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: '# doc ünïcödé', metadata: { version: '3' }, etag: expect.any(String) });
     });
 
     it('writes with no metadata read back as empty metadata, as an S3 object written without any would', async () => {
       await backend.putObject(key, { body: Buffer.from('img'), contentType: 'image/png', cacheControl: 'public, max-age=86400' });
 
       await expect(backend.headObject(key)).resolves.toEqual({});
-      await expect(backend.getObject(key)).resolves.toEqual({ body: 'img', metadata: {} });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: 'img', metadata: {}, etag: expect.any(String) });
     });
 
     it('a body with no sidecar (or an unreadable one) still reads, with empty metadata', async () => {
       await mkdir(join(root, 'brand-kit', 'proj-uid-1'), { recursive: true });
       await writeFile(join(root, 'brand-kit', 'proj-uid-1', 'abc.md'), '# bare');
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: '# bare', metadata: {} });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: '# bare', metadata: {}, etag: expect.any(String) });
 
       await writeFile(join(root, 'brand-kit', 'proj-uid-1', 'abc.md.meta.json'), 'not json');
 
@@ -137,7 +157,7 @@ describe('FileObjectStoreBackend', () => {
       await backend.putObject(key, { body: Buffer.from('v1'), contentType: 'text/plain', cacheControl: 'private', metadata: { version: '1' } });
       await backend.putObject(key, { body: Buffer.from('v2'), contentType: 'text/plain', cacheControl: 'private', metadata: { version: '2' } });
 
-      await expect(backend.getObject(key)).resolves.toEqual({ body: 'v2', metadata: { version: '2' } });
+      await expect(backend.getObject(key)).resolves.toMatchObject({ body: 'v2', metadata: { version: '2' }, etag: expect.any(String) });
     });
   });
 
@@ -252,7 +272,7 @@ describe('FileObjectStoreBackend', () => {
           await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
           await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
         }
-        await expect(backend.getObject('a/b')).resolves.toEqual({ body: 'x', metadata: {} });
+        await expect(backend.getObject('a/b')).resolves.toMatchObject({ body: 'x', metadata: {}, etag: expect.any(String) });
       });
 
       it('refuses writing a key that is the folder of stored objects with a typed 400', async () => {
@@ -261,7 +281,7 @@ describe('FileObjectStoreBackend', () => {
         const put = backend.putObject('a/b', input);
         await expect(put).rejects.toBeInstanceOf(ServiceValidationError);
         await expect(put).rejects.toMatchObject(refusedKey(/collides with a stored object/));
-        await expect(backend.getObject('a/b/c')).resolves.toEqual({ body: 'x', metadata: {} });
+        await expect(backend.getObject('a/b/c')).resolves.toMatchObject({ body: 'x', metadata: {}, etag: expect.any(String) });
         // The failed rename cleaned up after itself: no .partial file next to the folder.
         await expect(readdir(join(root, 'a'))).resolves.toEqual(['b']);
       });

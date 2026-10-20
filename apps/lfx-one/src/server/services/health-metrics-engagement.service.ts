@@ -181,8 +181,8 @@ export class HealthMetricsEngagementService {
       binds.push(query.projectSlug);
     }
 
-    // The chip counts and the header stay on the whole scope, so the type cut applies to the page
-    // and its paginator total only; each chip's labels are bound where they are counted.
+    // The per-type counts and the header stay on the whole scope, so the type cut applies to the page
+    // and its paginator total only; each type's labels are bound where they are counted.
     const typeChips = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.flatMap(({ key }) => {
       const labels = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS[key];
       return labels?.length ? [{ key, labels }] : [];

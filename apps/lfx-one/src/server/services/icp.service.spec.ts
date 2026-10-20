@@ -255,6 +255,7 @@ describe('IcpService', () => {
       expect(purpose).toBe('marketing-os-artifacts');
       expect(key).toBe(`icp/${PROJECT_UID}/${envelope['content_sha256'] as string}.md`);
       expect(contentType).toBe('text/markdown; charset=utf-8');
+      expect(objectStoreMocks.putContentAddressedObject.mock.calls[0][6]).toEqual({ version: '1', 'revision-managed': 'true' });
       // Recorded as a revision of the project's ICP document, keyed by the run's session.
       expect(documentStoreMocks.recordedSessions).toEqual(['session-1']);
     });

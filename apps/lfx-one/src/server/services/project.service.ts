@@ -11,10 +11,10 @@ import {
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
-  HEALTH_METRICS_OVERVIEW_TILE_LINKS,
   HEALTH_METRICS_RANGES,
   HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
   HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
@@ -4087,7 +4087,16 @@ export class ProjectService {
     }
   }
 
-  public async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
+  /**
+   * Resolves a project slug to its uid over NATS. By default a timeout or 503 is reported as a missing
+   * project (`exists: false`); pass `unavailableAsMissing: false` to have it throw instead, for a
+   * caller that must tell "couldn't check" apart from "no such project".
+   */
+  public async getProjectIdBySlug(
+    req: Request,
+    slug: string,
+    { unavailableAsMissing = true }: { unavailableAsMissing?: boolean } = {}
+  ): Promise<ProjectSlugToIdResponse> {
     const codec = this.natsService.getCodec();
 
     try {
@@ -4122,8 +4131,8 @@ export class ProjectService {
         slug,
       });
 
-      // If it's a timeout or no responder error, treat as not found
-      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+      // If it's a timeout or no responder error, treat as not found (unless the caller opted out)
+      if (unavailableAsMissing && error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
           uid: '',
           slug,
@@ -9241,8 +9250,7 @@ export class ProjectService {
     const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
     const contributorsCount = row.CONTRIBUTORS_COUNT;
     const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
-    // NON_MEMBERS_PIPELINE_VALUE_USD is always NULL pending upstream ticket DL-1383 — render blank
-    // rather than a misleading "$0" until that data lands.
+    // NON_MEMBERS_PIPELINE_VALUE_USD can be NULL for a foundation — render blank rather than a misleading "$0".
     const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
 
     // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
@@ -9312,7 +9320,7 @@ export class ProjectService {
     const area = lookup(HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS, row.CATEGORY);
     if (!row.HEADLINE || !range || !classification || !area) return null;
 
-    const linkTarget = lookup(HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS, row.SIGNAL_KEY) ?? HEALTH_METRICS_OVERVIEW_TILE_LINKS[area].linkTarget;
+    const linkTarget = lookup(HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS, row.SIGNAL_KEY) ?? HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS[area];
     return {
       range,
       finding: {

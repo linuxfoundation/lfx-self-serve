@@ -34,6 +34,7 @@ import type {
   CampaignTabOption,
   CampaignToggleAction,
   CampaignToggleStatus,
+  CreativeAssetMimeType,
   GoogleCreativeEitherOrRule,
   GoogleCreativeFieldSpec,
   KeywordActionOutcome,
@@ -1820,6 +1821,43 @@ export function googleAdsUrlGoParseFlaw(url: string): boolean {
 }
 
 /**
+ * Whether a destination URL is one upstream's `validateServableURL` will serve: absolute, http(s),
+ * with a hostname, no embedded credentials, and none of the Go parser flaws
+ * {@link googleAdsUrlGoParseFlaw} names.
+ *
+ * The accept set lived in three hand-written copies before this existed — the Implementation tab's
+ * add guard, the controller's dispatch refusal, and the brief-restore path — and the third had
+ * drifted to a scheme check alone, so a URL with embedded credentials or a `;` in its query was
+ * seeded into the editor and then refused at create with no way to see why from the editor. One
+ * definition is the only arrangement in which "the same accept set" stays a fact rather than a
+ * comment, since the tiers cannot call each other's private methods.
+ *
+ * The argument must ALREADY be trimmed, with {@link googleAdsTrimSpace} rather than
+ * `String.prototype.trim` — the two disagree on U+0085 and U+FEFF, and the trimmed value is the one
+ * the caller goes on to store, so trimming here instead would judge a string no caller keeps.
+ *
+ * `describeDestinationUrl` (`campaign.controller.ts`) deliberately stays separate: it reports WHICH
+ * refusal a URL hits, as a token the error messages name, and it judges brief destinations for all
+ * five platforms rather than Google sitelinks. Its accept set is this one: `ok`/`ok-http`, with the
+ * same flaw test layered on by `googleSitelinkUrlRefusal` at the sitelink site, and the two must
+ * move together.
+ */
+export function isGoogleAdsServableUrl(trimmedUrl: string): boolean {
+  if (trimmedUrl === '' || googleAdsUrlGoParseFlaw(trimmedUrl)) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmedUrl);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (parsed.hostname === '') return false;
+  return parsed.username === '' && parsed.password === '';
+}
+
+/**
  * Caller-supplied text cut short for an error message, by code point so an emoji is never split
  * into a lone surrogate. The text comes from an unvalidated body, so the echo is bounded.
  */
@@ -1838,6 +1876,33 @@ export function googleAdsEchoed(text: string, max = 32): string {
  */
 export function googleAdsToLower(text: string): string {
   return [...text].map((ch) => (ch === '\u0130' ? 'i' : ch.toLowerCase())).join('');
+}
+
+/**
+ * An untrusted extension string — a callout, a sitelink label, a sitelink description — trimmed and
+ * bounded to `maxRunes`, or `''` when there is nothing usable in it.
+ *
+ * Shared rather than written twice because two places take extension text from outside this app and
+ * must agree with the editor's own guard to the character: the brief generator shaping a model
+ * response, and the brief restore reading a row campaign-service stored opaquely. A list either of
+ * them seeds must be one the operator could have typed, or the editor opens holding entries it
+ * would refuse them for adding.
+ *
+ * {@link googleAdsTrimSpace} rather than `String.prototype.trim`, and the spread rather than
+ * `.slice`, for the reasons those two carry: JS and Go disagree about U+0085 and U+FEFF at the
+ * edges, and `.slice` counts UTF-16 units where upstream counts runes, so it can both cut an astral
+ * character's string shorter than needed and leave a lone surrogate behind.
+ *
+ * The trailing re-trim matters: cutting at a rune boundary can land immediately after a space, and a
+ * trailing space is a difference upstream's duplicate check sees.
+ */
+export function googleAdsBoundExtensionText(value: unknown, maxRunes: number): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = googleAdsTrimSpace(value);
+  const runes = [...trimmed];
+  return runes.length > maxRunes ? googleAdsTrimSpace(runes.slice(0, maxRunes).join('')) : trimmed;
 }
 
 /**
@@ -2558,6 +2623,55 @@ export const DEFAULT_REDDIT_CALL_TO_ACTION = 'Learn More';
  * mirroring upstream must not have. Use `[...headline].length`.
  */
 export const MAX_REDDIT_HEADLINE_LENGTH = 300;
+
+/**
+ * The image types a creative-asset upload accepts — campaign-service's `upload-creative-asset`
+ * `content_type` enum (`design/brief.go`), which re-sniffs the bytes and refuses anything else.
+ *
+ * The one list both sides of this app check against: the browser's file picker and pre-upload
+ * check, and the BFF route that refuses a body before it is base64-encoded and forwarded.
+ */
+export const CREATIVE_ASSET_MIME_TYPES = ['image/png', 'image/jpeg'] as const;
+
+/**
+ * The largest image this app uploads as a creative asset, in bytes (10 MiB).
+ *
+ * Deliberately BELOW campaign-service's own 30 MiB decoded ceiling. The BFF buffers the whole
+ * image, then a base64 JSON body a third larger, to send upstream with a declared `Content-Length`
+ * (campaign-service's upload admission prices a request by that header and runs undeclared uploads
+ * one at a time), so this bound is what keeps one upload's memory on this tier small. It is also
+ * comfortably above any ad image an operator would hand Reddit, which re-hosts the image itself.
+ */
+export const CREATIVE_ASSET_MAX_BYTES = 10 * 1024 * 1024;
+
+/** Shown, and answered by the BFF, when an image exceeds `CREATIVE_ASSET_MAX_BYTES`. */
+export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB. Choose a smaller PNG or JPEG.';
+
+/** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
+export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
+
+/**
+ * The creative-asset type the leading bytes of an image actually are, or `null`.
+ *
+ * Checked by the BFF before forwarding, because a declared `Content-Type` is the caller's claim:
+ * campaign-service re-sniffs and refuses a mismatch anyway, so this only turns that upstream 400
+ * into the same readable refusal the wrong-type case gets, without a round trip. PNG is its fixed
+ * eight-byte signature; JPEG is the SOI marker followed by the start of the next marker.
+ */
+export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeType | null {
+  // Only a real byte buffer is read: the BFF hands this a request body, which a tampered request
+  // could make an array or a string whose `length`/indexes would be read as bytes.
+  if (Array.isArray(bytes) || !(bytes instanceof Uint8Array)) return null;
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (bytes.length >= png.length && png.every((b, i) => bytes[i] === b)) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  return null;
+}
+
+/** Whether a declared MIME type is one `CREATIVE_ASSET_MIME_TYPES` admits. */
+export function isCreativeAssetMimeType(value: unknown): value is CreativeAssetMimeType {
+  return typeof value === 'string' && (CREATIVE_ASSET_MIME_TYPES as readonly string[]).includes(value);
+}
 
 /**
  * The concrete video optimization goals Reddit accepts — `validVideoGoals` in the same upstream

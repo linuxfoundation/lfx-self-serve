@@ -6,13 +6,22 @@ import type { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.co
 /** A period the Level 2 views have columns for — `COMPLETED_YEAR_4` is not one of them. */
 export type HealthMetricsL2Range = (typeof HEALTH_METRICS_L2_RANGES)[number];
 
+/** One run of footnote text: plain, bold, or a link to another Health Metrics tab. */
+export interface HealthMetricsFootnotePart {
+  text: string;
+  bold?: boolean;
+  /** Tab path segment under `HEALTH_METRICS_BASE_PATH`; when set, the run links to that tab. */
+  route?: string;
+}
+
 /** One anchored section of a Health Metrics Level 2 tab; the key doubles as its URL fragment. */
 export interface HealthMetricsL2Section {
   key: string;
   label: string;
   heading: string;
   description: string;
-  footnote: string;
+  /** Empty renders no footnote. */
+  footnote: readonly HealthMetricsFootnotePart[];
   footnoteCaution: boolean;
   /** A pill beside the heading, e.g. for figures still pending validation. */
   headingBadge?: string;

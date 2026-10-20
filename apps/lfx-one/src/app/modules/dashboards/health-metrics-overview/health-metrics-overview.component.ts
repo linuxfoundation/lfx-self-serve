@@ -13,6 +13,7 @@ import {
   HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS,
 } from '@lfx-one/shared/constants';
 import {
+  buildHealthMetricsOverviewAreaTabRoute,
   buildHealthMetricsOverviewTabRoute,
   buildHealthMetricsOverviewTiles,
   buildLensAwareInsightsUrl,
@@ -255,6 +256,7 @@ export class HealthMetricsOverviewComponent {
       linkHref,
       linkRoute,
       linkIsExternal: isInsightsLink,
+      areaTabRoute: buildHealthMetricsOverviewAreaTabRoute(finding.area),
       visual: finding.visual,
     };
   }

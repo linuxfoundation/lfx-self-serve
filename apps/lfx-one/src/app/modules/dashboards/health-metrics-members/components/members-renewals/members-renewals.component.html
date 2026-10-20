@@ -8,7 +8,12 @@
   } @else {
     <!-- The pills stay up on a failed read, so another window can still be picked. -->
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-renewals-controls">
-      <lfx-filter-pills [options]="windowOptions" [selectedFilter]="window()" (filterChange)="onWindowChange($event)" data-testid="members-renewals-window" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="windowOptions"
+        [selectedFilter]="window()"
+        (filterChange)="onWindowChange($event)"
+        data-testid="members-renewals-window" />
       <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-renewals-count">
         @if (loading() || loadFailed()) {
           &mdash;
@@ -33,7 +38,7 @@
         subtitle="No membership renews inside this window."
         data-testid="members-renewals-empty" />
     } @else {
-      <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-renewals-hero">
+      <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-renewals-hero">
         <div class="flex flex-col gap-2">
           <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="members-renewals-value">{{ summary().valueLabel }}</span>
           <span class="text-[12.5px] text-gray-500">Value up for renewal</span>
@@ -41,7 +46,7 @@
 
         <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-renewals-side">
           <div class="flex flex-col gap-0.5">
-            <dt class="text-[11.5px] text-gray-400">Renewals due</dt>
+            <dt class="text-[11.5px] text-gray-500">Renewals due</dt>
             <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-renewals-due">{{ summary().renewalCountLabel }}</dd>
           </div>
         </dl>
@@ -55,6 +60,7 @@
       }
 
       <lfx-table
+        [rowHover]="false"
         [value]="rowViews()"
         [loading]="loading()"
         [lazy]="true"

@@ -30,7 +30,7 @@
       }}</span>
     }
 
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="events-sponsorship-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="events-sponsorship-hero">
       <div class="flex flex-col gap-2" data-testid="events-sponsorship-headline">
         <div class="flex items-baseline gap-2">
           <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="events-sponsorship-headline-value">{{ view().headline.value }}</span>
@@ -51,7 +51,7 @@
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="events-sponsorship-side">
         @for (stat of view().side; track stat.key) {
           <div class="flex flex-col gap-0.5" [attr.data-testid]="'events-sponsorship-side-' + stat.key">
-            <dt class="text-[11.5px] text-gray-400">{{ stat.label }}</dt>
+            <dt class="text-[11.5px] text-gray-500">{{ stat.label }}</dt>
             <dd class="text-[17px] font-semibold tabular-nums text-gray-900" [attr.data-testid]="'events-sponsorship-side-' + stat.key + '-value'">
               {{ stat.value }}
             </dd>
@@ -91,16 +91,11 @@
       @if (view().tiers.length === 0) {
         <p class="text-sm text-gray-500" data-testid="events-sponsorship-tiers-empty">No tier package was sold in the selected period.</p>
       } @else {
-        <ul class="flex flex-col gap-2.5">
-          @for (bar of view().tiers; track bar.key; let index = $index) {
-            <li class="flex flex-col gap-1" [attr.data-testid]="'events-sponsorship-tier-' + index">
-              <div class="flex items-baseline justify-between gap-2 text-[13px]">
-                <span class="min-w-0 break-words text-gray-700">{{ bar.label }}</span>
-                <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-sponsorship-tier-' + index + '-value'">{{ bar.valueLabel }}</span>
-              </div>
-              <div class="h-1.5 w-full rounded-full bg-gray-100" aria-hidden="true">
-                <div class="h-full rounded-full" [class]="bar.barClass" [style.width.%]="bar.widthPct"></div>
-              </div>
+        <ul class="flex flex-col gap-[8px]">
+          @for (row of view().tiers; track row.key; let index = $index) {
+            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'events-sponsorship-tier-' + index">
+              <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
+              <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-sponsorship-tier-' + index + '-value'">{{ row.valueLabel }}</span>
             </li>
           }
         </ul>

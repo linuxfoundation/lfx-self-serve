@@ -565,7 +565,7 @@ export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
     description:
-      "Let guests see who else is invited, and who has accepted, in LFX and in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
+      'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never share their guest list.',
     color: lfxColors.blue[500],
   },
   {

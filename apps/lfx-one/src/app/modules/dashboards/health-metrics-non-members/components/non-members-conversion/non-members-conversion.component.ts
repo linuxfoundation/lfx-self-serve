@@ -5,17 +5,14 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import {
-  HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS,
-  HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED,
-} from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_L2_RANGES, HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED } from '@lfx-one/shared/constants';
 import { buildHealthMetricsNonMembersConversionView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
@@ -31,7 +28,7 @@ import type {
  */
 @Component({
   selector: 'lfx-non-members-conversion',
-  imports: [EmptyStateComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, Skeleton],
   templateUrl: './non-members-conversion.component.html',
 })
 export class NonMembersConversionComponent {
@@ -49,7 +46,6 @@ export class NonMembersConversionComponent {
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
-  protected readonly barClass = HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS;
 
   protected readonly query: Signal<HealthMetricsNonMembersConversionQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',

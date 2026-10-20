@@ -175,18 +175,22 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
       pipelineValue: '$50K',
       pipelineLabel: 'Estimated pipeline',
       hasEstimate: true,
-      footnote: 'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only.',
     });
+    expect(view.footnote).toEqual([
+      { text: 'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only. The ' },
+      { text: 'fit score', bold: true },
+      { text: ' is a model change, sequenced after the matching fix.' },
+    ]);
     expect(view.side).toEqual([
       { key: 'high-fit', label: 'High-fit organizations', value: '2' },
       { key: 'new', label: 'New this period', value: '37' },
     ]);
   });
 
-  it('sizes the warmest bars by contributions, labelled with meetings', () => {
+  it('lists the warmest organizations with contributions, labelled with meetings', () => {
     expect(buildHealthMetricsNonMembersConversionView(CONVERSION).warmest).toEqual([
-      { accountId: '0014100000AcmeAAAA', label: 'Acme Motors · 12 meetings', valueLabel: '400 contributions', widthPct: 100 },
-      { accountId: '0014100000VendAAAA', label: 'Vendor Corp · 1 meeting', valueLabel: '100 contributions', widthPct: 25 },
+      { accountId: '0014100000AcmeAAAA', label: 'Acme Motors · 12 meetings', valueLabel: '400 contributions' },
+      { accountId: '0014100000VendAAAA', label: 'Vendor Corp · 1 meeting', valueLabel: '100 contributions' },
     ]);
   });
 
@@ -196,7 +200,11 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
     expect(view.pipelineValue).toBe('—');
     expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
     expect(view.hasEstimate).toBe(false);
-    expect(view.footnote).toBe('Estimated pipeline multiplies high-fit organizations by an entry-tier fee and is indicative only.');
+    expect(view.footnote).toEqual([
+      { text: 'Estimated pipeline multiplies high-fit organizations by an entry-tier fee and is indicative only. The ' },
+      { text: 'fit score', bold: true },
+      { text: ' is a model change, sequenced after the matching fix.' },
+    ]);
   });
 
   it('renders a NULL count as not available but keeps a real zero', () => {
@@ -210,10 +218,10 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
 
     expect(view.summary).toBe('Organizations tracked not available');
     expect(view.side.map((stat) => stat.value)).toEqual(['0', 'not available']);
-    expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available', widthPct: 0 }]);
+    expect(view.warmest).toEqual([{ accountId: '0014100000AcmeAAAA', label: 'Acme Motors · not available', valueLabel: 'not available' }]);
   });
 
-  it('marks the unmeasured value as not measured with no bars', () => {
+  it('marks the unmeasured value as not measured', () => {
     const view = buildHealthMetricsNonMembersConversionView(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
 
     expect(view.measured).toBe(false);
