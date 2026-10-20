@@ -127,8 +127,6 @@ because acceptance requires every radius and shadow to resolve through a token.
 | `--md-shadow-color`  | `rgb(15 20 25 / 9%)`                | derived from `--md-text-heading`       |
 | `--md-shadow-pop`    | `0 6px 18px var(--md-shadow-color)` | hover/raised cards and tiles           |
 | `--md-shadow-raise`  | `0 2px 6px var(--md-shadow-color)`  | small round icon buttons               |
-| `--md-radius-dialog` | `18px`                              | the occurrence browse dialog's panel   |
-| `--md-shadow-dialog` | `0 24px 60px rgb(15 20 25 / 28%)`   | dialog panels (the prototype's lift)   |
 | `--md-shadow-focus`  | `0 0 0 3px var(--md-accent)`        | focus ring — 4.82:1 light, 6.25:1 dark |
 
 The occurrence strip (E6-03) maps the prototype onto these: its 12px chip radius is
@@ -137,11 +135,6 @@ The occurrence strip (E6-03) maps the prototype onto these: its 12px chip radius
 the prototype's `--faint`: that is `--md-glyph-faint`, which is under AA for text. "Jump to next
 meeting" is `--md-accent-ink` rather than the prototype's `--accent`, the link ink every V2 text
 action uses, since `--md-accent` is tuned for fills and borders.
-
-The browse dialog (E6-04) takes PrimeNG's own mask rather than the prototype's `rgba(15,20,25,.42)`,
-so no mask token is added; its 12px rows use `--md-radius-chip` (13px), and its trigger carries one
-glyph (the calendar search) where the prototype adds a trailing chevron, since `lfx-button` takes one
-icon.
 
 ### Feature (non-text)
 

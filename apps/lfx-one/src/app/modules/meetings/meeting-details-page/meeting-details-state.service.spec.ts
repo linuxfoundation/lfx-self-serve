@@ -328,7 +328,6 @@ describe('MeetingDetailsStateService', () => {
       startMs,
       startTime: new Date(startMs).toISOString(),
       duration: 30,
-      endKnown: true,
       occurrenceId: String(startMs / 1000),
       isPast: false,
       cancelled: false,

@@ -18,14 +18,13 @@
       <p-skeleton height="109px" borderRadius="var(--md-radius-chip)" aria-hidden="true" data-testid="occurrence-strip-loading" />
     } @else {
       <div class="flex min-h-[18px] items-center justify-between gap-[10px]">
-        <!-- Opens the browse-all dialog (E6-04); "Browse occurrences" until the whole series is known. -->
-        <lfx-button
-          [label]="browseLabel()"
-          icon="fa-light fa-calendar-magnifying-glass"
-          ariaHaspopup="dialog"
-          [styleClass]="browseButtonClass"
-          (onClick)="openBrowse()"
-          data-testid="occurrence-strip-position" />
+        @if (position(); as position) {
+          <p class="m-0 text-[12.5px] font-semibold text-[var(--md-text-body)]" data-testid="occurrence-strip-position">
+            Occurrence {{ position.index }} of {{ position.total }}
+          </p>
+        } @else {
+          <span></span>
+        }
         @if (showJumpToNext()) {
           <lfx-button [label]="jumpLabel()" [styleClass]="textButtonClass" (onClick)="jumpToNext()" data-testid="occurrence-strip-jump-next" />
         }

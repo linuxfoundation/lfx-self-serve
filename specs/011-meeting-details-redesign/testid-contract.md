@@ -232,26 +232,17 @@ data-state: idle | loading | ready | error
 
 ## Occurrences
 
-| `data-testid`                           | Element                                                                                                                             |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `occurrence-strip-section`              | The occurrence strip (E6-03); absent on a refusal, a failure, or a single occurrence                                                |
-| `occurrence-strip-loading`              | Its placeholder, the strip's height, until the first page settles                                                                   |
-| `occurrence-strip-position`             | The browse trigger: "Occurrence N of M" once the whole series is loaded, else "Browse occurrences"; opens the browse dialog (E6-04) |
-| `occurrence-strip-jump-next`            | "Jump to next meeting", when the page shows another occurrence than the next one                                                    |
-| `occurrence-strip-prev`                 | Previous occurrence (pages in older ones at a loaded end)                                                                           |
-| `occurrence-strip-next`                 | Next occurrence (pages in later ones at a loaded end)                                                                               |
-| `occurrence-strip-chips`                | The scrolling row of chips                                                                                                          |
-| `occurrence-chip-${occurrenceId}`       | One occurrence chip; `occurrenceId` is the 10-digit seconds id                                                                      |
-| `occurrence-browse-dialog`              | The browse-all-occurrences dialog (E6-04)                                                                                           |
-| `occurrence-browse-subtitle`            | "N occurrences" (only once the whole series is known) and the cadence                                                               |
-| `occurrence-browse-close`               | The dialog's close button                                                                                                           |
-| `occurrence-browse-tab-${tab}`          | A tab, `upcoming` or `past`; `aria-selected` on the open one                                                                        |
-| `occurrence-browse-row-${occurrenceId}` | A row; `data-selected`, `data-cancelled`, `data-start-ms` as on the chips                                                           |
-| `occurrence-browse-viewing`             | The "Viewing" pill on the page's own occurrence                                                                                     |
-| `occurrence-browse-load-more`           | Load more on the open tab, while that side has more                                                                                 |
-| `occurrence-browse-empty`               | "No upcoming / past occurrences."                                                                                                   |
-| `occurrence-browse-unavailable`         | The Past tab when the history could not be read                                                                                     |
-| `occurrence-browse-partial`             | Under Past rows when the rest of the past history could not be read                                                                 |
+| `data-testid`                     | Element                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| `occurrence-strip-section`        | The occurrence strip (E6-03); absent on a refusal, a failure, or a single occurrence |
+| `occurrence-strip-loading`        | Its placeholder, the strip's height, until the first page settles                    |
+| `occurrence-strip-position`       | "Occurrence N of M", only once the whole series is loaded                            |
+| `occurrence-strip-jump-next`      | "Jump to next meeting", when the page shows another occurrence than the next one     |
+| `occurrence-strip-prev`           | Previous occurrence (pages in older ones at a loaded end)                            |
+| `occurrence-strip-next`           | Next occurrence (pages in later ones at a loaded end)                                |
+| `occurrence-strip-chips`          | The scrolling row of chips                                                           |
+| `occurrence-chip-${occurrenceId}` | One occurrence chip; `occurrenceId` is the 10-digit seconds id                       |
+| `occurrence-browse-dialog`        | The browse-all-occurrences dialog (E6-04)                                            |
 
 Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | `false`), and
 `data-start-ms`, its 13-digit start. The selected one has `aria-current="date"`; a cancelled one is

@@ -360,18 +360,10 @@ export interface MeetingAdminLink {
 export interface MeetingOccurrenceStripItem {
   /** The start as a Unix-millisecond instant: the strip's key, and the URL's `?occurrence=` value */
   startMs: number;
-  /**
-   * ISO start time as scheduled, what a row displays: a past record's `scheduled_start_time` when it has
-   * one, which can differ from the composite id's start (`startMs`, the identity)
-   */
+  /** ISO start time */
   startTime: string;
   /** Minutes */
   duration: number;
-  /**
-   * Whether `duration` is the occurrence's own (a live occurrence's, or a past record's scheduled end)
-   * rather than the series' duration standing in: only then may an end time be shown as fact
-   */
-  endKnown: boolean;
   /** The canonical occurrence id (Unix seconds, 10 digits), what RSVP and occurrence APIs take */
   occurrenceId: string;
   /** A past record's composite id (`{meetingId}-{13-digit ms}`), its canonical URL; absent for an upcoming one */
@@ -424,64 +416,6 @@ export interface MeetingOccurrenceStripChip {
   nextUp: boolean;
   /** 0 for the strip's one tab stop, -1 for every other chip */
   tabIndex: number;
-}
-
-/** A tab of the browse-all-occurrences dialog (E6-04). */
-export type MeetingOccurrenceBrowseTab = 'upcoming' | 'past';
-
-/** A tab of the browse dialog with its label. */
-export interface MeetingOccurrenceBrowseTabOption {
-  id: MeetingOccurrenceBrowseTab;
-  label: string;
-}
-
-/**
- * What the occurrence strip hands its browse-all dialog (E6-04, #3587). The dialog reads the strip's
- * loaded series through these getters and asks the strip to read further or open an occurrence, so
- * one loader serves both, with its run guards.
- */
-export interface MeetingOccurrenceBrowseDialogData {
-  /** The meeting's title, the dialog's heading */
-  title: string;
-  /** The project's logo, beside the heading, when it has one */
-  logoUrl: string | null;
-  /** The cadence ("Weekly on Thursday"), when the meeting's recurrence gives one */
-  cadence: string | null;
-  /** The viewer's timezone, for dates and times */
-  timezone: string;
-  /** Every occurrence loaded so far, ascending */
-  items: () => MeetingOccurrenceStripItem[];
-  /** The page's occurrence (Unix ms), the row marked "Viewing" */
-  selectedStartMs: () => number | null;
-  /** Whether the page shows an occurrence that has ended: the tab to open when its row is not loaded */
-  selectedHasEnded: () => boolean;
-  /** Whether a side has more to read */
-  hasMore: (tab: MeetingOccurrenceBrowseTab) => boolean;
-  /** The past history could not be read: the Past tab is unknown, not empty */
-  pastIncomplete: () => boolean;
-  /** Reads the next page on a side; false when there is none or it failed */
-  loadMore: (tab: MeetingOccurrenceBrowseTab) => Promise<boolean>;
-  /** Opens an occurrence as a chip would */
-  open: (item: MeetingOccurrenceStripItem) => void;
-}
-
-/** A row of the browse-all-occurrences dialog as it renders, computed once per change (E6-04). */
-export interface MeetingOccurrenceBrowseRow {
-  item: MeetingOccurrenceStripItem;
-  /** Upper-case short month ("JUL"), the date tile's band */
-  month: string;
-  /** Day of the month, the date tile's figure */
-  day: string;
-  /** Full date ("Thursday, July 23, 2026") */
-  date: string;
-  /** "9:00 AM – 10:00 AM", or the start alone when the end is not known */
-  time: string;
-  /** The page's occurrence: marked "Viewing" */
-  selected: boolean;
-  /** The row's own colours (selected, hovered, or inert when cancelled) */
-  rowClass: string;
-  /** The date tile's month band colours */
-  bandClass: string;
 }
 
 /** Where the strip's request goes: the series, and the password the page holds for it. */

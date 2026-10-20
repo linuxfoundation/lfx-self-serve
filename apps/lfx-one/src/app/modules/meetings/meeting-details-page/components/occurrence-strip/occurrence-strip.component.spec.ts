@@ -6,7 +6,6 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   Meeting,
-  MeetingOccurrenceBrowseDialogData,
   MeetingOccurrenceStripItem,
   MeetingOccurrenceStripPages,
   MeetingRecurrence,
@@ -15,12 +14,10 @@ import {
   PublicMeetingOccurrencesResponse,
 } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { Observable, of, Subject, throwError } from 'rxjs';
-import { afterEach, describe, expect, it, MockInstance, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
-import { MeetingOccurrenceBrowseDialogComponent } from '../occurrence-browse-dialog/occurrence-browse-dialog.component';
 import { MeetingOccurrenceStripComponent } from './occurrence-strip.component';
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -84,8 +81,6 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence: options.recurrence === undefined ? { type: 2 } : options.recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
-            selectedOccurrence: signal(null),
-            timeState: signal('before'),
             matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(!!options.pastPage),
             password,
@@ -146,82 +141,6 @@ describe('MeetingOccurrenceStripComponent', () => {
       expect(query('[data-testid="occurrence-strip-jump-next"]')?.textContent).toContain('Jump to next meeting');
       button('occurrence-strip-jump-next')?.click();
       expect(navigatedTo()).toBe(at(1));
-    });
-
-    /** Opens the dialog with a stubbed ref, as PrimeNG would register it, and returns what it was given. */
-    const openBrowse = (): { open: MockInstance<DialogService['open']>; ref: DynamicDialogRef; setInput: ReturnType<typeof vi.fn> } => {
-      const dialogService = fixture.debugElement.injector.get(DialogService);
-      const ref = { onDestroy: new Subject<void>(), close: vi.fn() } as unknown as DynamicDialogRef;
-      const setInput = vi.fn();
-      const open = vi.spyOn(dialogService, 'open').mockImplementation(() => {
-        dialogService.dialogComponentRefMap.set(ref, { setInput, changeDetectorRef: { detectChanges: vi.fn() } } as never);
-        return ref;
-      });
-      button('occurrence-strip-position')?.click();
-      return { open, ref, setInput };
-    };
-
-    it('opens the browse-all dialog from the position, named from its heading', async () => {
-      await loaded();
-      const { open, setInput } = openBrowse();
-
-      expect(open).toHaveBeenCalledWith(MeetingOccurrenceBrowseDialogComponent, expect.objectContaining({ showHeader: false }));
-      expect(open.mock.calls[0][1].ariaLabelledBy).toBeUndefined();
-      expect(setInput).toHaveBeenCalledWith('pt', { pcDialog: { root: { 'aria-labelledby': MeetingOccurrenceBrowseDialogComponent.headingId } } });
-    });
-
-    it("hands the dialog the strip's series, and opens a row as a chip would", async () => {
-      await loaded();
-      const data = openBrowse().open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
-
-      expect(data.items().map((item) => item.startMs)).toEqual([at(-2), at(-1), at(1), at(2)]);
-      expect(data.selectedStartMs()).toBe(at(-1));
-      expect(data.hasMore('past')).toBe(false);
-      expect(data.pastIncomplete()).toBe(false);
-
-      data.open(data.items()[3]);
-      await settle();
-      expect(navigatedTo()).toBe(at(2));
-    });
-
-    it("labels the cadence from the selected occurrence's own rule when it overrides the meeting's", async () => {
-      await loaded();
-      (TestBed.inject(MeetingDetailsStateService).selectedOccurrence as WritableSignal<unknown>).set({
-        ...future(1),
-        recurrence: { type: 3, repeat_interval: 3, monthly_day: 16 },
-      });
-      const data = openBrowse().open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
-
-      expect(data.cadence).toBe('Quarterly on day 16');
-    });
-
-    it('keeps one dialog: a second activation while it is open opens nothing', async () => {
-      await loaded();
-      const { open } = openBrowse();
-
-      button('occurrence-strip-position')?.click();
-
-      expect(open).toHaveBeenCalledTimes(1);
-    });
-
-    it('closes an open dialog when the page moves to another route', async () => {
-      await loaded();
-      const { ref } = openBrowse();
-
-      (TestBed.inject(MeetingDetailsStateService).matchesRoute as WritableSignal<boolean>).set(false);
-      fixture.detectChanges();
-      await settle();
-
-      expect(ref.close).toHaveBeenCalled();
-    });
-
-    it('closes an open dialog when the strip goes', async () => {
-      await loaded();
-      const { ref } = openBrowse();
-
-      fixture.destroy();
-
-      expect(ref.close).toHaveBeenCalled();
     });
 
     it('says the position once the whole series is loaded', async () => {
@@ -317,7 +236,7 @@ describe('MeetingOccurrenceStripComponent', () => {
     await render(page({ past: [], future: [future(1), future(2)], past_incomplete: true }));
 
     expect(query('[data-testid="occurrence-strip-section"]')).not.toBeNull();
-    expect(query('[data-testid="occurrence-strip-position"]')?.textContent?.trim()).toBe('Browse occurrences');
+    expect(query('[data-testid="occurrence-strip-position"]')).toBeNull();
   });
 
   it('leaves out the position while more of the series is unread, and pages in at a loaded end', async () => {
@@ -325,7 +244,7 @@ describe('MeetingOccurrenceStripComponent', () => {
       selected: at(-1),
       pages: [page({ past: [past(-2)], future: [], past_has_more: false })],
     });
-    expect(query('[data-testid="occurrence-strip-position"]')?.textContent?.trim()).toBe('Browse occurrences');
+    expect(query('[data-testid="occurrence-strip-position"]')).toBeNull();
 
     button('occurrence-strip-prev')?.click();
     await settle();
@@ -374,8 +293,6 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence: { type: 2 } } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
-            selectedOccurrence: signal(null),
-            timeState: signal('before'),
             matchesRoute: onRoute,
             loadedViaPastMeetingId: signal(false),
             password: signal('pw'),
@@ -641,66 +558,6 @@ describe('MeetingOccurrenceStripComponent', () => {
     expect(navigateToOccurrence.mock.calls.at(-1)?.[0].pastResourceId).toBeUndefined();
   });
 
-  it('lets the Past tab read on through ended entries the live list still carries', async () => {
-    // No past pages left; the live list starts with ended entries, more than the next-up search reads.
-    const ended = (week: number) => page({ past: [], future: [future(week)], past_has_more: false, future_has_more: true, future_cursor: String(at(week)) });
-    await render(page({ past: [past(-40)], future: [future(-30)], future_has_more: true, future_cursor: String(at(-30)) }), {
-      selected: at(-40),
-      pages: [ended(-29), ended(-28), ended(-27), ended(-26), ended(-25), ended(-24)],
-    });
-    const dialogService = fixture.debugElement.injector.get(DialogService);
-    const open = vi.spyOn(dialogService, 'open').mockReturnValue({ onDestroy: new Subject<void>(), close: vi.fn() } as unknown as DynamicDialogRef);
-    button('occurrence-strip-position')?.click();
-    const data = open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
-
-    expect(data.hasMore('past')).toBe(true);
-    await expect(data.loadMore('past')).resolves.toBe(true);
-
-    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 50, direction: 'future', cursor: String(at(-25)) });
-    expect(
-      data
-        .items()
-        .filter((item) => item.isPast)
-        .map((item) => item.startMs)
-    ).toContain(at(-24));
-  });
-
-  it('closes the dialog when a refused page hides the strip', async () => {
-    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
-      selected: at(-1),
-      pages: [new HttpErrorResponse({ status: 403 })],
-    });
-    const dialogService = fixture.debugElement.injector.get(DialogService);
-    const ref = { onDestroy: new Subject<void>(), close: vi.fn() } as unknown as DynamicDialogRef;
-    const open = vi.spyOn(dialogService, 'open').mockReturnValue(ref);
-    button('occurrence-strip-position')?.click();
-    const data = open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
-
-    await data.loadMore('past');
-    await settle();
-
-    expect(query('[data-testid="occurrence-strip-section"]')).toBeNull();
-    expect(ref.close).toHaveBeenCalled();
-  });
-
-  it("lets the dialog read the past side through the strip's loader, in the largest pages", async () => {
-    await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)) }), {
-      selected: at(-1),
-      pages: [page({ past: [past(-3), past(-2)], future: [], past_has_more: false })],
-    });
-    const dialogService = fixture.debugElement.injector.get(DialogService);
-    const open = vi.spyOn(dialogService, 'open').mockReturnValue({ onDestroy: new Subject<void>(), close: vi.fn() } as unknown as DynamicDialogRef);
-    button('occurrence-strip-position')?.click();
-    const data = open.mock.calls[0][1].data as MeetingOccurrenceBrowseDialogData;
-    expect(data.hasMore('past')).toBe(true);
-
-    await expect(data.loadMore('past')).resolves.toBe(true);
-
-    expect(getPage).toHaveBeenLastCalledWith(SERIES, 'pw', { pageSize: 50, direction: 'past', cursor: String(at(-1)) });
-    expect(data.items().map((item) => item.startMs)).toContain(at(-3));
-    expect(data.hasMore('past')).toBe(false);
-  });
-
   it("applies a later page's cancellations to chips already shown", async () => {
     await render(page({ past: [past(-1)], past_has_more: true, past_cursor: String(at(-1)), cancelled_occurrences: [] }), {
       selected: at(-1),
@@ -818,8 +675,6 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence: null } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
-            selectedOccurrence: signal(null),
-            timeState: signal('before'),
             matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(true),
             password: signal('pw'),
@@ -865,8 +720,6 @@ describe('MeetingOccurrenceStripComponent', () => {
             meeting: signal({ id: SERIES, duration: 30, recurrence } as Meeting),
             now: signal(new Date()),
             seriesUid: signal(SERIES),
-            selectedOccurrence: signal(null),
-            timeState: signal('before'),
             matchesRoute: signal(true),
             loadedViaPastMeetingId: signal(recurrence === null),
             password,

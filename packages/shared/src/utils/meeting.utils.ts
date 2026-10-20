@@ -832,16 +832,12 @@ export function buildOccurrenceStripItems(
     const startMs = new Date(occurrence.start_time).getTime();
     // A zero (or missing) duration inherits the series', as the occurrence picker reads it.
     const duration = occurrence.duration || fallbackDuration;
-    const isPast = isOccurrencePast(occurrence.start_time, duration, now);
     return {
       startMs,
       startTime: occurrence.start_time,
       duration,
-      // An upcoming occurrence's own duration is its scheduled end. Once it has ended, a past row shows
-      // an end only from its record's scheduled end (#3587), set when that record is merged in.
-      endKnown: (occurrence.duration ?? 0) > 0 && !isPast,
       occurrenceId: occurrence.occurrence_id,
-      isPast,
+      isPast: isOccurrencePast(occurrence.start_time, duration, now),
       cancelled: occurrence.status === 'cancel' || cancelledIds.has(occurrence.occurrence_id),
     };
   };
@@ -854,35 +850,23 @@ export function buildOccurrenceStripItems(
     if (startMs === null) {
       continue;
     }
-    // Minutes, unrounded: start plus duration must give back the scheduled end exactly (09:00:45–09:30
-    // is 29.25 minutes, not 29).
-    const scheduled =
-      past.scheduled_end_time && past.scheduled_start_time
-        ? (new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000
-        : 0;
-    // An ended occurrence the live list still carries takes the record's composite id, its canonical URL,
-    // and the record's end: shown only when the record has a scheduled end (the live duration may be the
-    // series' standing in). One still in progress keeps its live entry alone, as the page joins it there.
+    // An ended occurrence the live list still carries gets the record's composite id, its canonical URL;
+    // one still in progress keeps its live entry alone, as the page joins it from there.
     const existing = byInstant.get(startMs);
     if (existing) {
       if (existing.isPast) {
-        byInstant.set(startMs, {
-          ...existing,
-          startTime: past.scheduled_start_time || existing.startTime,
-          pastResourceId: past.meeting_and_occurrence_id,
-          duration: scheduled > 0 ? scheduled : existing.duration,
-          endKnown: scheduled > 0,
-        });
+        byInstant.set(startMs, { ...existing, pastResourceId: past.meeting_and_occurrence_id });
       }
       continue;
     }
+    const scheduled =
+      past.scheduled_end_time && past.scheduled_start_time
+        ? Math.round((new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000)
+        : 0;
     add({
       startMs,
-      // The composite id's start is the record's identity and URL; its scheduled start, when present, is
-      // what was on the calendar, and what a row shows (the two can differ).
-      startTime: past.scheduled_start_time || new Date(startMs).toISOString(),
+      startTime: new Date(startMs).toISOString(),
       duration: scheduled > 0 ? scheduled : fallbackDuration,
-      endKnown: scheduled > 0,
       occurrenceId: startMsToOccurrenceId(startMs),
       pastResourceId: past.meeting_and_occurrence_id,
       isPast: true,
@@ -894,15 +878,7 @@ export function buildOccurrenceStripItems(
     const startMs = occurrenceIdToStartMs(id);
     if (startMs !== null) {
       const startTime = new Date(startMs).toISOString();
-      add({
-        startMs,
-        startTime,
-        duration: fallbackDuration,
-        endKnown: false,
-        occurrenceId: id,
-        isPast: isOccurrencePast(startTime, fallbackDuration, now),
-        cancelled: true,
-      });
+      add({ startMs, startTime, duration: fallbackDuration, occurrenceId: id, isPast: isOccurrencePast(startTime, fallbackDuration, now), cancelled: true });
     }
   }
 
