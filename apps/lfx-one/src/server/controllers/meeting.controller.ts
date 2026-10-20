@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
@@ -546,8 +546,8 @@ export class MeetingController {
         fieldErrors['start_time'] = startTimeError;
       }
 
-      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < MIN_CUSTOM_DURATION || duration > MAX_CUSTOM_DURATION) {
-        fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_CUSTOM_DURATION}`;
+      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < MIN_CUSTOM_DURATION || duration > MAX_MEETING_DURATION) {
+        fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_MEETING_DURATION}`;
       }
 
       const title = typeof body.title === 'string' ? body.title.trim() : body.title;

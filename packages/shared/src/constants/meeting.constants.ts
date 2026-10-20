@@ -870,16 +870,25 @@ export const PUBLIC_REGISTRATION_FIELD_LABELS = {
 export const MIN_CUSTOM_DURATION = 5;
 
 /**
- * Upper bound for the custom meeting duration, in minutes (10 hours).
- * @description Matches the meeting service's own `duration` maximum (`Maximum(600)` in
- * lfx-v2-meeting-service `design/itx_types.go`) and what PCC allows.
+ * Upper bound for a custom duration on the pre-v2 screens, in minutes (8 hours)
+ * @description The reschedule-occurrence dialog's cap. Kept at 8 hours so flag-off screens don't
+ * change while the meeting v2 composer, behind its feature flag, uses {@link MAX_MEETING_DURATION}.
  */
-export const MAX_CUSTOM_DURATION = 600;
+export const MAX_CUSTOM_DURATION = 480;
+
+/**
+ * Upper bound for a meeting duration, in minutes (10 hours)
+ * @description Matches the meeting service's own `duration` maximum (`Maximum(600)` in
+ * lfx-v2-meeting-service `design/itx_types.go`) and what PCC allows. Used by the meeting v2 composer
+ * and by the BFF occurrence-update check, which the composer's single-occurrence edit also calls —
+ * pre-v2 clients stop at {@link MAX_CUSTOM_DURATION} before reaching it.
+ */
+export const MAX_MEETING_DURATION = 600;
 
 /**
  * Duration chips for the meeting composer's Date & Schedule section
  * @description `custom` reveals the `customDuration` control; `MeetingComposerFormService` owns that
- * control's `MIN_CUSTOM_DURATION` / `MAX_CUSTOM_DURATION` validators.
+ * control's `MIN_CUSTOM_DURATION` / `MAX_MEETING_DURATION` validators.
  */
 export const MEETING_DURATION_CHIP_OPTIONS = [
   { label: '15 min', value: 15 },

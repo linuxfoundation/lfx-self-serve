@@ -164,6 +164,10 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     expect(component.canSave()).toBe(false);
   });
 
+  it('keeps the pre-v2 eight-hour cap outside the v2 composer', () => {
+    expect(MAX_CUSTOM_DURATION).toBe(480);
+  });
+
   it.each([0, 4, MAX_CUSTOM_DURATION + 1])('blocks a duration of %s minutes', async (duration) => {
     const component = await mount();
 

@@ -14,7 +14,7 @@ import {
   DEFAULT_EMAIL_REMINDER_HOURS,
   DEFAULT_EMAIL_REMINDER_MINUTES,
   DEFAULT_MEETING_TOOL,
-  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
   MAX_EARLY_JOIN_TIME,
   MAX_EMAIL_REMINDER_HOURS,
   MAX_EMAIL_REMINDER_MINUTES,
@@ -1342,7 +1342,7 @@ export class MeetingComposerFormService {
     }
 
     if (duration === 'custom') {
-      customDuration.setValidators([Validators.required, Validators.min(MIN_CUSTOM_DURATION), Validators.max(MAX_CUSTOM_DURATION)]);
+      customDuration.setValidators([Validators.required, Validators.min(MIN_CUSTOM_DURATION), Validators.max(MAX_MEETING_DURATION)]);
     } else {
       customDuration.clearValidators();
     }

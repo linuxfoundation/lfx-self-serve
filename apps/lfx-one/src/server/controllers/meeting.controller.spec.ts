@@ -79,7 +79,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   MEETING_REMOVAL_SOURCE_HEADER: 'x-lfx-removal-source',
   MEETING_REMOVAL_SOURCES: ['meeting-card', 'meeting-join'],
   MIN_CUSTOM_DURATION: 5,
-  MAX_CUSTOM_DURATION: 600,
+  MAX_MEETING_DURATION: 600,
 }));
 // `truncateToUtf16Units` is the real implementation: the truncation assertions below are about what
 // the controller sends upstream, so stubbing it would test the stub. `string.utils` has no imports of
