@@ -3,13 +3,20 @@
 
 import { computed, PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Meeting, MeetingStatusKind, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence, MeetingStatusKind, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { environment } from '@environments/environment';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/constants';
 import { resolvePrivacy } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CancelOccurrenceConfirmationComponent } from '../../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
+import { RescheduleOccurrenceDialogComponent } from '../../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingHeaderComponent } from './header.component';
 
@@ -23,6 +30,14 @@ describe('MeetingHeaderComponent', () => {
   let timeState: WritableSignal<MeetingTimeState | null>;
   let meetingStatus: WritableSignal<MeetingStatusKind | null>;
   let myRsvpAttr: WritableSignal<string | null>;
+  let canManageOccurrence: WritableSignal<boolean>;
+  let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
+  let meetingsV2Enabled: WritableSignal<boolean>;
+  let showOccurrenceAfterChange: ReturnType<typeof vi.fn>;
+  let nextLiveOccurrenceStartMs: ReturnType<typeof vi.fn>;
+  let dialogClose: Subject<unknown>;
+  let openDialog: ReturnType<typeof vi.fn>;
+  let add: ReturnType<typeof vi.fn>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -60,8 +75,12 @@ describe('MeetingHeaderComponent', () => {
             meeting,
             timeState,
             meetingStatus,
-            selectedOccurrence: signal(null),
+            selectedOccurrence,
+            meetingTitle: computed(() => selectedOccurrence()?.title || meeting()?.title || ''),
             myRsvpAttr,
+            canManageOccurrence,
+            showOccurrenceAfterChange,
+            nextLiveOccurrenceStartMs,
             privacy: computed(() => {
               const current = meeting();
               return current ? resolvePrivacy(current.visibility, current.restricted) : null;
@@ -70,8 +89,12 @@ describe('MeetingHeaderComponent', () => {
         },
         { provide: ProjectContextService, useValue: { setFoundation } },
         { provide: ClipboardShareService, useValue: { copyLink } },
+        { provide: MessageService, useValue: { add } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(MeetingHeaderComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
+      .compileComponents();
 
     fixture = TestBed.createComponent(MeetingHeaderComponent);
     fixture.detectChanges();
@@ -84,6 +107,14 @@ describe('MeetingHeaderComponent', () => {
     timeState = signal<MeetingTimeState | null>('before');
     meetingStatus = signal<MeetingStatusKind | null>('upcoming');
     myRsvpAttr = signal<string | null>(null);
+    canManageOccurrence = signal(false);
+    selectedOccurrence = signal<MeetingOccurrence | null>(null);
+    meetingsV2Enabled = signal(false);
+    showOccurrenceAfterChange = vi.fn();
+    nextLiveOccurrenceStartMs = vi.fn().mockReturnValue(null);
+    dialogClose = new Subject();
+    openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: dialogClose.asObservable() });
+    add = vi.fn();
     await create();
   });
 
@@ -288,6 +319,110 @@ describe('MeetingHeaderComponent', () => {
       expect(query(`meeting-header-badge-${id}`)).toBeNull();
     }
     expect(query('meeting-header-badge-youtube')).not.toBeNull();
+  });
+
+  describe("V1's occurrence actions", () => {
+    const occurrence = { occurrence_id: 'occ-2', start_time: '2026-11-03T15:00:00Z', duration: 60 } as MeetingOccurrence;
+
+    function manage(): void {
+      show({ recurrence: { type: 2, repeat_interval: 1 } as Meeting['recurrence'], organizer: true });
+      selectedOccurrence.set(occurrence);
+      canManageOccurrence.set(true);
+      fixture.detectChanges();
+    }
+
+    it('offers Edit and Cancel this occurrence only when the state service allows it', () => {
+      expect(query('meeting-occurrence-edit-button')).toBeNull();
+      expect(query('meeting-occurrence-cancel-button')).toBeNull();
+
+      manage();
+
+      expect(query('meeting-occurrence-edit-button')).not.toBeNull();
+      expect(query('meeting-occurrence-cancel-button')).not.toBeNull();
+      expect(query('meeting-header-copy-link')).not.toBeNull();
+    });
+
+    it.each([
+      [false, MAX_CUSTOM_DURATION],
+      [true, MAX_MEETING_DURATION],
+    ])("opens V1's Edit Occurrence dialog for the selected occurrence (composer flag %s caps the duration at %s)", (v2, maxDuration) => {
+      meetingsV2Enabled.set(v2);
+      manage();
+
+      query('meeting-occurrence-edit-button')?.querySelector('button')?.click();
+
+      expect(openDialog).toHaveBeenCalledWith(
+        RescheduleOccurrenceDialogComponent,
+        expect.objectContaining({ header: 'Edit Occurrence', width: '520px', data: { meeting: meeting(), occurrence, maxDuration } })
+      );
+    });
+
+    it("follows an edited occurrence to its new start, with V1's confirmation toast", () => {
+      manage();
+      query('meeting-occurrence-edit-button')?.querySelector('button')?.click();
+
+      dialogClose.next({ confirmed: true, start_time: '2026-11-04T16:00:00Z' });
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence updated' }));
+      expect(showOccurrenceAfterChange).toHaveBeenCalledWith(Date.parse('2026-11-04T16:00:00Z'));
+    });
+
+    it('changes nothing when the edit dialog closes without a confirmed new start', () => {
+      manage();
+      query('meeting-occurrence-edit-button')?.querySelector('button')?.click();
+
+      dialogClose.next(undefined);
+
+      expect(add).not.toHaveBeenCalled();
+      expect(showOccurrenceAfterChange).not.toHaveBeenCalled();
+    });
+
+    // V1's `meetingTitle`: an occurrence edit can give the occurrence its own title.
+    it("shows the selected occurrence's own title over the meeting's", () => {
+      manage();
+      selectedOccurrence.set({ ...occurrence, title: 'Acme Sync: release review' });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('h1')?.textContent?.trim()).toBe('Acme Sync: release review');
+    });
+
+    it('keeps the successor it read when the cancel dialog opened, even if the selection moves on meanwhile', () => {
+      nextLiveOccurrenceStartMs.mockReturnValue(1_800_000_000_000);
+      manage();
+      query('meeting-occurrence-cancel-button')?.querySelector('button')?.click();
+
+      // The 30-second clock moves the selection on while the dialog is open.
+      nextLiveOccurrenceStartMs.mockReturnValue(1_900_000_000_000);
+      dialogClose.next({ confirmed: true });
+
+      expect(showOccurrenceAfterChange).toHaveBeenCalledWith(1_800_000_000_000);
+    });
+
+    it("moves to the cancelled occurrence's successor after a confirmed cancel", () => {
+      nextLiveOccurrenceStartMs.mockReturnValue(1_800_000_000_000);
+      manage();
+      query('meeting-occurrence-cancel-button')?.querySelector('button')?.click();
+
+      expect(openDialog).toHaveBeenCalledWith(
+        CancelOccurrenceConfirmationComponent,
+        expect.objectContaining({ header: 'Cancel Occurrence', width: '450px', data: { meeting: meeting(), occurrence } })
+      );
+
+      dialogClose.next({ confirmed: true });
+
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Occurrence cancelled' }));
+      expect(showOccurrenceAfterChange).toHaveBeenCalledWith(1_800_000_000_000);
+    });
+
+    it("reports a failed cancel with V1's error toast and stays put", () => {
+      manage();
+      query('meeting-occurrence-cancel-button')?.querySelector('button')?.click();
+
+      dialogClose.next({ confirmed: false, error: 'Upstream refused the cancel' });
+
+      expect(add).toHaveBeenCalledWith({ severity: 'error', summary: 'Error', detail: 'Upstream refused the cancel' });
+      expect(showOccurrenceAfterChange).not.toHaveBeenCalled();
+    });
   });
 
   it('falls back to an icon when the project has no logo', () => {

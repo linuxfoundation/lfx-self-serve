@@ -20,11 +20,13 @@ import {
   MeetingStatusKind,
   MeetingTimeState,
   MeetingViewerRole,
+  PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicPastMeetingResponse,
   RsvpResponse,
 } from '@lfx-one/shared/interfaces';
 import {
+  buildOccurrenceNavTimeline,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
   getMeetingSeriesUid,
@@ -158,8 +160,28 @@ export class MeetingDetailsStateService {
   // Route id the held `meeting()` value actually resolved for. Only a success moves it.
   private readonly resolvedRouteId = signal<string | null>(null);
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
+  private readonly occurrencesRefresh$ = new BehaviorSubject<void>(undefined);
+  /**
+   * The occurrence on screen when an edit or cancel moved `?occurrence=`, held until the meeting is
+   * read again: the payload still has the old start, so the new one cannot match yet, and the page
+   * would otherwise jump to the series' first upcoming date meanwhile (V1 re-selects only when the
+   * meeting changes).
+   */
+  private readonly heldOccurrence = signal<MeetingOccurrence | null>(null);
+  /**
+   * Emits when the series timeline must be read again (after an occurrence edit or cancel), as V1's
+   * `seriesOccurrencesRefresh$`; the occurrence navigation re-fetches on it.
+   */
+  public readonly occurrencesRefresh: Observable<void> = this.occurrencesRefresh$.asObservable();
 
   public readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined>;
+  /**
+   * The series timeline (V1's `initializeSeriesOccurrences`), for the occurrence navigation and a
+   * cancel's successor alike: the unpaged `/public/api/meetings/:id/occurrences`, read in the browser
+   * only, for a recurring meeting and for a past occurrence even without a rule (its payload omits
+   * `recurrence`). Read again whenever `occurrencesRefresh` emits.
+   */
+  public readonly seriesOccurrences: Signal<PublicMeetingOccurrencesResponse>;
   /**
    * The current time, ticking every 30 seconds on the browser, so anything derived from the time state
    * (the identity bar's status, E1-05's pill) moves from upcoming to live to ended while the page is
@@ -175,6 +197,8 @@ export class MeetingDetailsStateService {
    * by its composite id, where the meeting payload is the occurrence itself.
    */
   public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
+  /** V1's `meetingTitle`: the selected occurrence's own title (an occurrence edit can set one), else the meeting's. */
+  public readonly meetingTitle: Signal<string> = computed(() => this.selectedOccurrence()?.title || this.meeting()?.title || '');
   /** The selected occurrence's time state on the clock; `null` until the meeting has loaded. */
   public readonly timeState: Signal<MeetingTimeState | null> = this.initTimeState();
   /**
@@ -232,6 +256,17 @@ export class MeetingDetailsStateService {
    * composer's navigation-state password never appears in a URL.
    */
   public readonly signInHref: Signal<string> = this.initSignInHref();
+  /**
+   * V1's `canManageOccurrence`: whether the header offers Edit / Cancel for the occurrence on screen.
+   * A signed-in organizer of a recurring meeting, on a live occurrence (not a past record, not ended).
+   * Upstream enforces `organizer` on both writes; this only decides whether to offer them.
+   */
+  public readonly canManageOccurrence: Signal<boolean> = this.initCanManageOccurrence();
+  /**
+   * Where V1 offers Add to calendar: a signed-in organizer or invitee, before the join window opens
+   * (inside it V1's rail is Join only).
+   */
+  public readonly showAddToCalendar: Signal<boolean> = this.initShowAddToCalendar();
 
   public constructor() {
     const routeId = this.activatedRoute.snapshot.paramMap.get('id');
@@ -250,6 +285,7 @@ export class MeetingDetailsStateService {
 
     this.applyPassword(this.activatedRoute.snapshot.queryParamMap);
     this.meeting = this.initMeeting(seed);
+    this.seriesOccurrences = this.initSeriesOccurrences();
   }
 
   /**
@@ -305,6 +341,47 @@ export class MeetingDetailsStateService {
     this.refresh$.next();
   }
 
+  /**
+   * V1's `showOccurrenceAfterChange`, after an occurrence edit or cancel: points `?occurrence=` at
+   * `startMs` (an edit can move the occurrence, which makes its start a new one), or drops it when
+   * `null`, then reads the meeting and the series timeline again. The explicit refresh covers an
+   * unchanged URL, which the router treats as a no-op.
+   */
+  public showOccurrenceAfterChange(startMs: number | null): void {
+    this.heldOccurrence.set(this.selectedOccurrence());
+    void this.router.navigate([], {
+      relativeTo: this.activatedRoute,
+      queryParams: { occurrence: startMs === null ? null : String(startMs) },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    this.occurrencesRefresh$.next();
+    this.refresh$.next();
+  }
+
+  /**
+   * V1's `nextLiveOccurrenceStartMs`: the start (ms) of the occurrence after the selected one on the
+   * merged series timeline (the payload's active occurrences and `seriesOccurrences`), or `null` when
+   * there is none or it is a past record. Read before a cancel lands, so the page moves to the
+   * cancelled occurrence's successor rather than back to the series' first upcoming date.
+   */
+  public nextLiveOccurrenceStartMs(): number | null {
+    const meeting = this.meeting();
+    const current = this.selectedOccurrence();
+    if (!meeting || !current) {
+      return null;
+    }
+    const live = getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences);
+    const sorted = buildOccurrenceNavTimeline(live, this.seriesOccurrences(), meeting.duration);
+    const currentMs = new Date(current.start_time).getTime();
+    const currentIdx = sorted.findIndex((occurrence) => new Date(occurrence.start_time).getTime() === currentMs);
+    const next = currentIdx >= 0 ? sorted[currentIdx + 1] : undefined;
+    if (!next || next.meeting_and_occurrence_id) {
+      return null;
+    }
+    return new Date(next.start_time).getTime();
+  }
+
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
   public refresh(): void {
     this.retrying.set(true);
@@ -327,6 +404,11 @@ export class MeetingDetailsStateService {
         const match = active.find((occurrence) => new Date(occurrence.start_time).getTime() === requested);
         if (match) {
           return match;
+        }
+        // An edit moved it: keep showing it until the meeting is read again (see `heldOccurrence`).
+        const held = this.heldOccurrence();
+        if (held) {
+          return held;
         }
       }
       // A series with none current or next left has ended: its last occurrence, not the series'
@@ -425,6 +507,52 @@ export class MeetingDetailsStateService {
     return computed(() => {
       const kind = this.resolveSlotAt('live');
       return kind === 'join' || kind === 'guest-join';
+    });
+  }
+
+  private initSeriesOccurrences(): Signal<PublicMeetingOccurrencesResponse> {
+    const empty: PublicMeetingOccurrencesResponse = { past: [], future: [] };
+    if (!isPlatformBrowser(this.platformId)) {
+      return signal(empty).asReadonly();
+    }
+    return toSignal(
+      toObservable(this.meeting).pipe(
+        map((meeting) => (meeting && (meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id) ? getMeetingSeriesUid(meeting) : null)),
+        distinctUntilChanged(),
+        // Another series (or none) starts empty: the service outlives in-app navigations, so the
+        // previous meeting's dates must never merge into this one's while its own read is in flight.
+        // A refresh of the same series keeps the timeline it has until the new one lands.
+        switchMap((seriesUid) =>
+          seriesUid
+            ? this.occurrencesRefresh$.pipe(
+                switchMap(() => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password())),
+                startWith(empty)
+              )
+            : of(empty)
+        )
+      ),
+      { initialValue: empty }
+    );
+  }
+
+  private initCanManageOccurrence(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return (
+        this.userService.authenticated() &&
+        !!meeting?.organizer &&
+        !!meeting.recurrence &&
+        !this.loadedViaPastMeetingId() &&
+        this.timeState() !== 'ended' &&
+        !!this.selectedOccurrence()
+      );
+    });
+  }
+
+  private initShowAddToCalendar(): Signal<boolean> {
+    return computed(() => {
+      const role = this.viewerRole();
+      return this.timeState() === 'before' && (role === 'organizer' || role === 'registrant');
     });
   }
 
@@ -553,6 +681,7 @@ export class MeetingDetailsStateService {
         this.loadFailed.set(false);
         this.failureCount.set(0);
         this.retrying.set(false);
+        this.heldOccurrence.set(null);
         this.resolvedRouteId.set(this.routeId());
         if (isPlatformServer(this.platformId)) {
           this.transferState.set(this.stateKey, {

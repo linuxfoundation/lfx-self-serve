@@ -23,6 +23,13 @@ const stateKey = makeStateKey<MeetingJoinPageState>(MEETING_JOIN_STATE_KEY);
 
 // `debounceTime(0)` puts the lookup one macrotask after the route emission.
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+// Settles the lookup, then runs the effects behind `toObservable` (TestBed runs them on `tick()`) and
+// settles the reads they start.
+const flush = async (): Promise<void> => {
+  await settle();
+  TestBed.tick();
+  await settle();
+};
 
 describe('MeetingDetailsStateService', () => {
   let paramMap$: BehaviorSubject<ParamMap>;
@@ -30,6 +37,7 @@ describe('MeetingDetailsStateService', () => {
   let getPublicMeeting: ReturnType<typeof vi.fn>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyRsvp: ReturnType<typeof vi.fn>;
+  let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let seed: MeetingJoinPageState | null;
   let authenticated: WritableSignal<boolean>;
@@ -55,7 +63,7 @@ describe('MeetingDetailsStateService', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
-        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp } },
+        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp, getPublicMeetingOccurrences } },
         { provide: UserService, useValue: { authenticated } },
         { provide: MeetingDetailsSeedService, useValue: { take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null) } },
       ],
@@ -69,6 +77,7 @@ describe('MeetingDetailsStateService', () => {
     getPublicMeeting = vi.fn().mockReturnValue(of({ meeting: buildMeeting(), project }));
     getPublicPastMeeting = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
     getMyRsvp = vi.fn().mockReturnValue(of(null));
+    getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
     navigate = vi.fn().mockResolvedValue(true);
     seed = null;
     authenticated = signal(true);
@@ -511,6 +520,229 @@ describe('MeetingDetailsStateService', () => {
       const state = create();
 
       expect(state.timeState()).toBeNull();
+    });
+  });
+
+  describe("V1's occurrence actions and Add to calendar", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const first = new Date(Date.now() + 2 * DAY);
+    const second = new Date(Date.now() + 9 * DAY);
+    const third = new Date(Date.now() + 16 * DAY);
+    const series = (overrides: Partial<Meeting> = {}) =>
+      ({
+        ...buildMeeting(),
+        start_time: first.toISOString(),
+        duration: 60,
+        recurrence: { type: 2 },
+        organizer: true,
+        occurrences: [
+          { occurrence_id: '1', start_time: first.toISOString(), duration: 60 },
+          { occurrence_id: '2', start_time: second.toISOString(), duration: 60 },
+          { occurrence_id: '3', start_time: third.toISOString(), duration: 60 },
+        ],
+        cancelled_occurrences: [],
+        ...overrides,
+      }) as unknown as Meeting;
+
+    async function load(meeting: Meeting): Promise<MeetingDetailsStateService> {
+      getPublicMeeting.mockReturnValue(of({ meeting, project }));
+      const state = create();
+      await flush();
+      return state;
+    }
+
+    it('lets a signed-in organizer of a recurring meeting manage the selected occurrence', async () => {
+      expect((await load(series())).canManageOccurrence()).toBe(true);
+    });
+
+    it.each([
+      ['a non-organizer', { organizer: false }],
+      ['a one-off meeting', { recurrence: null }],
+    ])('offers no occurrence actions for %s', async (_case, overrides) => {
+      expect((await load(series(overrides as Partial<Meeting>))).canManageOccurrence()).toBe(false);
+    });
+
+    it('offers no occurrence actions to a signed-out viewer', async () => {
+      authenticated.set(false);
+      expect((await load(series())).canManageOccurrence()).toBe(false);
+    });
+
+    it('offers no occurrence actions on a past occurrence opened by its composite id', async () => {
+      const pastId = '99152950841-1700000000000';
+      paramMap$.next(convertToParamMap({ id: pastId }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: series(), project, full_access: true }));
+      const state = create();
+      await flush();
+
+      expect(state.canManageOccurrence()).toBe(false);
+    });
+
+    it('names the next active occurrence as the successor, skipping cancelled ones', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(first.getTime()) }));
+      const state = await load(series({ cancelled_occurrences: ['2'] } as Partial<Meeting>));
+
+      expect(state.nextLiveOccurrenceStartMs()).toBe(third.getTime());
+    });
+
+    // V1 reads the successor off the merged series timeline, not the payload's occurrences alone.
+    it('finds a successor that only the series timeline has', async () => {
+      const fourth = new Date(Date.now() + 23 * DAY);
+      getPublicMeetingOccurrences.mockReturnValue(of({ past: [], future: [{ occurrence_id: '4', start_time: fourth.toISOString(), duration: 60 }] }));
+      queryParamMap$.next(convertToParamMap({ occurrence: String(third.getTime()) }));
+      const state = await load(series());
+
+      expect(state.nextLiveOccurrenceStartMs()).toBe(fourth.getTime());
+    });
+
+    it('reads the series timeline for a recurring meeting, with the page password, and again on a refresh', async () => {
+      queryParamMap$.next(convertToParamMap({ password: 'secret' }));
+      const state = await load(series());
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledWith(MEETING_ID, 'secret');
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+
+      state.showOccurrenceAfterChange(second.getTime());
+      await flush();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
+    });
+
+    it('drops the previous series timeline when the route moves to another meeting', async () => {
+      getPublicMeetingOccurrences.mockReturnValue(of({ past: [], future: [{ occurrence_id: '9', start_time: third.toISOString(), duration: 60 }] }));
+      const state = await load(series());
+      expect(state.seriesOccurrences().future.length).toBe(1);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2', recurrence: null } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await flush();
+
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+    });
+
+    it("shows none of the previous series' dates while the next series' timeline is still loading", async () => {
+      getPublicMeetingOccurrences.mockReturnValue(of({ past: [], future: [{ occurrence_id: '9', start_time: third.toISOString(), duration: 60 }] }));
+      const state = await load(series());
+      expect(state.seriesOccurrences().future.length).toBe(1);
+
+      getPublicMeetingOccurrences.mockReturnValue(new Subject());
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await flush();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenLastCalledWith('meeting-2', null);
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+    });
+
+    it('reads a series again after the page passed through a one-off meeting', async () => {
+      await load(series());
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'one-off', uid: 'one-off', recurrence: null } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'one-off' }));
+      await flush();
+      getPublicMeeting.mockReturnValue(of({ meeting: series(), project }));
+      paramMap$.next(convertToParamMap({ id: MEETING_ID }));
+      await flush();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
+    });
+
+    it("never reads a one-off meeting's series", async () => {
+      await load(series({ recurrence: null }));
+
+      expect(getPublicMeetingOccurrences).not.toHaveBeenCalled();
+    });
+
+    it("titles the page with the selected occurrence's own title, else the meeting's", async () => {
+      const titled = series();
+      (titled.occurrences ?? [])[1].title = 'Release review';
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      const state = await load(titled);
+
+      expect(state.meetingTitle()).toBe('Release review');
+
+      queryParamMap$.next(convertToParamMap({ occurrence: String(first.getTime()) }));
+      await flush();
+      expect(state.meetingTitle()).toBe('Weekly Sync');
+    });
+
+    it('has no successor after the last occurrence', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(third.getTime()) }));
+      const state = await load(series());
+
+      expect(state.nextLiveOccurrenceStartMs()).toBeNull();
+    });
+
+    it('after a change, points ?occurrence= at the new start and reads the meeting and the timeline again', async () => {
+      const state = await load(series());
+      const timelineReads = vi.fn();
+      state.occurrencesRefresh.subscribe(timelineReads);
+      const lookups = getPublicMeeting.mock.calls.length;
+
+      state.showOccurrenceAfterChange(second.getTime());
+      await flush();
+
+      expect(navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { occurrence: String(second.getTime()) }, queryParamsHandling: 'merge', replaceUrl: true })
+      );
+      expect(timelineReads).toHaveBeenCalledTimes(2); // the current value on subscribe, then the refresh
+      expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(lookups);
+    });
+
+    it('keeps the edited occurrence on screen until the meeting is read again with its new start', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      const state = await load(series());
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+
+      const moved = new Date(second.getTime() + 60 * 60 * 1000);
+      const refetched = new Subject<{ meeting: Meeting; project: PublicMeetingProject }>();
+      getPublicMeeting.mockReturnValue(refetched.asObservable());
+      navigate.mockImplementation((_commands: unknown[], extras: { queryParams: Record<string, string | null> }) => {
+        queryParamMap$.next(convertToParamMap({ occurrence: extras.queryParams['occurrence'] }));
+        return Promise.resolve(true);
+      });
+
+      state.showOccurrenceAfterChange(moved.getTime());
+      await flush();
+
+      // The held payload has only the old start: still the edited occurrence, not the series' first date.
+      expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
+
+      const updated = series();
+      (updated.occurrences ?? [])[1].start_time = moved.toISOString();
+      refetched.next({ meeting: updated, project });
+
+      expect(state.selectedOccurrence()?.start_time).toBe(moved.toISOString());
+    });
+
+    it('drops ?occurrence= after a cancel with no successor', async () => {
+      const state = await load(series());
+
+      state.showOccurrenceAfterChange(null);
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { occurrence: null } }));
+    });
+
+    it.each([
+      ['an organizer', { organizer: true }, true],
+      ['an invitee', { organizer: false, invited: true }, true],
+      ['a signed-in outsider', { organizer: false, invited: false }, false],
+    ])('offers Add to calendar before the window to %s: %s', async (_case, overrides, expected) => {
+      expect((await load(series(overrides as Partial<Meeting>))).showAddToCalendar()).toBe(expected);
+    });
+
+    it('offers no Add to calendar inside the join window, where the rail is Join only', async () => {
+      const state = await load({
+        ...buildMeeting(),
+        start_time: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+        duration: 60,
+        occurrences: [],
+        invited: true,
+      } as unknown as Meeting);
+
+      expect(state.timeState()).toBe('live');
+      expect(state.showAddToCalendar()).toBe(false);
     });
   });
 
@@ -1027,6 +1259,17 @@ describe('MeetingDetailsStateService', () => {
   });
 
   describe('on the server', () => {
+    // The browser completes the timeline after hydration, as V1 does.
+    it('reads no series timeline', async () => {
+      getPublicMeetingOccurrences.mockClear();
+      getPublicMeeting.mockReturnValue(of({ meeting: { ...buildMeeting(), recurrence: { type: 2 } }, project }));
+      const state = create('server');
+      await settle();
+
+      expect(getPublicMeetingOccurrences).not.toHaveBeenCalled();
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+    });
+
     it('writes the resolved meeting to TransferState in the shape V1 writes', async () => {
       create('server');
       await settle();

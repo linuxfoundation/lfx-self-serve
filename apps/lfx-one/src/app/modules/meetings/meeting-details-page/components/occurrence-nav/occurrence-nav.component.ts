@@ -1,22 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformServer } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { MeetingOccurrenceNavContext, OccurrenceNavItem, PastMeeting, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
 import { buildOccurrenceNavTimeline, getActiveOccurrences, getMeetingSeriesUid, hasMeetingEnded } from '@lfx-one/shared/utils';
-import { MeetingService } from '@services/meeting.service';
-import { distinctUntilChanged, filter, map, switchMap } from 'rxjs';
+import { map } from 'rxjs';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 
 /**
  * V1's occurrence navigation on the V2 page: Previous / Next and "N of M" over a recurring meeting's
  * series, with the same data, rules and edge cases as `meeting-join.component` (V1 parity, epic #1765).
- * @description The series comes from the unpaged `/public/api/meetings/:id/occurrences`, read in the
- * browser only (the server renders the live occurrences alone and the browser completes the timeline),
+ * @description The series comes from the unpaged `/public/api/meetings/:id/occurrences`, which the state
+ * service reads in the browser only (the server renders the live occurrences alone and the browser
+ * completes the timeline),
  * merged with the meeting's own active occurrences by `buildOccurrenceNavTimeline`. Each link is a plain
  * `href` built on V1's URL rules: a past record by its composite id, an ended occurrence without one by
  * `{seriesUid}-{start ms}`, anything else by `{seriesUid}?occurrence={start ms}`; only a password already
@@ -28,14 +27,13 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
 })
 export class MeetingOccurrenceNavComponent {
   private readonly state = inject(MeetingDetailsStateService);
-  private readonly meetingService = inject(MeetingService);
   private readonly activatedRoute = inject(ActivatedRoute);
-  private readonly platformId = inject(PLATFORM_ID);
 
   private readonly routeId: Signal<string> = toSignal(this.activatedRoute.paramMap.pipe(map((params) => params.get('id') ?? '')), {
     initialValue: this.activatedRoute.snapshot.paramMap.get('id') ?? '',
   });
-  private readonly seriesOccurrences: Signal<PublicMeetingOccurrencesResponse> = this.initSeriesOccurrences();
+  /** The series timeline, read by the state service (V1's `initializeSeriesOccurrences`). */
+  private readonly seriesOccurrences: Signal<PublicMeetingOccurrencesResponse> = this.state.seriesOccurrences;
   private readonly context: Signal<MeetingOccurrenceNavContext> = this.initContext();
 
   /** A 34px pill link, as the identity bar's controls. */
@@ -49,27 +47,6 @@ export class MeetingOccurrenceNavComponent {
   protected readonly nextUrl: Signal<string | null> = this.initStepUrl(1);
   /** "N of M", or `null` when the navigation is absent. */
   protected readonly label: Signal<string | null> = this.initLabel();
-
-  /**
-   * The series timeline, V1's `initializeSeriesOccurrences`: skipped on the server (the browser reads it
-   * after hydration), read for a recurring meeting, and for a past occurrence even without a rule, since
-   * the past payload omits `recurrence` and the timeline itself tells whether there is anywhere to go.
-   */
-  private initSeriesOccurrences(): Signal<PublicMeetingOccurrencesResponse> {
-    const empty: PublicMeetingOccurrencesResponse = { past: [], future: [] };
-    if (isPlatformServer(this.platformId)) {
-      return signal(empty).asReadonly();
-    }
-    return toSignal(
-      toObservable(this.state.meeting).pipe(
-        map((meeting) => (meeting && (meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id) ? getMeetingSeriesUid(meeting) : null)),
-        filter((seriesUid): seriesUid is string => !!seriesUid),
-        distinctUntilChanged(),
-        switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.state.password()))
-      ),
-      { initialValue: empty }
-    );
-  }
 
   /** V1's `initializeOccurrenceContext`: the merged timeline and the page's place in it. */
   private initContext(): Signal<MeetingOccurrenceNavContext> {

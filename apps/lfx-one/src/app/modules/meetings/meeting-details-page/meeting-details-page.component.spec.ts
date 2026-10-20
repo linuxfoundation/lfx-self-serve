@@ -111,7 +111,17 @@ describe('MeetingDetailsPageComponent', () => {
           providers: [
             {
               provide: MeetingDetailsStateService,
-              useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections, rosterRequest, timeState },
+              useValue: {
+                status,
+                meeting: signal(meeting),
+                meetingTitle: signal(meeting.title),
+                refresh,
+                retrying,
+                failureCount,
+                visibleSections,
+                rosterRequest,
+                timeState,
+              },
             },
           ],
         },

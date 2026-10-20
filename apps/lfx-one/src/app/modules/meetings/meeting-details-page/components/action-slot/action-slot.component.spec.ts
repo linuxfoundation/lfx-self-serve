@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, signal, WritableSignal } from '@angular/core';
+import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
@@ -12,6 +13,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { AddToCalendarComponent } from '../../../components/add-to-calendar/add-to-calendar.component';
 import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
@@ -28,6 +30,13 @@ class GuestJoinStubComponent {}
 
 @Component({ selector: 'lfx-meeting-rsvp-card', template: '<span data-testid="rsvp-card-stub"></span>' })
 class RsvpCardStubComponent {}
+
+// V1's Add to calendar is reused unchanged and tested in its own spec; here only where it renders.
+@Component({ selector: 'lfx-add-to-calendar', template: '<span data-testid="add-to-calendar-stub"></span>' })
+class AddToCalendarStubComponent {
+  public readonly meeting = input<Meeting>();
+  public readonly currentOccurrence = input<MeetingOccurrence | null>(null);
+}
 
 const SIGN_IN_HREF = '/login?returnTo=https%3A%2F%2Fapp.example%2Fmeetings%2Fmeeting-1';
 const KINDS: ActionSlotKind[] = ['join', 'rsvp', 'register', 'invitation-required', 'guest-join', 'tools', 'no-access', 'rsvp-unavailable', 'none'];
@@ -48,6 +57,7 @@ describe('MeetingActionSlotComponent', () => {
   let openDialog: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
+  let showAddToCalendar: WritableSignal<boolean>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -71,6 +81,7 @@ describe('MeetingActionSlotComponent', () => {
     openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: dialogClose.asObservable() });
     add = vi.fn();
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
+    showAddToCalendar = signal(false);
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
@@ -87,6 +98,7 @@ describe('MeetingActionSlotComponent', () => {
             pastAccessKnown,
             markRegistered,
             selectedOccurrence,
+            showAddToCalendar,
             signInHref: signal(SIGN_IN_HREF),
           },
         },
@@ -96,8 +108,8 @@ describe('MeetingActionSlotComponent', () => {
       ],
     })
       .overrideComponent(MeetingActionSlotComponent, {
-        remove: { imports: [MeetingJoinActionComponent, MeetingGuestJoinComponent, MeetingRsvpCardComponent] },
-        add: { imports: [JoinActionStubComponent, GuestJoinStubComponent, RsvpCardStubComponent] },
+        remove: { imports: [AddToCalendarComponent, MeetingJoinActionComponent, MeetingGuestJoinComponent, MeetingRsvpCardComponent] },
+        add: { imports: [AddToCalendarStubComponent, JoinActionStubComponent, GuestJoinStubComponent, RsvpCardStubComponent] },
       })
       .overrideComponent(MeetingActionSlotComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
       .compileComponents();
@@ -454,6 +466,25 @@ describe('MeetingActionSlotComponent', () => {
       render('join');
 
       expect(query('meeting-action-join-hint')).toBeNull();
+    });
+  });
+  describe('add to calendar', () => {
+    it("renders V1's Add to calendar under the slot for the selected occurrence when the state service offers it", () => {
+      const occurrence = { occurrence_id: 'occ-2', start_time: '2026-11-03T15:00:00Z' } as MeetingOccurrence;
+      selectedOccurrence.set(occurrence);
+      showAddToCalendar.set(true);
+      render('rsvp');
+
+      const calendar = fixture.debugElement.query(By.directive(AddToCalendarStubComponent));
+      expect(calendar).not.toBeNull();
+      expect(calendar.componentInstance.meeting()).toBe(meeting());
+      expect(calendar.componentInstance.currentOccurrence()).toBe(occurrence);
+    });
+
+    it('renders no Add to calendar when the state service does not offer it', () => {
+      render('rsvp');
+
+      expect(query('add-to-calendar-stub')).toBeNull();
     });
   });
 });

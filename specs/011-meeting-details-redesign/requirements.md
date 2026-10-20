@@ -144,8 +144,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   U-01 (#2927) rather than fan out one participants call per occurrence (E6-06).
 - **FR-048**: _Withdrawn (scope reset, 2026-10-20)._ Recording duration (E4-02): V1 shows none,
   and V2 keeps V1's functionality and backend.
-- **FR-050**: V2 MUST NOT add: add-to-calendar, `.ics` download, share beyond copy-link, recording
-  download, an inline video player, approve/edit of the AI summary, or attendance export. (Passcode
+- **FR-050**: V2 MUST keep V1's Add to calendar (Google, Outlook / Microsoft 365, `.ics`; this date
+  or the entire series) where V1 offers it: a signed-in organizer or invitee, before the join window.
+  V2 MUST NOT add: share beyond copy-link, recording download, an inline video player,
+  approve/edit of the AI summary, or attendance export. (Passcode
   and dial-in numbers are not on this list: they are planned E7 work, held back only until upstream
   U-04 / U-05 land; see FR-043.)
 - **FR-051**: Editing or deleting the whole series, and in-page organizer editing (O-01 to O-04),
