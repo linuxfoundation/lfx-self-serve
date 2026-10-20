@@ -614,12 +614,14 @@ describe('VoteManageComponent', () => {
     });
 
     // GH-3781 review round 4 (PRRT_kwDOPMiRQ86uNuyT, cursor "Clone submit trusts unrelated committee
-    // grant"): the committee leg of write access previously still resolved off ?committee_uid= even
-    // while cloning, so a caller who happened to be a writer on some unrelated committee (e.g. a
-    // stale or unrelated ?committee_uid= left over from navigation) could satisfy
+    // grant"; PRRT_kwDOPMiRQ86uOJtD / PRRT_kwDOPMiRQ86uOLVe, greptile/copilot "Committee writers
+    // cannot clone"): the committee leg of write access previously still resolved off
+    // ?committee_uid= even while cloning, so a caller who happened to be a writer on some unrelated
+    // committee (e.g. a stale or unrelated ?committee_uid= left over from navigation) could satisfy
     // resolvedWriteAccess() and have resolveAuthorizedProjectUid() hand back the clone's own
-    // (unsynced, unauthorized) project_uid. Pins the fix: committeeCandidate$ folds to null while
-    // cloning, so the committee leg can never vouch for a project it was never asked about.
+    // (unsynced, unauthorized) project_uid. Pins the fix: committeeCandidate$ swaps the URL uid for
+    // the loaded SOURCE's own committee_uid while cloning — never an unrelated ?committee_uid= — so
+    // the committee leg can vouch only for the committee the clone actually belongs to.
     it('does not authorize an unsynced clone project off write access to an unrelated committee', async () => {
       const SOURCE_PROJECT_UID = 'source-project-uid';
       // Sync never converged (e.g. the clone source lacks project_slug) — activeContext stays null,
@@ -627,9 +629,10 @@ describe('VoteManageComponent', () => {
       activeContext.set(null);
       getProject.mockReturnValue(of(null));
       routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID, committee_uid: 'unrelated-committee-uid' }));
-      // The caller IS a writer on this committee — if the committee leg still consulted it while
-      // cloning, resolvedWriteAccess() would wrongly resolve true.
-      fetchCommittee.mockReturnValue(of({ uid: 'unrelated-committee-uid', writer: true }));
+      // The caller IS a writer on the URL's unrelated committee but NOT on the source vote's own
+      // committee (COMMITTEE_UID) — if the committee leg still consulted the URL's uid while cloning,
+      // resolvedWriteAccess() would wrongly resolve true.
+      fetchCommittee.mockImplementation((uid: string) => of({ uid, writer: uid === 'unrelated-committee-uid' }));
       fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
       const fixture = await createComponent();
 
@@ -646,6 +649,37 @@ describe('VoteManageComponent', () => {
 
       expect(fetchCommittee).not.toHaveBeenCalledWith('unrelated-committee-uid');
       expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+    });
+
+    // GH-3781 review round 4 (PRRT_kwDOPMiRQ86uOJtD / PRRT_kwDOPMiRQ86uOLVe, greptile/copilot
+    // "Committee writers cannot clone"): an organizer with writer:true on the source vote's OWN
+    // committee but writer:false on its project can still enter the clone flow through writerGuard's
+    // committee leg. Folding committeeCandidate$ to null entirely while cloning (the round-4 fix's
+    // first pass) would have denied both legs and blocked submission for this organizer. Pins the fix:
+    // committeeCandidate$ swaps in the loaded source's own committee_uid, so this organizer's existing
+    // committee grant still authorizes the clone.
+    it('allows submission for a committee-only writer cloning a vote owned by their own committee', async () => {
+      // Not a writer on the project — only the committee grant can authorize this clone.
+      activeContext.set({ uid: PROJECT_UID, slug: 'project-a', name: 'Project A' });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: false }));
+      fetchCommittee.mockImplementation((uid: string) => of({ uid, writer: uid === COMMITTEE_UID }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(fetchCommittee).toHaveBeenCalledWith(COMMITTEE_UID);
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalled();
     });
 
     // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): the clone fetch disables the form while in flight
