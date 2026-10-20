@@ -267,7 +267,9 @@ export class MeetingActionSlotComponent {
             // `markLeft` guards its own page-local updates.
             this.state.markLeft(meetingId);
           }
-          if (this.state.meeting()?.id !== meetingId) {
+          // `matchesRoute` too: after a navigation the held meeting stays the old one until the new
+          // lookup settles, and the toast and focus must not land on the next page meanwhile.
+          if (!this.state.matchesRoute() || this.state.meeting()?.id !== meetingId) {
             return;
           }
           if (!complete) {
@@ -297,7 +299,7 @@ export class MeetingActionSlotComponent {
         },
         error: (error: unknown) => {
           // As the success path: the error belongs to the page and account the removal was made on.
-          if (this.state.meeting()?.id !== meetingId || this.viewerSubject() !== subject) {
+          if (!this.state.matchesRoute() || this.state.meeting()?.id !== meetingId || this.viewerSubject() !== subject) {
             return;
           }
           const fallback = 'Unable to remove you from this meeting. Please try again.';

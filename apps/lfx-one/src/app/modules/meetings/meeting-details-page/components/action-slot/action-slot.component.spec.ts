@@ -74,6 +74,7 @@ describe('MeetingActionSlotComponent', () => {
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let markLeft: ReturnType<typeof vi.fn>;
   let leavingFor: WritableSignal<string | null>;
+  let matchesRoute: WritableSignal<boolean>;
   let markLeaveIncomplete: ReturnType<typeof vi.fn>;
   let consumeLeaveRequest: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
@@ -110,6 +111,7 @@ describe('MeetingActionSlotComponent', () => {
     status = signal<MeetingDetailsLoadStatus>('ready');
     markLeft = vi.fn();
     leavingFor = signal<string | null>(null);
+    matchesRoute = signal(true);
     markLeaveIncomplete = vi.fn();
     consumeLeaveRequest = vi.fn(() => leaveRequest.set(null));
     // A real service, so `<p-confirmDialog>` can subscribe to it; only `confirm` is observed.
@@ -141,6 +143,7 @@ describe('MeetingActionSlotComponent', () => {
             status,
             leaving: signal(false),
             leavingFor,
+            matchesRoute,
             markLeft,
             markLeaveIncomplete,
             consumeLeaveRequest,
@@ -642,6 +645,22 @@ describe('MeetingActionSlotComponent', () => {
       pending.complete();
 
       expect(leavingFor()).toBeNull();
+    });
+
+    // The held meeting is still the old one until the new route's lookup settles.
+    it('keeps a late removal off the next page while its lookup is still in flight', () => {
+      const pending = new Subject<{ remaining_registrant_ids: string[] }>();
+      removeMyMeetingRegistration.mockReturnValue(pending.asObservable());
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+
+      matchesRoute.set(false);
+      pending.next({ remaining_registrant_ids: [] });
+
+      expect(markLeft).toHaveBeenCalledWith('meeting-1');
+      expect(add).not.toHaveBeenCalled();
     });
 
     it("keeps a removal's error off a meeting the page has moved to", () => {
