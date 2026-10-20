@@ -113,10 +113,10 @@ own namespace; the two never share a value.
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
 section deletes its placeholder and its row here. A test must never assert on one.
 
-The feature badges render from the `*_enabled` flags alone, whatever the viewer's artifact access
-(FR-041), until the meeting ends. Once it has ended, only `meeting-header-badge-youtube` remains: the
-recording section shows what was actually produced, so the Recording, Transcripts and AI Summary
-chips would contradict it (#3633). V1 names the same four `meeting-badge-*`; V2 keeps its own `meeting-header-badge-*`.
+The feature badges render as V1's do, from the `*_enabled` flags whatever the viewer's artifact access
+(FR-041), before, during and after the meeting. The one exception is V1's: on a past occurrence opened
+by its own id, `meeting-header-badge-recording` renders only when that occurrence's recording actually
+loads. V1 names the same four `meeting-badge-*`; V2 keeps its own `meeting-header-badge-*`.
 
 The two occurrence controls port V1's (#3040, #3206): organizer only, on a recurring meeting, for the
 selected upcoming occurrence. V1 names them `meeting-reschedule-occurrence-button` and
@@ -339,6 +339,7 @@ An ended meeting's figures, as V1's `attendance-summary` shows them: no names, t
 | `tools-summary-btn`                         | AI summary control                                                                               |
 | `tools-summary`                             | The AI summary block (E4-03)                                                                     |
 | `tools-summary-content`                     | The summary, rendered from its markdown                                                          |
+| `tools-summary-approved`                    | Approved pill (an approved summary, as V1)                                                       |
 | `tools-summary-pending`                     | Pending pill (unapproved summary, every viewer who can read it, as V1)                           |
 | `tools-summary-unavailable[data-reason]`    | No summary to read: `none` (none, or a failed read, as V1) or `no-access`                        |
 | `tools-transcript-btn`                      | Transcript control                                                                               |

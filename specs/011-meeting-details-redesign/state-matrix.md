@@ -76,9 +76,9 @@ returns a payload, tiered by `full_access` (helpers/meeting.helper.ts:273–335)
   (FGA `v1_past_meeting#organizer`), or an authenticated caller is a registrant, a past
   participant, or a member of a linked committee;
 - otherwise `none`, and the payload is trimmed to 19 fields: no description, no occurrences, no
-  committees, no counts, no artifacts. The feature toggles survive, but V2 shows no Recording,
-  Transcripts or AI Summary chip once a meeting has ended (#3633): the recording section reports
-  what exists, so a chip with nothing behind it would contradict it.
+  committees, no counts, no artifacts. The feature toggles survive, and V2's chips follow them as
+  V1's do; only the Recording chip on a past occurrence opened by its own id waits for that
+  occurrence's recording to load (V1's `showRecordingBadge`).
 
 So every ended combination is legal. Anonymous + `full` happens only for `public-open` meetings.
 

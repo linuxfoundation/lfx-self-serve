@@ -261,19 +261,17 @@ describe('MeetingActionSlotComponent', () => {
     });
   });
 
-  // #3633: a visitor is pointed at sign-in without being promised artifacts that may not exist.
-  it('asks a visitor to sign in without promising the artifacts exist', () => {
+  it('asks a visitor to sign in for the artifacts of an ended meeting', () => {
     render('tools', 'visitor');
 
-    expect(text('meeting-action-message')).toBe('This meeting has ended. Sign in to see its recording, transcript and summary, where available.');
+    expect(text('meeting-action-message')).toBe('This meeting has ended. Sign in to see its recording and summary.');
   });
 
-  // #3633: the ended rail points at the artifacts without promising them.
-  it('tells a signed-in viewer of an ended meeting where its artifacts are, without promising them', () => {
+  // V1's line; the recording section below says what the meeting produced.
+  it("tells a signed-in viewer of an ended meeting only that it has ended, as V1's banner does", () => {
     render('tools', 'registrant');
 
-    expect(text('meeting-action-message')).toBe('This meeting has ended. Its recording, transcript and summary are on this page where available.');
-    expect(text('meeting-action-message')).not.toContain('once they are ready');
+    expect(text('meeting-action-message')).toBe('This meeting has ended.');
   });
 
   describe('no-access', () => {

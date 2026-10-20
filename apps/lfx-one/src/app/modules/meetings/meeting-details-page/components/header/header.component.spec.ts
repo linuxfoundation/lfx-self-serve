@@ -9,10 +9,12 @@ import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION } from '@lfx-one/shared/const
 import { resolvePrivacy } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CancelOccurrenceConfirmationComponent } from '../../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
@@ -38,6 +40,9 @@ describe('MeetingHeaderComponent', () => {
   let dialogClose: Subject<unknown>;
   let openDialog: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
+  let loadedViaPastMeetingId: WritableSignal<boolean>;
+  let pastMeetingFullAccess: WritableSignal<boolean>;
+  let getPastMeetingRecording: ReturnType<typeof vi.fn>;
 
   const project: PublicMeetingProject = {
     uid: 'project-1',
@@ -78,6 +83,8 @@ describe('MeetingHeaderComponent', () => {
             selectedOccurrence,
             myRsvpAttr,
             canManageOccurrence,
+            loadedViaPastMeetingId,
+            pastMeetingFullAccess,
             showOccurrenceAfterChange,
             nextLiveOccurrenceStartMs,
             privacy: computed(() => {
@@ -89,6 +96,8 @@ describe('MeetingHeaderComponent', () => {
         { provide: ProjectContextService, useValue: { setFoundation } },
         { provide: ClipboardShareService, useValue: { copyLink } },
         { provide: MessageService, useValue: { add } },
+        { provide: MeetingService, useValue: { getPastMeetingRecording } },
+        { provide: UserService, useValue: { authenticated: signal(true) } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled } },
       ],
     })
@@ -114,6 +123,9 @@ describe('MeetingHeaderComponent', () => {
     dialogClose = new Subject();
     openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: dialogClose.asObservable() });
     add = vi.fn();
+    loadedViaPastMeetingId = signal(false);
+    pastMeetingFullAccess = signal(false);
+    getPastMeetingRecording = vi.fn().mockReturnValue(of(null));
     await create();
   });
 
@@ -309,15 +321,50 @@ describe('MeetingHeaderComponent', () => {
     }
   });
 
-  // Once ended, the recording section shows what the meeting produced; the setting chips would contradict it.
-  it('drops the Recording, Transcripts and AI Summary chips once the meeting has ended', () => {
+  // V1 keeps the setting chips once a meeting has ended.
+  it('keeps the Recording, Transcripts and AI Summary chips once the meeting has ended, as V1 does', () => {
     timeState.set('ended');
     show({ recording_enabled: true, transcript_enabled: true, youtube_upload_enabled: true, ai_summary_enabled: true });
 
-    for (const id of ['recording', 'transcripts', 'ai-summary']) {
-      expect(query(`meeting-header-badge-${id}`)).toBeNull();
+    for (const id of ['recording', 'transcripts', 'youtube', 'ai-summary']) {
+      expect(query(`meeting-header-badge-${id}`)).not.toBeNull();
     }
-    expect(query('meeting-header-badge-youtube')).not.toBeNull();
+  });
+
+  describe("V1's Recording chip on a past occurrence opened by its own id", () => {
+    const pastId = '99152950841-1700000000000';
+
+    async function showPast(fullAccess = true, recordingEnabled = false): Promise<void> {
+      loadedViaPastMeetingId.set(true);
+      pastMeetingFullAccess.set(fullAccess);
+      timeState.set('ended');
+      show({ id: pastId, recording_enabled: recordingEnabled } as Partial<Meeting>);
+      // The recording read runs from an effect: let it settle, then render its answer.
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('shows Recording when the recording actually loads, whatever the setting', async () => {
+      getPastMeetingRecording.mockReturnValue(of({ sessions: [{ share_url: 'https://zoom.example/rec/1', total_size: 10 }] }));
+      await showPast();
+
+      expect(getPastMeetingRecording).toHaveBeenCalled();
+      expect(query('meeting-header-badge-recording')).not.toBeNull();
+    });
+
+    it('shows no Recording when there is no recording, or it cannot be read', async () => {
+      getPastMeetingRecording.mockReturnValue(throwError(() => ({ status: 404 })));
+      await showPast();
+
+      expect(query('meeting-header-badge-recording')).toBeNull();
+    });
+
+    it('reads no recording without full access, and shows no Recording', async () => {
+      await showPast(false, true);
+
+      expect(getPastMeetingRecording).not.toHaveBeenCalled();
+      expect(query('meeting-header-badge-recording')).toBeNull();
+    });
   });
 
   describe("V1's occurrence actions", () => {

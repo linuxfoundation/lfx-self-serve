@@ -3,7 +3,7 @@
 
 import { DOCUMENT, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
@@ -29,14 +29,16 @@ import {
   MeetingRescheduleOccurrenceResult,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
-import { resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
+import { getLargestSessionShareUrl, getPastMeetingResourceId, resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { RescheduleOccurrenceDialogComponent } from '../../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
@@ -49,11 +51,9 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * the feature badges (Recording, Transcripts, YouTube Upload, AI summary). E1-05's status pill and
  * E1-04's privacy chip lead the row.
  *
- * Feature badges read the `*_enabled` flags only, never artifact access, so before and during the
- * meeting they show what it is configured to capture. Once it has ended, the Recording, Transcripts
- * and AI Summary chips are dropped (`showArtifactChips`, #3633): the recording section (E4-01) then
- * shows what the meeting actually produced, and a setting chip beside "No recording for this
- * meeting" would only contradict it. YouTube Upload stays, as no section reports it.
+ * Feature badges follow V1's: the `*_enabled` flags, except Recording on a past occurrence opened by
+ * its own id, which shows only when that occurrence's recording actually loads (V1's
+ * `showRecordingBadge`).
  */
 @Component({
   selector: 'lfx-meeting-header',
@@ -71,6 +71,8 @@ export class MeetingHeaderComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly document = inject(DOCUMENT);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly meetingService = inject(MeetingService);
+  private readonly userService = inject(UserService);
   /** As V1: the reschedule dialog's duration cap follows the composer flag. */
   private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
@@ -138,11 +140,10 @@ export class MeetingHeaderComponent {
   protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
   protected readonly status: Signal<MeetingStatusKind | null> = this.state.meetingStatus;
   /**
-   * The Recording, Transcripts and AI Summary chips are the meeting's settings: what it will
-   * produce. Once it has ended, the recording section shows what it did produce, so the chips would
-   * only contradict it ("Recording" above "No recording for this meeting").
+   * V1's `showRecordingBadge`: a past occurrence opened by its own id badges on a recording that
+   * actually loads; anything else on the `recording_enabled` setting.
    */
-  protected readonly showArtifactChips = computed(() => this.timeState() !== 'ended');
+  protected readonly showRecordingBadge: Signal<boolean> = this.initShowRecordingBadge();
   protected readonly statusLabel = computed(() => {
     const status = this.status();
     return status ? MEETING_STATUS_LABELS[status] : '';
@@ -256,6 +257,31 @@ export class MeetingHeaderComponent {
         this.messageService.add({ severity: 'error', summary: 'Error', detail: result.error });
       }
     });
+  }
+
+  private initShowRecordingBadge(): Signal<boolean> {
+    // V1's past recording read: signed in, with the past endpoint's full access, for the occurrence's
+    // resource id. `getPastMeetingRecording` is cached, so the recording section reuses the same read.
+    const resourceId = computed(() => {
+      const meeting = this.meeting();
+      const readable = !!meeting && this.state.loadedViaPastMeetingId() && this.state.pastMeetingFullAccess() && this.userService.authenticated();
+      return readable && meeting ? getPastMeetingResourceId(meeting) : null;
+    });
+    const recordingUrl = toSignal(
+      toObservable(resourceId).pipe(
+        distinctUntilChanged(),
+        switchMap((id) =>
+          id
+            ? this.meetingService.getPastMeetingRecording(id).pipe(
+                map((recording) => getLargestSessionShareUrl(recording)),
+                catchError(() => of(null))
+              )
+            : of(null)
+        )
+      ),
+      { initialValue: null }
+    );
+    return computed(() => (this.state.loadedViaPastMeetingId() ? !!recordingUrl() : !!this.meeting()?.recording_enabled));
   }
 
   private initCommittees(): Signal<MeetingCommitteeLink[]> {
