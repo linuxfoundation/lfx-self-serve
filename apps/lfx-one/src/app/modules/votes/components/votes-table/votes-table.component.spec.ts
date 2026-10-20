@@ -1238,7 +1238,11 @@ describe('VotesTableComponent — Extend deadline', () => {
   let extendVote: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let onClose: Subject<{ end_time: string; end_time_timezone: string } | undefined>;
-  const ROWS = [vote('active'), vote('ended', { status: PollStatus.ENDED }), vote('draft', { status: PollStatus.DISABLED })];
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
   const extendButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-extend-deadline-${uid}"] button`);
 
   beforeEach(async () => {
@@ -1280,7 +1284,34 @@ describe('VotesTableComponent — Extend deadline', () => {
   });
 
   it('hides the button for a non-manager viewer', async () => {
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
+    );
+    await settle();
+    expect(extendButton('active')).toBeNull();
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uO-ES @copilot-pull-request-reviewer): the button was previously
+  // gated on project-level hasPMOAccess() rather than the vote's own writer flag — a committee-only
+  // writer without project access couldn't extend their own vote's deadline, even though they could
+  // already "Send reminder" on the same row (toggleRowActionMenu() already used vote.writer there).
+  it('shows the button for a writable vote even without project access', async () => {
     fixture.componentRef.setInput('hasPMOAccess', false);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: true } : row))
+    );
+    await settle();
+    expect(extendButton('active')).not.toBeNull();
+  });
+
+  it('hides the button for a non-writable vote even with project access', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
+    );
     await settle();
     expect(extendButton('active')).toBeNull();
   });
@@ -1330,7 +1361,7 @@ describe('VotesTableComponent — Extend deadline', () => {
     await settle();
 
     // A second, later extension lands in the row before this client's own refresh ever matches exactly.
-    fixture.componentRef.setInput('votes', [vote('active', { end_time: '2026-12-01T23:59:00.000Z', end_time_timezone: 'UTC' })]);
+    fixture.componentRef.setInput('votes', [vote('active', { end_time: '2026-12-01T23:59:00.000Z', end_time_timezone: 'UTC', writer: true })]);
     await settle();
 
     extendButton('active')!.click();

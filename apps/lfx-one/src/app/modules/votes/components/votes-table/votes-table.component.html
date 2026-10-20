@@ -234,6 +234,19 @@
 
               <td>
                 <div class="flex items-center justify-end gap-1">
+                  <!-- Gated on the vote's own writer flag, not project-level hasPMOAccess() — a committee writer
+                       without project write access can still extend their own vote's deadline, matching the
+                       "Send reminder" check in toggleRowActionMenu() (per @copilot-pull-request-reviewer). -->
+                  @if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
+                    <lfx-button
+                      label="Extend deadline"
+                      severity="secondary"
+                      size="small"
+                      [text]="true"
+                      (onClick)="$event.stopPropagation(); onExtendDeadline(vote)"
+                      [attr.data-testid]="'votes-extend-deadline-' + vote.uid">
+                    </lfx-button>
+                  }
                   @if (hasPMOAccess()) {
                     @if (vote.status === PollStatus.DISABLED) {
                       <lfx-button
@@ -256,14 +269,6 @@
                         [attr.data-testid]="'votes-delete-' + vote.uid">
                       </lfx-button>
                     } @else if (vote.status === PollStatus.ACTIVE) {
-                      <lfx-button
-                        label="Extend deadline"
-                        severity="secondary"
-                        size="small"
-                        [text]="true"
-                        (onClick)="$event.stopPropagation(); onExtendDeadline(vote)"
-                        [attr.data-testid]="'votes-extend-deadline-' + vote.uid">
-                      </lfx-button>
                       <lfx-button
                         label="View"
                         severity="primary"

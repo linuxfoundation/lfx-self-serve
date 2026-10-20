@@ -146,4 +146,37 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
 
     expect(service.getVote).toHaveBeenCalledTimes(1);
   });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uO6AL @greptile-apps, PRRT_kwDOPMiRQ86uO6wo @cursor,
+  // PRRT_kwDOPMiRQ86uO-Du @copilot-pull-request-reviewer): the fix above forced initVote() to
+  // re-emit on every visibility toggle but only destructured the id, so closing the drawer re-fetched
+  // (and could clear) an already-loaded vote. Pins the fix: closing short-circuits with EMPTY instead,
+  // so the last-loaded vote is retained through the close animation with no extra request.
+  it('does not re-fetch the vote when the drawer closes', async () => {
+    const vote = makeVote(PollStatus.ACTIVE);
+    const service = {
+      getVote: vi.fn(() => of(vote)),
+      getMyVoteResponse: vi.fn(() => of(null)),
+      getVoteResults: vi.fn(() => of(null)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', vote.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(service.getVote).toHaveBeenCalledTimes(1);
+
+    service.getVote.mockClear();
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(service.getVote).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['vote']()).toEqual(vote);
+  });
 });

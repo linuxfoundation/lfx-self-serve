@@ -205,25 +205,28 @@ export class VotesTableComponent {
         untracked(() => this.statusTab.set('all'));
       }
     });
-    effect(() => {
-      const votes = this.votes();
-      const overrides = untracked(() => this.extendedDeadlines());
-      if (overrides.size === 0) return;
-      const next = new Map(overrides);
-      let changed = false;
-      for (const vote of votes) {
-        const override = next.get(vote.uid);
-        // A later extension landing before this one's refresh must also evict the override — comparing
-        // timestamps (>=) rather than exact string equality (per @greptile-apps, @copilot-pull-request-reviewer).
-        if (override && new Date(vote.end_time).getTime() >= new Date(override.end_time).getTime()) {
-          next.delete(vote.uid);
-          changed = true;
+    // toObservable().subscribe() rather than effect() — effect() side-effect writes are disallowed in this
+    // codebase (per @cursor), matching the drawer's initVote() fix.
+    toObservable(this.votes)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((votes) => {
+        const overrides = this.extendedDeadlines();
+        if (overrides.size === 0) return;
+        const next = new Map(overrides);
+        let changed = false;
+        for (const vote of votes) {
+          const override = next.get(vote.uid);
+          // A later extension landing before this one's refresh must also evict the override — comparing
+          // timestamps (>=) rather than exact string equality (per @greptile-apps, @copilot-pull-request-reviewer).
+          if (override && new Date(vote.end_time).getTime() >= new Date(override.end_time).getTime()) {
+            next.delete(vote.uid);
+            changed = true;
+          }
         }
-      }
-      if (changed) {
-        untracked(() => this.extendedDeadlines.set(next));
-      }
-    });
+        if (changed) {
+          this.extendedDeadlines.set(next);
+        }
+      });
     // Only personal/client scope owns these options. Do not clear controls during a feed refresh.
     const availableGroups = computed(() => (this.lazy() || this.loading() ? null : this.groupOptions()));
     toObservable(availableGroups)

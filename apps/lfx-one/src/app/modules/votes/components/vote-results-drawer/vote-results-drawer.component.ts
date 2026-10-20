@@ -164,10 +164,15 @@ export class VoteResultsDrawerComponent {
     // emits on value changes, and visible() flips on every open/close cycle.
     return toSignal(
       combineLatest([this.voteId$, toObservable(this.visible)]).pipe(
-        switchMap(([id]) => {
+        switchMap(([id, visible]) => {
           if (!id) {
             this.loadingVoteDetails.set(false);
             return of(null);
+          }
+          if (!visible) {
+            // Closing — keep the already-loaded vote instead of firing a redundant fetch during the close animation (per @copilot-pull-request-reviewer / @greptile-apps).
+            this.loadingVoteDetails.set(false);
+            return EMPTY;
           }
 
           this.loadingVoteDetails.set(true);
