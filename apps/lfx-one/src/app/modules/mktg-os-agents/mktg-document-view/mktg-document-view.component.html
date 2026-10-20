@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="relative container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
-  <span class="sr-only" role="status" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
+  <span class="sr-only" role="status" aria-live="polite" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
   <div class="flex flex-col gap-5 mt-3">
     <!-- Top bar: back to Documents, the document, and which revision this is -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
@@ -16,18 +16,27 @@
         >← Documents</a
       >
       <span class="text-gray-400" aria-hidden="true">/</span>
-      <h1 class="text-base font-semibold text-gray-900" data-testid="mktg-document-view-title">{{ title() }}</h1>
+      <div class="flex min-w-0 flex-col gap-1">
+        <h1 class="text-base font-semibold text-gray-900" data-testid="mktg-document-view-title">{{ title() }}</h1>
+        @if (header(); as meta) {
+          @if (hasAssetMetadata()) {
+            <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
+          }
+        }
+      </div>
       <div class="grow"></div>
       @if (view(); as current) {
-        <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
-          Revision {{ current.revision.number }} of {{ current.revisions.length }}
-          @if (current.revision.latest) {
-            · Current
-          }
-          @if (current.revision.status) {
-            · {{ current.revision.status }}
-          }
-        </span>
+        @if (!hasAssetView() && current.revision.format !== 'json') {
+          <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
+            Revision {{ current.revision.number }} of {{ current.revisions.length }}
+            @if (current.revision.latest) {
+              · Current
+            }
+            @if (current.revision.status) {
+              · {{ current.revision.status }}
+            }
+          </span>
+        }
       }
     </div>
 
@@ -39,8 +48,36 @@
     }
 
     @if (loading()) {
-      <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status">Loading the document…</div>
+      <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-document-view-loading">
+        Loading the document…
+      </div>
     } @else if (view(); as current) {
+      <ng-template #approveActions>
+        @if (runAgainLink(); as link) {
+          <a
+            [routerLink]="link"
+            [queryParams]="runAgainParams()"
+            class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700"
+            data-testid="mktg-document-view-run-again"
+            >Run again</a
+          >
+        }
+        @if (mayApprove()) {
+          <div class="flex flex-col gap-2">
+            <lfx-button
+              [label]="'Approve v' + current.revision.number"
+              severity="success"
+              size="small"
+              [loading]="approvingId() === current.revision.id"
+              [disabled]="writePending()"
+              data-testid="mktg-document-view-approve"
+              (onClick)="onApprove()" />
+            @if (approvalError()) {
+              <lfx-message severity="error" [text]="approvalError()" data-testid="mktg-document-view-approval-error" />
+            }
+          </div>
+        }
+      </ng-template>
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
         <!-- Structured assets span the full page; Markdown retains its document column. -->
@@ -84,7 +121,7 @@
               <button
                 type="button"
                 class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
-                [disabled]="restoringId() !== null"
+                [disabled]="writePending()"
                 data-testid="mktg-document-view-history-bar-make-current"
                 (click)="onRestore(current.revision)">
                 @if (restoringId() === current.revision.id) {
@@ -114,43 +151,62 @@
               [asset]="framework"
               state="ready"
               [version]="current.revision.number"
-              [note]="revisionNote()"
-              [approval]="current.revision.approval"
-              [approvedAsset]="current.approvedCurrent?.revisionId === current.revision.id ? framework : null"
-              [approvedVersion]="current.revision.number"
+              [showMetadata]="false"
               [kit]="printKit()"
+              [approvedAsset]="approvedFramework()"
+              [approvedVersion]="approvedVersion()"
+              [approvedLoading]="approvedView().loading"
+              [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
-              data-testid="mktg-document-view-framework" />
+              [exportLookupTarget]="exportLookupTarget()"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-framework">
+              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
+            </lfx-mktg-framework-view>
           } @else if (boilerplates(); as boilerplatesAsset) {
             <!-- A Boilerplates revision is the four lengths, on the Boilerplates view; its report and checks come from the sidecar. -->
             <lfx-mktg-boilerplates-view
               [projectName]="projectName()"
               [asset]="boilerplatesAsset"
               [version]="current.revision.number"
-              [note]="revisionNote()"
-              data-testid="mktg-document-view-boilerplates" />
+              [showMetadata]="false"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-boilerplates">
+              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
+            </lfx-mktg-boilerplates-view>
           } @else if (faq(); as faqAsset) {
             <lfx-mktg-faq-view
               [projectName]="projectName()"
               [asset]="faqAsset"
               [version]="current.revision.number"
-              [note]="revisionNote()"
-              data-testid="mktg-document-view-faq" />
+              [showMetadata]="false"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-faq">
+              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
+            </lfx-mktg-faq-view>
           } @else if (brandKit(); as kit) {
             <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
             <lfx-brand-kit-web-view
               [kit]="kit"
-              [approval]="current.revision.approval"
-              [approvedKit]="current.approvedCurrent?.revisionId === current.revision.id ? kit : null"
-              [approvedVersion]="current.revision.number"
               [version]="current.revision.number"
-              [note]="revisionNote()"
+              [showMetadata]="false"
+              [approvedKit]="approvedKit()"
+              [approvedVersion]="approvedVersion()"
+              [approvedLoading]="approvedView().loading"
+              [approvedError]="approvedView().error"
               [exportTarget]="exportTarget()"
-              data-testid="mktg-document-view-brand-kit" />
+              [exportLookupTarget]="exportLookupTarget()"
+              [approval]="current.revision.approval"
+              data-testid="mktg-document-view-brand-kit">
+              <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
+            </lfx-brand-kit-web-view>
           } @else {
             <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
               @if (current.revision.format === 'json') {
-                <pre class="whitespace-pre-wrap break-all text-xs text-gray-700" data-testid="mktg-document-view-json">{{ current.markdown }}</pre>
+                <lfx-message
+                  severity="error"
+                  [text]="'This revision could not be displayed. Revision ' + current.revision.number + '.'"
+                  data-testid="mktg-document-view-unreadable-json" />
               } @else {
                 <lfx-markdown-renderer [content]="current.markdown" [headingLevelOffset]="1" />
               }
@@ -171,6 +227,7 @@
                   <div class="min-w-0 flex-1 break-words">
                     <span [attr.data-testid]="'mktg-document-view-revision-label-' + row.revision.number">
                       <span class="font-mono" [textContent]="'v' + row.revision.number"></span>
+                      <span [textContent]="row.revision.approval ? ' · Approved' : ' · Draft'"></span>
                       @if (row.revision.createdAt) {
                         <span [textContent]="' · ' + (row.revision.createdAt | date: 'd MMM')"></span>
                       }
@@ -184,6 +241,9 @@
                         >
                       }
                       <span [textContent]="' · ' + row.how + ' · ' + row.authorLabel"></span>
+                      @if (row.revision.approval; as approval) {
+                        <span [textContent]="' · approved by ' + (approval.approvedBy?.name || 'a project writer')"></span>
+                      }
                     </span>
                     @if (row.revision.latest && current.current?.revisionId === row.revision.id) {
                       @if (current.current; as selection) {
@@ -214,7 +274,7 @@
                         <button
                           type="button"
                           class="text-right text-blue-600 underline hover:text-blue-800 disabled:cursor-not-allowed disabled:text-gray-400"
-                          [disabled]="restoringId() !== null"
+                          [disabled]="writePending()"
                           [attr.aria-label]="'Make revision ' + row.revision.number + ' current'"
                           [attr.data-testid]="'mktg-document-view-restore-' + row.revision.number"
                           (click)="onRestore(row.revision)">

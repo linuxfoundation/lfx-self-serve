@@ -11,14 +11,16 @@ server-resolved project partition still gate every route.
 
 Revision bundles remain immutable JSON at
 `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`.
-`current.json` in the same document prefix selects the revision dependent agents
-read. Without that record, the newest historical revision is current: existing
-documents need no migration.
+`current.json` in the same document prefix selects current, which is not
+necessarily approved. Without that record, the newest historical revision is
+current: existing documents need no migration, and no approval is invented.
 
 Make current (the compatibility HTTP endpoint remains `POST …/restore`) changes
 only `current.json`. It does not copy a bundle or add history. One-off run
 documents refuse this action. New runs append through `recordRevision`, which
-records their current base and moves current. The future comment-and-revise
+records their current base. When current is approved, a new Draft extends the
+manifest without moving the pointer or its selection attribution. Otherwise the
+newest generation becomes current. The future comment-and-revise
 writer uses that same method with its actual `basedOnId` and comments; this
 change does not introduce a Revise endpoint or UI.
 
@@ -28,7 +30,8 @@ The current record also holds the IDs of committed revisions. Appends and Make
 current preserve every previously committed ID even if its object is temporarily
 missing or unreadable; restoring the object makes it visible again. An immutable
 bundle is first created with `If-None-Match: *`, then a compare-and-swap of the
-current record publishes its ID and selects it together. An interrupted or
+current record atomically publishes its ID and the chosen selection. Generation
+can preserve approved current while publishing a newer Draft. An interrupted or
 losing write can leave an immutable object, but it is not visible history.
 New objects carry `managed` metadata so an interrupted first save is not mistaken
 for historical data when no current record exists yet. First publication initializes
@@ -53,6 +56,41 @@ bypass a conditional comparison; unlike S3, an overlapping unconditional put can
 return 412. For recovery, first confirm no writer is active, then remove the
 `<key>.lock.partial` directory under the purpose folder. Never remove a live
 writer's lock. S3 passes the original ETag through `If-Match`.
+
+## Approval and consumers
+
+The optional `approvals` map on the same current record stores each revision's
+`approvedAt` and opaque effective-sub `approvedBy`; it is never part of hashed
+revision bytes. Missing or malformed optional annotations mean no approvals,
+not a corrupt critical pointer. Approve uses the existing `writeCurrent` CAS to
+add an annotation and select that revision atomically. Already approved and
+current is a no-op; selecting an earlier approval preserves its original
+approval time and actor. Make current only moves selection: it never approves
+a Draft. Both operations fail fast on a stale CAS with 412, without retries.
+One-off run documents cannot be approved. A true pre-revision document must have
+a stored revision before approval; the API returns a field validation error
+and the UI omits Approve rather than migrating it.
+
+Public summaries and revision responses expose nullable name-only `approval`.
+Detail and listing expose nullable `approvedCurrent: { revisionId, number }`,
+derived only when the current revision has an annotation, using the same
+current snapshot already read for the document. Directory resolution never
+substitutes the generator or pointer mover for an approver.
+
+All dependent attachments and actual PDF/Slides bytes use approved current:
+plain and sidecar `readLatest` return null when none is approved. Read failures
+propagate rather than being mislabeled as missing approval. Only the server's
+true pre-revision plain fallback remains; browser runs never supply attachments.
+Explicit export selectors must match approved current or fail instead of
+silently changing bytes. `readNewestRevisionRef` deliberately retains newest
+identity for export freshness comparison, so an approved export can be out of
+date when a newer Draft exists.
+
+Approval and the board's approval attribution live on the document Asset view.
+Standalone results are Draft previews with Open in Documents: an available
+canonical receipt key selects its exact revision; otherwise the document default
+opens. Receipt keys retained in memory never expand persisted run schemas, and
+content hashes never infer revision identity or approval.
 
 ## Reads and attribution
 

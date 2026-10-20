@@ -62,8 +62,6 @@ export class BrandKitWebViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
-  /** Compatibility with the preceding document-view layer; not rendered. */
-  public readonly note = input('');
   public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
