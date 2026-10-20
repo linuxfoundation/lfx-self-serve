@@ -2437,7 +2437,7 @@ export class MeetingService {
    * Fetches committee names for all unique committees referenced in meetings.
    * Returns a Map of committee UID -> committee name for merging into meeting data.
    */
-  private async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
+  private async getCommitteeNameMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, string>> {
     const uniqueCommitteeUids = [
       ...new Set(
         meetings
@@ -2470,11 +2470,20 @@ export class MeetingService {
         fetchAllQueryResources<Committee>(
           req,
           (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'committee',
-              filters_or: batch.map((uid) => `uid:${uid}`),
-              ...(pageToken && { page_token: pageToken }),
-            }),
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(
+              req,
+              'LFX_V2_SERVICE',
+              '/query/resources',
+              'GET',
+              {
+                type: 'committee',
+                filters_or: batch.map((uid) => `uid:${uid}`),
+                ...(pageToken && { page_token: pageToken }),
+              },
+              undefined,
+              undefined,
+              options
+            ),
           { failOnPartial: true }
         )
       )

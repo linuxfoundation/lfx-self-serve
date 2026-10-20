@@ -943,12 +943,11 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
       meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue([]);
       validatePasswordMock.mockReturnValue(false);
       getEffectiveEmailMock.mockReturnValue('user@example.com');
-      getUsernameFromAuthMock.mockResolvedValue('user');
     });
 
     it('gives it to a registrant of a restricted meeting', async () => {
       meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true, occurrences: [liveOccurrence] } as Partial<Meeting>));
-      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
       const { req, res, next } = buildReqRes(true);
 
       await controller.getMeetingOccurrences(req, res, next);
@@ -958,7 +957,6 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
     it('gives it to an organizer of a private meeting who is not a registrant', async () => {
       meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
-      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
       meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
       addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
       const { req, res, next } = buildReqRes(true);
@@ -981,18 +979,6 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
       expect(occurrence).not.toHaveProperty('registrant_count');
     });
 
-    it('gives it to a registrant found only by the direct email lookup', async () => {
-      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, occurrences: [liveOccurrence] } as Partial<Meeting>));
-      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
-      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
-      const { req, res, next } = buildReqRes(true);
-
-      await controller.getMeetingOccurrences(req, res, next);
-
-      expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalled();
-      expect(res.json.mock.calls[0][0].future[0].registrant_count).toBe(12);
-    });
-
     // The passcode ends the chain before the registrant and organizer lookups (#3584: no new
     // upstream call), so even an organizer whose client sends it is counted as a passcode holder.
     it('withholds it from a signed-in organizer whose client also sends the passcode, without the lookups', async () => {
@@ -1006,7 +992,7 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
       expect(next).not.toHaveBeenCalled();
       expect(res.json.mock.calls[0][0].future[0]).not.toHaveProperty('registrant_count');
-      expect(meetingSvc.getMeetingRegistrantsForUser).not.toHaveBeenCalled();
+      expect(meetingSvc.getMeetingRegistrantsByEmail).not.toHaveBeenCalled();
       expect(addAccessToResourceMock).not.toHaveBeenCalled();
     });
 
@@ -1014,13 +1000,13 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     // from any visitor here; proving it would add an upstream call (#3584).
     it('withholds it from a signed-in registrant of a public meeting', async () => {
       meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences: [liveOccurrence] } as Partial<Meeting>));
-      meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
       const { req, res, next } = buildReqRes(true);
 
       await controller.getMeetingOccurrences(req, res, next);
 
       expect(res.json.mock.calls[0][0].future[0]).not.toHaveProperty('registrant_count');
-      expect(meetingSvc.getMeetingRegistrantsForUser).not.toHaveBeenCalled();
+      expect(meetingSvc.getMeetingRegistrantsByEmail).not.toHaveBeenCalled();
     });
   });
 
