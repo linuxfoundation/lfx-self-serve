@@ -23,6 +23,7 @@ import {
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementAttendanceMonth,
+  HealthMetricsEngagementAttendanceMonthRow,
   HealthMetricsEngagementAttendanceTrend,
   HealthMetricsEngagementAttendanceTrendQuery,
   HealthMetricsEngagementGroupAttendance,
@@ -89,15 +90,6 @@ const PROJECT_SCOPE_PREDICATE = '((? IS NULL AND is_all_projects = TRUE) OR proj
 /** True when this service can serve the range — the controller uses it to validate before binding. */
 export function isSupportedEngagementRange(range: string): range is SupportedEngagementRange {
   return isHealthMetricsL2Range(range);
-}
-
-interface AttendanceMonthRow {
-  MONTH_START_DATE: Date | string | null;
-  MEETINGS_HELD_COUNT: number | null;
-  INVITED_COUNT: number | null;
-  ATTENDED_COUNT: number | null;
-  ATTENDANCE_PCT: number | string | null;
-  ATTENDANCE_PCT_CHANGE_PP: number | string | null;
 }
 
 interface GroupAttendanceRow {
@@ -392,7 +384,7 @@ export class HealthMetricsEngagementService {
       ORDER BY month_start_date ASC
     `;
 
-    const result = await executeSnowflakeViewRead<AttendanceMonthRow>(
+    const result = await executeSnowflakeViewRead<HealthMetricsEngagementAttendanceMonthRow>(
       this.snowflakeService,
       req,
       sql,
@@ -845,7 +837,7 @@ function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriod
 }
 
 /** A row without a month cannot be placed on the axis, so it is dropped rather than guessed. */
-function mapAttendanceMonth(row: AttendanceMonthRow): HealthMetricsEngagementAttendanceMonth | null {
+function mapAttendanceMonth(row: HealthMetricsEngagementAttendanceMonthRow): HealthMetricsEngagementAttendanceMonth | null {
   const monthStartDate = toIsoDate(row.MONTH_START_DATE);
   if (!monthStartDate) return null;
 

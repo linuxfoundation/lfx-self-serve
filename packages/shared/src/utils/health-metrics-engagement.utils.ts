@@ -14,7 +14,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
-import { MONTH_NAMES } from '../constants/marketing-impact.constants';
+import { MONTH_NAMES } from '../constants/calendar.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
