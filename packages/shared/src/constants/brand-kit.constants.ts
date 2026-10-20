@@ -8,7 +8,7 @@
 // src/kit.ts, src/questions.ts, src/questions-turn.ts) and
 // docs/contracts/brand-kit-output.md / brand-kit-questions.md. The agent is
 // Brand Kit 2.0.0: the kit's tokens come from the real logo files, the site's
-// CSS and the latest messaging framework, every colour sourced.
+// CSS and the approved messaging framework, every colour sourced.
 //
 // The STORAGE constants below are aliases of the shared agent-artifact ones
 // (mktg-artifact.constants.ts): storage is one layer shared by every Marketing
@@ -78,12 +78,15 @@ export const BRAND_KIT_FIELD_KEYS = {
 /**
  * Answer key the project's messaging framework travels under in the
  * generate body — the agent's own form key (`messaging_framework`,
- * src/form.ts). Never an intake field: the run page attaches the latest
- * stored revision's JSON itself, serialized, and the BFF parses it back
+ * src/form.ts). Never an intake field: the run page attaches the approved
+ * current revision's JSON, serialized, and the BFF parses it back
  * into the form payload. The Voice chapter's umbrella message and brand line
  * come from it verbatim; without it the Brand Kit does not run.
  */
 export const BRAND_KIT_FRAMEWORK_ANSWER_KEY = 'messaging_framework';
+
+/** The Brand Kit gate cannot distinguish absence from a stored, unapproved draft. */
+export const BRAND_KIT_APPROVAL_REQUIRED_MESSAGE = 'Approve a messaging framework first — the Brand Kit builds on the approved one.';
 
 /**
  * How the agent's refusal reply opens (brand-kit 2.1.0, src/framework-gate.ts;

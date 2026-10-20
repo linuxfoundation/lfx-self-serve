@@ -100,7 +100,7 @@ const req = { path: '/api/mktg-agents/brand-kit/generate' } as unknown as Reques
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 60"><rect fill="#4D4E4E" width="200" height="60"/></svg>';
 
-/** The messaging framework as the run page attaches it: the latest stored Messaging Document revision's sidecar, serialized. */
+/** The approved current framework sidecar as the run page attaches it, serialized. */
 const FRAMEWORK = {
   contract: 'messaging-document-output/v1',
   fields: {

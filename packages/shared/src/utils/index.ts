@@ -118,3 +118,4 @@ export * from './campaign.utils';
 export * from './campaign-optimize.utils';
 export * from './campaign-audience.utils';
 export * from './meta-ad-set.utils';
+export * from './mktg-asset.utils';

@@ -43,6 +43,7 @@ import type {
   PersonaType,
 } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 const PROJECT_UID = 'p0000000-0000-0000-0000-00000000faq0';
@@ -87,17 +88,19 @@ function revisionSummary(): MktgRevisionSummary {
     format: 'json',
     commentCount: 0,
     latest: true,
+    approval: null,
   };
 }
 
 function documentDetail(): MktgDocumentDetailResponse {
-  return { project: PROJECT_UID, type: faqType(), documentId: DOCUMENT_ID, revisions: [revisionSummary()] };
+  return { project: PROJECT_UID, type: faqType(), documentId: DOCUMENT_ID, revisions: [revisionSummary()], approvedCurrent: null };
 }
 
 function revisionResponse(): MktgRevisionResponse {
   return {
     ...documentDetail(),
     revision: revisionSummary(),
+    approval: null,
     markdown: JSON.stringify(CONTENT),
     sidecar: { mode: 'draft', report: { sources_read: [], sources_failed: [], gaps: [], notes: '' }, checks: { findings: [] } },
   };
@@ -150,6 +153,7 @@ async function stubContext(page: Page): Promise<void> {
  * route on the Express server, whose fetches bypass `page.route` and hit the real BFF.
  */
 async function gotoFaqDocument(page: Page): Promise<void> {
+  await suppressCookieBanner(page);
   await pinMktgFlag(page);
   await seedContextCookies(page);
   await stubContext(page);
