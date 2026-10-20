@@ -112,7 +112,7 @@ export class MeetingActionSlotComponent {
         this.state.markRegistered(meeting.id);
         // Register is gone from the slot now, so focus has nowhere to return to: hand it to the slot's
         // new first control once it renders, or to the slot itself when the new state has none (e.g.
-        // `rsvp-unavailable`, plain text), so it never falls to <body> (#3260, WCAG 2.4.3). Only on the
+        // `rsvp-unavailable`, V1's empty rail), so it never falls to <body> (#3260, WCAG 2.4.3). Only on the
         // meeting the registration was for: a late result after the page moved on changes nothing here.
         if (this.state.meeting()?.id === meeting.id) {
           afterNextRender(() => this.focusSlot(), { injector: this.injector });

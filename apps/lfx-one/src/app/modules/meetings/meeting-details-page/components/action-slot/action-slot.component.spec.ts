@@ -124,11 +124,15 @@ describe('MeetingActionSlotComponent', () => {
     expect(slots[0].getAttribute('data-kind')).toBe(kind);
   });
 
-  it.each(KINDS.filter((kind) => kind !== 'join' && kind !== 'rsvp' && kind !== 'none'))('explains the %s kind instead of leaving the rail empty', (kind) => {
-    render(kind);
+  // `none` and `rsvp-unavailable` are V1's empty rail; each is tested on its own.
+  it.each(KINDS.filter((kind) => kind !== 'join' && kind !== 'rsvp' && kind !== 'none' && kind !== 'rsvp-unavailable'))(
+    'explains the %s kind instead of leaving the rail empty',
+    (kind) => {
+      render(kind);
 
-    expect(text('meeting-action-message')).not.toBe('');
-  });
+      expect(text('meeting-action-message')).not.toBe('');
+    }
+  );
 
   it('renders the Join control for the join kind', () => {
     expect(query('join-action-stub')).not.toBeNull();
@@ -235,8 +239,11 @@ describe('MeetingActionSlotComponent', () => {
   it("renders V1's empty rail for a meeting without RSVP tracking, with nothing to answer", () => {
     render('rsvp-unavailable');
 
-    expect(query('meeting-action-slot')?.getAttribute('data-kind')).toBe('rsvp-unavailable');
-    expect(query('meeting-action-message')).toBeNull();
+    const slot = query('meeting-action-slot');
+    expect(slot?.getAttribute('data-kind')).toBe('rsvp-unavailable');
+    // Nothing at all inside the slot (outside the join window there is no hint either).
+    expect(slot?.children.length).toBe(0);
+    expect(slot?.textContent?.trim()).toBe('');
     // No control at all, and nothing that carries an answer.
     expect(fixture.nativeElement.querySelector('button, input')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-my-rsvp]')).toBeNull();
@@ -248,7 +255,8 @@ describe('MeetingActionSlotComponent', () => {
     render('rsvp-unavailable');
 
     expect(text('meeting-action-join-hint')).toBe('You can join up to 15 minutes before the start time.');
-    expect(query('meeting-action-message')).toBeNull();
+    // The hint is the slot's only content.
+    expect(query('meeting-action-slot')?.children.length).toBe(1);
   });
 
   // E2-06 (FR-025).
