@@ -10,7 +10,6 @@ import type {
   MeetingStatusKind,
   MeetingTypeConfig,
   PastMeetingArtifactKind,
-  PastMeetingIdentityTier,
   PastMeetingSummaryApprovalState,
   PastRosterAttendanceFilter,
   PastRosterFilterOption,
@@ -605,31 +604,6 @@ export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
  * below `high` is `medium`, the rest `high`. One set for the public and the admin page.
  */
 export const PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS = { medium: 25, high: 70 } as const;
-
-/** Each identity tier's label on the admin participant list (N-02). An `unverified` row left unknown reads "Unknown". */
-export const PAST_MEETING_IDENTITY_TIER_LABELS: Record<PastMeetingIdentityTier, string> = {
-  verified: 'Verified',
-  'auto-matched': 'Auto-matched',
-  'ai-reconciled': 'AI-matched',
-  unverified: 'Needs review',
-};
-
-/** The label of an `unverified` attendee that reconciliation left unknown (N-02). */
-export const PAST_MEETING_IDENTITY_UNKNOWN_LABEL = 'Unknown';
-
-/** The label of an attendee that is a notetaker or recording bot (#2253), in place of a tier (N-02). */
-export const PAST_MEETING_NOTETAKER_BOT_LABEL = 'Notetaker bot';
-
-/**
- * How strongly each identity tier identifies an attendee (N-02), so the BFF keeps the best-identified
- * record when it merges one person's duplicate attendee records, whatever order they arrive in.
- */
-export const PAST_MEETING_IDENTITY_TIER_RANK: Record<PastMeetingIdentityTier, number> = {
-  unverified: 0,
-  'auto-matched': 1,
-  'ai-reconciled': 2,
-  verified: 3,
-};
 
 /** The V2 past roster's invitation filter (E4-05), worded as the admin page's cells ("Not invited"). */
 export const PAST_ROSTER_INVITATION_FILTER_OPTIONS: PastRosterFilterOption<PastRosterInvitationFilter>[] = [

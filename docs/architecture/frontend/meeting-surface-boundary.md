@@ -81,12 +81,6 @@ admin table:
 | Job title               | **no**                | yes         |
 | Committee voting status | **no**                | yes         |
 
-"Aggregate only" (N-02): the public roster names every identified attendee, in the `verified`,
-`auto-matched` or `ai-reconciled` tier (`getPastMeetingIdentityTier`), without saying which, and
-counts the `unverified` ones (`unidentified_attendees`). An auto-match is an exact email or username
-match, and an AI match is one an organizer confirmed, so both are identities, not guesses. Only the
-admin table shows the tier.
-
 V1's past participant list shows email today (`meeting-registrants-display`). V2 does not carry that
 over; V1 is unchanged until it retires. E4-05 and N-02 implement this table, not the admin row as
 it stands.

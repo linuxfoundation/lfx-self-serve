@@ -36,11 +36,6 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // The real masker: the registrant lookup's log must never carry the address itself.
   maskEmailForLogs: (await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils')).maskEmailForLogs,
   buildRecurrenceNeverEndDate: vi.fn(),
-  // The real classifier: the participant merge keeps the better-identified record by its tier (N-02).
-  getPastMeetingIdentityTier: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
-    .getPastMeetingIdentityTier,
-  isPastMeetingNotetakerBot: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
-    .isPastMeetingNotetakerBot,
   getPastMeetingTranscriptUrl: vi.fn(),
   // The real measurement, so the recording response is checked with the duration it actually carries.
   getRecordingDurationSeconds: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
@@ -1515,59 +1510,6 @@ describe('MeetingService.getPastMeetingParticipants', () => {
     expect(result[0].is_invited).toBe(true);
     expect(result[0].is_attended).toBe(true);
     expect(result[0].email).toBe('jane@example.com');
-  });
-
-  // N-02: a person's identity tier must not depend on the order the query returns their duplicates in.
-  it.each([
-    ['unverified first', ['unverified', 'verified']],
-    ['verified first', ['verified', 'unverified']],
-  ])('keeps the better-identified attended record whatever the order (%s)', async (_, order) => {
-    const records = {
-      unverified: participantRecord('a', { email: 'jane@example.com', is_attended: true, is_invited: false, zoom_user_name: 'Jane (iPhone)' }),
-      verified: participantRecord('b', { email: 'jane@example.com', is_attended: true, is_invited: true, is_verified: true, mapped_invitee_name: 'Jane Doe' }),
-    };
-    proxyRequest.mockResolvedValueOnce({ resources: order.map((key) => records[key as keyof typeof records]) });
-
-    const [merged] = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
-
-    expect(merged.is_verified).toBe(true);
-    expect(merged.mapped_invitee_name).toBe('Jane Doe');
-    expect(merged.is_invited).toBe(true);
-    // The Zoom name only the other record had survives the merge.
-    expect(merged.zoom_user_name).toBe('Jane (iPhone)');
-  });
-
-  it.each([
-    ['needs-review first', ['review', 'unknown']],
-    ['left-unknown first', ['unknown', 'review']],
-  ])('keeps an organizer\'s explicit "Leave unknown" over a needs-review duplicate (%s)', async (_, order) => {
-    const records = {
-      review: participantRecord('a', { email: 'jane@example.com', is_attended: true }),
-      unknown: participantRecord('b', { email: 'jane@example.com', is_attended: true, is_unknown: true }),
-    };
-    proxyRequest.mockResolvedValueOnce({ resources: order.map((key) => records[key as keyof typeof records]) });
-
-    const [merged] = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
-
-    expect(merged.is_unknown).toBe(true);
-  });
-
-  it.each([
-    ['person first', ['person', 'bot']],
-    ['bot first', ['bot', 'person']],
-  ])('never merges a notetaker bot with the person whose email it shares (%s)', async (_, order) => {
-    const records = {
-      person: participantRecord('a', { email: 'jane@example.com', is_attended: true, is_verified: true }),
-      bot: participantRecord('b', { email: 'jane@example.com', is_attended: true, zoom_user_name: "Jane's Notetaker (Otter.ai)" }),
-    };
-    proxyRequest.mockResolvedValueOnce({ resources: order.map((key) => records[key as keyof typeof records]) });
-
-    const result = await service.getPastMeetingParticipants(req, 'meeting-1-occ-1');
-
-    expect(result).toHaveLength(2);
-    const person = result.find((participant) => participant.uid === 'a');
-    expect(person?.is_verified).toBe(true);
-    expect(person?.zoom_user_name).toBeUndefined();
   });
 
   it('does not merge two records with the same email but different usernames', async () => {

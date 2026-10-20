@@ -147,7 +147,6 @@ export class PastMeetingController {
         delete meeting.committee_members_count;
         delete meeting.participant_count;
         delete meeting.attended_count;
-        delete meeting.unverified_attended_count;
       }
 
       // Webhook-created past meeting lacks a human created_by — join back to the live

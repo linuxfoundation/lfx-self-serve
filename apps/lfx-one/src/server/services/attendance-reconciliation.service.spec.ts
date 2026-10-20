@@ -20,10 +20,6 @@ vi.mock('@lfx-one/shared/constants', async () => {
     RECONCILIATION_BOT_NAME_PATTERN: meeting.RECONCILIATION_BOT_NAME_PATTERN,
   };
 });
-// The bot check comes from the real shared helper (deep import: the utils barrel needs Angular).
-vi.mock('@lfx-one/shared/utils', async () => ({
-  isPastMeetingNotetakerBot: (await import('@lfx-one/shared/utils/past-meeting.utils')).isPastMeetingNotetakerBot,
-}));
 
 const { getPastMeetingParticipants, getPastOccurrencesForMeeting, updatePastMeetingParticipant } = vi.hoisted(() => ({
   getPastMeetingParticipants: vi.fn(),

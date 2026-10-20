@@ -156,10 +156,6 @@
             <span class="text-sm text-gray-500 uppercase tracking-wide">Attended</span>
             <span class="text-xl font-bold text-emerald-600" data-testid="attendance-attended">{{ figures.attended }}</span>
             <span class="text-xs text-gray-400">of {{ figures.total }}</span>
-            @if (figures.unverified) {
-              <!-- Counted as attended, but nobody has established who they are (N-02). -->
-              <span class="text-xs font-medium text-amber-600" data-testid="attendance-unverified">{{ figures.unverified }} unverified</span>
-            }
           </div>
           <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
             <i class="fa-light fa-circle-xmark text-gray-400 text-sm"></i>
@@ -413,13 +409,7 @@
             </tr>
           </ng-template>
           <ng-template #body let-p>
-            <!-- Reconciliation state rides on data-* (N-02), never on class names. -->
-            <tr
-              [attr.data-testid]="'participant-row-' + p.uid"
-              [attr.data-attended]="p.is_attended"
-              [attr.data-invited]="p.is_invited"
-              [attr.data-identity-tier]="p.identity_tier"
-              [attr.data-notetaker-bot]="p.is_notetaker_bot || null">
+            <tr>
               <td>
                 <div class="flex items-center gap-2.5">
                   <div class="relative flex-shrink-0">
@@ -437,31 +427,10 @@
                       }
                     </div>
                   </div>
-                  <div class="flex min-w-0 flex-col gap-0.5">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <span class="text-sm text-gray-900 truncate">{{ p.first_name }} {{ p.last_name }}</span>
-                      @if (p.host) {
-                        <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" data-testid="participant-organizer-tag"
-                          >Organizer</span
-                        >
-                      }
-                      @if (p.identity_tier && p.identity_label) {
-                        <lfx-tag
-                          [value]="p.identity_label"
-                          [severity]="identityTierSeverity[p.identity_tier]"
-                          styleClass="text-xs"
-                          data-testid="participant-identity-tier"
-                          [attr.data-identity-tier]="p.identity_tier"></lfx-tag>
-                      } @else if (p.is_notetaker_bot) {
-                        <!-- Reconciliation never queues a bot (#2253), so it is not shown as needing review. -->
-                        <lfx-tag [value]="p.identity_label" severity="secondary" styleClass="text-xs" data-testid="participant-notetaker-bot"></lfx-tag>
-                      }
-                    </div>
-                    @if (p.identity_names.matchedTo) {
-                      <span class="text-xs text-gray-500 break-words" data-testid="participant-matched-to">Matched to {{ p.identity_names.matchedTo }}</span>
-                    }
-                    @if (p.identity_names.joinedAs) {
-                      <span class="text-xs text-gray-500 break-words" data-testid="participant-joined-as">Joined Zoom as {{ p.identity_names.joinedAs }}</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-sm text-gray-900 truncate">{{ p.first_name }} {{ p.last_name }}</span>
+                    @if (p.host) {
+                      <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" data-testid="participant-organizer-tag">Organizer</span>
                     }
                   </div>
                 </div>

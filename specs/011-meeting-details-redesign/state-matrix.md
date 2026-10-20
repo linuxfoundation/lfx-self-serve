@@ -222,4 +222,4 @@ Not decided here, and each blocks the issue named:
 - ~~`show_meeting_attendees` is enforced nowhere and V1 only toasts "Coming Soon"~~ — decided in E3-04: the BFF returns `[]` to a registrant of an unshared meeting, and V2 gives that registrant no people section rather than a placeholder
 - Materials "Primary / Supporting" is really file vs link — E3-02
 - RSVP alongside Join during the window (V1 has no RSVP there) — E2-01
-- ~~How much participant identity a public viewer sees (N-02 tiers)~~ — decided in N-02: the public roster names every identified attendee (and invitees who did not attend) without the tier, and counts the `unverified` ones; the admin list shows every tier and how many attendees are unverified
+- How much participant identity a public viewer sees (N-02 tiers) — N-02
