@@ -186,6 +186,50 @@ export class ImportMembersDialogComponent {
     this.dialogRef.close(result);
   }
 
+  private initPendingInvites(invites: CommitteeInvite[]): Map<string, string> {
+    const byEmail = new Map<string, string>();
+    for (const invite of invites) {
+      const email = (invite.invitee_email ?? '').trim().toLowerCase();
+      if (email && invite.uid && (invite.status ?? '').toLowerCase() === 'pending') {
+        byEmail.set(email, invite.uid);
+      }
+    }
+    return byEmail;
+  }
+
+  private initRowViews(): Signal<MemberImportRowView[]> {
+    return computed(() =>
+      this.rows().map((row) => {
+        const { cells } = row;
+        const display = MEMBER_IMPORT_STATUS_DISPLAY[row.status];
+        return {
+          row,
+          name: [cells.first_name, cells.last_name].filter(Boolean).join(' '),
+          organization: cells.organization_name ?? '',
+          governance: [cells.role, cells.voting_status].filter(Boolean).join(' · '),
+          statusLabel: display.label,
+          statusSeverity: display.severity,
+          details: this.fieldGuide.flatMap(({ column }) => (cells[column] ? [{ column, value: cells[column] }] : [])),
+        };
+      })
+    );
+  }
+
+  private initStatusMessage(): Signal<string> {
+    return computed(() => {
+      switch (this.phase()) {
+        case 'preview':
+          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.`;
+        case 'importing':
+          return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
+        case 'results':
+          return `${this.addedCount()} added, ${this.skippedCount()} skipped, ${this.failedCount()} failed.`;
+        default:
+          return this.fileErrors().length > 0 ? 'The file could not be imported. See the errors below.' : '';
+      }
+    });
+  }
+
   private applyFileText(text: string): void {
     const parsed = parseMemberImportCsv(text, this.rules);
     if (parsed.errors.length > 0) {
@@ -229,6 +273,8 @@ export class ImportMembersDialogComponent {
               if (err.status === 409) {
                 return of({ rowNumber: row.rowNumber, status: 'skipped' as const, conflict: true, reason: 'Already a member of this group.' });
               }
+              // Log only the status: raw errors may contain imported personal data.
+              console.error('CSV member import failed', { status: err.status });
               const reason = this.failureReason(err);
               if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && !stopReason) {
                 stopReason = reason;
@@ -268,7 +314,10 @@ export class ImportMembersDialogComponent {
         this.pendingInviteUidByEmail.delete(row.normalizedEmail);
         return undefined;
       }),
-      catchError(() => of('Added, but their pending invitation could not be revoked. Revoke it from the Pending tab.'))
+      catchError((err: HttpErrorResponse) => {
+        console.error('CSV member import invitation cleanup failed', { status: err.status });
+        return of('Added, but their pending invitation could not be revoked. Revoke it from the Pending tab.');
+      })
     );
   }
 
@@ -281,6 +330,9 @@ export class ImportMembersDialogComponent {
     }
     if (err.status === 404) {
       return 'This group could not be found.';
+    }
+    if (err.status === 429) {
+      return 'Too many requests. Wait a minute, then retry.';
     }
     return extractErrorMessage(err, 'The member could not be added.');
   }
@@ -299,49 +351,5 @@ export class ImportMembersDialogComponent {
       return;
     }
     afterNextRender(() => this.resultSummary()?.nativeElement.focus(), { injector: this.injector });
-  }
-
-  private initPendingInvites(invites: CommitteeInvite[]): Map<string, string> {
-    const byEmail = new Map<string, string>();
-    for (const invite of invites) {
-      const email = (invite.invitee_email ?? '').trim().toLowerCase();
-      if (email && invite.uid && (invite.status ?? '').toLowerCase() === 'pending') {
-        byEmail.set(email, invite.uid);
-      }
-    }
-    return byEmail;
-  }
-
-  private initRowViews(): Signal<MemberImportRowView[]> {
-    return computed(() =>
-      this.rows().map((row) => {
-        const { cells } = row;
-        const display = MEMBER_IMPORT_STATUS_DISPLAY[row.status];
-        return {
-          row,
-          name: [cells.first_name, cells.last_name].filter(Boolean).join(' '),
-          organization: cells.organization_name ?? '',
-          governance: [cells.role, cells.voting_status].filter(Boolean).join(' · '),
-          statusLabel: display.label,
-          statusSeverity: display.severity,
-          details: this.fieldGuide.flatMap(({ column }) => (cells[column] ? [{ column, value: cells[column] }] : [])),
-        };
-      })
-    );
-  }
-
-  private initStatusMessage(): Signal<string> {
-    return computed(() => {
-      switch (this.phase()) {
-        case 'preview':
-          return `${this.readyCount()} ready, ${this.invalidCount()} invalid, ${this.skippedCount()} skipped.`;
-        case 'importing':
-          return `Adding members: ${this.batchSettled()} of ${this.batchTotal()} done.`;
-        case 'results':
-          return `${this.addedCount()} added, ${this.skippedCount()} skipped, ${this.failedCount()} failed.`;
-        default:
-          return this.fileErrors().length > 0 ? 'The file could not be imported. See the errors below.' : '';
-      }
-    });
   }
 }

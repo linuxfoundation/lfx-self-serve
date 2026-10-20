@@ -2,13 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { APPOINTED_BY_OPTIONS, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from '../constants/committees.constants';
-import { MEMBER_IMPORT_COLUMNS, MEMBER_IMPORT_FIELDS, MEMBER_IMPORT_MAX_RECORDS } from '../constants/member-import.constants';
+import {
+  MEMBER_IMPORT_COLUMNS,
+  MEMBER_IMPORT_FIELDS,
+  MEMBER_IMPORT_HTTP_URL_PATTERN,
+  MEMBER_IMPORT_MAX_RECORDS,
+  MEMBER_IMPORT_VOTING_COLUMNS,
+  MEMBER_IMPORT_VOTING_STATUS_LABELS,
+} from '../constants/member-import.constants';
 import { EMAIL_REGEX } from '../constants/regex.constants';
 import { LINKEDIN_PROFILE_PATTERN } from '../constants/validation.constants';
 import type { CreateCommitteeMemberRequest } from '../interfaces/member.interface';
 import type {
   MemberImportCells,
   MemberImportColumn,
+  MemberImportFieldDefinition,
   MemberImportFieldGuide,
   MemberImportGroupRules,
   MemberImportParseResult,
@@ -23,7 +31,6 @@ const ROLE_BY_NAME = new Map(MEMBER_ROLES.map(({ value }) => [value as string, v
 const VOTING_STATUS_BY_NAME = new Map(MEMBER_FORM_VOTING_STATUSES.map(({ value }) => [value as string, value]));
 const APPOINTED_BY_BY_NAME = new Map(APPOINTED_BY_OPTIONS.map(({ value }) => [value as string, value]));
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const VOTING_COLUMNS: MemberImportColumn[] = ['voting_status', 'voting_start_date', 'voting_end_date'];
 
 /** Template guidance for the columns that apply to a group, with group-specific requiredness. */
 export function getMemberImportFieldGuide(rules: MemberImportGroupRules): MemberImportFieldGuide[] {
@@ -141,11 +148,11 @@ export function validateMemberImportRow(cells: MemberImportCells, rules: MemberI
     if (!votingStatus) {
       add('voting_status', 'Voting status is required for voting groups.');
     } else if (!VOTING_STATUS_BY_NAME.has(votingStatus)) {
-      add('voting_status', `Voting status "${votingStatus}" is not allowed. Use Voting Rep, Alternate Voting Rep, Observer or Emeritus.`);
+      add('voting_status', `Voting status "${votingStatus}" is not allowed. Use ${MEMBER_IMPORT_VOTING_STATUS_LABELS}.`);
     }
     validateDateRange(cells, 'voting_start_date', 'voting_end_date', !!votingStatus, 'voting status', add);
   } else {
-    for (const column of VOTING_COLUMNS) {
+    for (const column of MEMBER_IMPORT_VOTING_COLUMNS) {
       if (value(column)) {
         add(column, 'This group does not use voting. Clear the voting columns.');
       }
@@ -243,7 +250,7 @@ export function prepareMemberImportRows(
   });
 }
 
-function isColumnRequired(requiredWhen: 'always' | 'organization' | 'voting' | 'never', rules: MemberImportGroupRules): boolean {
+function isColumnRequired(requiredWhen: MemberImportFieldDefinition['requiredWhen'], rules: MemberImportGroupRules): boolean {
   switch (requiredWhen) {
     case 'always':
       return true;
@@ -433,7 +440,7 @@ function isRealDate(value: string): boolean {
 
 function isAbsoluteHttpUrl(value: string, protocols: string[]): boolean {
   // Match the upstream HTTP(S) spelling before WHATWG parsing can repair missing slashes or backslashes.
-  if (!/^https?:\/\/[^\s/$.?#][^\s]*$/.test(value) || value.includes('\\')) {
+  if (!MEMBER_IMPORT_HTTP_URL_PATTERN.test(value) || value.includes('\\')) {
     return false;
   }
   try {

@@ -107,14 +107,19 @@ describe('ImportMembersDialogComponent', () => {
     await fixture.whenStable();
   }
 
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+
   afterEach(() => {
     TestBed.resetTestingModule();
+    vi.restoreAllMocks();
   });
 
   describe('preview', () => {
     beforeEach(async () => setup(OPEN_GROUP, [{ email: 'Existing@Example.com' }]));
 
-    it('shows the open-group guidance without voting columns and downloads only a header row', async () => {
+    it('shows the open-group guidance without voting columns', async () => {
       expect(query('import-members-guide-email')?.textContent).toContain('Required');
       expect(query('import-members-guide-first_name')?.textContent).toContain('Optional');
       expect(query('import-members-guide-voting_status')).toBeNull();
@@ -316,19 +321,32 @@ describe('ImportMembersDialogComponent', () => {
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 2, conflicts: 1 });
     });
 
-    it('stops sending after an authorization failure and keeps unsent rows retryable', async () => {
+    it.each([
+      [401, 'Your session has expired. Sign in again, then retry.'],
+      [403, 'You no longer have permission to manage this group.'],
+      [404, 'This group could not be found.'],
+      [429, 'Too many requests. Wait a minute, then retry.'],
+    ])('stops sending after HTTP %i and keeps unsent rows retryable', async (status, reason) => {
       await upload(`email\n${emails(7)}`);
       component.startImport();
-      fail(0, 403);
+      fail(0, status);
       for (let i = 1; i < 5; i++) succeed(i);
       await render();
 
       expect(pending).toHaveLength(5);
-      expect(component.stopReason()).toBe('You no longer have permission to manage this group.');
+      expect(component.stopReason()).toBe(reason);
+      expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import failed', { status });
       expect(component.rows().map((row) => row.status)).toEqual(['failed', 'added', 'added', 'added', 'added', 'failed', 'failed']);
       expect(component.rows()[6].reason).toContain('Not sent');
       expect(query('import-members-stop-reason')).not.toBeNull();
       expect(component.canRetry()).toBe(true);
+
+      component.retryFailed();
+      expect(pending.slice(5).map((call) => call.body.email)).toEqual(['person0@example.com', 'person5@example.com', 'person6@example.com']);
+      for (let i = 5; i < 8; i++) succeed(i);
+      await render();
+      expect(component.addedCount()).toBe(7);
+      expect(component.canRetry()).toBe(false);
     });
   });
 
@@ -382,6 +400,7 @@ describe('ImportMembersDialogComponent', () => {
 
       expect(component.rows().map((row) => row.status)).toEqual(['added', 'added']);
       expect(component.rows()[0].cleanupWarning).toContain('pending invitation could not be revoked');
+      expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import invitation cleanup failed', { status: 500 });
       expect(query('import-members-cleanup-warning')).not.toBeNull();
       expect(component.canRetry()).toBe(false);
       expect(committeeService.createCommitteeInvite).not.toHaveBeenCalled();

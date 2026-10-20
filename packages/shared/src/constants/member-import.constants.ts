@@ -3,6 +3,7 @@
 
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { MemberImportFieldDefinition, MemberImportRowStatus } from '../interfaces/member-import.interface';
+import { MEMBER_FORM_VOTING_STATUSES } from './committees.constants';
 
 /** Largest member import CSV accepted, checked before the file is read. */
 export const MEMBER_IMPORT_MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -11,6 +12,12 @@ export const MEMBER_IMPORT_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MEMBER_IMPORT_MAX_RECORDS = 500;
 
 export const MEMBER_IMPORT_TEMPLATE_FILENAME = 'member-import-template.csv';
+
+/** Match the upstream member URL spelling before WHATWG parsing can repair malformed URLs. */
+export const MEMBER_IMPORT_HTTP_URL_PATTERN = /^https?:\/\/[^\s/$.?#][^\s]*$/;
+
+/** Display the same voting choices that member validation accepts. */
+export const MEMBER_IMPORT_VOTING_STATUS_LABELS = MEMBER_FORM_VOTING_STATUSES.map(({ label }) => label).join(', ');
 
 /** Every header the member import CSV accepts, in template order. Anything else is rejected. */
 export const MEMBER_IMPORT_COLUMNS = [
@@ -46,7 +53,7 @@ export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
   { column: 'role', requiredWhen: 'voting', votingOnly: false, description: 'One of the group roles, e.g. Chair, Vice Chair, None.' },
   { column: 'role_start_date', requiredWhen: 'never', votingOnly: false, description: 'YYYY-MM-DD. Needs a role.' },
   { column: 'role_end_date', requiredWhen: 'never', votingOnly: false, description: 'YYYY-MM-DD, not before the start date. Needs a role.' },
-  { column: 'voting_status', requiredWhen: 'voting', votingOnly: true, description: 'Voting Rep, Alternate Voting Rep, Observer or Emeritus.' },
+  { column: 'voting_status', requiredWhen: 'voting', votingOnly: true, description: `${MEMBER_IMPORT_VOTING_STATUS_LABELS}.` },
   { column: 'voting_start_date', requiredWhen: 'never', votingOnly: true, description: 'YYYY-MM-DD. Needs a voting status.' },
   { column: 'voting_end_date', requiredWhen: 'never', votingOnly: true, description: 'YYYY-MM-DD, not before the start date. Needs a voting status.' },
   {
@@ -56,6 +63,9 @@ export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
     description: 'How the member was appointed, e.g. Community. Leave blank for the default.',
   },
 ];
+
+/** Derive voting-only validation from the same metadata used by the template. */
+export const MEMBER_IMPORT_VOTING_COLUMNS = MEMBER_IMPORT_FIELDS.filter(({ votingOnly }) => votingOnly).map(({ column }) => column);
 
 /** Tag label and severity for each import row status. */
 export const MEMBER_IMPORT_STATUS_DISPLAY: Readonly<Record<MemberImportRowStatus, { label: string; severity: TagSeverity }>> = {
@@ -67,5 +77,5 @@ export const MEMBER_IMPORT_STATUS_DISPLAY: Readonly<Record<MemberImportRowStatus
   failed: { label: 'Failed', severity: 'danger' },
 };
 
-/** HTTP statuses after which an import sends no further rows: the caller lost access or the group is gone. */
-export const MEMBER_IMPORT_FATAL_HTTP_STATUSES: ReadonlySet<number> = new Set([401, 403, 404]);
+/** HTTP statuses after which an import sends no further rows: lost access, a missing group, or rate limiting. */
+export const MEMBER_IMPORT_FATAL_HTTP_STATUSES: ReadonlySet<number> = new Set([401, 403, 404, 429]);

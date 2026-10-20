@@ -5,6 +5,8 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { MEMBER_FORM_VOTING_STATUSES } from '../constants/committees.constants';
+import { MEMBER_IMPORT_VOTING_COLUMNS } from '../constants/member-import.constants';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { MemberImportCells, MemberImportGroupRules } from '../interfaces/member-import.interface';
 import {
@@ -46,6 +48,19 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
         .filter((field) => field.required)
         .map((field) => field.column)
     ).toEqual(['email', 'organization_name', 'organization_website', 'role', 'voting_status']);
+  });
+
+  it('derives voting-only validation and guidance from the configured choices', () => {
+    const labels = MEMBER_FORM_VOTING_STATUSES.map(({ label }) => label).join(', ');
+    const guide = getMemberImportFieldGuide(VOTING).find(({ column }) => column === 'voting_status');
+    expect(guide?.description).toBe(`${labels}.`);
+    expect(messages({ email: 'ada@example.com', voting_status: 'unsupported' }, VOTING)).toContain(
+      `voting_status: Voting status "unsupported" is not allowed. Use ${labels}.`
+    );
+    for (const column of MEMBER_IMPORT_VOTING_COLUMNS) {
+      expect(getMemberImportTemplateHeaders(OPEN)).not.toContain(column);
+      expect(messages({ email: 'ada@example.com', [column]: 'unsupported' })).toContain(`${column}: This group does not use voting. Clear the voting columns.`);
+    }
   });
 
   it('never offers username, status, permission or id columns', () => {
@@ -234,7 +249,7 @@ describe('validateMemberImportRow', () => {
     const base = { email: 'ada@example.com', organization_name: 'Acme Motors', organization_website: 'https://acme-motors.example' };
     expect(messages(base, VOTING)).toEqual(['role: Role is required for voting groups.', 'voting_status: Voting status is required for voting groups.']);
     expect(messages({ ...base, role: 'None', voting_status: 'None' }, VOTING)).toEqual([
-      'voting_status: Voting status "None" is not allowed. Use Voting Rep, Alternate Voting Rep, Observer or Emeritus.',
+      `voting_status: Voting status "None" is not allowed. Use ${MEMBER_FORM_VOTING_STATUSES.map(({ label }) => label).join(', ')}.`,
     ]);
     expect(messages({ ...base, role: 'None', voting_status: 'Observer', voting_start_date: '2026-01-01' }, VOTING)).toEqual([]);
   });

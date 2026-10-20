@@ -66,7 +66,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 
 - People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
 - After the import, each row shows **Added**, **Skipped**, or **Failed** with the reason. Select **Retry _N_ failed** to send only the failed rows again — added and skipped rows are never resubmitted.
-- If your session expires or you lose permission to manage the group, the import stops and rows that were not sent are marked **Failed** so you can retry them later.
+- If your session expires, you lose permission to manage the group, or too many requests are sent, the import stops and rows that were not sent are marked **Failed** so you can retry them later. For too many requests, wait a minute before retrying.
 - If an added person had a pending invitation, it is revoked. If that cleanup fails, the person is still added and the row says so; revoke the invitation from the **Pending** tab.
 - Select **Close** to return to the roster, which refreshes to show the new members. Newly added members can take a few moments to appear.
 
