@@ -141,13 +141,13 @@ parity · `fix` V2 deliberately repairs a V1 dead end · `D-n` the row a decisio
 
 ### Ended
 
-| Viewer                | D      | V1                                                                                                         | V2 (#2909)  | Status                                       |
-| --------------------- | ------ | ---------------------------------------------------------------------------------------------------------- | ----------- | -------------------------------------------- |
-| organizer             | any    | Meeting Tools (organizer always has `full` per FGA)                                                        | `tools`     | =                                            |
-| outsider / registrant | `full` | Meeting Tools — recording / AI summary (Approved·Pending) / transcript, each with an unavailable state     | `tools`     | =                                            |
-| outsider / registrant | `none` | no column; amber "This is a private meeting" lock panel; agenda + materials hidden                         | `no-access` | =                                            |
-| visitor               | `full` | **no column** — branch D needs `authenticated()`; the artifacts come from the public routes (E4-04, #3528) | `tools`     | D-4 — public artifacts, sign-in for the rest |
-| visitor               | `none` | no column; "Sign in to view meeting details" card; agenda + materials hidden                               | `no-access` | =                                            |
+| Viewer                | D      | V1                                                                                                     | V2 (#2909)  | Status                            |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ----------- | --------------------------------- |
+| organizer             | any    | Meeting Tools (organizer always has `full` per FGA)                                                    | `tools`     | =                                 |
+| outsider / registrant | `full` | Meeting Tools — recording / AI summary (Approved·Pending) / transcript, each with an unavailable state | `tools`     | =                                 |
+| outsider / registrant | `none` | no column; amber "This is a private meeting" lock panel; agenda + materials hidden                     | `no-access` | =                                 |
+| visitor               | `full` | **no column** — branch D needs `authenticated()`, and every artifact route is `/api/*` (auth required) | `tools`     | D-4 — sign-in variant until E4-04 |
+| visitor               | `none` | no column; "Sign in to view meeting details" card; agenda + materials hidden                           | `no-access` | =                                 |
 
 ## Decisions (signed off 2026-09-24)
 
@@ -170,9 +170,8 @@ registrants. All four recommendations were accepted; D-1 to D-3 are applied in P
 - **D-4 — An anonymous viewer of an ended public-open meeting keeps `tools`.** `full_access` is
   true, but every artifact route requires auth, so E4-01 renders the tools slot's sign-in variant.
   E4-04 adds the public artifact routes (`/public/api/meetings/past/:id/{recording,transcript,transcript/content,summary}`),
-  which give such a viewer each artifact whose own access level is `public`; the page reads them
-  through those routes (#3528), offers sign-in per artifact the route refuses, and keeps the sign-in
-  variant only when it refuses all three. No resolver change.
+  which give such a viewer each artifact whose own access level is `public`; the page reads them in
+  a follow-up to E4-04. No resolver change.
 
 The resolver's live and before branches are therefore:
 

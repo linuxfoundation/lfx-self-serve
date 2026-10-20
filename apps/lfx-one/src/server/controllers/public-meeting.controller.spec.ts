@@ -1859,8 +1859,7 @@ describe('PublicMeetingController public past-meeting artifacts (E4-04)', () => 
     await controller.getPublicPastMeetingRecording(req, res, next);
 
     expect(meetingSvc.getPastMeetingById).toHaveBeenCalledWith(req, MEETING_ID, { bearerToken: 'm2m-token' });
-    // By the composite id, whichever id the route was called with (the V2 page uses the composite one).
-    expect(meetingSvc.getPastMeetingArtifactAccessLevels).toHaveBeenCalledWith(req, RESOURCE_ID, { bearerToken: 'm2m-token' });
+    expect(meetingSvc.getPastMeetingArtifactAccessLevels).toHaveBeenCalledWith(req, MEETING_ID, { bearerToken: 'm2m-token' });
     expect(meetingSvc.getPastMeetingRecording).toHaveBeenCalledWith(req, RESOURCE_ID, { bearerToken: 'm2m-token' });
     expect(res.json.mock.calls[0][0]).toMatchObject({ uid: 'rec-1', recording_files: [], sessions: [] });
     expect(JSON.stringify(res.json.mock.calls[0][0])).not.toMatch(/host@example.com|creator@example.com/);

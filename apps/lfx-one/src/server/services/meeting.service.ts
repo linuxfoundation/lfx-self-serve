@@ -1532,14 +1532,11 @@ export class MeetingService {
    * A past meeting's per-artifact access levels (E4-04), from its `v1_past_meeting` query-service
    * document. The ITX past-meeting read does not carry them (only `artifact_visibility`, which is the
    * recording's level), while the index document holds all three, each as upstream FGA enforces it.
-   * Looked up by the composite `meeting_and_occurrence_id` (`getPastMeetingResourceId`), which every
-   * past-meeting record carries whichever id the page was opened by (the V2 page opens a past meeting
-   * by its composite id, not its uuid). Null when no document matches, which the caller must treat as
-   * not public.
+   * Null when no document with this id is found, which the caller must treat as not public.
    */
   public async getPastMeetingArtifactAccessLevels(
     req: Request,
-    resourceId: string,
+    pastMeetingUid: string,
     options?: ApiRequestOptions
   ): Promise<Pick<PastMeeting, 'recording_access' | 'transcript_access' | 'ai_summary_access'> | null> {
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(
@@ -1547,17 +1544,17 @@ export class MeetingService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      { type: 'v1_past_meeting', filters: [`meeting_and_occurrence_id:${resourceId}`] },
+      { type: 'v1_past_meeting', tags: `past_meeting_id:${pastMeetingUid}` },
       undefined,
       undefined,
       options
     );
 
-    // Only the document of this occurrence: its levels decide what an anonymous caller may read, so a
-    // match that returned any other document fails closed rather than lending its levels.
-    const record = resources?.find((resource) => resource.data?.meeting_and_occurrence_id === resourceId)?.data;
+    // Only the document of this past meeting: its levels decide what an anonymous caller may read, so
+    // a tag match that returned any other document fails closed rather than lending its levels.
+    const record = resources?.find((resource) => resource.data?.id === pastMeetingUid)?.data;
     if (!record) {
-      logger.debug(req, 'get_past_meeting_artifact_access_levels', 'No past meeting document found', { past_meeting_id: resourceId });
+      logger.debug(req, 'get_past_meeting_artifact_access_levels', 'No past meeting document found', { past_meeting_id: pastMeetingUid });
       return null;
     }
     return { recording_access: record.recording_access, transcript_access: record.transcript_access, ai_summary_access: record.ai_summary_access };

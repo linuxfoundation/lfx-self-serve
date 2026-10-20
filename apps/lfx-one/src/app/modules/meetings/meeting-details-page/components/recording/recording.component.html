@@ -17,13 +17,7 @@
     @case ('sign-in') {
       <p class="m-0 text-[14px] text-[var(--md-text-body)]" data-testid="tools-sign-in">
         <!-- data-dd-privacy="mask": returnTo can carry the meeting password; keep it out of Session Replay. -->
-        <a
-          class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-          [href]="signInHref()"
-          data-dd-privacy="mask"
-          data-testid="tools-sign-in-link"
-          >Sign in</a
-        >
+        <a class="font-semibold text-[var(--md-accent-ink)] underline" [href]="signInHref()" data-dd-privacy="mask" data-testid="tools-sign-in-link">Sign in</a>
         to watch the recording and read the transcript.
       </p>
     }
@@ -68,20 +62,6 @@
                 [styleClass]="primaryButtonClass"
                 data-testid="tools-recording-link" />
             }
-            @case ('sign-in') {
-              <!-- #3528: an anonymous viewer whose public route refused this artifact; returnTo is masked as above. The whole
-                   phrase is the link, so each of up to three sign-in links has its own name in a screen reader's links list. -->
-              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="sign-in">
-                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i
-                ><a
-                  class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [href]="signInHref()"
-                  data-dd-privacy="mask"
-                  data-testid="tools-recording-sign-in-link"
-                  >Sign in to watch the recording</a
-                >
-              </span>
-            }
             @case ('no-access') {
               <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="no-access">
                 <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the recording
@@ -102,18 +82,6 @@
                 ariaHaspopup="dialog"
                 (onClick)="openTranscript()"
                 data-testid="tools-transcript-btn" />
-            }
-            @case ('sign-in') {
-              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="sign-in">
-                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i
-                ><a
-                  class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [href]="signInHref()"
-                  data-dd-privacy="mask"
-                  data-testid="tools-transcript-sign-in-link"
-                  >Sign in to read the transcript</a
-                >
-              </span>
             }
             @case ('no-access') {
               <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="no-access">
@@ -160,18 +128,6 @@
             @case ('awaiting-review') {
               <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="awaiting-review">
                 The AI summary is awaiting the organizer's review.
-              </p>
-            }
-            @case ('sign-in') {
-              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="sign-in">
-                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i
-                ><a
-                  class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [href]="signInHref()"
-                  data-dd-privacy="mask"
-                  data-testid="tools-summary-sign-in-link"
-                  >Sign in to read the AI summary</a
-                >
               </p>
             }
             @case ('no-access') {

@@ -314,22 +314,14 @@ describe('MeetingService.getPastMeetingArtifactAccessLevels (E4-04)', () => {
     service = new MeetingService();
   });
 
-  it("reads the three levels from the occurrence's query-service document, by its composite id, with the given token", async () => {
+  it("reads the three levels from the past meeting's query-service document with the given token", async () => {
     proxyRequest.mockResolvedValueOnce({
       resources: [
-        {
-          data: {
-            id: 'pm-1',
-            meeting_and_occurrence_id: 'meeting-1-1700000000000',
-            recording_access: 'public',
-            transcript_access: 'meeting_hosts',
-            ai_summary_access: 'meeting_participants',
-          },
-        },
+        { data: { id: 'pm-1', recording_access: 'public', transcript_access: 'meeting_hosts', ai_summary_access: 'meeting_participants', title: 'TSC' } },
       ],
     });
 
-    await expect(service.getPastMeetingArtifactAccessLevels(req, 'meeting-1-1700000000000', { bearerToken: 'm2m-token' })).resolves.toEqual({
+    await expect(service.getPastMeetingArtifactAccessLevels(req, 'pm-1', { bearerToken: 'm2m-token' })).resolves.toEqual({
       recording_access: 'public',
       transcript_access: 'meeting_hosts',
       ai_summary_access: 'meeting_participants',
@@ -339,7 +331,7 @@ describe('MeetingService.getPastMeetingArtifactAccessLevels (E4-04)', () => {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      { type: 'v1_past_meeting', filters: ['meeting_and_occurrence_id:meeting-1-1700000000000'] },
+      { type: 'v1_past_meeting', tags: 'past_meeting_id:pm-1' },
       undefined,
       undefined,
       { bearerToken: 'm2m-token' }
@@ -348,19 +340,15 @@ describe('MeetingService.getPastMeetingArtifactAccessLevels (E4-04)', () => {
 
   it('is null when there is no document', async () => {
     proxyRequest.mockResolvedValueOnce({ resources: [] });
-    await expect(service.getPastMeetingArtifactAccessLevels(req, 'meeting-1-1700000000000')).resolves.toBeNull();
+    await expect(service.getPastMeetingArtifactAccessLevels(req, 'pm-1')).resolves.toBeNull();
   });
 
-  // Fails closed: another occurrence's levels never decide this one's.
-  it('ignores a document for any other occurrence', async () => {
+  // Fails closed: another document's levels never decide this past meeting's.
+  it('ignores a document for any other past meeting', async () => {
     proxyRequest.mockResolvedValueOnce({
-      resources: [
-        {
-          data: { meeting_and_occurrence_id: 'meeting-1-1600000000000', recording_access: 'public', transcript_access: 'public', ai_summary_access: 'public' },
-        },
-      ],
+      resources: [{ data: { id: 'pm-2', recording_access: 'public', transcript_access: 'public', ai_summary_access: 'public' } }],
     });
-    await expect(service.getPastMeetingArtifactAccessLevels(req, 'meeting-1-1700000000000')).resolves.toBeNull();
+    await expect(service.getPastMeetingArtifactAccessLevels(req, 'pm-1')).resolves.toBeNull();
   });
 });
 

@@ -290,11 +290,10 @@ export interface MeetingRosterState {
  * One past-meeting artifact as the V2 Recording & Transcript section knows it (E4-01): `available`
  * with somewhere to open it, `none` when the meeting has no such artifact, `no-access` when the
  * viewer may not open it, `error` when it could not be read, or `session-expired` when the read
- * answered 401 (the section then asks the viewer to sign in). `sign-in`: an anonymous viewer whose
- * public route refused this one artifact (#3528), which signing in may open.
+ * answered 401 (the section then asks the viewer to sign in).
  */
 export interface MeetingArtifactState {
-  status: 'available' | 'none' | 'no-access' | 'error' | 'session-expired' | 'sign-in';
+  status: 'available' | 'none' | 'no-access' | 'error' | 'session-expired';
   /** The recording's share URL (`getLargestSessionShareUrl`); unset for the transcript, which opens in a modal. */
   url?: string;
   /** The recording's length as shown (`formatRecordingDuration`, E4-02); unset when it could not be measured. */
@@ -304,10 +303,9 @@ export interface MeetingArtifactState {
 }
 
 /**
- * The V2 Recording & Transcript section's load (E4-01). `sign-in`: an anonymous viewer the public
- * artifact routes (E4-04) give nothing to (no artifact access, or no artifact of this meeting is
- * public). `pending`: an ended meeting opened by its series id, which has no occurrence record to
- * read artifacts from yet.
+ * The V2 Recording & Transcript section's load (E4-01). `sign-in`: an anonymous viewer, until the
+ * public artifact routes (E4-04). `pending`: an ended meeting opened by its series id, which has no
+ * occurrence record to read artifacts from yet.
  */
 export interface MeetingRecordingSectionState {
   status: 'loading' | 'ready' | 'sign-in' | 'pending';

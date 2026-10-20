@@ -39,13 +39,10 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * opens V1's transcript modal, unchanged. Each keeps V1's three states apart: available, none (the
  * meeting has no such artifact) and no access (the viewer may not open it), plus a read error.
  *
- * A signed-in viewer reads the artifacts on `/api/past-meetings` by the occurrence's composite id. An
- * anonymous viewer with artifact access reads them on the public routes (E4-04, #3528) by the id the
- * page loaded the past meeting with, which the BFF resolves: each artifact the route refuses (401, not public) offers sign-in on its own, and
- * when it refuses all three the section asks the viewer to sign in, as it does for one without access.
- * An ended meeting opened by its series id, which has no occurrence record yet, says its recording
- * appears once it is ready. The recording's length (E4-02) shows on the still when the BFF could
- * measure it.
+ * The artifact routes need a session and an occurrence record, so an anonymous viewer is asked to
+ * sign in (until the public artifact routes, E4-04), and an ended meeting opened by its series id,
+ * which has no occurrence record yet, says its recording appears once it is ready. The recording's
+ * length (E4-02) shows on the still when the BFF could measure it.
  *
  * The AI summary (E4-03) sits under the actions, rendered from its markdown (no new parser) and
  * collapsed past the agenda's height, with Read full summary opening V1's summary modal. An
@@ -122,9 +119,7 @@ export class MeetingRecordingComponent {
       modal: true,
       closable: true,
       dismissableMask: true,
-      data: this.userService.authenticated()
-        ? { pastMeetingUid: getPastMeetingResourceId(meeting), meetingTitle: meeting.title }
-        : { publicPastMeetingId: meeting.id, meetingTitle: meeting.title },
+      data: { pastMeetingUid: getPastMeetingResourceId(meeting), meetingTitle: meeting.title },
     });
     restoreFocusOnDialogClose(ref, trigger);
   }
@@ -136,23 +131,15 @@ export class MeetingRecordingComponent {
         if (!meeting || !this.state.matchesRoute()) {
           return null;
         }
-        const anonymous = !this.userService.authenticated();
-        // An anonymous viewer reads only through the public routes, and only with artifact access.
-        if (anonymous && !this.state.pastMeetingFullAccess()) {
+        if (!this.userService.authenticated()) {
           return { kind: 'sign-in' as const };
         }
         if (!this.state.loadedViaPastMeetingId()) {
           return { kind: 'pending' as const };
         }
-        // The public routes take the id the page loaded the past meeting with (`/public/api/meetings/past/:id`,
-        // the BFF resolves it); /api/past-meetings takes the composite id.
-        const id = anonymous ? meeting.id : getPastMeetingResourceId(meeting);
-        return { kind: 'fetch' as const, id, anonymous, refresh: this.refreshCount() };
+        return { kind: 'fetch' as const, id: getPastMeetingResourceId(meeting), refresh: this.refreshCount() };
       },
-      {
-        equal: (a, b) =>
-          a?.kind === b?.kind && (a?.kind !== 'fetch' || (b?.kind === 'fetch' && a.id === b.id && a.anonymous === b.anonymous && a.refresh === b.refresh)),
-      }
+      { equal: (a, b) => a?.kind === b?.kind && (a?.kind !== 'fetch' || (b?.kind === 'fetch' && a.id === b.id && a.refresh === b.refresh)) }
     );
     const loading: MeetingRecordingSectionState = {
       status: 'loading',
@@ -170,18 +157,7 @@ export class MeetingRecordingComponent {
           if (req.kind !== 'fetch') {
             return of({ status: req.kind, recording: { status: 'none' }, transcript: { status: 'none' }, summary: { status: 'none' } });
           }
-          const reads = req.anonymous
-            ? {
-                recording: this.meetingService.getPublicPastMeetingRecording(req.id),
-                transcript: this.meetingService.getPublicPastMeetingTranscript(req.id),
-                summary: this.meetingService.getPublicPastMeetingSummary(req.id),
-              }
-            : {
-                recording: this.meetingService.getPastMeetingRecording(req.id),
-                transcript: this.meetingService.getPastMeetingTranscript(req.id),
-                summary: this.meetingService.getPastMeetingSummary(req.id),
-              };
-          const recording$ = reads.recording.pipe(
+          const recording$ = this.meetingService.getPastMeetingRecording(req.id).pipe(
             map((recording): MeetingArtifactState => {
               const url = toSafeExternalHref(getLargestSessionShareUrl(recording));
               // The BFF measures the linked session (E4-02); no length is shown rather than a guess.
@@ -189,14 +165,14 @@ export class MeetingRecordingComponent {
               const durationLabel = formatRecordingDurationSpoken(recording.duration_seconds) ?? undefined;
               return url ? { status: 'available', url, duration, durationLabel } : { status: 'none' };
             }),
-            catchError((error: unknown) => of(this.artifactFailure(error, 'recording', req.anonymous)))
+            catchError((error: unknown) => of(this.artifactFailure(error, 'recording')))
           );
-          const transcript$ = reads.transcript.pipe(
+          const transcript$ = this.meetingService.getPastMeetingTranscript(req.id).pipe(
             map((transcript): MeetingArtifactState => (getPastMeetingTranscriptUrl(transcript) ? { status: 'available' } : { status: 'none' })),
-            catchError((error: unknown) => of(this.artifactFailure(error, 'transcript', req.anonymous)))
+            catchError((error: unknown) => of(this.artifactFailure(error, 'transcript')))
           );
           const organizer = this.state.viewerRole() === 'organizer';
-          const summary$ = reads.summary.pipe(
+          const summary$ = this.meetingService.getPastMeetingSummary(req.id).pipe(
             map((summary): MeetingSummaryArtifactState => {
               const content = getPastMeetingSummaryContent(summary);
               if (!content) {
@@ -206,16 +182,14 @@ export class MeetingRecordingComponent {
               // Approval required and not given: only organizers see the text (isPastMeetingSummaryVisible).
               return approval === 'pending' && !organizer ? { status: 'awaiting-review' } : { status: 'available', content, approval, record: summary };
             }),
-            catchError((error: unknown) => of(this.artifactFailure(error, 'AI summary', req.anonymous)))
+            catchError((error: unknown) => of(this.artifactFailure(error, 'AI summary')))
           );
           return combineLatest([recording$, transcript$, summary$]).pipe(
             map(
               ([recording, transcript, summary]): MeetingRecordingSectionState =>
-                // Signed in, a 401 is an expired session (the routes sit behind the auth middleware), not a
-                // refusal: the way forward is to sign in again, as the materials section does for its past
-                // route. Anonymous, a public route that refuses every artifact leaves nothing to show but sign-in.
-                [recording, transcript, summary].some((artifact) => artifact.status === 'session-expired') ||
-                [recording, transcript, summary].every((artifact) => artifact.status === 'sign-in')
+                // A 401 is an expired session (the routes sit behind the auth middleware), not a refusal:
+                // the way forward is to sign in again, as the materials section does for its past route.
+                [recording, transcript, summary].some((artifact) => artifact.status === 'session-expired')
                   ? { status: 'sign-in', recording: { status: 'none' }, transcript: { status: 'none' }, summary: { status: 'none' } }
                   : { status: 'ready', recording, transcript, summary }
             ),
@@ -228,18 +202,17 @@ export class MeetingRecordingComponent {
   }
 
   /**
-   * 404: the meeting has no such artifact (the BFF answers 404 only for an empty result). 401: for a
-   * signed-in viewer the session expired; for an anonymous one the public route refused this artifact
-   * (not public), which signing in may open. 403: the viewer may not open it. Anything else, an
-   * upstream failure included: an error, with Try again.
+   * 404: the meeting has no such artifact (the BFF answers 404 only for an empty result). 401: the
+   * session expired. 403: the viewer may not open it. Anything else, an upstream failure included:
+   * an error, with Try again.
    */
-  private artifactFailure(error: unknown, artifact: string, anonymous: boolean): MeetingArtifactState {
+  private artifactFailure(error: unknown, artifact: string): MeetingArtifactState {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
     if (status === 404) {
       return { status: 'none' };
     }
     if (status === 401) {
-      return { status: anonymous ? 'sign-in' : 'session-expired' };
+      return { status: 'session-expired' };
     }
     if (status === 403) {
       return { status: 'no-access' };

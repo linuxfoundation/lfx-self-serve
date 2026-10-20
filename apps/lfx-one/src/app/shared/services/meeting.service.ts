@@ -661,32 +661,11 @@ export class MeetingService {
   }
 
   /**
-   * The past meeting's artifacts on the public routes (E4-04, #3528), by the id `getPublicPastMeeting`
-   * loaded it with (the BFF resolves it, composite id included). For a viewer with no session: the BFF gives only an artifact whose own level is `public`,
-   * else a 401. Not cached, unlike the signed-in recording read, since the answer depends on the session.
-   */
-  public getPublicPastMeetingRecording(pastMeetingId: string): Observable<PastMeetingRecording> {
-    return this.http.get<PastMeetingRecording>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/recording`);
-  }
-
-  public getPublicPastMeetingTranscript(pastMeetingId: string): Observable<PastMeetingTranscript> {
-    return this.http.get<PastMeetingTranscript>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/transcript`);
-  }
-
-  public getPublicPastMeetingTranscriptContent(pastMeetingId: string): Observable<PastMeetingTranscriptContent> {
-    return this.http.get<PastMeetingTranscriptContent>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/transcript/content`);
-  }
-
-  /**
    * The past meeting's public roster (E4-04, E4-05): identified participants with § Public roster
    * fields, the unidentified-attendee count and the meeting's attendance counts. Needs a session.
    */
   public getPublicPastMeetingRoster(pastMeetingId: string): Observable<PublicPastMeetingRoster> {
     return this.http.get<PublicPastMeetingRoster>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/participants`);
-  }
-
-  public getPublicPastMeetingSummary(pastMeetingId: string): Observable<PastMeetingSummary> {
-    return this.http.get<PastMeetingSummary>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/summary`);
   }
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {

@@ -48,15 +48,11 @@ describe('MeetingRecordingComponent', () => {
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let loadedViaPastMeetingId: WritableSignal<boolean>;
   let authenticated: WritableSignal<boolean>;
-  let pastMeetingFullAccess: WritableSignal<boolean>;
   let viewerRole: WritableSignal<MeetingViewerRole | null>;
   let meetingService: {
     getPastMeetingRecording: ReturnType<typeof vi.fn>;
     getPastMeetingTranscript: ReturnType<typeof vi.fn>;
     getPastMeetingSummary: ReturnType<typeof vi.fn>;
-    getPublicPastMeetingRecording: ReturnType<typeof vi.fn>;
-    getPublicPastMeetingTranscript: ReturnType<typeof vi.fn>;
-    getPublicPastMeetingSummary: ReturnType<typeof vi.fn>;
   };
   let dialogService: { open: ReturnType<typeof vi.fn> };
 
@@ -68,7 +64,7 @@ describe('MeetingRecordingComponent', () => {
       providers: [
         {
           provide: MeetingDetailsStateService,
-          useValue: { meeting, matchesRoute: signal(true), loadedViaPastMeetingId, pastMeetingFullAccess, viewerRole, signInHref: signal('/login?returnTo=x') },
+          useValue: { meeting, matchesRoute: signal(true), loadedViaPastMeetingId, viewerRole, signInHref: signal('/login?returnTo=x') },
         },
         { provide: MeetingService, useValue: meetingService },
         { provide: UserService, useValue: { authenticated } },
@@ -90,16 +86,12 @@ describe('MeetingRecordingComponent', () => {
     } as unknown as LoadedMeeting);
     loadedViaPastMeetingId = signal(true);
     authenticated = signal(true);
-    pastMeetingFullAccess = signal(true);
     viewerRole = signal<MeetingViewerRole | null>('registrant');
     meetingService = {
       getPastMeetingRecording: vi.fn(),
       getPastMeetingTranscript: vi.fn(),
       // Default: no summary (the BFF answers 404 for an empty result).
       getPastMeetingSummary: vi.fn(() => throwError(() => new HttpErrorResponse({ status: 404 }))),
-      getPublicPastMeetingRecording: vi.fn(),
-      getPublicPastMeetingTranscript: vi.fn(),
-      getPublicPastMeetingSummary: vi.fn(),
     };
     dialogService = { open: vi.fn() };
   });
@@ -336,9 +328,8 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-recording-link')).not.toBeNull();
   });
 
-  it('asks an anonymous viewer without artifact access to sign in, without reading anything', async () => {
+  it('asks an anonymous viewer to sign in, without reading anything', async () => {
     authenticated.set(false);
-    pastMeetingFullAccess.set(false);
     await setup(
       () => of(recording([])),
       () => of(transcript(true))
@@ -347,110 +338,6 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-sign-in-link')?.getAttribute('href')).toBe('/login?returnTo=x');
     expect(query('tools-sign-in-link')?.getAttribute('data-dd-privacy')).toBe('mask');
     expect(meetingService.getPastMeetingRecording).not.toHaveBeenCalled();
-    expect(meetingService.getPublicPastMeetingRecording).not.toHaveBeenCalled();
-  });
-
-  // #3528: an anonymous viewer with artifact access reads through the public routes (E4-04).
-  describe('anonymous viewer with artifact access', () => {
-    const refused = () => throwError(() => new HttpErrorResponse({ status: 401 }));
-
-    beforeEach(() => {
-      authenticated.set(false);
-    });
-
-    it('reads every artifact on the public routes, by the id the page loaded the past meeting with', async () => {
-      meetingService.getPublicPastMeetingRecording.mockReturnValue(of(recording([{ share_url: 'https://zoom.example/large', total_size: 99 }])));
-      meetingService.getPublicPastMeetingTranscript.mockReturnValue(of(transcript(true)));
-      meetingService.getPublicPastMeetingSummary.mockReturnValue(of(summaryRecord()));
-      await setup(
-        () => of(recording([])),
-        () => of(transcript(false))
-      );
-
-      expect(meetingService.getPublicPastMeetingRecording).toHaveBeenCalledWith('meeting-1');
-      expect(meetingService.getPublicPastMeetingTranscript).toHaveBeenCalledWith('meeting-1');
-      expect(meetingService.getPublicPastMeetingSummary).toHaveBeenCalledWith('meeting-1');
-      expect(meetingService.getPastMeetingRecording).not.toHaveBeenCalled();
-      expect(meetingService.getPastMeetingSummary).not.toHaveBeenCalled();
-      expect(query('tools-recording-link')?.querySelector('a')?.getAttribute('href')).toBe('https://zoom.example/large');
-      expect(query('tools-transcript-btn')).not.toBeNull();
-      expect(query('tools-summary-content')?.textContent).toContain('Agreed the roadmap');
-      expect(query('tools-sign-in')).toBeNull();
-    });
-
-    it('offers sign-in for each artifact the public route refuses, and shows the rest', async () => {
-      meetingService.getPublicPastMeetingRecording.mockReturnValue(of(recording([{ share_url: 'https://zoom.example/large', total_size: 99 }])));
-      meetingService.getPublicPastMeetingTranscript.mockImplementation(refused);
-      meetingService.getPublicPastMeetingSummary.mockImplementation(refused);
-      await setup(
-        () => of(recording([])),
-        () => of(transcript(false))
-      );
-
-      expect(query('tools-recording-link')).not.toBeNull();
-      expect(query('tools-transcript-unavailable')?.getAttribute('data-reason')).toBe('sign-in');
-      expect(query('tools-transcript-sign-in-link')?.getAttribute('href')).toBe('/login?returnTo=x');
-      expect(query('tools-transcript-sign-in-link')?.getAttribute('data-dd-privacy')).toBe('mask');
-      // The whole phrase is the link, so each sign-in link has its own accessible name.
-      expect(query('tools-transcript-sign-in-link')?.textContent?.trim()).toBe('Sign in to read the transcript');
-      expect(query('tools-summary-sign-in-link')?.textContent?.trim()).toBe('Sign in to read the AI summary');
-      expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('sign-in');
-      expect(query('tools-summary-sign-in-link')).not.toBeNull();
-      expect(query('tools-error')).toBeNull();
-    });
-
-    it('shows a refused artifact as sign-in and a failed one as an error, with Try again on the public route', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      meetingService.getPublicPastMeetingRecording.mockImplementation(refused);
-      meetingService.getPublicPastMeetingTranscript.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
-      meetingService.getPublicPastMeetingSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
-      await setup(
-        () => of(recording([])),
-        () => of(transcript(false))
-      );
-
-      expect(query('tools-recording-unavailable')?.getAttribute('data-reason')).toBe('sign-in');
-      expect(query('tools-error')?.textContent).toContain("We couldn't load the transcript.");
-
-      meetingService.getPublicPastMeetingTranscript.mockReturnValue(of(transcript(true)));
-      query('tools-retry')?.querySelector('button')?.click();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(meetingService.getPublicPastMeetingTranscript).toHaveBeenCalledTimes(2);
-      expect(query('tools-transcript-btn')).not.toBeNull();
-      expect(query('tools-error')).toBeNull();
-    });
-
-    it('keeps the sign-in variant when the public routes refuse all three', async () => {
-      meetingService.getPublicPastMeetingRecording.mockImplementation(refused);
-      meetingService.getPublicPastMeetingTranscript.mockImplementation(refused);
-      meetingService.getPublicPastMeetingSummary.mockImplementation(refused);
-      await setup(
-        () => of(recording([])),
-        () => of(transcript(false))
-      );
-
-      expect(query('tools-sign-in-link')).not.toBeNull();
-      expect(query('tools-recording-unavailable')).toBeNull();
-    });
-
-    it('opens the transcript on the public route', async () => {
-      meetingService.getPublicPastMeetingRecording.mockImplementation(refused);
-      meetingService.getPublicPastMeetingTranscript.mockReturnValue(of(transcript(true)));
-      meetingService.getPublicPastMeetingSummary.mockImplementation(refused);
-      await setup(
-        () => of(recording([])),
-        () => of(transcript(false))
-      );
-
-      query('tools-transcript-btn')?.querySelector('button')?.click();
-
-      expect(dialogService.open).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ data: { publicPastMeetingId: 'meeting-1', meetingTitle: 'Weekly Sync' } })
-      );
-    });
   });
 
   it('says the artifacts are on their way for an ended meeting opened by its series id', async () => {

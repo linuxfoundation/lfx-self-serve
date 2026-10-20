@@ -87,8 +87,7 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   be kept.
 - **FR-028**: After the meeting ends, the slot MUST be `tools` for organizers and for any viewer with
   `full_access`, and `no-access` otherwise. For an anonymous viewer with `full_access`, `tools` MUST
-  read the artifacts through the public artifact routes (E4-04, #3528), offer sign-in for each one
-  they refuse, and render the sign-in variant when they refuse all three.
+  render a sign-in variant until public artifact routes exist (E4-04).
 - **FR-029**: Inside the join window the slot MUST be Join only, as in V1: no RSVP in the window
   (decided 2026-10-06 in E2-01). Revisit with the RSVP card (E2-05) if late RSVPs become a need.
 
