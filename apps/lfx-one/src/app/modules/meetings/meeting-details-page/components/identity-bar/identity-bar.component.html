@@ -48,9 +48,9 @@
               <!-- Single line, as the prototype; the native title shows the full text when it is cut. -->
               <span
                 class="max-w-[44vw] truncate text-[14.5px] font-bold text-[var(--md-text-heading)]"
-                [attr.title]="meeting.title"
+                [attr.title]="state.meetingTitle()"
                 data-testid="meeting-identity-bar-title"
-                >{{ meeting.title }}</span
+                >{{ state.meetingTitle() }}</span
               >
               <span class="truncate text-[11.5px] text-[var(--md-text-muted)]" [attr.title]="subtitle()" data-testid="meeting-identity-bar-subtitle">{{
                 subtitle()

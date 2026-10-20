@@ -81,6 +81,7 @@ describe('MeetingHeaderComponent', () => {
             timeState,
             meetingStatus,
             selectedOccurrence,
+            meetingTitle: computed(() => selectedOccurrence()?.title || meeting()?.title || ''),
             myRsvpAttr,
             canManageOccurrence,
             loadedViaPastMeetingId,
@@ -421,6 +422,27 @@ describe('MeetingHeaderComponent', () => {
 
       expect(add).not.toHaveBeenCalled();
       expect(showOccurrenceAfterChange).not.toHaveBeenCalled();
+    });
+
+    // V1's `meetingTitle`: an occurrence edit can give the occurrence its own title.
+    it("shows the selected occurrence's own title over the meeting's", () => {
+      manage();
+      selectedOccurrence.set({ ...occurrence, title: 'Acme Sync: release review' });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('h1')?.textContent?.trim()).toBe('Acme Sync: release review');
+    });
+
+    it('keeps the successor it read when the cancel dialog opened, even if the selection moves on meanwhile', () => {
+      nextLiveOccurrenceStartMs.mockReturnValue(1_800_000_000_000);
+      manage();
+      query('meeting-occurrence-cancel-button')?.querySelector('button')?.click();
+
+      // The 30-second clock moves the selection on while the dialog is open.
+      nextLiveOccurrenceStartMs.mockReturnValue(1_900_000_000_000);
+      dialogClose.next({ confirmed: true });
+
+      expect(showOccurrenceAfterChange).toHaveBeenCalledWith(1_800_000_000_000);
     });
 
     it("moves to the cancelled occurrence's successor after a confirmed cancel", () => {
