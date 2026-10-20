@@ -13,9 +13,9 @@ until this spike is reopened.
 
 Reasoning:
 
-1. **Three independent upstream gaps.** Each needs a contract change in a service this repo doesn't
-   own, and the feature needs all three. That is roughly L + M + M of upstream work for one
-   sidebar line.
+1. **Three independent upstream gaps, plus an unowned consent store.** Each needs a contract change
+   in a service this repo doesn't own, and the feature needs all of them. That is roughly L + M + M,
+   plus M for consent, of upstream work for one sidebar line.
 2. **The privacy question is the larger cost.** Today a viewer sees a meeting's guests only when
    the organizer shares the guest list. This feature would answer a different question, "who from
    your employer is attending X", and would answer it for people outside the meeting's audience.
@@ -78,7 +78,7 @@ blockers hold; two of them needed their wording corrected.
   `needsReview = !(verified && verifiedBy === sub)`. Either way the org is self-asserted, or comes
   from enrichment the user confirmed. The conclusion stands: it isn't authorization-grade.
 - The `b2b_org` FGA object (`lfx-v2-member-service` `docs/fga-contract.md`) has writer and auditor
-  grants, key contacts and an LF-staff auditor team. It has no employee relation. The
+  grants and an LF-staff auditor team. It has no employee relation. The
   `organization` field in `lfx-v2-auth-service` user metadata is self-edited.
 - **Partial precedent:** the newsletter coworker invite (#3483,
   `newsletter-invite.service.ts`) matches the caller's **verified emails**
@@ -104,8 +104,8 @@ blockers hold; two of them needed their wording corrected.
   viewer doesn't pass it.
 - **Upstream:** query-service can filter on data fields (`filters_all=org_name:…`). But
   `v1_meeting_registrant` access checks `viewer` on the parent `v1_meeting`, which is wider than the
-  BFF's roster gate, and `show_meeting_attendees` isn't enforced in FGA or the index. A query that
-  relied on it would expose guest lists the organizer didn't share. The filter is also an exact
+  BFF's roster gate. A colleague query can't rely on it; it would need the dedicated relation
+  below. The filter is also an exact
   match on free text, so "Acme" and "Acme Inc." don't match each other.
 
 ## Estimated upstream work
@@ -137,8 +137,8 @@ confirmed, the assumption is stated.
 - **Restricted, Board and private meetings.** These must never contribute. Today's
   `isMeetingAttendeeListShared` is the floor, not the ceiling: a shared guest list still hasn't
   consented to colleague discovery.
-- **GDPR-style concerns.** Attendance at, for example, a security, a union-adjacent or a competitor's
-  working group can reveal affiliations or job-search activity. Purpose limitation, data
+- **GDPR-style concerns.** Attendance at, for example, a security working group, a union-adjacent
+  one or a competitor's can reveal affiliations or job-search activity. Purpose limitation, data
   minimisation (a count instead of names) and the employer as a recipient all need a ruling.
 - **Inference risk.** Even a bare count leaks. In a small organization, or a meeting with one
   attendee from the org, "1 colleague attending" names the person. Repeated queries across meetings
@@ -163,4 +163,4 @@ No code change is needed. The V2 page must not add a colleagues section while th
 
 - Design: remove the "N colleagues attending" section from the prototype.
 - [#3610](https://github.com/linuxfoundation/lfx-self-serve/issues/3610) closes once the privacy
-  review either signs off on the deferral or rejects it.
+  review has ruled. If it rejects the deferral, a new spike replaces this one.
