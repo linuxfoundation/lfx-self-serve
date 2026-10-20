@@ -18,7 +18,6 @@ import {
   MeetingRegistrant,
   PastMeeting,
   PastMeetingArtifactKind,
-  PastOccurrenceSummary,
   Project,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
@@ -49,7 +48,6 @@ import {
   resolveOrganizerAndHostKey,
   stripHostKey,
 } from '../helpers/meeting.helper';
-import { pageOccurrenceTimeline, parseOccurrencesPageRequest } from '../helpers/meeting-occurrences.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -615,25 +613,7 @@ export class PublicMeetingController {
         return;
       }
 
-      // Read before any upstream call past the gate, so a malformed parameter is a 400, not wasted work.
-      const page = parseOccurrencesPageRequest(req);
-
-      // A paged request (V2) gets a failed later page reported as past_incomplete with an empty past,
-      // not a silent prefix of the history (#3585). An unpaged one (V1) keeps the old degradation: the
-      // pages read so far, or none.
-      let pastIncomplete = false;
-      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id, { throwOnFailure: !!page }).catch((error: unknown) => {
-        // Unpaged, the service already swallows a fetch failure; anything else still goes to the error handler.
-        if (!page) {
-          throw error;
-        }
-        logger.warning(req, 'get_public_meeting_occurrences', 'Past occurrences unavailable, returning none and flagging it', {
-          meeting_id: id,
-          err: error,
-        });
-        pastIncomplete = true;
-        return [] as PastOccurrenceSummary[];
-      });
+      const past = await this.meetingService.getPastOccurrencesForMeeting(req, id);
 
       // A projection, never the ITX payload, which carries sensitive fields (e.g. password). The
       // registrant count goes only to a caller the gate let in as a registrant or organizer (spec 011
@@ -651,19 +631,16 @@ export class PublicMeetingController {
         ...(showsRegistrantCount && { registrant_count: o.registrant_count }),
       }));
 
-      // No paging parameter: the whole timeline, as V1 reads it. V2 always sends one (#3585).
       const response: PublicMeetingOccurrencesResponse = {
-        ...(page ? pageOccurrenceTimeline(past, future, page) : { past, future }),
+        past,
+        future,
         cancelled_occurrences: liveMeeting?.cancelled_occurrences ?? undefined,
-        ...(pastIncomplete ? { past_incomplete: true } : {}),
       };
 
       logger.success(req, 'get_public_meeting_occurrences', startTime, {
         meeting_id: id,
-        paged: !!page,
-        past_count: response.past.length,
-        future_count: response.future.length,
-        past_incomplete: pastIncomplete,
+        past_count: past.length,
+        future_count: future.length,
       });
 
       res.json(response);

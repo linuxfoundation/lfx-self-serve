@@ -1080,36 +1080,10 @@ export type MeetingContentAccess = 'public' | 'password' | 'registrant' | 'organ
 export interface PublicMeetingOccurrencesResponse {
   /** Past occurrences, ascending by scheduled start time */
   past: PastOccurrenceSummary[];
-  /** Current/future occurrences, ascending on a paged request (unpaged, in ITX's order); empty when the series no longer exists */
+  /** Current/future occurrences; empty when the series no longer exists */
   future: MeetingTimelineOccurrence[];
   /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
   cancelled_occurrences?: string[];
-  /** Paged requests only: older past occurrences exist than `past[0]` */
-  past_has_more?: boolean;
-  /** Paged requests only: later occurrences exist than the last of `future` */
-  future_has_more?: boolean;
-  /** Paged requests only, when `past_has_more`: send as `cursor` with `direction=past` for the next older page */
-  past_cursor?: string;
-  /** Paged requests only, when `future_has_more`: send as `cursor` with `direction=future` for the next later page */
-  future_cursor?: string;
-  /** Paged requests only: true when the past history could not be read in full; `past` is then empty rather than a silent prefix */
-  past_incomplete?: boolean;
-}
-
-/** Which side of the timeline a paged occurrences request reads (E6-02, #3585). */
-export type MeetingOccurrenceDirection = 'past' | 'future';
-
-/**
- * The paging parameters of `GET /public/api/meetings/:id/occurrences` (E6-02, #3585), parsed. Absent
- * (null) when the request names none, which keeps the whole-timeline response V1 reads.
- */
-export interface MeetingOccurrencesPageRequest {
-  /** Occurrences per side (the `page_size` parameter), at most `MEETING_OCCURRENCES_PAGE_MAX_LIMIT` */
-  limit: number;
-  /** Read one side only; both sides around now when absent */
-  direction?: MeetingOccurrenceDirection;
-  /** A 13-digit Unix-millisecond start: older than it with `past`, later than it with `future` */
-  cursor?: number;
 }
 
 /**

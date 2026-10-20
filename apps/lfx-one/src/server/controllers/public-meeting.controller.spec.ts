@@ -113,8 +113,6 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   HOST_KEY_EARLY_MINUTES: 70,
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',
-  MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT: 12,
-  MEETING_OCCURRENCES_PAGE_MAX_LIMIT: 50,
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH: 255,
   PUBLIC_REGISTRATION_FIELD_LABELS: {
     meeting_id: 'Meeting ID',
@@ -1027,92 +1025,6 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
 
       expect(res.json.mock.calls[0][0].future[0]).not.toHaveProperty('registrant_count');
       expect(meetingSvc.getMeetingRegistrantsForUser).not.toHaveBeenCalled();
-    });
-  });
-
-  // E6-02 (#3585): paging is opt-in. With no parameter V1 keeps the whole timeline.
-  describe('paging', () => {
-    const weekly = (weeks: number[]) =>
-      weeks.map((week) => ({
-        occurrence_id: String(Math.floor((T2 + week * 7 * 86400000) / 1000)),
-        start_time: new Date(T2 + week * 7 * 86400000).toISOString(),
-        duration: 30,
-        title: 'Weekly sync',
-      }));
-
-    beforeEach(() => {
-      meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
-      meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ occurrences: weekly([0, 1, 2]) } as Partial<Meeting>));
-    });
-
-    it('returns the whole timeline with no paging fields when no parameter is sent', async () => {
-      const { req, res, next } = buildReqRes(false);
-
-      await controller.getMeetingOccurrences(req, res, next);
-
-      const payload = res.json.mock.calls[0][0];
-      expect(payload.future).toHaveLength(3);
-      expect(payload.past).toEqual(pastSummaries);
-      expect(Object.keys(payload).sort()).toEqual(['cancelled_occurrences', 'future', 'past']);
-      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: false });
-    });
-
-    it('returns one bounded page with a cursor when a page size is sent', async () => {
-      const { req, res, next } = buildReqRes(false);
-      req.query = { page_size: '2' };
-
-      await controller.getMeetingOccurrences(req, res, next);
-
-      const payload = res.json.mock.calls[0][0];
-      expect(payload.future.map((o: { occurrence_id: string }) => o.occurrence_id)).toEqual(weekly([0, 1]).map((o) => o.occurrence_id));
-      expect(payload).toEqual(
-        expect.objectContaining({ future_has_more: true, future_cursor: String(T2 + 7 * 86400000), past_has_more: false, past: pastSummaries })
-      );
-    });
-
-    it('refuses a malformed parameter with a 400 before reading the history', async () => {
-      const { req, res, next } = buildReqRes(false);
-      req.query = { page_size: '500' };
-
-      await controller.getMeetingOccurrences(req, res, next);
-
-      expect(res.json).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
-      expect(meetingSvc.getPastOccurrencesForMeeting).not.toHaveBeenCalled();
-    });
-
-    it('flags an unreadable history on a paged request instead of returning a silent prefix', async () => {
-      meetingSvc.getPastOccurrencesForMeeting.mockRejectedValue(new Error('page 2 failed'));
-      const { req, res, next } = buildReqRes(false);
-      req.query = { page_size: '12' };
-
-      await controller.getMeetingOccurrences(req, res, next);
-
-      expect(next).not.toHaveBeenCalled();
-      const payload = res.json.mock.calls[0][0];
-      expect(payload.past).toEqual([]);
-      expect(payload.past_incomplete).toBe(true);
-      expect(payload.future).toHaveLength(3);
-      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: true });
-    });
-
-    it('still sends an unexpected history error to the error handler on an unpaged (V1) request', async () => {
-      meetingSvc.getPastOccurrencesForMeeting.mockRejectedValue(new Error('mapping failed'));
-      const { req, res, next } = buildReqRes(false);
-
-      await controller.getMeetingOccurrences(req, res, next);
-
-      expect(res.json).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'mapping failed' }));
-    });
-
-    it('keeps the old degradation for an unpaged (V1) request: no throw, no flag', async () => {
-      const { req, res, next } = buildReqRes(false);
-
-      await controller.getMeetingOccurrences(req, res, next);
-
-      expect(meetingSvc.getPastOccurrencesForMeeting).toHaveBeenCalledWith(req, MEETING_ID, { throwOnFailure: false });
-      expect(res.json.mock.calls[0][0]).not.toHaveProperty('past_incomplete');
     });
   });
 
