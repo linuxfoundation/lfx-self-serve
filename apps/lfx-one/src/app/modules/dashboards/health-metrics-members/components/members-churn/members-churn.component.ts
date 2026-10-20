@@ -267,7 +267,7 @@ export class MembersChurnComponent {
 
   /** Earlier years pale, the selected one solid — red when its churn rose on the year before. */
   private buildChart(points: HealthMetricsMembersChurnTrendPointView[], rose: boolean): ChartData<'bar'> {
-    const selectedColor = rose ? lfxColors.red[600] : lfxColors.blue[600];
+    const selectedColor = rose ? lfxColors.red[600] : lfxColors.blue[500];
     return {
       labels: points.map((point) => point.label),
       datasets: [

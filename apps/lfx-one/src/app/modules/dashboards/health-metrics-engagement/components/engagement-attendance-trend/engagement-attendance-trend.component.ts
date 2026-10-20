@@ -137,7 +137,7 @@ export class EngagementAttendanceTrendComponent {
 
   /** One blue line that gaps on unrated months; the month in progress is dashed and hollow. */
   private buildChart(points: HealthMetricsEngagementAttendanceTrendPointView[]): ChartData<'line'> {
-    const line = lfxColors.blue[600];
+    const line = lfxColors.blue[500];
     return {
       labels: points.map((point) => point.label),
       datasets: [
