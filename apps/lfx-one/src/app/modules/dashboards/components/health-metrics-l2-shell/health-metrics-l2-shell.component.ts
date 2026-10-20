@@ -99,6 +99,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    * pending key: another one reflowing afterwards would move the anchor out from under it.
    */
   private readonly unsettledSections = new Set<string>();
+  /** Read key → the section it renders in, for a section that holds more than one read. */
+  private readonly readSections = new Map<string, string>();
   private readonly resize$ = new Subject<void>();
   private pendingSectionTimer?: ReturnType<typeof setTimeout>;
   /** Set while the reader-intent listeners are registered; nulled by the removal it performs. */
@@ -173,10 +175,12 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   /**
    * A starting read puts the section back among those a deep link waits on, and restarts the
    * deadline against that read rather than leaving it to expire on the fragment that armed it.
+   * `sectionKey` names the section the read renders in, when a section holds more than one read.
    */
-  public sectionReading(key: string): void {
+  public sectionReading(key: string, sectionKey = key): void {
     this.unsettledSections.add(key);
-    this.holdSectionHeight(key);
+    this.readSections.set(key, sectionKey);
+    this.holdSectionHeight(sectionKey);
 
     const pending = this.pendingSection();
     if (pending) this.armPendingSection(pending);
@@ -186,12 +190,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    * A read landing changes the page's height, so a waiting deep link re-scrolls here, a paint later
    * than the emission. The key is released only once every data section has settled.
    */
-  public sectionSettled(key: string): void {
+  public sectionSettled(key: string, sectionKey = key): void {
     this.unsettledSections.delete(key);
     afterNextRender(
       () => {
-        // Released once the result has painted, unless a newer read has re-held it for its own skeleton.
-        if (!this.unsettledSections.has(key)) this.sectionElement(key)?.style.removeProperty('min-height');
+        // Released once every read in the section has painted, so neither a sibling still loading nor a
+        // newer read that re-held it for its own skeleton loses the height.
+        if (!this.hasUnsettledRead(sectionKey)) this.sectionElement(sectionKey)?.style.removeProperty('min-height');
         this.rebuildScrollSpyIfGeometryChanged();
         this.settlePendingSection();
         // A still-pending key would scroll the page back to the anchor on every later re-emission.
@@ -263,6 +268,10 @@ export class HealthMetricsL2ShellComponent implements OnInit {
 
     const section = this.sectionElement(key);
     if (section) section.style.minHeight = `${section.offsetHeight}px`;
+  }
+
+  private hasUnsettledRead(sectionKey: string): boolean {
+    return [...this.unsettledSections].some((key) => (this.readSections.get(key) ?? key) === sectionKey);
   }
 
   private sectionElement(key: string): HTMLElement | null {

@@ -867,6 +867,22 @@ describe('HealthMetricsL2ShellComponent', () => {
     expect(section.style.minHeight).toBe('480px');
   });
 
+  it('keeps a section at its height until every read rendering in it has painted', async () => {
+    const shell = fixture.debugElement.query(By.directive(HealthMetricsL2ShellComponent)).componentInstance as HealthMetricsL2ShellComponent;
+    const section = fixture.nativeElement.querySelector('#sec-test-alpha') as HTMLElement;
+    Object.defineProperty(section, 'offsetHeight', { configurable: true, value: 480 });
+
+    shell.sectionReading('alpha');
+    shell.sectionReading('alpha-bridge', 'alpha');
+    shell.sectionSettled('alpha');
+    await flush();
+    expect(section.style.minHeight).toBe('480px');
+
+    shell.sectionSettled('alpha-bridge', 'alpha');
+    await flush();
+    expect(section.style.minHeight).toBe('');
+  });
+
   describe('scroll position across query-only navigations', () => {
     // TestBed never starts the router's scroller, so this emits the `Scroll` it sends once a navigation ends.
     async function navigateThenRouterScroll(url: string, beforeScroll?: () => void): Promise<void> {
