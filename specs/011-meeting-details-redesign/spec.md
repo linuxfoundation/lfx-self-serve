@@ -176,15 +176,15 @@ verified · unknown/needs-review · auto-matched · AI-reconciled — plus the `
 
 ### Phase 2
 
-| Sub-epic              | Plan IDs                                                                                      | Upstream blocker                                                                 |
-| --------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| E6 Occurrence UI      | E6-01 (#3584) · E6-02 (#3585) · E6-03 (#3586) · E6-04 (#3587) · E6-05 (#3588) · E6-06 (#3589) | U-01 (#2927) → E6-06 · U-02 (#2928) → E6-04 (soft) · U-03 (#2929) → E6-03 marker |
-| E7 Join details       | E7-01 (#3590) · E7-02 (#3591) · E7-03 (#3592)                                                 | U-04 (#2930) → E7-01, E7-03 · U-05 (#2931) → E7-01                               |
-| E8 Discover more      | E8-01 (#3593) · E8-02 (#3594) · E8-03 (#3595) · E8-04 (#3596) · E8-05 (#3597)                 | U-06 (#2932) → E8-04 (soft; the glyph fallback works)                            |
-| E9 Structured agenda  | E9-01 (#3598) · E9-02 (#3599) · E9-03 (#3600)                                                 | U-07 (#2933) → all three                                                         |
-| E10 Identity matching | E10-01 (#3601) · E10-02 (#3602) · E10-03 (#3603)                                              | none. The plan recommends pulling E10-01 into Phase 1                            |
-| O Organizer dialogs   | O-01 (#3604) · O-02 (#3605) · O-03 (#3606) · O-04 (#3607)                                     | none                                                                             |
-| M Magic link          | M-01 (#3608) · M-02 (#3609)                                                                   | U-08 (#2934) → M-01; M-02 defines its security requirements                      |
+| Sub-epic              | Plan IDs                                                                                 | Upstream blocker                                            |
+| --------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| E6 Occurrence UI      | E6-06 (#3589); E6-01 to E6-05 (#3584–#3588) withdrawn in the scope reset (V1 navigation) | U-01 (#2927) → E6-06                                        |
+| E7 Join details       | E7-01 (#3590) · E7-02 (#3591) · E7-03 (#3592)                                            | U-04 (#2930) → E7-01, E7-03 · U-05 (#2931) → E7-01          |
+| E8 Discover more      | E8-01 (#3593) · E8-02 (#3594) · E8-03 (#3595) · E8-04 (#3596) · E8-05 (#3597)            | U-06 (#2932) → E8-04 (soft; the glyph fallback works)       |
+| E9 Structured agenda  | E9-01 (#3598) · E9-02 (#3599) · E9-03 (#3600)                                            | U-07 (#2933) → all three                                    |
+| E10 Identity matching | E10-01 (#3601) · E10-02 (#3602) · E10-03 (#3603)                                         | none. The plan recommends pulling E10-01 into Phase 1       |
+| O Organizer dialogs   | O-01 (#3604) · O-02 (#3605) · O-03 (#3606) · O-04 (#3607)                                | none                                                        |
+| M Magic link          | M-01 (#3608) · M-02 (#3609)                                                              | U-08 (#2934) → M-01; M-02 defines its security requirements |
 
 ### Phase 3
 
@@ -217,7 +217,7 @@ The parts of #1766's deliverable that live beside this spec rather than in it:
   axes do not cover: the selected occurrence and the viewer's own RSVP.
 
 **`contracts/`** (JSON Schema for new or widened BFF responses) moves to the PRs that build each
-endpoint (E3-03, E4-04, E6-01), so each schema is reviewed with its code.
+endpoint (E3-03, E4-04), so each schema is reviewed with its code.
 E3-03's is [`contracts/public-meeting-attachments.schema.json`](contracts/public-meeting-attachments.schema.json).
 
 ### Deviations from #1766's acceptance criteria

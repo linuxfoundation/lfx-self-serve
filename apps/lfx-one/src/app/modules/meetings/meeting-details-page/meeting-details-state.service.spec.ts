@@ -974,6 +974,32 @@ describe('MeetingDetailsStateService', () => {
       expect(state.visibleSections()?.agenda).toBe(false);
     });
 
+    // V1's navigation rule: a recurring meeting, or a past occurrence of a series (no `recurrence` on it).
+    it('offers no occurrence navigation for a one-off meeting', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: { ...buildMeeting(), start_time: new Date(Date.now() + 86_400_000).toISOString(), duration: 60 }, project })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.visibleSections()?.occurrences).toBe(false);
+    });
+
+    it('offers it for a past occurrence of a series, whose payload has no recurrence', async () => {
+      paramMap$.next(convertToParamMap({ id: '99152950841-1700000000000' }));
+      getPublicPastMeeting.mockReturnValue(
+        of({
+          meeting: { ...buildMeeting('99152950841-1700000000000'), meeting_id: '99152950841', start_time: '2023-11-14T22:13:20Z', duration: 60 },
+          project,
+          full_access: false,
+        })
+      );
+      const state = create();
+      await settle();
+
+      expect(state.visibleSections()?.occurrences).toBe(true);
+    });
+
     it('has no sections before the meeting loads', () => {
       getPublicMeeting.mockReturnValue(new Subject());
 

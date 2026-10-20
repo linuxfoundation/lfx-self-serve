@@ -28,6 +28,7 @@ import {
 import {
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
+  getMeetingSeriesUid,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
   isPastMeetingCompositeId,
@@ -397,7 +398,9 @@ export class MeetingDetailsStateService {
       return resolveVisibleSections({
         fullAccess: this.pastMeetingFullAccess(),
         inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
-        recurring: !!meeting.recurrence,
+        // V1's occurrence-navigation rule: a recurring meeting, or a past occurrence (whose payload
+        // omits `recurrence`) of a series.
+        recurring: !!meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id,
         timeState,
         viewerRole,
       });

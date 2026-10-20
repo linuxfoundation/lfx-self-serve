@@ -100,7 +100,7 @@
     <div class="flex min-w-0 flex-col gap-[64px] min-[921px]:flex-[1.7_1_0%]" data-testid="meeting-content-column">
       <!-- V1's Previous / Next occurrence navigation (V1 parity); it renders nothing when there is nowhere to go.
            Only once the page is ready: during a navigation's skeleton the state still holds the previous meeting. -->
-      @if (state.status() === 'ready') {
+      @if (state.status() === 'ready' && state.visibleSections()?.occurrences) {
         <lfx-meeting-occurrence-nav class="empty:hidden" />
       }
       <!-- E4-01: an ended meeting's recording and transcript, where the viewer has artifact access (FR-040). -->

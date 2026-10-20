@@ -171,7 +171,10 @@ export interface ActionSlotInput {
 export interface MeetingSectionVisibilityInput {
   fullAccess: boolean;
   inviteResponsesEnabled: boolean;
-  /** Whether the meeting recurs, i.e. whether there is an occurrence strip to render. */
+  /**
+   * Whether the meeting belongs to a series with occurrences to navigate: it recurs, or it is a past
+   * occurrence of a series (whose payload omits `recurrence`), as V1 decides for its navigation.
+   */
   recurring: boolean;
   timeState: MeetingTimeState;
   viewerRole: MeetingViewerRole;
@@ -196,7 +199,7 @@ export interface MeetingSectionVisibility {
    */
   joinDetails: boolean;
   materials: boolean;
-  /** The occurrence strip for a recurring meeting. */
+  /** The Previous / Next occurrence navigation, which still hides itself when there is nowhere to go. */
   occurrences: boolean;
   /**
    * The participant roster.

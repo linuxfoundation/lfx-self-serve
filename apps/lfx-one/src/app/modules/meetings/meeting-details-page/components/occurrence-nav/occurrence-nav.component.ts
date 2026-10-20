@@ -43,7 +43,7 @@ export class MeetingOccurrenceNavComponent {
     'inline-flex h-[34px] items-center gap-[6px] rounded-full border border-[var(--md-border-strong)] bg-[var(--md-surface-card)] px-[14px] text-[13px] font-semibold text-[var(--md-accent-ink)] no-underline hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none';
   /** The same pill with nowhere to go, as V1's greyed-out Previous / Next. */
   protected readonly disabledClass =
-    'inline-flex h-[34px] cursor-default items-center gap-[6px] rounded-full border border-[var(--md-border)] px-[14px] text-[13px] font-semibold text-[var(--md-glyph-faint)]';
+    'inline-flex h-[34px] cursor-default items-center gap-[6px] rounded-full border border-[var(--md-border)] px-[14px] text-[13px] font-semibold text-[var(--md-text-muted)]';
 
   protected readonly previousUrl: Signal<string | null> = this.initStepUrl(-1);
   protected readonly nextUrl: Signal<string | null> = this.initStepUrl(1);

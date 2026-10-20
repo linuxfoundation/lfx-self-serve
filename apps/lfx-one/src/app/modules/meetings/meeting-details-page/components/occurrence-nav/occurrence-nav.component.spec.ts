@@ -12,7 +12,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingOccurrenceNavComponent } from './occurrence-nav.component';
 
-const SERIES = 'meeting-1';
+// No hyphen, as a real Zoom-style series id: a composite route id then splits into exactly two parts.
+const SERIES = '91234567890';
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
@@ -194,10 +195,11 @@ describe('MeetingOccurrenceNavComponent', () => {
 
     it('falls back to the start in its route id when the timeline has no record for it', async () => {
       const unlisted = at(-10 * DAY);
-      await setup(pastPayload, { past: [past(one), past(two)], future: [] }, { routeId: `${SERIES}-${unlisted}`, viaPast: true });
+      await setup(pastPayload, { past: [past(one), past(two)], future: [first] }, { routeId: `${SERIES}-${unlisted}`, viaPast: true });
 
-      // The first occurrence at or after the route's start.
-      expect(counter()).toBe('2 of 2');
+      // The first occurrence at or after the route's start, not the clock's ("3 of 3").
+      expect(counter()).toBe('2 of 3');
+      expect(href('occurrence-nav-section-prev')).toBe(`/meetings/${SERIES}-${one}`);
     });
 
     it('renders nothing when the series has nowhere else to go', async () => {

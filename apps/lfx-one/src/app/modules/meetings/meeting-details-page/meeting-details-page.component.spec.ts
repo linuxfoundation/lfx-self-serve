@@ -77,7 +77,7 @@ describe('MeetingDetailsPageComponent', () => {
 
   beforeEach(async () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
-    visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true, materials: true });
+    visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true, materials: true, occurrences: true });
     rosterRequest = signal<MeetingRosterRequest | null>({ meetingId: 'meeting-1', occurrenceId: undefined });
     refresh = vi.fn();
     retrying = signal(false);
@@ -207,6 +207,16 @@ describe('MeetingDetailsPageComponent', () => {
   });
 
   // E3-01: the agenda follows the page's section visibility (hidden for an ended meeting without access).
+  it('renders the occurrence navigation only for a series', () => {
+    show('ready');
+    expect(query('occurrence-nav-stub')).not.toBeNull();
+
+    visibleSections.set({ agenda: true, materials: true, occurrences: false });
+    fixture.detectChanges();
+
+    expect(query('occurrence-nav-stub')).toBeNull();
+  });
+
   it('renders the agenda only where the section visibility allows it', () => {
     show('ready');
     expect(query('agenda-stub')).not.toBeNull();
