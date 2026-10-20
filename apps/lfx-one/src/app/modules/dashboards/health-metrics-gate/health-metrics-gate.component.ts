@@ -1,23 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass, ViewportScroller } from '@angular/common';
+import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import {
-  ActivatedRoute,
-  NavigationCancel,
-  NavigationEnd,
-  NavigationError,
-  NavigationSkipped,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-  RouterOutlet,
-  Scroll,
-  UrlTree,
-} from '@angular/router';
+import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import {
   HEALTH_METRICS_BASE_PATH,
   HEALTH_METRICS_OVERVIEW_ENABLED_FLAG,
@@ -84,7 +71,6 @@ export class HealthMetricsGateComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
-  private readonly viewportScroller = inject(ViewportScroller);
   protected readonly chrome = inject(HealthMetricsChromeService);
   protected readonly userService = inject(UserService);
 
@@ -131,7 +117,6 @@ export class HealthMetricsGateComponent {
   public constructor() {
     afterNextRender(() => this.hydrated.set(true));
     this.initProjectSelection();
-    this.initQueryScrollKeeping();
     // The header only exists inside the enabled branch, so it appears a render after `hydrated`
     // latches — watching the viewChild signal picks it up whenever that happens.
     toObservable(this.pageHeader)
@@ -201,30 +186,6 @@ export class HealthMetricsGateComponent {
       .subscribe(() => this.writeProjectParam(null));
   }
 
-  /**
-   * A pill, search, page or project change writes its state to the query string, and the router's
-   * app-wide `scrollPositionRestoration: 'top'` would jump the page up. Such a navigation keeps its place.
-   */
-  private initQueryScrollKeeping(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
-
-    // Navigation id → the scroll position to put back once the router's own scroll has run.
-    const held = new Map<number, [number, number]>();
-    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
-      if (event instanceof NavigationStart) {
-        if (this.changesOnlyQuery(event.url)) held.set(event.id, this.viewportScroller.getScrollPosition());
-      } else if (event instanceof NavigationCancel || event instanceof NavigationError || event instanceof NavigationSkipped) {
-        held.delete(event.id);
-      } else if (event instanceof Scroll) {
-        const position = held.get(event.routerEvent.id);
-        if (!position) return;
-        held.delete(event.routerEvent.id);
-        // A microtask lands after the router's own scroll, whichever subscribed first, and before paint.
-        queueMicrotask(() => this.viewportScroller.scrollToPosition(position, { behavior: 'instant' }));
-      }
-    });
-  }
-
   private initProjectSelectorLabel(): string {
     if (this.activeTab()?.projectScoped !== true) {
       return 'All projects';
@@ -249,12 +210,6 @@ export class HealthMetricsGateComponent {
       preserveFragment: true,
       replaceUrl: true,
     });
-  }
-
-  /** Same path and fragment as the current URL: only the query string moves. */
-  private changesOnlyQuery(url: string): boolean {
-    const withoutQuery = (tree: UrlTree) => this.router.serializeUrl(new UrlTree(tree.root, {}, tree.fragment));
-    return withoutQuery(this.router.parseUrl(url)) === withoutQuery(this.router.parseUrl(this.router.url));
   }
 
   private resolveActiveTab(url: string): HealthMetricsTab | undefined {
