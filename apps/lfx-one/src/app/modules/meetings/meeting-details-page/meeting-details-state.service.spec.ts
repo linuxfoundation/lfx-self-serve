@@ -23,6 +23,13 @@ const stateKey = makeStateKey<MeetingJoinPageState>(MEETING_JOIN_STATE_KEY);
 
 // `debounceTime(0)` puts the lookup one macrotask after the route emission.
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+// Settles the lookup, then runs the effects behind `toObservable` (TestBed runs them on `tick()`) and
+// settles the reads they start.
+const flush = async (): Promise<void> => {
+  await settle();
+  TestBed.tick();
+  await settle();
+};
 
 describe('MeetingDetailsStateService', () => {
   let paramMap$: BehaviorSubject<ParamMap>;
@@ -540,7 +547,7 @@ describe('MeetingDetailsStateService', () => {
     async function load(meeting: Meeting): Promise<MeetingDetailsStateService> {
       getPublicMeeting.mockReturnValue(of({ meeting, project }));
       const state = create();
-      await settle();
+      await flush();
       return state;
     }
 
@@ -565,7 +572,7 @@ describe('MeetingDetailsStateService', () => {
       paramMap$.next(convertToParamMap({ id: pastId }));
       getPublicPastMeeting.mockReturnValue(of({ meeting: series(), project, full_access: true }));
       const state = create();
-      await settle();
+      await flush();
 
       expect(state.canManageOccurrence()).toBe(false);
     });
@@ -595,7 +602,7 @@ describe('MeetingDetailsStateService', () => {
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
 
       state.showOccurrenceAfterChange(second.getTime());
-      await settle();
+      await flush();
 
       expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
     });
@@ -607,7 +614,7 @@ describe('MeetingDetailsStateService', () => {
 
       getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2', recurrence: null } as Partial<Meeting>), project }));
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
-      await settle();
+      await flush();
 
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
     });
@@ -620,7 +627,7 @@ describe('MeetingDetailsStateService', () => {
       getPublicMeetingOccurrences.mockReturnValue(new Subject());
       getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
-      await settle();
+      await flush();
 
       expect(getPublicMeetingOccurrences).toHaveBeenLastCalledWith('meeting-2', null);
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
@@ -632,10 +639,10 @@ describe('MeetingDetailsStateService', () => {
 
       getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'one-off', uid: 'one-off', recurrence: null } as Partial<Meeting>), project }));
       paramMap$.next(convertToParamMap({ id: 'one-off' }));
-      await settle();
+      await flush();
       getPublicMeeting.mockReturnValue(of({ meeting: series(), project }));
       paramMap$.next(convertToParamMap({ id: MEETING_ID }));
-      await settle();
+      await flush();
 
       expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
     });
@@ -655,7 +662,7 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meetingTitle()).toBe('Release review');
 
       queryParamMap$.next(convertToParamMap({ occurrence: String(first.getTime()) }));
-      await settle();
+      await flush();
       expect(state.meetingTitle()).toBe('Weekly Sync');
     });
 
@@ -673,7 +680,7 @@ describe('MeetingDetailsStateService', () => {
       const lookups = getPublicMeeting.mock.calls.length;
 
       state.showOccurrenceAfterChange(second.getTime());
-      await settle();
+      await flush();
 
       expect(navigate).toHaveBeenCalledWith(
         [],
@@ -697,7 +704,7 @@ describe('MeetingDetailsStateService', () => {
       });
 
       state.showOccurrenceAfterChange(moved.getTime());
-      await settle();
+      await flush();
 
       // The held payload has only the old start: still the edited occurrence, not the series' first date.
       expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
