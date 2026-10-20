@@ -251,6 +251,8 @@ export default {
       colors: lfxColors,
       boxShadow: {
         md: '0px 1px 2px -1px rgba(0, 0, 0, 0.10), 0px 1px 3px 0px rgba(0, 0, 0, 0.10)',
+        // Health Metrics card surface: inset gray-100 ring plus a soft drop shadow.
+        card: `inset 0 0 0 1px ${lfxColors.gray[100]}, 0px 1px 2px -1px rgba(0, 0, 0, 0.05), 0px 1px 3px 0px rgba(0, 0, 0, 0.05)`,
       },
       keyframes: {
         'step-in': {

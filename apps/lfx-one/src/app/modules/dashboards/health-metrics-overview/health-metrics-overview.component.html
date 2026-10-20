@@ -1,8 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Card radius is the design's 12px; the 14px root makes `rounded-xl` undershoot it. -->
 <div class="flex flex-col gap-6" data-testid="health-metrics-overview-page">
-  <section class="tile-strip surface-card overflow-hidden rounded-xl bg-white" data-testid="health-metrics-overview-tile-strip">
+  <section class="tile-strip overflow-hidden rounded-[12px] bg-white shadow-card" data-testid="health-metrics-overview-tile-strip">
     @for (tile of tiles(); track tile.area) {
       <lfx-health-metrics-overview-tile [tile]="tile" [attr.data-testid]="'health-metrics-overview-tile-' + tile.area" />
     }
@@ -11,7 +12,7 @@
   <div class="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
     <section class="min-w-0" data-testid="health-metrics-overview-findings-list">
       @if (findingsLoading()) {
-        <div class="surface-card flex flex-col gap-4 rounded-xl bg-white px-[26px] py-5" data-testid="health-metrics-overview-findings-loading">
+        <div class="flex flex-col gap-4 rounded-[12px] bg-white px-[26px] py-5 shadow-card" data-testid="health-metrics-overview-findings-loading">
           @for (row of [1, 2, 3]; track row) {
             <div class="flex flex-col gap-2">
               <p-skeleton width="6rem" height="0.75rem" />
@@ -20,7 +21,7 @@
           }
         </div>
       } @else if (hasFindings()) {
-        <div class="surface-card flex flex-col rounded-xl bg-white">
+        <div class="flex flex-col rounded-[12px] bg-white shadow-card">
           @for (findingGroup of findingGroups(); track findingGroup.classification) {
             <div [attr.data-testid]="'health-metrics-overview-findings-group-' + findingGroup.classification">
               <div class="flex items-center gap-2 px-[26px] pt-4 pb-2">
