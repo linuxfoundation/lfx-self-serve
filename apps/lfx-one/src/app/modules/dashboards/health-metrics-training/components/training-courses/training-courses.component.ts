@@ -92,6 +92,7 @@ export class TrainingCoursesComponent {
   protected readonly scopeTotal = computed(() => this.response().scopeTotal);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => formatHealthMetricsTrainingCoursesCountLabel(this.totalRecords()));
+  protected readonly noMatchLabel = computed(() => (this.search() ? `No course matches “${this.search()}”.` : 'No course matches this filter.'));
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
