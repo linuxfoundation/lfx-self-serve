@@ -22,6 +22,7 @@ import {
   formatHealthMetricsEngagementAvgReps,
   formatHealthMetricsEngagementRatio,
   formatIsoDateLabel,
+  resolveHealthMetricsEngagementOrgTierPillClass,
   selectHealthMetricsEngagementOrgPeriod,
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -120,6 +121,7 @@ export class EngagementOrgParticipationComponent {
             lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
             avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
             attendedLabel: formatHealthMetricsEngagementRatio(period?.attendedCount ?? null, period?.meetingsTotal ?? null),
+            tierPillClass: resolveHealthMetricsEngagementOrgTierPillClass(row.membershipTier),
           },
         ];
       })
@@ -144,7 +146,9 @@ export class EngagementOrgParticipationComponent {
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
-    return `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'} · ${counts.lapsedOrgs.toLocaleString('en-US')} lapsed`;
+    const orgs = `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'}`;
+    // The lapsed part drops at zero, as in the design.
+    return counts.lapsedOrgs > 0 ? `${orgs} · ${counts.lapsedOrgs.toLocaleString('en-US')} lapsed` : orgs;
   });
 
   public constructor() {

@@ -30,10 +30,10 @@ test.describe.configure({ timeout: TEST_TIMEOUT });
 
 test.describe('Docs portal — shell auth states (US2)', () => {
   test.describe('Authenticated visitor', () => {
-    test('lens-switcher renders with the docs button on /docs', async ({ page }) => {
+    test('navbar renders with the docs button on /docs', async ({ page }) => {
       await page.goto('/docs', { waitUntil: 'domcontentloaded' });
       await expect(page).not.toHaveURL(/auth0\.com/);
-      await expect(page.getByTestId('lens-switcher')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('navbar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
       await expect(page.getByTestId('lens-docs-button')).toBeVisible();
       await expect(page.getByTestId('docs-shell-authed')).toBeVisible();
     });
@@ -49,15 +49,15 @@ test.describe('Docs portal — shell auth states (US2)', () => {
 
     test('returning to a non-docs route restores prior context', async ({ page }) => {
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-      await expect(page.getByTestId('lens-switcher')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('navbar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
       await page.goto('/docs', { waitUntil: 'domcontentloaded' });
       await expect(page.getByTestId('docs-shell-authed')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
       await page.goBack();
       await expect(page).toHaveURL(/^.*\/$|^.*\/dashboard/);
-      // Lens switcher persists outside docs and the docs icon is still present.
-      await expect(page.getByTestId('lens-switcher')).toBeVisible();
+      // The navbar persists outside docs and the docs icon is still present.
+      await expect(page.getByTestId('navbar')).toBeVisible();
       await expect(page.getByTestId('lens-docs-button')).toBeVisible();
     });
   });
@@ -72,8 +72,8 @@ test.describe('Docs portal — shell auth states (US2)', () => {
       await expect(page.getByTestId('docs-sidebar-nav')).toBeVisible();
       await expect(page.getByTestId('docs-sidebar-docs-button')).toBeVisible();
       await expect(page.getByTestId('docs-sidebar-signin-button')).toBeVisible();
-      // Lens switcher must NOT render in the public shell.
-      await expect(page.getByTestId('lens-switcher')).toHaveCount(0);
+      // The navbar must NOT render in the public shell.
+      await expect(page.getByTestId('navbar')).toHaveCount(0);
     });
 
     test('sign-in CTA preserves returnTo for the current docs URL', async ({ page }) => {

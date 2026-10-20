@@ -16,14 +16,28 @@ import {
   campaignResumeRefusedAdoptedMessage,
   campaignResumeRefusedMessage,
   COUNTRIES,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CAMPAIGN_CHANNELS_REQUIRING_FLAG,
   GOOGLE_CAMPAIGN_CHANNEL_LABELS,
   GOOGLE_VIDEO_CREATE_SUPPORTED,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
+  googleAdsBoundExtensionText,
+  googleAdsToLower,
+  googleAdsTrimSpace,
+  isCreativeAssetMimeType,
+  isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
+import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
@@ -31,6 +45,7 @@ import type {
   ApiResponse,
   BriefMetrics,
   CampaignAudience,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBidUpdateParams,
@@ -54,9 +69,11 @@ import type {
   CampaignServiceAccountMonitor,
   CampaignServiceAudience,
   CampaignServiceCampaign,
+  CampaignServiceCampaignMetrics,
   CampaignServiceCampaignResolution,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
+  CampaignServiceCreativeAsset,
   CampaignServiceHubSpotCampaign,
   CampaignServiceHubSpotCampaigns,
   CampaignServiceHubSpotEmailMonitor,
@@ -68,7 +85,10 @@ import type {
   CampaignServiceNegativeKeywordInput,
   CampaignServiceNegativeKeywordResult,
   CampaignServiceNegativeKeywords,
+  CampaignSitelink,
   CampaignToggleStatus,
+  CreativeAssetMimeType,
+  CreativeAssetUploadResult,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
@@ -218,6 +238,16 @@ interface CampaignServiceBrief {
   delivery_type?: string;
   stage?: string;
   status: string;
+  /**
+   * The row's optimistic-concurrency version — and, quoted, the validator itself.
+   *
+   * The `ETag` header and this field are rendered from the SAME `b.Version` in one `briefResult`
+   * literal upstream (`internal/service/brief.go`: `Version: b.Version` beside
+   * `Etag: optStr(briefETag(b.Version))`, where `briefETag` is `"` + the decimal + `"`). The
+   * `etag` attribute is header-mapped, so Goa keeps it OUT of every brief response body — the
+   * version is the body's copy of it. See `readBriefValidator`, which quotes this when the
+   * header does not survive the hop.
+   */
   version: number;
   // Returned by every brief response: `Brief` Reference()s `BriefData` in `design/brief.go`, so
   // these come back on the find whether or not this phase renders them. Declared for the create
@@ -495,6 +525,19 @@ export function canCreateWithBidding(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBidding);
 }
 
+/**
+ * Whether a Reddit create may reference an uploaded image by `imageAssetId` (decision D3).
+ *
+ * Needs the campaign-service create path to serve the create AND the Reddit-assets flag, which
+ * says that service's creative-asset URL signing is configured. Either alone fails: the legacy
+ * creator never reads `imageAssetId` (the campaign would be created with no ad), and an unsigned
+ * campaign-service refuses the field with a 400. Gates the upload route as well as the create
+ * field, because an upload nothing can use is a stored image and a confused operator.
+ */
+export function canUseRedditCreativeAssets(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditAssets);
+}
+
 export class CampaignServiceClient {
   private readonly microserviceProxy: MicroserviceProxyService;
 
@@ -561,6 +604,7 @@ export class CampaignServiceClient {
         googleChannelsEnabled: canCreateGoogleChannels(),
         googleCreativeEnabled: cutoverOwnsCreate(),
         redditCreativeEnabled: canCreateRedditCreative(),
+        redditAssetUploadEnabled: canUseRedditCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
       };
     }
@@ -618,6 +662,7 @@ export class CampaignServiceClient {
       googleChannelsEnabled: canCreateGoogleChannels(),
       googleCreativeEnabled: cutoverOwnsCreate(),
       redditCreativeEnabled: canCreateRedditCreative(),
+      redditAssetUploadEnabled: canUseRedditCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
     };
   }
@@ -886,9 +931,12 @@ export class CampaignServiceClient {
     const brief = fromBriefResponse(found.brief);
     // Only the exact `approved` token counts. A brief left in `draft` by a failed approve step is
     // stored but unusable -- `build-audience` and campaign creation both gate on `approved` -- and
-    // restoring it suppresses the save that would otherwise retry. Any other or unreadable value
-    // is treated as NOT approved so the restore path re-approves; claiming approval we cannot see
-    // is the one answer that silently strands the brief.
+    // restoring it suppresses the save that would otherwise retry. So this value is what the
+    // restore path ACTS on: a `false` here is what makes it approve the stored row through
+    // `approveStoredBrief`, writing nothing. Any other or unreadable value is treated as NOT
+    // approved; claiming approval we cannot see is the one answer that silently strands the brief,
+    // because it skips that approval and leaves campaign creation refusing a brief the UI calls
+    // ready.
     const approved = found.brief.status === 'approved';
 
     // Defence in depth, and no longer the thing that keeps the surfaces apart. Since LFXV2-3198's
@@ -950,9 +998,121 @@ export class CampaignServiceClient {
     const brief = fromBriefResponse(response.data);
     const approved = response.data.status === 'approved';
 
+    // `readBriefValidator`, not `readEtag`: the validator this returns is what the caller's next
+    // version-gated write is checked against, and `approveStoredBrief` below refuses outright on
+    // a null one. Recovering it from the body keeps that refusal out of reach whenever upstream
+    // answered at all.
     return brief === null
-      ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readEtag(response), approved }
-      : { status: 'loaded', briefId: response.data.id, brief, etag: readEtag(response), approved };
+      ? { status: 'unreadable', briefId: response.data.id, brief: null, etag: readBriefValidator(response), approved }
+      : { status: 'loaded', briefId: response.data.id, brief, etag: readBriefValidator(response), approved };
+  }
+
+  /**
+   * Approve a brief that is ALREADY STORED, writing nothing.
+   *
+   * The sibling of `approveBrief` above, and deliberately a separate method rather than a
+   * parameter on it: that one approves the response of a write it just made and reports a SAVE
+   * (`CampaignBriefPersistResult`, `created` and all), while this one is handed only an id and
+   * reports an approval. Folding them together would mean a result whose `created` field is a
+   * lie on one of the two paths.
+   *
+   * It exists because of the one state nothing else could leave. A stored brief sits in `draft`
+   * whenever the save's own approval failed, and `replaceBriefQuery` resets `status` to `draft`
+   * on every PUT — yet campaign creation and audience building both refuse an unapproved brief.
+   * RESTORING such a brief suppresses the save on purpose (re-saving would PUT
+   * `fromBriefResponse`'s lossy reconstruction over the stored `event_details`, `copy`,
+   * `keywords` and `targeting`), so before this method the only route back to `approved` was the
+   * one route the restore must never take, and Create Campaign stayed disabled forever.
+   *
+   * `knownEtag` is the validator the caller already holds — the one the restore read carried.
+   * `knownEtag` is REQUIRED in substance: when it holds none, this refuses as
+   * `unverified-validator` rather than fetching one itself.
+   *
+   * An earlier revision re-read the row by id and approved with whatever validator that read
+   * returned, reasoning that approval sends no content so a self-read validator can only approve
+   * "exactly what is stored". That reasoning does not survive the restore path it serves. The
+   * restore approves AUTOMATICALLY, one round trip after its own read, and campaign-service
+   * refuses a create from an unapproved brief — so the row this service approves is the row
+   * Create then builds from. A writer who replaced the brief between those two GETs gets their
+   * content approved and built on, while the user looks at the content the restore put on their
+   * screen and is told the approval succeeded. "Exactly what is stored" is the wrong unit: the
+   * question is whether what is stored is what was SHOWN, and a validator the caller did not
+   * bring is precisely the thing that cannot answer it. The same reasoning `replaceBrief` makes
+   * for `unverified-validator`, reached from the same direction.
+   *
+   * This is not the dead end refusing it used to be, because the caller now almost always has
+   * one: `readBriefValidator` recovers the validator from the body's `version` when the `ETag`
+   * header does not survive the hop, so a null here means upstream answered with neither — and
+   * re-reading would have yielded neither too. The remedy the UI names, reloading and re-entering
+   * the event URL, is a fresh read, which is the only thing that can produce a validator at all.
+   */
+  public async approveStoredBrief(req: Request, projectSlug: string, briefId: string, knownEtag: string | null): Promise<CampaignBriefApproveResult> {
+    const basePath = `/projects/${encodePathSegment(projectSlug)}/briefs`;
+    const refused = { enabled: true as const, briefId, etag: null, approved: false };
+
+    // No validator, no approval — see the docblock. Classified rather than indeterminate: this
+    // is a decision, not a lost answer, and `approve-brief` declares `PreconditionRequired` so
+    // an `If-Match`-less approval would be refused upstream in any case.
+    if (knownEtag === null) {
+      logger.warning(req, 'campaign_approve_stored_brief', 'the caller holds no validator for the stored brief; refusing to approve it unverified', {
+        briefId,
+      });
+      return { ...refused, conflict: 'unverified-validator' };
+    }
+
+    try {
+      const approved = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `${basePath}/${encodePathSegment(briefId)}/approve`,
+        'POST',
+        undefined,
+        undefined,
+        { 'If-Match': knownEtag }
+      );
+      // The NEW validator, never the one we approved with. `approve-brief` does
+      // `version = version + 1` and the ETag mirrors the version, so the caller's existing
+      // validator is stale the instant this succeeds — keeping it would have the caller's next
+      // save refused with a 412 by its own approval.
+      return { enabled: true, briefId, etag: readEtag(approved), approved: true };
+    } catch (error) {
+      // The same classification `approveBrief` makes, for the same reasons, mapped onto this
+      // result's own conflicts. The one difference is that nothing was written here, so there is
+      // no `superseded-after-write`: a 412 is simply a stale validator, and a typed 404 is simply
+      // a brief that is gone.
+      //
+      // 408 is excluded from the 4xx arm because `ApiClientService` turns a local `AbortError`
+      // into `MicroserviceError(408, 'TIMEOUT')` — our own deadline, not a refusal, and the
+      // approval may have committed with its reply lost.
+      const staleValidator = error instanceof MicroserviceError && error.statusCode === 412;
+      const briefRemoved = error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody);
+      const definitelyRejected =
+        error instanceof MicroserviceError &&
+        error.statusCode >= 400 &&
+        error.statusCode < 500 &&
+        error.statusCode !== 412 &&
+        error.statusCode !== 408 &&
+        !briefRemoved;
+
+      logger.warning(req, 'campaign_approve_stored_brief', 'the stored brief could not be approved', {
+        briefId,
+        definitelyRejected,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      if (staleValidator) {
+        return { ...refused, conflict: 'stale-brief' };
+      }
+      if (briefRemoved) {
+        return { ...refused, conflict: 'brief-not-found' };
+      }
+      if (definitelyRejected) {
+        return { ...refused, conflict: 'rejected' };
+      }
+      // Indeterminate: a 5xx, a timeout, a reset. No conflict — the approval may have landed, and
+      // naming a reason the user could act on would be inventing one.
+      return refused;
+    }
   }
 
   /**
@@ -1720,9 +1880,9 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Add negative keywords to one live Microsoft Advertising, Reddit or X campaign: at campaign level
-   * on Microsoft, in the excluded keywords of the campaign's one ad group on Reddit, and as negated
-   * keyword targeting on its one line item on X.
+   * Add negative keywords to one live Google Ads, Microsoft Advertising, Reddit or X campaign: as
+   * campaign criteria on Google, at campaign level on Microsoft, in the excluded keywords of the
+   * campaign's one ad group on Reddit, and as negated keyword targeting on its one line item on X.
    *
    * NOT ATOMIC and POSITIONAL: upstream answers one result per requested keyword, in request
    * order, each with its own outcome. The response is therefore mapped index for index and never
@@ -1730,8 +1890,8 @@ export class CampaignServiceClient {
    * at `i`, and a shifted entry would show a keyword that was not added as added.
    *
    * `revision` (Reddit's compare-and-set token from the keyword-targeting read) goes in the body
-   * ONLY when the caller passed one: Microsoft Advertising and X refuse the field whenever it is
-   * present, even empty.
+   * ONLY when the caller passed one: Google Ads, Microsoft Advertising and X refuse the field
+   * whenever it is present, even empty.
    *
    * No `If-Match` and no ETag: upstream persists nothing for this lever. Upstream's own refusals
    * (400 malformed batch or unsupported platform, 409, 503) pass through unchanged. A transport
@@ -1798,6 +1958,87 @@ export class CampaignServiceClient {
       // Recounted from the mapped results rather than copied, so it cannot disagree with them
       // when an entry above was downgraded to UNCONFIRMED.
       appliedCount: results.filter((r) => r.outcome === 'APPLIED' || r.outcome === 'ALREADY_PRESENT').length,
+    };
+  }
+
+  /**
+   * Store an image against a brief (`upload-creative-asset`) and return its asset id, which a
+   * Reddit create then names as `redditConfig.imageAssetId` (decision D3).
+   *
+   * The wire is JSON with the image base64-encoded in `bytes` — not multipart — because that is
+   * what the endpoint declares (`design/brief.go`). The body is serialized HERE and handed to the
+   * API client as a Buffer, which is the one shape it sends with an explicit `Content-Length`:
+   * campaign-service's upload admission prices a request by its declared length and charges an
+   * undeclared (chunked) one the whole upload budget, so undeclared uploads run one at a time and
+   * a concurrent one is shed with a 503 (campaign-service #183/#343, `pkg/uploadclient`).
+   *
+   * The caller has already bounded the image (`CREATIVE_ASSET_MAX_BYTES`) and checked its type;
+   * campaign-service re-sniffs, re-bounds and decodes it in full, and its 400s carry a readable
+   * reason that passes through. 201 and 200 are both success: 200 is an identical image already
+   * stored for this brief, returned unchanged.
+   *
+   * The answer is VALIDATED, not cast: its id is what the create will send, and an id that is not
+   * the asset just stored would fail the Reddit platform later, after the operator has moved on.
+   */
+  public async uploadCreativeAsset(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    contentType: CreativeAssetMimeType,
+    image: Buffer
+  ): Promise<CreativeAssetUploadResult> {
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/creative-assets`;
+    const body = Buffer.from(JSON.stringify({ content_type: contentType, bytes: image.toString('base64') }), 'utf8');
+
+    logger.debug(req, 'upload_creative_asset', 'Uploading creative asset to campaign-service', {
+      brief_id: briefId,
+      content_type: contentType,
+      byte_size: image.byteLength,
+    });
+
+    const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCreativeAsset>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      path,
+      'POST',
+      // The body is the SIXTH argument: a payload in the query position goes out with no body.
+      undefined,
+      body,
+      // A Buffer body carries no Content-Type of its own (the client only defaults JSON for
+      // non-Buffer data), so it is stated here.
+      { 'Content-Type': 'application/json' }
+    );
+
+    const asset = response.data;
+    const usable =
+      typeof asset?.id === 'string' &&
+      asset.id.length > 0 &&
+      typeof asset.brief_id === 'string' &&
+      asset.brief_id.toLowerCase() === briefId.toLowerCase() &&
+      isCreativeAssetMimeType(asset.mime_type) &&
+      typeof asset.byte_size === 'number' &&
+      typeof asset.checksum === 'string';
+    if (!usable) {
+      logger.warning(req, 'upload_creative_asset', 'Upstream answered the upload with an unusable asset', {
+        brief_id: briefId,
+        echoed_brief_id: asset?.brief_id,
+        status: response.status,
+      });
+      throw new MicroserviceError('Creative asset upload answer was unusable', 502, 'BAD_GATEWAY', {
+        operation: 'upload_creative_asset',
+        service: 'campaign_service_client',
+        path,
+        clientMessage: 'The image upload could not be confirmed. Please try again.',
+      });
+    }
+
+    return {
+      id: asset.id,
+      mimeType: asset.mime_type as CreativeAssetMimeType,
+      byteSize: asset.byte_size,
+      checksum: asset.checksum,
+      // The STATUS is authoritative upstream (201 stored, 200 already existed); `created` mirrors it.
+      created: response.status === 201,
     };
   }
 
@@ -1983,6 +2224,59 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/metrics`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
+   * Read live metrics for ONE campaign on a brief: `get-campaign-metrics`.
+   *
+   * The single-campaign sibling of `getBriefMetrics`, and the two differ in how a failure arrives.
+   * There is no per-row `status` here: every failure mode the brief-wide read folds into a row is
+   * its own HTTP status on this one — 400 when the platform has no metrics read (or cannot serve
+   * the window), 409 when the campaign has no platform id yet, reported no data for the window, or
+   * belongs to another account, 404 when the project has no connection for the channel, and
+   * 500/503 for an unusable connection or a failed platform read. They are thrown, not mapped, so
+   * the error middleware relays campaign-service's own status and sentence.
+   *
+   * A pure read upstream; nothing is persisted. `cost_micros` is USD on LinkedIn and the ad
+   * account's own currency elsewhere; the response names neither.
+   *
+   * The Optimize tab shows a row's counters from the brief-wide read it already makes, and calls
+   * this only when the operator refreshes one row, or asks about a row the brief-wide read could not
+   * measure (to get this read's precise 400/409 reason).
+   *
+   * The window is a QUERY parameter and is omitted unless the caller names one, for the reason
+   * `getBriefMetrics` gives: upstream picks a per-platform default (`last_7_days` on X Ads), and an
+   * explicit `last_30_days` sent on the caller's behalf would turn that X read into a 400.
+   */
+  public async getCampaignMetrics(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    campaignId: string,
+    window?: CampaignMetricsWindow
+  ): Promise<CampaignServiceCampaignMetrics> {
+    // Refused rather than sent, as `getBriefMetrics` refuses: an empty segment makes a different
+    // route that 404s at the gateway, which a caller cannot tell from campaign-service's own 404.
+    // Named per field, so the 400 says which one was missing.
+    for (const [field, value] of [
+      ['project', projectSlug],
+      ['briefId', briefId],
+      ['campaignId', campaignId],
+    ] as const) {
+      if (value === '') {
+        throw ServiceValidationError.forField(field, 'A campaign metrics read requires the project, the brief and the campaign it is scoped to.', {
+          operation: 'campaign_metrics_read',
+          service: 'campaign_service',
+        });
+      }
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceCampaignMetrics>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/campaigns/${encodePathSegment(campaignId)}/metrics`,
       'GET',
       window ? { window } : undefined
     );
@@ -2786,6 +3080,15 @@ export class CampaignServiceClient {
    * `FindBriefResponseBody` has no ETag field). Reading `data.etag` yields `undefined` every
    * time, which would make the second save of any event throw on the guard above rather than
    * issue its PUT.
+   *
+   * `readBriefValidator`, not `readEtag`, for exactly that reason taken one step further: the
+   * body has no `etag`, but it does have the `version` the header is rendered from, so when the
+   * header itself does not survive the hop the validator is still recoverable. Both consumers
+   * are better for it. `loadBrief` hands it to the restore, whose `approveStoredBrief` refuses
+   * outright on a null validator; `saveBrief` hands it to `replaceBrief`, whose
+   * `etag_fallback` arm would otherwise fall back to a SAVE-TIME read — the validator that
+   * always matches and can never 412, which is the last-write-wins hazard `loadBrief`'s own
+   * comment above describes.
    */
   // `deliveryType` and `stage` are part of the LOOKUP KEY upstream, not a filter applied to its
   // result. Omitting them does not widen the search; it addresses the paid brief with no stage,
@@ -2804,7 +3107,7 @@ export class CampaignServiceClient {
         delivery_type: deliveryType,
         stage,
       });
-      return { brief: response.data, etag: readEtag(response) };
+      return { brief: response.data, etag: readBriefValidator(response) };
     } catch (error) {
       if (error instanceof MicroserviceError && error.statusCode === 404 && isCampaignServiceNotFound(error.errorBody)) {
         return null;
@@ -2913,6 +3216,47 @@ function deepEqual(a: unknown, b: unknown): boolean {
 export function readEtag(response: ApiResponse<unknown>): string | null {
   const etag = response.headers['etag'];
   return typeof etag === 'string' && etag.length > 0 ? etag : null;
+}
+
+/**
+ * The validator for a BRIEF read: the `ETag` header, or the body's `version` quoted when the
+ * header did not reach us.
+ *
+ * The brief body does NOT carry an `etag` field — `design/brief.go` maps that attribute to the
+ * response header (`Header("etag:ETag")`), so Goa omits it from every generated brief response
+ * body (`FindBriefResponseBody` and `GetBriefResponseBody` have no such field). What the body
+ * does carry is `version`, and upstream renders both from the same value in one literal:
+ * `briefResult` sets `Version: b.Version` beside `Etag: optStr(briefETag(b.Version))`, and
+ * `briefETag` is nothing but `"` + `strconv.FormatInt(version, 10)` + `"`. Quoting the version
+ * here therefore reconstructs the header's own string rather than guessing at a second one, and
+ * `parseBriefIfMatch` upstream accepts the quoted form explicitly so it round-trips.
+ *
+ * Why bother: a read that hands its caller a validator means the caller's next version-gated
+ * write is CHECKED. An absent validator is not a weaker check, it is the absence of one, and
+ * the paths that cope with it either approve or overwrite a row nobody proved was still the row
+ * on screen — which is why `approveStoredBrief` now refuses instead of coping, and why
+ * `replaceBrief`'s `etag_fallback` arm is the weakest check in this file. Recovering the
+ * validator here keeps both out of reach for any row upstream actually answered with, which is a
+ * stronger fix than hardening each of them.
+ *
+ * `Number.isSafeInteger` is the guard, not a truthiness test. `version` is an int64 upstream:
+ * one past 2^53 has already lost digits in `JSON.parse` by the time it reaches this line, and a
+ * quoted wrong number is worse than no validator — it is an `If-Match` that cannot match, which
+ * surfaces as a stale-brief conflict the user never caused. Zero is a legitimate value and is
+ * kept: it is what the header would have said.
+ *
+ * READS only. The write paths keep bare `readEtag`: a write's own response is reconciled against
+ * what that write sent, a different question from "which row am I looking at", and one this
+ * change has no evidence about.
+ */
+export function readBriefValidator(response: ApiResponse<CampaignServiceBrief>): string | null {
+  const header = readEtag(response);
+  if (header !== null) {
+    return header;
+  }
+
+  const version = response.data?.version;
+  return Number.isSafeInteger(version) ? `"${version}"` : null;
 }
 
 /**
@@ -3210,6 +3554,23 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       linkedIn: brief.linkedInCopy ?? null,
       reddit: brief.redditCopy ?? null,
       meta: brief.metaCopy ?? null,
+      // Written as `null` when the brief has no list, NOT as `[]`, and the difference is load-bearing
+      // on the way back: `populateFromBrief` seeds these two on `!== undefined`. `null` restores as
+      // absent — the generator produced nothing, or ran before these fields existed — and leaves an
+      // editor the operator may have typed into alone. `[]` says something narrower and reaches here
+      // from one producer only: `briefWithCarriedExtensions`, which carries the operator's own
+      // emptied list forward, and whose `[]` restores as a cleared editor because that is what they
+      // asked for. `fromBriefResponse` below is the half that holds up this end of the contract.
+      //
+      // Under `copy` rather than a new top-level field because `BriefInput` has no first-class home
+      // for them and `copy` is the opaque slot whose meaning — "the creative this brief generated" —
+      // these fit; the same reasoning `targeting` carries for the planning fields.
+      googleCallouts: brief.googleCallouts ?? null,
+      googleSitelinks: brief.googleSitelinks ?? null,
+      // Stored beside them, and read back on the same `null`-is-absent rule, though nothing here
+      // CLEARS an editor: the Optimize tab's negative-keyword editor opens pre-filled from this
+      // list, and an absent or empty one simply leaves it blank, as it was before this field.
+      negativeKeywords: brief.negativeKeywords ?? null,
     },
     keywords: brief.keywords,
     targeting: {
@@ -3319,6 +3680,12 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     redditCopy: asVariantCopy<RedditBriefCopy>(copy['reddit'], REDDIT_VARIANT_FIELDS),
     metaCopy: asVariantCopy<MetaBriefCopy>(copy['meta'], META_VARIANT_FIELDS),
     keywords: asKeywords(found.keywords),
+    // `undefined` rather than `[]` for anything that is not an array, which is what makes a brief
+    // written before extension generation shipped restore as ABSENT instead of as an empty list —
+    // see the write side for why the Implementation tab needs those to stay distinguishable.
+    googleCallouts: asCallouts(copy['googleCallouts']),
+    googleSitelinks: asSitelinks(copy['googleSitelinks']),
+    negativeKeywords: asNegativeKeywords(copy['negativeKeywords']),
     campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
@@ -3603,6 +3970,168 @@ function asKeywords(value: unknown): CampaignKeyword[] {
     });
     return keywords;
   }, []);
+}
+
+/**
+ * A stored negative-keyword suggestion list, or `undefined` when the field is absent or not an
+ * array.
+ *
+ * Re-validated rather than trusted, and through the EDITOR'S own parser
+ * ({@link parseNegativeKeywordInput}) rather than a reimplementation, because that is the thing
+ * this list has to satisfy: a stored row can carry anything a past client wrote, and a suggestion
+ * the editor would refuse the operator for typing must never arrive pre-filled in it. Google Ads'
+ * 80-character cap is applied for the reason the generator applies it — the narrowest of the four
+ * platforms, since the brief does not know which campaign these will be sent to — and the count is
+ * bounded to what one request may carry.
+ *
+ * `undefined` and `[]` both leave the editor empty here, unlike {@link asCallouts}, where `[]` is
+ * an operator-emptied list and clears an editor. Nothing is lost either way: the operator's own
+ * text has never been stored in this field.
+ */
+function asNegativeKeywords(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const lines = value.filter((entry): entry is string => typeof entry === 'string');
+  const { keywords } = parseNegativeKeywordInput(lines.join('\n'), MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+  return keywords.slice(0, MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+}
+
+/**
+ * A stored callout list, or `undefined` when the field is absent or not an array.
+ *
+ * `undefined` and `[]` are NOT interchangeable here, unlike in `asKeywords` above: the
+ * Implementation tab seeds `googleCallouts` on `!== undefined`, so returning `[]` for a brief
+ * written before this feature existed would clear an editor rather than leave it untouched.
+ *
+ * A stored `[]` is a list the OPERATOR emptied. It reaches the row from one producer only —
+ * `briefWithCarriedExtensions` on the client, which carries an emptied draft list forward — because
+ * the generator yields its `callouts` event only when it shaped at least one entry, so a generation
+ * that produced nothing writes no field at all. So `[]` returns as `[]` and re-clears the editor,
+ * which is what the operator asked for, while the generation-produced-nothing and
+ * written-before-this-feature cases both arrive as the `null` `toBriefInput` writes, restore as
+ * absent, and leave the editor alone.
+ *
+ * Bounded and de-duplicated by the editor's own rules, so a row written by an older or foreign
+ * client cannot open the editor holding a list it would refuse the operator for typing. Where the
+ * generator's `shapeCallouts` DROPS an over-long entry, this one TRUNCATES it: there the entry is
+ * one the model just produced and the next candidate can take its place, here it is one the
+ * operator typed and the only alternative is losing it.
+ */
+function asCallouts(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const callouts: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const text = googleAdsBoundExtensionText(entry, GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES);
+    if (text === '') {
+      continue;
+    }
+    // Case-insensitive under Go's rules, matching the editor's own add-guard
+    // (`googleAdsToLower(c) === key`): it refuses a second "Free Admission" for an existing
+    // "free admission", so a restore that seeded both would leave the operator holding a pair
+    // they could not have created.
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    callouts.push(text);
+    if (callouts.length === GOOGLE_ADS_MAX_CALLOUTS) {
+      break;
+    }
+  }
+  return callouts;
+}
+
+/** Hoisted out of {@link asSitelinks}' loop — one encoder for the whole module, not one per row. */
+const SITELINK_URL_ENCODER = new TextEncoder();
+
+/**
+ * A stored sitelink list, or `undefined` when the field is absent or not an array.
+ *
+ * Held on the same `undefined`-vs-`[]` terms as {@link asCallouts}, and dropping an entry rather
+ * than the list for anything unusable — a sitelink with no text, no servable destination, or a
+ * `finalUrl` past the byte cap is one the operator could not have saved and campaign-service would
+ * refuse.
+ *
+ * Every guard below is re-applied here because a stored list has three possible producers and only
+ * one of them page-verified anything:
+ *
+ * - the GENERATOR, whose destinations came from `verifyPageLink` — every URL was fetched and found
+ *   servable on the event's own page;
+ * - this RESTORE path, whose output is only ever as good as the checks in this function, since what
+ *   it reads is whatever the opaque `copy` blob holds;
+ * - the CARRY (`briefWithCarriedExtensions` on the client), which re-persists the operator's EDITED
+ *   list — vetted by the editor's add-guards alone, so a destination typed or pasted there was
+ *   never fetched and is not known to resolve.
+ *
+ * So "this app only ever writes verified URLs" is not a premise this function may rest on, and the
+ * value lands in an `href` the operator clicks and in an ad's destination.
+ *
+ * The two description lines are ALL-OR-NOTHING, as upstream requires: a lone `description1` is
+ * dropped rather than carried, so the editor never opens on a pair that `googleads/assets.go`
+ * would reject on dispatch.
+ */
+function asSitelinks(value: unknown): CampaignSitelink[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const sitelinks: CampaignSitelink[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const record = asRecord(entry);
+    if (record === null) {
+      continue;
+    }
+
+    const text = googleAdsBoundExtensionText(record['text'], GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+    // Trimmed with Go's space set, not JS's, for the same reason `text` above is: the editor's
+    // `addGoogleSitelink` trims the destination with `googleAdsTrimSpace`, and the two disagree on
+    // characters this field really can carry. JS `trim` leaves U+0085 in place, `new URL()` then
+    // throws on it, and the guard below would drop a row the editor itself would accept.
+    const finalUrl = googleAdsTrimSpace(asText(record['finalUrl']));
+    // The same accept set the editor's add guard and the controller's dispatch refusal use, not a
+    // scheme check: a stored row carrying embedded credentials, a `;` in its query or a stray `%`
+    // parses fine under `new URL()` and is refused by `googleSitelinkUrlRefusal` at create. Seeding
+    // it would open the editor holding a chip the operator cannot have typed and cannot submit, and
+    // the only refusal they would ever see names a row they never added.
+    if (text === '' || !isGoogleAdsServableUrl(finalUrl)) {
+      continue;
+    }
+    // The byte cap is checked here and not only at dispatch, because the three other places that
+    // know about it all sit AFTER this one: `addGoogleSitelink` refuses an over-long URL on the
+    // add path, and the controller refuses the create. A restored row that skipped this would open
+    // the editor holding a chip the operator cannot have typed and cannot submit — a dead end whose
+    // only exit is deleting a row they did not add. Bytes, not runes: the limit is Google's and it
+    // counts the encoded URL.
+    if (SITELINK_URL_ENCODER.encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) {
+      continue;
+    }
+    // Keyed on the LABEL, not the destination, because that is the editor's guard
+    // (`googleAdsToLower(s.text)`) and upstream's: Google Ads refuses duplicate sitelink TEXT and
+    // is indifferent to two labels sharing one URL, which a combined "venue and agenda" page
+    // legitimately produces.
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    const description1 = googleAdsBoundExtensionText(record['description1'], GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+    const description2 = googleAdsBoundExtensionText(record['description2'], GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+    const descriptions = description1 !== '' && description2 !== '' ? { description1, description2 } : {};
+
+    sitelinks.push({ text, finalUrl, ...descriptions });
+    if (sitelinks.length === GOOGLE_ADS_MAX_SITELINKS) {
+      break;
+    }
+  }
+  return sitelinks;
 }
 
 /**

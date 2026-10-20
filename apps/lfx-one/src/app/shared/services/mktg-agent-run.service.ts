@@ -17,6 +17,7 @@ import {
   MktgRunAttempt,
   MktgRunGenerateBody,
   MktgRunQuestionsPending,
+  MktgRunPersistReceipt,
   MktgRunResultBody,
   MktgRunResultResponse,
   MktgRunSessionResponse,
@@ -59,13 +60,15 @@ import { UserService } from './user.service';
  * session via the chat/session BFF; `regenerateViaGenerate` intakes (e.g. the
  * ICP) send the same through the validated generate endpoint on a FRESH
  * session, replacing the stored run's session while keeping its version
- * history; and `freshRunPerSubmission` intakes (the Messaging Document) send
+ * history; and `freshRunPerSubmission` intakes (the Messaging Framework) send
  * every submission as a fresh first-run generate with no prior version and no
  * feedback, the run shell numbering the versions. An agent that researches
- * first (the Messaging Document) may answer the poll with `questions` instead
- * of a document: the run stops at a questions step, and `answerQuestions`
- * sends the answers to the SAME session and polls on. Either way the
- * document comes exclusively
+ * first (the Messaging Framework, the Brand Kit) may answer the poll with
+ * `questions` instead of a document: the run stops at a questions step, and
+ * `answerQuestions` sends the answers to the SAME session and polls on. An
+ * agent may also answer with `refused` (the Brand Kit without a messaging
+ * framework): it did not run, the reply is the outcome, and nothing is
+ * stored or retried. Either way the document comes exclusively
  * from the agent's result endpoint, which returns only schema-validated,
  * sha256-verified envelopes — raw chat text is never treated as the document.
  * Each run (session + answers + versions) persists in localStorage, keyed to
@@ -92,14 +95,27 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
+  // Receipt keys support exact document navigation during this page session only.
+  // They never become persisted run fields or approval evidence.
+  private readonly receiptKeys = new WeakMap<MktgRunVersion, string>();
+
+  public receiptKey(version: MktgRunVersion): string | null {
+    return this.receiptKeys.get(version) ?? null;
+  }
 
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
    *
    * - `submitted` — the generate/chat POST resolved.
+   * - `activity` — for intakes with a live feed (`liveActivity`), between
+   *   `submitted` and the outcome: the whole feed so far, on every poll
+   *   that changed it, the last one included.
    * - `questions` — INSTEAD of a document, and last: the agent asks the gaps
    *   it could not settle from the sources. The run continues through
    *   {@link answerQuestions} on the same session.
+   * - `refused` — INSTEAD of a document, and last: the agent did not run
+   *   (the Brand Kit with no messaging framework) and replied why; the
+   *   session is over, nothing is stored or retried.
    * - `document` — the validated document landed, with the updated stored run.
    * - `persisted` — OPTIONAL and last: the server-side copy exists. Emitted
    *   only for agents that persist their document (`persistsDocument`) whose
@@ -119,7 +135,7 @@ export class MktgAgentRunService {
     const stored = this.loadRun(request.projectUid, request.agentId);
     let attempt$: Observable<MktgRunAttempt>;
     if (!stored || request.intake.freshRunPerSubmission) {
-      // `freshRunPerSubmission` intakes (the Messaging Document) carry no
+      // `freshRunPerSubmission` intakes (the Messaging Framework) carry no
       // prior version or feedback: every submission is a first run on a fresh
       // session, appended to the stored run's history by `appendVersion`.
       attempt$ = this.startRun(request);
@@ -211,6 +227,7 @@ export class MktgAgentRunService {
     const body: MktgRunGenerateBody = {
       answers: request.answers,
       ...(request.documents?.length && { documents: request.documents }),
+      ...(request.logoFiles?.length && { logoFiles: request.logoFiles }),
       // The agent's own LFX lookups need the project; the storage partition is
       // the result poll's business, resolved server-side.
       ...(request.intake.submitsProject && request.projectUid && { project: request.projectUid }),
@@ -300,7 +317,9 @@ export class MktgAgentRunService {
 
   /**
    * What one generate attempt (or one answers round) ends in: the agent's
-   * questions, which end the stream, or the document with its stored run and
+   * questions, which end the stream; its refusal reply, which ends it too
+   * (the Brand Kit without a messaging framework — the session is over and
+   * the reply is the outcome); or the document with its stored run and
    * the bounded persistence retry behind it. `answered` is the round the
    * attempt is continuing, when it is one: its block is ignored by the poll
    * and stored with the version.
@@ -327,10 +346,15 @@ export class MktgAgentRunService {
             })
           );
         }
+        if (result.status === 'refused') {
+          // The agent did not run: nothing to store, nothing to retry.
+          return concat(activity$, of<MktgGenerateProgress>({ type: 'refused', reply: result.reply ?? '' }));
+        }
+        const run = this.appendVersion(request, attempt, result, answered);
         return concat(
           activity$,
-          of<MktgGenerateProgress>({ type: 'document', run: this.appendVersion(request, attempt, result, answered) }),
-          this.retryPersistence(request, attempt.session, result)
+          of<MktgGenerateProgress>({ type: 'document', run }),
+          this.retryPersistence(request, attempt.session, result, run.versions.at(-1)?.version ?? 0)
         );
       })
     );
@@ -340,7 +364,8 @@ export class MktgAgentRunService {
    * Polls the agent's validated result endpoint (owner token in the POST body,
    * never the query string) until it reports a `ready` document with a version
    * newer than the prior draft's — or, for intakes with an answers endpoint, a
-   * `questions` block other than the one already answered. The endpoint
+   * `questions` block other than the one already answered — or the agent's
+   * `refused` reply, which ends the session. The endpoint
    * surfaces only schema-validated, sha256-verified envelopes, so agent status
    * chatter can never be mistaken for the document — anything else stays
    * `pending`.
@@ -373,15 +398,18 @@ export class MktgAgentRunService {
     answeredQuestionsId?: string
   ): Observable<{ result: MktgRunResultResponse; terminal: boolean }> {
     const body = this.resultBody(session, projectUid);
+    // A ready result carries the document's Markdown, or — for an agent that
+    // writes a structured asset — the asset; either ends the poll.
     const isDocument = (result: MktgRunResultResponse): boolean =>
-      result.status === 'ready' && typeof result.documentMarkdown === 'string' && (result.version ?? 0) > priorVersion;
+      result.status === 'ready' && (typeof result.documentMarkdown === 'string' || !!result.asset) && (result.version ?? 0) > priorVersion;
     const isNewQuestions = (result: MktgRunResultResponse): boolean =>
       !!intake.endpoints.answers &&
       result.status === 'questions' &&
       (result.questions?.length ?? 0) > 0 &&
       !!result.questionsId &&
       result.questionsId !== answeredQuestionsId;
-    const isTerminal = (result: MktgRunResultResponse): boolean => isDocument(result) || isNewQuestions(result);
+    const isRefused = (result: MktgRunResultResponse): boolean => result.status === 'refused' && !!result.reply;
+    const isTerminal = (result: MktgRunResultResponse): boolean => isDocument(result) || isNewQuestions(result) || isRefused(result);
     return defer(() => {
       // One wall-clock deadline for the whole wait: with a live feed the poll
       // emits along the way, so a per-emission timeout would never fire.
@@ -423,9 +451,10 @@ export class MktgAgentRunService {
   }
 
   /**
-   * Bounded background persistence retry for agents whose result endpoint
-   * persists the validated document (`intake.persistsDocument`, today the
-   * Brand Kit's dec-brand-kit-storage-v2 write path).
+   * Bounded background persistence retry for every agent whose result
+   * endpoint persists the validated document: any intake that sets
+   * `persistsDocument`, not only the Brand Kit (the Messaging Framework's
+   * export, for one, relies on this retry too).
    *
    * A `ready` result with NO persistence receipt means the server-side write
    * did not happen — usually a transient object-store failure, which the BFF
@@ -440,14 +469,21 @@ export class MktgAgentRunService {
    * stream never errors a run that already succeeded: a failed retry poll is
    * just a spent attempt, exactly as on the standalone Brand Kit form, and the
    * budget is shared with it (`MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS`). Its ONE
-   * emission is `{ type: 'persisted' }` when a receipt finally arrives, after
-   * which polling stops. That event exists because dependency resolution
-   * prefers the SERVER copy over any browser-stored run: a v2 announced while
-   * the write was still failing would leave consumers attached to the server's
-   * v1 with nothing to tell them it had been superseded. No project scope
-   * means the BFF never persists at all, so there is nothing to retry.
+   * emission is `{ type: 'persisted', run }` when a receipt finally arrives,
+   * after which polling stops. The receipt's hash is written onto the stored
+   * `version` it persisted and `run` is that stored run (null when this
+   * browser no longer holds the run). The digest never identifies approval;
+   * a retained canonical receipt key supports document navigation only.
+   * The event refreshes server-approved dependency reads, never substitutes
+   * the browser Draft for an attachment. No project scope means the BFF never persists at all,
+   * so there is nothing to retry.
    */
-  private retryPersistence(request: MktgGenerateRequest, session: MktgSessionInfo, result: MktgRunResultResponse): Observable<MktgGenerateProgress> {
+  private retryPersistence(
+    request: MktgGenerateRequest,
+    session: MktgSessionInfo,
+    result: MktgRunResultResponse,
+    version: number
+  ): Observable<MktgGenerateProgress> {
     if (!request.intake.persistsDocument || result.persistence || !request.projectUid) {
       return EMPTY;
     }
@@ -470,8 +506,29 @@ export class MktgAgentRunService {
       // one that emits, and the stream completes right after it.
       takeWhile((response) => !response.persistence, true),
       filter((response) => !!response.persistence),
-      map((): MktgGenerateProgress => ({ type: 'persisted' }))
+      map((response): MktgGenerateProgress => ({ type: 'persisted', run: this.recordReceipt(request, version, response.persistence) }))
     );
+  }
+
+  /** Keep existing hash persistence; retain the receipt key only in memory for document navigation. */
+  private recordReceipt(request: MktgGenerateRequest, version: number, receipt: MktgRunPersistReceipt | undefined): MktgStoredAgentRun | null {
+    const contentSha256 = receipt?.content_sha256;
+    const stored = this.loadRun(request.projectUid, request.agentId);
+    if (!stored || !contentSha256) {
+      return stored;
+    }
+    const run: MktgStoredAgentRun = {
+      ...stored,
+      versions: stored.versions.map((entry) => {
+        if (entry.version !== version) return entry;
+        const updated = { ...entry, contentSha256 };
+        if (receipt?.project === request.projectUid) this.receiptKeys.set(updated, receipt.s3_key);
+        return updated;
+      }),
+      savedAt: new Date().toISOString(),
+    };
+    this.saveRun(run);
+    return run;
   }
 
   /** Result-endpoint body: the owner token travels in the body (never the query string), with the run's project scope when there is one. */
@@ -496,6 +553,8 @@ export class MktgAgentRunService {
       // always says version 1, so the run numbers its own history instead.
       version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
       document: result.documentMarkdown ?? '',
+      // An agent that writes an asset instead of a document stores it with the version; the run page renders it on the asset view.
+      ...(result.asset && { asset: result.asset }),
       feedback: request.feedback,
       derivatives: result.derivatives,
       // Recorded per version: the submission that produced this document is
@@ -503,8 +562,13 @@ export class MktgAgentRunService {
       // and a restored run both read.
       readme: attempt.readme,
       ...(answered && { questions: answered.questions, answers: answered.answers }),
+      // The Brand Kit's revision is a JSON kit: stored with the version so the kit view renders it back without a poll.
+      ...(result.brandKit && { brandKit: result.brandKit }),
+      // Preserve the existing content digest; it is not approval or revision identity.
+      ...(result.persistence?.content_sha256 && { contentSha256: result.persistence.content_sha256 }),
       createdAt: new Date().toISOString(),
     };
+    if (result.persistence?.project === request.projectUid) this.receiptKeys.set(version, result.persistence.s3_key);
     const run: MktgStoredAgentRun = {
       agentId: request.agentId,
       projectUid: request.projectUid,

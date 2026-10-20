@@ -20,11 +20,9 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 /**
  * Names a signatory and emails them the CCLA (#2365).
  *
- * Two entry points share this dialog: attestation **I am not authorized**, and the unsigned
- * Overview **Identify someone else**. It does not collect the self-sign attestation checkboxes,
- * and it does not send hardcoded `true` for them. The POST carries `sendAsEmail`, the name, and
- * the email — nothing else. Empty `signUrl` is success here; this dialog never navigates to
- * DocuSign.
+ * It does not collect the self-sign attestation checkboxes, and it does not send hardcoded
+ * `true` for them. The POST carries `sendAsEmail`, the name, and the email — nothing else.
+ * Empty `signUrl` is success here; this dialog never navigates to DocuSign.
  *
  * Distinct from the #1984 CLA Manager modal, which names a manager rather than a signatory.
  */
@@ -128,9 +126,9 @@ export class OrgEasyclaSendByEmailComponent {
         authorityEmail,
       })
       // take(1), not takeUntilDestroyed. Unsubscribing cancels the in-flight POST, so EasyCLA can
-      // still mail the signatory while onMailed never runs — Close then offers Identify someone
-      // else again. The overlay may be gone by the time this returns; the opener lock still must
-      // land. Same shape as the approval-list write: the request completes, local UI is skipped.
+      // still mail the signatory while onMailed never runs. The overlay may be gone by the time
+      // this returns; the opener lock still must land. Same shape as the approval-list write: the
+      // request completes, local UI is skipped.
       .pipe(take(1))
       .subscribe({
         next: () => {

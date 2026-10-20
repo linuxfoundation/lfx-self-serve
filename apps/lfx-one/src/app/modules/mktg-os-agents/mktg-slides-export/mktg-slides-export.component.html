@@ -1,0 +1,136 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- The export's panel: shown once there is a last export or an export under way; the header's button drives it. -->
+<div class="flex flex-col gap-3" aria-live="polite" data-testid="mktg-slides-export">
+  @if (visible()) {
+    <div class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3" data-testid="mktg-slides-export-panel">
+      @switch (phase()) {
+        @case ('choosing') {
+          <div class="flex flex-col gap-2" data-testid="mktg-slides-export-choice">
+            <p class="text-sm text-gray-700">
+              A deck already exists for this {{ assetLabel() }}. Update it in place (same link, same sharing), or create a new deck in Google Drive.
+            </p>
+            <div class="flex flex-wrap items-center gap-2">
+              <lfx-button
+                label="Update the existing deck"
+                icon="fa-light fa-arrows-rotate"
+                size="small"
+                data-testid="mktg-slides-export-update"
+                (onClick)="onChoose('update')" />
+              <lfx-button
+                label="Create a new deck"
+                icon="fa-light fa-plus"
+                [outlined]="true"
+                size="small"
+                data-testid="mktg-slides-export-create"
+                (onClick)="onChoose('create')" />
+              <lfx-button label="Cancel" [text]="true" size="small" data-testid="mktg-slides-export-cancel" (onClick)="onClose()" />
+            </div>
+          </div>
+        }
+        @case ('running') {
+          <div class="flex items-center gap-3 text-sm text-gray-700" role="status" data-testid="mktg-slides-export-running">
+            <span class="h-4 w-4 shrink-0 rounded-full border-2 border-blue-200 border-t-blue-600 motion-safe:animate-spin" aria-hidden="true"></span>
+            <span>Exporting the {{ assetLabel() }} to Google Slides… This usually takes a minute or two.</span>
+          </div>
+        }
+        @case ('done') {
+          @if (record(); as deck) {
+            <div class="flex flex-col gap-1.5" data-testid="mktg-slides-export-done">
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span class="text-sm font-semibold text-gray-900">Your deck is ready</span>
+                <a
+                  class="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-800"
+                  [href]="deck.link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="mktg-slides-export-open">
+                  Open the deck in Google Slides
+                  <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                  <span class="sr-only">(opens in a new tab)</span>
+                </a>
+                <div class="grow"></div>
+                <lfx-button label="Close" [text]="true" size="small" data-testid="mktg-slides-export-close" (onClick)="onClose()" />
+              </div>
+              <p class="text-xs text-gray-500" data-testid="mktg-slides-export-detail">{{ resultDetail() }}</p>
+              @if (brand(); as summary) {
+                <p class="text-xs text-gray-600" data-testid="mktg-slides-export-brand">{{ summary.text }}</p>
+                @if (summary.logoNote) {
+                  <p class="text-xs text-amber-700" data-testid="mktg-slides-export-logo-note">{{ summary.logoNote }}</p>
+                }
+              }
+            </div>
+          }
+        }
+        @case ('failed') {
+          <div class="flex flex-col gap-2" data-testid="mktg-slides-export-failed">
+            <lfx-message severity="error" [text]="failureMessage()" />
+            <div class="flex flex-wrap items-center gap-2">
+              @if (failure() === 'not-a-deck') {
+                <lfx-button
+                  label="Create a new deck"
+                  icon="fa-light fa-plus"
+                  size="small"
+                  data-testid="mktg-slides-export-create-instead"
+                  (onClick)="onChoose('create')" />
+              } @else {
+                <lfx-button label="Try again" icon="fa-light fa-rotate-right" size="small" data-testid="mktg-slides-export-retry" (onClick)="onRetry()" />
+              }
+              @if (failureDeckLink(); as link) {
+                <a
+                  class="text-sm font-medium text-blue-600 hover:text-blue-800"
+                  [href]="link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="mktg-slides-export-partial-deck"
+                  >Open the incomplete deck<span class="sr-only"> (opens in a new tab)</span></a
+                >
+              }
+              <lfx-button label="Close" [text]="true" size="small" data-testid="mktg-slides-export-dismiss" (onClick)="onClose()" />
+            </div>
+          </div>
+        }
+      }
+
+      @if (showLookupFailed()) {
+        <div class="flex flex-wrap items-center gap-2 text-sm text-gray-700" data-testid="mktg-slides-export-lookup-failed">
+          <span
+            >Could not check for an earlier deck of this {{ assetLabel() }}. Export waits until the check succeeds, so no second deck is made by mistake.</span
+          >
+          <lfx-button
+            [label]="lookupChecking() ? 'Checking…' : 'Check again'"
+            icon="fa-light fa-rotate-right"
+            [text]="true"
+            size="small"
+            [loading]="lookupChecking()"
+            [disabled]="lookupChecking()"
+            data-testid="mktg-slides-export-check-again"
+            (onClick)="onCheckAgain()" />
+        </div>
+      }
+
+      @if (showLast()) {
+        @if (last(); as previous) {
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500" data-testid="mktg-slides-export-last">
+            <i class="fa-light fa-presentation-screen text-gray-400" aria-hidden="true"></i>
+            <a
+              class="font-medium text-blue-600 hover:text-blue-800"
+              [href]="previous.link"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="mktg-slides-export-last-link"
+              >Open the last export<span class="sr-only"> (opens in a new tab)</span></a
+            >
+            <span>· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }} · from revision {{ previous.revisionNumber }}</span>
+            @if (stale()) {
+              <span class="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700" data-testid="mktg-slides-export-stale"
+                >Out of date: the {{ assetLabel() }} has a newer revision</span
+              >
+            }
+          </div>
+        }
+      }
+    </div>
+  }
+</div>

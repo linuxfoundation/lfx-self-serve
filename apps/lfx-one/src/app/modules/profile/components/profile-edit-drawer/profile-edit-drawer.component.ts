@@ -69,7 +69,7 @@ export class ProfileEditDrawerComponent {
   // While impersonating, the drawer opens to show the target user's profile, but stays read-only:
   // mutations still act on the real account and are rejected server-side (IMPERSONATION_READ_ONLY).
   // Read directly off UserService rather than threading it through an @Input, matching the
-  // established pattern (weekly-brief-card, lens-switcher). profile-panel receives it via
+  // established pattern (weekly-brief-card). profile-panel receives it via
   // @Input instead, since it's purely presentational and sourced from the parent's data.
   public readonly impersonating = this.userService.impersonating;
 

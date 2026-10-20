@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import type { PastMeetingSummary } from '../interfaces';
+import type { Meeting, PastMeetingSummary } from '../interfaces';
 
 /**
  * AI summary approval gating, kept free of Angular imports so the pure logic can
@@ -43,4 +43,21 @@ export function isPastMeetingSummaryVisible(summary: SummaryApprovalFlags | null
 export function isPastMeetingSummaryAwaitingApproval(summary: SummaryApprovalFlags | null | undefined): boolean {
   if (!summary) return false;
   return summary.requires_approval && !summary.approved;
+}
+
+/**
+ * Whether the summary modal opens read-only for this viewer: the Edit and Approve actions are only
+ * offered when the viewer holds organizer rights on the meeting (the same relation the upstream
+ * write checks) and the summary has a uid to write back to. Fails closed on missing input.
+ *
+ * @param meeting - The meeting the summary belongs to; `organizer` is the access-check flag the
+ *   BFF adds to the response (or null/undefined when not loaded)
+ * @param summary - The past meeting summary (or null/undefined when not loaded)
+ * @returns true when the viewer may only read the summary
+ */
+export function isPastMeetingSummaryReadOnly(
+  meeting: Pick<Meeting, 'organizer'> | null | undefined,
+  summary: Pick<PastMeetingSummary, 'uid'> | null | undefined
+): boolean {
+  return meeting?.organizer !== true || !summary?.uid;
 }

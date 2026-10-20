@@ -8,25 +8,24 @@ import {
   HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO,
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO,
-  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
   HEALTH_METRICS_EVENTS_NOT_AVAILABLE,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
   HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
-  HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_VIRTUAL_SHARE,
   HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_PANDEMIC_YEARS,
   HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD,
   HEALTH_METRICS_EVENTS_SECTIONS,
-  HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPEAKERS_RECENT_PROPOSALS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_TOP_ORGANIZATIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
-  HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET,
 } from '../constants/health-metrics-events.constants';
+import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
 import { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+import { HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH, HEALTH_METRICS_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-members.constants';
+import { HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH, HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
@@ -44,6 +43,7 @@ import type {
   HealthMetricsEventsGeography,
   HealthMetricsEventsGeographyView,
   HealthMetricsEventsOrganization,
+  HealthMetricsEventsOrganizationLink,
   HealthMetricsEventsOrganizationRowView,
   HealthMetricsEventsPast,
   HealthMetricsEventsPastEvent,
@@ -61,8 +61,8 @@ import type {
   HealthMetricsEventsRegistrationsGrowthYear,
   HealthMetricsEventsSectionKey,
   HealthMetricsEventsSpeakers,
-  HealthMetricsEventsSpeakersBarInput,
-  HealthMetricsEventsSpeakersBarView,
+  HealthMetricsEventsRankedRowInput,
+  HealthMetricsEventsRankedRowView,
   HealthMetricsEventsSpeakersProposal,
   HealthMetricsEventsSpeakersProposalRowView,
   HealthMetricsEventsSpeakersStatusGroup,
@@ -97,15 +97,43 @@ export function buildHealthMetricsEventsOrganizationRowView(organization: Health
   return {
     accountId: organization.accountId,
     accountName: organization.accountName,
-    logoUrl: organization.logoUrl ?? '',
     memberLabel: membership.label,
-    memberClass: membership.badgeClass,
+    memberGlyph: membership.glyph,
+    memberClass: membership.textClass,
     registrationsLabel: formatHealthMetricsEventsCount(organization.registrations),
     barWidthPct: Math.min(Math.max(share * 100, 0), 100),
     sponsorshipLabel: organization.sponsorshipUsd ? formatCurrency(organization.sponsorshipUsd) : '—',
     proposalsLabel: organization.proposals ? formatHealthMetricsEventsCount(organization.proposals) : '—',
     speakersLabel: formatHealthMetricsEventsCount(organization.speakers),
     eventsLabel: formatHealthMetricsEventsCount(organization.events),
+    link: buildHealthMetricsEventsOrganizationLink(organization),
+    linkLabel: `Open ${organization.accountName} in ${organization.isMember ? 'Members' : 'Non-Members'}`,
+  };
+}
+
+/** A member opens the Members directory and a non-member opens Non-Members company participation, each searched by name with other filters cleared. */
+function buildHealthMetricsEventsOrganizationLink(organization: HealthMetricsEventsOrganization): HealthMetricsEventsOrganizationLink {
+  if (organization.isMember) {
+    return {
+      commands: [HEALTH_METRICS_BASE_PATH, 'members'],
+      fragment: 'list',
+      queryParams: {
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directorySearch]: organization.accountName.slice(0, HEALTH_METRICS_MEMBERS_DIRECTORY_MAX_SEARCH_LENGTH),
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryTier]: null,
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryNps]: null,
+        [HEALTH_METRICS_MEMBERS_QUERY_PARAMS.directoryPage]: null,
+      },
+    };
+  }
+
+  return {
+    commands: [HEALTH_METRICS_BASE_PATH, 'non-members'],
+    fragment: 'orgs',
+    queryParams: {
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsSearch]: organization.accountName.slice(0, HEALTH_METRICS_NON_MEMBERS_ORGS_MAX_SEARCH_LENGTH),
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsFilter]: null,
+      [HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS.orgsPage]: null,
+    },
   };
 }
 
@@ -190,8 +218,6 @@ export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsF
 export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastRowView[] {
   return sortHealthMetricsEventsForecastRows(events).map((event) => {
     const status = resolveHealthMetricsEventsForecastStatus(event);
-    const ratio = resolveProgressRatio(event);
-    const pct = ratio === null ? null : Math.round(ratio * 100);
 
     return {
       event,
@@ -201,8 +227,7 @@ export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEv
       dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
       registrationsLabel: formatHealthMetricsEventsCount(event.registrationsNow),
       goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
-      progressPct: pct === null ? null : Math.min(pct, 100),
-      progressClass: resolveProgressClass(pct),
+      hasGoal: hasHealthMetricsEventsGoal(event.goal),
     };
   });
 }
@@ -270,23 +295,22 @@ export function formatHealthMetricsEventsRevenue(value: number | null): string {
   return value === null ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : formatCurrency(value);
 }
 
-/** One period's at-a-glance section. For YTD the events total adds the upcoming ones to those held so far. */
+/** One period's at-a-glance section. For YTD the events total adds the upcoming ones to those held so far; it carries no delta. */
 export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEventsAtAGlance, range: HealthMetricsRange): HealthMetricsEventsAtAGlanceView {
   const period = glance.periods.find((candidate) => candidate.range === range) ?? null;
   const changes = period?.changes ?? null;
   const upcoming = range === 'YTD' ? glance.upcomingEvents : 0;
   const past = period?.pastEvents ?? null;
   const total = past === null || upcoming === null ? null : past + upcoming;
+  const noDelta: HealthMetricsEventsAtAGlanceDelta = { delta: null, deltaDirection: 'neutral' };
   // `null` changes means the period is not compared, so its figures carry no delta at all.
   const delta = (value: number | null | undefined, unit: 'pct' | 'pp' = 'pct'): HealthMetricsEventsAtAGlanceDelta =>
-    changes ? formatAtAGlanceDelta(value ?? null, unit) : { delta: null, deltaDirection: 'neutral' };
-  const warns = (value: number | null | undefined): boolean => value !== null && value !== undefined && value < HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE;
-  const stat = (key: string, label: string, value: string, change: HealthMetricsEventsAtAGlanceDelta, warn = false): HealthMetricsEventsAtAGlanceStatView => ({
+    changes ? formatAtAGlanceDelta(value ?? null, unit) : noDelta;
+  const stat = (key: string, label: string, value: string, change: HealthMetricsEventsAtAGlanceDelta): HealthMetricsEventsAtAGlanceStatView => ({
     key,
     label,
     value,
     ...change,
-    warn,
   });
 
   return {
@@ -297,22 +321,22 @@ export function buildHealthMetricsEventsAtAGlanceView(glance: HealthMetricsEvent
     side: [
       stat('attendees', 'Attendees', formatAtAGlanceCount(period?.attendees), delta(changes?.attendees)),
       stat('show-up-rate', 'Show-up rate', formatShowUpRate(period), delta(changes?.showUpRatePts, 'pp')),
-      stat('events', 'Events held', formatAtAGlanceCount(period?.events), delta(changes?.events)),
+      stat('events', 'Events', formatAtAGlanceCount(total), noDelta),
     ],
     tiles: [
       stat('registrations', 'Registrations', formatAtAGlanceCount(period?.registrations), delta(changes?.registrations)),
-      stat('attendees', 'Attendees', formatAtAGlanceCount(period?.attendees), delta(changes?.attendees), warns(changes?.attendees)),
+      stat('attendees', 'Attendees', formatAtAGlanceCount(period?.attendees), delta(changes?.attendees)),
       stat('organizations', 'Organizations', formatAtAGlanceCount(period?.organizations), delta(changes?.organizations)),
-      stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), delta(changes?.speakers), warns(changes?.speakers)),
+      stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), delta(changes?.speakers)),
       stat('countries', 'Countries', formatAtAGlanceCount(period?.countries), delta(changes?.countries)),
-      { key: 'past-upcoming', label: 'Past / upcoming', value: formatPastUpcoming(past, upcoming), delta: null, deltaDirection: 'neutral', warn: false },
+      stat('past-upcoming', 'Past / upcoming', formatPastUpcoming(past, upcoming), noDelta),
     ],
   };
 }
 
 /**
- * One period's revenue section; the table lists only the past events in that period, matching the headline.
- * Upcoming events fall in no period, so they list apart on the current-year view, soonest first.
+ * One period's revenue section. Upcoming events fall in no period, so only the current-year view lists them,
+ * soonest first, ahead of the period's past events, latest first.
  */
 export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEventsRevenue, range: HealthMetricsRange): HealthMetricsEventsRevenueView {
   const period = revenue.periods.find((candidate) => candidate.range === range) ?? null;
@@ -329,16 +353,13 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
     label,
     value: formatHealthMetricsEventsRevenue(value ?? null),
     ...change,
-    warn: false,
   });
-  const rows = revenue.events.filter((event) => event.isPastEvent && event.ranges.some((candidate) => candidate === range)).map(buildRevenueRowView);
-  const upcomingRows =
-    range === 'YTD'
-      ? revenue.events
-          .filter((event) => !event.isPastEvent)
-          .sort((a, b) => compareUpcomingStartDates(a.eventStartDate, b.eventStartDate))
-          .map(buildRevenueRowView)
-      : [];
+  const upcoming =
+    range === 'YTD' ? revenue.events.filter((event) => !event.isPastEvent).sort((a, b) => compareStartDates(a.eventStartDate, b.eventStartDate, 'asc')) : [];
+  const past = revenue.events
+    .filter((event) => event.isPastEvent && event.ranges.some((candidate) => candidate === range))
+    .sort((a, b) => compareStartDates(a.eventStartDate, b.eventStartDate, 'desc'));
+  const rows = [...upcoming, ...past].map(buildRevenueRowView);
 
   return {
     foundationMeasured: revenue.periods.length > 0,
@@ -347,12 +368,11 @@ export function buildHealthMetricsEventsRevenueView(revenue: HealthMetricsEvents
     side: [
       stat('registration', 'Registration', period?.registrationUsd, delta(changes?.registration)),
       stat('sponsorship', 'Sponsorship', period?.sponsorshipUsd, delta(changes?.sponsorship)),
-      { key: 'split', label: 'Split', value: formatRevenueSplit(period?.registrationShare ?? null), delta: null, deltaDirection: 'neutral', warn: false },
+      { key: 'split', label: 'Split', value: formatRevenueSplit(period?.registrationShare ?? null), delta: null, deltaDirection: 'neutral' },
     ],
     rows,
-    upcomingRows,
     eventsMeasured: revenue.eventsMeasured,
-    hasUnconverted: period?.hasUnconverted === true || [...rows, ...upcomingRows].some((row) => row.event.hasUnconverted),
+    hasUnconverted: period?.hasUnconverted === true || rows.some((row) => row.event.hasUnconverted),
     headlineUnconverted: period?.hasUnconverted === true,
   };
 }
@@ -420,7 +440,6 @@ export function buildHealthMetricsEventsSpeakersView(
     label,
     value,
     ...change,
-    warn: false,
   });
   const tabCounts: Record<HealthMetricsEventsSpeakersTab, number | null> = {
     all: period?.submitted ?? null,
@@ -442,7 +461,6 @@ export function buildHealthMetricsEventsSpeakersView(
               label: organization.accountName,
               rank: entry.rank,
               value: entry.submitted,
-              barClass: HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
             },
           ]
         : [];
@@ -461,17 +479,16 @@ export function buildHealthMetricsEventsSpeakersView(
       stat('acceptance-rate', 'Acceptance rate', formatWholePercent(period?.acceptanceRate ?? null)),
       stat('speakers', 'Speakers', formatAtAGlanceCount(period?.speakers), changes ? formatAtAGlanceDelta(changes.speakers, 'pct') : undefined),
     ],
-    statusBars: buildSpeakersBars(
+    statusRows: buildRankedRows(
       (Object.keys(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS) as HealthMetricsEventsSpeakersStatusGroup[])
         .map((group) => ({
           key: group,
           label: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].label,
           value: statusCounts[group],
-          barClass: HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS[group].barClass,
         }))
         .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
     ),
-    organizations: buildSpeakersBars(organizations),
+    organizations: buildRankedRows(organizations),
     individualLabel: individual ? `${formatProposalCount(individual)} submitted` : null,
     proposals: speakers.proposals
       .filter((proposal) => proposal.range === range && (tab === 'all' || proposal.statusGroup === tab))
@@ -512,7 +529,6 @@ export function buildHealthMetricsEventsSponsorshipView(
     label,
     value,
     ...(change ?? { delta: null, deltaDirection: 'neutral' }),
-    warn: false,
   });
   const tierPackages = period?.tierPackages ?? null;
   const addOns = period?.addOns ?? null;
@@ -534,9 +550,7 @@ export function buildHealthMetricsEventsSponsorshipView(
     ],
     goalSet: !!period?.goalUsd,
     progress: period?.goalUsd ? resolveSponsorshipProgress(period.progressToGoal) : null,
-    tiers: buildSpeakersBars(
-      (period?.tiers ?? []).map((tier) => ({ key: tier.name, label: tier.name, value: tier.packages, barClass: HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS }))
-    ),
+    tiers: buildRankedRows((period?.tiers ?? []).map((tier) => ({ key: tier.name, label: tier.name, value: tier.packages }))),
   };
 }
 
@@ -547,7 +561,6 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
   const measured = topCountries.length > 0;
   const countries = measured ? (period?.countries ?? null) : null;
   const changes = measured ? (period?.changes ?? null) : null;
-  const hidden = measured ? Math.max((period?.rankedCountries ?? 0) - topCountries.length, 0) : 0;
 
   return {
     foundationMeasured: geography.periods.length > 0,
@@ -559,17 +572,8 @@ export function buildHealthMetricsEventsGeographyView(geography: HealthMetricsEv
       label: 'Countries represented',
       value: formatAtAGlanceCount(countries),
       ...(changes ? formatAtAGlanceDelta(changes.countries, 'pct') : { delta: null, deltaDirection: 'neutral' }),
-      warn: false,
     },
-    bars: buildSpeakersBars(
-      topCountries.map((country) => ({
-        key: country.country,
-        label: country.country,
-        value: country.registrations,
-        barClass: HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
-      }))
-    ),
-    moreLabel: hidden > 0 ? `+${hidden.toLocaleString('en-US')} more` : '',
+    topCountries: buildRankedRows(topCountries.map((country) => ({ key: country.country, label: country.country, value: country.registrations }))),
   };
 }
 
@@ -632,22 +636,15 @@ function buildRevenueRowView(event: HealthMetricsEventsRevenueEvent): HealthMetr
     registrationGoalLabel: formatRevenueGoal(event.registrationGoal, event.registrationGoalWithheld),
     sponsorshipLabel: formatHealthMetricsEventsRevenue(event.sponsorshipUsd),
     sponsorshipGoalLabel: formatRevenueGoal(event.sponsorshipGoal, event.sponsorshipGoalWithheld),
-    goalStatus: resolveRevenueGoalStatus(event),
   };
 }
 
-/** Only a past event with a goal in USD carries a chip; the model leaves the flag unset otherwise. */
-function resolveRevenueGoalStatus(event: HealthMetricsEventsRevenueEvent): HealthMetricsEventsRevenueRowView['goalStatus'] {
-  if (!event.isPastEvent || event.goalMet === null) return null;
-  return event.goalMet ? HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES.met : HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES.missed;
-}
-
-/** Soonest first, with an undated event last so it can't top the list. */
-function compareUpcomingStartDates(a: string | null, b: string | null): number {
+/** Start dates in either order, with an undated event last so it can't top the list. */
+function compareStartDates(a: string | null, b: string | null, order: 'asc' | 'desc'): number {
   if (a === b) return 0;
   if (a === null) return 1;
   if (b === null) return -1;
-  return a.localeCompare(b);
+  return order === 'asc' ? a.localeCompare(b) : b.localeCompare(a);
 }
 
 function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastRowView {
@@ -661,17 +658,9 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
     dateLabel: event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—',
     registrationsLabel: formatHealthMetricsEventsCount(event.registrations),
     goalLabel: formatHealthMetricsEventsCount(hasHealthMetricsEventsGoal(event.goal) ? event.goal : null),
+    hasGoal: hasHealthMetricsEventsGoal(event.goal),
     revenueLabel: formatHealthMetricsEventsRevenue(event.revenueUsd),
-    progressPct: resolvePastProgressPct(event),
-    progressClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].progressClass,
   };
-}
-
-/** Final registrations against goal, capped at 100; null when either is unmeasured, since null is not zero. */
-function resolvePastProgressPct(event: HealthMetricsEventsPastEvent): number | null {
-  if (!hasHealthMetricsEventsGoal(event.goal) || event.registrations === null) return null;
-
-  return Math.min(100, Math.round((event.registrations / event.goal) * 100));
 }
 
 /** Registrations now against goal; null when either is unmeasured, since null is not zero. */
@@ -679,13 +668,6 @@ function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number |
   if (!hasHealthMetricsEventsGoal(event.goal) || event.registrationsNow === null) return null;
 
   return event.registrationsNow / event.goal;
-}
-
-function resolveProgressClass(pct: number | null): string {
-  if (pct === null) return 'bg-gray-200';
-  if (pct >= 90) return 'bg-emerald-500';
-
-  return pct >= 45 ? 'bg-amber-500' : 'bg-red-400';
 }
 
 function buildRegistrationsGrowthRowView(
@@ -741,17 +723,9 @@ function formatWholePercent(fraction: number | null): string {
   return fraction === null ? HEALTH_METRICS_EVENTS_NOT_AVAILABLE : `${Math.round(fraction * 100)}%`;
 }
 
-/** Bars scaled against the longest; an unmeasured value draws no bar and reads as not available. */
-function buildSpeakersBars(items: HealthMetricsEventsSpeakersBarInput[]): HealthMetricsEventsSpeakersBarView[] {
-  const max = Math.max(0, ...items.map((item) => item.value ?? 0));
-
-  return items.map((item) => ({
-    key: item.key,
-    label: item.label,
-    valueLabel: formatAtAGlanceCount(item.value),
-    widthPct: max > 0 && item.value !== null ? (item.value / max) * 100 : 0,
-    barClass: item.barClass,
-  }));
+/** Ranked-list rows, name and value only; an unmeasured value reads as not available. */
+function buildRankedRows(items: HealthMetricsEventsRankedRowInput[]): HealthMetricsEventsRankedRowView[] {
+  return items.map((item) => ({ key: item.key, label: item.label, valueLabel: formatAtAGlanceCount(item.value) }));
 }
 
 /** `null` without a modelled progress; the width stops at full while the label keeps the real percent. */

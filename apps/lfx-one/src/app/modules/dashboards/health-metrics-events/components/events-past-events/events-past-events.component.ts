@@ -13,6 +13,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
@@ -28,7 +29,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-past-events',
-  imports: [EmptyStateComponent, Skeleton, TableComponent],
+  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
   templateUrl: './events-past-events.component.html',
 })
 export class EventsPastEventsComponent {

@@ -1,7 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AI_MODEL, CAMPAIGN_DELIVERY_TYPES, GOOGLE_ADS_GEO_TARGET_MAP, JOB_LOST_MESSAGE, META_CHAR_LIMITS } from '@lfx-one/shared/constants';
+import {
+  AI_MODEL,
+  CAMPAIGN_DELIVERY_TYPES,
+  GOOGLE_ADS_GEO_TARGET_MAP,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  googleAdsBoundExtensionText,
+  googleAdsToLower,
+  googleAdsTrimSpace,
+  isGoogleAdsServableUrl,
+  JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+  META_CHAR_LIMITS,
+} from '@lfx-one/shared/constants';
+import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 
 import { isConfidentMatch, scoreCampaignName } from './campaign-utm-mapper';
 
@@ -18,6 +36,7 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignProgramType,
+  CampaignSitelink,
   CampaignSSEEventType,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
@@ -640,6 +659,23 @@ function buildCopySystemPrompt(platforms: string[], programType?: CampaignProgra
 // alone, since the model has to pick. Keywords are a search-intent concept and identical
 // across the two platforms, so neutral wording loses nothing.
 const KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array. No markdown fences, no explanation.`;
+
+/**
+ * Names Google Ads ALONE, unlike {@link KEYWORD_SYSTEM_PROMPT}, because the gate below is narrower
+ * than the keyword gate: callouts are a Google extension asset, dispatched only on `googleCallouts`
+ * and validated only by `googleads/assets.go`. A Microsoft-only brief reaches the keyword block and
+ * does not reach this one, so naming both platforms here would describe a caller that cannot exist.
+ */
+const CALLOUT_SYSTEM_PROMPT = `You are a Google Ads extensions strategist. Return only a valid JSON array of strings. No markdown fences, no explanation.`;
+
+/**
+ * Names both search platforms, as {@link KEYWORD_SYSTEM_PROMPT} does and unlike
+ * {@link CALLOUT_SYSTEM_PROMPT}, because the gate below is the keyword gate: a negative keyword is
+ * an exclusion on the same search query a keyword matches, and campaign-service adds it at campaign
+ * level on Google Ads and on Microsoft Advertising alike (`add-negative-keywords`). Nothing in the
+ * list is platform-specific, so a Microsoft-only brief gets the same one.
+ */
+const NEGATIVE_KEYWORD_SYSTEM_PROMPT = `You are a paid search keyword strategist for Google Ads and Microsoft Advertising. Return only a valid JSON array of strings. No markdown fences, no explanation.`;
 
 const LINKEDIN_STRATEGY_SYSTEM_PROMPT_EVENTS = `You are a LinkedIn Ads strategist specializing in developer and open-source technology events.
 Analyze the event details and generate a comprehensive targeting strategy for LinkedIn Sponsored Content campaigns.
@@ -1708,6 +1744,79 @@ export class CampaignProxyService {
         logger.warning(req, 'campaign_brief_keywords', 'Keyword generation failed', { err: error });
         yield { type: 'status', data: 'Keyword generation failed, skipping...' };
       }
+
+      // The SAME gate as the keywords above, deliberately: a negative keyword is the exclusion side
+      // of the keyword list, derived from the same event details, and campaign-service adds it at
+      // campaign level on Google Ads and Microsoft Advertising both. It is NOT gated on
+      // `!isRefinement` the way callouts and sitelinks are, and the difference is not an oversight:
+      // this list is a SUGGESTION the Optimize tab's editor opens pre-filled with, never a stored
+      // decision, and nothing the operator typed lives in the field a regeneration would overwrite
+      // — what they type lives in the editor's own text until they send it. Sitelinks' silent-wipe
+      // problem has no analogue here either: nothing in this block reads `pageLinks`.
+      //
+      // Nested in the keyword gate rather than repeated beside it so the two conditions cannot
+      // drift apart; a brief that gets keywords gets negatives, and the pairing is the point.
+      yield { type: 'status', data: 'Generating negative keywords...' };
+      try {
+        const negativePrompt = buildNegativeKeywordsPrompt(body, eventDetails);
+        const negativeText = stripJsonFences(await aiChat(NEGATIVE_KEYWORD_SYSTEM_PROMPT, negativePrompt, signal));
+        const negativeKeywords = shapeNegativeKeywords(JSON.parse(negativeText));
+        // Guarded for the reason the callout yield is: an empty array is a value the client
+        // assigns, so a response that shaped away to nothing would clear a list already held.
+        if (negativeKeywords.length > 0) {
+          yield { type: 'negativeKeywords', data: negativeKeywords };
+        }
+      } catch (error) {
+        // An operator closing the tab aborts this signal, which arrives here as an AbortError —
+        // a cancellation, not a degradation. Checked first, as the callout catch does.
+        if (signal.aborted) return;
+        logger.warning(req, 'campaign_brief_negative_keywords', 'Negative keyword generation failed', { err: error });
+        yield { type: 'status', data: 'Negative keyword generation failed, skipping...' };
+      }
+    }
+
+    // Narrower than the keyword gate above, and not by oversight. Callouts and sitelinks are
+    // GOOGLE extension assets: `CampaignCreateRequest` carries them under `callouts`/`sitelinks`
+    // SEARCH-only, the Implementation tab renders their editors behind `googleCalloutsAvailable`,
+    // and only `googleads/assets.go` validates them. A Microsoft-only brief takes the keyword
+    // block and skips this one, which is right — seeding extensions it has no way to dispatch
+    // would fill an editor the operator never sees with text nothing reads.
+    //
+    // `!isRefinement` covers both halves for one reason each. Sitelinks are derived from
+    // `pageLinks`, which a refinement never populated (it does not scrape), so every URL would
+    // fail verification and the block would yield an empty list OVER the operator's edited one —
+    // a silent wipe, not a no-op, since absent and empty are the same value on this wire.
+    // Callouts are excluded on the matching rule rather than a different one: a refinement that
+    // regenerated them would discard the operator's edits the same way.
+    if (!isEmail && !isRefinement && selectedPlatforms.includes('google-ads')) {
+      // Deterministic and free — no model call, so no try/catch and no status line of its own.
+      // An empty result is the honest answer for a page that carries none of the four links.
+      const sitelinks = buildSitelinksFromPage(eventDetails, pageLinks, pageBaseUrl, body.programType);
+      if (sitelinks.length > 0) {
+        yield { type: 'sitelinks', data: sitelinks };
+      }
+
+      yield { type: 'status', data: 'Generating callout extensions...' };
+      try {
+        const calloutPrompt = buildCalloutPrompt(body, eventDetails);
+        const calloutText = stripJsonFences(await aiChat(CALLOUT_SYSTEM_PROMPT, calloutPrompt, signal));
+        const callouts = shapeCallouts(JSON.parse(calloutText));
+        // Guarded rather than yielded unconditionally, for the reason the sitelink yield is: an
+        // empty array is a value the client assigns, so a response that shaped away to nothing
+        // would clear a list the operator may already be holding.
+        if (callouts.length > 0) {
+          yield { type: 'callouts', data: callouts };
+        }
+      } catch (error) {
+        // The controller aborts this signal on `res.on('close')`, so an operator closing the tab
+        // mid-call lands here as an AbortError — a cancellation, not a degradation. Checked first
+        // the way every sibling catch in this file that carries the same signal does, because WARN
+        // is for on-call-relevant failure and a caller-triggered cancel is neither relevant nor
+        // rate-limited: one per closed tab.
+        if (signal.aborted) return;
+        logger.warning(req, 'campaign_brief_callouts', 'Callout generation failed', { err: error });
+        yield { type: 'status', data: 'Callout generation failed, skipping...' };
+      }
     }
 
     // `!isEmail` is not redundant with the platform check. Today's client never sends
@@ -2572,6 +2681,268 @@ ${platformInstruction}`;
   return `Generate ad copy for this ${contentLabel}: ${body.url}${extraBlock}${refinementBlock}
 
 ${platformInstruction}`;
+}
+
+/** Hoisted out of {@link buildSitelinksFromPage}'s loop — one encoder for the whole module, not one per row. */
+const SITELINK_URL_ENCODER = new TextEncoder();
+
+/**
+ * The page links that become sitelinks, each with the label it is given, keyed by program type.
+ *
+ * `registration_url` is deliberately NOT here on either program. It is the ad's own final URL, so a
+ * sitelink built from it would offer the operator a second control pointing where the headline
+ * already points — paying for the same destination twice in the same ad and crowding out a link
+ * that goes somewhere new. The entries below are the ones that add a destination.
+ *
+ * The two tables exist because the extraction prompts fill the SAME keys with different pages.
+ * {@link EDUCATION_EXTRACTION_PROMPT} defines `agenda_url` as the syllabus/course-outline page and
+ * `venue_url` as the training-location/delivery-details page, so an event's wording — "View the
+ * Agenda", "Venue & Travel" — would label an online course's delivery page as a place to travel to.
+ * That is the failure this table's own guarantee below rules out, and it would reach public ad copy
+ * through an Implementation editor the operator opens pre-filled. {@link buildCalloutPrompt}
+ * already branches on the same program type; this table was the half that did not.
+ *
+ * Education carries only the two keys its prompt can answer — it pins `cfp_url` and
+ * `sponsorship_url` to null, and a course has neither. A key added to that prompt later needs its
+ * label added here too, or the link is silently dropped rather than mislabelled, which is the safer
+ * way round.
+ *
+ * Labels are fixed strings rather than model output, so no sitelink can be labelled something the
+ * page does not support. Each is well inside {@link GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES}; the
+ * builder bounds them anyway rather than trusting this table to stay that way.
+ */
+const SITELINK_SOURCES_EVENTS: readonly { key: string; text: string }[] = [
+  { key: 'agenda_url', text: 'View the Agenda' },
+  { key: 'cfp_url', text: 'Submit a Talk' },
+  { key: 'venue_url', text: 'Venue & Travel' },
+  { key: 'sponsorship_url', text: 'Become a Sponsor' },
+];
+
+const SITELINK_SOURCES_EDUCATION: readonly { key: string; text: string }[] = [
+  { key: 'agenda_url', text: 'Course Outline' },
+  { key: 'venue_url', text: 'Training Details' },
+];
+
+/**
+ * Build sitelinks from the scraped page's own verified links.
+ *
+ * Labels come from {@link SITELINK_SOURCES_EVENTS} or {@link SITELINK_SOURCES_EDUCATION} according
+ * to `programType`, because the two extraction prompts fill the same keys with different pages.
+ *
+ * Destinations are emitted UNTAGGED, unlike the ad's own final URL from {@link buildFinalUrl} in
+ * this same file. campaign-service tags every sitelink itself at dispatch, and a URL that arrived
+ * pre-tagged would keep its own `utm_campaign` through that step — attributing the click to
+ * whichever campaign first seeded the link rather than the one that served it. The reasoning is
+ * recorded on `CampaignBriefOutput.googleSitelinks` as well; it is repeated here because this is
+ * the function that makes the choice, two screens from the one that does the opposite.
+ *
+ * Deterministic and model-free on purpose. The destinations come from {@link verifyPageLink}, which
+ * refuses any URL the scraped page does not actually carry, so this cannot produce a sitelink
+ * pointing at a composed `/schedule/` that 404s — the failure the extraction prompt's URL rule
+ * already exists to prevent, reproduced here rather than re-earned.
+ *
+ * No descriptions. The pair is all-or-nothing upstream and both lines would have to be WRITTEN —
+ * nothing on the page supplies them — so every sitelink would carry two sentences asserting what
+ * is behind a link this code has not read. An operator who wants them has the editor.
+ *
+ * Over-cap entries are dropped silently, matching the Implementation tab's own editor: it refuses
+ * an add past {@link GOOGLE_ADS_MAX_SITELINKS} rather than growing. Four candidates against a cap
+ * of twenty means the slice is inert today; it is here so the cap is enforced by the code that
+ * produces the list rather than by the table's current length.
+ *
+ * An entry whose destination is past {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}, or that
+ * {@link isGoogleAdsServableUrl} refuses, is dropped on the same terms, for the reason the editor's
+ * add-guard and the controller's dispatch check exist: a chip the operator can neither have typed
+ * nor submit is a dead end whose only exit is deleting a row they did not add.
+ */
+function buildSitelinksFromPage(
+  eventDetails: Record<string, unknown> | null,
+  pageLinks: Map<string, string>,
+  pageBaseUrl: string,
+  programType?: CampaignProgramType
+): CampaignSitelink[] {
+  if (!eventDetails) return [];
+  const sources = programType === 'education' ? SITELINK_SOURCES_EDUCATION : SITELINK_SOURCES_EVENTS;
+  const sitelinks: CampaignSitelink[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    const finalUrl = verifyPageLink(eventDetails[source.key], pageLinks, pageBaseUrl);
+    if (!finalUrl) continue;
+    // Being a real href on the event's own page is not the same as being a destination Google will
+    // serve. `verifyPageLink` answers provenance and nothing more.
+    //
+    // It does settle part of this already — `normalizeForCompare` admits only http(s), and
+    // `pageHref` rebuilds the href from `host`, which drops any userinfo — so scheme, hostname and
+    // credentials cannot be wrong on THIS path. What survives it is everything `new URL()` accepts
+    // and Go's parser does not: a `;` separating query parameters, which older registration and
+    // tracking links really do use, and a stray `%` that is not an escape. Either is refused by
+    // `googleSitelinkUrlRefusal` at create, so seeding one would open the editor holding a chip the
+    // operator cannot have typed and cannot submit.
+    //
+    // The whole predicate is applied rather than the flaw test alone, because which parts are
+    // already guaranteed is a fact about `verifyPageLink`'s internals, and a guard that silently
+    // depends on them breaks the day they change.
+    if (!isGoogleAdsServableUrl(finalUrl)) continue;
+    // One page can legitimately answer two of these keys with the same href — a combined
+    // "attend" page serving as both venue and agenda is common. Google refuses duplicate
+    // sitelink TEXT, not duplicate destinations, so this is about the operator's list rather
+    // than upstream: two rows they must read twice to tell apart, one of them mislabelled.
+    if (seen.has(finalUrl)) continue;
+    seen.add(finalUrl);
+    // The same byte cap the other four places enforce, applied here because this is the one path
+    // into the editor that bypasses the editor. `addGoogleSitelink` refuses an over-long URL the
+    // operator types, the controller refuses the create, and the brief-restore path drops a stored
+    // row; a seeded row that skipped it would open the editor holding a chip the operator cannot
+    // have typed and cannot submit. A page href really can run past it — a registration link
+    // carrying a long tracking query is the realistic shape. Bytes, not runes: the limit is
+    // Google's and it counts the encoded URL.
+    if (SITELINK_URL_ENCODER.encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) continue;
+    const text = googleAdsBoundExtensionText(source.text, GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+    if (!text) continue;
+    sitelinks.push({ text, finalUrl });
+  }
+  return sitelinks.slice(0, GOOGLE_ADS_MAX_SITELINKS);
+}
+
+/**
+ * Shape a model's callout response into the bounded, de-duplicated list the editor opens on.
+ *
+ * Accepts the wrapped object form (`{ "callouts": [...] }`) alongside the bare array the prompt
+ * asks for, exactly as the keyword block accepts `{ "keywords": [...] }` — the same model answers
+ * both, and it wraps intermittently.
+ *
+ * De-duplication is case-insensitive because the editor's own add-guard is
+ * (`googleAdsToLower(c) === key`): a list seeded with both "Free To Attend" and "free to attend"
+ * would show the operator two rows they then cannot re-add after deleting either.
+ *
+ * An over-long answer is DROPPED, not shortened — see the comment on the rune check below.
+ */
+function shapeCallouts(parsed: unknown): string[] {
+  const raw = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>)['callouts'] : parsed;
+  if (!Array.isArray(raw)) return [];
+  const callouts: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue;
+    const text = googleAdsTrimSpace(entry);
+    if (!text) continue;
+    // Dropped rather than bounded to the cap, which is where this path parts company with the
+    // restore path's {@link googleAdsBoundExtensionText}. Every other guard in this feature REFUSES
+    // over-long text instead of rewriting it — `addGoogleCallout` returns false, and upstream's
+    // `validateCallouts` refuses the whole create — so shortening here would make the generator the
+    // one place in the system that invents wording nobody wrote: a 28-rune answer would seed the
+    // editor as a phrase cut mid-word and ship that way if the operator did not catch it. Bounding
+    // is defensible on the restore path, where the alternative is losing an entry the operator
+    // typed; the generator has no such excuse, and the prompt asks for 8-12 candidates already
+    // under the cap, so losing the odd over-runner costs nothing.
+    if ([...text].length > GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES) continue;
+    const key = googleAdsToLower(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    callouts.push(text);
+    if (callouts.length === GOOGLE_ADS_MAX_CALLOUTS) break;
+  }
+  return callouts;
+}
+
+function buildCalloutPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const e = eventDetails || {};
+  const isEducation = body.programType === 'education';
+  const subject = (e['name'] as string) || body.url;
+  const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
+  const extraParts: string[] = [];
+  if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
+  if (body.targetAudience) extraParts.push(`Target Audience: ${body.targetAudience}`);
+  if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
+  const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
+  const detailBlock = isEducation
+    ? `COURSE: ${subject}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`
+    : `EVENT: ${subject}\nDates: ${e['dates'] || ''}\nLocation: ${e['city'] || ''}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`;
+
+  return `Generate 8-12 Google Ads callout extensions for this ${isEducation ? 'training/certification program' : 'event'}.
+
+${detailBlock}${extraBlock}
+
+A callout is a short, standalone benefit phrase shown under a search ad. It is not a link and not a sentence.
+
+Return a JSON array of plain strings. No objects, no keys.
+
+CRITICAL RULES:
+- Each callout must be ${GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} characters or fewer. Shorter is better.
+- Use Title Case. No ending punctuation.
+- State only what the details above support. Do NOT invent prices, discounts, deadlines, attendee counts, speaker names, or claims like "Award Winning" that nothing here establishes.
+- No superlatives you cannot back ("Best", "#1", "World's Largest").
+- No calls to action ("Register Now", "Sign Up Today") — those belong in the ad copy, not a callout.
+- No phone numbers, URLs, or special characters beyond & and -.
+- Each callout must say something DIFFERENT from the others.`;
+}
+
+/**
+ * Shape a model's negative-keyword response into the bounded list the Optimize tab's editor opens
+ * pre-filled with.
+ *
+ * Accepts the wrapped object form (`{ "negativeKeywords": [...] }`, and the snake_case spelling
+ * the prompt's own key could be echoed as) alongside the bare array the prompt asks for, as
+ * {@link shapeCallouts} accepts `{ "callouts": [...] }` — the same model answers both and wraps
+ * intermittently.
+ *
+ * The filtering is NOT hand-written here: the entries are joined into the editor's own input format
+ * and run through {@link parseNegativeKeywordInput}, which is what normalises and refuses a line the
+ * operator types. That is the whole point — every keyword seeded this way is one the editor would
+ * have accepted, so the list can never open already failing its own validator. It drops rather than
+ * rewrites, for the reason `shapeCallouts` drops an over-long callout, and it collapses whitespace
+ * and refuses a repeat case-insensitively, exactly as a typed line is treated.
+ *
+ * The cap passed is Google Ads' 80, the NARROWEST of the four platforms that take negatives, not
+ * the shared 100 the BFF enforces: the brief does not know which campaign the operator will send
+ * these to, so one generated list has to be sendable on all of them. The count is capped at
+ * `MAX_NEGATIVE_KEYWORDS_PER_REQUEST`, the most one request may carry.
+ */
+function shapeNegativeKeywords(parsed: unknown): string[] {
+  const wrapper = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  const raw = wrapper ? (wrapper['negativeKeywords'] ?? wrapper['negative_keywords']) : parsed;
+  if (!Array.isArray(raw)) return [];
+  const lines = raw.filter((entry): entry is string => typeof entry === 'string');
+  const { keywords } = parseNegativeKeywordInput(lines.join('\n'), MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+  return keywords.slice(0, MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+}
+
+function buildNegativeKeywordsPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {
+  const e = eventDetails || {};
+  const isEducation = body.programType === 'education';
+  const subject = (e['name'] as string) || body.url;
+  const themes = Array.isArray(e['themes']) ? (e['themes'] as string[]).join(', ') : '';
+  const extraParts: string[] = [];
+  if (body.campaignGoal) extraParts.push(`Campaign Goal: ${body.campaignGoal}`);
+  if (body.targetAudience) extraParts.push(`Target Audience: ${body.targetAudience}`);
+  if (body.valueProp) extraParts.push(`Key Value Prop / Offer: ${body.valueProp}`);
+  const extraBlock = extraParts.length > 0 ? `\n\nADDITIONAL CAMPAIGN CONTEXT:\n${extraParts.join('\n')}` : '';
+  const detailBlock = isEducation
+    ? `COURSE: ${subject}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`
+    : `EVENT: ${subject}\nDates: ${e['dates'] || ''}\nLocation: ${e['city'] || ''}\nThemes: ${themes}\nAudience: ${e['audience'] || ''}`;
+
+  return `Generate 20-${MAX_NEGATIVE_KEYWORDS_PER_REQUEST} negative keywords for a paid search campaign promoting this ${isEducation ? 'training/certification program' : 'event'}.
+
+${detailBlock}${extraBlock}
+
+A negative keyword stops the ad showing for searches that contain it. Pick the terms that would waste budget on people who will never ${isEducation ? 'enrol' : 'attend'}.
+
+Negative keyword categories to cover:
+1. Free/cheap intent: searches looking for something at no cost.
+2. Jobs and careers: people searching for employment, not ${isEducation ? 'training' : 'a ticket'}.
+3. Research and study: definitions, tutorials, "what is", academic papers.
+4. Wrong format: ${isEducation ? 'conferences, meetups and events, when this is a course' : 'courses, certifications and exams, when this is an event'}.
+5. Past editions and wrong years, where the details above name a year.
+6. Adjacent but irrelevant topics the themes above make likely.
+
+Return a JSON array of plain strings. No objects, no keys.
+
+CRITICAL RULES:
+- Each negative keyword must be ${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters or fewer.
+- Use only letters, digits, spaces and the characters & ' - . Never two of those punctuation characters next to each other.
+- Lower case. No quotation marks, no brackets, no match-type syntax.
+- Never exclude a term the campaign needs: nothing from the event or course name, its themes, or its audience above.
+- Each negative keyword must be DIFFERENT from the others, not a case variant or a repeat.`;
 }
 
 function buildKeywordPrompt(body: CampaignBriefRequest, eventDetails: Record<string, unknown> | null): string {

@@ -3,14 +3,23 @@
 
 import { addDays } from 'date-fns';
 import { FormControl, type FormGroup } from '@angular/forms';
-import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
+import {
+  CLONE_VOTE_DEFAULT_DURATION_DAYS,
+  CLONE_VOTE_TITLE_PREFIX,
+  DRAFT_VOTE_DEFAULT_DURATION_DAYS,
+  DRAFT_VOTE_PLACEHOLDER_QUESTION,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_TIME,
+  VOTE_TITLE_MAX_LENGTH,
+} from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, VoteResponseStatus } from '../enums/poll.enum';
+import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
-import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
+import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus } from './poll.utils';
+import { truncateToUtf16Units } from './string.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -30,6 +39,7 @@ import type {
   VoteFormValue,
   VoteParticipationStats,
   VoteResultsResponse,
+  VoteRowParticipation,
 } from '../interfaces/poll.interface';
 
 /** Active votes with a deadline strictly after now and within the rolling seven-day window. */
@@ -144,11 +154,64 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: endDate ? toZonedDateCarrier(endDate, zone) : null,
-    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : '11:59 PM',
+    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : VOTE_DEFAULT_CLOSE_TIME,
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
     commentPrompts: (vote.poll_comment_prompts ?? []).map(mapApiCommentPromptToFormValue),
+  };
+}
+
+/** Rounds participation against a positive electorate, capping incomplete counts at 99% and complete/excess counts at 100%. */
+function computeParticipationPercent(responses: number, invited: number): number {
+  return Math.min(responses < invited ? 99 : 100, Math.round((responses / invited) * 100));
+}
+
+/**
+ * Maps a Vote API response to a VoteFormValue for prefilling the create form when cloning a vote
+ * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
+ * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
+ * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
+ * edit: {@link mapFiltersToEligibility} widens to 'all' whenever the filter set contains Observer or
+ * Emeritus, so a clone can re-expand to a broader electorate than the source actually had. This is a
+ * known, accepted tradeoff (not yet surfaced to the organizer) rather than an oversight — unlike the
+ * poll-type/pseudo-anonymity guard below, which refuses to clone a source it can't faithfully represent,
+ * electorate widening degrades silently. Revisit if this needs its own warning (GH-3781 review 3).
+ * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
+ * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
+ * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own
+ * timezone rather than the source's stored zone (a still-future deadline is reused as-is, in its own zone).
+ * @param vote - The source Vote entity to clone
+ * @param nowMs - Current time in epoch ms, injectable for deterministic tests (defaults to Date.now())
+ * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
+ * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
+ * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-results-drawer,
+ * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
+ * hydration — this does not prevent a server/client difference, it just makes the server side
+ * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
+ * @returns VoteFormValue to patch into the create form
+ */
+export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), fallbackTimezone: string = getUserTimezone()): VoteFormValue {
+  const base = mapVoteToFormValue(vote);
+  const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX)
+    ? base.title
+    : truncateToUtf16Units(`${CLONE_VOTE_TITLE_PREFIX}${base.title}`, VOTE_TITLE_MAX_LENGTH);
+
+  const endMs = vote.end_time ? Date.parse(vote.end_time) : NaN;
+  const deadlineInFuture = Number.isFinite(endMs) && endMs > nowMs;
+  if (deadlineInFuture) {
+    return { ...base, title };
+  }
+
+  const timezone = fallbackTimezone;
+  const resetDate = addDays(new Date(nowMs), CLONE_VOTE_DEFAULT_DURATION_DAYS);
+  return {
+    ...base,
+    title,
+    timezone,
+    close_date: toZonedDateCarrier(resetDate, timezone),
+    close_time: VOTE_DEFAULT_CLOSE_TIME,
   };
 }
 
@@ -157,6 +220,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
  * @description Upstream (itx-service-voting) counts abstentions in `num_votes_cast` but excludes them from
  * per-choice tallies, so `abstainedVoters` is a subset of `totalResponses`; `abstainedRate` is their share of all
  * responses cast — the same `num_votes_cast` base upstream uses for per-choice percentages, so the two always agree.
+ * Participation uses the same completion-aware rounding as the table: incomplete counts cap at 99%, complete/excess counts at 100%.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @returns VoteParticipationStats for the participation card and abstain row
  */
@@ -168,10 +232,71 @@ export function computeVoteParticipationStats(results: VoteResultsResponse | nul
   const eligibleVoters = results.num_recipients || 0;
   const totalResponses = results.num_votes_cast || 0;
   const abstainedVoters = results.num_abstained || 0;
-  const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
+  const participationRate = eligibleVoters > 0 ? computeParticipationPercent(totalResponses, eligibleVoters) : 0;
   const abstainedRate = totalResponses > 0 ? Math.round((abstainedVoters / totalResponses) * 100) : 0;
 
   return { eligibleVoters, totalResponses, participationRate, abstainedVoters, abstainedRate };
+}
+
+/** A count is usable only when upstream sent a real non-negative number — strings/null/NaN are never coerced to 0. */
+function isParticipationCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/**
+ * Computes the votes-table participation summary for one vote row
+ * @description The denominator is the invited electorate (`total_voting_request_invitations`), not current group
+ * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` in the results drawer.
+ * Drafts never show counts; missing counts degrade to UNAVAILABLE/COUNT_ONLY instead of a false zero; a zero electorate
+ * never yields a percent. Use the same completion-aware rounding as the results drawer: incomplete counts cap at 99%,
+ * complete/excess counts at 100%.
+ * @param vote - Vote list row from the query-service index or per-vote REST
+ * @returns VoteRowParticipation for the Responses cell
+ */
+export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
+  const status = normalizePollStatus(vote.status);
+  const empty = { responses: null, invited: null, percent: null, secondaryLabel: null, ariaLabel: null };
+
+  if (status === PollStatus.DISABLED) {
+    return { ...empty, state: VoteRowParticipationState.NOT_OPEN, label: 'Not open yet' };
+  }
+
+  const responses = vote.num_response_received;
+  if (!isParticipationCount(responses)) {
+    return { ...empty, state: VoteRowParticipationState.UNAVAILABLE, label: 'Unavailable' };
+  }
+
+  const invited = vote.total_voting_request_invitations;
+  if (!isParticipationCount(invited)) {
+    return {
+      ...empty,
+      state: VoteRowParticipationState.COUNT_ONLY,
+      responses,
+      label: `${responses} responded`,
+      secondaryLabel: 'Total unavailable',
+    };
+  }
+
+  if (invited === 0) {
+    return {
+      ...empty,
+      state: VoteRowParticipationState.NO_ELECTORATE,
+      responses,
+      invited,
+      label: 'No one invited',
+    };
+  }
+
+  const percent = computeParticipationPercent(responses, invited);
+  return {
+    state: VoteRowParticipationState.PROGRESS,
+    responses,
+    invited,
+    percent,
+    label: `${responses} of ${invited} responded · ${percent}%`,
+    secondaryLabel: null,
+    ariaLabel: status === PollStatus.ACTIVE ? `Participation: ${responses} of ${invited} responded, ${percent}%` : null,
+  };
 }
 
 /**

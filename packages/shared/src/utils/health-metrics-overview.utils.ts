@@ -9,19 +9,17 @@ import {
   HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS,
-  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
-  HEALTH_METRICS_OVERVIEW_TILE_LINKS,
   HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS,
 } from '../constants/health-metrics-overview.constants';
 
-import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
 import type {
   HealthMetricsAreaState,
   HealthMetricsFinding,
+  HealthMetricsOverviewArea,
   HealthMetricsOverviewClassification,
   HealthMetricsOverviewFindingGroupRows,
   HealthMetricsOverviewFindingRoute,
@@ -109,12 +107,18 @@ export function buildHealthMetricsOverviewTabRoute(linkTarget: HealthMetricsOver
   );
 }
 
+/** The top of an area's Level 2 tab, as `routerLink` commands; `undefined` for an area with no tab (`code`). */
+export function buildHealthMetricsOverviewAreaTabRoute(area: HealthMetricsOverviewArea): readonly string[] | undefined {
+  const tab = HEALTH_METRICS_OVERVIEW_AREAS.find((areaMeta) => areaMeta.key === area)?.tab;
+  return tab ? [HEALTH_METRICS_BASE_PATH, tab] : undefined;
+}
+
 /**
  * Maps `hm_area_state` rows onto the fixed 6-area tile order. Defensive only: `hm_area_state`
  * promises one row per area per foundation per period, and a foundation with no data still gets a
  * 'none' row (e.g. a Training tile reading "no data this period") — an area whose row is somehow
  * absent is omitted rather than rendered as an empty tile. `insightsUrl` is attached to the `code`
- * tile only, and an in-app `route` to each tile in `HEALTH_METRICS_OVERVIEW_TILE_LINKS`.
+ * tile only; every other tile links to the top of its tab, even with no figure.
  */
 export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaState[], insightsUrl: string | undefined): HealthMetricsOverviewTileViewModel[] {
   const areaStateByKey = new Map(areaStates.map((state) => [state.area, state]));
@@ -123,24 +127,17 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
     if (!state) {
       return null;
     }
-    const tileLink = Object.hasOwn(HEALTH_METRICS_OVERVIEW_TILE_LINKS, areaMeta.key)
-      ? HEALTH_METRICS_OVERVIEW_TILE_LINKS[areaMeta.key as keyof typeof HEALTH_METRICS_OVERVIEW_TILE_LINKS]
-      : undefined;
-    // No drill-in link on a tile with no figure — there is nothing to drill into.
-    const linked = tileLink !== undefined && state.statValue !== HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE;
     const tile: HealthMetricsOverviewTileViewModel = {
       area: state.area,
-      name: areaMeta.name,
+      name: areaMeta.tileName,
       icon: areaMeta.icon,
       statValue: state.statValue,
       statLabel: state.statLabel,
-      statDetail: state.statDetail,
       classification: state.classification,
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
       showStatus: state.showStatus,
-      route: linked ? buildHealthMetricsOverviewTabRoute(tileLink.linkTarget) : undefined,
-      routeLabel: linked ? tileLink.label : undefined,
+      tabRoute: buildHealthMetricsOverviewAreaTabRoute(areaMeta.key),
     };
     return tile;
   }).filter((tile): tile is HealthMetricsOverviewTileViewModel => tile !== null);
@@ -171,15 +168,6 @@ export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFindin
 export function resolveHealthMetricsOverviewKpiClassification(status: string | null | undefined): HealthMetricsOverviewClassification {
   const normalized = status?.trim().toLowerCase();
   return normalized && Object.hasOwn(KPI_STATUS_TO_CLASSIFICATION, normalized) ? KPI_STATUS_TO_CLASSIFICATION[normalized] : 'none';
-}
-
-/**
- * Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never
- * drifts between the two components. An empty `evaluatedAt` means the area was never evaluated
- * (e.g. a neutral placeholder tile) — returns '' rather than a dangling "as of " in that case.
- */
-export function formatHealthMetricsOverviewAsOfLabel(evaluatedAt: string): string {
-  return evaluatedAt ? `as of ${formatIsoDateLabel(evaluatedAt)}` : '';
 }
 
 /** Resolves a findings-list group's classification key to its tone/icon, for the group heading. */

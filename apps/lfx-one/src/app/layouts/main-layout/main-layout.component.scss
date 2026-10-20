@@ -6,9 +6,11 @@
 }
 
 ::ng-deep {
-  .mobile-sidebar-drawer {
-    .p-drawer-content {
-      @apply px-2;
-    }
+  // The navbar brings its own dark floating panel; the drawer is just a transparent 296px track.
+  .mobile-navbar-drawer.p-drawer {
+    width: 296px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
   }
 }

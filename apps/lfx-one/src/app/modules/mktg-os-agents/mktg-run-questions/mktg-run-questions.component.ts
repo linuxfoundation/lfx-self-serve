@@ -168,7 +168,7 @@ export class MktgRunQuestionsComponent {
         if (index === this.index()) {
           state = 'current';
         }
-        return { key: question.key, label: mktgRunQuestionShortLabel(question.key, question.label), index, state };
+        return { key: question.key, label: mktgRunQuestionShortLabel(question.label), index, state };
       });
     });
   }

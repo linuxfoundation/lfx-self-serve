@@ -5,7 +5,7 @@
   <lfx-card-tabs-bar [options]="statusTabOptions()" [selectedFilter]="statusTab()" (filterChange)="onStatusTabChange($event)" data-testid="votes-status-tabs">
   </lfx-card-tabs-bar>
 
-  @if (loading() || votes().length > 0 || isFiltered()) {
+  @if (loading() || votes().length > 0 || isFiltered() || !resultsComplete()) {
     <div class="px-5 pt-4 pb-3">
       <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
         <div class="flex-1 min-w-0">
@@ -70,11 +70,12 @@
         <lfx-empty-state
           [withCard]="false"
           icon="fa-light fa-eyes"
-          title="No results found"
-          subtitle="Try adjusting your filter criteria"
-          ctaLabel="Reset filters"
+          [title]="emptyStateCopy().title"
+          [subtitle]="emptyStateCopy().subtitle"
+          [ctaLabel]="resultsComplete() ? 'Reset filters' : 'Retry'"
           ctaIcon="fa-light fa-arrow-rotate-left"
-          (ctaClick)="resetFilters()">
+          (ctaClick)="resultsComplete() ? resetFilters() : refresh.emit()"
+          data-testid="votes-table-empty-state">
         </lfx-empty-state>
       } @else {
         <lfx-table
@@ -97,9 +98,9 @@
           data-testid="votes-table">
           <ng-template #header>
             <tr>
-              <th class="w-[28%]">{{ voteLabel.singular }} Name</th>
+              <th class="w-[24%]">{{ voteLabel.singular }} Name</th>
               <th class="w-[20%]">Group</th>
-              <th class="w-[12%]">Responses</th>
+              <th class="w-[16%]">{{ showParticipationProgress() ? 'Responses' : 'Your vote' }}</th>
               <th class="w-[18%]">Due</th>
               <th class="w-[8%]">Status</th>
               <th class="w-[14%]"></th>
@@ -125,9 +126,56 @@
               </td>
 
               <td>
-                <span class="text-sm text-gray-700" [attr.data-testid]="'votes-responses-' + vote.uid">
-                  {{ vote.num_response_received }}
-                </span>
+                @if (!showParticipationProgress()) {
+                  @if (vote.response_status === VoteResponseStatus.RESPONDED) {
+                    <span
+                      class="inline-flex items-center"
+                      role="img"
+                      pTooltip="Voted"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
+                      tabindex="0"
+                      aria-label="Voted"
+                      [attr.data-testid]="'votes-your-vote-' + vote.uid">
+                      <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+                    </span>
+                  } @else {
+                    <span class="text-gray-500 text-xs" role="img" aria-label="Not voted" [attr.data-testid]="'votes-your-vote-' + vote.uid">—</span>
+                  }
+                } @else {
+                  <div class="flex flex-col gap-1" [attr.data-testid]="'votes-participation-' + vote.uid">
+                    @if (vote.participation.state === VoteRowParticipationState.PROGRESS) {
+                      <span class="text-sm text-gray-700 tabular-nums whitespace-nowrap" [attr.data-testid]="'votes-participation-label-' + vote.uid">
+                        {{ vote.participation.label }}
+                      </span>
+                      @if (vote.status === PollStatus.ACTIVE) {
+                        <div
+                          class="h-1.5 w-full min-w-16 overflow-hidden rounded-full bg-gray-200"
+                          role="progressbar"
+                          [attr.aria-valuenow]="vote.participation.percent"
+                          aria-valuemin="0"
+                          aria-valuemax="100"
+                          [attr.aria-label]="vote.participation.ariaLabel"
+                          [attr.data-testid]="'votes-participation-bar-' + vote.uid">
+                          <div class="h-full rounded-full bg-blue-500" [style.width.%]="vote.participation.percent"></div>
+                        </div>
+                      }
+                    } @else if (vote.participation.state === VoteRowParticipationState.COUNT_ONLY) {
+                      <span class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                        <span class="text-sm text-gray-700 tabular-nums whitespace-nowrap" [attr.data-testid]="'votes-participation-label-' + vote.uid">
+                          {{ vote.participation.label }}
+                        </span>
+                        <span class="text-xs text-gray-500 whitespace-nowrap" [attr.data-testid]="'votes-participation-secondary-' + vote.uid">
+                          {{ vote.participation.secondaryLabel }}
+                        </span>
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-500" [attr.data-testid]="'votes-participation-label-' + vote.uid">
+                        {{ vote.participation.label }}
+                      </span>
+                    }
+                  </div>
+                }
               </td>
 
               <td>

@@ -126,12 +126,15 @@ describe('MembersBridgeComponent', () => {
     expect(query('members-bridge-loading')).toBeNull();
   });
 
-  it('draws the running year with signed counts and dues, and no note when it reconciles', async () => {
+  it('draws the running year with signed counts, dues only for screen readers, and no note when it reconciles', async () => {
     await render();
 
     expect(text('members-bridge-heading')).toBe('How the base changed this year');
     expect(text('members-bridge-count-new')).toBe('+7');
-    expect(text('members-bridge-dues-new')).toBe('+$70K');
+    // The design draws no dues line under a bar; the bar's accessible name still carries them.
+    expect(query('members-bridge-dues-new')).toBeNull();
+    expect(query('members-bridge-action-new')?.getAttribute('aria-label')).toContain('+$70K in dues');
+    expect(text('members-bridge-label-today')).toContain('in dues');
     expect(text('members-bridge-count-downgrade')).toBe('−3');
     expect(query('members-bridge-count-downgrade')?.className).toContain('text-red-600');
     expect(query('members-bridge-fill-new')?.className).toContain('bg-emerald-600');
@@ -165,6 +168,13 @@ describe('MembersBridgeComponent', () => {
     expect(drawer().year()).toBe(2026);
     expect(drawer().foundationSlug()).toBe('acme');
     expect(drawer().barCount()).toBe(3);
+  });
+
+  it('stretches each bar action over its whole column, so the bar opens the list too', async () => {
+    await render();
+
+    expect(query('members-bridge-bar-downgrade')?.classList).toContain('relative');
+    expect(query('members-bridge-action-downgrade')?.classList).toContain('after:inset-0');
   });
 
   it('sends the churn bar to its section and leaves an empty movement inert', async () => {

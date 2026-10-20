@@ -3,7 +3,7 @@
 
 <div class="flex flex-col gap-4" data-testid="engagement-org-participation">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
       <div class="w-full sm:w-64">
         <!-- The placeholder and icon give the box no accessible name, so the label carries it. -->
         <label class="sr-only" for="engagement-org-participation-search">Search organization</label>
@@ -18,6 +18,7 @@
           dataTest="engagement-org-participation-search-input" />
       </div>
       <lfx-filter-pills
+        variant="track"
         [options]="filterOptions"
         [selectedFilter]="filter()"
         (filterChange)="onFilterChange($event)"
@@ -53,6 +54,7 @@
       data-testid="engagement-org-participation-empty" />
   } @else {
     <lfx-table
+      [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
       [paginator]="totalRecords() > size()"
@@ -83,7 +85,17 @@
             <span class="text-sm font-medium text-gray-900">{{ row.accountName }}</span>
           </td>
           <td>
-            <span class="text-sm text-gray-800">{{ row.membershipTier }}</span>
+            <!-- The design's `.pill`: 12px with 2px 8px padding, exact px for the 14px root. -->
+            @if (row.membershipTier) {
+              <span
+                class="rounded-full px-[8px] lg:whitespace-nowrap py-[2px] text-[12px] leading-[16px]"
+                [class]="view.tierPillClass"
+                [attr.data-testid]="'engagement-org-participation-row-' + row.accountId + '-tier'"
+                >{{ row.membershipTier }}</span
+              >
+            } @else {
+              <span class="text-sm text-gray-400">—</span>
+            }
           </td>
           <td>
             <span class="text-sm tabular-nums text-gray-800">{{ view.attendedLabel }}</span>

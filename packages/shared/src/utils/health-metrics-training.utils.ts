@@ -73,7 +73,7 @@ export function formatHealthMetricsTrainingCoursesCountLabel(total: number | nul
   return `${formatHealthMetricsTrainingCount(total)} ${total === 1 ? 'course' : 'courses'}`;
 }
 
-/** Render-ready Enrollment & revenue section for the period, with the by-type bars ranked by `metric`. */
+/** Render-ready Enrollment & revenue section for the period, with the by-type list ranked by `metric`. */
 export function buildHealthMetricsTrainingEnrollmentView(
   enrollment: HealthMetricsTrainingEnrollment,
   range: HealthMetricsL2Range,
@@ -120,7 +120,6 @@ function buildTrainingTypeRows(
 ): HealthMetricsTrainingEnrollmentTypeView[] {
   const pick = (type: HealthMetricsTrainingEnrollmentType): number | null => (metric === 'revenue' ? type.revenueUsd : type.enrollments);
   const shown = metric === 'revenue' ? types.filter((type) => !isStructuralZero(type, metric)) : types.filter(hasEnrollments);
-  const max = Math.max(0, ...shown.map((type) => pick(type) ?? 0));
   const ordered = metric === 'revenue' ? [...shown].sort((a, b) => (pick(b) ?? -Infinity) - (pick(a) ?? -Infinity)) : shown;
 
   return ordered.map((type) => {
@@ -129,7 +128,6 @@ function buildTrainingTypeRows(
       deliveryType: type.deliveryType,
       label: getHealthMetricsTrainingDeliveryTypeLabel(type.deliveryType),
       value: metric === 'revenue' ? formatHealthMetricsTrainingRevenue(value) : formatHealthMetricsTrainingCount(value),
-      barWidthPct: value === null || max === 0 ? 0 : Math.min(100, Math.max(0, (value / max) * 100)),
     };
   });
 }

@@ -77,6 +77,7 @@ import {
   getMeetingSelfRemovalMessage,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
+  isPastMeetingSummaryReadOnly,
   isSameOccurrenceId,
   retainConfirmedRsvp,
 } from '@lfx-one/shared/utils';
@@ -240,7 +241,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly inviteResponsesEnabled: Signal<boolean> = computed(() => isMeetingInviteResponsesEnabled(this.meeting()));
   public readonly attendeeListShared: Signal<boolean> = computed(() => isMeetingAttendeeListShared(this.meeting()));
   public readonly isRegisteredAttendee: Signal<boolean> = computed(
-    () => this.authenticated() && this.effectivelyInvited() && !this.meeting().organizer && !this.pastMeeting()
+    () => this.authenticated() && this.effectivelyInvited() && !this.pastMeeting() && (!this.meeting().organizer || this.hasOwnRegistration())
   );
   public readonly userAttended: Signal<boolean> = computed(() => {
     // Read the input, not the local `meeting` signal: that one is only seeded while it has no id, so a
@@ -256,11 +257,8 @@ export class MeetingCardComponent implements OnInit {
     const registrantIds = this.meetingInput().my_registrant_ids;
     return registrantIds ? registrantIds.length > 0 : this.effectivelyInvited();
   });
-  public readonly canLeaveMeeting: Signal<boolean> = computed(() => {
-    const meeting = this.meeting();
-    if (!this.authenticated() || !this.effectivelyInvited() || this.pastMeeting()) return false;
-    return !meeting.organizer || this.hasOwnRegistration();
-  });
+  // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -591,7 +589,8 @@ export class MeetingCardComponent implements OnInit {
     // Keep the action guard identical to the banner's render condition
     // (hasSummary() === !!summaryContent()) so the "Review Summary" button is
     // never visible-but-inert. The modal only needs content to open; the summary
-    // uid is required solely for the edit/approve write path.
+    // uid is required solely for the edit/approve write path, and whether that
+    // path is offered at all is decided by `readOnly` below.
     if (!this.summaryContent()) {
       return;
     }
@@ -610,9 +609,10 @@ export class MeetingCardComponent implements OnInit {
         pastMeetingUid: getPastMeetingResourceId(this.meeting()),
         meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
-        // Edit/Approve write back via the summary uid; without one the modal
-        // opens read-only so its actions are never visible-but-inert.
-        readOnly: !summaryUid,
+        // Read-only unless the viewer is an organizer with a summary uid to write
+        // to: Edit/Approve are only offered to the viewer the upstream write accepts,
+        // so a non-organizer who can view the summary never sees inert actions.
+        readOnly: isPastMeetingSummaryReadOnly(this.meeting(), this.summary()),
         // Sync the card the moment an edit/approve succeeds — not on dialog close.
         // The dialog's onClose payload is only built by the "Close" button, so an
         // X or backdrop dismiss left the card stale (e.g. approved summary kept
@@ -864,7 +864,7 @@ export class MeetingCardComponent implements OnInit {
     this.leavingMeeting.set(true);
 
     this.meetingService
-      .removeMyMeetingRegistration(meetingId)
+      .removeMyMeetingRegistration(meetingId, 'meeting-card')
       .pipe(
         take(1),
         finalize(() => this.leavingMeeting.set(false))

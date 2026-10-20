@@ -1,0 +1,745 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let v = view();
+<!-- The cards are LFX One's; the brand's colours, typeface and logo grounds appear inside the samples only. -->
+@let card = 'bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2';
+@let cardTitle = 'text-sm font-semibold text-gray-900';
+@let label = 'text-xs font-semibold uppercase tracking-wider text-gray-500';
+@let caption = 'text-xs text-gray-500';
+@let sample = 'flex items-center justify-center overflow-hidden rounded-lg p-6';
+
+<!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL, a hash) wraps inside its card instead of running across the next one. -->
+<section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="brand-kit-web-view">
+  <!-- Header: what this is, which version, and what you can do with it -->
+  <div class="flex flex-wrap items-center gap-2 px-1" data-testid="brand-kit-web-view-header">
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="brand-kit-web-view-title">{{ title() }}</h2>
+        <lfx-mktg-asset-meta [metadata]="header()" prefix="brand-kit-web-view" />
+      </div>
+      @if (modeLabel()) {
+        <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="brand-kit-web-view-mode">{{ modeLabel() }}</span>
+      }
+    }
+    <div class="grow"></div>
+    <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
+      <lfx-button
+        label="Download PDF"
+        icon="fa-light fa-file-pdf"
+        [outlined]="true"
+        size="small"
+        [disabled]="!printView()"
+        ariaLabel="Download the approved current brand kit as a PDF"
+        data-testid="brand-kit-web-view-download-pdf"
+        (onClick)="onDownloadPdf()" />
+      <!-- The kit as a deck: the panel below the header shows the export. -->
+      <lfx-button
+        label="Export to Google Slides"
+        icon="fa-light fa-presentation-screen"
+        [outlined]="true"
+        size="small"
+        [loading]="slidesExport.busy()"
+        [disabled]="!slidesExport.canExport()"
+        ariaLabel="Export the brand kit to Google Slides"
+        data-testid="brand-kit-web-view-export-slides"
+        (onClick)="slidesExport.onExport()" />
+      <lfx-button
+        label="Report"
+        icon="fa-light fa-clipboard-list"
+        [text]="true"
+        size="small"
+        [badge]="gapCount() > 0 ? gapCount().toString() : undefined"
+        ariaLabel="Open the run's report: sources read, failed and gaps"
+        data-testid="brand-kit-web-view-report"
+        (onClick)="onGoToTab('sources')" />
+      <ng-content select="[asset-actions]" />
+    </div>
+  </div>
+
+  @if (!exportTarget()) {
+    @if (approvedLoading()) {
+      <p role="status" class="text-xs text-gray-500">Loading the approved current…</p>
+    } @else if (approvedError()) {
+      <lfx-message severity="error" [text]="approvedError()" />
+    } @else {
+      <p class="text-xs text-gray-500" data-testid="brand-kit-web-view-approval-required">{{ approvalRequiredNote }}</p>
+    }
+  }
+  <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
+  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [lookupTarget]="exportLookupTarget()" data-testid="brand-kit-web-view-slides-export" />
+
+  <!-- Tabs: the overview, the six chapters, the run's report -->
+  <div class="border-b border-gray-200" role="tablist" aria-label="Brand kit" data-testid="brand-kit-web-view-tabs" (keydown)="onTabKeydown($event)">
+    <div class="flex flex-wrap gap-x-1">
+      @for (tab of tabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="-mb-px border-b-2 px-3 py-2 text-sm font-medium [overflow-wrap:normal] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+          [ngClass]="tab.tabClass"
+          [id]="tab.tabId"
+          [attr.aria-selected]="tab.selected"
+          [attr.aria-controls]="tab.panelId"
+          [attr.tabindex]="tab.selected ? 0 : -1"
+          [attr.data-testid]="'brand-kit-web-view-tab-' + tab.id"
+          (click)="onSelectTab(tab.id)">
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @switch (selectedTab()) {
+    <!-- OVERVIEW: what the kit is built from, the brand at a glance, the six chapters in brief -->
+    @case ('overview') {
+      <div
+        class="flex flex-col gap-5"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-overview"
+        aria-labelledby="brand-kit-web-view-tab-overview"
+        data-testid="brand-kit-web-view-panel-overview">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div class="lg:col-span-2" [class]="card">
+            <h3 [class]="cardTitle">What this kit is built from</h3>
+            <p class="text-sm leading-relaxed text-gray-800" data-testid="brand-kit-web-view-built-from">{{ v.builtFrom }}</p>
+            <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+              @if (v.host) {
+                <dt class="text-gray-500">Website</dt>
+                <dd class="text-gray-800">{{ v.host }}</dd>
+              }
+              <dt class="text-gray-500">Typeface</dt>
+              <dd class="text-gray-800">{{ v.type.family }}</dd>
+              <dt class="text-gray-500">Palette</dt>
+              <dd class="text-gray-800">{{ v.palette.length }} colors</dd>
+              @if (v.monthYear) {
+                <dt class="text-gray-500">Generated</dt>
+                <dd class="text-gray-800">{{ v.monthYear }}</dd>
+              }
+            </dl>
+          </div>
+          <!-- The brand at a glance: the lockup on white, the palette, the typeface -->
+          <div [class]="card" data-testid="brand-kit-web-view-glance">
+            <span [class]="label">At a glance</span>
+            <div class="h-28 border border-gray-200 bg-white" [class]="sample">
+              <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Primary lockup' }" />
+            </div>
+            <div class="flex flex-wrap gap-1.5" role="img" [attr.aria-label]="proportionLabel()">
+              @for (swatch of v.palette; track swatch.hex) {
+                <span class="h-6 w-6 rounded-full border border-gray-200" [style.background]="swatch.hex"></span>
+              }
+            </div>
+            <span class="text-lg text-gray-900" [style.font-family]="v.fontStack">{{ v.type.family }}</span>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <h3 [class]="cardTitle">Chapters</h3>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="brand-kit-web-view-chapters">
+            @for (chapter of chapters(); track chapter.id) {
+              <article [class]="card" [attr.data-testid]="'brand-kit-web-view-chapter-' + chapter.id">
+                <div class="flex items-baseline justify-between gap-2">
+                  <h4 class="text-base font-semibold text-gray-900">{{ chapter.title }}</h4>
+                  <span class="text-xs text-gray-400">{{ chapter.number }}</span>
+                </div>
+                <p class="grow text-sm text-gray-800">{{ chapter.summary }}</p>
+                <button
+                  type="button"
+                  class="self-start text-xs font-medium text-blue-600 hover:text-blue-800"
+                  [attr.data-testid]="'brand-kit-web-view-open-' + chapter.id"
+                  (click)="onGoToTab(chapter.id)">
+                  Open {{ chapter.title }}
+                </button>
+              </article>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- LOGO: the real lockups, the colorways on their grounds, clear space and minimum sizes, the symbol, the partnership lockup, the watchouts -->
+    @case ('logo') {
+      <div
+        class="flex flex-col gap-5"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-logo"
+        aria-labelledby="brand-kit-web-view-tab-logo"
+        data-testid="brand-kit-web-view-panel-logo">
+        @if (v.placeholder) {
+          <div
+            class="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+            data-testid="brand-kit-web-view-placeholder">
+            <i class="fa-light fa-circle-info mt-0.5 shrink-0" aria-hidden="true"></i>
+            No logo artwork yet: the marks below are placeholders until the logo files are uploaded.
+          </div>
+        }
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div [class]="card">
+            <h3 [class]="cardTitle">Logo system</h3>
+            <p class="text-sm text-gray-800">{{ v.logo.system }}</p>
+            <p class="text-sm text-gray-800">Logo artwork is supplied as files. Never retype the wordmark.</p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-span-2" data-testid="brand-kit-web-view-lockups">
+            <article [class]="card">
+              <div class="h-36 border border-gray-200 bg-white" [class]="sample">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Horizontal lockup' }" />
+              </div>
+              <span [class]="label">Primary · horizontal</span>
+              @if (v.logos.primary; as image) {
+                <span [class]="caption">{{ image.name }}</span>
+              }
+            </article>
+            <article [class]="card">
+              <div class="h-36 border border-gray-200 bg-white" [class]="sample">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.stacked ?? v.logos.primary, what: 'Stacked lockup' }" />
+              </div>
+              <span [class]="label">Stacked</span>
+              @if (v.logos.stacked; as image) {
+                <span [class]="caption">{{ image.name }}</span>
+              } @else {
+                <span [class]="caption">No stacked file: the horizontal lockup stands in.</span>
+              }
+            </article>
+            <article [class]="card">
+              <div class="h-36 border border-gray-200 bg-white" [class]="sample">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+              </div>
+              <span [class]="label">Symbol</span>
+              <span [class]="caption">{{ v.logo.symbol }}</span>
+            </article>
+          </div>
+        </div>
+
+        <!-- Colorways: the logo on its grounds — white, the dark, the tint, one-colour -->
+        <div class="flex flex-col gap-2">
+          <h3 [class]="cardTitle">Colorways</h3>
+          <p class="text-sm text-gray-600">
+            Full color on white and light grounds. Reversed (white) on {{ v.darkName }} and dark imagery. One-color black for print, engraving and embossing
+            only. Accent colors are never logo colors.
+          </p>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="brand-kit-web-view-colorways">
+            @for (colorway of v.colorways; track colorway.name) {
+              <article [class]="card" data-testid="brand-kit-web-view-colorway">
+                <div class="h-32" [class]="sample" [ngClass]="{ 'border border-gray-200': colorway.light }" [style.background]="colorway.ground">
+                  <div class="flex h-full w-full items-center justify-center" [style.filter]="colorway.logoFilter || null">
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: colorway.logo, what: 'Logo' }" />
+                  </div>
+                </div>
+                <span class="text-sm text-gray-800">{{ colorway.name }}</span>
+              </article>
+            }
+          </div>
+        </div>
+
+        <!-- Clear space and minimum sizes -->
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div [class]="card" data-testid="brand-kit-web-view-clear-space">
+            <h3 [class]="cardTitle">Clear space</h3>
+            <p class="text-sm text-gray-800">{{ v.logo.clear_space }}</p>
+            <!-- The lockup inside a frame one X from every edge. -->
+            <div class="relative flex h-44 items-center justify-center border border-dashed border-gray-400 bg-white p-10">
+              <span class="absolute left-1/2 top-2 text-xs text-gray-500">X</span>
+              <span class="absolute bottom-2 left-1/2 text-xs text-gray-500">X</span>
+              <span class="absolute left-2 top-1/2 text-xs text-gray-500">X</span>
+              <span class="absolute right-2 top-1/2 text-xs text-gray-500">X</span>
+              <div class="flex h-full w-full items-center justify-center">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+              </div>
+            </div>
+          </div>
+          <div [class]="card" data-testid="brand-kit-web-view-minimum-size">
+            <h3 [class]="cardTitle">Minimum size</h3>
+            <p class="text-sm text-gray-800">
+              {{ v.logo.minimum_size.screen_px }} px tall on screen, {{ v.logo.minimum_size.print_mm }} mm in print. {{ v.logo.minimum_size.rule }} (minimum
+              {{ v.logo.minimum_size.symbol_px }} px).
+            </p>
+            <div class="flex flex-wrap items-end gap-6 rounded-lg border border-gray-200 bg-white p-4">
+              @for (size of v.minimumSizes; track size.label) {
+                <div class="flex flex-col items-start gap-1.5">
+                  <div class="aspect-[10/3]" [style.height.px]="size.px">
+                    <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+                  </div>
+                  <span [class]="caption">{{ size.label }}</span>
+                </div>
+              }
+              <div class="flex flex-col items-start gap-1.5">
+                <div [style.height.px]="v.logo.minimum_size.symbol_px" [style.width.px]="v.logo.minimum_size.symbol_px">
+                  <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                </div>
+                <span [class]="caption">Symbol {{ v.logo.minimum_size.symbol_px }} px</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- The symbol in shape, and the partnership lockup -->
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div [class]="card">
+            <h3 [class]="cardTitle">Symbol in shape</h3>
+            <p class="text-sm text-gray-800">For contained uses, place the symbol in a circle or rounded square, with one X of padding to the edge.</p>
+            <div class="flex flex-wrap items-center gap-4">
+              <div class="flex h-20 w-20 items-center justify-center rounded-full p-4" [style.background]="v.dark">
+                <div class="flex h-full w-full items-center justify-center brightness-0 invert">
+                  <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                </div>
+              </div>
+              <div class="flex h-20 w-20 items-center justify-center rounded-2xl border border-gray-200 p-4" [style.background]="v.tint">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+              </div>
+              <div class="flex h-20 w-20 items-center justify-center rounded-2xl p-4" [style.background]="v.accent">
+                <div class="flex h-full w-full items-center justify-center brightness-0 invert">
+                  <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.symbol, what: 'Symbol' }" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div [class]="card" data-testid="brand-kit-web-view-partnership">
+            <h3 [class]="cardTitle">Partnership lockup</h3>
+            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
+              @for (rule of v.logo.partnership; track $index) {
+                <li>{{ rule }}</li>
+              }
+            </ul>
+            <div class="h-24 gap-6 border border-gray-200 bg-white" [class]="sample">
+              <div class="flex h-full w-2/5 items-center justify-center">
+                <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+              </div>
+              <div class="h-3/5 w-px" [style.background]="v.dark"></div>
+              <div class="flex h-full w-2/5 items-center justify-center rounded-lg border border-dashed border-gray-300 text-xs text-gray-400">
+                Partner logo
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Watchouts: each rule drawn as the mistake it forbids -->
+        <div class="flex flex-col gap-2">
+          <h3 [class]="cardTitle">Watchouts</h3>
+          <p class="text-sm text-gray-600">
+            Consistency is what makes the mark recognizable. When in doubt: full color on white, or reversed on {{ v.darkName }}, with X of clear space.
+          </p>
+          <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="brand-kit-web-view-watchouts">
+            @for (watchout of v.watchouts; track watchout.label) {
+              <article [class]="card" data-testid="brand-kit-web-view-watchout">
+                <div class="relative h-24 border border-gray-200 bg-white" [class]="sample" [style.background]="watchout.ground || null">
+                  <i class="fa-light fa-xmark absolute right-2 top-1.5 text-sm text-red-600" aria-hidden="true"></i>
+                  @if (watchout.retyped) {
+                    <span class="font-serif text-base font-semibold text-gray-900">{{ v.projectName }}</span>
+                  } @else {
+                    <div
+                      class="flex h-full w-full max-w-[70%] items-center justify-center"
+                      [style.transform]="watchout.transform || null"
+                      [style.filter]="watchout.filter || null">
+                      <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Logo' }" />
+                    </div>
+                  }
+                </div>
+                <span class="text-sm text-gray-800">{{ watchout.label }}</span>
+              </article>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- COLOR: the swatches with where each value was found, the proportion, the contrast table -->
+    @case ('color') {
+      <div
+        class="flex flex-col gap-5"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-color"
+        aria-labelledby="brand-kit-web-view-tab-color"
+        data-testid="brand-kit-web-view-panel-color">
+        <div [class]="card">
+          <h3 [class]="cardTitle">Palette</h3>
+          <p class="text-sm text-gray-800">{{ v.color.summary }}</p>
+          <p [class]="caption">Values come from the logo artwork, the site and the brand page; each card says where.</p>
+        </div>
+        <!-- auto-fit: as many swatch columns as fit at 13rem each (arbitrary value, see styling.md). -->
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3" data-testid="brand-kit-web-view-swatches">
+          @for (swatch of v.palette; track swatch.hex) {
+            <article
+              class="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white"
+              [attr.data-testid]="'brand-kit-web-view-swatch-' + swatch.hexDigits">
+              <div class="flex h-24 items-end p-3 text-sm font-medium" [ngClass]="{ 'border-b border-gray-200': swatch.light }" [style.background]="swatch.hex">
+                <span [style.color]="swatch.ink">{{ swatch.name }}</span>
+              </div>
+              <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-4 text-sm">
+                <dt class="text-gray-500">HEX</dt>
+                <dd class="font-mono text-gray-900">{{ swatch.hex }}</dd>
+                <dt class="text-gray-500">RGB</dt>
+                <dd class="font-mono text-gray-900">{{ swatch.rgb }}</dd>
+                <dt class="text-gray-500">Role</dt>
+                <dd class="text-gray-800">{{ swatch.role }}</dd>
+                <dt class="text-gray-500">Found</dt>
+                <dd class="text-gray-600">{{ swatch.source }}</dd>
+              </dl>
+            </article>
+          }
+        </div>
+
+        <div [class]="card">
+          <h3 [class]="cardTitle">Proportion</h3>
+          <!-- The segments are paint: the name lists every share, and the legend below prints them. -->
+          <div
+            class="flex h-6 overflow-hidden rounded-lg border border-gray-200"
+            role="img"
+            [attr.aria-label]="proportionLabel()"
+            data-testid="brand-kit-web-view-proportion">
+            @for (row of v.proportion; track row.hex) {
+              <div [style.width.%]="row.share" [style.background]="row.hex"></div>
+            }
+          </div>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+            @for (row of v.proportion; track row.hex) {
+              <span class="flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 rounded-full border border-gray-200" [style.background]="row.hex" aria-hidden="true"></span>
+                {{ row.name }} {{ row.share }}%
+              </span>
+            }
+          </div>
+        </div>
+
+        <div [class]="card">
+          <h3 [class]="cardTitle">Contrast</h3>
+          <p class="text-sm text-gray-800">{{ v.color.contrast.rule }}</p>
+          <table class="w-full text-sm" data-testid="brand-kit-web-view-contrast">
+            <thead>
+              <tr class="text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">
+                <th class="pb-1 pr-3 font-semibold">Sample</th>
+                <th class="pb-1 pr-3 font-semibold">Pair</th>
+                <th class="pb-1 pr-3 font-semibold">Ratio</th>
+                <th class="pb-1 pr-3 font-semibold">Grade</th>
+                <th class="pb-1 font-semibold">Body text</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of v.contrast; track row.foreground + row.background) {
+                <tr class="border-t border-gray-100 align-middle" [attr.data-testid]="'brand-kit-web-view-contrast-' + $index">
+                  <td class="py-1.5 pr-3">
+                    <span
+                      class="flex h-8 w-12 items-center justify-center rounded-md border border-gray-200 text-base font-semibold"
+                      [style.background]="row.backgroundHex"
+                      [style.color]="row.foregroundHex"
+                      [style.font-family]="v.fontStack"
+                      aria-hidden="true"
+                      >Aa</span
+                    >
+                  </td>
+                  <td class="py-1.5 pr-3 text-gray-800">{{ row.foreground }} on {{ row.background }}</td>
+                  <td class="py-1.5 pr-3 tabular-nums text-gray-800">{{ row.ratio }}</td>
+                  <td class="py-1.5 pr-3 text-gray-800">{{ row.grade }}</td>
+                  <td class="py-1.5">
+                    @if (row.passes) {
+                      <span class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Pass</span>
+                    } @else {
+                      <span class="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Fail</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    <!-- TYPE: the typeface set in itself, its weights, the scale -->
+    @case ('type') {
+      <div
+        class="flex flex-col gap-5"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-type"
+        aria-labelledby="brand-kit-web-view-tab-type"
+        data-testid="brand-kit-web-view-panel-type">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div class="lg:col-span-2" [class]="card" data-testid="brand-kit-web-view-specimen">
+            <span [class]="label">Typeface</span>
+            <div class="flex flex-col gap-3 text-gray-900" [style.font-family]="v.fontStack">
+              <span class="text-4xl font-medium leading-tight">{{ v.type.family }}</span>
+              <span class="text-2xl leading-snug">{{ v.voice.line }}</span>
+              <span class="text-base tracking-wide text-gray-700">{{ v.specimen }}</span>
+              <div class="flex flex-wrap gap-6 pt-1">
+                @for (weight of v.weights; track weight.weight) {
+                  <div class="flex flex-col gap-1">
+                    <span class="text-3xl leading-none" [style.font-weight]="weight.weight">Aa</span>
+                    <span class="font-sans text-xs text-gray-500">{{ weight.label }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+          <div [class]="card">
+            <h3 [class]="cardTitle">How to set it</h3>
+            <p class="text-sm text-gray-800">{{ v.type.summary }}</p>
+            @if (v.type.note) {
+              <p class="text-sm text-gray-800">{{ v.type.note }}</p>
+            }
+            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
+              @for (rule of v.type.rules; track $index) {
+                <li>{{ rule }}</li>
+              }
+            </ul>
+          </div>
+        </div>
+
+        <!-- The scale: sizes in container units against the 11 in page, so a row reads at its size on a wide card and scales down on a narrow one. -->
+        <div class="[container-type:inline-size]" [class]="card" data-testid="brand-kit-web-view-scale">
+          <h3 [class]="cardTitle">Type scale</h3>
+          @for (row of v.scale; track row.label) {
+            <div class="grid grid-cols-1 items-baseline gap-x-4 gap-y-1 border-t border-gray-100 py-2 md:grid-cols-[8rem_9rem_1fr]">
+              <span class="text-sm font-medium text-gray-900">{{ row.label }}</span>
+              <span class="text-xs text-gray-500">{{ row.spec }}</span>
+              <span
+                class="min-w-0 text-gray-900"
+                [style.font-family]="v.fontStack"
+                [style.font-weight]="row.fontWeight"
+                [style.font-size]="row.fontSize"
+                [style.line-height]="row.lineHeight"
+                [style.text-transform]="row.textTransform"
+                [style.letter-spacing]="row.letterSpacing"
+                >{{ row.sample }}</span
+              >
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- VISUAL: iconography, imagery, the graphic elements -->
+    @case ('visual') {
+      <div
+        class="flex flex-col gap-5"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-visual"
+        aria-labelledby="brand-kit-web-view-tab-visual"
+        data-testid="brand-kit-web-view-panel-visual">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div [class]="card" data-testid="brand-kit-web-view-icons">
+            <h3 [class]="cardTitle">Iconography</h3>
+            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
+              @for (rule of v.visual.icons.rules; track $index) {
+                <li>{{ rule }}</li>
+              }
+            </ul>
+            <div class="grid grid-cols-4 gap-3 rounded-lg border border-gray-200 bg-white p-4">
+              @for (icon of v.icons; track icon.label) {
+                <div class="flex flex-col items-center gap-1.5 text-xs text-gray-600">
+                  <i class="text-2xl" [class]="icon.icon" [style.color]="v.dark" aria-hidden="true"></i>
+                  <span>{{ icon.label }}</span>
+                </div>
+              }
+            </div>
+            <p [class]="caption">Recommended set: {{ v.visual.icons.recommended }}</p>
+          </div>
+          <div [class]="card" data-testid="brand-kit-web-view-imagery">
+            <h3 [class]="cardTitle">Imagery</h3>
+            <p class="text-sm text-gray-800">{{ v.visual.imagery.rule }}</p>
+            <span [class]="label">Avoid</span>
+            <ul class="flex flex-wrap gap-1.5">
+              @for (item of v.visual.imagery.avoid; track $index) {
+                <li class="rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs text-red-700">{{ item }}</li>
+              }
+            </ul>
+          </div>
+        </div>
+
+        <div [class]="card" data-testid="brand-kit-web-view-elements">
+          <h3 [class]="cardTitle">Graphic elements</h3>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-3" [style.font-family]="v.fontStack">
+            <div class="flex min-h-36 flex-col justify-end gap-1.5 rounded-lg p-5 text-white" [style.background]="v.dark">
+              <span class="text-xs uppercase tracking-widest opacity-80">— Eyebrow</span>
+              <span class="text-xl font-medium leading-snug">{{ v.voice.line }}</span>
+            </div>
+            <div class="flex flex-col items-start gap-2 rounded-lg border border-gray-200 bg-white p-5">
+              <span class="font-sans" [class]="label">Buttons</span>
+              <span class="rounded-md px-4 py-2 text-sm font-medium text-white" [style.background]="v.accent">Primary button</span>
+              <span class="rounded-md border px-4 py-2 text-sm font-medium" [style.border-color]="v.dark" [style.color]="v.dark">Secondary</span>
+            </div>
+            <div class="flex flex-col gap-2 rounded-lg border border-gray-200 bg-white p-5">
+              <span class="font-sans" [class]="label">Call-out card</span>
+              <div class="rounded-lg border-l-4 p-4 text-sm" [style.border-color]="v.accent" [style.background]="v.tint" [style.color]="v.dark">
+                One per view, for the main call to action.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- USAGE: the example usages, set in the kit -->
+    @case ('usage') {
+      <div
+        class="flex flex-col gap-5"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-usage"
+        aria-labelledby="brand-kit-web-view-tab-usage"
+        data-testid="brand-kit-web-view-panel-usage">
+        <div [class]="card">
+          <h3 [class]="cardTitle">Example usage</h3>
+          <p class="text-sm text-gray-800">{{ v.usage.summary }}</p>
+        </div>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="brand-kit-web-view-usages">
+          @for (usage of v.usageTiles; track usage.caption) {
+            <article [class]="card" data-testid="brand-kit-web-view-usage">
+              <div
+                class="flex aspect-video flex-col justify-end gap-2 overflow-hidden rounded-lg p-6"
+                [ngClass]="{ 'border border-gray-200': !usage.dark }"
+                [style.background]="usage.dark ? v.dark : 'white'"
+                [style.color]="usage.dark ? 'white' : v.dark"
+                [style.font-family]="v.fontStack">
+                @switch (usage.layout) {
+                  @case ('social') {
+                    <span class="text-2xl font-medium leading-tight">{{ v.voice.line }}</span>
+                    <span class="text-xs opacity-80">{{ v.host }}</span>
+                  }
+                  @case ('report') {
+                    <span class="text-xs uppercase tracking-widest opacity-70">— Report</span>
+                    <span class="text-2xl font-medium leading-tight">{{ v.projectName }} annual report · [year]</span>
+                  }
+                  @case ('announcement') {
+                    <div class="h-1 w-12" [style.background]="v.accent"></div>
+                    <span class="text-2xl font-medium leading-tight">[Partner] joins {{ v.projectName }}</span>
+                  }
+                  @default {
+                    <div class="h-1 w-12" [style.background]="v.accent"></div>
+                    <span class="text-2xl font-medium leading-tight">{{ v.voice.line }}</span>
+                  }
+                }
+              </div>
+              <span class="text-sm text-gray-800">{{ usage.caption }}</span>
+            </article>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- VOICE: the voice in brief, from the messaging framework -->
+    @case ('voice') {
+      <div
+        class="flex flex-col gap-5"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-voice"
+        aria-labelledby="brand-kit-web-view-tab-voice"
+        data-testid="brand-kit-web-view-panel-voice">
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div [class]="card">
+            <span [class]="label">Umbrella message</span>
+            <p class="text-sm leading-relaxed text-gray-900" data-testid="brand-kit-web-view-umbrella">{{ v.voice.umbrella }}</p>
+          </div>
+          <div class="flex flex-col gap-1 rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <span class="text-xs font-semibold uppercase tracking-wider text-blue-700">Brand line</span>
+            <p class="font-display text-xl text-blue-900" data-testid="brand-kit-web-view-line">{{ v.voice.line }}</p>
+          </div>
+        </div>
+        <div class="flex flex-col gap-2">
+          <h3 [class]="cardTitle">Attributes</h3>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="brand-kit-web-view-attributes">
+            @for (attribute of v.voice.attributes; track attribute.name) {
+              <article [class]="card">
+                <h4 class="text-base font-semibold text-gray-900">{{ attribute.name }}</h4>
+                <p class="text-sm text-gray-800">{{ attribute.line }}</p>
+              </article>
+            }
+          </div>
+        </div>
+        <div [class]="card">
+          <p class="text-sm text-gray-800">{{ v.voice.note }}</p>
+          <p [class]="caption">{{ v.voice.source }}. For the full voice, persona and messaging rules, see the messaging framework.</p>
+        </div>
+      </div>
+    }
+
+    <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state (the framework view's treatment) -->
+    @case ('sources') {
+      <div
+        class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+        role="tabpanel"
+        id="brand-kit-web-view-panel-sources"
+        aria-labelledby="brand-kit-web-view-tab-sources"
+        data-testid="brand-kit-web-view-panel-sources">
+        <div [class]="card">
+          <h3 [class]="cardTitle">Sources read</h3>
+          @if (v.report.sources_read.length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="brand-kit-web-view-sources-read">
+              @for (source of v.report.sources_read; track $index) {
+                <li class="flex items-start gap-2">
+                  <i class="fa-light fa-check mt-1 shrink-0 text-xs text-emerald-600" aria-hidden="true"></i><span class="min-w-0">{{ source }}</span>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-sources-read-empty">Nothing was read.</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">Could not be read</h3>
+          @if (v.report.sources_failed.length > 0) {
+            <ul class="flex flex-col gap-1.5 text-sm" data-testid="brand-kit-web-view-sources-failed">
+              @for (failed of v.report.sources_failed; track $index) {
+                <li class="flex flex-col">
+                  <span class="text-gray-800">{{ failed.name }}</span>
+                  <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">Every source was read.</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">Gaps</h3>
+          @if (v.report.gaps.length > 0) {
+            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800" data-testid="brand-kit-web-view-gaps">
+              @for (gap of v.report.gaps; track $index) {
+                <li>{{ gap }}</li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-gaps-empty">The sources left no gap.</p>
+          }
+        </div>
+        <div [class]="card">
+          <h3 [class]="cardTitle">Notes</h3>
+          @if (reportNotes().length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="brand-kit-web-view-report-notes">
+              @for (line of reportNotes(); track $index) {
+                <li>{{ line }}</li>
+              }
+            </ul>
+          } @else {
+            <p [class]="caption" data-testid="brand-kit-web-view-notes-empty">No notes.</p>
+          }
+        </div>
+      </div>
+    }
+  }
+
+  <!-- Footer: what Download PDF and the Google Slides export give you -->
+  <p class="px-1 text-xs text-gray-500" data-testid="brand-kit-web-view-footer">
+    Download PDF prints the kit as a 16-page book, landscape: choose “Save as PDF” in the print dialog. Export to Google Slides builds the kit as a deck in
+    Google Drive, in the kit’s colours, typeface and logo.
+  </p>
+
+  <!-- The book, the kit's print rendering: never shown on screen (styles.scss), shown alone while Download PDF prints. -->
+  @if (printView(); as approvedPrint) {
+    <div [class]="printOnlyClass" data-testid="brand-kit-web-view-print">
+      <lfx-brand-kit-view [view]="approvedPrint" />
+    </div>
+  }
+</section>
+
+<!-- A logo as drawn in a sample: the artwork, or a placeholder naming what goes there (no file, or a PNG/ZIP member the kit carries no bytes for). -->
+<ng-template #logoTpl let-image let-what="what">
+  @if (image?.src; as src) {
+    <img class="max-h-full max-w-full object-contain" [src]="src" [alt]="what + ' — ' + image.name" />
+  } @else if (image) {
+    <span class="flex h-full w-full items-center justify-center rounded-md border border-dashed border-gray-300 p-2 text-center text-xs text-gray-400">{{
+      image.name
+    }}</span>
+  } @else {
+    <span class="flex h-full w-full items-center justify-center rounded-md border border-dashed border-gray-300 p-2 text-center text-xs text-gray-400">{{
+      what
+    }}</span>
+  }
+</ng-template>

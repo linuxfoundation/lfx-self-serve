@@ -347,7 +347,7 @@ export const routes: Routes = [
       // Formation stage lands on its checklist instead: `formationOverviewRedirectGuard` runs first
       // so its redirect wins over `projectQueryParamGuard` (#2754). The guards must also re-run when
       // only `?project=` changes — the project selector re-enters the lens that way while already on
-      // this route (`SidebarComponent.contextSwitchTarget`), and the default `paramsChange`
+      // this route (`NavMenuBase.contextSwitchTarget`), and the default `paramsChange`
       // policy would let that navigation complete without re-deciding the landing page.
       // `formationOverviewReleaseGuard` (CanDeactivate) clears the fail-open record the redirect
       // guard leaves for the sidebar whenever navigation leaves this route.

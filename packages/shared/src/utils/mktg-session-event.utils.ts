@@ -26,7 +26,11 @@
 // is prose, a tool's input or a tool's output — all of which can carry a
 // fetched page, quoted or failed, and none of which is the transcript.
 
-import { MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH, MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES } from '../constants/mktg-run.constants';
+import {
+  MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH,
+  MKTG_SESSION_AGENT_OUTPUT_EVENT_TYPES,
+  MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES,
+} from '../constants/mktg-run.constants';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -101,6 +105,11 @@ function isToolCallBlock(record: UnknownRecord): boolean {
  */
 function isProseMessage(record: UnknownRecord): boolean {
   return typeof record['role'] === 'string' && typeof record['content'] === 'string';
+}
+
+/** The runtime's output (the agent's final text, a progress notice): what the model wrote, whatever its shape. */
+function isAgentOutput(record: UnknownRecord): boolean {
+  return (MKTG_SESSION_AGENT_OUTPUT_EVENT_TYPES as readonly unknown[]).includes(record['type']);
 }
 
 /** The text of a tool result's content: a string, the joined text blocks, or the JSON of anything else. */
@@ -179,6 +188,9 @@ export function extractMktgAgentTexts(payload: string): string[] {
  * not) or a message written as one string: each is read for what it is and
  * never entered, so a page the agent quoted, passed to a tool, or had a
  * fetch fail on cannot plant the pair where only a transcript block counts.
+ * Nor is the runtime's output (`agent_notification_message`, a progress
+ * notice) ever entered: it is what the model wrote, so an envelope or a
+ * call-and-result pair it spells out is not the finalize tool's result.
  */
 export function extractMktgToolResults(payload: string, toolName: string): string[] {
   const event = readableEvent(payload);
@@ -188,7 +200,7 @@ export function extractMktgToolResults(payload: string, toolName: string): strin
   const callIds = new Set<string>();
   const results: { id: string; text: string }[] = [];
   walk(event, 0, (record) => {
-    if (isProseMessage(record) || record['type'] === 'text') {
+    if (isProseMessage(record) || record['type'] === 'text' || isAgentOutput(record)) {
       return false;
     }
     if (isToolCallBlock(record)) {

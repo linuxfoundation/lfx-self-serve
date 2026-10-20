@@ -23,6 +23,13 @@ export const DEFAULT_QUERY_PARAMS: Record<string, string> = {
 export const MEETING_PASSWORD_HEADER = 'x-meeting-password';
 
 /**
+ * Request header naming the UI surface that triggered a self-removal from a meeting.
+ * @description Telemetry only: the BFF logs it so removals can be broken down by where they came from.
+ * Never used for authorization. Lowercase to match Express's normalized req.headers keys.
+ */
+export const MEETING_REMOVAL_SOURCE_HEADER = 'x-lfx-removal-source';
+
+/**
  * Maximum number of `filters_or` clauses per query-service request.
  * @description URL-length guard for batched lookups on `/query/resources`. When the caller has
  * more than this many IDs/values to OR together, split into chunks of this size to keep each

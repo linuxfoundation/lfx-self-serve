@@ -23,8 +23,8 @@ import { distinctUntilChanged, filter, map, merge, Observable, of, switchMap } f
 // disabled cards, a "vN generated" badge on agents with stored output, and
 // dependency gating (dec-agent-dependency-gating): an agent that `dependsOn`
 // another stays disabled — tagged "Requires <document>" — until every
-// dependency has stored output for the ACTIVE project (server-persisted
-// preferred, browser-stored run fallback), re-evaluated on project switch.
+// dependency has server-approved current for the ACTIVE project, never a
+// browser Draft fallback, re-evaluated on project switch.
 // Card clicks route to the per-agent run page (/:agentId) — the form-first
 // run shell that replaced the earlier in-page chat-panel approach.
 @Component({
@@ -130,7 +130,8 @@ export class MktgOsAgentsComponent {
             return merge(of(context.uid), this.refreshTriggers(context.uid)).pipe(
               switchMap(() => {
                 this.loadStoredVersions(context.uid);
-                return this.dependencyService.resolveDependencies(context.uid, this.catalogDependencyIds);
+                // A failed dependency locks only its dependents; successful siblings remain available.
+                return this.dependencyService.resolveDependencies(context.uid, this.catalogDependencyIds, [], true);
               })
             );
           }),

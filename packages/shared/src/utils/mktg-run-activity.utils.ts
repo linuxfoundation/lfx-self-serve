@@ -32,10 +32,14 @@ import {
   MKTG_RUN_ACTIVITY_OPAQUE_PATH_SEGMENTS,
   MKTG_RUN_ACTIVITY_PATH_SEGMENT_MAX_CHARS,
   MKTG_RUN_ACTIVITY_PHASES,
-  MKTG_RUN_ACTIVITY_QUESTIONS_MARKER,
+  MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS,
   MKTG_RUN_ACTIVITY_TOOLS,
-  MKTG_RUN_QUESTION_SHORT_LABELS,
+  MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS,
+  MKTG_RUN_QUESTION_CHIP_WORDS,
 } from '../constants/mktg-run-activity.constants';
+import { BOILERPLATES_QUESTIONS_CONTRACT_ID } from '../constants/boilerplates.constants';
+import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
+import { FAQ_QUESTIONS_CONTRACT_ID } from '../constants/faq.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
 
 type UnknownRecord = Record<string, unknown>;
@@ -170,7 +174,8 @@ function isQuestionsTurn(event: UnknownRecord): boolean {
   if (type !== 'agent_notification_message' && type !== 'agent_notification_progress') {
     return false;
   }
-  return JSON.stringify(event['content'] ?? '').includes(MKTG_RUN_ACTIVITY_QUESTIONS_MARKER);
+  const content = JSON.stringify(event['content'] ?? '');
+  return MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS.some((marker) => content.includes(marker));
 }
 
 /**
@@ -195,6 +200,23 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   let questionsAt = -1;
   let writingStart = '';
   let firstFinalizeAfterQuestions = '';
+  /**
+   * The run's own writing and first-check sentences: the framework's, until
+   * the run shows it is the Brand Kit's (its logo tool, its finalize tool or
+   * its questions turn), the Boilerplates' or the FAQ's (its finalize tool or
+   * its questions turn). The first agent the run shows is the one it stays.
+   */
+  let runLabels: { checking: string; writing: string } = { checking: MKTG_RUN_ACTIVITY_LABELS.checking, writing: MKTG_RUN_ACTIVITY_LABELS.writing };
+  let identified = false;
+  const identify = (checking: string, writing: string): void => {
+    if (!identified) {
+      identified = true;
+      runLabels = { checking, writing };
+    }
+  };
+  const identifyBrandKit = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBrandKit, MKTG_RUN_ACTIVITY_LABELS.writingBrandKit);
+  const identifyBoilerplates = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBoilerplates, MKTG_RUN_ACTIVITY_LABELS.writingBoilerplates);
+  const identifyFaq = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingFaq, MKTG_RUN_ACTIVITY_LABELS.writingFaq);
   /** Local-tool steps still open: done once any later event arrives. */
   const openLocal: Step[] = [];
 
@@ -233,14 +255,25 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
         let step: Step;
         if (tool === MKTG_RUN_ACTIVITY_TOOLS.askRequester) {
           step = { kind: 'questions', label: MKTG_RUN_ACTIVITY_LABELS.questions, status: 'running', startedAt: createdAt };
+        } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.inspectLogos) {
+          // The Brand Kit decodes the uploaded artwork inside the agent: reading, like a fetched page.
+          identifyBrandKit();
+          step = { kind: 'reading', label: MKTG_RUN_ACTIVITY_LABELS.inspectingLogos, status: 'running', startedAt: createdAt };
         } else {
           finalizeCount += 1;
+          if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeBrandKit) {
+            identifyBrandKit();
+          } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates) {
+            identifyBoilerplates();
+          } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq) {
+            identifyFaq();
+          }
           if (questionsAt >= 0 && !firstFinalizeAfterQuestions) {
             firstFinalizeAfterQuestions = createdAt;
           }
           step = {
             kind: 'checking',
-            label: finalizeCount === 1 ? MKTG_RUN_ACTIVITY_LABELS.checking : MKTG_RUN_ACTIVITY_LABELS.fixing,
+            label: finalizeCount === 1 ? runLabels.checking : MKTG_RUN_ACTIVITY_LABELS.fixing,
             status: 'running',
             startedAt: createdAt,
           };
@@ -253,6 +286,14 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
 
     if (isQuestionsTurn(event)) {
       questionsAt = index;
+      const content = JSON.stringify(event['content'] ?? '');
+      if (content.includes(BRAND_KIT_QUESTIONS_CONTRACT_ID)) {
+        identifyBrandKit();
+      } else if (content.includes(BOILERPLATES_QUESTIONS_CONTRACT_ID)) {
+        identifyBoilerplates();
+      } else if (content.includes(FAQ_QUESTIONS_CONTRACT_ID)) {
+        identifyFaq();
+      }
     }
   }
 
@@ -261,7 +302,7 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   if (writingStart) {
     steps.push({
       kind: 'writing',
-      label: MKTG_RUN_ACTIVITY_LABELS.writing,
+      label: runLabels.writing,
       status: firstFinalizeAfterQuestions ? 'done' : 'running',
       startedAt: writingStart,
       ...(firstFinalizeAfterQuestions && { endedAt: firstFinalizeAfterQuestions }),
@@ -323,9 +364,25 @@ export function mktgRunActivityPhases(activity: MktgRunActivity[]): MktgRunActiv
   });
 }
 
-/** The short chip label of a question in the stepper ("Vision", "Proof points"). */
-export function mktgRunQuestionShortLabel(key: string, label: string): string {
-  return MKTG_RUN_QUESTION_SHORT_LABELS[key] ?? label.split(/\s+/).slice(0, 2).join(' ');
+/**
+ * The short chip label of a question in the stepper: the label itself when it
+ * has at most {@link MKTG_RUN_QUESTION_CHIP_WORDS} words ("Words to avoid"),
+ * else its first words without a trailing connector ("Proof points to
+ * confirm" → "Proof points"). The hand test of 18 Oct showed "Words to".
+ */
+export function mktgRunQuestionShortLabel(label: string): string {
+  const words = label
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word !== '');
+  if (words.length <= MKTG_RUN_QUESTION_CHIP_WORDS) {
+    return words.join(' ');
+  }
+  const cut = words.slice(0, MKTG_RUN_QUESTION_CHIP_WORDS);
+  while (cut.length > 1 && MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS.includes(cut[cut.length - 1].toLowerCase().replace(/[^a-z]/g, ''))) {
+    cut.pop();
+  }
+  return cut.join(' ').replace(/[,;:]$/, '');
 }
 
 /** True for any of the kinds the feed knows — for callers narrowing untyped input. */

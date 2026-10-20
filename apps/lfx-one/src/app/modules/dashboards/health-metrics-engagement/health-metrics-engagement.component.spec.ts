@@ -104,7 +104,7 @@ describe('HealthMetricsEngagementComponent', () => {
   };
 
   /** One settled group read: the badge counts, then the settle the deep link actually waits on. */
-  function groupSettles(counts: HealthMetricsEngagementGroupCounts | null = { groups: 34, dormantGroups: 3 }): void {
+  function groupSettles(counts: HealthMetricsEngagementGroupCounts | null = { groups: 34, dormantGroups: 3, lowAttendanceGroups: 2 }): void {
     stubChild().countsChange.emit(counts);
     stubChild().settled.emit();
   }
@@ -177,12 +177,23 @@ describe('HealthMetricsEngagementComponent', () => {
   it('badges Group attendance from the counts that section reports', () => {
     const child = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
 
-    child.countsChange.emit({ groups: 34, dormantGroups: 3 });
+    child.countsChange.emit({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
     fixture.detectChanges();
 
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
     expect(item.textContent).toContain('34');
+    expect(item.textContent).toContain('3 dormant · 5 below 50%');
+  });
+
+  it('drops the below-50% part of the Group attendance note at zero', () => {
+    const child = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
+
+    child.countsChange.emit({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 0 });
+    fixture.detectChanges();
+
+    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
     expect(item.textContent).toContain('3 dormant');
+    expect(item.textContent).not.toContain('below 50%');
   });
 
   it('badges Organization participation from the counts that section reports', () => {

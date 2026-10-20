@@ -193,8 +193,6 @@ export interface HealthMetricsMembersBridgeBarView {
   movementType: HealthMetricsMembersBridgeStepType;
   label: string;
   countLabel: string;
-  /** Empty when the model has no dues figure for the step. */
-  duesLabel: string;
   tone: HealthMetricsMembersBridgeTone;
   bottomPct: number;
   heightPct: number;
@@ -426,10 +424,6 @@ export interface HealthMetricsMembersAtRiskRowView {
   tierLabel: string;
   overdueLabel: string;
   ageLabel: string;
-  agingLabel: string;
-  /** `null` renders no risk chip. */
-  churnRiskLabel: string | null;
-  churnRiskClass: string;
   lastEngagedLabel: string;
 }
 
@@ -489,8 +483,6 @@ export interface HealthMetricsMembersRenewalRowView {
   accountName: string;
   tierLabel: string;
   renewalDateLabel: string;
-  /** "Today", "In 1 day", "In 23 days"; `—` when unset. */
-  daysUntilLabel: string;
   duesLabel: string;
   hasOutstandingBalance: boolean;
   hasRenewed: boolean;

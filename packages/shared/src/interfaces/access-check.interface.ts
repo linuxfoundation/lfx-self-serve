@@ -44,7 +44,9 @@ export type AccessCheckResourceType =
   | 'groupsio_member'
   | 'team'
   /** LFXV2-3029 — b2b_org, so the BFF can ask the authorizer to classify connected-component candidates instead of re-deriving the hierarchy rule locally. No access-type change needed: `writer` and `auditor` are already in the union below. */
-  | 'b2b_org';
+  | 'b2b_org'
+  /** #3769 — vote, so the BFF can gate vote-manager reads (e.g. reminder recipients) on `vote#writer`. */
+  | 'vote';
 export type AccessCheckAccessType =
   | 'writer'
   /** `project` only: `writer or global_writer`. Staff whose access is a per-project global-team grant hold this, not bare `writer`. */
@@ -59,6 +61,4 @@ export type AccessCheckAccessType =
   | 'member'
   | 'marketing_auditor'
   | 'campaign_manager'
-  /** Scheduled for removal from the model once `team:marketing-ops` moves to `global_marketing_ops`; drop it here first. */
-  | 'marketing_ops'
   | 'global_marketing_ops';

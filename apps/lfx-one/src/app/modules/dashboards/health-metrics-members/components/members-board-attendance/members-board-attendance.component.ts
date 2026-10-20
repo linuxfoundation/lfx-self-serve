@@ -22,7 +22,6 @@ import {
   lfxColors,
 } from '@lfx-one/shared/constants';
 import {
-  buildHealthMetricsMembersBoardCountLabel,
   buildHealthMetricsMembersBoardMeetingRows,
   buildHealthMetricsMembersBoardNote,
   buildHealthMetricsMembersBoardSummary,
@@ -113,7 +112,6 @@ export class MembersBoardAttendanceComponent {
     buildHealthMetricsMembersBoardMeetingRows(this.response().rows)
   );
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly countLabel = computed(() => buildHealthMetricsMembersBoardCountLabel(this.totalRecords()));
   protected readonly meetingNoun = computed(() => HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[this.cohort()]);
   protected readonly first = computed(() => (this.page() - 1) * this.size);
   /** Holds the skeleton until a scope's first read lands; paging keeps the figures and loads in the table. */

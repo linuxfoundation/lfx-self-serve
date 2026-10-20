@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
 } from '@lfx-one/shared/constants';
@@ -291,7 +292,62 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     expect(remounted.componentInstance.form.controls.keywords.value).toBe('');
   });
 
-  describe('on Reddit and X', () => {
+  // The brief generates these from the event page, and the editor is the only place they can be
+  // sent from — negative keywords have no create-time path upstream at all. Seeding the box is the
+  // whole delivery of that generation.
+  it('opens pre-filled with the suggested keywords from the brief', () => {
+    fixture.componentRef.setInput('suggestedKeywords', ['free kubecon', 'kubecon jobs']);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value).toBe('free kubecon\nkubecon jobs');
+  });
+
+  // A suggestion arriving after the editor is open (the brief finishing its load) must never
+  // overwrite what the operator has typed. The seed is an offer, not a reset.
+  it('leaves typed keywords alone when the suggestion arrives later', () => {
+    typeKeywords('my own exclusion');
+
+    fixture.componentRef.setInput('suggestedKeywords', ['free kubecon']);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value).toBe('my own exclusion');
+  });
+
+  // Capped by THIS platform's rules, not by the generator's: the brief bounds its list to Google
+  // Ads' limits because it cannot know which campaign it will be sent to, and X takes far fewer per
+  // request. Without the re-cap the editor would open already failing its own validator.
+  it(`truncates the suggestion to X's ${MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST} keywords per request`, () => {
+    fixture.componentRef.setInput('platform', 'twitter-ads');
+    fixture.componentRef.setInput(
+      'suggestedKeywords',
+      Array.from({ length: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST + 5 }, (_unused, i) => `negative ${i}`)
+    );
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value.split('\n')).toHaveLength(MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST);
+  });
+
+  // The restore path owns a remounted editor on a campaign that has been sent to: those keywords
+  // are ones the operator chose and the platform did not confirm, and a suggestion seeded over them
+  // would be a silent loss of their work rather than a convenience.
+  it('restores the unconfirmed keywords rather than the suggestion after a request', () => {
+    addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [{ text: 'alpha', matchType: 'Exact', outcome: 'FAILED' }] }));
+    typeKeywords('alpha');
+    submit();
+    fixture.destroy();
+
+    const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+    remounted.componentRef.setInput('projectSlug', 'tlf');
+    remounted.componentRef.setInput('briefId', 'b-1');
+    remounted.componentRef.setInput('campaignId', 'c-1');
+    remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+    remounted.componentRef.setInput('suggestedKeywords', ['free kubecon']);
+    remounted.detectChanges();
+
+    expect(remounted.componentInstance.form.controls.keywords.value).toBe('alpha');
+  });
+
+  describe('on Google, Reddit and X', () => {
     const targeting = (revision?: string): CampaignServiceKeywordTargeting => ({
       campaign_id: 'c-1',
       platform: 'reddit-ads',
@@ -300,7 +356,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       ...(revision !== undefined && { revision }),
     });
 
-    function setPlatform(platform: 'reddit-ads' | 'twitter-ads'): void {
+    function setPlatform(platform: 'google-ads' | 'reddit-ads' | 'twitter-ads'): void {
       fixture.componentRef.setInput('platform', platform);
       fixture.detectChanges();
     }
@@ -436,6 +492,28 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       typeKeywords('free');
       submit();
       expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text: 'free', matchType: 'Exact' }], undefined);
+    });
+
+    // Google's own mutate is atomic and campaign-service refuses an over-long text with a 400
+    // before Google is contacted, taking the whole batch with it — so the editor refuses it first.
+    it(`offers Google its three match types, caps a keyword's text at ${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH}, and never reads or sends a revision`, () => {
+      addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [] }));
+      setPlatform('google-ads');
+
+      for (const type of ['Exact', 'Phrase', 'Broad']) {
+        expect(el().querySelector(`label[for="campaign-negatives-type-c-1-${type}"]`)).not.toBeNull();
+      }
+      expect(getKeywordTargeting).not.toHaveBeenCalled();
+
+      typeKeywords('a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1));
+      submit();
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-negatives-line-error-1')!.textContent).toContain(`${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters`);
+
+      const text = 'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+      typeKeywords(text);
+      submit();
+      expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text, matchType: 'Exact' }], undefined);
     });
   });
 });

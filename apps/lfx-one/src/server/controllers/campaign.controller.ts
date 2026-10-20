@@ -17,6 +17,7 @@ import type {
   CampaignBidType,
   CampaignBidUpdateRequest,
   CampaignBidUpdateResult,
+  CampaignBriefApproveResult,
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefRefineRequest,
@@ -61,6 +62,9 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   DEFAULT_CAMPAIGN_BID_TYPE,
   GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_AGE_RANGE_MAP,
@@ -148,12 +152,14 @@ import {
   googleAdsTrimSpace,
   googleAdsUrlGoParseFlaw,
   isCanonicalGoogleAdsResourceId,
+  isCreativeAssetMimeType,
   isGoSpaceCode,
   isMicrosoftMatchType,
+  sniffCreativeAssetMimeType,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
-import { MicroserviceError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
@@ -175,6 +181,7 @@ import {
   asResumeRefusal,
   CampaignServiceClient,
   canCreateWithBidding,
+  canUseRedditCreativeAssets,
   deriveEventSlug,
   isCampaignServiceJobId,
   isCampaignServiceNotFound,
@@ -665,6 +672,20 @@ export class CampaignController {
       if (unservedBiddingField !== null) {
         next(
           ServiceValidationError.forField(unservedBiddingField, 'bidding options are not enabled on this deployment; omit bidding to use automatic bidding', {
+            operation: 'campaign_create',
+            service: 'campaign_controller',
+          })
+        );
+        return;
+      }
+
+      // An uploaded Reddit image is refused, not dropped, when this deployment cannot use it — the
+      // same reasoning as `bidding` above. The form never sends it in that state
+      // (`redditAssetUploadEnabled` hides the upload control).
+      const unservedRedditAssetField = this.unservedRedditAssetField(body);
+      if (unservedRedditAssetField !== null) {
+        next(
+          ServiceValidationError.forField(unservedRedditAssetField, 'uploaded Reddit images are not enabled on this deployment; supply an image URL instead', {
             operation: 'campaign_create',
             service: 'campaign_controller',
           })
@@ -1793,6 +1814,79 @@ export class CampaignController {
   }
 
   /**
+   * Approve a brief that is already stored, without rewriting it.
+   *
+   * The missing third verb beside `persistBrief` and `loadBrief`. Until now approval existed only
+   * as the tail of a save, so a stored brief sitting in `draft` — the state every failed approval
+   * and every replace leaves behind — could be restored and read but never made usable, because
+   * campaign creation refuses an unapproved brief and the restore path deliberately does not
+   * re-save. The Restore offer led to a disabled Create Campaign button with no action that could
+   * enable it.
+   *
+   * `POST` with an EMPTY body, which is the honest shape: this sends no content at all, it moves a
+   * status. The brief is named by the path, the foundation by `?project=`, and the validator by
+   * the request's own `If-Match` header — a header rather than a query parameter because that is
+   * what it is, and because `approve-brief` upstream requires one.
+   *
+   * Flag-gated with `persistBrief` and `loadBrief`, on the same flag for the same reason: all
+   * three are the one cutover.
+   */
+  public async approveBrief(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      // Every field present so the response satisfies `CampaignBriefApproveResult` on both arms —
+      // the client branches on `enabled` alone. No `conflict`: nothing was refused, the cutover
+      // is simply dark.
+      res.json({ enabled: false, briefId: '', etag: null, approved: false } satisfies CampaignBriefApproveResult);
+      return;
+    }
+
+    // Same rule as `persistBrief`: never defaulted. A brief is approved inside one foundation's
+    // project, and guessing which would approve a row in a foundation the user did not choose.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation: 'campaign_approve_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const briefId = typeof req.params['briefId'] === 'string' ? req.params['briefId'].trim() : '';
+    if (briefId.length === 0) {
+      next(
+        ServiceValidationError.forField('briefId', 'brief id is required', {
+          operation: 'campaign_approve_brief',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'campaign_approve_brief', { briefId, projectSlug });
+
+    try {
+      // The validator the caller already holds, from the read that put this brief on their
+      // screen. Absent is a classified outcome, not an error: `approveStoredBrief` refuses to
+      // approve a brief it cannot verify and returns `conflict: 'unverified-validator'`, which
+      // the response below carries to the client like any other conflict.
+      const ifMatch = req.get('If-Match');
+      const knownEtag = typeof ifMatch === 'string' && ifMatch.trim() !== '' ? ifMatch : null;
+      const result = await this.campaignServiceClient.approveStoredBrief(req, projectSlug, briefId, knownEtag);
+      logger.success(req, 'campaign_approve_brief', startTime, {
+        briefId,
+        projectSlug,
+        approved: result.approved,
+        conflict: result.conflict ?? null,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Read back the brief saved for an event slug — the other half of `persistBrief`.
    *
    * Gated on the SAME flag, not a new one. Read and write have to flip together: a read enabled
@@ -2010,41 +2104,10 @@ export class CampaignController {
       return;
     }
 
-    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
-    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
-    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
-    // given", so the enum check is skipped and the read proceeds on the per-platform default.
-    // That is the substitution this method refuses by design: the response's own `window` field
-    // would then report a period the caller never asked for, as though it had. `project` and
-    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
-    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
-    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
-    // already carry.
-    const windowParam = req.query['window'];
-    if (windowParam !== undefined && typeof windowParam !== 'string') {
-      next(
-        ServiceValidationError.forField('window', 'window must be given at most once', {
-          operation: 'campaign_brief_metrics',
-          service: 'campaign_controller',
-        })
-      );
+    const window = this.readMetricsWindow(req, 'campaign_brief_metrics', next);
+    if (window === null) {
       return;
     }
-    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
-    // and treating them as "no window given" would skip the enum check and serve the default —
-    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
-    // may default; every supplied value must be in the enum.
-    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
-    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
-      next(
-        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
-          operation: 'campaign_brief_metrics',
-          service: 'campaign_controller',
-        })
-      );
-      return;
-    }
-    const window = rawWindow as CampaignMetricsWindow | undefined;
 
     const startTime = logger.startOperation(req, 'campaign_brief_metrics', { briefId, projectSlug, window });
 
@@ -2060,6 +2123,159 @@ export class CampaignController {
         okCount: result.ok_count,
         actionItemCount: result.action_items.length,
       });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `POST /api/campaigns/brief/creative-assets?project=&brief_id=` — the raw image bytes, typed
+   * `image/png` or `image/jpeg`, stored against the brief by campaign-service's
+   * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
+   * the image was stored and 200 when an identical one already was (the id is usable either way).
+   *
+   * Refused before anything is sent upstream: the capability off (`canUseRedditCreativeAssets` —
+   * nothing could use the asset), a missing `project` or `brief_id`, a type outside
+   * `CREATIVE_ASSET_MIME_TYPES` or bytes that are not the type they claim (415), an empty body
+   * (400). Over `CREATIVE_ASSET_MAX_BYTES` is a 413 from the route's raw parser before this runs;
+   * the length is re-checked here so a direct caller of this method gets the same answer.
+   * Upstream 4xx/5xx pass through with campaign-service's own message. Only ids, type and size are
+   * logged, never the bytes.
+   */
+  public async uploadCreativeAsset(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_upload_creative_asset';
+    const fail = (field: string, message: string): void => {
+      next(ServiceValidationError.forField(field, message, { operation, service: 'campaign_controller' }));
+    };
+
+    if (!canUseRedditCreativeAssets()) {
+      fail('file', 'image uploads are not enabled on this deployment; paste an image URL instead');
+      return;
+    }
+
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+    if (briefId.length === 0) {
+      fail('brief_id', 'save the brief before uploading an image for it');
+      return;
+    }
+    // Refused, not defaulted, for the reason `getBriefMetrics` refuses: a constant here would
+    // write into another foundation's brief.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      fail('project', 'no foundation is selected; reload the campaigns page from the sidebar');
+      return;
+    }
+
+    // `express.raw` skips a body whose type is not on its list, so a wrong type arrives here with
+    // no Buffer — told apart from an empty file by the declared type, not by the body.
+    const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+    const image: unknown = req.body;
+    if (!isCreativeAssetMimeType(declaredType) || !Buffer.isBuffer(image)) {
+      next(this.unsupportedCreativeAsset(req, operation));
+      return;
+    }
+    if (image.byteLength === 0) {
+      fail('file', 'the image is empty');
+      return;
+    }
+    if (image.byteLength > CREATIVE_ASSET_MAX_BYTES) {
+      next(
+        new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+    // The declared type is the browser's claim; campaign-service re-sniffs and would refuse a
+    // mismatch with a 400. Checking the magic bytes here gives that the wrong-type answer without
+    // a base64 round trip.
+    if (sniffCreativeAssetMimeType(image) !== declaredType) {
+      next(this.unsupportedCreativeAsset(req, operation));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { briefId, projectSlug, contentType: declaredType, byteSize: image.byteLength });
+    try {
+      const asset = await this.campaignServiceClient.uploadCreativeAsset(req, projectSlug, briefId, declaredType, image);
+      logger.success(req, operation, startTime, { briefId, assetId: asset.id, created: asset.created });
+      res.status(asset.created ? 201 : 200).json(asset);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Read campaign-service's live metrics for ONE campaign: impressions, clicks, cost and CTR, read
+   * from its platform on every request. The Optimize tab shows each row's counters from the
+   * brief-wide read (`getBriefMetrics`) it already makes on open, and calls this only when the
+   * operator refreshes one row, or clicks a row the brief-wide read could not measure, to get this
+   * read's precise reason. Each call reaches an ad platform whose rate budget is shared across
+   * foundations.
+   *
+   * Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like the adoptable-brief list: the route is
+   * addressed by a campaign-service brief, and with the flag off none exists here, so it answers
+   * 404 rather than reaching upstream.
+   *
+   * The query takes `project` and `briefId` (camelCase, like the sibling per-campaign Optimize reads)
+   * and an optional `window` refused rather than defaulted or dropped, as `getBriefMetrics` does.
+   * Both ids are checked as UUIDs, which upstream declares them.
+   * Upstream's refusals are relayed as they come: 400 for a platform with no metrics read, 409 for
+   * a campaign that cannot be measured yet or belongs to another account, 404 for a missing
+   * connection, 5xx for a connection or platform failure.
+   */
+  public async getCampaignMetrics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_metrics_read';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+
+    const campaignId = req.params['campaignId'];
+    if (typeof campaignId !== 'string' || !isCampaignServiceJobId(campaignId)) {
+      next(ServiceValidationError.forField('campaignId', 'campaignId must be a campaign UUID', { operation, service: 'campaign_controller', path: req.path }));
+      return;
+    }
+
+    const briefId = typeof req.query['briefId'] === 'string' ? req.query['briefId'].trim() : '';
+    if (!isCampaignServiceJobId(briefId)) {
+      next(
+        ServiceValidationError.forField('briefId', "the brief UUID is required to read a campaign's metrics", {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    // Refused, not defaulted, for the reason `getBriefMetrics` gives.
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    if (projectSlug.length === 0) {
+      next(
+        ServiceValidationError.forField('project', 'no foundation is selected; reload the campaigns page from the sidebar', {
+          operation,
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const window = this.readMetricsWindow(req, operation, next);
+    if (window === null) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId, briefId, projectSlug, window });
+
+    try {
+      const result = await this.campaignServiceClient.getCampaignMetrics(req, projectSlug, briefId, campaignId, window);
+      // The window upstream SERVED, which can be narrower than the one asked for (X Ads), and the
+      // counters themselves are not logged: they are the response, not a diagnostic.
+      logger.success(req, operation, startTime, { campaignId, briefId, projectSlug, window: result.window });
       res.json(result);
     } catch (error) {
       next(error);
@@ -3596,6 +3812,49 @@ export class CampaignController {
   }
 
   /**
+   * The optional `?window=` of a campaign-service metrics read: the window, `undefined` when it was
+   * OMITTED, or `null` once a malformed value has been reported to `next`. Shared by the brief-wide
+   * and single-campaign reads, which accept the same seven values and refuse the same shapes.
+   */
+  private readMetricsWindow(req: Request, operation: string, next: NextFunction): CampaignMetricsWindow | undefined | null {
+    // ABSENT and MALFORMED are separated before the enum check, because collapsing them makes the
+    // malformed case fail OPEN. A repeated `?window=a&window=b` arrives as an ARRAY, and a
+    // `typeof === 'string'` test alone turns that into `''` — indistinguishable from "no window
+    // given", so the enum check is skipped and the read proceeds on the per-platform default.
+    // That is the substitution this method refuses by design: the response's own `window` field
+    // would then report a period the caller never asked for, as though it had. `project` and
+    // `brief` are safe from the same shape only because an array collapses to `''` and THEIR
+    // guard refuses empty; `window` is legitimately optional, so it has no such backstop.
+    // Matches the repeated-param handling `persistBrief`, `loadBrief` and `searchHubSpotEmails`
+    // already carry.
+    const windowParam = req.query['window'];
+    if (windowParam !== undefined && typeof windowParam !== 'string') {
+      next(
+        ServiceValidationError.forField('window', 'window must be given at most once', {
+          operation,
+          service: 'campaign_controller',
+        })
+      );
+      return null;
+    }
+    // PRESENT-BUT-EMPTY is malformed, not absent. `?window=` and `?window=%20` arrive as a string,
+    // and treating them as "no window given" would skip the enum check and serve the default —
+    // the same fail-open shape as the array case above, one layer in. Only an OMITTED parameter
+    // may default; every supplied value must be in the enum.
+    const rawWindow = windowParam === undefined ? undefined : windowParam.trim();
+    if (rawWindow !== undefined && !CAMPAIGN_METRICS_WINDOWS.includes(rawWindow as CampaignMetricsWindow)) {
+      next(
+        ServiceValidationError.forField('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, {
+          operation,
+          service: 'campaign_controller',
+        })
+      );
+      return null;
+    }
+    return rawWindow as CampaignMetricsWindow | undefined;
+  }
+
+  /**
    * `?days=`, clamped to the account monitors' 7–90 range rather than refused — the behaviour the
    * Meta and Reddit routes already had. Upstream rejects an out-of-range value, so the clamp is
    * what keeps a stray `?days=365` a read instead of a 400.
@@ -3803,6 +4062,29 @@ export class CampaignController {
           })
       )
     );
+  }
+
+  /** 415 for an upload that is not a PNG or JPEG, or whose bytes are not the type declared. */
+  private unsupportedCreativeAsset(req: Request, operation: string): MicroserviceError {
+    return new MicroserviceError(CREATIVE_ASSET_WRONG_TYPE_MESSAGE, 415, 'UNSUPPORTED_MEDIA_TYPE', {
+      operation,
+      service: 'campaign_controller',
+      path: req.path,
+    });
+  }
+
+  /**
+   * `redditConfig.imageAssetId` when this deployment cannot honour it, else `null`.
+   *
+   * `in`, as for bidding: an explicit `imageAssetId: null` is still the field, and campaign-service
+   * would refuse it. Off means either the legacy creator serves (it never reads the field, so the
+   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses).
+   */
+  private unservedRedditAssetField(body: CampaignCreateRequest): string | null {
+    if (canUseRedditCreativeAssets()) return null;
+    const config: unknown = body?.redditConfig;
+    if (config !== null && typeof config === 'object' && 'imageAssetId' in config) return 'redditConfig.imageAssetId';
+    return null;
   }
 
   /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */

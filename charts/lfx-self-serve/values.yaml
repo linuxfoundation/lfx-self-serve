@@ -575,6 +575,25 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING:
     value:
 
+  # Offers an image UPLOAD in the Reddit section of the create flow (decision D3): the operator
+  # picks a PNG/JPEG (up to 10 MB), it is stored by campaign-service against the brief, and the
+  # create sends its id as `redditConfig.imageAssetId` instead of a pasted `imageUrl`. The pasted
+  # image URL stays offered either way.
+  #
+  # A CAPABILITY flag, like BIDDING: "does the DEPLOYED campaign-service have creative-asset URL
+  # signing configured?" — CREATIVE_ASSET_URL_SIGNING_KEY (secret) and
+  # CREATIVE_ASSET_PUBLIC_BASE_URL (https origin) on campaign-service (LFXV2-2665). Reddit can only
+  # fetch an image from a public URL, and that signed URL is how a stored asset becomes one; without
+  # both, campaign-service refuses every `imageAssetId` with a 400. It also needs the create
+  # pipeline (CREATE, BRIEFS, JOBS) on, because the legacy creator never reads `imageAssetId`.
+  #
+  # Off (the default), the upload control is hidden, the upload route refuses, and a create request
+  # carrying `redditConfig.imageAssetId` is refused with a 400 rather than dropped. Order: configure
+  # campaign-service's signing key and public base URL, confirm it, THEN set this. Same accepted
+  # values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS:
+    value:
+
   # Gates FGA-based (marketing_auditor / campaign_manager) authorization on the marketing
   # analytics routes (analytics.route.ts) and campaigns routes (campaigns.route.ts). Same
   # accepted values and same default-deny as the campaign-service flags above.
@@ -915,6 +934,12 @@ environment:
   # this value) once Guild delivers structured agent inputs verbatim.
   GUILD_STRUCTURED_AGENT_INPUT:
     value: "false"
+
+  # The Google Drive folder Export to Google Slides creates new decks in.
+  # Defaults in code to the Marketing OS folder; set it outside production to
+  # keep test decks out of the folder marketing works from.
+  MKTG_SLIDES_EXPORT_FOLDER_ID:
+    value:
 
   # Optional GitHub token for the server-side README fetch that grounds the
   # Message Foundation agent. Unauthenticated GitHub REST is capped at 60/hour

@@ -19,7 +19,12 @@
       data-testid="members-at-risk-empty" />
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-at-risk-controls">
-      <lfx-filter-pills [options]="filterOptions" [selectedFilter]="bucket()" (filterChange)="onBucketChange($event)" data-testid="members-at-risk-pills" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="filterOptions"
+        [selectedFilter]="bucket()"
+        (filterChange)="onBucketChange($event)"
+        data-testid="members-at-risk-pills" />
       <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-at-risk-count">
         @if (loading()) {
           &mdash;
@@ -29,7 +34,7 @@
       </span>
     </div>
 
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-at-risk-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-at-risk-hero">
       <div class="flex flex-col gap-2">
         <span class="text-3xl font-semibold tabular-nums text-red-600" data-testid="members-at-risk-outstanding">{{ summary().outstandingLabel }}</span>
         <span class="text-[12.5px] text-gray-500">Outstanding balance</span>
@@ -37,15 +42,15 @@
 
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-at-risk-side">
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">High risk</dt>
+          <dt class="text-[11.5px] text-gray-500">High risk</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-high">{{ summary().highRiskLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">Medium risk</dt>
+          <dt class="text-[11.5px] text-gray-500">Medium risk</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-at-risk-medium">{{ summary().mediumRiskLabel }}</dd>
         </div>
         <div class="flex flex-col gap-0.5">
-          <dt class="text-[11.5px] text-gray-400">Members at risk</dt>
+          <dt class="text-[11.5px] text-gray-500">Members at risk</dt>
           <dd class="text-[17px] font-semibold tabular-nums text-red-600" data-testid="members-at-risk-members">{{ summary().memberCountLabel }}</dd>
         </div>
       </dl>
@@ -71,6 +76,7 @@
     }
 
     <lfx-table
+      [rowHover]="false"
       [value]="rowViews()"
       [loading]="loading()"
       [lazy]="true"
@@ -99,19 +105,9 @@
       <ng-template #body let-view>
         <tr [attr.data-testid]="'members-at-risk-row-' + view.accountId">
           <td>
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-              <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
-                view.accountName
-              }}</span>
-              @if (view.churnRiskLabel) {
-                <span
-                  class="rounded-full px-2 py-0.5 text-[11.5px] font-medium"
-                  [class]="view.churnRiskClass"
-                  [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-churn-risk'"
-                  >{{ view.churnRiskLabel }}</span
-                >
-              }
-            </div>
+            <span class="text-sm font-semibold text-gray-900" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-name'">{{
+              view.accountName
+            }}</span>
           </td>
           <td>
             <span
@@ -127,10 +123,7 @@
             }}</span>
           </td>
           <td class="text-right">
-            <div class="flex flex-col items-end gap-0.5">
-              <span class="text-sm tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
-              <span class="text-[11.5px] text-gray-400" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-aging'">{{ view.agingLabel }}</span>
-            </div>
+            <span class="text-sm tabular-nums text-red-600" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-age'">{{ view.ageLabel }}</span>
           </td>
           <td class="text-right">
             <span class="text-sm tabular-nums text-amber-700" [attr.data-testid]="'members-at-risk-row-' + view.accountId + '-last-engaged'">{{

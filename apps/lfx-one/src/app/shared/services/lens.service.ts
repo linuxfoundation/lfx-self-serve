@@ -110,7 +110,7 @@ export class LensService {
    * access to the specific project/committee explicitly (a direct grant or a batch access-check
    * that evaluates inherited access), so gating on `getAllowedLensIds()` here would reject
    * legitimate, already-authorized picks purely because the persona doesn't happen to hold a
-   * matching lens. `setLens()` keeps that gate for every other caller (sidebar, lens-switcher,
+   * matching lens. `setLens()` keeps that gate for every other caller (sidebar, navbar lens tabs,
    * dashboards) — this method exists so the create flow doesn't have to go through it.
    *
    * `applyLensSelection()` alone isn't enough: `activeLens` re-derives its value from
@@ -123,7 +123,7 @@ export class LensService {
    * The override also self-clears once the navigation this call is for concludes (success,
    * cancel, or error) — without that, a persona whose allowed lenses never include `lens` (e.g. a
    * committee-only writer creating against a project/foundation target) has no normal
-   * `setLens()`/`switchLens()` call left to run, since the lens-switcher UI only offers lenses
+   * `setLens()`/`switchLens()` call left to run, since the navbar's lens tabs only offer lenses
    * `getAllowedLensIds()` admits. Left unscoped, the override would silently stick past this one
    * navigation and clamp every subsequent route (including lens-agnostic ones like `/badges`) to
    * `lens` for the rest of the session.

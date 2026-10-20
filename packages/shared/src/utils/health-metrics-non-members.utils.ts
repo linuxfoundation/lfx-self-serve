@@ -4,6 +4,7 @@
 import {
   HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
   HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE,
+  HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD,
   HEALTH_METRICS_NON_MEMBERS_SECTIONS,
 } from '../constants/health-metrics-non-members.constants';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -13,14 +14,13 @@ import type {
   HealthMetricsNonMembersConversion,
   HealthMetricsNonMembersConversionView,
   HealthMetricsNonMembersOrg,
-  HealthMetricsNonMembersOrgChannelView,
   HealthMetricsNonMembersOrgRowView,
   HealthMetricsNonMembersPerson,
   HealthMetricsNonMembersPersonRowView,
   HealthMetricsNonMembersSectionKey,
   HealthMetricsNonMembersSubNavItem,
   HealthMetricsNonMembersWarmOrg,
-  HealthMetricsNonMembersWarmOrgBarView,
+  HealthMetricsNonMembersWarmOrgRowView,
 } from '../interfaces/health-metrics-non-members.interface';
 
 /** Sub-nav items for the Non-Members tab; a section without a count carries no badge. */
@@ -30,12 +30,11 @@ export function buildHealthMetricsNonMembersSubNavItems(
   return HEALTH_METRICS_NON_MEMBERS_SECTIONS.map((section) => ({ key: section.key, label: section.label, count: counts[section.key] ?? null, note: '' }));
 }
 
-/** Company participation rows. A zero or NULL count renders a dash; only channels with activity get a chip. */
+/** Company participation rows. A zero or NULL count renders a dash. */
 export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMembersOrg[]): HealthMetricsNonMembersOrgRowView[] {
   return rows.map((row) => ({
     accountId: row.accountId,
     accountName: row.accountName,
-    channels: buildChannels(row),
     meetingsLabel: formatCount(row.meetingsAttended),
     peopleLabel: formatCount(row.distinctPeople),
     contributionsLabel: formatCount(row.contributions),
@@ -48,6 +47,12 @@ export function buildHealthMetricsNonMembersOrgRows(rows: HealthMetricsNonMember
 /** The unfiltered count line: "412 organizations · 37 new this period". */
 export function buildHealthMetricsNonMembersOrgsSummary(scopeTotal: number, newCount: number): string {
   return `${pluralize(scopeTotal, 'organization')} · ${newCount.toLocaleString('en-US')} new this period`;
+}
+
+/** The amber chip when too few organizations are active to rank by fit; `null` at or above the threshold, or with none. */
+export function buildHealthMetricsNonMembersOrgsLowConfidence(scopeTotal: number): string | null {
+  if (scopeTotal <= 0 || scopeTotal >= HEALTH_METRICS_NON_MEMBERS_ORGS_LOW_CONFIDENCE_THRESHOLD) return null;
+  return `Only ${pluralize(scopeTotal, 'active organization')} — too early to rank by fit.`;
 }
 
 /** People rows. A person with no matched organization, or no attended date, renders a dash. */
@@ -86,17 +91,13 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
       { key: 'high-fit', label: 'High-fit organizations', value: formatStat(conversion.highFitCount) },
       { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
     ],
-    warmest: buildWarmestBars(conversion.warmest),
-    footnote: `Estimated pipeline multiplies high-fit organizations by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only.`,
+    warmest: buildWarmestRows(conversion.warmest),
+    footnote: [
+      { text: `Estimated pipeline multiplies high-fit organizations by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only. The ` },
+      { text: 'fit score', bold: true },
+      { text: ' is a model change, sequenced after the matching fix.' },
+    ],
   };
-}
-
-// Training, sponsorship and speaking have no non-member feed yet, so they never get a chip.
-function buildChannels(row: HealthMetricsNonMembersOrg): HealthMetricsNonMembersOrgChannelView[] {
-  const channels: HealthMetricsNonMembersOrgChannelView[] = [];
-  if ((row.meetingsAttended ?? 0) > 0) channels.push({ key: 'meetings', label: 'Attends meetings' });
-  if ((row.contributions ?? 0) > 0) channels.push({ key: 'code', label: 'Contributes code' });
-  return channels;
 }
 
 function formatCount(value: number | null): string {
@@ -107,14 +108,12 @@ function pluralize(count: number, noun: string): string {
   return `${count.toLocaleString('en-US')} ${count === 1 ? noun : `${noun}s`}`;
 }
 
-// Sized by contributions against the largest in the list; a NULL count draws no bar.
-function buildWarmestBars(orgs: HealthMetricsNonMembersWarmOrg[]): HealthMetricsNonMembersWarmOrgBarView[] {
-  const max = Math.max(0, ...orgs.map((org) => org.contributions ?? 0));
+// Name and value only, as the design's ranked list; a NULL count reads as not available.
+function buildWarmestRows(orgs: HealthMetricsNonMembersWarmOrg[]): HealthMetricsNonMembersWarmOrgRowView[] {
   return orgs.map((org) => ({
     accountId: org.accountId,
     label: `${org.accountName} · ${org.meetingsAttended === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.meetingsAttended, 'meeting')}`,
     valueLabel: org.contributions === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.contributions, 'contribution'),
-    widthPct: max > 0 && org.contributions !== null ? (org.contributions / max) * 100 : 0,
   }));
 }
 
