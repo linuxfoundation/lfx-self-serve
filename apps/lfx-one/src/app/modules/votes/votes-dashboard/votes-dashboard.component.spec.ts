@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
-import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteSummary } from '@lfx-one/shared/interfaces';
+import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -55,10 +55,10 @@ describe('VotesDashboardComponent personal summary', () => {
   let getMyVotes: ReturnType<typeof vi.fn>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
-  const tabLabels = () =>
-    Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]') as NodeListOf<HTMLElement>).map(
-      (pill) => pill.textContent!.trim()
-    );
+  const tabPills = () =>
+    Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]') as NodeListOf<HTMLElement>);
+  const tabLabels = () => tabPills().map((pill) => pill.textContent!.trim());
+  const tabAccessibleNames = () => tabPills().map((pill) => pill.getAttribute('aria-label'));
   const element = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   const settle = async () => {
     fixture.detectChanges();
@@ -695,7 +695,7 @@ describe('VotesDashboardComponent personal summary', () => {
     });
   }
 
-  it.each<Lens>(['project', 'foundation'])('requests %s tab counts by scope, search and Group only, and shows failures as unavailable', async (lens) => {
+  it.each<Lens>(['project', 'foundation'])('requests %s tab counts by scope, search and Group only, and shows failures as plain labels', async (lens) => {
     const service = TestBed.inject(VoteService);
     const counts = vi.mocked(service.getVoteStatusCountsByProject);
     await management(lens);
@@ -708,11 +708,13 @@ describe('VotesDashboardComponent personal summary', () => {
     await settle();
     expect(counts).toHaveBeenCalledOnce();
     expect(dashboard['tabStatusCounts']()).toBeNull();
-    expect(tabLabels()).toEqual(['All (–)', 'Active (–)', 'Draft (–)', 'Ended (–)']);
+    expect(tabLabels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(tabAccessibleNames()).toEqual(tabLabels());
     expect(rows()).toEqual(['first-page']);
     dashboard['refreshVotes']();
     await settle();
     expect(tabLabels()).toEqual(['All (9)', 'Active (4)', 'Draft (2)', 'Ended (3)']);
+    expect(tabAccessibleNames()).toEqual(tabLabels());
 
     counts.mockClear();
     table['onStatusTabChange'](PollStatus.ENDED);
@@ -724,6 +726,28 @@ describe('VotesDashboardComponent personal summary', () => {
     table.searchForm.patchValue({ search: ' Ballot ', group: 'Synthetic Board' });
     await settle();
     expect(counts).toHaveBeenCalledExactlyOnceWith('project-a', 'Ballot', 'Synthetic Board');
+  });
+
+  it.each<Lens>(['project', 'foundation'])('shows plain %s tab labels while counts are pending, then only positive counts', async (lens) => {
+    const service = TestBed.inject(VoteService);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    await management(lens);
+    const request = new Subject<VoteStatusCounts>();
+    counts.mockReturnValueOnce(request);
+    dashboard['refreshVotes']();
+    await settle();
+    expect(dashboard['tabStatusCounts']()).toBeNull();
+    expect(tabLabels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(tabAccessibleNames()).toEqual(tabLabels());
+    expect(rows()).toEqual(['first-page']);
+
+    request.next({ all: 5, active: 1, disabled: 0, ended: 4 });
+    request.complete();
+    await settle();
+    expect(dashboard['tabStatusCounts']()).toEqual({ all: 5, active: 1, disabled: 0, ended: 4 });
+    expect(tabLabels()).toEqual(['All (5)', 'Active (1)', 'Draft', 'Ended (4)']);
+    expect(tabAccessibleNames()).toEqual(tabLabels());
+    expect(element(`filter-pill-${PollStatus.DISABLED}`)).not.toBeNull();
   });
 
   it('counts the personal list by foundation/project/Group/search, ignoring quick filters and the status tab', async () => {
@@ -760,14 +784,18 @@ describe('VotesDashboardComponent personal summary', () => {
     dashboard['refreshVotes']();
     await settle();
     expect(dashboard['tabStatusCounts']()).toBeNull();
+    expect(tabLabels()).toEqual(['All', 'Active', 'Ended']);
+    expect(tabAccessibleNames()).toEqual(tabLabels());
     request.error(new HttpErrorResponse({ status: 503 }));
     await settle();
     expect(dashboard['tabStatusCounts']()).toBeNull();
+    expect(tabLabels()).toEqual(['All', 'Active', 'Ended']);
     getMyVotes.mockReturnValueOnce(of({ votes: [], complete: true }));
     dashboard['refreshVotes']();
     await settle();
     expect(dashboard['tabStatusCounts']()).toEqual({ all: 0, active: 0, disabled: 0, ended: 0 });
-    expect(tabLabels()).toEqual(['All (0)', 'Active (0)', 'Ended (0)']);
+    expect(tabLabels()).toEqual(['All', 'Active', 'Ended']);
+    expect(tabAccessibleNames()).toEqual(tabLabels());
   });
 
   it.each([false, true])('keeps partial personal rows usable without reporting exact tab totals (empty: %s)', async (empty) => {
@@ -778,18 +806,13 @@ describe('VotesDashboardComponent personal summary', () => {
 
     expect(dashboard['myVotesError']()).toBe(false);
     expect(dashboard['tabStatusCounts']()).toBeNull();
-    expect(tabLabels()).toEqual(['All (–)', 'Active (–)', 'Ended (–)']);
+    expect(tabLabels()).toEqual(['All', 'Active', 'Ended']);
     expect(rows()).toEqual(votes.map((vote) => vote.uid));
     expect(element('votes-load-error')).toBeNull();
     expect(table.resultsComplete()).toBe(false);
     expect(element('votes-table-empty-state')?.textContent ?? '').not.toContain('No active votes');
     expect(!!element('votes-table-empty-state')).toBe(empty);
-    const tabs: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]');
-    expect(Array.from(tabs, (tab) => tab.getAttribute('aria-label'))).toEqual([
-      'All, count unavailable',
-      'Active, count unavailable',
-      'Ended, count unavailable',
-    ]);
+    expect(tabAccessibleNames()).toEqual(['All', 'Active', 'Ended']);
 
     // Filtering the usable rows cannot turn an unknown scope into a confirmed zero.
     table.searchForm.patchValue({ search: 'no matching vote' });

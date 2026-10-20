@@ -71,6 +71,15 @@ class StatusCountsHostComponent {
   public readonly selected: string[] = [];
 }
 
+@Component({
+  selector: 'lfx-status-counts-loading-host',
+  imports: [VotesTableComponent],
+  template: `<lfx-votes-table [votes]="[]" [showStatusCounts]="true" [statusCounts]="counts()" />`,
+})
+class LoadingCountsHostComponent {
+  public readonly counts = signal<VoteStatusCounts | null>(null);
+}
+
 describe('VotesTableComponent — status tab counts', () => {
   let fixture: ComponentFixture<StatusCountsHostComponent>;
   let host: StatusCountsHostComponent;
@@ -109,8 +118,15 @@ describe('VotesTableComponent — status tab counts', () => {
   const labels = (): string[] => pills().map((pill) => pill.textContent!.trim());
   const accessibleNames = (): (string | null)[] => pills().map((pill) => pill.getAttribute('aria-label'));
 
-  it('appends each tab count to its label and keeps a confirmed zero visible', () => {
-    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Draft (0)', 'Ended (2)']);
+  it('appends positive counts and leaves a confirmed zero as the plain label', () => {
+    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Draft', 'Ended (2)']);
+    expect(accessibleNames()).toEqual(labels());
+  });
+
+  it('keeps a count of exactly 1 visible beside zero totals', async () => {
+    host.counts.set({ all: 1, active: 0, disabled: 1, ended: 0 });
+    await settle();
+    expect(labels()).toEqual(['All (1)', 'Active', 'Draft (1)', 'Ended']);
     expect(accessibleNames()).toEqual(labels());
   });
 
@@ -120,11 +136,33 @@ describe('VotesTableComponent — status tab counts', () => {
     expect(labels()).toEqual(['All (5)', 'Active (3)', 'Ended (2)']);
   });
 
-  it('renders unavailable counts as a dash and announces them as unavailable', async () => {
+  it('renders unavailable counts as plain labels without a placeholder', async () => {
     host.counts.set(null);
     await settle();
-    expect(labels()).toEqual(['All (–)', 'Active (–)', 'Draft (–)', 'Ended (–)']);
-    expect(accessibleNames()).toEqual(['All, count unavailable', 'Active, count unavailable', 'Draft, count unavailable', 'Ended, count unavailable']);
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(accessibleNames()).toEqual(labels());
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-status-tabs"]').textContent).not.toMatch(/[–(]/);
+  });
+
+  it('follows count updates from loading to positive to zero and back to loading', async () => {
+    host.counts.set(null);
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+
+    host.counts.set({ all: 4, active: 1, disabled: 2, ended: 1 });
+    await settle();
+    expect(labels()).toEqual(['All (4)', 'Active (1)', 'Draft (2)', 'Ended (1)']);
+    expect(accessibleNames()).toEqual(labels());
+
+    host.counts.set({ all: 0, active: 0, disabled: 0, ended: 0 });
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(accessibleNames()).toEqual(labels());
+
+    host.counts.set(null);
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(accessibleNames()).toEqual(labels());
   });
 
   it('renders plain labels for consumers that do not opt in', async () => {
@@ -133,12 +171,53 @@ describe('VotesTableComponent — status tab counts', () => {
     expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
   });
 
-  it('still selects counted tabs by their bare status id', async () => {
+  it('keeps zero-count tabs selectable by their bare status id', async () => {
+    expect(labels()[2]).toBe('Draft');
     (fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]') as HTMLButtonElement).click();
     await settle();
     expect(host.selected).toEqual([PollStatus.DISABLED]);
     expect(host.status()).toBe(PollStatus.DISABLED);
-    expect(fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('still selects counted tabs by their bare status id', async () => {
+    (fixture.nativeElement.querySelector(`[data-testid="filter-pill-${PollStatus.ENDED}"]`) as HTMLButtonElement).click();
+    await settle();
+    expect(host.selected).toEqual([PollStatus.ENDED]);
+    expect(host.status()).toBe(PollStatus.ENDED);
+    expect(fixture.nativeElement.querySelector(`[data-testid="filter-pill-${PollStatus.ENDED}"]`).getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('VotesTableComponent — status tab counts on initial load', () => {
+  let fixture: ComponentFixture<LoadingCountsHostComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [LoadingCountsHostComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(LoadingCountsHostComponent);
+  });
+  afterEach(() => fixture?.destroy());
+
+  it('renders plain labels on the first render while counts are still pending, then shows positive counts', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const pills = (): HTMLButtonElement[] =>
+      Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]'));
+    expect(pills().map((pill) => pill.textContent!.trim())).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(pills().map((pill) => pill.getAttribute('aria-label'))).toEqual(['All', 'Active', 'Draft', 'Ended']);
+
+    fixture.componentInstance.counts.set({ all: 2, active: 2, disabled: 0, ended: 0 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(pills().map((pill) => pill.textContent!.trim())).toEqual(['All (2)', 'Active (2)', 'Draft', 'Ended']);
   });
 });
 
