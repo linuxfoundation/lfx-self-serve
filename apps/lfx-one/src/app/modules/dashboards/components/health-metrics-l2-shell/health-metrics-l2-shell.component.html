@@ -25,7 +25,7 @@
       @let body = bodyByKey().get(section.key);
       <section
         [id]="section.id"
-        class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5 lg:scroll-mt-[var(--l2-sticky-top)]"
+        class="flex flex-col gap-3 rounded-[12px] bg-white p-[24px] shadow-card lg:scroll-mt-[var(--l2-sticky-top)]"
         [attr.data-testid]="testIdPrefix() + '-section-' + section.key">
         <div class="flex flex-col gap-[6px]" [id]="section.headingId">
           <div class="flex flex-wrap items-center gap-2">
