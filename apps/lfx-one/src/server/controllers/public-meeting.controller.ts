@@ -11,28 +11,15 @@ import {
 } from '@lfx-one/shared/constants';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
-  ApiRequestOptions,
   CreateMeetingRegistrantRequest,
   MeetingOccurrenceSummary,
   MeetingRegistrant,
-  PastMeeting,
-  PastMeetingArtifactKind,
   Project,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
-import {
-  getPastMeetingResourceId,
-  isPastMeetingArtifactPublic,
-  isPastMeetingSummaryAwaitingApproval,
-  joinAsSentenceList,
-  toPublicPastMeetingRecording,
-  toPublicPastMeetingRoster,
-  toPublicPastMeetingSummary,
-  toPublicPastMeetingTranscript,
-  truncateToUtf16Units,
-} from '@lfx-one/shared/utils';
+import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -366,103 +353,6 @@ export class PublicMeetingController {
         project: this.toPublicMeetingProject(project, parent),
         full_access: fullAccess,
       });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /public/api/meetings/past/:id/recording — the past meeting's recording for the public page
-   * (E4-04, FR-028). See {@link resolvePublicPastArtifact} for who may read it. A caller with no
-   * session gets an allowlist (`toPublicPastMeetingRecording`), never upstream's host or audit identities.
-   */
-  public async getPublicPastMeetingRecording(req: Request, res: Response, next: NextFunction): Promise<void> {
-    await this.sendPublicPastArtifact(req, res, next, 'recording', 'get_public_past_meeting_recording', async (resourceId, options) => {
-      const recording = await this.meetingService.getPastMeetingRecording(req, resourceId, options);
-      // Signed in (no options): what upstream returned for the caller's own token; anonymous: an allowlist.
-      return options && recording ? toPublicPastMeetingRecording(recording) : recording;
-    });
-  }
-
-  /**
-   * GET /public/api/meetings/past/:id/transcript — the past meeting's transcript record, behind the
-   * same gate and with the same allowlist for a caller with no session as {@link getPublicPastMeetingRecording}.
-   */
-  public async getPublicPastMeetingTranscript(req: Request, res: Response, next: NextFunction): Promise<void> {
-    await this.sendPublicPastArtifact(req, res, next, 'transcript', 'get_public_past_meeting_transcript', async (resourceId, options) => {
-      const transcript = await this.meetingService.getPastMeetingTranscript(req, resourceId, options);
-      return options && transcript ? toPublicPastMeetingTranscript(transcript) : transcript;
-    });
-  }
-
-  /**
-   * GET /public/api/meetings/past/:id/transcript/content — the transcript text, behind the transcript's
-   * gate. The upstream file read keeps `getPastMeetingTranscriptContent`'s 5 MB / 15 s bound.
-   */
-  public async getPublicPastMeetingTranscriptContent(req: Request, res: Response, next: NextFunction): Promise<void> {
-    await this.sendPublicPastArtifact(req, res, next, 'transcript', 'get_public_past_meeting_transcript_content', (resourceId, options) =>
-      this.meetingService.getPastMeetingTranscriptContent(req, resourceId, options)
-    );
-  }
-
-  /**
-   * GET /public/api/meetings/past/:id/summary — the AI summary. A summary awaiting approval is the
-   * organizer's alone upstream, so a caller with no session never gets one (404, as for no summary),
-   * and gets a public one as an allowlist without the Zoom document link, its password or config
-   * (`toPublicPastMeetingSummary`).
-   */
-  public async getPublicPastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
-    await this.sendPublicPastArtifact(req, res, next, 'summary', 'get_public_past_meeting_summary', async (resourceId, options) => {
-      const summary = await this.meetingService.getPastMeetingSummary(req, resourceId, options);
-      // Signed in (no options): exactly what upstream returned for the caller's own token.
-      if (!options || !summary) {
-        return summary;
-      }
-      return isPastMeetingSummaryAwaitingApproval(summary) ? null : toPublicPastMeetingSummary(summary);
-    });
-  }
-
-  /**
-   * GET /public/api/meetings/past/:id/participants — the public roster (E4-04).
-   * @description Never anonymous: a session is required even where artifact access would admit an
-   * anonymous caller (`meeting-surface-boundary.md`). A signed-in caller needs artifact access
-   * (`checkPastMeetingAccess`: public and unrestricted, organizer, registrant, participant or committee
-   * member); the rows are then read with the M2M token and cut down to § Public roster fields in
-   * the response (`toPublicPastMeetingRoster`): no email, job title or committee standing.
-   */
-  public async getPublicPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { id } = req.params;
-    const operation = 'get_public_past_meeting_participants';
-    const startTime = logger.startOperation(req, operation, { past_meeting_id: id });
-
-    // Depends on the caller's session, so never cached.
-    res.setHeader('Cache-Control', 'private, no-store');
-
-    try {
-      if (!this.validateMeetingId(id, operation, req, next)) {
-        return;
-      }
-      if (!req.oidc?.isAuthenticated() || !req.bearerToken) {
-        throw new AuthenticationError('Sign in to see who attended this meeting', { operation, service: 'public_meeting_controller' });
-      }
-
-      const m2mToken = await generateM2MToken(req);
-      const meeting = await this.meetingService.getPastMeetingById(req, id, { bearerToken: m2mToken });
-      const isOrganizer = await this.isPastMeetingOrganizer(req, meeting);
-      if (!(await checkPastMeetingAccess(req, meeting, m2mToken, isOrganizer))) {
-        throw new AuthorizationError("You don't have access to this meeting's participants", { operation, service: 'public_meeting_controller' });
-      }
-
-      // Fails on a partial page walk, so a short read never understates the roster or its count.
-      const participants = await this.meetingService.getPastMeetingParticipants(req, getPastMeetingResourceId(meeting), true, { bearerToken: m2mToken });
-      const roster = toPublicPastMeetingRoster(participants);
-
-      logger.success(req, operation, startTime, {
-        past_meeting_id: id,
-        participant_count: roster.participants.length,
-        unidentified_attendees: roster.unidentified_attendees,
-      });
-      res.json(roster);
     } catch (error) {
       next(error);
     }
@@ -922,92 +812,6 @@ export class PublicMeetingController {
     return Object.fromEntries(
       PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS.filter((field) => registrant[field] !== undefined).map((field) => [field, registrant[field]])
     );
-  }
-
-  /**
-   * Sends one past-meeting artifact for the public page (E4-04). Failures go to the error handler: 404
-   * when there is none, 401 when the caller must sign in, upstream errors as raised.
-   */
-  private async sendPublicPastArtifact<T>(
-    req: Request,
-    res: Response,
-    next: NextFunction,
-    kind: PastMeetingArtifactKind,
-    operation: string,
-    read: (resourceId: string, options: ApiRequestOptions | undefined) => Promise<T | null>
-  ): Promise<void> {
-    const { id } = req.params;
-    const startTime = logger.startOperation(req, operation, { past_meeting_id: id });
-
-    // Depends on the caller's session, so never cached.
-    res.setHeader('Cache-Control', 'private, no-store');
-
-    try {
-      if (!this.validateMeetingId(id, operation, req, next)) {
-        return;
-      }
-
-      const { resourceId, options } = await this.resolvePublicPastArtifact(req, id, kind, operation);
-      const artifact = await read(resourceId, options);
-      if (!artifact) {
-        throw new ResourceNotFoundError(`Past meeting ${kind}`, id, { operation, service: 'public_meeting_controller' });
-      }
-
-      logger.success(req, operation, startTime, { past_meeting_id: id, anonymous: !!options });
-      res.json(artifact);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * Who reads a past-meeting artifact on a public route, and with which token (E4-04).
-   * @description A signed-in caller reads with their own token, so upstream FGA decides exactly as on
-   * `/api/past-meetings` (the `recording_viewer` / `transcript_viewer` / `ai_summary_viewer` relations,
-   * which the meeting service derives from each artifact's own access level). A caller with no session
-   * has no token for upstream to judge, so the BFF decides: only an artifact whose own level is `public`
-   * on a public, unrestricted meeting (`isPastMeetingArtifactPublic`), read with the M2M token. The
-   * levels come from the past meeting's query-service document, since the ITX read does not carry
-   * them; no document, or an unset level, is not public. Anything else is a 401, so the page can offer
-   * sign-in. The past meeting is read with the M2M token only to resolve the gate and the artifacts'
-   * composite id; none of it is returned.
-   */
-  private async resolvePublicPastArtifact(
-    req: Request,
-    id: string,
-    kind: PastMeetingArtifactKind,
-    operation: string
-  ): Promise<{ resourceId: string; options: ApiRequestOptions | undefined }> {
-    const m2mToken = await generateM2MToken(req);
-    const meeting = await this.meetingService.getPastMeetingById(req, id, { bearerToken: m2mToken });
-    const resourceId = getPastMeetingResourceId(meeting);
-
-    if (req.oidc?.isAuthenticated() && req.bearerToken) {
-      return { resourceId, options: undefined };
-    }
-    const levels = await this.meetingService.getPastMeetingArtifactAccessLevels(req, resourceId, { bearerToken: m2mToken });
-    if (!levels || !isPastMeetingArtifactPublic({ visibility: meeting.visibility, restricted: meeting.restricted, ...levels }, kind)) {
-      throw new AuthenticationError(`Sign in to view this meeting's ${kind}`, { operation, service: 'public_meeting_controller' });
-    }
-    return { resourceId, options: { bearerToken: m2mToken } };
-  }
-
-  /**
-   * Whether the signed-in caller organizes this past meeting, checked with their own token (never the
-   * M2M identity). An access-check failure counts as no (fail closed).
-   */
-  private async isPastMeetingOrganizer(req: Request, meeting: PastMeeting): Promise<boolean> {
-    try {
-      const meetingWithAccess = await this.accessCheckService.addAccessToResource(
-        req,
-        { ...meeting, id: getPastMeetingResourceId(meeting) },
-        'v1_past_meeting',
-        'organizer'
-      );
-      return meetingWithAccess.organizer ?? false;
-    } catch {
-      return false;
-    }
   }
 
   /**

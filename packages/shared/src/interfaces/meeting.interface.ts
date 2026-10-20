@@ -1007,14 +1007,6 @@ export interface PastMeeting extends Meeting {
   occurrence_id: string;
   /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000"); used as the canonical id downstream */
   meeting_and_occurrence_id?: string;
-  /**
-   * Who may read each artifact, as upstream FGA enforces it for a caller's own token. Carried by the
-   * past meeting's query-service document, not by the ITX read (whose `artifact_visibility` is the
-   * recording's level). The BFF reads them only to decide what an anonymous caller may read (E4-04).
-   */
-  recording_access?: ArtifactVisibility | null;
-  transcript_access?: ArtifactVisibility | null;
-  ai_summary_access?: ArtifactVisibility | null;
   /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
@@ -1133,34 +1125,6 @@ export interface PastMeetingParticipant {
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
-}
-
-/** A past-meeting artifact that has its own access level (E4-04). */
-export type PastMeetingArtifactKind = 'recording' | 'transcript' | 'summary';
-
-/**
- * One row of the public past-meeting roster (`GET /public/api/meetings/past/:id/participants`): only
- * the fields `meeting-surface-boundary.md` § Public roster fields allows. No email, job title or
- * committee voting status.
- */
-export interface PublicPastMeetingParticipant {
-  uid: string;
-  first_name: string;
-  last_name: string;
-  avatar_url?: string;
-  org_name?: string;
-  is_attended: boolean;
-  is_invited: boolean;
-}
-
-/**
- * The public past-meeting roster: the verified identities (invitees, and attendees whose identity is
- * verified), plus how many attendees are not verified (unknown, needs review, auto-matched or
- * AI-reconciled: the identity-tier aggregate, N-02), who are counted but never listed.
- */
-export interface PublicPastMeetingRoster {
-  participants: PublicPastMeetingParticipant[];
-  unidentified_attendees: number;
 }
 
 /**
@@ -1593,11 +1557,6 @@ export interface PastMeetingRecording {
   sessions: RecordingSession[];
   /** Total size of all recordings in bytes */
   total_size: number;
-  /**
-   * Length in seconds of the linked (largest) session, derived by the BFF from its media files
-   * (`getRecordingDurationSeconds`, E4-02); `null` when it cannot be measured.
-   */
-  duration_seconds?: number | null;
   /** Creation timestamp */
   created_at: string;
   /** Last update timestamp */

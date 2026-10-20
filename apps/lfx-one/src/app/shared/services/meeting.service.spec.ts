@@ -215,7 +215,7 @@ describe('MeetingService own RSVP', () => {
   it('scopes the request to an occurrence when one is given', async () => {
     get.mockReturnValue(of(null));
 
-    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, '1760000000'));
+    await firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID, '1760000000'));
 
     expect(get).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
   });
@@ -223,24 +223,18 @@ describe('MeetingService own RSVP', () => {
   it('asks for series-wide answers only with allDatesOnly and no occurrence, the occurrence winning otherwise', async () => {
     get.mockReturnValue(of(null));
 
-    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, undefined, true));
+    await firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID, undefined, true));
     expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { rsvp_scope: 'all' } });
 
-    await firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID, '1760000000', true));
+    await firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID, '1760000000', true));
     expect(get).toHaveBeenLastCalledWith(`/api/meetings/${MEETING_UID}/rsvp/me`, { params: { occurrenceId: '1760000000' } });
   });
 
-  it('rethrows a failure from the strict variant', async () => {
-    get.mockReturnValue(throwError(() => ({ status: 500 })));
-
-    await expect(firstValueFrom(service.getMeetingRsvpForCurrentUserOrFail(MEETING_UID))).rejects.toEqual({ status: 500 });
-    expect(console.error).toHaveBeenCalled();
-  });
-
-  it('keeps reading a failure as null in the original method', async () => {
+  it('reads a failure as null, as V1 does', async () => {
     get.mockReturnValue(throwError(() => ({ status: 500 })));
 
     await expect(firstValueFrom(service.getMeetingRsvpForCurrentUser(MEETING_UID))).resolves.toBeNull();
+    expect(console.error).toHaveBeenCalled();
   });
 });
 

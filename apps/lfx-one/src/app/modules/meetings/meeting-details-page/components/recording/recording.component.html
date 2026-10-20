@@ -44,13 +44,6 @@
               class="flex h-[60px] w-[60px] items-center justify-center rounded-full border-[1.5px] border-[var(--md-video-still-disc-border)] bg-[var(--md-video-still-disc)] backdrop-blur-sm">
               <i class="fa-solid fa-play text-[22px] text-[var(--md-video-still-glyph)]"></i>
             </span>
-            @if (recording.duration) {
-              <span
-                class="absolute bottom-[12px] left-[14px] rounded-[6px] bg-[var(--md-video-still-badge)] px-[9px] py-[3px] text-[12px] font-semibold tabular-nums text-[var(--md-video-still-ink)]"
-                data-testid="tools-recording-duration"
-                >{{ recording.duration }}</span
-              >
-            }
           </div>
         }
         <div class="flex flex-wrap items-center gap-[10px] px-[18px] py-[16px]">
@@ -58,29 +51,13 @@
             @case ('available') {
               <lfx-button
                 label="Watch recording"
-                [ariaLabel]="
-                  recording.durationLabel ? 'Watch recording, ' + recording.durationLabel + ' (opens in a new tab)' : 'Watch recording (opens in a new tab)'
-                "
+                ariaLabel="Watch recording (opens in a new tab)"
                 icon="fa-light fa-play"
                 [href]="recording.url"
                 target="_blank"
                 rel="noopener noreferrer"
                 [styleClass]="primaryButtonClass"
                 data-testid="tools-recording-link" />
-            }
-            @case ('sign-in') {
-              <!-- #3528: an anonymous viewer whose public route refused this artifact; returnTo is masked as above. The whole
-                   phrase is the link, so each of up to three sign-in links has its own name in a screen reader's links list. -->
-              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="sign-in">
-                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i
-                ><a
-                  class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [href]="signInHref()"
-                  data-dd-privacy="mask"
-                  data-testid="tools-recording-sign-in-link"
-                  >Sign in to watch the recording</a
-                >
-              </span>
             }
             @case ('no-access') {
               <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-recording-unavailable" data-reason="no-access">
@@ -102,18 +79,6 @@
                 ariaHaspopup="dialog"
                 (onClick)="openTranscript()"
                 data-testid="tools-transcript-btn" />
-            }
-            @case ('sign-in') {
-              <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="sign-in">
-                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i
-                ><a
-                  class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [href]="signInHref()"
-                  data-dd-privacy="mask"
-                  data-testid="tools-transcript-sign-in-link"
-                  >Sign in to read the transcript</a
-                >
-              </span>
             }
             @case ('no-access') {
               <span class="text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-transcript-unavailable" data-reason="no-access">
@@ -157,23 +122,6 @@
                 [attr.data-approval]="summary.approval"
                 data-testid="tools-summary-btn" />
             }
-            @case ('awaiting-review') {
-              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="awaiting-review">
-                The AI summary is awaiting the organizer's review.
-              </p>
-            }
-            @case ('sign-in') {
-              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="sign-in">
-                <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i
-                ><a
-                  class="rounded-[4px] font-semibold text-[var(--md-accent-ink)] underline focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
-                  [href]="signInHref()"
-                  data-dd-privacy="mask"
-                  data-testid="tools-summary-sign-in-link"
-                  >Sign in to read the AI summary</a
-                >
-              </p>
-            }
             @case ('no-access') {
               <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="no-access">
                 <i class="fa-light fa-lock mr-[6px]" aria-hidden="true"></i>You don't have access to the AI summary
@@ -184,22 +132,8 @@
                 No AI summary for this meeting
               </p>
             }
-            @case ('error') {
-              <p class="m-0 text-[13.5px] text-[var(--md-text-muted)]" data-testid="tools-summary-unavailable" data-reason="error">
-                The AI summary could not be loaded.
-              </p>
-            }
           }
         </div>
-        @if (recording.status === 'error' || transcript.status === 'error' || summary.status === 'error') {
-          <div
-            class="flex flex-wrap items-center justify-between gap-[12px] border-t border-[var(--md-divider)] px-[18px] py-[14px]"
-            role="alert"
-            data-testid="tools-error">
-            <p class="m-0 text-[13.5px] text-[var(--md-text-body)]">We couldn't load the {{ failedArtifacts() }}.</p>
-            <lfx-button label="Try again" [styleClass]="secondaryButtonClass" (onClick)="retry()" data-testid="tools-retry" />
-          </div>
-        }
       </div>
     }
   }
