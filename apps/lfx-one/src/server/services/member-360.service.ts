@@ -19,8 +19,10 @@ import {
   formInputSchema,
   renderMember360FormMessage,
   createMember360Redactor,
+  member360CandidateContacts,
   redactMember360Tabs,
   findMember360Questions,
+  member360TerminalResult,
 } from '@lfx-one/shared/server';
 import { extractMktgToolResults } from '@lfx-one/shared/utils/mktg-session-event.utils';
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
@@ -64,6 +66,8 @@ export class Member360Service {
     const project = await this.resolveProject(req, projectUid);
     let best: Member360Envelope | null = null;
     const payloads = await this.guild.getRawEventPayloads(req, sessionId);
+    // Raw candidates supply privacy masks only, never authoritative output.
+    const contacts = payloads.flatMap((payload) => extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID).flatMap(member360CandidateContacts));
     for (const payload of payloads.flatMap((event) => extractMktgToolResults(event, MEMBER_360_FINALIZE_TOOL))) {
       for (const candidate of extractMktgEnvelopeCandidates(payload, MEMBER_360_CONTRACT_ID)) {
         const parsed = envelopeSchema.safeParse(candidate);
@@ -90,7 +94,13 @@ export class Member360Service {
     }
     if (!best) {
       const questionsText = findMember360Questions(payloads);
-      return { status: questionsText ? 'needs_input' : 'pending', activity: buildMktgRunActivity(payloads) };
+      if (questionsText) return { status: 'needs_input', activity: buildMktgRunActivity(payloads) };
+      const failed = member360TerminalResult(payloads, contacts);
+      if (failed) {
+        logger.debug(req, 'member_360_result', 'Session ended without a valid envelope', {});
+        return failed;
+      }
+      return { status: 'pending', activity: buildMktgRunActivity(payloads) };
     }
     const type = findMktgDocumentType('member-360');
     if (!type)

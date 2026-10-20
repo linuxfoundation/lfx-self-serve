@@ -2,9 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { createMember360Redactor } from './member-360-redaction.utils';
+import { createMember360Redactor, member360CandidateContacts } from './member-360-redaction.utils';
 
 describe('Member 360 exact contact redaction', () => {
+  it('collects only contact strings structurally, even from incomplete candidates', () => {
+    const candidate = {
+      tabs: { member_ranking: [null, 'not a row', { key_contact: 42 }, { key_contact: 'opaque-contact-1' }, { key_contact: 'owner@example.test' }] },
+    };
+    expect(member360CandidateContacts(candidate)).toEqual(['opaque-contact-1', 'owner@example.test']);
+    for (const invalid of [null, [], 'not an envelope', {}, { tabs: null }, { tabs: { member_ranking: {} } }]) {
+      expect(member360CandidateContacts(invalid)).toEqual([]);
+    }
+  });
   it('ignores short values and placeholders and preserves words containing a contact', () => {
     const redact = createMember360Redactor(['—', 'A', 'TBD', 'n/a', 'ant']);
     expect(redact('caféant anté ant')).toBe('caféant anté [contact redacted]');

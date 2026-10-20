@@ -91,11 +91,11 @@ export class Member360Service {
       tap((result) => {
         if (result.activity) onActivity?.(result.activity);
       }),
-      filter((result) => result.status === 'needs_input' || (result.status === 'ready' && result.stored === true)),
+      filter((result) => result.status === 'failed' || result.status === 'needs_input' || (result.status === 'ready' && result.stored === true)),
       take(1),
       timeout(MKTG_RUN_POLL.timeoutMs),
       tap((result) => {
-        if (result.status === 'ready') this.forget(project, documentId);
+        if (result.status === 'ready' || result.status === 'failed') this.forget(project, documentId);
       })
     );
   }

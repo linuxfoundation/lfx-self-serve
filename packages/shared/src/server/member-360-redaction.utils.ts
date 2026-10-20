@@ -4,6 +4,16 @@
 import { MEMBER_360_CONTACT_PLACEHOLDERS } from '../constants/member-360.constants';
 import type { Member360Tabs } from '../interfaces/member-360.interface';
 
+/** Privacy extraction is structural, independent of schema validity and project scope. */
+export function member360CandidateContacts(candidate: unknown): string[] {
+  if (!candidate || typeof candidate !== 'object' || !('tabs' in candidate)) return [];
+  const tabs = candidate.tabs;
+  if (!tabs || typeof tabs !== 'object' || !('member_ranking' in tabs) || !Array.isArray(tabs.member_ranking)) return [];
+  return tabs.member_ranking.flatMap((row: unknown) =>
+    row && typeof row === 'object' && 'key_contact' in row && typeof row.key_contact === 'string' ? [row.key_contact] : []
+  );
+}
+
 /** Exact known contacts only, never guessed names or fragments inside other words. */
 export function createMember360Redactor(contacts: (string | null)[]): (text: string) => string {
   const patterns = [...new Set(contacts.filter((value): value is string => value !== null).map((value) => value.trim()))]

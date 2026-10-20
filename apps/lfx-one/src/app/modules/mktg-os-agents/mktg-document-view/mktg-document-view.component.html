@@ -42,7 +42,18 @@
 
     @if (errorText()) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
-      <lfx-button label="Retry" [text]="true" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
+      @if (runFailed()) {
+        <a
+          routerLink="../../../member-360"
+          [queryParams]="{ revision: null }"
+          queryParamsHandling="merge"
+          class="font-semibold text-blue-600 hover:text-blue-800"
+          data-testid="member-360-run-again"
+          >Run again</a
+        >
+      } @else {
+        <lfx-button label="Retry" [text]="true" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
+      }
     }
     @if (notice()) {
       <lfx-message severity="success" [text]="notice()" data-testid="mktg-document-view-notice" />

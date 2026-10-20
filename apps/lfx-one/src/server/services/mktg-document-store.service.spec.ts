@@ -3,6 +3,7 @@
 
 import { createHash } from 'node:crypto';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -226,6 +227,19 @@ describe('MktgDocumentStoreService', () => {
     }));
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     service = new MktgDocumentStoreService();
+  });
+
+  it.each([true, false])('projects Member 360 from the integrity-checked sidecar without losing current metadata (valid hash=%s)', async (validHash) => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'member-360');
+    if (!type) throw new Error('Missing synthetic Member 360 type');
+    const member360 = member360Fixture();
+    if (!validHash) member360.content_sha256 = '0'.repeat(64);
+    const generated = { ...envelope('# Member 360'), member360 };
+    const saved = await service.recordGeneration(req, type, PROJECT, generated, 'member-run');
+    const view = await service.getRevision(req, PROJECT, type, saved.record.documentId, saved.id);
+    expect(view?.current?.revisionId).toBe(saved.id);
+    expect(view?.revision.approval).toBeNull();
+    expect(view?.member360).toEqual(validHash ? member360 : undefined);
   });
 
   async function approveStored(type: MktgDocumentType, number: number): Promise<void> {
