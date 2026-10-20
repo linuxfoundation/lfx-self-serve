@@ -80,7 +80,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   different email.
 - **FR-026**: When RSVP tracking is off, a registrant MUST get `rsvp-unavailable`, and **no** RSVP
   UI may render anywhere on the page: no controls, summary strip, roster filter or per-avatar badge.
-  Only the invitee count remains.
+  Only the invitee count remains. The slot renders V1's empty rail for it (N-01's explanation was
+  withdrawn, scope reset 2026-10-20: V1 shows nothing there).
 - **FR-027**: `join` MUST be offered in the window to organizers and registrants, and to signed-in
   outsiders on unrestricted meetings. The join control MUST have loading, ready and error states,
   and the existing auto-join behaviour (signed in, email present, `zoom_redirect` not disabled) MUST
@@ -199,56 +200,56 @@ so does every Phase 3 spike; the Phase 3 hygiene items are accounted for in `spe
 issue column of `—` marks a row with no issue of its own: work shipped before the epic (E5-01), or
 V1 parity tracked by its FRs.
 
-| Plan ID                       | Issue             | Requirements                                        |
-| ----------------------------- | ----------------- | --------------------------------------------------- |
-| E0-01 this spec               | #1766             | all                                                 |
-| E0-03 public/admin ADR        | #1767             | FR-041, FR-054                                      |
-| V2-01 flag gate               | #2873             | FR-001, FR-002, FR-003                              |
-| V2-02 scaffold                | #2874             | FR-001, FR-004                                      |
-| V2-03 rollout doc             | #2875             | FR-001, FR-003, SC-006                              |
-| E0-02 view model              | #2876             | FR-020, FR-026, FR-028, SC-001                      |
-| E0-04 testid contract         | #1768             | FR-020, FR-060                                      |
-| E0-05 design tokens           | #1769             | FR-061                                              |
-| E1-01 page shell              | #1770             | FR-005, FR-006                                      |
-| E1-02 sticky identity bar     | #1771             | FR-013, FR-061                                      |
-| E1-03 header                  | #1772             | FR-041, FR-050                                      |
-| E1-04 privacy chip            | #1773             | FR-010                                              |
-| E1-05 status pill             | #2877             | FR-011                                              |
-| E1-06 time banner             | #1774             | FR-012 (and the timezone skeleton moved from E1-03) |
-| E2-01 action slot             | #1775             | FR-014, FR-020, FR-027, FR-029, SC-004              |
-| E2-02 outsider + register     | #2878             | FR-021                                              |
-| E2-03 invitation required     | #2879             | FR-007, FR-022                                      |
-| E2-04 own RSVP                | #2880             | FR-023                                              |
-| E2-05 RSVP card + scope       | #2881             | FR-024                                              |
-| E2-06 guest join in the rail  | #2882             | FR-025, SC-003                                      |
-| N-01 pre-2024 RSVP            | #3263             | FR-026, SC-005                                      |
-| N-02 identity tiers           | #3264             | FR-033 (withdrawn)                                  |
-| N-03 admin route guard        | #3265             | FR-054                                              |
-| E3-01 agenda                  | #3250             | FR-030                                              |
-| E3-02 materials               | #3251             | FR-031                                              |
-| E3-03 public attachments      | #3252             | FR-031 (withdrawn: V1's signed-in read)             |
-| E3-04 people                  | #3253             | FR-032                                              |
-| E3-05 attachment categories   | #3254             | FR-031 (withdrawn)                                  |
-| E4-01 recording + transcript  | #3255             | FR-028, FR-040                                      |
-| E4-02 recording duration      | #3256             | FR-048 (withdrawn)                                  |
-| E4-03 inline AI summary       | #3257             | FR-040                                              |
-| E4-04 public artifact routes  | #3258             | FR-028 (withdrawn: V1 routes only)                  |
-| E4-05 align with admin page   | #3259             | FR-032 (withdrawn: V1 figures only)                 |
-| E5-01 page error state        | —                 | shipped before the epic (#2046)                     |
-| E5-02 accessibility           | #3260             | FR-061                                              |
-| E5-03 V2 specs                | #3261             | FR-062                                              |
-| E5-04 E2E                     | #3262             | FR-063, SC-001, SC-002, SC-003                      |
-| E6-01 / E6-02 / E6-06         | #3584 #3585 #3589 | FR-047 (E6-01 / E6-02 withdrawn: scope reset)       |
-| E6-03 / E6-04 / E6-05         | #3586 #3587 #3588 | FR-044 (withdrawn: scope reset, V1 navigation)      |
-| V1 parity: occurrence actions | —                 | FR-046                                              |
-| E7-01 / E7-02 join details    | #3590 #3591       | FR-042, FR-043                                      |
-| E7-03 Zoom ID + passcode      | #3592             | FR-043 (blocked on U-04, #2930)                     |
-| E8-01 / E8-02 / E8-03         | #3593 #3594 #3595 | FR-045                                              |
-| E8-04 / E8-05 discover more   | #3596 #3597       | FR-045                                              |
-| E9-01 / E9-02 / E9-03         | #3598 #3599 #3600 | FR-030 (blocked on U-07, #2933)                     |
-| E10-01 verified-email match   | #3601             | FR-053                                              |
-| E10-02 / E10-03 identity UX   | #3602 #3603       | FR-013, FR-025                                      |
-| O-01 – O-04 organizer dialogs | #3604–#3607       | FR-051                                              |
-| M-01 / M-02 magic link        | #3608 #3609       | FR-052                                              |
-| S-01 / S-02 spikes (Phase 3)  | #3610 #3611       | none: spikes produce decisions                      |
-| V1 retirement (out of scope)  | #3266             | none: closed 2026-10-14, V1 stays                   |
+| Plan ID                                            | Issue             | Requirements                                        |
+| -------------------------------------------------- | ----------------- | --------------------------------------------------- |
+| E0-01 this spec                                    | #1766             | all                                                 |
+| E0-03 public/admin ADR                             | #1767             | FR-041, FR-054                                      |
+| V2-01 flag gate                                    | #2873             | FR-001, FR-002, FR-003                              |
+| V2-02 scaffold                                     | #2874             | FR-001, FR-004                                      |
+| V2-03 rollout doc                                  | #2875             | FR-001, FR-003, SC-006                              |
+| E0-02 view model                                   | #2876             | FR-020, FR-026, FR-028, SC-001                      |
+| E0-04 testid contract                              | #1768             | FR-020, FR-060                                      |
+| E0-05 design tokens                                | #1769             | FR-061                                              |
+| E1-01 page shell                                   | #1770             | FR-005, FR-006                                      |
+| E1-02 sticky identity bar                          | #1771             | FR-013, FR-061                                      |
+| E1-03 header                                       | #1772             | FR-041, FR-050                                      |
+| E1-04 privacy chip                                 | #1773             | FR-010                                              |
+| E1-05 status pill                                  | #2877             | FR-011                                              |
+| E1-06 time banner                                  | #1774             | FR-012 (and the timezone skeleton moved from E1-03) |
+| E2-01 action slot                                  | #1775             | FR-014, FR-020, FR-027, FR-029, SC-004              |
+| E2-02 outsider + register                          | #2878             | FR-021                                              |
+| E2-03 invitation required                          | #2879             | FR-007, FR-022                                      |
+| E2-04 own RSVP                                     | #2880             | FR-023                                              |
+| E2-05 RSVP card + scope                            | #2881             | FR-024                                              |
+| E2-06 guest join in the rail                       | #2882             | FR-025, SC-003                                      |
+| N-01 pre-2024 RSVP (copy withdrawn: V1 empty rail) | #3263             | FR-026, SC-005                                      |
+| N-02 identity tiers                                | #3264             | FR-033 (withdrawn)                                  |
+| N-03 admin route guard                             | #3265             | FR-054                                              |
+| E3-01 agenda                                       | #3250             | FR-030                                              |
+| E3-02 materials                                    | #3251             | FR-031                                              |
+| E3-03 public attachments                           | #3252             | FR-031 (withdrawn: V1's signed-in read)             |
+| E3-04 people                                       | #3253             | FR-032                                              |
+| E3-05 attachment categories                        | #3254             | FR-031 (withdrawn)                                  |
+| E4-01 recording + transcript                       | #3255             | FR-028, FR-040                                      |
+| E4-02 recording duration                           | #3256             | FR-048 (withdrawn)                                  |
+| E4-03 inline AI summary                            | #3257             | FR-040                                              |
+| E4-04 public artifact routes                       | #3258             | FR-028 (withdrawn: V1 routes only)                  |
+| E4-05 align with admin page                        | #3259             | FR-032 (withdrawn: V1 figures only)                 |
+| E5-01 page error state                             | —                 | shipped before the epic (#2046)                     |
+| E5-02 accessibility                                | #3260             | FR-061                                              |
+| E5-03 V2 specs                                     | #3261             | FR-062                                              |
+| E5-04 E2E                                          | #3262             | FR-063, SC-001, SC-002, SC-003                      |
+| E6-01 / E6-02 / E6-06                              | #3584 #3585 #3589 | FR-047 (E6-01 / E6-02 withdrawn: scope reset)       |
+| E6-03 / E6-04 / E6-05                              | #3586 #3587 #3588 | FR-044 (withdrawn: scope reset, V1 navigation)      |
+| V1 parity: occurrence actions                      | —                 | FR-046                                              |
+| E7-01 / E7-02 join details                         | #3590 #3591       | FR-042, FR-043                                      |
+| E7-03 Zoom ID + passcode                           | #3592             | FR-043 (blocked on U-04, #2930)                     |
+| E8-01 / E8-02 / E8-03                              | #3593 #3594 #3595 | FR-045                                              |
+| E8-04 / E8-05 discover more                        | #3596 #3597       | FR-045                                              |
+| E9-01 / E9-02 / E9-03                              | #3598 #3599 #3600 | FR-030 (blocked on U-07, #2933)                     |
+| E10-01 verified-email match                        | #3601             | FR-053                                              |
+| E10-02 / E10-03 identity UX                        | #3602 #3603       | FR-013, FR-025                                      |
+| O-01 – O-04 organizer dialogs                      | #3604–#3607       | FR-051                                              |
+| M-01 / M-02 magic link                             | #3608 #3609       | FR-052                                              |
+| S-01 / S-02 spikes (Phase 3)                       | #3610 #3611       | none: spikes produce decisions                      |
+| V1 retirement (out of scope)                       | #3266             | none: closed 2026-10-14, V1 stays                   |
