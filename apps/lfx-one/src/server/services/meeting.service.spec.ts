@@ -2748,6 +2748,27 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     expect(createCall?.[5].committees).toEqual([{ uid: 'cmt-public', name: 'TSC', allowed_voting_statuses: undefined }]);
   });
 
+  it('adds the public committee context to the meeting list payload with a single committee read', async () => {
+    proxyRequest.mockImplementation(async (_req, _service, path, _method, params) => {
+      if (path === '/query/resources' && params?.type === 'v1_meeting') {
+        return { resources: [{ id: 'v1_meeting:meeting-1', data: meetingWithCommittees('meeting-1') }], page_token: undefined };
+      }
+      if (path === '/query/resources' && params?.type === 'committee') {
+        return committeeResources([publicCommittee, privateCommittee]);
+      }
+      return { resources: [], page_token: undefined };
+    });
+
+    // ProjectService is mocked to an empty class; project-name enrichment is not under test here.
+    vi.spyOn(service, 'getMeetingProjectName').mockImplementation(async (_req, meetings) => meetings);
+
+    const { data } = await service.getMeetings(req, {}, 'v1_meeting', false);
+
+    expect(committeeQueries()).toHaveLength(1);
+    expect(data[0].committees[0]).toMatchObject({ behavioral_class: 'oversight-committee', total_members: 12, join_mode: 'open' });
+    expect(data[0].committees[1]).toEqual({ uid: 'cmt-private', name: 'Security Response', allowed_voting_statuses: undefined });
+  });
+
   it('keeps the meeting-supplied committee name when the committee read fails', async () => {
     proxyRequest.mockResolvedValueOnce(meetingWithCommittees('meeting-1')).mockRejectedValueOnce(new Error('query service down'));
 
