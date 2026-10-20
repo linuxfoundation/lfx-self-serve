@@ -147,7 +147,10 @@ export class MeetingRsvpCardComponent {
   private initRsvpKey(): Signal<string> {
     return computed(() => {
       const meeting = this.state.meeting();
-      return meeting ? `${meeting.id}|${resolveRsvpOccurrenceId(meeting, { occurrence: this.state.selectedOccurrence() }) ?? ''}` : '';
+      // `rsvpReset` is bumped when the viewer removes themselves, so the card's saved answer (and its
+      // step state) never outlives the registration it belonged to.
+      const reset = this.state.rsvpReset();
+      return meeting ? `${meeting.id}|${resolveRsvpOccurrenceId(meeting, { occurrence: this.state.selectedOccurrence() }) ?? ''}|${reset}` : '';
     });
   }
 
