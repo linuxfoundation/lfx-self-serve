@@ -24,7 +24,6 @@ import {
   PastRosterAttendanceFilter,
   PastRosterInvitationFilter,
   PublicPastMeetingParticipant,
-  RecordingSession,
 } from '../interfaces';
 import { firstValidTimestampMs } from './iso-timestamp.utils';
 

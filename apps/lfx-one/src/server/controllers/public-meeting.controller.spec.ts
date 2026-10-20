@@ -62,10 +62,10 @@ const {
   checkPastMeetingAccessMock: vi.fn(),
 }));
 
-// The `@lfx-one/shared/*` path alias isn't wired into vitest; stub the one runtime shared import
-// the controller/gate use. validation.helper is mocked wholesale (see below) so its heavy
-// shared/constants + shared/utils module graph never loads.
-vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
+// The enums are plain values with no heavy imports, so the real module is used: the deep-imported
+// past-meeting utils load the constants that read MeetingType. validation.helper is mocked wholesale
+// (see below) so its heavy shared/constants + shared/utils module graph never loads.
+vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 // meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer and
 // resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
 // dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
@@ -85,6 +85,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // the barrel needs the Angular JIT compiler (loaded at the top of this spec) in plain Node.
   isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
   getPastMeetingResourceId: (await import('@lfx-one/shared/utils/past-meeting.utils')).getPastMeetingResourceId,
+  countPastMeetingAttendance: (await import('@lfx-one/shared/utils/past-meeting.utils')).countPastMeetingAttendance,
 }));
 // The deep-imported shared meeting-privacy module reads HOST_KEY_* from this barrel; stub it so
 // the full constants module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
