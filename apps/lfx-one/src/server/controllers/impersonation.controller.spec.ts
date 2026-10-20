@@ -70,6 +70,15 @@ describe('ImpersonationController.startImpersonation', () => {
     expect(startImpersonation).not.toHaveBeenCalled();
   });
 
+  it('rejects when the real token lacks the can_impersonate claim', async () => {
+    decodeJwtPayload.mockReturnValue({});
+
+    await controller.startImpersonation(buildReq({ impersonationToken: 'old-target-token' }), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(exchangeToken).not.toHaveBeenCalled();
+  });
+
   it('fails closed when the real session token cannot be resolved', async () => {
     resolveRealAccessToken.mockResolvedValue(null);
 

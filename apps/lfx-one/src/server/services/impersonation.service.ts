@@ -154,6 +154,9 @@ export class ImpersonationService {
       name: oidcUser?.['name'] || '',
     };
 
+    // Set only when switching from an active session, so the audit trail shows which session this one replaced.
+    const previousTargetSub = req.appSession['impersonationToken'] ? (req.appSession['impersonationUser']?.sub ?? null) : null;
+
     req.appSession['impersonationToken'] = tokenResponse.access_token;
     const safetyBufferSeconds = tokenResponse.expires_in > 300 ? 300 : 0;
     req.appSession['impersonationExpiresAt'] = Date.now() + (tokenResponse.expires_in - safetyBufferSeconds) * 1000;
@@ -179,6 +182,7 @@ export class ImpersonationService {
       impersonator_email: impersonator.email,
       target_sub: targetUser.sub,
       target_email: targetUser.email,
+      previous_target_sub: previousTargetSub,
       persona_context: personaContext ?? null,
     });
   }

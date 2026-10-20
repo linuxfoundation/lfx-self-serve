@@ -127,7 +127,7 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 
 | Method                                                    | Purpose                                                          |
 | --------------------------------------------------------- | ---------------------------------------------------------------- |
-| `exchangeToken(req, targetUser)`                          | Performs CTE via NATS to `lfx-v2-auth-service`                   |
+| `exchangeToken(req, targetUser, subjectToken?)`           | Performs CTE via NATS to `lfx-v2-auth-service`                   |
 | `fetchTargetUserProfile(req, userId)`                     | Fetches target user's name/picture via NATS `user_metadata.read` |
 | `startImpersonation(req, tokenResponse, claims, profile)` | Stores impersonation state in `appSession`                       |
 | `stopImpersonation(req)`                                  | Clears impersonation state from `appSession`                     |
@@ -143,6 +143,8 @@ Profile enrichment (fetching the target user's name and picture) also uses NATS 
 | `/api/impersonate`        | POST   | Start impersonation (body: `{ targetUser: "email-or-username" }`) |
 | `/api/impersonate/stop`   | POST   | Stop impersonation, clear session                                 |
 | `/api/impersonate/status` | GET    | Check current impersonation state                                 |
+
+**Switching users:** `POST /api/impersonate` is also accepted while a session is already active, which replaces the target without a stop in between (the banner's **Switch User** button). The controller resolves the impersonator's own token with `resolveRealAccessToken` and uses it both for the `can_impersonate` check and as the CTE `subject_token`. `req.bearerToken` is the current target's token at that point, so it must not be the subject. If the real token cannot be resolved the request fails with 403, and the new session never chains one target's token into another. A switch naming the user already being impersonated is refused with 409 `ALREADY_IMPERSONATING_TARGET`, decided after the exchange by comparing `sub` claims.
 
 ### 4. Auth Middleware Override
 
@@ -184,7 +186,7 @@ These check `req.appSession['impersonationUser']` first, falling back to `req.oi
 | `getRealEmail(req)`           | The real user's OIDC email (lowercased), never the impersonation target's; `null` unless `email_verified` is `true` | Use only where the actual actor — not the target — must be attributed for an externally-visible, hard-to-retract action                                                                                                                                                                                                   |
 | `resolveRealAccessToken(req)` | `Promise<string \| null>` — the real user's own bearer token, even while impersonating                              | Reads `req.oidc.accessToken` directly (never touched by the impersonation-token swap), refreshing it if expired since `extractBearerToken`'s own refresh step is skipped whenever impersonation is active; returns `null` (fail closed) if it can't be resolved — callers must never fall back to the impersonation token |
 
-The only current caller is `WeeklyBriefService.shareBrief()`'s mailing-list send — see Limitation 2 below.
+Current callers are `WeeklyBriefService.shareBrief()`'s mailing-list send — see Limitation 2 below — and `ImpersonationController.startImpersonation`, which seeds the token exchange when switching users (see § 3).
 
 **Profile & account settings — read-only during impersonation (LFXV2-2572):** The profile controller's **read** endpoints resolve identity through the effective helpers, so Profile pages and Account Settings show the _target_ user's data:
 
@@ -234,7 +236,7 @@ Note that persona detection (step 2) resolves the **target** user's persona even
 
 **Components:**
 
-- **Impersonation banner** (`main-layout.component.html`) — fixed yellow bar at the top showing who is being impersonated and a "Stop" button
+- **Impersonation banner** (`main-layout.component.html`) — fixed yellow bar at the top showing who is being impersonated, with a "Switch User" button (reopens the impersonation dialog to swap targets in one request) and a "Stop Impersonating" button
 - **Impersonation trigger** (`navbar.component.html`) — user-secret icon in the navbar footer (visible only when `canImpersonate` is true), opens a dialog to enter a target email/username
 
 **Services:**
@@ -299,8 +301,18 @@ Impersonation start/stop events are logged at INFO level:
 impersonation_granted: Impersonation session started
   impersonator_sub: auth0|jsmith
   target_sub: auth0|jdoe
+  previous_target_sub: null
 
 impersonation_stopped: Impersonation session ended
+```
+
+A switch logs no `impersonation_stopped` for the replaced session. Its `impersonation_granted` carries `previous_target_sub` (the replaced target's `sub`, `null` for a fresh start), which is how the end of the earlier session is recorded:
+
+```text
+impersonation_granted: Impersonation session started
+  impersonator_sub: auth0|jsmith
+  target_sub: auth0|jother
+  previous_target_sub: auth0|jdoe
 ```
 
 ## Limitations
