@@ -163,13 +163,30 @@ describe('ImpersonationDialogComponent', () => {
     expect(startImpersonation).toHaveBeenCalledWith('jdoe', null);
   });
 
-  it('rejects a pick with no LF account and leaves the target untouched', async () => {
+  it('rejects a pick with no LF account without filling the target', async () => {
     pick({ username: null });
     await fixture.whenStable();
 
     const alert = fixture.nativeElement.querySelector('[data-testid="impersonation-error"]');
     expect(alert?.textContent).toContain(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
     expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
+  });
+
+  it('clears an earlier target and its shown name when a later pick is rejected', async () => {
+    pick({ username: 'jdoe' });
+    await fixture.whenStable();
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+
+    pick({ username: null, first_name: 'Sam', last_name: 'Roe' });
+    await fixture.whenStable();
+
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
+    expect(searchBoxValue()).toBe('');
+    expect(fixture.nativeElement.querySelector('[data-testid="impersonation-error"]')?.textContent).toContain(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
+
+    // Start can no longer act on the earlier person while the rejection is showing.
+    dialog().submit();
+    expect(startImpersonation).not.toHaveBeenCalled();
   });
 
   it('clears a previous rejection when a valid person is picked', async () => {

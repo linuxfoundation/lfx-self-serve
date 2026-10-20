@@ -152,6 +152,10 @@ export class ImpersonationDialogComponent {
   }
 
   protected onNameSearchRejected(): void {
+    // Empty the target as well as showing the message: otherwise an earlier target stays armed
+    // behind the alert and Start would impersonate that person while the pick appears to have
+    // failed. The valueChanges guard in the constructor drops the stale shown name with it.
+    this.targetUserForm.controls.targetUser.setValue('');
     this.error.set(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
   }
 
