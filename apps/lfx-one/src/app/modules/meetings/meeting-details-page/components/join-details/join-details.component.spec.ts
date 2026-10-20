@@ -19,7 +19,6 @@ describe('MeetingJoinDetailsComponent', () => {
   let meeting: WritableSignal<Meeting | undefined>;
   let timeState: WritableSignal<MeetingTimeState | null>;
   let loadedViaPastMeetingId: WritableSignal<boolean>;
-  let cancelledOccurrence: WritableSignal<MeetingOccurrence | null>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
   let now: WritableSignal<Date>;
   let reload: ReturnType<typeof vi.fn>;
@@ -34,7 +33,6 @@ describe('MeetingJoinDetailsComponent', () => {
     meeting = signal<Meeting | undefined>(initial);
     timeState = signal<MeetingTimeState | null>('before');
     loadedViaPastMeetingId = signal(false);
-    cancelledOccurrence = signal<MeetingOccurrence | null>(null);
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
     now = signal(new Date());
     reload = vi.fn();
@@ -44,7 +42,7 @@ describe('MeetingJoinDetailsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [MeetingJoinDetailsComponent],
       providers: [
-        { provide: MeetingDetailsStateService, useValue: { meeting, timeState, loadedViaPastMeetingId, cancelledOccurrence, selectedOccurrence, now, reload } },
+        { provide: MeetingDetailsStateService, useValue: { meeting, timeState, loadedViaPastMeetingId, selectedOccurrence, now, reload } },
         { provide: Clipboard, useValue: { copy } },
         { provide: MessageService, useValue: { add } },
         { provide: PLATFORM_ID, useValue: platform },
@@ -114,7 +112,6 @@ describe('MeetingJoinDetailsComponent', () => {
     ['on an ended occurrence', () => timeState.set('ended')],
     ['on a past meeting', () => loadedViaPastMeetingId.set(true)],
     ['once its window has closed on a page left open', () => now.set(new Date(Date.now() + 3 * HOUR))],
-    ['on a cancelled occurrence', () => cancelledOccurrence.set({ occurrence_id: '1', start_time: '', duration: 60, status: 'cancel' })],
   ])('renders nothing %s', async (_case, arrange) => {
     arrange();
     await update();

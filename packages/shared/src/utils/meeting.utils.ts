@@ -37,7 +37,6 @@ import type {
   MeetingOccurrence,
   MeetingOccurrenceOption,
   MeetingOccurrenceRoute,
-  MeetingOccurrenceStripItem,
   MeetingOrganizerChipModel,
   MeetingOrganizerLink,
   MeetingRecurrence,
@@ -372,32 +371,6 @@ export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, canc
   }
   const cancelledIds = cancelledOccurrences ?? [];
   return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
-}
-
-/**
- * The occurrence a `?occurrence=` link (a Unix-*millisecond* start) addresses when it was cancelled
- * (E6-05, #3588, FR-044), else `null`. Honours both cancellation signals: an occurrence entry with
- * `status: 'cancel'` (the single-meeting payload), and an id in `cancelled_occurrences` (Unix *seconds*,
- * 10 digits, the list payload), whether or not the payload still lists the occurrence. An id the
- * payload no longer lists is rebuilt from the start, with the series' duration. A start that is not a
- * whole second has no occurrence id, so it never matches one by flooring.
- */
-export function findCancelledOccurrence(
-  meeting: Pick<Meeting, 'occurrences' | 'cancelled_occurrences' | 'duration'>,
-  requestedMs: number
-): MeetingOccurrence | null {
-  if (!Number.isSafeInteger(requestedMs) || requestedMs <= 0) {
-    return null;
-  }
-  const entry = (meeting.occurrences ?? []).find((occurrence) => new Date(occurrence.start_time).getTime() === requestedMs);
-  if (entry) {
-    return isMeetingOccurrenceCancelled(entry, meeting.cancelled_occurrences) ? entry : null;
-  }
-  const occurrenceId = startMsToOccurrenceId(requestedMs);
-  if (requestedMs % 1000 !== 0 || !(meeting.cancelled_occurrences ?? []).includes(occurrenceId)) {
-    return null;
-  }
-  return { occurrence_id: occurrenceId, start_time: new Date(requestedMs).toISOString(), duration: meeting.duration ?? 0, status: 'cancel' };
 }
 
 export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
@@ -809,129 +782,6 @@ export function isVoteCalendarEventPast(vote: Pick<Vote, 'end_time' | 'status' |
     return true;
   }
   return isCalendarDeadlinePast(vote.early_end_time ?? vote.end_time, now);
-}
-
-/**
- * An occurrence id (Unix seconds, 10 digits, as `occurrence_id` and `cancelled_occurrences` carry it)
- * as the Unix-millisecond start the URL and the composite id use; `null` when it is not one.
- */
-export function occurrenceIdToStartMs(occurrenceId: string): number | null {
-  return /^\d{10}$/.test(occurrenceId) ? Number(occurrenceId) * 1000 : null;
-}
-
-/** A Unix-millisecond start as its occurrence id (Unix seconds, 10 digits). */
-export function startMsToOccurrenceId(startMs: number): string {
-  return String(Math.floor(startMs / 1000));
-}
-
-/**
- * The 13-digit millisecond start a past-meeting composite id (`{meetingId}-{13-digit ms}`) ends with;
- * `null` for any other id.
- */
-export function compositeIdToStartMs(compositeId: string): number | null {
-  return isPastMeetingCompositeId(compositeId) ? Number(compositeId.split('-').pop()) : null;
-}
-
-/**
- * The V2 occurrence strip's chips (E6-03, #3586): the live occurrences and the endpoint's pages merged
- * into one ascending list, one chip per start instant (live > endpoint future > past record, as
- * {@link buildOccurrenceNavTimeline}), except that an ended live entry takes its past record's composite
- * id, so it opens as the past meeting. Unlike that list it keeps cancelled occurrences, flagged, so
- * the strip shows them rather than dropping them (FR-044), including a cancelled id with no
- * occurrence left in either list, placed at its own start.
- */
-export function buildOccurrenceStripItems(
-  liveOccurrences: MeetingOccurrence[],
-  series: Pick<PublicMeetingOccurrencesResponse, 'past' | 'future' | 'cancelled_occurrences'>,
-  fallbackDuration = 0,
-  now = new Date()
-): MeetingOccurrenceStripItem[] {
-  const cancelledIds = new Set(series.cancelled_occurrences ?? []);
-  const byInstant = new Map<number, MeetingOccurrenceStripItem>();
-  const add = (item: MeetingOccurrenceStripItem): void => {
-    if (Number.isFinite(item.startMs) && !byInstant.has(item.startMs)) {
-      byInstant.set(item.startMs, item);
-    }
-  };
-  const fromOccurrence = (occurrence: MeetingOccurrence): MeetingOccurrenceStripItem => {
-    const startMs = new Date(occurrence.start_time).getTime();
-    // A zero (or missing) duration inherits the series', as the occurrence picker reads it.
-    const duration = occurrence.duration || fallbackDuration;
-    const isPast = isOccurrencePast(occurrence.start_time, duration, now);
-    return {
-      startMs,
-      startTime: occurrence.start_time,
-      duration,
-      // An upcoming occurrence's own duration is its scheduled end. Once it has ended, a past row shows
-      // an end only from its record's scheduled end (#3587), set when that record is merged in.
-      endKnown: (occurrence.duration ?? 0) > 0 && !isPast,
-      occurrenceId: occurrence.occurrence_id,
-      isPast,
-      cancelled: occurrence.status === 'cancel' || cancelledIds.has(occurrence.occurrence_id),
-    };
-  };
-
-  liveOccurrences.forEach((occurrence) => add(fromOccurrence(occurrence)));
-  series.future.forEach((occurrence) => add(fromOccurrence(occurrence)));
-
-  for (const past of series.past) {
-    const startMs = compositeIdToStartMs(past.meeting_and_occurrence_id);
-    if (startMs === null) {
-      continue;
-    }
-    // Minutes, unrounded: start plus duration must give back the scheduled end exactly (09:00:45–09:30
-    // is 29.25 minutes, not 29).
-    const scheduled =
-      past.scheduled_end_time && past.scheduled_start_time
-        ? (new Date(past.scheduled_end_time).getTime() - new Date(past.scheduled_start_time).getTime()) / 60000
-        : 0;
-    // An ended occurrence the live list still carries takes the record's composite id, its canonical URL,
-    // and the record's end: shown only when the record has a scheduled end (the live duration may be the
-    // series' standing in). One still in progress keeps its live entry alone, as the page joins it there.
-    const existing = byInstant.get(startMs);
-    if (existing) {
-      if (existing.isPast) {
-        byInstant.set(startMs, {
-          ...existing,
-          startTime: past.scheduled_start_time || existing.startTime,
-          pastResourceId: past.meeting_and_occurrence_id,
-          duration: scheduled > 0 ? scheduled : existing.duration,
-          endKnown: scheduled > 0,
-        });
-      }
-      continue;
-    }
-    add({
-      startMs,
-      // The composite id's start is the record's identity and URL; its scheduled start, when present, is
-      // what was on the calendar, and what a row shows (the two can differ).
-      startTime: past.scheduled_start_time || new Date(startMs).toISOString(),
-      duration: scheduled > 0 ? scheduled : fallbackDuration,
-      endKnown: scheduled > 0,
-      occurrenceId: startMsToOccurrenceId(startMs),
-      pastResourceId: past.meeting_and_occurrence_id,
-      isPast: true,
-      cancelled: cancelledIds.has(startMsToOccurrenceId(startMs)),
-    });
-  }
-
-  for (const id of cancelledIds) {
-    const startMs = occurrenceIdToStartMs(id);
-    if (startMs !== null) {
-      const startTime = new Date(startMs).toISOString();
-      add({
-        startMs,
-        startTime,
-        duration: fallbackDuration,
-        endKnown: false,
-        occurrenceId: id,
-        isPast: isOccurrencePast(startTime, fallbackDuration, now),
-        cancelled: true,
-      });
-    }
-  }
-
-  return [...byInstant.values()].sort((a, b) => a.startMs - b.startMs);
 }
 
 /** Composite past-meeting route id: `{meetingId}-{13-digit-ms}`. */

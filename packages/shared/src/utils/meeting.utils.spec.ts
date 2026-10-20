@@ -44,17 +44,14 @@ import {
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
   buildOccurrenceNavTimeline,
-  buildOccurrenceStripItems,
   buildRecurrenceNeverEndDate,
   buildRecurrenceSummary,
   collectMeetingOrganizers,
   compareMeetingPeopleByHostThenName,
-  compositeIdToStartMs,
   convertRecurrenceToPattern,
   countMeetingDatesBefore,
   extractRegistrantEmails,
   filterUnlistedEmails,
-  findCancelledOccurrence,
   formatMeetingMailtoDate,
   formatMeetingOccurrenceLabel,
   fromMeetingApiVotingStatuses,
@@ -77,7 +74,6 @@ import {
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
   normalizeMeetingApiVotingStatuses,
-  occurrenceIdToStartMs,
   reconcileOptimisticPad,
   resolveMeetingCalendarColors,
   resolveMeetingOrganizer,
@@ -92,7 +88,6 @@ import {
   selectNextUpcomingMeeting,
   selectPrimaryPastMeetingSummary,
   sortPastMeetingsDescending,
-  startMsToOccurrenceId,
   toMeetingApiVotingStatuses,
 } from './meeting.utils';
 
@@ -1424,210 +1419,6 @@ describe('getMeetingSeriesUid', () => {
   });
 });
 
-describe('occurrence id conversions (E6-03)', () => {
-  const startMs = Date.UTC(2026, 6, 16, 9, 30);
-
-  it('converts a 10-digit seconds id and a 13-digit millisecond start both ways', () => {
-    expect(startMsToOccurrenceId(startMs)).toBe(String(startMs / 1000));
-    expect(startMsToOccurrenceId(startMs)).toMatch(/^\d{10}$/);
-    expect(occurrenceIdToStartMs(startMsToOccurrenceId(startMs))).toBe(startMs);
-  });
-
-  it('refuses an id that is not 10 digits', () => {
-    expect(occurrenceIdToStartMs(String(startMs))).toBeNull();
-    expect(occurrenceIdToStartMs('abc')).toBeNull();
-  });
-
-  it('reads the 13-digit start of a composite past id, and nothing else', () => {
-    expect(compositeIdToStartMs(`99152950841-${startMs}`)).toBe(startMs);
-    expect(compositeIdToStartMs('99152950841')).toBeNull();
-    expect(compositeIdToStartMs(`99152950841-${startMs / 1000}`)).toBeNull();
-  });
-});
-
-describe('buildOccurrenceStripItems (E6-03)', () => {
-  const now = new Date(Date.UTC(2026, 6, 20, 12, 0));
-  const at = (day: number): number => Date.UTC(2026, 6, day, 9, 30);
-  const occurrence = (day: number, extra: Partial<MeetingOccurrence> = {}): MeetingOccurrence => ({
-    occurrence_id: String(at(day) / 1000),
-    start_time: new Date(at(day)).toISOString(),
-    duration: 30,
-    ...extra,
-  });
-
-  it('merges past records and upcoming occurrences into one ascending list, one chip per start', () => {
-    const items = buildOccurrenceStripItems(
-      [occurrence(23)],
-      {
-        past: [{ meeting_and_occurrence_id: `99152950841-${at(16)}`, scheduled_start_time: new Date(at(16)).toISOString() }],
-        future: [occurrence(23), occurrence(30)],
-      },
-      30,
-      now
-    );
-
-    expect(items.map((item) => item.startMs)).toEqual([at(16), at(23), at(30)]);
-    expect(items[0]).toEqual(expect.objectContaining({ isPast: true, pastResourceId: `99152950841-${at(16)}`, occurrenceId: String(at(16) / 1000) }));
-    expect(items[1]).toEqual(expect.objectContaining({ isPast: false, cancelled: false }));
-  });
-
-  it('gives an ended occurrence the live list still carries its past record id, but not one still in progress', () => {
-    const ended = Date.UTC(2026, 6, 16, 9, 0);
-    const running = Date.UTC(2026, 6, 20, 11, 45);
-    const live = (ms: number): MeetingOccurrence => ({ occurrence_id: String(ms / 1000), start_time: new Date(ms).toISOString(), duration: 30 });
-    const record = (ms: number) => ({ meeting_and_occurrence_id: `99152950841-${ms}`, scheduled_start_time: new Date(ms).toISOString() });
-    // `now` is 2026-07-20 12:00 UTC: the 16th has ended; the 20th at 11:45 is still in progress, and its
-    // record is already forming.
-    const items = buildOccurrenceStripItems([], { past: [record(ended), record(running)], future: [live(ended), live(running)] }, 30, now);
-
-    expect(items).toHaveLength(2);
-    expect(items[0]).toEqual(expect.objectContaining({ isPast: true, pastResourceId: `99152950841-${ended}` }));
-    const inProgress = items.find((item) => item.startMs === running);
-    expect(inProgress).toEqual(expect.objectContaining({ isPast: false }));
-    expect(inProgress?.pastResourceId).toBeUndefined();
-  });
-
-  it("gives an occurrence with a zero duration the series' duration", () => {
-    // 50 minutes into a 60-minute meeting: still running, though a zero duration plus the 40-minute
-    // end buffer alone would call it ended.
-    const start = now.getTime() - 50 * 60_000;
-    const [item] = buildOccurrenceStripItems(
-      [],
-      { past: [], future: [{ occurrence_id: String(Math.floor(start / 1000)), start_time: new Date(start).toISOString(), duration: 0 }] },
-      60,
-      now
-    );
-
-    expect(item).toEqual(expect.objectContaining({ duration: 60, isPast: false }));
-  });
-
-  it("knows the end only from an occurrence's own duration or a record's scheduled end", () => {
-    const items = buildOccurrenceStripItems(
-      [],
-      {
-        past: [
-          { meeting_and_occurrence_id: `99152950841-${at(9)}`, scheduled_start_time: new Date(at(9)).toISOString() },
-          {
-            meeting_and_occurrence_id: `99152950841-${at(16)}`,
-            scheduled_start_time: new Date(at(16)).toISOString(),
-            scheduled_end_time: new Date(at(16) + 45 * 60_000).toISOString(),
-          },
-        ],
-        future: [occurrence(23, { duration: 0 }), occurrence(30)],
-      },
-      60,
-      now
-    );
-
-    expect(items.map((item) => [item.duration, item.endKnown])).toEqual([
-      [60, false],
-      [45, true],
-      [60, false],
-      [30, true],
-    ]);
-  });
-
-  it("takes an ended duplicate's end from its past record: known only when the record has a scheduled end", () => {
-    const record = (day: number, endMinutes?: number) => ({
-      meeting_and_occurrence_id: `99152950841-${at(day)}`,
-      scheduled_start_time: new Date(at(day)).toISOString(),
-      ...(endMinutes !== undefined && { scheduled_end_time: new Date(at(day) + endMinutes * 60_000).toISOString() }),
-    });
-    const items = buildOccurrenceStripItems([], { past: [record(9), record(16, 50)], future: [occurrence(9), occurrence(16)] }, 30, now);
-
-    expect(items.map((item) => [item.startMs, item.duration, item.endKnown, !!item.pastResourceId])).toEqual([
-      [at(9), 30, false, true],
-      [at(16), 50, true, true],
-    ]);
-  });
-
-  it("keeps a past record's composite start as its identity but its scheduled start for display", () => {
-    const scheduled = at(16) + 60 * 60_000;
-    const [item] = buildOccurrenceStripItems(
-      [],
-      {
-        past: [
-          {
-            meeting_and_occurrence_id: `99152950841-${at(16)}`,
-            scheduled_start_time: new Date(scheduled).toISOString(),
-            scheduled_end_time: new Date(scheduled + 30 * 60_000).toISOString(),
-          },
-        ],
-        future: [],
-      },
-      60,
-      now
-    );
-
-    expect(item).toEqual(expect.objectContaining({ startMs: at(16), startTime: new Date(scheduled).toISOString(), duration: 30, endKnown: true }));
-  });
-
-  it('knows no end for an ended live occurrence until its past record supplies one', () => {
-    const items = buildOccurrenceStripItems([], { past: [], future: [occurrence(16), occurrence(30)] }, 60, now);
-
-    expect(items.map((item) => [item.isPast, item.endKnown])).toEqual([
-      [true, false],
-      [false, true],
-    ]);
-  });
-
-  it('keeps a scheduled length with seconds exact, so start plus duration is the scheduled end', () => {
-    const start = at(16) + 45_000;
-    const end = at(16) + 30 * 60_000;
-    const [item] = buildOccurrenceStripItems(
-      [],
-      {
-        past: [
-          {
-            meeting_and_occurrence_id: `99152950841-${at(16)}`,
-            scheduled_start_time: new Date(start).toISOString(),
-            scheduled_end_time: new Date(end).toISOString(),
-          },
-        ],
-        future: [],
-      },
-      60,
-      now
-    );
-
-    expect(Date.parse(item.startTime) + item.duration * 60_000).toBe(end);
-  });
-
-  it('flags a past record whose id is listed as cancelled', () => {
-    const items = buildOccurrenceStripItems(
-      [],
-      {
-        past: [{ meeting_and_occurrence_id: `99152950841-${at(16)}`, scheduled_start_time: new Date(at(16)).toISOString() }],
-        future: [],
-        cancelled_occurrences: [String(at(16) / 1000)],
-      },
-      30,
-      now
-    );
-
-    expect(items).toEqual([expect.objectContaining({ startMs: at(16), pastResourceId: `99152950841-${at(16)}`, cancelled: true })]);
-  });
-
-  it('keeps cancelled occurrences, flagged, by status or by listed id, including one with no occurrence left', () => {
-    const items = buildOccurrenceStripItems(
-      [],
-      {
-        past: [],
-        future: [occurrence(23, { status: 'cancel' }), occurrence(30)],
-        cancelled_occurrences: [String(at(30) / 1000), String(at(27) / 1000)],
-      },
-      30,
-      now
-    );
-
-    expect(items.map((item) => [item.startMs, item.cancelled])).toEqual([
-      [at(23), true],
-      [at(27), true],
-      [at(30), true],
-    ]);
-  });
-});
-
 describe('buildOccurrenceNavTimeline', () => {
   const T1 = Date.UTC(2026, 6, 16, 9, 30); // Jul 16
   const T2 = Date.UTC(2026, 6, 23, 9, 30); // Jul 23
@@ -2207,53 +1998,5 @@ describe('isBatchRegistrantOperationResponse', () => {
     ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
   ])('rejects %s', (_label, value) => {
     expect(isBatchRegistrantOperationResponse(value)).toBe(false);
-  });
-});
-
-describe('findCancelledOccurrence', () => {
-  const start = Date.UTC(2026, 6, 23, 16, 0);
-  const id = String(start / 1000);
-  const entry = (extra: Partial<MeetingOccurrence> = {}): MeetingOccurrence => ({
-    occurrence_id: id,
-    start_time: new Date(start).toISOString(),
-    duration: 45,
-    ...extra,
-  });
-
-  it("finds an occurrence the single-meeting payload marks status 'cancel'", () => {
-    expect(findCancelledOccurrence({ occurrences: [entry({ status: 'cancel' })], duration: 60 }, start)).toEqual(
-      expect.objectContaining({ occurrence_id: id })
-    );
-  });
-
-  it('finds an occurrence listed in cancelled_occurrences', () => {
-    expect(findCancelledOccurrence({ occurrences: [entry()], cancelled_occurrences: [id], duration: 60 }, start)).toEqual(
-      expect.objectContaining({ duration: 45 })
-    );
-  });
-
-  it('finds it when both signals say so', () => {
-    expect(findCancelledOccurrence({ occurrences: [entry({ status: 'cancel' })], cancelled_occurrences: [id], duration: 60 }, start)).not.toBeNull();
-  });
-
-  it('rebuilds one the payload no longer lists from its id, with the series duration', () => {
-    expect(findCancelledOccurrence({ occurrences: [], cancelled_occurrences: [id], duration: 60 }, start)).toEqual({
-      occurrence_id: id,
-      start_time: new Date(start).toISOString(),
-      duration: 60,
-      status: 'cancel',
-    });
-  });
-
-  it('matches a millisecond start to its second id only on a whole second', () => {
-    expect(findCancelledOccurrence({ occurrences: [], cancelled_occurrences: [id], duration: 60 }, start + 999)).toBeNull();
-  });
-
-  it('returns null for an active occurrence, an unknown start, or a malformed request', () => {
-    const meeting = { occurrences: [entry()], cancelled_occurrences: [], duration: 60 };
-    expect(findCancelledOccurrence(meeting, start)).toBeNull();
-    expect(findCancelledOccurrence(meeting, start + 7 * 86_400_000)).toBeNull();
-    expect(findCancelledOccurrence(meeting, Number.NaN)).toBeNull();
-    expect(findCancelledOccurrence(meeting, 0)).toBeNull();
   });
 });
