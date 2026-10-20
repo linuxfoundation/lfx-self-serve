@@ -629,7 +629,11 @@ describe('MeetingActionSlotComponent', () => {
       meeting.set({ id: 'meeting-2' } as Meeting);
       pending.next({ remaining_registrant_ids: [] });
 
-      expect(markLeft).not.toHaveBeenCalled();
+      // The removal is still recorded for meeting-1 (session-wide; `markLeft` keeps meeting-2's page as
+      // it is), but the toast and focus belong to a page that has moved on.
+      expect(markLeft).toHaveBeenCalledWith('meeting-1');
+      expect(markLeft).not.toHaveBeenCalledWith('meeting-2');
+      expect(add).not.toHaveBeenCalled();
     });
 
     describe('from a ?action=leave link', () => {
