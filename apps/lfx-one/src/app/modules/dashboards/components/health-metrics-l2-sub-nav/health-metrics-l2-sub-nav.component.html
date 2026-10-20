@@ -3,7 +3,11 @@
 
 <!-- The design's `.subnav2`. Pixel sizes follow it; the 14px root makes the rem scale undershoot them. Its blues sit one
      step lighter than ours, so its blue-50 / blue-100 / blue-800 are our blue-100 / blue-200 / blue-900. -->
-<nav class="flex flex-col gap-[4px] lg:sticky" [style.top.px]="topPx()" [attr.aria-label]="ariaLabel()" [attr.data-testid]="testIdPrefix() + '-sub-nav'">
+<!-- Capped to the viewport left below the sticky host's offset, so a long sub-nav scrolls itself. -->
+<nav
+  class="flex flex-col gap-[4px] lg:max-h-[calc(100vh_-_var(--l2-sub-nav-top)_-_40px)] lg:overflow-y-auto"
+  [attr.aria-label]="ariaLabel()"
+  [attr.data-testid]="testIdPrefix() + '-sub-nav'">
   @for (item of items(); track item.key) {
     @let active = item.key === activeKey();
     <button

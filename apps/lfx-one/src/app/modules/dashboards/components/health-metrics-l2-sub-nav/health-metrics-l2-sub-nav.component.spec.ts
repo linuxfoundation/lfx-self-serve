@@ -101,8 +101,16 @@ describe('HealthMetricsL2SubNavComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs-note"]')).toBeNull();
   });
 
-  it('pins the rail at the offset the page measured', () => {
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav"]').style.top).toBe('96px');
+  // The host is the grid item, so it is what sticks; a sticky child would have no room to travel in it.
+  it('pins the rail at the offset the page measured, sticking the host and capping the list to the viewport', () => {
+    const host = fixture.nativeElement as HTMLElement;
+    const nav = host.querySelector('[data-testid="engagement-sub-nav"]') as HTMLElement;
+
+    expect(host.style.top).toBe('96px');
+    expect(host.classList).toContain('lg:sticky');
+    expect(host.style.getPropertyValue('--l2-sub-nav-top')).toBe('96px');
+    expect(nav.className).toContain('lg:overflow-y-auto');
+    expect(nav.className).toContain('lg:max-h-[calc(100vh_-_var(--l2-sub-nav-top)_-_40px)]');
   });
 
   it('emits the picked section rather than scrolling itself', () => {
