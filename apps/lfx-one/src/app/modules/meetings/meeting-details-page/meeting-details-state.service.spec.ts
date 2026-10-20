@@ -1003,6 +1003,19 @@ describe('MeetingDetailsStateService', () => {
       expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: true });
     });
 
+    // V1 dropped the param already: nothing will clear a latch, so none is set, and a later link asks.
+    it('asks again for a later link after handling one V1 had already dropped from the URL', async () => {
+      leaveLinkFor = MEETING_ID;
+      const state = await load(upcoming());
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: true });
+
+      state.consumeLeaveRequest();
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await flush();
+
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
+    });
+
     it('drops the param once the link is handled', async () => {
       queryParamMap$.next(convertToParamMap({ action: 'leave' }));
       const state = await load(upcoming());

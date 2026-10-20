@@ -342,7 +342,9 @@ export class MeetingDetailsStateService {
    * not ask again.
    */
   public consumeLeaveRequest(): void {
-    this.consumedLeaveFor = this.leaveRequest()?.meetingId ?? null;
+    // Latched only while the param is actually in the URL: a seeded request V1 already dropped has no
+    // param change coming to clear the latch, which would then swallow a later link to this meeting.
+    this.consumedLeaveFor = this.activatedRoute.snapshot.queryParamMap.get('action') === 'leave' ? (this.leaveRequest()?.meetingId ?? null) : null;
     this.leaveRequest.set(null);
     void this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
