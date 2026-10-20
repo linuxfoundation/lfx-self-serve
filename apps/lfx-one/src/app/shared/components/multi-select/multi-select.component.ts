@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, contentChild, ElementRef, inject, input, output, PLATFORM_ID, Signal, TemplateRef } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, contentChild, ElementRef, inject, input, output, PLATFORM_ID, Signal, TemplateRef, viewChild } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { MultiSelectModule } from 'primeng/multiselect';
-import { map, of, startWith, switchMap } from 'rxjs';
+import { MultiSelect, MultiSelectModule } from 'primeng/multiselect';
 
 @Component({
   selector: 'lfx-multi-select',
@@ -67,18 +65,16 @@ export class MultiSelectComponent {
   public readonly inputId = input<string | undefined>(undefined);
   public readonly filterChange = output<string>();
 
+  private readonly multiSelect = viewChild(MultiSelect);
+
   /**
-   * Whether the bound control holds any value — the same test PrimeNG uses before appending its own
-   * placeholder after a `#selecteditems` template. Read off the control rather than the template's
-   * `selectedOptions`, which drops values missing from `options` (still loading, or no longer listed).
+   * Whether the bound control holds any value — read off PrimeNG's own `modelValue`, the signal its
+   * template tests before appending its own placeholder after a `#selecteditems` template, so the two
+   * can never disagree. Not the control's `valueChanges`, which skips `emitEvent: false` writes that
+   * still reach PrimeNG through the value accessor; nor the template's `selectedOptions`, which drops
+   * values missing from `options` (still loading, or no longer listed).
    */
-  protected readonly hasValue: Signal<boolean> = toSignal(
-    toObservable(computed(() => this.form().get(this.control()))).pipe(
-      switchMap((control) => (control ? control.valueChanges.pipe(startWith(control.value)) : of(null))),
-      map((value) => Array.isArray(value) && value.length > 0)
-    ),
-    { initialValue: false }
-  );
+  protected readonly hasValue: Signal<boolean> = computed(() => (this.multiSelect()?.modelValue()?.length ?? 0) > 0);
 
   /** Optional custom option template (mirrors `lfx-select`'s `itemTemplate`) for richer rows — project as `<ng-template let-option #item>`; takes precedence over the built-in layout. */
   public readonly itemTemplate = contentChild<TemplateRef<unknown>>('item');

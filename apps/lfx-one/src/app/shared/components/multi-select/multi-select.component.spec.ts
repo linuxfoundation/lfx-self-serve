@@ -62,4 +62,19 @@ describe('MultiSelectComponent — placeholderOnly', () => {
     const text: string = fixture.nativeElement.querySelector('.p-multiselect-label').textContent;
     expect(text.match(/Select group\(s\)/g)).toHaveLength(1);
   });
+
+  it('tracks silent writes that skip valueChanges, in both directions', async () => {
+    await render(true, []);
+    const control = fixture.componentInstance.form().get('picks')!;
+    const placeholderCount = (): number =>
+      (fixture.nativeElement.querySelector('.p-multiselect-label').textContent as string).match(/Select group\(s\)/g)?.length ?? 0;
+
+    control.setValue(['a'], { emitEvent: false });
+    await fixture.whenStable();
+    expect(placeholderCount()).toBe(1);
+
+    control.setValue([], { emitEvent: false });
+    await fixture.whenStable();
+    expect(placeholderCount()).toBe(1);
+  });
 });
