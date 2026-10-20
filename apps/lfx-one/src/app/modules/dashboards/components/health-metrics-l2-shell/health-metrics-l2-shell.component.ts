@@ -190,8 +190,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.unsettledSections.delete(key);
     afterNextRender(
       () => {
-        // Released once the result has painted, so the page never shrinks to the loading state.
-        this.sectionElement(key)?.style.removeProperty('min-height');
+        // Released once the result has painted, unless a newer read has re-held it for its own skeleton.
+        if (!this.unsettledSections.has(key)) this.sectionElement(key)?.style.removeProperty('min-height');
         this.rebuildScrollSpyIfGeometryChanged();
         this.settlePendingSection();
         // A still-pending key would scroll the page back to the anchor on every later re-emission.
