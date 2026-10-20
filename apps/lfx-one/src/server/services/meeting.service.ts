@@ -545,7 +545,7 @@ export class MeetingService {
     };
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // to opt a board meeting into sharing its guest list. A restricted meeting
     // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting v2
     // composer sends one, since the pre-v2 wizard locks the control off — and is forced off otherwise.
     if (
@@ -626,7 +626,7 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // to opt a board meeting into sharing its guest list. A restricted meeting
     // keeps any explicit `true` from a caller allowed to edit it (in practice only the meeting v2
     // composer sends one; the pre-v2 wizard locks the control off) and is forced off otherwise.
     if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {

@@ -6,10 +6,10 @@ import { MeetingType } from '../enums';
 import type { Meeting, ShowMeetingAttendeesLockOptions } from '../interfaces';
 
 /**
- * Whether the show-attendees-in-calendar-invites toggle is locked off.
+ * Whether the show-attendees-to-guests toggle is locked off.
  * @description Locked for `meeting_type === Board` or `restricted === true` (invite-only).
  * `visibility === private` is a separate axis and is not locked here — a private unrestricted
- * meeting can still share its guest list in invites if the organizer opts in. `allowRestricted`
+ * meeting can still share its guest list with guests if the organizer opts in. `allowRestricted`
  * (meeting v2 composer only) lifts the restricted half, so only Board locks. The lock tracks
  * the meeting's current type and restricted flag on each write; changing `meeting_type` away
  * from Board lifts it. A Board meeting stays locked if the organizer only turns `restricted`

@@ -785,15 +785,15 @@ export const RESTRICTED_MEETING_FEATURE = {
 
 /**
  * Show meeting attendees feature configuration
- * @description Feature toggle config for sharing the guest list with guests: as ATTENDEE lines in
- * each calendar invite, and as the guest list on the meeting card and meeting page, which the BFF
- * withholds from non-organizers when this is off.
+ * @description Feature toggle config for sharing the guest list with guests in LFX: the guest list
+ * on the meeting card and meeting page, which the BFF withholds from non-organizers when this is off.
+ * Calendar invites never list other guests, whatever this is set to.
  */
 export const SHOW_MEETING_ATTENDEES_FEATURE = {
   key: 'show_meeting_attendees',
   icon: 'fa-light fa-users',
   title: 'Show attendees to guests',
-  description: "Let guests see who else is invited, and who has accepted, in LFX and in their calendar app's invite",
+  description: 'Let guests see who else is invited, and who has accepted, on the meeting in LFX',
   recommended: false,
   color: lfxColors.blue[500],
 };
