@@ -61,14 +61,15 @@ export interface PublicGroupSummary {
   website?: string | null;
   has_public_calendar?: boolean;
   /**
-   * Whether the signed-in caller is a member, resolved from one username-tagged membership query
-   * for the whole directory. Absent for anonymous callers and when the lookup failed, so absence
+   * Whether the signed-in caller is a member, resolved once for the whole directory from their
+   * membership rows matched by LFID username or by verified email — the two ways the public group
+   * page matches a caller. Absent for anonymous callers and when the lookup failed, so absence
    * means "unknown", never "not a member".
    */
   is_member?: boolean;
   /**
-   * Whether the signed-in caller has a pending join application, resolved from one
-   * `applicant_email`-tagged application query for the whole directory. Absent for anonymous
+   * Whether the signed-in caller has a pending join application, resolved once for the whole
+   * directory from their applications matched by verified email. Absent for anonymous
    * callers and when the lookup failed; `false` when the caller is a member. The query index lags
    * a fresh submission, so a client that just applied should keep its own pending state too.
    */

@@ -28,6 +28,7 @@ const {
   isImpersonating,
   enrichWithProjectData,
   getEffectiveEmail,
+  getEffectiveUsername,
 } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   addAccessToResources: vi.fn(),
@@ -47,6 +48,7 @@ const {
   // Default: pass items through unchanged — most tests don't exercise includeProjectMetadata.
   enrichWithProjectData: vi.fn((_req: unknown, items: unknown[]) => Promise.resolve(items)),
   getEffectiveEmail: vi.fn<() => string | null>(() => 'user@example.com'),
+  getEffectiveUsername: vi.fn<() => string | null>(() => null),
 }));
 
 vi.mock('@lfx-one/shared/enums', () => ({
@@ -99,7 +101,13 @@ vi.mock('../helpers/query-service.helper', async () => {
     fetchAllQueryResources: vi.fn(actual.fetchAllQueryResources),
   };
 });
-vi.mock('../utils/auth-helper', () => ({ resolveAuditUserDisplayName, getUsernameFromAuth: vi.fn(), isImpersonating, getEffectiveEmail }));
+vi.mock('../utils/auth-helper', () => ({
+  resolveAuditUserDisplayName,
+  getUsernameFromAuth: vi.fn(),
+  isImpersonating,
+  getEffectiveEmail,
+  getEffectiveUsername,
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -146,46 +154,88 @@ describe('CommitteeService.getMyCommitteeUids', () => {
     expect(await new CommitteeService().getMyCommitteeUids(req, undefined, { failOnPartial: true })).toEqual(new Set());
     expect(proxyRequest).not.toHaveBeenCalled();
   });
-
-  it('scopes a per-call bearer token override to every page', async () => {
-    proxyRequest
-      .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a' } }], page_token: 'next' })
-      .mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'b' } }] });
-    await new CommitteeService().getMyCommitteeUids(req, undefined, { failOnPartial: true }, { bearerToken: 'user-token' });
-    expect(proxyRequest.mock.calls.map((call) => call[7])).toEqual([{ bearerToken: 'user-token' }, { bearerToken: 'user-token' }]);
-  });
 });
 
-describe('CommitteeService.getMyPendingApplicationCommitteeUids', () => {
+describe('CommitteeService.getCallerGroupState', () => {
+  const signedIn = { oidc: { isAuthenticated: () => true }, bearerToken: 'user-token' } as unknown as Request;
+
+  /** Answers each query by its identity tag, so the test reads as "who matched what". */
+  function answerBy(byTag: Record<string, unknown[] | Error>): void {
+    proxyRequest.mockImplementation(async (_req: unknown, _svc: string, _path: string, _method: string, params: { tags_all: string[] }) => {
+      const answer = byTag[params.tags_all[0]];
+      if (answer instanceof Error) throw answer;
+      return { resources: (answer ?? []).map((data) => ({ data })) };
+    });
+  }
+
   beforeEach(async () => {
     proxyRequest.mockReset();
-    getEffectiveEmail.mockReset().mockReturnValue('user@example.com');
+    vi.mocked(logger.warning).mockClear();
+    getEffectiveEmail.mockReset().mockReturnValue('ada@example.org');
+    getEffectiveUsername.mockReset().mockReturnValue('ada');
     const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
     vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
   });
 
-  it('returns pending application committee UIDs from one paginated applicant_email query, as the given token', async () => {
-    proxyRequest.mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a', status: 'pending' } }], page_token: 'next' }).mockResolvedValueOnce({
-      resources: [{ data: { committee_uid: 'b', status: 'approved' } }, { data: { committee_uid: 'c', status: 'pending' } }, { data: { status: 'pending' } }],
+  it('returns null for an anonymous caller without querying', async () => {
+    expect(await new CommitteeService().getCallerGroupState({ oidc: { isAuthenticated: () => false } } as unknown as Request)).toBeNull();
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('unions memberships by username and email, and drops pending applications for groups already joined', async () => {
+    answerBy({
+      'username:ada': [{ committee_uid: 'by-username' }, { committee_uid: 'joined-and-applied' }],
+      'email:ada@example.org': [{ committee_uid: 'by-email' }],
+      'applicant_email:ada@example.org': [
+        { committee_uid: 'joined-and-applied', status: 'pending' },
+        { committee_uid: 'applied', status: 'pending' },
+        { committee_uid: 'lagging-index', status: 'approved' },
+      ],
     });
 
-    const uids = await new CommitteeService().getMyPendingApplicationCommitteeUids(req, { bearerToken: 'user-token' });
+    const state = await new CommitteeService().getCallerGroupState(signedIn);
 
-    expect(uids).toEqual(new Set(['a', 'c']));
-    expect(proxyRequest.mock.calls[0][4]).toEqual({ type: 'committee_application', tags_all: ['applicant_email:user@example.com'] });
-    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next' });
-    expect(proxyRequest.mock.calls.map((call) => call[7])).toEqual([{ bearerToken: 'user-token' }, { bearerToken: 'user-token' }]);
+    expect(state).toEqual({ memberUids: new Set(['by-username', 'joined-and-applied', 'by-email']), pendingApplicationUids: new Set(['applied']) });
+    // Three bounded queries, all on the caller's own token from req (no per-call override).
+    expect(proxyRequest.mock.calls.map((call) => call[4])).toEqual([
+      { type: 'committee_member', tags_all: ['username:ada'] },
+      { type: 'committee_member', tags_all: ['email:ada@example.org'] },
+      { type: 'committee_application', tags_all: ['applicant_email:ada@example.org', 'status:pending'] },
+    ]);
+    expect(proxyRequest.mock.calls.every((call) => call[7] === undefined)).toBe(true);
   });
 
-  it('throws on a later-page failure rather than reporting a partial set', async () => {
-    const error = new Error('later application page failed');
-    proxyRequest.mockResolvedValueOnce({ resources: [{ data: { committee_uid: 'a', status: 'pending' } }], page_token: 'next' }).mockRejectedValueOnce(error);
-    await expect(new CommitteeService().getMyPendingApplicationCommitteeUids(req)).rejects.toBe(error);
+  it('reports membership unknown when either membership query fails, logging no identity', async () => {
+    const failure = new MicroserviceError('query down', 503, 'SERVICE_UNAVAILABLE', {
+      operation: 'proxy',
+      service: 'query',
+      path: '/query/resources?tags_all=email:ada@example.org',
+    });
+    answerBy({ 'username:ada': [{ committee_uid: 'by-username' }], 'email:ada@example.org': failure, 'applicant_email:ada@example.org': [] });
+
+    const state = await new CommitteeService().getCallerGroupState(signedIn);
+
+    expect(state).toEqual({ memberUids: null, pendingApplicationUids: new Set() });
+    expect(logger.warning).toHaveBeenCalledWith(signedIn, 'get_caller_group_state', expect.any(String), {
+      status_code: 503,
+      error_code: 'SERVICE_UNAVAILABLE',
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('ada');
   });
 
-  it('returns an empty set without querying when the caller has no verified email', async () => {
+  it('matches on username alone when the caller has no verified email, and leaves applications unknown', async () => {
     getEffectiveEmail.mockReturnValue(null);
-    expect(await new CommitteeService().getMyPendingApplicationCommitteeUids(req)).toEqual(new Set());
+    answerBy({ 'username:ada': [{ committee_uid: 'by-username' }] });
+
+    expect(await new CommitteeService().getCallerGroupState(signedIn)).toEqual({ memberUids: new Set(['by-username']), pendingApplicationUids: null });
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves both sets unknown, without querying, when the caller has no identity to match on', async () => {
+    getEffectiveEmail.mockReturnValue(null);
+    getEffectiveUsername.mockReturnValue(null);
+
+    expect(await new CommitteeService().getCallerGroupState(signedIn)).toEqual({ memberUids: null, pendingApplicationUids: null });
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

@@ -35,6 +35,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
 import {
+  ApiRequestOptions,
   BoardMeetingInviteeRow,
   BoardMeetingParticipationSummaryResponse,
   BrandHealthMention,
@@ -387,9 +388,19 @@ export class ProjectService {
     uid: string,
     access: boolean = true,
     includeMeetingCoordinator: boolean = false,
-    includeAuditor: boolean = false
+    includeAuditor: boolean = false,
+    requestOptions?: ApiRequestOptions
   ): Promise<Project> {
-    const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
+    const project = await this.microserviceProxy.proxyRequest<Project>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${uid}`,
+      'GET',
+      undefined,
+      undefined,
+      undefined,
+      requestOptions
+    );
 
     if (!project) {
       throw new ResourceNotFoundError('Project', uid, {
@@ -470,11 +481,14 @@ export class ProjectService {
    * identifier (400/403/404 — unknown, malformed, or not visible to the caller). Any other failure
    * (timeout, 5xx, network) is rethrown so each caller applies its safe outage policy: UID feeds return
    * an error instead of a cacheable empty response; slug/group gates mask it as a non-cacheable refusal.
+   *
+   * @param requestOptions Per-call overrides, e.g. `bearerToken` for the M2M token a public route
+   *   uses without overwriting the caller's own token on `req`.
    */
-  public async getPubliclyDiscoverableProject(req: Request, uid: string): Promise<Project | null> {
+  public async getPubliclyDiscoverableProject(req: Request, uid: string, requestOptions?: ApiRequestOptions): Promise<Project | null> {
     let project: Project;
     try {
-      project = await this.getProjectById(req, uid, false);
+      project = await this.getProjectById(req, uid, false, false, false, requestOptions);
     } catch (error) {
       if (isBaseApiError(error) && (error.statusCode === 400 || error.statusCode === 403 || error.statusCode === 404)) {
         // DEBUG, not WARN: the identifier comes straight from an anonymous request, so misses are caller-controlled.
@@ -7468,7 +7482,7 @@ export class ProjectService {
    * @returns Array of UIDs including the foundation itself and every project discovered while
    *   walking its full descendant tree, up to the depth/node caps above
    */
-  public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
+  public async getFoundationProjectUids(req: Request, foundationUid: string, requestOptions?: ApiRequestOptions): Promise<string[]> {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving descendant projects for foundation', { foundation_uid: foundationUid });
 
     const uids = new Set<string>([foundationUid]);
@@ -7495,12 +7509,21 @@ export class ProjectService {
           const resources = await fetchAllQueryResources<{ uid: string; slug?: string }>(
             req,
             (pageToken) =>
-              this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                type: 'project',
-                parent: `project:${containerUid}`,
-                page_size: QUERY_SERVICE_PAGE_SIZE,
-                ...(pageToken && { page_token: pageToken }),
-              }),
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(
+                req,
+                'LFX_V2_SERVICE',
+                '/query/resources',
+                'GET',
+                {
+                  type: 'project',
+                  parent: `project:${containerUid}`,
+                  page_size: QUERY_SERVICE_PAGE_SIZE,
+                  ...(pageToken && { page_token: pageToken }),
+                },
+                undefined,
+                undefined,
+                requestOptions
+              ),
             { failOnPartial: true }
           );
           for (const r of resources) {

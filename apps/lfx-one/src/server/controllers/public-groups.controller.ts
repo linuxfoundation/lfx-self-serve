@@ -4,6 +4,7 @@
 import { CHAIR_ROLES, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP, UUID_REGEX } from '@lfx-one/shared/constants';
 import { CommitteeMemberVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import {
+  ApiRequestOptions,
   Committee,
   CommitteeMember,
   GroupsIOMailingList,
@@ -230,11 +231,9 @@ export class PublicGroupsController {
     const startTime = logger.startOperation(req, 'get_public_groups_by_foundation', { identifier });
 
     try {
-      // Kept for the caller's own membership lookup, which must run as the caller, not the app.
-      const userToken = req.bearerToken;
-      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
-      const m2mToken = await generateM2MToken(req);
-      req.bearerToken = m2mToken;
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls.
+      // Scoped per call so `req.bearerToken` stays the caller's own for their membership lookup.
+      const m2m: ApiRequestOptions = { bearerToken: await generateM2MToken(req) };
 
       const isFoundationUid = UUID_REGEX.test(identifier);
       if (!isFoundationUid) {
@@ -244,7 +243,7 @@ export class PublicGroupsController {
       const foundationUid = await this.resolveProjectIdentifier(req, identifier);
       // Slugs whose metadata is hidden or unavailable share the unknown-slug refusal. UID metadata
       // failures still propagate (lfx-self-serve-ops#437).
-      const foundation = await this.projectService.getPubliclyDiscoverableProject(req, foundationUid).catch((error: unknown) => {
+      const foundation = await this.projectService.getPubliclyDiscoverableProject(req, foundationUid, m2m).catch((error: unknown) => {
         if (isFoundationUid) {
           throw error;
         }
@@ -258,8 +257,8 @@ export class PublicGroupsController {
         throw this.projectNotFoundError(identifier);
       }
       // Runs alongside the directory fan-out below; never rejects.
-      const callerStatePromise = this.resolveCallerGroupState(req, userToken, 'get_public_groups_by_foundation');
-      const childUids = await this.projectService.getFoundationProjectUids(req, foundationUid);
+      const callerStatePromise = this.committeeService.getCallerGroupState(req);
+      const childUids = await this.projectService.getFoundationProjectUids(req, foundationUid, m2m);
 
       // KNOWN LIMITATION: getFoundationProjectUids now resolves the full nested sub-foundation tree
       // (GH-2382), so childUids can legitimately number in the hundreds for a large umbrella
@@ -292,8 +291,8 @@ export class PublicGroupsController {
         scopedUids = [foundationUid, ...remaining].slice(0, PUBLIC_FOUNDATION_GROUPS_UID_FAN_OUT_CAP);
       }
 
-      const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids);
-      const projects = await this.resolveContextProjects(req, allCommittees);
+      const allCommittees = await this.fetchPublicCommitteesForProjects(req, scopedUids, m2m);
+      const projects = await this.resolveContextProjects(req, allCommittees, m2m);
       const callerState = await callerStatePromise;
 
       // Drop committees whose owning child project is hidden or unconfirmed, so a confidential child
@@ -321,11 +320,9 @@ export class PublicGroupsController {
     const startTime = logger.startOperation(req, 'get_public_groups_by_project', { identifier });
 
     try {
-      // Kept for the caller's own membership lookup, which must run as the caller, not the app.
-      const userToken = req.bearerToken;
-      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls
-      const m2mToken = await generateM2MToken(req);
-      req.bearerToken = m2mToken;
+      // M2M token required: public endpoint with no user session; app credentials needed for upstream calls.
+      // Scoped per call so `req.bearerToken` stays the caller's own for their membership lookup.
+      const m2m: ApiRequestOptions = { bearerToken: await generateM2MToken(req) };
 
       const isProjectUid = UUID_REGEX.test(identifier);
       if (!isProjectUid) {
@@ -335,7 +332,7 @@ export class PublicGroupsController {
       const projectUid = await this.resolveProjectIdentifier(req, identifier);
       // Slugs whose metadata is hidden or unavailable share the unknown-slug refusal. UID metadata
       // failures still propagate (lfx-self-serve-ops#437).
-      const project = await this.projectService.getPubliclyDiscoverableProject(req, projectUid).catch((error: unknown) => {
+      const project = await this.projectService.getPubliclyDiscoverableProject(req, projectUid, m2m).catch((error: unknown) => {
         if (isProjectUid) {
           throw error;
         }
@@ -347,19 +344,23 @@ export class PublicGroupsController {
       }
 
       // Runs alongside the parent and committee lookups below; never rejects.
-      const callerStatePromise = this.resolveCallerGroupState(req, userToken, 'get_public_groups_by_project');
+      const callerStatePromise = this.committeeService.getCallerGroupState(req);
 
       let parentFoundation = null;
       if (project.parent_uid) {
         // A hidden parent, or a failed lookup, leaves the project top-level.
-        const candidate = await this.getDiscoverableParent(req, 'get_public_groups_by_project', project.parent_uid);
+        const candidate = await this.getDiscoverableParent(req, 'get_public_groups_by_project', project.parent_uid, m2m);
         // ROOT is an administrative pseudo-project — treat its children as top-level foundations
         if (candidate && candidate.slug !== 'ROOT') {
           parentFoundation = candidate;
         }
       }
 
-      const committees = await this.committeeService.getCommittees(req, { tags: `project_uid:${projectUid}` }, { skipMailingListEnrichment: true });
+      const committees = await this.committeeService.getCommittees(
+        req,
+        { tags: `project_uid:${projectUid}` },
+        { skipMailingListEnrichment: true, requestOptions: m2m }
+      );
       const publicCommittees = committees.filter((c) => c.public);
       const callerState = await callerStatePromise;
 
@@ -411,16 +412,16 @@ export class PublicGroupsController {
    * A parent foundation only feeds group context, so a transient lookup failure degrades to "top-level"
    * rather than failing the route; a hidden parent is null either way (lfx-self-serve-ops#437).
    */
-  private async getDiscoverableParent(req: Request, operation: string, parentUid: string): Promise<Project | null> {
+  private async getDiscoverableParent(req: Request, operation: string, parentUid: string, requestOptions?: ApiRequestOptions): Promise<Project | null> {
     try {
-      return await this.projectService.getPubliclyDiscoverableProject(req, parentUid);
+      return await this.projectService.getPubliclyDiscoverableProject(req, parentUid, requestOptions);
     } catch (error) {
       logger.warning(req, operation, 'Parent foundation lookup failed, treating project as top-level', { parent_uid: parentUid, err: error });
       return null;
     }
   }
 
-  private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[]): Promise<Committee[]> {
+  private async fetchPublicCommitteesForProjects(req: Request, projectUids: string[], requestOptions: ApiRequestOptions): Promise<Committee[]> {
     const BATCH_SIZE = 10;
     const seen = new Set<string>();
     const result: Committee[] = [];
@@ -431,7 +432,7 @@ export class PublicGroupsController {
       const batchResults = await Promise.all(
         batch.map((uid) =>
           this.committeeService
-            .getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true })
+            .getCommittees(req, { tags: `project_uid:${uid}` }, { skipMailingListEnrichment: true, requestOptions })
             .then((committees) => {
               successCount++;
               return committees;
@@ -462,7 +463,7 @@ export class PublicGroupsController {
     return result.sort((a, b) => a.name.localeCompare(b.name, 'en'));
   }
 
-  private async resolveContextProjects(req: Request, committees: Committee[]): Promise<Map<string, any>> {
+  private async resolveContextProjects(req: Request, committees: Committee[], requestOptions: ApiRequestOptions): Promise<Map<string, any>> {
     const uids = [...new Set(committees.map((c) => c.project_uid).filter(Boolean))];
     const BATCH_SIZE = 10;
     const map = new Map<string, any>();
@@ -471,7 +472,7 @@ export class PublicGroupsController {
       const projects = await Promise.all(
         // null for a hidden project or a failed lookup; the caller drops committees whose project is null.
         batch.map((uid) =>
-          this.projectService.getPubliclyDiscoverableProject(req, uid).catch((error) => {
+          this.projectService.getPubliclyDiscoverableProject(req, uid, requestOptions).catch((error) => {
             logger.warning(req, 'resolve_context_projects', 'Project lookup failed, dropping its committees from the directory', {
               project_uid: uid,
               err: error,
@@ -485,39 +486,6 @@ export class PublicGroupsController {
       }
     }
     return map;
-  }
-
-  /**
-   * Resolves the signed-in caller's membership and pending applications once for a whole directory
-   * — one membership query and one application query, run together, as the caller's own token
-   * (never the M2M token: these are the caller's own records). Returns null for anonymous callers,
-   * so their summaries carry no membership fields at all. A failed lookup leaves its set null and
-   * its flag omitted rather than answering `false`, and never fails the directory.
-   */
-  private async resolveCallerGroupState(req: Request, userToken: string | undefined, operation: string): Promise<PublicGroupCallerState | null> {
-    if (!req.oidc?.isAuthenticated() || !userToken) {
-      return null;
-    }
-
-    const requestOptions = { bearerToken: userToken };
-    const [members, applications] = await Promise.allSettled([
-      // No username means no membership row can be matched: unknown, not "member of nothing".
-      getEffectiveUsername(req) ? this.committeeService.getMyCommitteeUids(req, undefined, { failOnPartial: true }, requestOptions) : Promise.resolve(null),
-      // Applications are indexed by verified email only; without one the answer is unknown too.
-      getEffectiveEmail(req) ? this.committeeService.getMyPendingApplicationCommitteeUids(req, requestOptions) : Promise.resolve(null),
-    ]);
-
-    if (members.status === 'rejected') {
-      logger.warning(req, operation, 'Caller membership lookup failed; omitting is_member', { err: members.reason });
-    }
-    if (applications.status === 'rejected') {
-      logger.warning(req, operation, 'Caller application lookup failed; omitting has_pending_application', { err: applications.reason });
-    }
-
-    return {
-      memberUids: members.status === 'fulfilled' ? members.value : null,
-      pendingApplicationUids: applications.status === 'fulfilled' ? applications.value : null,
-    };
   }
 
   /** A response carrying the caller's membership state must never be stored by a shared cache. */
@@ -552,9 +520,9 @@ export class PublicGroupsController {
         }),
     };
 
-    const isMember = callerState?.memberUids ? callerState.memberUids.has(committee.uid) : undefined;
-    // A member has nothing left to apply for, whatever the application index still says.
-    const hasPendingApplication = callerState?.pendingApplicationUids ? isMember !== true && callerState.pendingApplicationUids.has(committee.uid) : undefined;
+    // A null set is unknown, so its flag is omitted rather than answered `false`.
+    const isMember = callerState?.memberUids?.has(committee.uid);
+    const hasPendingApplication = callerState?.pendingApplicationUids?.has(committee.uid);
 
     return {
       uid: committee.uid,

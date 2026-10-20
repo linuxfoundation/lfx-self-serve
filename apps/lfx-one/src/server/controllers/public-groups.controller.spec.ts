@@ -18,10 +18,7 @@ const {
   getCommitteeMembersMock,
   getMeetingsMock,
   proxyRequestMock,
-  getMyCommitteeUidsMock,
-  getMyPendingApplicationCommitteeUidsMock,
-  getEffectiveEmailMock,
-  getEffectiveUsernameMock,
+  getCallerGroupStateMock,
 } = vi.hoisted(() => ({
   getFoundationProjectUidsMock: vi.fn(),
   getPubliclyDiscoverableProjectMock: vi.fn(),
@@ -32,10 +29,7 @@ const {
   getCommitteeMembersMock: vi.fn(),
   getMeetingsMock: vi.fn(),
   proxyRequestMock: vi.fn(),
-  getMyCommitteeUidsMock: vi.fn(),
-  getMyPendingApplicationCommitteeUidsMock: vi.fn(),
-  getEffectiveEmailMock: vi.fn(),
-  getEffectiveUsernameMock: vi.fn(),
+  getCallerGroupStateMock: vi.fn(),
 }));
 
 vi.mock('../services/project.service', () => ({
@@ -55,8 +49,7 @@ vi.mock('../services/committee.service', () => ({
       resolveCommitteeUid: resolveCommitteeUidMock,
       getCommitteeById: getCommitteeByIdMock,
       getCommitteeMembers: getCommitteeMembersMock,
-      getMyCommitteeUids: getMyCommitteeUidsMock,
-      getMyPendingApplicationCommitteeUids: getMyPendingApplicationCommitteeUidsMock,
+      getCallerGroupState: getCallerGroupStateMock,
     };
   }),
 }));
@@ -71,11 +64,6 @@ vi.mock('../services/microservice-proxy.service', () => ({
   MicroserviceProxyService: vi.fn(function () {
     return { proxyRequest: proxyRequestMock };
   }),
-}));
-
-vi.mock('../utils/auth-helper', () => ({
-  getEffectiveEmail: getEffectiveEmailMock,
-  getEffectiveUsername: getEffectiveUsernameMock,
 }));
 
 vi.mock('../utils/m2m-token.util', () => ({
@@ -365,7 +353,7 @@ describe('PublicGroupsController.getPublicGroupsByProject — discoverability (l
     await controller.getPublicGroupsByProject(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getPubliclyDiscoverableProjectMock).toHaveBeenCalledWith(req, PARENT_UID);
+    expect(getPubliclyDiscoverableProjectMock).toHaveBeenCalledWith(req, PARENT_UID, { bearerToken: 'm2m-token' });
     const response = res.json.mock.calls[0][0];
     expect(response.groups[0].context).toMatchObject({ scope: 'foundation', foundation_uid: PROJECT_UID, foundation_name: `name-${PROJECT_UID}` });
     const serialized = JSON.stringify(response);
@@ -558,7 +546,7 @@ describe('PublicGroupsController.getPublicGroupById — discoverability (lfx-sel
     await controller.getPublicGroupById(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getPubliclyDiscoverableProjectMock).toHaveBeenCalledWith(req, PARENT_UID);
+    expect(getPubliclyDiscoverableProjectMock).toHaveBeenCalledWith(req, PARENT_UID, undefined);
     const detail = res.json.mock.calls[0][0];
     expect(detail.context).toEqual({
       scope: 'foundation',
@@ -671,18 +659,14 @@ describe('PublicGroupsController.getPublicGroupById — discoverability (lfx-sel
 });
 
 describe('PublicGroupsController directory — caller membership state (#3595)', () => {
-  const USER_TOKEN = 'user-token';
   let controller: PublicGroupsController;
-
-  /** A signed-in request carrying the caller's own bearer token, as the optional-auth middleware leaves it. */
-  function signedIn(identifier: string): ReturnType<typeof buildReqRes> {
-    const ctx = buildReqRes(identifier);
-    Object.assign(ctx.req, { bearerToken: USER_TOKEN, oidc: { isAuthenticated: () => true } });
-    return ctx;
-  }
 
   function groupsOf(res: Response & { json: Mock }): Record<string, unknown>[] {
     return res.json.mock.calls[0][0].groups;
+  }
+
+  function byUid(res: Response & { json: Mock }): Record<string, Record<string, unknown>> {
+    return Object.fromEntries(groupsOf(res).map((g) => [g['uid'] as string, g]));
   }
 
   beforeEach(() => {
@@ -690,13 +674,11 @@ describe('PublicGroupsController directory — caller membership state (#3595)',
     controller = new PublicGroupsController();
     getPubliclyDiscoverableProjectMock.mockImplementation(async (_req: Request, uid: string) => discoverable(uid));
     getCommitteesMock.mockResolvedValue([committee('a-member', PROJECT_UID), committee('b-pending', PROJECT_UID), committee('c-other', PROJECT_UID)]);
-    getEffectiveUsernameMock.mockReturnValue('ada');
-    getEffectiveEmailMock.mockReturnValue('ada@example.org');
-    getMyCommitteeUidsMock.mockResolvedValue(new Set(['a-member', 'elsewhere']));
-    getMyPendingApplicationCommitteeUidsMock.mockResolvedValue(new Set(['a-member', 'b-pending']));
+    getCallerGroupStateMock.mockResolvedValue({ memberUids: new Set(['a-member', 'elsewhere']), pendingApplicationUids: new Set(['b-pending']) });
   });
 
-  it('gives anonymous callers the same shape with no membership fields, no lookups and no private cache header', async () => {
+  it('gives anonymous callers the same shape with no membership fields and no private cache header', async () => {
+    getCallerGroupStateMock.mockResolvedValue(null);
     const { req, res, next } = buildReqRes(PROJECT_UID);
 
     await controller.getPublicGroupsByProject(req, res, next);
@@ -706,64 +688,65 @@ describe('PublicGroupsController directory — caller membership state (#3595)',
       expect(group).not.toHaveProperty('is_member');
       expect(group).not.toHaveProperty('has_pending_application');
     }
-    expect(getMyCommitteeUidsMock).not.toHaveBeenCalled();
-    expect(getMyPendingApplicationCommitteeUidsMock).not.toHaveBeenCalled();
     expect(res.setHeader).not.toHaveBeenCalledWith('Cache-Control', 'private, no-store');
   });
 
-  it('resolves every group from one membership query and one application query, run together as the caller', async () => {
-    // Hold both lookups open: if the controller awaited one before starting the other, the second
-    // would never be called while the first is pending.
-    let releaseMembers!: (uids: Set<string>) => void;
-    let releaseApplications!: (uids: Set<string>) => void;
-    getMyCommitteeUidsMock.mockReturnValue(new Promise((resolve) => (releaseMembers = resolve)));
-    getMyPendingApplicationCommitteeUidsMock.mockReturnValue(new Promise((resolve) => (releaseApplications = resolve)));
-    const { req, res, next } = signedIn(PROJECT_UID);
+  it('folds one caller-state lookup, run alongside the directory fetch, into every group', async () => {
+    // Hold the lookup open: the directory query must still start, so the two run together.
+    let release!: (state: unknown) => void;
+    getCallerGroupStateMock.mockReturnValue(new Promise((resolve) => (release = resolve)));
+    const { req, res, next } = buildReqRes(PROJECT_UID);
 
     const pending = controller.getPublicGroupsByProject(req, res, next);
-    await vi.waitFor(() => {
-      expect(getMyCommitteeUidsMock).toHaveBeenCalledTimes(1);
-      expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledTimes(1);
-    });
-    releaseMembers(new Set(['a-member']));
-    releaseApplications(new Set(['a-member', 'b-pending']));
+    await vi.waitFor(() => expect(getCommitteesMock).toHaveBeenCalledTimes(1));
+    release({ memberUids: new Set(['a-member']), pendingApplicationUids: new Set(['b-pending']) });
     await pending;
 
     expect(next).not.toHaveBeenCalled();
-    // One query each for three groups — no per-group fan-out — and both under the caller's token.
-    expect(getMyCommitteeUidsMock).toHaveBeenCalledTimes(1);
-    expect(getMyCommitteeUidsMock).toHaveBeenCalledWith(req, undefined, { failOnPartial: true }, { bearerToken: USER_TOKEN });
-    expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledTimes(1);
-    expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledWith(req, { bearerToken: USER_TOKEN });
+    expect(getCallerGroupStateMock).toHaveBeenCalledTimes(1);
     expect(getCommitteeMembersMock).not.toHaveBeenCalled();
-
-    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
-    // A member is never also "pending", whatever the application index still says.
-    expect(byUid['a-member']).toMatchObject({ is_member: true, has_pending_application: false });
-    expect(byUid['b-pending']).toMatchObject({ is_member: false, has_pending_application: true });
-    expect(byUid['c-other']).toMatchObject({ is_member: false, has_pending_application: false });
+    expect(byUid(res)['a-member']).toMatchObject({ is_member: true, has_pending_application: false });
+    expect(byUid(res)['b-pending']).toMatchObject({ is_member: false, has_pending_application: true });
+    expect(byUid(res)['c-other']).toMatchObject({ is_member: false, has_pending_application: false });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
   });
 
-  it('carries the same flags on the foundation directory', async () => {
+  it("scopes the M2M token to the directory's upstream calls and leaves the caller's token on req", async () => {
+    const { req, res, next } = buildReqRes(PROJECT_UID);
+    Object.assign(req, { bearerToken: 'user-token' });
+
+    await controller.getPublicGroupsByProject(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(req.bearerToken).toBe('user-token');
+    expect(getPubliclyDiscoverableProjectMock).toHaveBeenCalledWith(req, PROJECT_UID, { bearerToken: 'm2m-token' });
+    expect(getCommitteesMock).toHaveBeenCalledWith(
+      req,
+      { tags: `project_uid:${PROJECT_UID}` },
+      { skipMailingListEnrichment: true, requestOptions: { bearerToken: 'm2m-token' } }
+    );
+  });
+
+  it('carries the same flags on the foundation directory, with the M2M token scoped the same way', async () => {
     getFoundationProjectUidsMock.mockResolvedValue([FOUNDATION_UID]);
     getCommitteesMock.mockResolvedValue([committee('a-member', FOUNDATION_UID), committee('c-other', FOUNDATION_UID)]);
-    const { req, res, next } = signedIn(FOUNDATION_UID);
+    const { req, res, next } = buildReqRes(FOUNDATION_UID);
+    Object.assign(req, { bearerToken: 'user-token' });
 
     await controller.getPublicGroupsByFoundation(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(getMyCommitteeUidsMock).toHaveBeenCalledTimes(1);
-    expect(getMyPendingApplicationCommitteeUidsMock).toHaveBeenCalledTimes(1);
-    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
-    expect(byUid['a-member']).toMatchObject({ is_member: true, has_pending_application: false });
-    expect(byUid['c-other']).toMatchObject({ is_member: false, has_pending_application: false });
+    expect(req.bearerToken).toBe('user-token');
+    expect(getFoundationProjectUidsMock).toHaveBeenCalledWith(req, FOUNDATION_UID, { bearerToken: 'm2m-token' });
+    expect(getCallerGroupStateMock).toHaveBeenCalledTimes(1);
+    expect(byUid(res)['a-member']).toMatchObject({ is_member: true, has_pending_application: false });
+    expect(byUid(res)['c-other']).toMatchObject({ is_member: false, has_pending_application: false });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
   });
 
-  it('omits a flag whose lookup failed instead of answering false, and still serves the directory', async () => {
-    getMyCommitteeUidsMock.mockRejectedValue(new MicroserviceError('query down', 503, 'UPSTREAM', { operation: 'x', service: 'y' }));
-    const { req, res, next } = signedIn(PROJECT_UID);
+  it('omits a flag whose set is unknown instead of answering false', async () => {
+    getCallerGroupStateMock.mockResolvedValue({ memberUids: null, pendingApplicationUids: new Set(['b-pending']) });
+    const { req, res, next } = buildReqRes(PROJECT_UID);
 
     await controller.getPublicGroupsByProject(req, res, next);
 
@@ -771,24 +754,8 @@ describe('PublicGroupsController directory — caller membership state (#3595)',
     for (const group of groupsOf(res)) {
       expect(group).not.toHaveProperty('is_member');
     }
-    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
-    expect(byUid['b-pending']).toMatchObject({ has_pending_application: true });
-  });
-
-  it('treats a missing username or verified email as unknown rather than "not a member"', async () => {
-    getEffectiveUsernameMock.mockReturnValue(null);
-    getEffectiveEmailMock.mockReturnValue(null);
-    const { req, res, next } = signedIn(PROJECT_UID);
-
-    await controller.getPublicGroupsByProject(req, res, next);
-
-    expect(next).not.toHaveBeenCalled();
-    expect(getMyCommitteeUidsMock).not.toHaveBeenCalled();
-    expect(getMyPendingApplicationCommitteeUidsMock).not.toHaveBeenCalled();
-    for (const group of groupsOf(res)) {
-      expect(group).not.toHaveProperty('is_member');
-      expect(group).not.toHaveProperty('has_pending_application');
-    }
+    expect(byUid(res)['b-pending']).toMatchObject({ has_pending_application: true });
+    expect(byUid(res)['c-other']).toMatchObject({ has_pending_application: false });
   });
 
   it('populates slug from the vanity group name and exposes no mailing list or external sources', async () => {
@@ -806,9 +773,8 @@ describe('PublicGroupsController directory — caller membership state (#3595)',
     await controller.getPublicGroupsByProject(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    const byUid = Object.fromEntries(groupsOf(res).map((g) => [g['uid'], g]));
-    expect(byUid['tsc']['slug']).toBe('tsc-slug');
-    expect(byUid['no-slug']['slug']).toBeUndefined();
+    expect(byUid(res)['tsc']['slug']).toBe('tsc-slug');
+    expect(byUid(res)['no-slug']['slug']).toBeUndefined();
     for (const group of groupsOf(res)) {
       expect(group).not.toHaveProperty('mailing_list');
       expect(group).not.toHaveProperty('external_sources');

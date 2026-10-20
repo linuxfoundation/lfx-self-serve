@@ -3474,7 +3474,15 @@ describe('ProjectService — getPubliclyDiscoverableProject', () => {
     proxyRequest.mockResolvedValueOnce(project);
 
     await expect(service.getPubliclyDiscoverableProject(req, 'p1')).resolves.toEqual(project);
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/p1', 'GET');
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/p1', 'GET', undefined, undefined, undefined, undefined);
+  });
+
+  it('scopes a per-call token override to the project read', async () => {
+    proxyRequest.mockResolvedValueOnce({ uid: 'p1', slug: 'p1', name: 'Visible', public: true, stage: 'Active' } as Project);
+
+    await service.getPubliclyDiscoverableProject(req, 'p1', { bearerToken: 'm2m-token' });
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/projects/p1', 'GET', undefined, undefined, undefined, { bearerToken: 'm2m-token' });
   });
 
   it('returns null for a non-public project', async () => {
