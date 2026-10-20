@@ -725,7 +725,16 @@ export class MeetingDetailsStateService {
             // return it) is no answer, so a later lookup never undoes a removal's correction.
             map((rsvp) => {
               const meeting = this.meeting();
-              return rsvp && meeting && this.userService.isMeetingRsvpCurrent(rsvp, meeting) ? rsvp : null;
+              if (!rsvp || !meeting || this.userService.isMeetingRsvpCurrent(rsvp, meeting)) {
+                return rsvp ?? null;
+              }
+              // The lookup returned a registration the viewer has removed (indexer lag): fall back to
+              // the surviving answers this session holds, as a partial removal selected them.
+              const occurrenceId = event.key?.occurrenceId;
+              const surviving = this.userService
+                .confirmedMeetingRsvps(meeting.id)
+                .filter((saved) => this.userService.isMeetingRsvpCurrent(saved, meeting) && (!meeting.recurrence || !!occurrenceId || saved.scope === 'all'));
+              return selectApplicableRsvp(occurrenceId, surviving);
             }),
             tap((rsvp) => (this.lastFetchedRsvp = rsvp)),
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),

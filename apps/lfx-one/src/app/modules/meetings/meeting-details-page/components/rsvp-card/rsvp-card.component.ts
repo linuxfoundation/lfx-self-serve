@@ -85,7 +85,11 @@ export class MeetingRsvpCardComponent {
   protected readonly pendingResponse = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
   /** The answer this card last saved, for a viewer whose own answer the state service does not load. */
   private readonly savedResponse = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
-  protected readonly saving = linkedSignal<string, RsvpResponse | null>({ source: this.rsvpKey, computation: () => null });
+  /**
+   * Keyed to the view, not the removal count: a removal resets the shown answer in place, but a save
+   * still in flight keeps the buttons locked, so a second save cannot race it.
+   */
+  protected readonly saving = linkedSignal<string, RsvpResponse | null>({ source: this.viewKey, computation: () => null });
   protected readonly error = linkedSignal<string, string | null>({ source: this.rsvpKey, computation: () => null });
   /** The live region's text: set after a save, so the result is announced once. */
   protected readonly announcement = linkedSignal({ source: this.rsvpKey, computation: () => '' });
