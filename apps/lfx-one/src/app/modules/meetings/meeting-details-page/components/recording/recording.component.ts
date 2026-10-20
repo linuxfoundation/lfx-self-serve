@@ -3,7 +3,7 @@
 
 import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
@@ -34,18 +34,18 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * (E4-01, #3255, FR-040).
  * @description The page renders it where `visibleSections().tools` allows (artifact access). Watch
  * recording opens the largest session's share URL (`getLargestSessionShareUrl`, as V1 does); Transcript
- * opens V1's transcript modal, unchanged. Each keeps V1's three states apart: available, none (the
- * meeting has no such artifact) and no access (the viewer may not open it), plus a read error.
+ * opens V1's transcript modal, unchanged. Each keeps V1's states apart: available, none (the meeting
+ * has no such artifact) and no access (the viewer may not open it).
  *
- * The artifact routes need a session and an occurrence record, so an anonymous viewer is asked to
- * sign in (until the public artifact routes, E4-04), and an ended meeting opened by its series id,
- * which has no occurrence record yet, says its recording appears once it is ready.
+ * As V1, the artifacts are read on `/api/past-meetings/:id/*`, which need a session and an occurrence
+ * record: an anonymous viewer is asked to sign in, and an ended meeting opened by its series id, which
+ * has no occurrence record yet, says its recording appears once it is ready. As V1, a failed read
+ * counts as no such artifact (the BFF answers 404 for a failed lookup too).
  *
  * The AI summary (E4-03) sits under the actions, rendered from its markdown (no new parser) and
- * collapsed past the agenda's height, with Read full summary opening V1's summary modal. An
- * unapproved summary (`pending`) is shown only to organizers, marked Pending review; anyone else
- * learns it is awaiting review, not what it says (`isPastMeetingSummaryVisible`, as the card applies
- * it). A summary record with no content surfaces no affordance: it reads as no summary.
+ * collapsed past the agenda's height, with Read full summary opening V1's summary modal. As V1, an
+ * unapproved summary is shown to everyone who can read the summary, marked Pending. A summary record
+ * with no content surfaces no affordance: it reads as no summary.
  */
 @Component({
   selector: 'lfx-meeting-recording',
@@ -68,23 +68,7 @@ export class MeetingRecordingComponent {
   protected readonly signInHref = this.state.signInHref;
   protected readonly summaryCollapsedHeight = MEETING_AGENDA_COLLAPSED_HEIGHT_PX;
   protected readonly approvalLabels = PAST_MEETING_SUMMARY_APPROVAL_LABELS;
-  /** Bumped to read the artifacts again after a read error. */
-  private readonly refreshCount = signal(0);
   protected readonly section: Signal<MeetingRecordingSectionState> = this.initSection();
-  /** What failed to load, for the error line: any of the recording, the transcript and the AI summary. */
-  protected readonly failedArtifacts = computed(() => {
-    const { recording, transcript, summary } = this.section();
-    const failed = [
-      recording.status === 'error' && 'recording',
-      transcript.status === 'error' && 'transcript',
-      summary.status === 'error' && 'AI summary',
-    ].filter((name): name is string => !!name);
-    return failed.length > 1 ? `${failed.slice(0, -1).join(', ')} and ${failed[failed.length - 1]}` : (failed[0] ?? '');
-  });
-
-  public retry(): void {
-    this.refreshCount.update((count) => count + 1);
-  }
 
   public openSummary(): void {
     const summary = this.section().summary.record;
@@ -134,9 +118,9 @@ export class MeetingRecordingComponent {
         if (!this.state.loadedViaPastMeetingId()) {
           return { kind: 'pending' as const };
         }
-        return { kind: 'fetch' as const, id: getPastMeetingResourceId(meeting), refresh: this.refreshCount() };
+        return { kind: 'fetch' as const, id: getPastMeetingResourceId(meeting) };
       },
-      { equal: (a, b) => a?.kind === b?.kind && (a?.kind !== 'fetch' || (b?.kind === 'fetch' && a.id === b.id && a.refresh === b.refresh)) }
+      { equal: (a, b) => a?.kind === b?.kind && (a?.kind !== 'fetch' || (b?.kind === 'fetch' && a.id === b.id)) }
     );
     const loading: MeetingRecordingSectionState = {
       status: 'loading',
@@ -159,24 +143,22 @@ export class MeetingRecordingComponent {
               const url = toSafeExternalHref(getLargestSessionShareUrl(recording));
               return url ? { status: 'available', url } : { status: 'none' };
             }),
-            catchError((error: unknown) => of(this.artifactFailure(error, 'recording')))
+            catchError((error: unknown) => of(this.artifactFailure(error)))
           );
           const transcript$ = this.meetingService.getPastMeetingTranscript(req.id).pipe(
             map((transcript): MeetingArtifactState => (getPastMeetingTranscriptUrl(transcript) ? { status: 'available' } : { status: 'none' })),
-            catchError((error: unknown) => of(this.artifactFailure(error, 'transcript')))
+            catchError((error: unknown) => of(this.artifactFailure(error)))
           );
-          const organizer = this.state.viewerRole() === 'organizer';
           const summary$ = this.meetingService.getPastMeetingSummary(req.id).pipe(
             map((summary): MeetingSummaryArtifactState => {
               const content = getPastMeetingSummaryContent(summary);
               if (!content) {
                 return { status: 'none' };
               }
-              const approval = getPastMeetingSummaryApprovalState(summary);
-              // Approval required and not given: only organizers see the text (isPastMeetingSummaryVisible).
-              return approval === 'pending' && !organizer ? { status: 'awaiting-review' } : { status: 'available', content, approval, record: summary };
+              // As V1: a summary awaiting approval is shown to every viewer who can read it, marked Pending.
+              return { status: 'available', content, approval: getPastMeetingSummaryApprovalState(summary), record: summary };
             }),
-            catchError((error: unknown) => of(this.artifactFailure(error, 'AI summary')))
+            catchError((error: unknown) => of(this.artifactFailure(error)))
           );
           return combineLatest([recording$, transcript$, summary$]).pipe(
             map(
@@ -196,22 +178,18 @@ export class MeetingRecordingComponent {
   }
 
   /**
-   * 404: the meeting has no such artifact (the BFF answers 404 only for an empty result). 401: the
-   * session expired. 403: the viewer may not open it. Anything else, an upstream failure included:
-   * an error, with Try again.
+   * 401: the session expired. 403: the viewer may not open it. Anything else, a 404 or a failure, reads
+   * as no such artifact, as V1 reads every failed artifact read (the BFF answers 404 for a failed
+   * lookup as for none).
    */
-  private artifactFailure(error: unknown, artifact: string): MeetingArtifactState {
+  private artifactFailure(error: unknown): MeetingArtifactState {
     const status = error instanceof HttpErrorResponse ? error.status : 0;
-    if (status === 404) {
-      return { status: 'none' };
-    }
     if (status === 401) {
       return { status: 'session-expired' };
     }
     if (status === 403) {
       return { status: 'no-access' };
     }
-    console.error(`Failed to load the meeting ${artifact}`, error);
-    return { status: 'error' };
+    return { status: 'none' };
   }
 }

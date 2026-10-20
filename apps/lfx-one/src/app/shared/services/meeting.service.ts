@@ -869,16 +869,6 @@ export class MeetingService {
   }
 
   public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
-    return this.getMeetingRsvpForCurrentUserOrFail(meetingUid, occurrenceId, allDatesOnly).pipe(catchError(() => of(null)));
-  }
-
-  /**
-   * The caller's own RSVP, or `null` when they have not answered — like
-   * {@link getMeetingRsvpForCurrentUser}, but a failure is logged and rethrown rather than read as
-   * `null`, for a caller that must not mistake "could not load" for "has not answered" (the V2
-   * status pill, E2-04). `allDatesOnly`, without an occurrence, asks for series-wide answers only.
-   */
-  public getMeetingRsvpForCurrentUserOrFail(meetingUid: string, occurrenceId?: string, allDatesOnly = false): Observable<MeetingRsvp | null> {
     const options: { params?: Record<string, string> } = {};
     if (occurrenceId) {
       options.params = { occurrenceId };
@@ -888,7 +878,7 @@ export class MeetingService {
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
         console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);
-        return throwError(() => error);
+        return of(null);
       })
     );
   }

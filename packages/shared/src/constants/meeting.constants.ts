@@ -1295,7 +1295,7 @@ export const MEETING_MATERIALS_PENDING_MAX_MS = 30_000;
 /** What each summary approval state reads as (E4-03); `not-required` shows no status. */
 export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryApprovalState, string | null> = {
   approved: 'Approved',
-  pending: 'Pending review',
+  pending: 'Pending',
   'not-required': null,
 };
 

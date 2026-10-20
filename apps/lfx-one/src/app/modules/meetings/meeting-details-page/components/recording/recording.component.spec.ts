@@ -231,30 +231,18 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-summary-pending')).toBeNull();
   });
 
-  // The user's decision (E4-03): an unapproved summary is the organizer's to review, not everyone's to read.
-  it('shows an unapproved summary to organizers only, marked Pending review', async () => {
-    viewerRole.set('organizer');
+  // As V1 (meeting-join): a summary awaiting approval is shown to everyone who can read the summary, marked Pending.
+  it.each(['registrant', 'organizer'] as const)('shows an unapproved summary to a %s, marked Pending', async (role) => {
+    viewerRole.set(role);
     meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: true })));
     await setup(
       () => of(recording([])),
       () => of(transcript(false))
     );
 
-    expect(query('tools-summary-pending')?.textContent?.trim()).toBe('Pending review');
+    expect(query('tools-summary-pending')?.textContent?.trim()).toBe('Pending');
     expect(query('tools-summary-btn')?.getAttribute('data-approval')).toBe('pending');
-  });
-
-  it('tells anyone else an unapproved summary is awaiting review, without its text', async () => {
-    meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: true })));
-    await setup(
-      () => of(recording([])),
-      () => of(transcript(false))
-    );
-
-    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('awaiting-review');
-    expect(query('tools-summary-content')).toBeNull();
-    expect(query('tools-summary-btn')).toBeNull();
-    expect(fixture.nativeElement.textContent).not.toContain('Agreed the roadmap');
+    expect(query('tools-summary-content')?.textContent).toContain('Agreed the roadmap');
   });
 
   it('surfaces no affordance for a summary record without content', async () => {
@@ -268,7 +256,7 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-summary-btn')).toBeNull();
   });
 
-  it('reads a pending record without content as none for a non-organizer too', async () => {
+  it('reads a pending record without content as none', async () => {
     meetingService.getPastMeetingSummary.mockReturnValue(of(summaryRecord({ approved: false, requires_approval: true, content: '', edited_content: '' })));
     await setup(
       () => of(recording([])),
@@ -278,33 +266,17 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('none');
   });
 
-  it('names every artifact that failed to load', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  // As V1, which reads every failed artifact read as none (the BFF answers 404 for a failed lookup too).
+  it('reads a failed read of any artifact as none', async () => {
     meetingService.getPastMeetingSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
     await setup(
       () => throwError(() => new HttpErrorResponse({ status: 500 })),
       () => throwError(() => new HttpErrorResponse({ status: 500 }))
     );
 
-    expect(query('tools-error')?.textContent).toContain("We couldn't load the recording, transcript and AI summary.");
-    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('error');
-  });
-
-  it('shows an error with a retry that reads the artifacts again', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    let calls = 0;
-    await setup(
-      () =>
-        ++calls === 1 ? throwError(() => new HttpErrorResponse({ status: 500 })) : of(recording([{ share_url: 'https://zoom.example/r', total_size: 1 }])),
-      () => of(transcript(true))
-    );
-    expect(query('tools-error')?.textContent).toContain("We couldn't load the recording.");
-
-    query('tools-retry')?.querySelector('button')?.click();
-    fixture.detectChanges();
-
-    expect(query('tools-error')).toBeNull();
-    expect(query('tools-recording-link')).not.toBeNull();
+    expect(query('tools-recording-unavailable')?.getAttribute('data-reason')).toBe('none');
+    expect(query('tools-transcript-unavailable')?.getAttribute('data-reason')).toBe('none');
+    expect(query('tools-summary-unavailable')?.getAttribute('data-reason')).toBe('none');
   });
 
   it('asks an anonymous viewer to sign in, without reading anything', async () => {

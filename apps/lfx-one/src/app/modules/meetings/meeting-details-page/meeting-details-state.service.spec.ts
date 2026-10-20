@@ -55,7 +55,7 @@ describe('MeetingDetailsStateService', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
-        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUserOrFail: getMyRsvp } },
+        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp } },
         { provide: UserService, useValue: { authenticated } },
         { provide: MeetingDetailsSeedService, useValue: { take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null) } },
       ],
@@ -964,18 +964,6 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meetingStatus()).toBe('awaiting-rsvp');
     });
 
-    // "Could not load" must never read as "has not answered".
-    it('falls back to the time state when the fetch fails', async () => {
-      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
-      getMyRsvp.mockReturnValue(throwError(() => ({ status: 500 })));
-      const state = create();
-      await load();
-
-      expect(state.myRsvp()).toBeUndefined();
-      expect(state.myRsvpAttr()).toBeNull();
-      expect(state.meetingStatus()).toBe('upcoming');
-    });
-
     // N-01 (FR-026): RSVP tracking off is the whole off-state, not just a missing fetch.
     it('gives an invitee on a meeting without RSVP tracking the unavailable slot and the time state', async () => {
       getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ is_invite_responses_enabled: false }), project }));
@@ -1092,61 +1080,6 @@ describe('MeetingDetailsStateService', () => {
       expect(state.myRsvp()).not.toBe('accepted');
       await load();
       expect(state.myRsvp()).toBeUndefined();
-    });
-
-    // A failure must not stick for the rest of the visit: one immediate retry, then one per clock
-    // tick while it keeps failing, and none once it succeeds.
-    it('retries a failed fetch, then once per clock tick until it succeeds', async () => {
-      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-      try {
-        getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
-        getMyRsvp.mockReturnValue(throwError(() => ({ status: 503 })));
-        const state = create();
-        vi.advanceTimersByTime(1);
-        await load();
-        await load();
-        expect(getMyRsvp).toHaveBeenCalledTimes(2);
-        expect(state.myRsvp()).toBeUndefined();
-
-        vi.advanceTimersByTime(30_000);
-        await load();
-        expect(getMyRsvp).toHaveBeenCalledTimes(3);
-
-        getMyRsvp.mockReturnValue(of(rsvp('accepted')));
-        vi.advanceTimersByTime(30_000);
-        await load();
-        expect(getMyRsvp).toHaveBeenCalledTimes(4);
-        expect(state.myRsvp()).toBe('accepted');
-
-        vi.advanceTimersByTime(60_000);
-        await load();
-        expect(getMyRsvp).toHaveBeenCalledTimes(4);
-      } finally {
-        vi.useRealTimers();
-      }
-    });
-
-    it('stops retrying a failed fetch once the viewer saves an answer', async () => {
-      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
-      try {
-        getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
-        getMyRsvp.mockReturnValue(throwError(() => ({ status: 503 })));
-        const state = create();
-        vi.advanceTimersByTime(1);
-        await load();
-        await load();
-        const callsBeforeSave = getMyRsvp.mock.calls.length;
-
-        state.setMyRsvp(MEETING_ID, undefined, rsvp('maybe'));
-        getMyRsvp.mockReturnValue(of(null));
-        vi.advanceTimersByTime(60_000);
-        await load();
-
-        expect(getMyRsvp).toHaveBeenCalledTimes(callsBeforeSave);
-        expect(state.myRsvp()).toBe('maybe');
-      } finally {
-        vi.useRealTimers();
-      }
     });
 
     // E2-05's save is async: one that lands after the page moved on must not mark the new view.

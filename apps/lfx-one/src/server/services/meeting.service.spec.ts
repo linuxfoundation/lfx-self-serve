@@ -283,45 +283,6 @@ describe('MeetingService public attachments (E3-03)', () => {
   });
 });
 
-describe('MeetingService past-meeting artifacts (E4-01)', () => {
-  let service: MeetingService;
-
-  beforeEach(() => {
-    proxyRequest.mockReset();
-    service = new MeetingService();
-  });
-
-  // Only an empty result is "none"; an upstream failure reaches the error handler, so the page can
-  // say it could not load rather than that there is nothing.
-  it.each(['getPastMeetingRecording', 'getPastMeetingTranscript'] as const)('%s: an empty result is null, a failure propagates', async (method) => {
-    proxyRequest.mockResolvedValueOnce({ resources: [] });
-    await expect(service[method](req, 'meeting-1-1700000000000')).resolves.toBeNull();
-
-    const upstream = Object.assign(new Error('query service unavailable'), { statusCode: 503 });
-    proxyRequest.mockRejectedValueOnce(upstream);
-    await expect(service[method](req, 'meeting-1-1700000000000')).rejects.toBe(upstream);
-  });
-});
-
-describe('MeetingService.getPastMeetingSummary failures (E4-03)', () => {
-  let service: MeetingService;
-
-  beforeEach(() => {
-    proxyRequest.mockReset();
-    service = new MeetingService();
-  });
-
-  // Only an empty result is "no summary"; an upstream failure reaches the error handler.
-  it('returns null for no summary and lets a failure propagate', async () => {
-    proxyRequest.mockResolvedValueOnce({ resources: [] });
-    await expect(service.getPastMeetingSummary(req, 'meeting-1-1700000000000')).resolves.toBeNull();
-
-    const upstream = Object.assign(new Error('query service unavailable'), { statusCode: 503 });
-    proxyRequest.mockRejectedValueOnce(upstream);
-    await expect(service.getPastMeetingSummary(req, 'meeting-1-1700000000000')).rejects.toBe(upstream);
-  });
-});
-
 describe('MeetingService.getMeetingHostKey', () => {
   let service: MeetingService;
 
@@ -996,8 +957,7 @@ describe('MeetingService.getMeetingRsvpForCurrentUser — unresolved recurring h
       created_at: '2026-02-01T00:00:00Z',
     } as MeetingRsvp;
     const other = { ...all, id: 'synthetic-other', registrant_id: 'another-registrant', created_at: '2026-03-01T00:00:00Z' };
-    // The strict raw walk (E2-04): a failed lookup must propagate rather than read as no RSVPs.
-    const history = vi.spyOn(service, 'getRawMeetingRsvps').mockResolvedValue([all, scoped, other]);
+    const history = vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([all, scoped, other]);
 
     expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', undefined, true))?.id).toBe(all.id);
     expect((await service.getMeetingRsvpForCurrentUser(req, 'synthetic-series', '4071031200', true))?.id).toBe(scoped.id);
@@ -2442,48 +2402,6 @@ describe('MeetingService.createMeeting attendee visibility lock', () => {
 });
 
 // E2-04: "could not load" must reach the caller as an error, never as "has not answered" (`null`).
-describe('MeetingService.getMeetingRsvpForCurrentUser', () => {
-  let service: MeetingService;
-
-  beforeEach(() => {
-    vi.mocked(getEffectiveEmail).mockReturnValue('dana.reyes@acme-motors.example');
-    service = new MeetingService();
-  });
-
-  it('propagates a failed registrant lookup', async () => {
-    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockRejectedValue(new Error('query service down'));
-
-    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).rejects.toThrow('query service down');
-  });
-
-  // Through the strict raw page walk: `getMeetingRsvps` would read the same failure as no RSVPs.
-  it('propagates a failed RSVP lookup', async () => {
-    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-1' }] as never);
-    const getMeetingRsvps = vi.spyOn(service, 'getMeetingRsvps');
-    const getRawMeetingRsvps = vi.spyOn(service, 'getRawMeetingRsvps').mockRejectedValue(new Error('query service down'));
-
-    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).rejects.toThrow('query service down');
-    expect(getRawMeetingRsvps).toHaveBeenCalledWith(req, 'meeting-1', undefined, true);
-    expect(getMeetingRsvps).not.toHaveBeenCalled();
-  });
-
-  it("answers with the viewer's own RSVP from that walk", async () => {
-    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'reg-1' }] as never);
-    vi.spyOn(service, 'getRawMeetingRsvps').mockResolvedValue([
-      { id: 'rsvp-other', registrant_id: 'reg-2', response_type: 'declined' },
-      { id: 'rsvp-own', registrant_id: 'reg-1', response_type: 'accepted' },
-    ] as never);
-
-    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).resolves.toMatchObject({ id: 'rsvp-own' });
-  });
-
-  it('still answers null for a viewer with no registrant row', async () => {
-    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([]);
-
-    await expect(service.getMeetingRsvpForCurrentUser(req, 'meeting-1')).resolves.toBeNull();
-  });
-});
-
 describe('MeetingService.createMeetingRsvp — acknowledged response', () => {
   it.each(['accepted', 'declined', 'maybe'] as const)('returns the successful %s answer when ITX omits its response value', async (answer) => {
     vi.clearAllMocks();
