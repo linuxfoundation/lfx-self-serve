@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibility } from '../enums';
-import type { MeetingRegistrant, PastMeetingSummary, PublicPastMeetingRoster, RsvpResponse } from './meeting.interface';
+import type { MeetingRegistrant, OccurrenceNavItem, PastMeetingSummary, PublicPastMeetingRoster, RsvpResponse } from './meeting.interface';
 
 /**
  * Where the viewer sits relative to the meeting's schedule.
@@ -387,4 +387,13 @@ export interface MeetingAgendaOverride {
   /** `null` for the series' agenda */
   occurrenceId: string | null;
   description: string;
+}
+
+/**
+ * The V2 page's Previous / Next occurrence navigation (V1 parity): the series timeline V1 builds with
+ * `buildOccurrenceNavTimeline`, and where the page's occurrence sits in it (`-1` for an empty one).
+ */
+export interface MeetingOccurrenceNavContext {
+  sorted: OccurrenceNavItem[];
+  currentIdx: number;
 }

@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- V1's occurrence navigation (meeting-join.component.html), in the V2 tokens. Exact px: the app's 14px
+     root would shrink rem utilities. Plain hrefs, as V1's, so each step is a fresh page load. -->
+@if (label(); as label) {
+  <nav class="flex flex-wrap items-center gap-[10px]" aria-label="Occurrences" data-testid="occurrence-nav-section">
+    <!-- data-dd-privacy="mask" on both links: their href can carry the meeting passcode; keep it out of Session Replay. -->
+    @if (previousUrl(); as url) {
+      <a [href]="url" [class]="linkClass" data-dd-privacy="mask" data-enabled="true" data-testid="occurrence-nav-section-prev">
+        <i class="fa-light fa-chevron-left text-[11px]" aria-hidden="true"></i>
+        <span>Previous</span>
+      </a>
+    } @else {
+      <span [class]="disabledClass" aria-disabled="true" data-enabled="false" data-testid="occurrence-nav-section-prev">
+        <i class="fa-light fa-chevron-left text-[11px]" aria-hidden="true"></i>
+        <span>Previous</span>
+      </span>
+    }
+    <span class="text-[13px] font-semibold tabular-nums text-[var(--md-text-muted)]" data-testid="occurrence-nav-section-counter"
+      ><span class="sr-only">Occurrence&#32;</span>{{ label }}</span
+    >
+    @if (nextUrl(); as url) {
+      <a [href]="url" [class]="linkClass" data-dd-privacy="mask" data-enabled="true" data-testid="occurrence-nav-section-next">
+        <span>Next</span>
+        <i class="fa-light fa-chevron-right text-[11px]" aria-hidden="true"></i>
+      </a>
+    } @else {
+      <span [class]="disabledClass" aria-disabled="true" data-enabled="false" data-testid="occurrence-nav-section-next">
+        <span>Next</span>
+        <i class="fa-light fa-chevron-right text-[11px]" aria-hidden="true"></i>
+      </span>
+    }
+  </nav>
+}

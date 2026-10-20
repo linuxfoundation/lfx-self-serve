@@ -61,7 +61,7 @@ own namespace; the two never share a value.
 | `meeting-header-admin-link`                 | Admin view: the organizer's link to `/details`, on an ended meeting's occurrence only (E4-05)                                                                                             |
 | `meeting-status-pill`                       | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                                                                                         |
 | `meeting-privacy-chip`                      | The single privacy chip (see below)                                                                                                                                                       |
-| `meeting-time-banner`                       | The time banner at the top of the rail card (see below)                                                               |
+| `meeting-time-banner`                       | The time banner at the top of the rail card (see below)                                                                                                                                   |
 | `meeting-time-banner-date`                  | Its weekday and date, in the viewer's timezone                                                                                                                                            |
 | `meeting-time-banner-time`                  | Its start – end time                                                                                                                                                                      |
 | `meeting-time-banner-timezone`              | Its timezone name                                                                                                                                                                         |
@@ -109,7 +109,7 @@ own namespace; the two never share a value.
 | `meeting-occurrence-edit-button`            | Organizer's "Edit this occurrence" control                                                                                                                                                |
 | `meeting-occurrence-cancel-button`          | Organizer's "Cancel this occurrence" control                                                                                                                                              |
 
-`meeting-section-placeholder-${section}` (`occurrences`, `discover`) marks
+`meeting-section-placeholder-${section}` (`discover`) marks
 the shell's stand-in for a section not built yet (E1-01). Each is temporary: the PR that builds the
 section deletes its placeholder and its row here. A test must never assert on one.
 
@@ -232,11 +232,16 @@ data-state: idle | loading | ready | error
 
 ## Occurrences
 
-| `data-testid`                     | Element                           |
-| --------------------------------- | --------------------------------- |
-| `occurrence-strip-section`        | The occurrence strip              |
-| `occurrence-chip-${occurrenceId}` | One occurrence chip               |
-| `occurrence-browse-dialog`        | The browse-all-occurrences dialog |
+V1's occurrence navigation, restyled (V1 parity): the occurrence strip, its chips and the
+browse-all dialog were withdrawn in the scope reset. V1 keeps its own `occurrence-navigation`,
+`occurrence-nav-prev`, `occurrence-nav-next` and `occurrence-counter`.
+
+| `data-testid`                    | Element                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `occurrence-nav-section`         | The Previous / Next navigation of a recurring meeting's occurrences                        |
+| `occurrence-nav-section-prev`    | Previous: a link, or with nowhere to go a greyed-out `aria-disabled` label; `data-enabled` |
+| `occurrence-nav-section-next`    | Next, the same                                                                             |
+| `occurrence-nav-section-counter` | "N of M": the page's occurrence and the series' length                                     |
 
 ## Agenda and materials
 
