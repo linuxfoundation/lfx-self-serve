@@ -18,8 +18,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // path alias isn't wired here, so runtime shared subpaths and the constructed collaborators must be
 // mocked (mirrors session-store.service.spec.ts / meeting.helper.spec.ts). Only the
 // microservice-proxy call path is exercised; the query-service pagination helper runs for real.
-const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc, getUserVerifiedEmails } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc, getUserVerifiedEmails, getContactIdForMatching } = vi.hoisted(() => ({
   getUserVerifiedEmails: vi.fn(),
+  getContactIdForMatching: vi.fn(),
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
@@ -77,7 +78,7 @@ vi.mock('./committee.service', () => ({
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
 vi.mock('./user-verified-emails.service', () => ({
   UserVerifiedEmailsService: vi.fn(function () {
-    return { getUserVerifiedEmails };
+    return { getUserVerifiedEmails, getContactIdForMatching };
   }),
 }));
 vi.mock('../utils/auth-helper', () => ({
@@ -638,6 +639,8 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     getUserVerifiedEmails.mockReset();
+    getContactIdForMatching.mockReset();
+    getContactIdForMatching.mockResolvedValue(null);
     getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, contactId: null, incomplete: false });
     service = new MeetingService();
   });
@@ -651,6 +654,38 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
     expect(getUserVerifiedEmails).not.toHaveBeenCalled();
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds the contact id to the single-meeting user lookup so a rewritten email still matches', async () => {
+    getContactIdForMatching.mockResolvedValue('lfOMJfHvkTWsGKfRzu');
+    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-alias', email: 'user+alias@example.com' }]));
+
+    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', 'user@example.com', undefined, 'm2m');
+
+    expect(rows.map((row) => row.uid)).toEqual(['reg-alias']);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual([
+      'email:user@example.com',
+      'case_insensitive_email:user@example.com',
+      'user_id:lfOMJfHvkTWsGKfRzu',
+    ]);
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('matches by contact id alone when the user has no email or username', async () => {
+    getContactIdForMatching.mockResolvedValue('lfOMJfHvkTWsGKfRzu');
+    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-alias' }]));
+
+    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', undefined, undefined);
+
+    expect(rows).toHaveLength(1);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:lfOMJfHvkTWsGKfRzu']);
+  });
+
+  it('returns nothing without querying when there is no email, username or contact id', async () => {
+    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', undefined, undefined);
+
+    expect(rows).toEqual([]);
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 
   it('queries the other verified emails in one call', async () => {

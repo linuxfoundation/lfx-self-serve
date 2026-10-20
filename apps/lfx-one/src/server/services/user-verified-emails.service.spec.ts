@@ -195,4 +195,46 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
 
     await expect(service.getUserVerifiedEmails(buildReq())).resolves.toMatchObject({ contactId: null, incomplete: true });
   });
+
+  describe('getContactIdForMatching', () => {
+    it('shares one /me call across callers on the same request', async () => {
+      const req = buildReq();
+
+      await expect(service.getContactIdForMatching(req)).resolves.toBe(CONTACT_ID);
+      await expect(new UserVerifiedEmailsService().getContactIdForMatching(req)).resolves.toBe(CONTACT_ID);
+      await service.getUserVerifiedEmails(req);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('looks up again for a different request', async () => {
+      await service.getContactIdForMatching(buildReq());
+      await service.getContactIdForMatching(buildReq());
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('is null without a gateway token, without calling /me', async () => {
+      await expect(service.getContactIdForMatching(buildReq(false))).resolves.toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('is null while impersonating, so the impersonator id is never used', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      await expect(service.getContactIdForMatching(buildReq())).resolves.toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('is null when /me fails or has no ID, never throwing', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 502 });
+      await expect(service.getContactIdForMatching(buildReq())).resolves.toBeNull();
+
+      fetchMock.mockRejectedValueOnce(new Error('timeout'));
+      await expect(service.getContactIdForMatching(buildReq())).resolves.toBeNull();
+
+      fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+      await expect(service.getContactIdForMatching(buildReq())).resolves.toBeNull();
+    });
+  });
 });

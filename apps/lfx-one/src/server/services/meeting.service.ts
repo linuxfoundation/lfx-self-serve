@@ -1041,8 +1041,8 @@ export class MeetingService {
   }
 
   /**
-   * Fetches registrants for a meeting that match the caller's email or username in a single query.
-   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z]` so the
+   * Fetches registrants for a meeting that match the caller's email, username or v1 contact id in a single query.
+   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z, user_id:C]` so the
    * query service resolves the intersection in one call instead of two sequential lookups.
    */
   public async getMeetingRegistrantsForUser(
@@ -1056,11 +1056,15 @@ export class MeetingService {
     const orClauses: string[] = [];
     if (email) orClauses.push(...this.emailClauses(email.toLowerCase()));
     if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
+    // Sync rewrites registrant emails to the meeting-invite preference but keeps `user_id`.
+    const contactId = await this.userVerifiedEmailsService.getContactIdForMatching(req);
+    if (contactId) orClauses.push(`user_id:${contactId}`);
 
     logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
       meeting_id: meetingUid,
       has_email: !!email,
       has_username: !!username,
+      has_contact_id: !!contactId,
     });
 
     if (orClauses.length === 0) {

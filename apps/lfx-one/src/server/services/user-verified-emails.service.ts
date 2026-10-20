@@ -27,9 +27,20 @@ function dedupeEmails(emails: (string | null | undefined)[]): string[] {
   return [...new Set(normalized)];
 }
 
+// Shared across service instances so one request costs one /me call.
+const contactIdByRequest = new WeakMap<Request, Promise<string | null | undefined>>();
+
 export class UserVerifiedEmailsService {
   private emailVerificationService = new EmailVerificationService();
   private meetingPreferenceService = new MeetingPreferenceService();
+
+  /**
+   * The signed-in user's v1 contact id, memoized per request so list views cost one `/me` call.
+   * Null when anonymous, impersonating, or the lookup fails; callers fall back to email/username.
+   */
+  public async getContactIdForMatching(req: Request): Promise<string | null> {
+    return (await this.getRequestContactId(req)) ?? null;
+  }
 
   /**
    * The signed-in user's verified emails and v1 contact id, or none for an anonymous caller. Never throws.
@@ -47,7 +58,7 @@ export class UserVerifiedEmailsService {
     const [emailData, preference, contactId] = await Promise.all([
       this.emailVerificationService.getUserEmails(req, sub),
       v1Token ? this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : Promise.resolve(undefined),
-      v1Token ? this.getContactId(req, v1Token) : Promise.resolve(undefined),
+      this.getRequestContactId(req),
     ]);
 
     if (!emailData) {
@@ -65,6 +76,20 @@ export class UserVerifiedEmailsService {
       // A missing gateway token or a failed /me is incomplete; a /me with no ID is a real "no contact".
       incomplete: !emailData || (!isImpersonating(req) && contactId === undefined),
     };
+  }
+
+  // Undefined means the lookup failed or was skipped; null means /me answered without an ID.
+  private getRequestContactId(req: Request): Promise<string | null | undefined> {
+    const v1Token = isImpersonating(req) ? undefined : req.apiGatewayToken;
+    if (!v1Token) {
+      return Promise.resolve(undefined);
+    }
+    let pending = contactIdByRequest.get(req);
+    if (!pending) {
+      pending = this.getContactId(req, v1Token);
+      contactIdByRequest.set(req, pending);
+    }
+    return pending;
   }
 
   // Registrant rows keep the user's contact id as `user_id` even when sync rewrites the email.
