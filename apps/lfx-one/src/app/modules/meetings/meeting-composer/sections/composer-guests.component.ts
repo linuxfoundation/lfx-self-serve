@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
+import { COMPOSER_ATTENDEE_LOCK, COMPOSER_SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
 import {
   avatarInitials,
@@ -82,7 +82,7 @@ export class ComposerGuestsComponent {
     return [g['email'], g['org_name']].filter(Boolean).join(' · ');
   });
 
-  protected readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
+  protected readonly showMeetingAttendeesFeature = COMPOSER_SHOW_MEETING_ATTENDEES_FEATURE;
 
   private readonly meetingTypeValue: Signal<string | null> = controlValueSignal<string>(this.form, 'meeting_type');
   private readonly restrictedValue: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');

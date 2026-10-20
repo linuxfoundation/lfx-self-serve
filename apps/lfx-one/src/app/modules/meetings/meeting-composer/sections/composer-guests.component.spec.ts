@@ -76,6 +76,16 @@ describe('ComposerGuestsComponent', () => {
     await fixture.whenStable();
   });
 
+  describe('show attendees toggle copy', () => {
+    it('promises only the LFX guest list, never calendar invites', () => {
+      const feature = component['showMeetingAttendeesFeature'];
+
+      expect(feature.key).toBe('show_meeting_attendees');
+      expect(feature.description).toContain('in LFX');
+      expect(feature.description).not.toMatch(/calendar|invite\b/i);
+    });
+  });
+
   /**
    * Covers guest reconciliation against group membership. The committee manager emits on mount and on
    * every fetch, and the consumer must not read an emission it can't trust as "nobody is in a group" —

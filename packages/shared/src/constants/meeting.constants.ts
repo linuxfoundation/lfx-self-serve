@@ -787,15 +787,27 @@ export const RESTRICTED_MEETING_FEATURE = {
  * Show meeting attendees feature configuration
  * @description Feature toggle config for sharing the guest list with guests in LFX: the guest list
  * on the meeting card and meeting page, which the BFF withholds from non-organizers when this is off.
- * Calendar invites never list other guests, whatever this is set to.
+ * Calendar invites never list other guests, whatever this is set to. The pre-v2 screens still render
+ * this description, which predates that; the meeting v2 composer uses
+ * {@link COMPOSER_SHOW_MEETING_ATTENDEES_FEATURE} instead, so the correction ships behind its flag.
  */
 export const SHOW_MEETING_ATTENDEES_FEATURE = {
   key: 'show_meeting_attendees',
   icon: 'fa-light fa-users',
   title: 'Show attendees to guests',
-  description: 'Let guests see who else is invited, and who has accepted, on the meeting in LFX',
+  description: "Let guests see who else is invited, and who has accepted, in LFX and in their calendar app's invite",
   recommended: false,
   color: lfxColors.blue[500],
+};
+
+/**
+ * Show meeting attendees toggle for the meeting v2 composer
+ * @description {@link SHOW_MEETING_ATTENDEES_FEATURE} with a description that promises only what the
+ * setting does — the guest list in LFX, never calendar invites.
+ */
+export const COMPOSER_SHOW_MEETING_ATTENDEES_FEATURE = {
+  ...SHOW_MEETING_ATTENDEES_FEATURE,
+  description: 'Let guests see who else is invited, and who has accepted, on the meeting in LFX',
 };
 
 /** Note shown when the attendees toggle is locked off for board or restricted meetings. */
