@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { MEETING_GROUP_MEETINGS_LIMIT } from '@lfx-one/shared/constants';
 import { MeetingGroupMeetingsState, PublicGroupSummary } from '@lfx-one/shared/interfaces';
@@ -32,7 +33,8 @@ export class MeetingGroupMeetingsService {
   private readonly meetingService = inject(MeetingService);
 
   /**
-   * Emits `loading`, then `ready`, `none` or `error`.
+   * Emits `loading`, then `ready`, `none` or `error` (a transient failure; a project the directory
+   * does not publish is `none`).
    * @param projectIdentifier The meeting's project, by uid or slug
    * @param committeeUids The meeting's committees, in the order the page lists them
    * @param currentMeetingUid The current meeting's series uid (`getMeetingSeriesUid`)
@@ -62,8 +64,13 @@ export class MeetingGroupMeetingsService {
           })
         );
       }),
-      // `MeetingService.getPublicProjectMeetings` logs its own failure; `GroupService` does not.
       catchError((error: unknown) => {
+        // The directory answers 404 for a project that is unknown or not publicly discoverable: no
+        // group of it is addressable, now or on a retry, so the section hides rather than erroring.
+        if (error instanceof HttpErrorResponse && error.status === 404) {
+          return of(this.state('none'));
+        }
+        // `MeetingService.getPublicProjectMeetings` logs its own failure; `GroupService` does not.
         console.error(`Failed to load the other meetings of the group for project ${projectIdentifier}:`, error);
         return of(this.state('error'));
       }),

@@ -126,18 +126,25 @@ describe('MeetingGroupMeetingsService', () => {
     ]);
   });
 
-  it('only calls the anonymous public routes, which serve PUBLIC meetings only', () => {
-    // Private meetings never reach this service: the feed filters them server-side for every caller
-    // (asserted in project.controller.spec.ts). This pins that the service reads that feed and no
-    // authenticated route that could return them.
+  it('only reads the public routes, which serve PUBLIC meetings only', () => {
+    // PRIVATE meetings never reach this service: the feed filters them server-side whatever the
+    // session (asserted in project.controller.spec.ts), so a signed-in viewer's cookies do not widen
+    // what it returns. This pins that the service reads that feed and the public directory only.
     fetch([GROUP_UID]);
     const directory = http.expectOne(() => true);
     expect(directory.request.url.startsWith('/public/api/')).toBe(true);
     directory.flush({ groups: [group(GROUP_UID, 'TOC')], total: 1 });
     const feed = http.expectOne(() => true);
     expect(feed.request.url.startsWith('/public/api/')).toBe(true);
-    expect(feed.request.headers.has('Authorization')).toBe(false);
     feed.flush({ meetings: [], total: 0, project: { uid: 'project-uid', name: 'CNCF' } });
+  });
+
+  it('hides (none) when the directory does not publish the project', () => {
+    fetch([GROUP_UID]);
+    http.expectOne(`/public/api/projects/${PROJECT}/groups`).flush('not found', { status: 404, statusText: 'Not Found' });
+
+    http.expectNone((r) => r.url.endsWith('/meetings'));
+    expect(states.at(-1)).toEqual({ status: 'none', group: null, meetings: [], hasMore: false });
   });
 
   it('is an error when the directory cannot be read', () => {

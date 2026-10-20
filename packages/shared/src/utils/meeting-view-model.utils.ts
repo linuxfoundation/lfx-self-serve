@@ -329,7 +329,7 @@ function nextOpenOccurrence(meeting: PublicCalendarMeeting, now: Date): Pick<Mee
 
   let next: Pick<MeetingGroupMeetingItem, 'startTime' | 'durationMinutes'> | null = null;
   for (const occurrence of occurrences) {
-    // Indexed occurrences omit `duration` when there is no per-occurrence override.
+    // Defensive: the feed resolves `duration` server-side, but the calendar mapper keeps the same fallback.
     const duration = occurrence.duration ?? meeting.duration;
     if (isMeetingOccurrenceCancelled(occurrence, meeting.cancelled_occurrences) || isOccurrencePast(occurrence.start_time, duration, now)) {
       continue;

@@ -17,6 +17,7 @@ import type {
   MeetingPrivacyState,
   MeetingSectionVisibility,
   MeetingTimeState,
+  MeetingOccurrenceSummary,
   MeetingViewerRole,
   PublicCalendarMeeting,
 } from '../interfaces';
@@ -831,6 +832,10 @@ describe('listOtherGroupMeetings (E8-02)', () => {
     };
   }
 
+  function occurrence(over: Partial<MeetingOccurrenceSummary> = {}): MeetingOccurrenceSummary {
+    return { occurrence_id: '1792681200', start_time: '2026-10-23T13:00:00Z', duration: 60, status: 'available', ...over };
+  }
+
   it('lists one-off meetings that have not ended, soonest first', () => {
     const items = listOtherGroupMeetings(
       [feedRow({ id: 'later', start_time: '2026-10-30T15:00:00Z' }), feedRow({ id: 'sooner', start_time: '2026-10-21T15:00:00Z', timezone: 'Europe/Lisbon' })],
@@ -870,11 +875,11 @@ describe('listOtherGroupMeetings (E8-02)', () => {
         feedRow({
           id: 'weekly',
           occurrences: [
-            { occurrence_id: '1792407600', start_time: '2026-10-13T15:00:00Z', duration: 60, status: 'available' },
-            { occurrence_id: '1793012400', start_time: '2026-10-27T15:00:00Z', duration: 45, status: 'available' },
-            { occurrence_id: '1792731600', start_time: '2026-10-24T03:00:00Z', duration: 60, status: 'available' },
-            { occurrence_id: '1792666800', start_time: '2026-10-23T09:00:00Z', duration: 60, status: 'cancel' },
-          ] as PublicCalendarMeeting['occurrences'],
+            occurrence({ occurrence_id: '1792407600', start_time: '2026-10-13T15:00:00Z' }),
+            occurrence({ occurrence_id: '1793012400', start_time: '2026-10-27T15:00:00Z', duration: 45 }),
+            occurrence({ occurrence_id: '1792731600', start_time: '2026-10-24T03:00:00Z' }),
+            occurrence({ occurrence_id: '1792666800', start_time: '2026-10-23T09:00:00Z', status: 'cancel' }),
+          ],
           cancelled_occurrences: ['1792731600'],
         }),
         feedRow({ id: 'weekly', start_time: '2026-10-21T15:00:00Z' }),
@@ -889,16 +894,11 @@ describe('listOtherGroupMeetings (E8-02)', () => {
   });
 
   it("falls back to the series' duration for an occurrence without its own", () => {
-    const items = listOtherGroupMeetings(
-      [
-        feedRow({
-          duration: 90,
-          occurrences: [{ occurrence_id: '1792681200', start_time: '2026-10-23T13:00:00Z', status: 'available' }] as PublicCalendarMeeting['occurrences'],
-        }),
-      ],
-      'current',
-      now
-    );
+    // Runtime data that breaks the interface: indexed occurrences may omit `duration`.
+    const withoutDuration = occurrence();
+    // @ts-expect-error -- `duration` is required on the type
+    delete withoutDuration.duration;
+    const items = listOtherGroupMeetings([feedRow({ duration: 90, occurrences: [withoutDuration] })], 'current', now);
 
     expect(items[0].durationMinutes).toBe(90);
   });
@@ -908,9 +908,9 @@ describe('listOtherGroupMeetings (E8-02)', () => {
       [
         feedRow({
           occurrences: [
-            { occurrence_id: '1792407600', start_time: '2026-10-13T15:00:00Z', duration: 60, status: 'available' },
-            { occurrence_id: '1793012400', start_time: '2026-10-27T15:00:00Z', duration: 60, status: 'available' },
-          ] as PublicCalendarMeeting['occurrences'],
+            occurrence({ occurrence_id: '1792407600', start_time: '2026-10-13T15:00:00Z' }),
+            occurrence({ occurrence_id: '1793012400', start_time: '2026-10-27T15:00:00Z' }),
+          ],
           cancelled_occurrences: ['1793012400'],
         }),
       ],
