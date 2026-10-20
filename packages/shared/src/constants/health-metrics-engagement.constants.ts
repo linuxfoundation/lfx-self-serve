@@ -195,9 +195,17 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED: HealthMetric
   typeCounts: [],
 };
 
-/** Inline sparkline viewBox, in px — a 60px trend cell is the design's column width. */
-export const HEALTH_METRICS_ENGAGEMENT_SPARKLINE_WIDTH_PX = 60;
-export const HEALTH_METRICS_ENGAGEMENT_SPARKLINE_HEIGHT_PX = 18;
+/** The design's `spark2` bar heights, in px: the series minimum sits at the floor, its maximum at floor + range. */
+export const HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX = 3;
+export const HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX = 19;
+
+/**
+ * Tiers drawn as the blue pill in the org table, matched case-insensitively; every other tier is grey.
+ * The blue is the Members tier pill's (`HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS`), duplicated
+ * because the Members constants import this file.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS: readonly string[] = ['platinum', 'premier', 'founding'];
+export const HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS = { top: 'bg-blue-50 text-blue-700', other: 'bg-gray-100 text-gray-600' } as const;
 
 /** Attendance-bar fill per tone — grey at zero, amber below the threshold, blue otherwise. */
 export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetricsEngagementAttendanceTone, string> = {

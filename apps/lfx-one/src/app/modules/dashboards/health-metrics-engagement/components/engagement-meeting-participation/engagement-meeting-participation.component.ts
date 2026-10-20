@@ -103,6 +103,9 @@ export class EngagementMeetingParticipationComponent {
     return this.response().rows.map((row) => ({ row, period: selectHealthMetricsEngagementParticipationPeriod(row, range) }));
   });
 
+  /** Meetings mode's bar scale: the busiest type row, not the roll-up, so one row always fills the track. */
+  protected readonly maxTypeMeetings = computed(() => Math.max(0, ...this.rowViews().map((view) => view.period?.meetingsHeld ?? 0)));
+
   protected readonly attendanceMode = computed(() => this.mode() === 'attendance');
   protected readonly heroValue = computed(() => {
     const period = this.totalPeriod();

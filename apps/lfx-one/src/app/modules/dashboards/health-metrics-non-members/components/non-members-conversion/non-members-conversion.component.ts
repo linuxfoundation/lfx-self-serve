@@ -37,8 +37,6 @@ export class NonMembersConversionComponent {
   private readonly chrome = inject(HealthMetricsChromeService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** High-fit organizations in the period, for the sub-nav badge; `null` while reading, after a failed read, or when not measured. */
-  public readonly countChange = output<number | null>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -70,7 +68,6 @@ export class NonMembersConversionComponent {
           foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          this.countChange.emit(null);
           this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight read.
@@ -81,9 +78,8 @@ export class NonMembersConversionComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
             }),
-            tap((response) => {
+            tap(() => {
               this.loading.set(!foundationSeen);
-              this.countChange.emit(response.measured ? response.highFitCount : null);
               // Held until a foundation is seen, so an unread section cannot release the shell's deep link.
               if (foundationSeen) this.settled.emit();
             })

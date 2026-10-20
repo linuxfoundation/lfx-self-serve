@@ -45,6 +45,7 @@ export interface HealthMetricsEngagementSubNavItem extends HealthMetricsL2SubNav
 export interface HealthMetricsEngagementSubNavCounts {
   groups: number | null;
   dormantGroups: number;
+  lowAttendanceGroups: number;
   orgs: number | null;
   lapsedOrgs: number;
   reps: number | null;
@@ -80,6 +81,13 @@ export interface HealthMetricsEngagementGroupRow {
   periods: HealthMetricsEngagementGroupPeriod[];
 }
 
+/** One bar of the group trend sparkline; `heightPx` is `null` for an unrated period's empty slot. */
+export interface HealthMetricsEngagementSparkBar {
+  heightPx: number | null;
+  /** The current period, drawn in the strong colour. */
+  last: boolean;
+}
+
 /** One table row with its selected-period numbers and sparkline series already resolved. */
 export interface HealthMetricsEngagementGroupRowView {
   row: HealthMetricsEngagementGroupRow;
@@ -94,10 +102,12 @@ export interface HealthMetricsEngagementGroupRowView {
 export interface HealthMetricsEngagementGroupCounts {
   groups: number;
   dormantGroups: number;
+  /** Not dormant, rated (enough meetings to state a rate) and below the low-attendance threshold. */
+  lowAttendanceGroups: number;
 }
 
 /** One group type's own counts, independent of whichever chip is selected. */
-export interface HealthMetricsEngagementGroupTypeCount extends HealthMetricsEngagementGroupCounts {
+export interface HealthMetricsEngagementGroupTypeCount extends Omit<HealthMetricsEngagementGroupCounts, 'lowAttendanceGroups'> {
   groupType: HealthMetricsEngagementGroupTypeFilter;
 }
 
@@ -109,8 +119,8 @@ export interface HealthMetricsEngagementGroupAttendance {
   /** `null` when the all-projects scope has no rows at all — distinct from a real zero. */
   counts: HealthMetricsEngagementGroupCounts | null;
   /**
-   * One entry per group type, `all` included; empty whenever `counts` is `null`. The chips show labels only, so
-   * nothing renders these yet; they are kept for the group count to follow the selected chip.
+   * One entry per group type, `all` included; empty whenever `counts` is `null`. The chips show labels only and the
+   * caption reads `totalRecords`, so nothing renders these yet.
    */
   typeCounts: HealthMetricsEngagementGroupTypeCount[];
 }
@@ -233,6 +243,8 @@ export interface HealthMetricsEngagementOrgRowView {
   avgRepsLabel: string;
   /** `12 / 27` — attended over total for the selected period; "—" when either side is unmeasured. */
   attendedLabel: string;
+  /** Blue for the top tiers, grey for every other tier. */
+  tierPillClass: string;
 }
 
 /** Sub-nav badge inputs for `#orgs`. Both counts are period-agnostic, denormalized onto every row. */
@@ -275,9 +287,6 @@ export interface HealthMetricsEngagementNonMemberRow {
   accountName: string;
   /** The view's own `MEMBERSHIP_STATUS`, rendered as-is — it reads `Non-member` on real rows. */
   membershipStatus: string;
-  /** All-time ISO dates, not per period; `null` renders as an em dash. */
-  firstSeenDate: string | null;
-  lastAttendedDate: string | null;
   periods: HealthMetricsEngagementNonMemberPeriod[];
 }
 
@@ -285,9 +294,6 @@ export interface HealthMetricsEngagementNonMemberRow {
 export interface HealthMetricsEngagementNonMemberRowView {
   row: HealthMetricsEngagementNonMemberRow;
   period: HealthMetricsEngagementNonMemberPeriod | null;
-  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
-  firstSeenLabel: string;
-  lastAttendedLabel: string;
 }
 
 /** Sub-nav badge input for `#nonmem`. Period-agnostic, denormalized onto every row. */
@@ -338,17 +344,12 @@ export interface HealthMetricsEngagementRepRow {
   personName: string;
   /** True when the view could not resolve the person, so the name is not a trustworthy identity. */
   identityUnresolved: boolean;
-  personRole: string | null;
-  jobTitle: string | null;
-  /** The row's organization, rendered in its own column; not a second identity. */
+  /** The row's organization, shown under the name with its tier; not a second identity. */
   accountName: string;
   membershipTier: string | null;
   committeeName: string;
   /** All-time, not per period: ISO date this person last attended this group under this project. */
   lastAttendedDate: string | null;
-  daysSinceLastAttended: number | null;
-  /** The view's all-time `IS_LAPSED_180D`, distinct from the per-period `lapsed` flag. */
-  lapsed180d: boolean;
   periods: HealthMetricsEngagementRepPeriod[];
 }
 
@@ -360,13 +361,9 @@ export interface HealthMetricsEngagementRepRowView {
   attendedLabel: string;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastAttendedLabel: string;
-  /** `N days ago`, or `null` when the view has no day count. */
-  daysAgoLabel: string | null;
   /** Name, or the unresolved-identity placeholder. */
   displayName: string;
-  /** `role · title`, or `null` when neither is known. */
-  roleLabel: string | null;
-  /** `org · tier`, or just the org when the tier is unknown. */
+  /** `org · tier`, just the org when the tier is unknown, or "—" when neither is. */
   orgLabel: string;
 }
 

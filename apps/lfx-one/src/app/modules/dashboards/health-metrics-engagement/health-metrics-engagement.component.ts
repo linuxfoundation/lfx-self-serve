@@ -60,6 +60,7 @@ export class HealthMetricsEngagementComponent {
     buildHealthMetricsEngagementSubNavItems({
       groups: this.groupCounts()?.groups ?? null,
       dormantGroups: this.groupCounts()?.dormantGroups ?? 0,
+      lowAttendanceGroups: this.groupCounts()?.lowAttendanceGroups ?? 0,
       orgs: this.orgCounts()?.orgs ?? null,
       lapsedOrgs: this.orgCounts()?.lapsedOrgs ?? 0,
       reps: this.repCounts()?.reps ?? null,

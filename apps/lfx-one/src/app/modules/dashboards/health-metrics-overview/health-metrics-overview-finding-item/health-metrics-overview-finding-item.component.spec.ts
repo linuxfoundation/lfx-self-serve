@@ -47,10 +47,12 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(paragraph.querySelector('.font-bold')).toBeNull();
   });
 
-  it('shows the keyLabel only when the finding has no visual', async () => {
+  it('shows the keyLabel only when the finding has no visual, capitalizing just its first letter', async () => {
     await render();
 
-    expect(fixture.nativeElement.textContent).toContain('below 50%');
+    const keyLabel: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-key-label"]');
+    expect(keyLabel.textContent?.trim()).toBe('below 50%');
+    expect(keyLabel.classList).toContain('first-letter:uppercase');
   });
 
   it('renders the secondary key line under the keyLabel only when the finding carries one', async () => {
@@ -196,6 +198,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
 
     const chips = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-finding-tags"] span'));
     expect(chips.map((chip) => chip.textContent?.trim())).toEqual(['Cloud', 'Fintech']);
+    expect(chips.every((chip) => chip.classList.contains('rounded-full'))).toBe(true);
   });
 
   it('renders a link testid unique to the finding by sortRank', async () => {

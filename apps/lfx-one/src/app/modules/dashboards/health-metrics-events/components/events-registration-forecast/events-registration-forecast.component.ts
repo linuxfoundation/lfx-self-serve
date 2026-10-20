@@ -12,8 +12,10 @@ import { TableComponent } from '@components/table/table.component';
 import {
   getYearForRange,
   HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED,
+  HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE,
   HEALTH_METRICS_EVENTS_FORECAST_HIDDEN_LEGEND_LABELS,
   HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED,
+  HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
   HEALTH_METRICS_EVENTS_QUERY_PARAMS,
   lfxColors,
 } from '@lfx-one/shared/constants';
@@ -36,6 +38,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -47,7 +50,7 @@ import type {
   HealthMetricsEventsForecastCurveSeries,
   HealthMetricsEventsForecastEvent,
   HealthMetricsEventsForecastQuery,
-  HealthMetricsEventsSectionKey,
+  HealthMetricsEventsForecastVerdictToneStyle,
 } from '@lfx-one/shared/interfaces';
 
 /**
@@ -56,7 +59,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-registration-forecast',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
   templateUrl: './events-registration-forecast.component.html',
 })
 export class EventsRegistrationForecastComponent {
@@ -73,10 +76,10 @@ export class EventsRegistrationForecastComponent {
   public readonly settled = output<void>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
-  /** The closed-period cross-link; the L2 shell owns scrolling, so a repeat click still lands. */
-  public readonly sectionPicked = output<HealthMetricsEventsSectionKey>();
 
   private readonly initialParams = this.route.snapshot.queryParamMap;
+
+  protected readonly footnote = HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE;
 
   protected readonly loading = signal<boolean>(true);
   protected readonly loadFailed = signal<boolean>(false);
@@ -97,12 +100,11 @@ export class EventsRegistrationForecastComponent {
   protected readonly forecastable = computed(() => filterHealthMetricsEventsForecastable(this.response().events));
   protected readonly eventOptions = computed<FilterPillOption[]>(() =>
     this.forecastable().map((event) => {
-      // The date is in the accessible name too, so same-named editions stay distinct to a screen reader.
-      const dateLabel = event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—';
+      // The pill shows the name only; the date stays in its tooltip and accessible name, so same-named editions stay distinct.
       return {
         id: event.eventId,
-        label: `${truncateHealthMetricsEventsPillName(event.eventName)} · ${dateLabel}`,
-        fullLabel: `${event.eventName} · ${dateLabel}`,
+        label: truncateHealthMetricsEventsPillName(event.eventName),
+        fullLabel: `${event.eventName} · ${this.formatEventDate(event)}`,
       };
     })
   );
@@ -110,6 +112,10 @@ export class EventsRegistrationForecastComponent {
   protected readonly selectedEvent = computed<HealthMetricsEventsForecastEvent | null>(() => {
     const events = this.forecastable();
     return events.find((event) => event.eventId === this.pickedEventId()) ?? events[0] ?? null;
+  });
+  protected readonly selectedDateLabel = computed(() => {
+    const event = this.selectedEvent();
+    return event ? this.formatEventDate(event) : '';
   });
 
   protected readonly curveQuery: Signal<HealthMetricsEventsForecastCurveQuery> = computed(() => ({
@@ -169,18 +175,10 @@ export class EventsRegistrationForecastComponent {
   protected readonly ratioLabel = computed(() => (this.verdict()?.ratio ?? 0).toFixed(1));
   /** A mis-entered goal can sit far above the forecast or far below it; the copy names which. */
   protected readonly goalSuspectAbove = computed(() => (this.verdict()?.ratio ?? 0) >= 1);
-  protected readonly verdictClass = computed(() => {
-    switch (this.verdict()?.tone) {
-      case 'ok':
-        return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-      case 'watch':
-        return 'border-amber-200 bg-amber-50 text-amber-800';
-      case 'act':
-        return 'border-red-200 bg-red-50 text-red-800';
-      default:
-        return 'border-gray-200 bg-gray-50 text-gray-700';
-    }
-  });
+  protected readonly verdictTone = computed<HealthMetricsEventsForecastVerdictToneStyle>(
+    () => HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES[this.verdict()?.tone ?? 'none']
+  );
+  protected readonly verdictBannerClass = computed(() => `${this.verdictTone().accentClass} ${this.verdictTone().tintClass}`.trim());
 
   protected readonly rowViews = computed(() => buildHealthMetricsEventsForecastRowViews(this.response().events));
 
@@ -241,10 +239,6 @@ export class EventsRegistrationForecastComponent {
 
   protected onFormatChange(format: string): void {
     this.format.set(format);
-  }
-
-  protected onViewPastEvents(): void {
-    this.sectionPicked.emit('past');
   }
 
   private initResponse(): Signal<HealthMetricsEventsForecast> {
@@ -388,6 +382,10 @@ export class EventsRegistrationForecastComponent {
         },
       ],
     };
+  }
+
+  private formatEventDate(event: HealthMetricsEventsForecastEvent): string {
+    return event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—';
   }
 
   private syncUrl(eventId: string | null): void {

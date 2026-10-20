@@ -114,12 +114,12 @@ export class EngagementGroupAttendanceComponent {
    * own counts, so this is not the same signal as `totalRecords() === 0`. */
   protected readonly counts = computed(() => this.response().counts);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
-  // Scope-wide, like the sub-nav badge: the selected chip narrows the table, not this count.
+  // Follows the selected chip, as in the design; the sub-nav badge stays scope-wide.
   protected readonly countLabel = computed(() => {
-    const counts = this.counts();
-    if (counts === null) return '—';
+    if (this.counts() === null) return '—';
 
-    return `${counts.groups.toLocaleString()} ${counts.groups === 1 ? 'group' : 'groups'}`;
+    const total = this.totalRecords();
+    return `${total.toLocaleString('en-US')} ${total === 1 ? 'group' : 'groups'}`;
   });
 
   public constructor() {

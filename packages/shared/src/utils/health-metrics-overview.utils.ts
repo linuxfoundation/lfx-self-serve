@@ -14,7 +14,6 @@ import {
   HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS,
 } from '../constants/health-metrics-overview.constants';
 
-import { formatIsoDateLabel } from './date-time.utils';
 import { formatCurrency } from './number.utils';
 
 import type {
@@ -130,11 +129,10 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
     }
     const tile: HealthMetricsOverviewTileViewModel = {
       area: state.area,
-      name: areaMeta.name,
+      name: areaMeta.tileName,
       icon: areaMeta.icon,
       statValue: state.statValue,
       statLabel: state.statLabel,
-      statDetail: state.statDetail,
       classification: state.classification,
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
@@ -170,15 +168,6 @@ export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFindin
 export function resolveHealthMetricsOverviewKpiClassification(status: string | null | undefined): HealthMetricsOverviewClassification {
   const normalized = status?.trim().toLowerCase();
   return normalized && Object.hasOwn(KPI_STATUS_TO_CLASSIFICATION, normalized) ? KPI_STATUS_TO_CLASSIFICATION[normalized] : 'none';
-}
-
-/**
- * Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never
- * drifts between the two components. An empty `evaluatedAt` means the area was never evaluated
- * (e.g. a neutral placeholder tile) — returns '' rather than a dangling "as of " in that case.
- */
-export function formatHealthMetricsOverviewAsOfLabel(evaluatedAt: string): string {
-  return evaluatedAt ? `as of ${formatIsoDateLabel(evaluatedAt)}` : '';
 }
 
 /** Resolves a findings-list group's classification key to its tone/icon, for the group heading. */

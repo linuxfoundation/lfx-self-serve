@@ -11,10 +11,11 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_L2_RANGES,
-  HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE,
+  HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS,
+  HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_SEARCH_DEBOUNCE_MS,
   HEALTH_METRICS_NON_MEMBERS_PEOPLE_UNMEASURED,
   HEALTH_METRICS_NON_MEMBERS_QUERY_PARAMS,
@@ -24,9 +25,11 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, debounceTime, distinctUntilChanged, map, merge, of, skip, Subject, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
+  HealthMetricsFootnotePart,
   HealthMetricsL2Range,
   HealthMetricsNonMembersPeople,
   HealthMetricsNonMembersPeopleQuery,
@@ -39,7 +42,7 @@ import type {
  */
 @Component({
   selector: 'lfx-non-members-people',
-  imports: [EmptyStateComponent, InputTextComponent, TableComponent],
+  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, InputTextComponent, TableComponent],
   templateUrl: './non-members-people.component.html',
 })
 export class NonMembersPeopleComponent {
@@ -64,7 +67,8 @@ export class NonMembersPeopleComponent {
   });
 
   protected readonly pageSizeOptions: number[] = [...HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE_OPTIONS];
-  protected readonly provisionalNote = HEALTH_METRICS_NON_MEMBERS_ORGS_PROVISIONAL_NOTE;
+  protected readonly footnote: readonly HealthMetricsFootnotePart[] = [{ text: HEALTH_METRICS_NON_MEMBERS_PEOPLE_PROVISIONAL_NOTE }];
+  protected readonly allTimeNote = HEALTH_METRICS_NON_MEMBERS_ALL_TIME_NOTE;
   protected readonly maxSearchLength = HEALTH_METRICS_NON_MEMBERS_PEOPLE_MAX_SEARCH_LENGTH;
   protected readonly size = signal<number>(HEALTH_METRICS_NON_MEMBERS_PEOPLE_PAGE_SIZE);
   protected readonly loading = signal<boolean>(true);

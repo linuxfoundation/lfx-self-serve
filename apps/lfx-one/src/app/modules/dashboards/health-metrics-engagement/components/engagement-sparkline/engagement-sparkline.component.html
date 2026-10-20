@@ -1,16 +1,23 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (hasLine()) {
-  <svg
-    [attr.width]="width"
-    [attr.height]="height"
-    [attr.viewBox]="'0 0 ' + width + ' ' + height"
-    role="img"
-    [attr.aria-label]="ariaLabel()"
-    data-testid="engagement-sparkline">
-    <path [attr.d]="path()" fill="none" class="stroke-blue-500" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-  </svg>
+<!-- The design's `spark2`: 6px bars, 2px apart in a 22px area, in exact px for the 14px root. An unrated
+     period keeps its slot with no bar, so a gap stays a gap in time. -->
+@if (bars().length) {
+  <div class="flex h-[22px] items-end justify-end gap-[2px]" role="img" [attr.aria-label]="ariaLabel()" data-testid="engagement-sparkline">
+    @for (bar of bars(); track $index) {
+      @if (bar.heightPx === null) {
+        <span class="block w-[6px] shrink-0" data-testid="engagement-sparkline-gap"></span>
+      } @else {
+        <span
+          class="block w-[6px] shrink-0 rounded-[1px]"
+          [class.bg-blue-500]="bar.last"
+          [class.bg-blue-200]="!bar.last"
+          [style.height.px]="bar.heightPx"
+          data-testid="engagement-sparkline-bar"></span>
+      }
+    }
+  </div>
 } @else {
-  <span class="text-[13px] text-gray-300" aria-hidden="true" data-testid="engagement-sparkline-empty">—</span>
+  <span class="block text-right text-[11.5px] text-gray-400" aria-hidden="true" data-testid="engagement-sparkline-empty">—</span>
 }

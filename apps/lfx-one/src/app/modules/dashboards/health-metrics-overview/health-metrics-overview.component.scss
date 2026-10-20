@@ -14,7 +14,7 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
 
   > * {
-    border-left: 1px solid theme('colors.gray.100');
+    border-left: 1px solid theme('colors.gray.200');
 
     &:first-child {
       border-left: 0;
@@ -30,7 +30,7 @@
       }
 
       &:nth-child(n + 4) {
-        border-top: 1px solid theme('colors.gray.100');
+        border-top: 1px solid theme('colors.gray.200');
       }
     }
   }
@@ -40,7 +40,7 @@
 
     > * {
       &:nth-child(3n + 1) {
-        border-left: 1px solid theme('colors.gray.100');
+        border-left: 1px solid theme('colors.gray.200');
       }
 
       &:nth-child(2n + 1) {
@@ -48,7 +48,7 @@
       }
 
       &:nth-child(n + 3) {
-        border-top: 1px solid theme('colors.gray.100');
+        border-top: 1px solid theme('colors.gray.200');
       }
     }
   }

@@ -99,16 +99,6 @@
       </div>
     }
 
-    <div class="flex justify-end">
-      <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-board-count">
-        @if (loading()) {
-          &mdash;
-        } @else {
-          {{ countLabel() }}
-        }
-      </span>
-    </div>
-
     <lfx-table
       [rowHover]="false"
       [value]="rowViews()"

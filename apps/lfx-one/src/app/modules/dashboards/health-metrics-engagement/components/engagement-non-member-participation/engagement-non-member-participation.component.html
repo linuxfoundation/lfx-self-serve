@@ -47,8 +47,6 @@
           <th scope="col"><span class="text-xs font-medium text-gray-500">Organization</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Meetings attended</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">People</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">First seen</span></th>
-          <th scope="col"><span class="text-xs font-medium text-gray-500">Last attended</span></th>
           <th scope="col"><span class="text-xs font-medium text-gray-500">Membership</span></th>
         </tr>
       </ng-template>
@@ -67,14 +65,12 @@
             <span class="text-sm tabular-nums text-gray-800">{{ period?.distinctPeople ?? '—' }}</span>
           </td>
           <td>
-            <span class="text-sm text-gray-800">{{ view.firstSeenLabel }}</span>
-          </td>
-          <td>
-            <span class="text-sm text-gray-800">{{ view.lastAttendedLabel }}</span>
-          </td>
-          <td>
-            <!-- The view's own status string, rendered as-is rather than re-derived client-side. -->
-            <span class="text-sm text-gray-800">{{ row.membershipStatus }}</span>
+            <!-- The design's `memStat`, 11.5px exact; the status string is the view's own, rendered as-is. -->
+            <span
+              class="text-[11.5px] text-gray-400 lg:whitespace-nowrap"
+              [attr.data-testid]="'engagement-non-member-participation-row-' + row.accountId + '-status'"
+              ><span aria-hidden="true">○ </span>{{ row.membershipStatus }}</span
+            >
           </td>
         </tr>
       </ng-template>

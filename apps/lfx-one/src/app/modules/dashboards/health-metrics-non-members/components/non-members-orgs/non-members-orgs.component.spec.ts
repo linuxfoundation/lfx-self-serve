@@ -108,12 +108,11 @@ describe('NonMembersOrgsComponent', () => {
     expect(counts).toEqual([null, 412]);
   });
 
-  it('renders an organization row with its active channels and counts', async () => {
+  it('renders an organization row with its counts and no channel chips', async () => {
     await render();
     const cell = (key: string) => text(`non-members-orgs-row-${ACCOUNT_ID}-${key}`);
 
-    const chips = [...(query(`non-members-orgs-row-${ACCOUNT_ID}-channels`)?.children ?? [])].map((chip) => chip.textContent?.trim());
-    expect(chips).toEqual(['Attends meetings', 'Contributes code']);
+    expect(query(`non-members-orgs-row-${ACCOUNT_ID}-channels`)).toBeNull();
     expect(cell('meetings')).toBe('42');
     expect(cell('people')).toBe('9');
     expect(cell('contributions')).toBe('1,840');
@@ -130,20 +129,54 @@ describe('NonMembersOrgsComponent', () => {
     expect(query(`non-members-orgs-row-${ACCOUNT_ID}-fit`)?.querySelector('.rounded-full')).toBeNull();
   });
 
-  it('caps the search box at the length the read honours and marks Last engaged as all time', async () => {
+  it('caps the search box at the length the read honours and keeps the all-time caveat out of the header', async () => {
     await render();
     const headers = [...(fixture.nativeElement as HTMLElement).querySelectorAll('th')].map((th) => th.textContent?.trim());
+    const input = fixture.nativeElement.querySelector('#non-members-orgs-search') as HTMLInputElement;
 
-    expect((fixture.nativeElement.querySelector('#non-members-orgs-search') as HTMLInputElement).maxLength).toBe(100);
-    expect(headers).toContain('Last engaged (all time)');
-    expect(headers.at(-1)).toBe('Fit');
+    expect(input.maxLength).toBe(100);
+    expect(input.placeholder).toBe('Search organization…');
+    expect(headers).toEqual(['Organization', 'Membership', 'Meetings attended', 'People', 'Contributions', 'Last engaged', 'Fit']);
   });
 
-  it('renders a contributions-only organization with dashes and only the code chip', async () => {
+  it('carries the design caution note and the all-time caveat in a warning footnote', async () => {
+    await render();
+    const note = query('non-members-orgs-provisional');
+
+    expect(text('non-members-orgs-provisional')).toContain(
+      'Organization matching is under validation — known members have previously appeared in this list. Treat it as provisional until the match is fixed, and never send it to sales unchecked.'
+    );
+    expect(note?.querySelector('[data-testid="health-metrics-footnote-icon"]')?.classList).toContain('fa-triangle-exclamation');
+    expect(text('non-members-orgs-all-time')).toBe('Last engaged / Last attended are all-time, not limited to the selected period.');
+  });
+
+  it('flags fewer than five active organizations as too few to rank, between the count line and the table', async () => {
+    await render(response({ totalRecords: 4, scopeTotal: 4 }));
+    const chip = query('non-members-orgs-low-confidence');
+
+    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 4 active organizations — too early to rank by fit.');
+    expect(chip?.classList).toContain('bg-amber-50');
+    expect(chip?.querySelector('[aria-hidden="true"]')?.textContent).toBe('◐');
+    expect(query('non-members-orgs-count')?.compareDocumentPosition(chip as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(chip?.compareDocumentPosition(query('non-members-orgs-table') as Node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it('keeps the low-confidence chip singular for one organization', async () => {
+    await render(response({ scopeTotal: 1 }));
+
+    expect(text('non-members-orgs-low-confidence')?.replace('◐', '').trim()).toBe('Only 1 active organization — too early to rank by fit.');
+  });
+
+  it('shows no low-confidence chip at five or more active organizations', async () => {
+    await render(response({ totalRecords: 5, scopeTotal: 5 }));
+
+    expect(query('non-members-orgs-low-confidence')).toBeNull();
+  });
+
+  it('renders a contributions-only organization with dashes', async () => {
     await render(response({ rows: [org({ meetingsAttended: null, distinctPeople: null })] }));
     const meetings = query(`non-members-orgs-row-${ACCOUNT_ID}-meetings`);
 
-    expect(text(`non-members-orgs-row-${ACCOUNT_ID}-channels`)).toBe('Contributes code');
     expect(meetings?.textContent?.trim()).toBe('—');
     expect(meetings?.classList).toContain('text-gray-400');
     expect(text(`non-members-orgs-row-${ACCOUNT_ID}-people`)).toBe('—');

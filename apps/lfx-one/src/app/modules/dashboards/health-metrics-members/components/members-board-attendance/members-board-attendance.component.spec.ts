@@ -127,7 +127,8 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(text('members-board-other')).toBe('65%');
     expect(text('members-board-attended')).toBe('9 / 11');
     expect(text('members-board-never')).toBe('0');
-    expect(text('members-board-count')).toBe('12 meetings');
+    // The meetings-in-range line above the hero is the only count; none repeats over the table.
+    expect(query('members-board-count')).toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
     expect(notes).toEqual(['', '82% attended']);
   });

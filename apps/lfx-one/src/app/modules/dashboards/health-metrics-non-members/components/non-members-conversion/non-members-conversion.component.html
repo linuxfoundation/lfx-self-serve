@@ -11,12 +11,6 @@
       data-testid="non-members-conversion-error" />
   } @else if (loading()) {
     <p-skeleton height="18rem" borderRadius="0.5rem" data-testid="non-members-conversion-loading" aria-hidden="true" />
-  } @else if (!view().measured) {
-    <lfx-empty-state
-      icon="fa-light fa-circle-question"
-      title="No conversion opportunity yet"
-      subtitle="Once this foundation's non-member organizations are scored for fit, the pipeline and warmest organizations appear here."
-      data-testid="non-members-conversion-unmeasured" />
   } @else {
     <span class="self-end rounded-full bg-blue-50 px-2.5 py-0.5 text-[12px] text-blue-700" data-testid="non-members-conversion-summary">{{
       view().summary
@@ -24,7 +18,13 @@
 
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="non-members-conversion-hero">
       <div class="flex flex-col gap-2" data-testid="non-members-conversion-pipeline">
-        <span class="text-3xl font-semibold tabular-nums text-gray-900" data-testid="non-members-conversion-pipeline-value">{{ view().pipelineValue }}</span>
+        <span
+          class="text-3xl font-semibold tabular-nums"
+          [class.text-gray-900]="view().hasEstimate"
+          [class.text-gray-400]="!view().hasEstimate"
+          data-testid="non-members-conversion-pipeline-value"
+          >{{ view().pipelineValue }}</span
+        >
         <span class="text-[12.5px] text-gray-500" data-testid="non-members-conversion-pipeline-label">{{ view().pipelineLabel }}</span>
       </div>
 
@@ -40,26 +40,29 @@
       </dl>
     </div>
 
-    <div class="flex flex-col gap-3" data-testid="non-members-conversion-warmest">
-      <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Warmest organizations</h4>
-        <span class="text-[12px] text-gray-400">attend meetings and contribute</span>
+    <!-- Unmeasured has no high-fit set, so an empty list here would claim zero. -->
+    @if (view().measured) {
+      <div class="flex flex-col gap-3" data-testid="non-members-conversion-warmest">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Warmest organizations</h4>
+          <span class="text-[12px] text-gray-400">attend meetings and contribute</span>
+        </div>
+        @if (view().warmest.length === 0) {
+          <p class="text-sm text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
+        } @else {
+          <ul class="flex flex-col gap-[8px]">
+            @for (row of view().warmest; track row.accountId; let index = $index) {
+              <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'non-members-conversion-warm-' + index">
+                <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
+                <span class="shrink-0 tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-warm-' + index + '-value'">{{
+                  row.valueLabel
+                }}</span>
+              </li>
+            }
+          </ul>
+        }
       </div>
-      @if (view().warmest.length === 0) {
-        <p class="text-sm text-gray-500" data-testid="non-members-conversion-warmest-empty">No high-fit organization in the selected period.</p>
-      } @else {
-        <ul class="flex flex-col gap-[8px]">
-          @for (row of view().warmest; track row.accountId; let index = $index) {
-            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'non-members-conversion-warm-' + index">
-              <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
-              <span class="shrink-0 tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-warm-' + index + '-value'">{{
-                row.valueLabel
-              }}</span>
-            </li>
-          }
-        </ul>
-      }
-    </div>
+    }
 
     <lfx-health-metrics-footnote [parts]="view().footnote" data-testid="non-members-conversion-footnote" />
   }

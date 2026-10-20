@@ -28,7 +28,6 @@ import {
   buildHealthMetricsOverviewTabRoute,
   buildHealthMetricsOverviewTiles,
   buildHealthMetricsOverviewTrainingRoute,
-  formatHealthMetricsOverviewAsOfLabel,
   groupHealthMetricsOverviewFindings,
   resolveHealthMetricsOverviewGroupMeta,
   resolveHealthMetricsOverviewKpiClassification,
@@ -115,10 +114,22 @@ describe('buildHealthMetricsOverviewTiles', () => {
     const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'evt', showStatus: false })], undefined);
     expect(tiles[0].showStatus).toBe(false);
   });
-  it('carries statDetail through to the tile view model', () => {
-    const statDetail = { text: '3 of 7 unsecured · $185K', tone: 'watch' as const };
-    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'mem', statDetail })], undefined);
-    expect(tiles[0].statDetail).toEqual(statDetail);
+
+  it('names and icons each tile per the design, not by its finding-eyebrow area name', () => {
+    const areas: HealthMetricsAreaState['area'][] = ['eng', 'evt', 'mem', 'non', 'trn', 'code'];
+    const tiles = buildHealthMetricsOverviewTiles(
+      areas.map((area) => areaState({ area })),
+      undefined
+    );
+    expect(tiles.map((tile) => tile.name)).toEqual(['Engagement', 'Events', 'Members', 'Non-members', 'Training', 'Code contributions']);
+    expect(tiles.map((tile) => tile.icon)).toEqual([
+      'fa-light fa-users',
+      'fa-light fa-calendar-days',
+      'fa-light fa-circle-check',
+      'fa-light fa-handshake',
+      'fa-light fa-graduation-cap',
+      'fa-light fa-code',
+    ]);
   });
 });
 
@@ -179,16 +190,6 @@ describe('resolveHealthMetricsOverviewKpiClassification', () => {
   it('degrades null or undefined to none', () => {
     expect(resolveHealthMetricsOverviewKpiClassification(null)).toBe('none');
     expect(resolveHealthMetricsOverviewKpiClassification(undefined)).toBe('none');
-  });
-});
-
-describe('formatHealthMetricsOverviewAsOfLabel', () => {
-  it('returns an empty string for a never-evaluated (empty evaluatedAt) area', () => {
-    expect(formatHealthMetricsOverviewAsOfLabel('')).toBe('');
-  });
-
-  it('formats a populated ISO date as an "as of" label', () => {
-    expect(formatHealthMetricsOverviewAsOfLabel('2026-03-05')).toBe('as of Mar 5, 2026');
   });
 });
 

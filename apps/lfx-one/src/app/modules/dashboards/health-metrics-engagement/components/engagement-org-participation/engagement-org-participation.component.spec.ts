@@ -147,6 +147,40 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('136 organizations · 54 lapsed');
   });
 
+  it('drops the lapsed part of the caption at zero', async () => {
+    await render(response({ counts: { orgs: 1, lapsedOrgs: 0 } }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('1 organization');
+  });
+
+  // The design's tier pill: blue for Platinum / Premier / Founding in any case, grey for every other tier.
+  it('pills the top tiers blue and every other tier grey', async () => {
+    await render(
+      response({
+        rows: [
+          orgRow({ accountId: 'a-1', membershipTier: 'Platinum' }),
+          orgRow({ accountId: 'a-2', membershipTier: 'founding' }),
+          orgRow({ accountId: 'a-3', membershipTier: 'Silver' }),
+          orgRow({ accountId: 'a-4', membershipTier: '' }),
+        ],
+        counts: { orgs: 4, lapsedOrgs: 0 },
+      })
+    );
+
+    const tier = (id: string) => fixture.nativeElement.querySelector(`[data-testid="engagement-org-participation-row-${id}-tier"]`) as HTMLElement | null;
+    expect(tier('a-1')?.textContent?.trim()).toBe('Platinum');
+    expect(tier('a-1')?.className).toContain('bg-blue-50');
+    expect(tier('a-1')?.className).toContain('text-blue-700');
+    expect(tier('a-1')?.className).toContain('rounded-full');
+    expect(tier('a-1')?.className).toContain('text-[12px]');
+    expect(tier('a-2')?.className).toContain('bg-blue-50');
+    expect(tier('a-3')?.className).toContain('bg-gray-100');
+    expect(tier('a-3')?.className).toContain('text-gray-600');
+    // No tier at all is an em dash, not an empty pill.
+    expect(tier('a-4')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-4"]').textContent).toContain('—');
+  });
+
   // A view that reports no scope count has not measured zero organizations, and the table says so.
   it('captions an unmeasured scope with an em dash rather than a confident zero', async () => {
     const emitted: unknown[] = [];

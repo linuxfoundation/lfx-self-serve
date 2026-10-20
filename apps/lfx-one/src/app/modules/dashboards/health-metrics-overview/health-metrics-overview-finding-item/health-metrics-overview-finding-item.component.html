@@ -103,11 +103,11 @@
       } @else if (tagsVisual(); as tags) {
         <div class="flex flex-wrap justify-end gap-1" data-testid="health-metrics-overview-finding-tags">
           @for (tag of tags; track tag) {
-            <span class="rounded bg-gray-200 px-1.5 py-0.5 text-[10.5px] font-semibold text-gray-600">{{ tag }}</span>
+            <span class="rounded-full bg-gray-200 px-1.5 py-0.5 text-[10.5px] font-semibold text-gray-600">{{ tag }}</span>
           }
         </div>
       } @else {
-        <span class="text-[12px] text-gray-500">{{ finding().keyLabel }}</span>
+        <span class="text-[12px] text-gray-500 first-letter:uppercase" data-testid="health-metrics-overview-finding-key-label">{{ finding().keyLabel }}</span>
         @if (finding().keySecondary; as keySecondary) {
           <span class="text-[11px] text-gray-400" data-testid="health-metrics-overview-finding-key-secondary">{{ keySecondary }}</span>
         }

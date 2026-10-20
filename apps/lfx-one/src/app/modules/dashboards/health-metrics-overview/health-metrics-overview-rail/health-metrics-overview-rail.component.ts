@@ -26,6 +26,8 @@ import type {
 })
 export class HealthMetricsOverviewRailComponent {
   public readonly revenue = input.required<HealthMetricsOverviewRevenue>();
+  /** The selected period's label ("YTD", "2025") — the revenue total reads "Total <period>". */
+  public readonly revenuePeriodLabel = input.required<string>();
   public readonly revenueLoading = input(false);
   public readonly foundationSummary = input.required<HealthMetricsOverviewFoundationSummary>();
   public readonly foundationSummaryLoading = input(false);

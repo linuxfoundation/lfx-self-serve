@@ -24,9 +24,6 @@
     <lfx-non-members-people (countChange)="peopleCount.set($event)" (reading)="shell.sectionReading('people')" (settled)="shell.sectionSettled('people')" />
   </ng-template>
   <ng-template lfxHealthMetricsL2Section="conversion">
-    <lfx-non-members-conversion
-      (countChange)="conversionCount.set($event)"
-      (reading)="shell.sectionReading('conversion')"
-      (settled)="shell.sectionSettled('conversion')" />
+    <lfx-non-members-conversion (reading)="shell.sectionReading('conversion')" (settled)="shell.sectionSettled('conversion')" />
   </ng-template>
 </lfx-health-metrics-l2-shell>

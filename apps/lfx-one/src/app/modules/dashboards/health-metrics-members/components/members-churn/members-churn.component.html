@@ -253,9 +253,6 @@
       </div>
     }
 
-    <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-churn-footer">
-      <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
-      <span>Churn leads here because renewal rate is unreliable mid-year: renewals are lumpy, so a rate taken part-way through the year swings widely.</span>
-    </p>
+    <lfx-health-metrics-footnote [parts]="footer" data-testid="members-churn-footer" />
   }
 </div>

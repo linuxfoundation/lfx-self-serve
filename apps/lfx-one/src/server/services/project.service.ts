@@ -9,8 +9,6 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
-  HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
-  HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
@@ -103,7 +101,6 @@ import {
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
   HealthMetricsAreaState,
-  HealthMetricsAreaStateDetail,
   HealthMetricsDailyResponse,
   HealthMetricsFinding,
   HealthMetricsOverviewArea,
@@ -1833,14 +1830,19 @@ export class ProjectService {
 
     // A null column is unmeasured, not zero — render it as "—" rather than "0 tiers".
     const format = (value: number | null, render: (count: number) => string): string => (value === null ? '—' : render(value));
+    // The design says "None" rather than "0 renewals" when nothing falls inside the window.
+    const renewals = (count: number): string => {
+      if (count === 0) return 'None in 90 days';
+      return `${count} ${count === 1 ? 'renewal' : 'renewals'} in 90 days`;
+    };
 
     return {
       dataAvailable: true,
       size: format(row.MEMBER_COUNT, (count) => `${ProjectService.formatExactCount(count)} ${count === 1 ? 'member' : 'members'}`),
-      projects: format(row.PROJECT_COUNT, (count) => String(count)),
+      projects: format(row.PROJECT_COUNT, (count) => `${ProjectService.formatExactCount(count)} ${count === 1 ? 'project' : 'projects'}`),
       tiers: format(row.MEMBERSHIP_TIER_COUNT, (count) => `${count} ${count === 1 ? 'tier' : 'tiers'}`),
-      board: format(row.BOARD_SEAT_COUNT, (count) => `${count} ${count === 1 ? 'seat' : 'seats'}`),
-      nextRenewals: format(row.RENEWALS_NEXT_90D_COUNT, (count) => `${count} in the next 90 days`),
+      board: format(row.BOARD_SEAT_COUNT, (count) => `${count} ${count === 1 ? 'board seat' : 'board seats'}`),
+      nextRenewals: format(row.RENEWALS_NEXT_90D_COUNT, renewals),
     };
   }
 
@@ -6378,12 +6380,8 @@ export class ProjectService {
           )
           .join(',\n        ')},
         members_renewing_90d_value_usd AS MEMBERS_RENEWING_90D_VALUE_USD,
-        members_renewing_90d_org_count AS MEMBERS_RENEWING_90D_ORG_COUNT,
-        members_renewing_90d_unsecured_org_count AS MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT,
-        members_renewing_90d_unsecured_value_usd AS MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD,
         members_status AS MEMBERS_STATUS,
-        non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
-        non_members_status AS NON_MEMBERS_STATUS
+        non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD
       FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS
       WHERE foundation_slug = ?
       LIMIT 1
@@ -8568,8 +8566,8 @@ export class ProjectService {
   }
 
   /**
-   * Engagement tile counts for every period in one read of `ENGAGEMENT_GROUP_ATTENDANCE`, using the
-   * Engagement tab's own rules: non-dormant groups with enough meetings and a non-null rate, and those below the low-attendance threshold.
+   * Engagement tile counts for every period in one read of `ENGAGEMENT_GROUP_ATTENDANCE`: every group and
+   * those the view flags dormant, counted as the Engagement tab's group attendance header counts them.
    * A stopgap until `HEALTH_OVERVIEW_KPIS` carries engagement columns. Any failure logs and returns
    * `null`, so a problem here never takes down the other five tiles.
    */
@@ -8577,25 +8575,14 @@ export class ProjectService {
     foundationSlug: string,
     ranges: HealthMetricsRange[]
   ): Promise<Partial<Record<HealthMetricsRange, HealthOverviewEngagementCounts>> | null> {
-    // Each range's columns sit beside their binds, so the `?`s and bind values can't drift apart.
-    const built = ranges.map((range) => {
-      const suffix = this.getRangeSuffix(range);
-      const rated = `NOT COALESCE(is_dormant${suffix}, FALSE) AND meetings_count${suffix} >= ? AND attendance_pct${suffix} IS NOT NULL`;
-      return {
-        sql: [
-          `COUNT(meetings_count${suffix}) AS MEASURED_GROUPS__${range}`,
-          `COUNT_IF(${rated}) AS ACTIVE_GROUPS__${range}`,
-          `COUNT_IF(${rated} AND attendance_pct${suffix} < ?) AS LOW_ATTENDANCE_GROUPS__${range}`,
-        ],
-        binds: [
-          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-          HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
-        ],
-      };
-    });
-    const columns = built.flatMap((range) => range.sql);
-    const binds: (string | number)[] = [...built.flatMap((range) => range.binds), foundationSlug];
+    // The group total is period-invariant, so it's selected once; dormancy is the view's own per-period flag.
+    const columns = [
+      'COUNT(*) AS TOTAL_GROUPS',
+      ...ranges.flatMap((range) => {
+        const suffix = this.getRangeSuffix(range);
+        return [`COUNT(meetings_count${suffix}) AS MEASURED_GROUPS__${range}`, `COUNT_IF(is_dormant${suffix}) AS DORMANT_GROUPS__${range}`];
+      }),
+    ];
     const query = `
       SELECT
         ${columns.join(',\n        ')}
@@ -8604,7 +8591,7 @@ export class ProjectService {
     `;
 
     try {
-      const result = await this.snowflakeService.execute<HealthOverviewAllPeriodsRow>(query, binds, { expectMissingObject: true });
+      const result = await this.snowflakeService.execute<HealthOverviewAllPeriodsRow>(query, [foundationSlug], { expectMissingObject: true });
       const row = result.rows?.[0];
       if (!row) {
         return null;
@@ -8614,13 +8601,14 @@ export class ProjectService {
           // The aggregate always returns a row, so a scope with no measured groups reads as unmeasured, not zero.
           const measured = ProjectService.toNullableNumber(row[`MEASURED_GROUPS__${range}`]);
           if (!measured) {
-            return [range, { activeGroups: null, lowAttendanceGroups: null }];
+            return [range, { totalGroups: null, dormantGroups: null }];
           }
           return [
             range,
             {
-              activeGroups: ProjectService.toNullableNumber(row[`ACTIVE_GROUPS__${range}`]),
-              lowAttendanceGroups: ProjectService.toNullableNumber(row[`LOW_ATTENDANCE_GROUPS__${range}`]),
+              totalGroups: ProjectService.toNullableNumber(row['TOTAL_GROUPS']),
+              // Snowflake's COUNT_IF can return NULL when nothing matches; with measured groups that means none.
+              dormantGroups: ProjectService.toNullableNumber(row[`DORMANT_GROUPS__${range}`]) ?? 0,
             },
           ];
         })
@@ -9252,6 +9240,7 @@ export class ProjectService {
     const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
     // NON_MEMBERS_PIPELINE_VALUE_USD can be NULL for a foundation — render blank rather than a misleading "$0".
     const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
+    const hasPipeline = nonMembersPipelineValue != null && nonMembersPipelineValue > 0;
 
     // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
     // missing its builder here is dropped. `eng` has no builder: its state comes from another table.
@@ -9264,10 +9253,9 @@ export class ProjectService {
         classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
         evaluatedAt,
         // Hide only when there's truly nothing to say (no goal, no status). Any goal or any status
-        // present shows the chip — a set goal with no status yet renders "Awaiting data", matching
-        // how trn/mem/non already treat a null status column.
+        // present shows the chip — a set goal with no status yet renders "No data", matching
+        // how trn/mem already treat a null status column.
         showStatus: eventsGoalPct != null || row.EVENTS_STATUS != null,
-        statDetail: ProjectService.buildHealthOverviewEventsDetail(row),
       }),
       trn: () => ({
         area: 'trn',
@@ -9280,24 +9268,25 @@ export class ProjectService {
       mem: () => ({
         area: 'mem',
         statValue: membersRenewingValue == null ? '—' : formatCurrency(membersRenewingValue),
-        statLabel: 'renewing in next 90 days',
+        statLabel: 'renewing in 90 days',
         statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
         evaluatedAt,
-        statDetail: ProjectService.buildHealthOverviewMembersDetail(row),
       }),
+      // Any pipeline is an opportunity to convert; with none there's nothing to classify, so no chip.
       non: () => ({
         area: 'non',
         statValue: nonMembersPipelineValue == null ? '—' : formatCurrency(nonMembersPipelineValue),
-        statLabel: 'pipeline value',
-        statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
-        classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
+        statLabel: 'pipeline if converted',
+        statSource: 'HEALTH_OVERVIEW_KPIS.non_members_pipeline_value_usd',
+        classification: hasPipeline ? 'opp' : 'none',
         evaluatedAt,
+        showStatus: hasPipeline,
       }),
       code: () => ({
         area: 'code',
         statValue: contributorsCount == null ? '—' : formatNumber(contributorsCount),
-        statLabel: 'active contributors',
+        statLabel: 'contributors',
         // No _STATUS column backs this area (see method doc), so unlike the sibling areas above,
         // statSource names the stat's own column rather than a status column.
         statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
@@ -9338,55 +9327,26 @@ export class ProjectService {
     };
   }
 
-  /** Exact, grouped count ("1,234"); the compact form would turn a registration total into "1.2K". */
+  /** Exact, grouped count ("1,234"); the compact form would turn a member count into "1.2K". */
   private static formatExactCount(count: number): string {
     return count.toLocaleString('en-US');
   }
 
-  /** "1,234 registrations · goal 1,500"; the goal part drops when unset, the line when the count is unmeasured. */
-  private static buildHealthOverviewEventsDetail(row: HealthOverviewKpisRow): HealthMetricsAreaStateDetail | undefined {
-    const count = row.EVENTS_REGISTRATIONS_COUNT;
-    if (count === null) return undefined;
-    const goal = row.EVENTS_REGISTRATIONS_GOAL;
-    const registrations = `${ProjectService.formatExactCount(count)} ${count === 1 ? 'registration' : 'registrations'}`;
-    return { text: goal === null ? registrations : `${registrations} · goal ${ProjectService.formatExactCount(goal)}` };
-  }
-
-  /** "3 of 7 unsecured · $185K"; any unsecured renewal raises the chip to a warning, and either count unmeasured drops the line. */
-  private static buildHealthOverviewMembersDetail(row: HealthOverviewKpisRow): HealthMetricsAreaStateDetail | undefined {
-    const orgCount = row.MEMBERS_RENEWING_90D_ORG_COUNT;
-    const unsecuredCount = row.MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT;
-    if (orgCount === null || unsecuredCount === null) return undefined;
-    const unsecuredValue = row.MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD;
-    const counts = `${ProjectService.formatExactCount(unsecuredCount)} of ${ProjectService.formatExactCount(orgCount)} unsecured`;
-    return {
-      text: unsecuredValue === null ? counts : `${counts} · ${formatCurrency(unsecuredValue)}`,
-      tone: unsecuredCount > 0 ? 'watch' : 'none',
-    };
-  }
-
   /**
-   * The Engagement tile's state. No status chip: the tab's rules define no classification for this
-   * count, so the tile carries a link into the group attendance view instead.
+   * The Engagement tile's state: dormant groups out of every group, per the design's "N of M groups
+   * inactive". Any dormant group needs action; an unmeasured period keeps its chipless no-data tile.
    */
   private static buildHealthOverviewEngagementAreaState(counts: HealthOverviewEngagementCounts): HealthMetricsAreaState {
-    const { activeGroups, lowAttendanceGroups } = counts;
-    let statValue: string = HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE;
-    let statLabel = 'no data this period';
-    if (activeGroups === 0) {
-      statLabel = 'no active groups this period';
-    } else if (activeGroups !== null && lowAttendanceGroups !== null) {
-      statValue = `${formatNumber(lowAttendanceGroups)} of ${formatNumber(activeGroups)}`;
-      statLabel = `groups below ${Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100)}% attendance`;
+    const { totalGroups, dormantGroups } = counts;
+    const base = { area: 'eng', statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.is_dormant', evaluatedAt: '' } as const;
+    if (totalGroups === null || dormantGroups === null) {
+      return { ...base, statValue: HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE, statLabel: 'no data this period', classification: 'none', showStatus: false };
     }
     return {
-      area: 'eng',
-      statValue,
-      statLabel,
-      statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
-      classification: 'none',
-      evaluatedAt: '',
-      showStatus: false,
+      ...base,
+      statValue: `${formatNumber(dormantGroups)} of ${formatNumber(totalGroups)}`,
+      statLabel: 'groups inactive',
+      classification: dormantGroups > 0 ? 'act' : 'ok',
     };
   }
 
@@ -9428,20 +9388,14 @@ export class ProjectService {
       row[ProjectService.kpiAlias(column, range)];
 
     return {
-      EVENTS_REGISTRATIONS_COUNT: ProjectService.toNullableNumber(period('EVENTS_REGISTRATIONS_COUNT')),
-      EVENTS_REGISTRATIONS_GOAL: ProjectService.toNullableNumber(period('EVENTS_REGISTRATIONS_GOAL')),
       EVENTS_PCT_OF_REGISTRATION_GOAL: ProjectService.toNullableNumber(period('EVENTS_PCT_OF_REGISTRATION_GOAL')),
       EVENTS_STATUS: ProjectService.toNullableString(period('EVENTS_STATUS')),
       CERTIFICATIONS_EARNED_COUNT: ProjectService.toNullableNumber(period('CERTIFICATIONS_EARNED_COUNT')),
       TRAINING_STATUS: ProjectService.toNullableString(period('TRAINING_STATUS')),
       CONTRIBUTORS_COUNT: ProjectService.toNullableNumber(period('CONTRIBUTORS_COUNT')),
       MEMBERS_RENEWING_90D_VALUE_USD: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_VALUE_USD']),
-      MEMBERS_RENEWING_90D_ORG_COUNT: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_ORG_COUNT']),
-      MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT']),
-      MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: ProjectService.toNullableNumber(row['MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD']),
       MEMBERS_STATUS: ProjectService.toNullableString(row['MEMBERS_STATUS']),
       NON_MEMBERS_PIPELINE_VALUE_USD: ProjectService.toNullableNumber(row['NON_MEMBERS_PIPELINE_VALUE_USD']),
-      NON_MEMBERS_STATUS: ProjectService.toNullableString(row['NON_MEMBERS_STATUS']),
     };
   }
 

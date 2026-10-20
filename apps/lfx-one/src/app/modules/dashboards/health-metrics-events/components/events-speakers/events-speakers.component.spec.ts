@@ -155,6 +155,25 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-chart')).not.toBeNull();
   });
 
+  it('stacks status over the per-year chart and titles each list with its caption', async () => {
+    await render();
+    const breakdown = query('events-speakers-breakdown');
+    // Heading and caption are separate flex items, spaced by the gap rather than a text node.
+    const heading = (testId: string): string =>
+      Array.from(query(testId)?.querySelector('h4')?.parentElement?.children ?? [])
+        .map((child) => child.textContent?.trim())
+        .join(' ');
+
+    expect(breakdown?.classList).toContain('flex-col');
+    expect(breakdown?.classList).toContain('gap-[24px]');
+    expect(Array.from(breakdown?.children ?? []).map((child) => child.getAttribute('data-testid'))).toEqual([
+      'events-speakers-status',
+      'events-speakers-by-year',
+    ]);
+    expect(heading('events-speakers-status')).toBe('Proposals by status count');
+    expect(heading('events-speakers-organizations')).toBe('Most active organizations proposals submitted');
+  });
+
   it('ranks the organizations and keeps individual speakers on their own line', async () => {
     await render();
 

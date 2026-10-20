@@ -147,10 +147,15 @@ describe('EventsRegistrationsGrowthComponent', () => {
     await render();
 
     expect(text('events-registrations-growth-virtual-2019')).toBe('—');
-    expect(text('events-registrations-growth-gap-2021')).toBe('no events recorded');
     expect(text('events-registrations-growth-total-2021')).toBe('—');
     expect(text('events-registrations-growth-in-person-2021')).toBe('—');
-    expect(query('events-registrations-growth-gap-2020')).toBeNull();
+  });
+
+  it('labels each year cell with the year alone, partial and gap years included', async () => {
+    await render();
+
+    expect(query('events-registrations-growth-row-2021')?.querySelector('td')?.textContent?.trim()).toBe('2021');
+    expect(query('events-registrations-growth-row-2026')?.querySelector('td')?.textContent?.trim()).toBe('2026');
   });
 
   it('switches the table and chart to attendees from the toggle', async () => {
@@ -166,12 +171,12 @@ describe('EventsRegistrationsGrowthComponent', () => {
     expect(getEventsRegistrationsGrowth).toHaveBeenCalledTimes(1);
   });
 
-  it('tags the partial year and links its footnote to the forecast', async () => {
+  it('notes the partial year in the footnote, linking to the forecast mid-sentence', async () => {
     await render();
 
-    expect(text('events-registrations-growth-partial-2026')).toBe('partial');
-    expect(query('events-registrations-growth-partial-2022')).toBeNull();
-    expect(text('events-registrations-growth-footnote')).toContain('A partial year is still open');
+    expect(text('events-registrations-growth-footnote')).toContain(
+      'The current year is partial — it sits against complete years, so it will always look short until December. Use the registration forecast → to compare like with like.'
+    );
 
     (query('events-registrations-growth-forecast-link') as HTMLButtonElement).click();
 
