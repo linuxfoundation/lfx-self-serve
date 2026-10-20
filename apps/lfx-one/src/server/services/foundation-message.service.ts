@@ -73,8 +73,8 @@ export class FoundationMessageService {
   /**
    * The Marketing OS document store: every validated bundle is recorded as a
    * revision of the project's foundation-message document (its report, inputs
-   * record and provenance ride in the revision's sidecar), whose latest
-   * revision is what the stored read serves.
+   * record and provenance ride in the revision's sidecar). Plain and sidecar
+   * stored reads serve approved current, never a newer Draft.
    */
   private readonly documentStore = new MktgDocumentStoreService();
 
@@ -184,16 +184,10 @@ export class FoundationMessageService {
   }
 
   /**
-   * The project's LATEST stored framework — its latest revision, restored ones
-   * included, as the JSON text of its content — which is what sibling agents
-   * (the ICP) attach. Falls back to the pre-revision read path (a Markdown
-   * document from before 4.0.0) when the document has no revisions yet.
-   *
-   * `withSidecar`: the same latest revision with its envelope JSON (the
-   * stored sidecar, the framework back under `content`) and date — what the
-   * Brand Kit attaches as the project's messaging framework (the latest
-   * regardless of its review status: Approve is a later item). Null when the
-   * document has no revision.
+   * Approved current supplies every dependent attachment, as stored content
+   * text and optionally its envelope sidecar/date. No approval means null;
+   * storage failures propagate. Only a true pre-revision plain read retains
+   * the legacy Markdown compatibility path when no stored revisions exist.
    */
   public async getStoredFoundationMessage(req: Request, project: string, withSidecar = false): Promise<FoundationMessageStoredResponse | null> {
     return this.documentStore.readLatest(req, this.artifactSpec, project, { withSidecar });

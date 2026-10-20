@@ -41,6 +41,7 @@ export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): Mk
     commentCount: 0,
     latest: number === currentNumber,
     author: null,
+    approval: null,
   }));
   for (const revision of revisions) {
     if (revision.number > 2) revision.author = { name: 'The writer' };
@@ -55,6 +56,7 @@ export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): Mk
     type: DOCUMENT_TYPE,
     documentId: 'living',
     revisions,
+    approvedCurrent: null,
     current: { revisionId: selected.id, changedAt: '2026-10-14T12:00:00.000Z', changedBy: { name: 'The writer' } },
   };
 }
@@ -163,6 +165,7 @@ export async function setupDocuments(
                     documentId: 'living',
                     revisionCount: detail.revisions.length,
                     latestRevisionId: current.id,
+                    approvedCurrent: null,
                     currentRevisionNumber: current.number,
                     updatedAt: current.createdAt,
                     createdAt: detail.revisions[detail.revisions.length - 1].createdAt,

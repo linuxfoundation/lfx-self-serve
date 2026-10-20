@@ -134,7 +134,7 @@ vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, AuthorizationError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
 
 function buildReq(query: Record<string, unknown> = {}): Request {
@@ -315,7 +315,7 @@ describe('MktgAgentsController', () => {
 
   describe('generateBrandKit (POST /api/mktg-agents/brand-kit/generate)', () => {
     const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>';
-    /** The messaging framework as the run page attaches it: the latest stored revision's sidecar, serialized. */
+    /** The approved framework sidecar as the run page attaches it, serialized. */
     const FRAMEWORK = '{"contract":"messaging-document-output/v1","fields":{"md.tagline":{"value":"Open standards","source":"Site","status":"approved"}}}';
     const brandKitAnswers = (): Record<string, string> => ({
       project_name: ' TestOrbit ',
@@ -365,7 +365,7 @@ describe('MktgAgentsController', () => {
       delete withoutFramework['messaging_framework'];
       await controller.generateBrandKit(buildIcpReq('/api/mktg-agents/brand-kit/generate', { answers: withoutFramework }), buildRes(), next);
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
-      expect((next.mock.calls[0][0] as ServiceValidationError).validationErrors[0].message).toContain('a messaging framework first');
+      expect((next.mock.calls[0][0] as ServiceValidationError).validationErrors[0].message).toContain('Approve a messaging framework first');
 
       next.mockClear();
       await controller.generateBrandKit(
@@ -908,7 +908,7 @@ describe('MktgAgentsController', () => {
       expect(res.json).toHaveBeenCalledWith(STORED_FOUNDATION_MESSAGE);
     });
 
-    it('serves the latest revision with its sidecar and date on ?sidecar=true — approved or not — and 404s when the project has none', async () => {
+    it('serves approved current with its sidecar and date on ?sidecar=true and gives approval guidance on 404', async () => {
       projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', slug: 'testorbit', writer: true });
       const latest = { ...STORED_FOUNDATION_MESSAGE, storedAt: '2026-10-16T09:00:00.000Z', sidecar: { fields: {} } };
       foundationMessageMocks.getStoredFoundationMessage.mockResolvedValue(latest);
@@ -924,9 +924,23 @@ describe('MktgAgentsController', () => {
       foundationMessageMocks.getStoredFoundationMessage.mockResolvedValue(null);
       await controller.storedFoundationMessage(buildFoundationMessageReq({ project: 'proj-uid-1', sidecar: 'true' }), buildRes(), next);
 
-      const error = next.mock.calls[0][0] as ResourceNotFoundError;
-      expect(error).toBeInstanceOf(ResourceNotFoundError);
-      expect(error.message).toContain('Stored Messaging Framework');
+      const error = next.mock.calls[0][0] as MicroserviceError;
+      expect(error).toBeInstanceOf(MicroserviceError);
+      expect(error.message).toBe('Approve a messaging framework first — the Brand Kit builds on the approved one.');
+      expect(error.code).toBe('MKTG_FRAMEWORK_NOT_APPROVED');
+    });
+
+    it.each(['none stored', 'stored but unapproved'])('requires approval on the sidecar read when the framework is %s', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: 'proj-uid-1', writer: true });
+      foundationMessageMocks.getStoredFoundationMessage.mockResolvedValue(null);
+      await controller.storedFoundationMessage(buildFoundationMessageReq({ project: 'proj-uid-1', sidecar: 'true' }), buildRes(), next);
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: 404,
+          message: 'Approve a messaging framework first — the Brand Kit builds on the approved one.',
+          code: 'MKTG_FRAMEWORK_NOT_APPROVED',
+        })
+      );
     });
 
     it('denies a caller without the project writer entitlement before any storage read (403)', async () => {

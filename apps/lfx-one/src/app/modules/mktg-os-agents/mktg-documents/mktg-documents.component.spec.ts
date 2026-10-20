@@ -34,6 +34,7 @@ describe('MktgDocumentsComponent', () => {
       commentCount: 0,
       latest: false,
       author: null,
+      approval: null,
       ...overrides,
     };
   }
@@ -43,6 +44,7 @@ describe('MktgDocumentsComponent', () => {
     type: BRAND_KIT,
     documentId: 'living',
     revisions: [revision(2, { latest: true }), revision(1, { origin: 'legacy' })],
+    approvedCurrent: null,
   };
 
   function documentsResponse(): MktgDocumentsResponse {
@@ -52,7 +54,17 @@ describe('MktgDocumentsComponent', () => {
         type,
         documents:
           type.agentKey === 'brand-kit'
-            ? [{ agentKey: 'brand-kit', documentId: 'living', revisionCount: 2, latestRevisionId: detail.revisions[0].id, updatedAt: null, createdAt: null }]
+            ? [
+                {
+                  agentKey: 'brand-kit',
+                  documentId: 'living',
+                  revisionCount: 2,
+                  latestRevisionId: detail.revisions[0].id,
+                  approvedCurrent: null,
+                  updatedAt: null,
+                  createdAt: null,
+                },
+              ]
             : [],
       })),
     };

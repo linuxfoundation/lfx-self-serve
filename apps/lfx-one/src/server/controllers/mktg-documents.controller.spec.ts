@@ -9,6 +9,7 @@ const storeMocks = vi.hoisted(() => ({
   getDocument: vi.fn(),
   getRevision: vi.fn(),
   restoreRevision: vi.fn(),
+  approveRevision: vi.fn(),
 }));
 const loggerMocks = vi.hoisted(() => ({
   startOperation: vi.fn(() => 0),
@@ -31,6 +32,7 @@ vi.mock('../services/mktg-document-store.service', () => ({
     public getDocument = storeMocks.getDocument;
     public getRevision = storeMocks.getRevision;
     public restoreRevision = storeMocks.restoreRevision;
+    public approveRevision = storeMocks.approveRevision;
   },
 }));
 vi.mock('../services/project.service', () => ({
@@ -77,6 +79,45 @@ describe('MktgDocumentsController', () => {
     expect(projectMocks.getProjectById).toHaveBeenCalledWith(expect.anything(), PROJECT, true);
     expect(storeMocks.listDocuments).toHaveBeenCalledWith(expect.anything(), 'resolved-uid');
     expect(res.json).toHaveBeenCalledWith({ project: 'resolved-uid', groups: [] });
+  });
+
+  it('approves under the SERVER-resolved writer project and returns the updated response', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'resolved-uid', writer: true });
+    storeMocks.approveRevision.mockResolvedValue({ revision: { number: 1 }, approval: { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } } });
+    const res = buildRes();
+    await controller.approveRevision(buildReq({ agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT }), res, next);
+    expect(storeMocks.approveRevision).toHaveBeenCalledWith(
+      expect.anything(),
+      'resolved-uid',
+      expect.objectContaining({ agentKey: 'faq' }),
+      'living',
+      REVISION_ID
+    );
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ approval: expect.any(Object) }));
+  });
+
+  it('refuses approval without writer rights and rejects invalid revision/project params', async () => {
+    projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+    await controller.approveRevision(buildReq({ agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    expect(storeMocks.approveRevision).not.toHaveBeenCalled();
+    next.mockClear();
+    await controller.approveRevision(buildReq({ agentKey: 'faq', documentId: 'living', revisionId: '../bad' }, { project: PROJECT }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    next.mockClear();
+    await controller.approveRevision(buildReq({ agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID }, { project: '../bad' }), buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+  });
+
+  it('returns not-found for approval of a missing revision and forwards write failures', async () => {
+    const request = buildReq({ agentKey: 'faq', documentId: 'living', revisionId: REVISION_ID }, { project: PROJECT });
+    storeMocks.approveRevision.mockResolvedValue(null);
+    await controller.approveRevision(request, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(expect.any(ResourceNotFoundError));
+    const failure = ServiceValidationError.forField('revision', 'Write failed');
+    storeMocks.approveRevision.mockRejectedValue(failure);
+    await controller.approveRevision(request, buildRes(), next);
+    expect(next).toHaveBeenCalledWith(failure);
   });
 
   it('refuses a caller without the project writer grant', async () => {

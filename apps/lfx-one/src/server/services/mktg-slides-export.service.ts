@@ -176,15 +176,15 @@ export class MktgSlidesExportService {
     const { envelope, otherOutput } = this.readOutputs(req, payloads);
 
     if (envelope) {
-      const found = await this.documentStore.readExportRevision(req, context.project, context.type, context.documentId, { revisionId: context.revisionId });
-      if (!found) {
+      const revision = await this.documentStore.readExportedRevision(req, context.project, context.type, context.documentId, context.revisionId);
+      if (!revision) {
         throw new ResourceNotFoundError('Exported revision', context.revisionId, {
           operation: 'mktg_slides_export_result',
           service: 'mktg_slides_export_service',
           path: req.path,
         });
       }
-      const record = this.buildRecord(context, found.summary, envelope);
+      const record = this.buildRecord(context, revision, envelope);
       await this.keepRecord(req, record);
       logger.info(req, 'mktg_slides_export_result', 'Slides export ready', {
         agent: context.agentKey,
@@ -214,11 +214,9 @@ export class MktgSlidesExportService {
   }
 
   /**
-   * The document's last export and its latest stored revision, which the
-   * panel compares by hash to say the deck is out of date. Read from the
-   * revision listing and the newest revision's body alone: every page view
-   * and version switch asks, and Export waits for the answer. Start and the
-   * result poll read every revision, where the exact one matters.
+   * Last export and newest readable identity for freshness comparison only.
+   * Export start selects approved-current bytes; result polling loads the
+   * exact revision selected at start even if approval/current has moved.
    */
   public async getLast(
     req: Request,
