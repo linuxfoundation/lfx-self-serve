@@ -5,7 +5,7 @@ import { isPlatformServer } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { MeetingOccurrenceNavContext, OccurrenceNavItem, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
+import { MeetingOccurrenceNavContext, OccurrenceNavItem, PastMeeting, PublicMeetingOccurrencesResponse } from '@lfx-one/shared/interfaces';
 import { buildOccurrenceNavTimeline, getActiveOccurrences, getMeetingSeriesUid, hasMeetingEnded } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { distinctUntilChanged, filter, map, switchMap } from 'rxjs';
@@ -88,9 +88,13 @@ export class MeetingOccurrenceNavComponent {
       }
 
       const routeId = this.routeId();
-      if (loadedViaPast) {
-        // The route id is the composite past-occurrence id: match it directly first.
-        const idxById = sorted.findIndex((occurrence) => occurrence.meeting_and_occurrence_id === routeId);
+      // A past record opened by its plain id (the upcoming lookup's 404 fallback) has no composite id in
+      // the route: the payload's own composite id and scheduled start place it instead.
+      const record = loadedViaPast ? (meeting as Partial<PastMeeting>) : null;
+      if (record) {
+        // The route id is the composite past-occurrence id, else the payload's: match it directly first.
+        const ids = [routeId, record.meeting_and_occurrence_id].filter((id): id is string => !!id);
+        const idxById = sorted.findIndex((occurrence) => !!occurrence.meeting_and_occurrence_id && ids.includes(occurrence.meeting_and_occurrence_id));
         if (idxById >= 0) {
           return { sorted, currentIdx: idxById };
         }
@@ -101,9 +105,17 @@ export class MeetingOccurrenceNavComponent {
       if (current) {
         currentTime = new Date(current.start_time).getTime();
       } else {
-        // A past occurrence opened by `/meetings/{id}-{start ms}`: its start is in the route.
+        // A past occurrence opened by `/meetings/{id}-{start ms}`: its start is in the route; one opened by
+        // its plain id: the record's scheduled start.
         const parts = routeId.split('-');
-        currentTime = parts.length === 2 && /^\d{13}$/.test(parts[1]) ? parseInt(parts[1], 10) : Date.now();
+        const scheduled = record?.scheduled_start_time ? Date.parse(record.scheduled_start_time) : NaN;
+        if (parts.length === 2 && /^\d{13}$/.test(parts[1])) {
+          currentTime = parseInt(parts[1], 10);
+        } else if (Number.isFinite(scheduled)) {
+          currentTime = scheduled;
+        } else {
+          currentTime = Date.now();
+        }
       }
       let currentIdx = sorted.findIndex((occurrence) => new Date(occurrence.start_time).getTime() === currentTime);
       if (currentIdx < 0) {

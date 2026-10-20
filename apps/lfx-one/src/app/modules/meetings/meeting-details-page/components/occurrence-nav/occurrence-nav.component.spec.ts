@@ -202,6 +202,28 @@ describe('MeetingOccurrenceNavComponent', () => {
       expect(href('occurrence-nav-section-prev')).toBe(`/meetings/${SERIES}-${one}`);
     });
 
+    it('finds a past record opened by its plain id by the payload’s composite id', async () => {
+      const plainPayload = {
+        ...pastPayload,
+        id: `${SERIES}-${one}`,
+        meeting_and_occurrence_id: `${SERIES}-${one}`,
+        scheduled_start_time: new Date(one).toISOString(),
+      } as unknown as Meeting;
+      await setup(plainPayload, { past: [past(one), past(two)], future: [first] }, { routeId: SERIES, viaPast: true });
+
+      // Not the clock's position ("3 of 3"): the first record.
+      expect(counter()).toBe('1 of 3');
+      expect(href('occurrence-nav-section-next')).toBe(`/meetings/${SERIES}-${two}`);
+    });
+
+    it('falls back to a plain-id past record’s scheduled start when the timeline has no record for it', async () => {
+      const unlisted = at(-10 * DAY);
+      const plainPayload = { ...pastPayload, id: `past-record-${unlisted}`, scheduled_start_time: new Date(unlisted).toISOString() } as unknown as Meeting;
+      await setup(plainPayload, { past: [past(one), past(two)], future: [first] }, { routeId: SERIES, viaPast: true });
+
+      expect(counter()).toBe('2 of 3');
+    });
+
     it('renders nothing when the series has nowhere else to go', async () => {
       await setup(pastPayload, { past: [past(two)], future: [] }, { routeId: `${SERIES}-${two}`, viaPast: true });
 
