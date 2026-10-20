@@ -106,6 +106,9 @@ vi.mock('../helpers/committee-v1-mapping.helper', () => ({
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: vi.fn(() => 'user@example.com'),
   getEffectiveUsername: vi.fn(() => null),
+  getRealEmail: vi.fn(() => 'operator@example.com'),
+  getRealUsername: vi.fn(() => null),
+  isImpersonating: vi.fn(() => false),
   getUsernameFromAuth: vi.fn(async () => null),
 }));
 vi.mock('../helpers/ics.helper', () => ({ buildMeetingCalendarEvents: vi.fn(() => ['VEVENT']), buildVCalendar: vi.fn(() => 'ICS_CONTENT') }));

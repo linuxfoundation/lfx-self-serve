@@ -155,6 +155,19 @@ export function getEffectiveUsername(req: Request): string | null {
   if (isImpersonating(req)) {
     return (req.appSession?.['impersonationUser']?.username as string) || null;
   }
+  return getRealUsername(req);
+}
+
+/**
+ * Gets the REAL (impersonator's own) username, deliberately ignoring impersonation state — the
+ * username counterpart of `getRealEmail`. `req.oidc.user` is always the actual authenticated
+ * user's OIDC session, impersonation or not, so this is `getEffectiveUsername`'s non-impersonating
+ * branch, unconditionally: the IdP-asserted LF username claim, or null when the session has none.
+ *
+ * Use this only where the real actor must act as themselves while impersonating (e.g. joining a
+ * meeting). Most callers want `getEffectiveUsername` instead.
+ */
+export function getRealUsername(req: Request): string | null {
   const claim = req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'];
   if (typeof claim === 'string' && claim) {
     return claim;

@@ -55,7 +55,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail, getEffectiveUsername, getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, getRealEmail, getRealUsername, getUsernameFromAuth, isImpersonating } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -282,8 +282,11 @@ export class MeetingController {
         let joinEmail: string | undefined;
 
         if (meeting.restricted) {
-          const email = getEffectiveEmail(req) || '';
-          const username = getEffectiveUsername(req);
+          // The join link embedded in the calendar file is the viewer's own, so while impersonating
+          // it resolves from the real session rather than the impersonation target.
+          const impersonating = isImpersonating(req);
+          const email = (impersonating ? getRealEmail(req) : getEffectiveEmail(req)) || '';
+          const username = impersonating ? getRealUsername(req) : getEffectiveUsername(req);
           const matchedRegistrant = await this.findRestrictedMeetingRegistrant(req, uid, email, username);
           joinEmail = matchedRegistrant?.email;
 
