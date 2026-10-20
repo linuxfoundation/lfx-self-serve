@@ -36,7 +36,8 @@ import { finalize, firstValueFrom, map, merge, take } from 'rxjs';
  *   and records the pending application in `CommitteeJoinApplicationSessionService`, because
  *   listing applications is writer-only and the server cannot rehydrate it.
  * - `closed` — "Contact Admin" informational toast.
- * - `invite_only` — no action.
+ * - `invite_only` — no button; a host CTA that still calls `requestJoin()` gets the same
+ *   "Contact Admin" toast as `closed`.
  *
  * An anonymous viewer is sent to sign in with `returnTo` set to the current page. The host decides
  * whether the viewer may act (membership, pending invitation) through `showButton`, and reacts to
@@ -165,11 +166,14 @@ export class GroupJoinButtonComponent {
     this.joining.set(true);
     this.committeeService
       .joinCommittee(group.uid, organization)
-      .pipe(finalize(() => this.joining.set(false)))
+      .pipe(
+        take(1),
+        finalize(() => this.joining.set(false))
+      )
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${group.name}"` });
-          this.stateChange.emit({ group_uid: group.uid, state: 'joined' });
+          this.emitStateChange({ group_uid: group.uid, state: 'joined' });
         },
         error: (err: HttpErrorResponse) => {
           const detail = committeeJoinErrorMessage(err, group.name);
@@ -207,7 +211,10 @@ export class GroupJoinButtonComponent {
 
         this.committeeService
           .submitApplication(group.uid, result.message, organization)
-          .pipe(finalize(() => this.joining.set(false)))
+          .pipe(
+            take(1),
+            finalize(() => this.joining.set(false))
+          )
           .subscribe({
             next: () => {
               this.markApplicationPending(group.uid);
@@ -235,7 +242,14 @@ export class GroupJoinButtonComponent {
 
   private markApplicationPending(groupUid: string): void {
     this.joinApplicationSession.markPending(groupUid);
-    this.stateChange.emit({ group_uid: groupUid, state: 'application_pending' });
+    this.emitStateChange({ group_uid: groupUid, state: 'application_pending' });
+  }
+
+  /** The request is not cancelled on destroy (it must land), but a destroyed output can't emit. */
+  private emitStateChange(change: GroupJoinStateChange): void {
+    if (!this.destroyed) {
+      this.stateChange.emit(change);
+    }
   }
 
   private async openOrganizationDialog(groupName: string): Promise<AcceptInviteOrganizationDialogResult | null> {
