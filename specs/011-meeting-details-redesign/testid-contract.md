@@ -259,37 +259,27 @@ Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | 
 
 ## Agenda and materials
 
-| `data-testid`                             | Element                                                                                              |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `agenda-section`                          | Agenda section                                                                                       |
-| `agenda-section-description`              | The description, links made clickable, collapsed past 200px                                          |
-| `agenda-section-empty`                    | Shown when the meeting has no description                                                            |
-| `agenda-section-edit`                     | Edit agenda (organizers, not ended): opens the edit-agenda dialog on the page (O-01)                 |
-| `edit-agenda-dialog`                      | The edit-agenda dialog (O-01): one free-text agenda for the series, or the selected occurrence's own |
-| `edit-agenda-scope`                       | What the edit applies to: this occurrence, every occurrence without its own agenda, or the meeting   |
-| `edit-agenda-input`                       | The agenda textarea (`lfx-textarea`), at most `MEETING_AGENDA_MAX_LENGTH`                            |
-| `edit-agenda-count`                       | Character count, amber from the warning length, red past the limit                                   |
-| `edit-agenda-empty-occurrence`            | An occurrence's own agenda emptied: it can't be removed, only changed                                |
-| `edit-agenda-conflict`                    | The agenda changed since the dialog opened; `edit-agenda-conflict-theirs` shows it                   |
-| `edit-agenda-use-theirs`                  | Keep the newer agenda; a second Save replaces it knowingly                                           |
-| `edit-agenda-moved`                       | The edited occurrence moved or was cancelled meanwhile; nothing is saved                             |
-| `edit-agenda-error`                       | The save failed; the dialog stays open                                                               |
-| `edit-agenda-save` / `edit-agenda-cancel` | Save (disabled until the agenda changes) and Cancel                                                  |
-| `materials-section`                       | Materials section                                                                                    |
-| `materials-file-${uid}`                   | One attached file                                                                                    |
-| `materials-link-${uid}`                   | One attached link                                                                                    |
-| `materials-section-add`                   | Add material (organizers; upcoming, or a past occurrence's page)                                     |
-| `materials-section-updated`               | The "Updated" pill: a change in the last seven days                                                  |
-| `materials-section-loading`               | The list's first load                                                                                |
-| `materials-section-sign-in`               | Sign in to view the materials (anonymous and refused)                                                |
-| `materials-section-sign-in-link`          | Its Sign in link                                                                                     |
-| `materials-section-error`                 | The list failed to load, with nothing to fall back on                                                |
-| `materials-section-retry`                 | Its Try again                                                                                        |
-| `materials-section-empty`                 | None attached                                                                                        |
-| `materials-section-files`                 | The files group ("Primary materials")                                                                |
-| `materials-section-links`                 | The links group ("Supporting materials")                                                             |
-| `materials-section-files-toggle`          | Show N more / Show less for files                                                                    |
-| `materials-section-links-toggle`          | Show N more / Show less for links                                                                    |
+| `data-testid`                    | Element                                                          |
+| -------------------------------- | ---------------------------------------------------------------- |
+| `agenda-section`                 | Agenda section                                                   |
+| `agenda-section-description`     | The description, links made clickable, collapsed past 200px      |
+| `agenda-section-empty`           | Shown when the meeting has no description                        |
+| `agenda-section-edit`            | The organizer's Edit agenda link to the meeting's edit page      |
+| `materials-section`              | Materials section                                                |
+| `materials-file-${uid}`          | One attached file                                                |
+| `materials-link-${uid}`          | One attached link                                                |
+| `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page) |
+| `materials-section-updated`      | The "Updated" pill: a change in the last seven days              |
+| `materials-section-loading`      | The list's first load                                            |
+| `materials-section-sign-in`      | Sign in to view the materials (anonymous and refused)            |
+| `materials-section-sign-in-link` | Its Sign in link                                                 |
+| `materials-section-error`        | The list failed to load, with nothing to fall back on            |
+| `materials-section-retry`        | Its Try again                                                    |
+| `materials-section-empty`        | None attached                                                    |
+| `materials-section-files`        | The files group ("Primary materials")                            |
+| `materials-section-links`        | The links group ("Supporting materials")                         |
+| `materials-section-files-toggle` | Show N more / Show less for files                                |
+| `materials-section-links-toggle` | Show N more / Show less for links                                |
 
 Files and links are separate prefixes rather than one `materials-item-${uid}` because E3-05 groups
 attachments by category, and a test for the grouping needs to assert on type without first reading

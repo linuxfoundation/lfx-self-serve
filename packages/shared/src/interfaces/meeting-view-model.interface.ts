@@ -496,39 +496,3 @@ export interface MeetingOccurrenceStripRequest {
  * `retry` until the second is, then `settled` (or `null` when the page is not waiting for a key).
  */
 export type MeetingHostKeyWait = 'closed' | 'opening' | 'retry' | 'settled';
-
-/** What the edit-agenda dialog edits (O-01): the series' agenda, or the selected occurrence's own. */
-export type MeetingAgendaEditScope = 'series' | 'occurrence';
-
-/** The occurrence an occurrence-scoped agenda edit saves to: the occurrence API needs its time. */
-export interface MeetingAgendaEditOccurrence {
-  occurrenceId: string;
-  startTime: string;
-  /** Minutes */
-  duration: number;
-}
-
-/** What the agenda section hands the edit-agenda dialog (O-01, #3604). */
-export interface MeetingEditAgendaDialogData {
-  meetingId: string;
-  scope: MeetingAgendaEditScope;
-  /** Set for an occurrence-scoped edit */
-  occurrence: MeetingAgendaEditOccurrence | null;
-  /** A series with more than one occurrence: a series edit says it applies to all of them */
-  recurring: boolean;
-  /** The agenda as the page showed it when the dialog opened, trimmed: the conflict check's baseline */
-  original: string;
-  /**
-   * Called with the agenda the page should now show: the one saved, or a newer one the organizer chose
-   * to keep. Called even if the dialog was dismissed while the save was in flight.
-   */
-  onApplied: (description: string) => void;
-}
-
-/** An agenda the page shows ahead of its next read, after an edit (O-01): keyed to what it edited. */
-export interface MeetingAgendaOverride {
-  meetingId: string;
-  /** `null` for the series' agenda */
-  occurrenceId: string | null;
-  description: string;
-}

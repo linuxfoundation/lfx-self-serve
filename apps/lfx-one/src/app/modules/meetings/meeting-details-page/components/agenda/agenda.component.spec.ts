@@ -2,22 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { signal, WritableSignal } from '@angular/core';
-import { Subject } from 'rxjs';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import {
-  Meeting,
-  MeetingAgendaOverride,
-  MeetingEditAgendaDialogData,
-  MeetingOccurrence,
-  MeetingTimeState,
-  PublicMeetingProject,
-} from '@lfx-one/shared/interfaces';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Meeting, MeetingOccurrence, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
-import { MeetingEditAgendaDialogComponent } from '../edit-agenda-dialog/edit-agenda-dialog.component';
 import { MeetingAgendaComponent } from './agenda.component';
 
 type LoadedMeeting = Meeting & { project: PublicMeetingProject };
@@ -27,10 +17,6 @@ describe('MeetingAgendaComponent', () => {
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
   let timeState: WritableSignal<MeetingTimeState>;
-  let agendaOverride: WritableSignal<MeetingAgendaOverride | null>;
-  let reload: ReturnType<typeof vi.fn>;
-  let open: ReturnType<typeof vi.fn>;
-  let closed: Subject<unknown>;
 
   const build = (overrides: Partial<Meeting> = {}): LoadedMeeting =>
     ({
@@ -45,17 +31,11 @@ describe('MeetingAgendaComponent', () => {
     meeting = signal<LoadedMeeting | undefined>(build());
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
     timeState = signal<MeetingTimeState>('before');
-    agendaOverride = signal<MeetingAgendaOverride | null>(null);
-    reload = vi.fn();
-    closed = new Subject<unknown>();
-    open = vi.fn().mockReturnValue({ onClose: closed.asObservable(), onDestroy: new Subject<void>() } as unknown as DynamicDialogRef);
 
     await TestBed.configureTestingModule({
       imports: [MeetingAgendaComponent],
-      providers: [provideRouter([]), { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence, timeState, agendaOverride, reload } }],
-    })
-      .overrideComponent(MeetingAgendaComponent, { set: { providers: [{ provide: DialogService, useValue: { open, dialogComponentRefMap: new Map() } }] } })
-      .compileComponents();
+      providers: [provideRouter([]), { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence, timeState } }],
+    }).compileComponents();
 
     fixture = TestBed.createComponent(MeetingAgendaComponent);
     fixture.detectChanges();
@@ -131,81 +111,22 @@ describe('MeetingAgendaComponent', () => {
     expect(query('agenda-section-edit')).toBeNull();
   });
 
-  describe('Edit agenda (O-01)', () => {
-    const openEditor = (): MeetingEditAgendaDialogData => {
-      query('agenda-section-edit')?.click();
-      expect(open).toHaveBeenCalledWith(MeetingEditAgendaDialogComponent, expect.objectContaining({ showHeader: false }));
-      return open.mock.calls[0][1].data as MeetingEditAgendaDialogData;
-    };
+  it("passes the meeting's committee to the edit page, as the meeting cards do", () => {
+    meeting.set(build({ organizer: true, project_slug: 'own-slug', committees: [{ uid: 'c1' }] } as Partial<Meeting>));
+    fixture.detectChanges();
 
-    beforeEach(() => {
-      meeting.set(build({ organizer: true, recurrence: { type: 2 } } as Partial<Meeting>));
-      fixture.detectChanges();
-    });
+    expect(query('agenda-section-edit')?.getAttribute('href')).toBe('/meetings/meeting-1/edit?project=own-slug&committee_uid=c1');
+  });
 
-    it("opens a dialog on the page for the series' agenda", () => {
-      expect(query('agenda-section-edit')?.getAttribute('aria-haspopup')).toBe('dialog');
-      expect(openEditor()).toEqual({
-        onApplied: expect.any(Function),
-        meetingId: 'meeting-1',
-        scope: 'series',
-        occurrence: null,
-        recurring: true,
-        original: 'Review the roadmap. Notes: https://docs.acme-motors.example/roadmap',
-      });
-    });
+  // Built as the meeting cards build it: under the foundation or project when known, with the project.
+  it.each([
+    [true, '/foundation/meetings/meeting-1/edit?project=acme-project'],
+    [false, '/project/meetings/meeting-1/edit?project=acme-project'],
+    [undefined, '/meetings/meeting-1/edit?project=acme-project'],
+  ] as [boolean | undefined, string][])('links Edit agenda to the edit page (is_foundation %s)', (isFoundation, href) => {
+    meeting.set(build({ organizer: true, is_foundation: isFoundation } as Partial<Meeting>));
+    fixture.detectChanges();
 
-    it("edits the selected occurrence's own agenda when it has one", () => {
-      selectedOccurrence.set({ occurrence_id: '1700000000', start_time: '2023-11-14T22:13:20Z', duration: 45, description: 'Occurrence notes' });
-      fixture.detectChanges();
-
-      expect(openEditor()).toEqual(
-        expect.objectContaining({
-          scope: 'occurrence',
-          occurrence: { occurrenceId: '1700000000', startTime: '2023-11-14T22:13:20Z', duration: 45 },
-          original: 'Occurrence notes',
-        })
-      );
-    });
-
-    it('shows a saved agenda at once and re-reads the meeting', () => {
-      openEditor().onApplied('New agenda');
-      fixture.detectChanges();
-
-      expect(agendaOverride()).toEqual({ meetingId: 'meeting-1', occurrenceId: null, description: 'New agenda' });
-      expect(query('agenda-section-description')?.textContent).toContain('New agenda');
-      expect(reload).toHaveBeenCalled();
-    });
-
-    it('changes nothing when the dialog is cancelled', () => {
-      openEditor();
-      closed.next(undefined);
-      fixture.detectChanges();
-
-      expect(agendaOverride()).toBeNull();
-      expect(reload).not.toHaveBeenCalled();
-    });
-
-    it('shows a saved occurrence agenda for that occurrence only', () => {
-      selectedOccurrence.set({ occurrence_id: '1700000000', start_time: '2023-11-14T22:13:20Z', duration: 45, description: 'Occurrence notes' });
-      fixture.detectChanges();
-      openEditor().onApplied('New occurrence notes');
-      fixture.detectChanges();
-
-      expect(agendaOverride()).toEqual({ meetingId: 'meeting-1', occurrenceId: '1700000000', description: 'New occurrence notes' });
-      expect(query('agenda-section-description')?.textContent).toContain('New occurrence notes');
-
-      selectedOccurrence.set({ occurrence_id: '1700604800', start_time: '2023-11-21T22:13:20Z', duration: 45 });
-      fixture.detectChanges();
-      expect(query('agenda-section-description')?.textContent).toContain('Review the roadmap');
-    });
-
-    it("never shows a series override over an occurrence's own agenda", () => {
-      agendaOverride.set({ meetingId: 'meeting-1', occurrenceId: null, description: 'Series agenda' });
-      selectedOccurrence.set({ occurrence_id: '1700000000', start_time: '2023-11-14T22:13:20Z', duration: 45, description: 'Occurrence notes' });
-      fixture.detectChanges();
-
-      expect(query('agenda-section-description')?.textContent).toContain('Occurrence notes');
-    });
+    expect(query('agenda-section-edit')?.getAttribute('href')).toBe(href);
   });
 });
