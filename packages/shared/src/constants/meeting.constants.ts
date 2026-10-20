@@ -9,11 +9,7 @@ import type {
   MeetingComposerPreviewFeature,
   MeetingStatusKind,
   MeetingTypeConfig,
-  PastMeetingIdentityTier,
   PastMeetingSummaryApprovalState,
-  PastRosterAttendanceFilter,
-  PastRosterFilterOption,
-  PastRosterInvitationFilter,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -598,51 +594,6 @@ export const DEFAULT_MEETING_TOOL = 'Zoom';
  * @description Who can access meeting artifacts (recordings, transcripts, AI summaries) by default
  */
 export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
-
-/**
- * Where a past meeting's attendance rate changes band (E4-05), in percent: below `medium` is `low`,
- * below `high` is `medium`, the rest `high`. One set for the public and the admin page.
- */
-export const PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS = { medium: 25, high: 70 } as const;
-
-/** Each identity tier's label on the admin participant list (N-02). An `unverified` row left unknown reads "Unknown". */
-export const PAST_MEETING_IDENTITY_TIER_LABELS: Record<PastMeetingIdentityTier, string> = {
-  verified: 'Verified',
-  'auto-matched': 'Auto-matched',
-  'ai-reconciled': 'AI-matched',
-  unverified: 'Needs review',
-};
-
-/** The label of an `unverified` attendee that reconciliation left unknown (N-02). */
-export const PAST_MEETING_IDENTITY_UNKNOWN_LABEL = 'Unknown';
-
-/** The label of an attendee that is a notetaker or recording bot (#2253), in place of a tier (N-02). */
-export const PAST_MEETING_NOTETAKER_BOT_LABEL = 'Notetaker bot';
-
-/**
- * How strongly each identity tier identifies an attendee (N-02), so the BFF keeps the best-identified
- * record when it merges one person's duplicate attendee records, whatever order they arrive in.
- */
-export const PAST_MEETING_IDENTITY_TIER_RANK: Record<PastMeetingIdentityTier, number> = {
-  unverified: 0,
-  'auto-matched': 1,
-  'ai-reconciled': 2,
-  verified: 3,
-};
-
-/** The V2 past roster's invitation filter (E4-05), worded as the admin page's cells ("Not invited"). */
-export const PAST_ROSTER_INVITATION_FILTER_OPTIONS: PastRosterFilterOption<PastRosterInvitationFilter>[] = [
-  { value: 'all', label: 'All' },
-  { value: 'invited', label: 'Invited' },
-  { value: 'not-invited', label: 'Not invited' },
-];
-
-/** The V2 past roster's attendance filter (E4-05). */
-export const PAST_ROSTER_ATTENDANCE_FILTER_OPTIONS: PastRosterFilterOption<PastRosterAttendanceFilter>[] = [
-  { value: 'all', label: 'All' },
-  { value: 'attended', label: 'Attended' },
-  { value: 'absent', label: 'Absent' },
-];
 
 /**
  * Default repeat interval for recurring meetings

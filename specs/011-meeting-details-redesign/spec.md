@@ -161,7 +161,7 @@ wait for it.
 | Shell & header              | E1-01 (#1770) · E1-02 (#1771) · E1-03 (#1772) · E1-04 (#1773) · E1-05 (#2877) · E1-06 (#1774)                                                                                                                                                                                                                                                                                              |
 | Action slot & viewer states | E2-01 (#1775) · E2-02 (#2878) · E2-03 (#2879) · E2-04 (#2880) · E2-05 (#2881) · E2-06 (#2882) · N-01 (#3263) pre-2024 RSVP state                                                                                                                                                                                                                                                           |
 | Content                     | E3-01 (#3250) agenda · E3-02 (#3251) materials · E3-03 (#3252) public attachments endpoint (BFF) · E3-04 (#3253) people · E3-05 (#3254) attachment categories · E4-01 (#3255) recording + transcript · E4-02 (#3256) recording duration (withdrawn) · E4-03 (#3257) inline AI summary · E4-04 (#3258) public artifact routes (withdrawn) · E4-05 (#3259) align with admin page (withdrawn) |
-| Identity & admin            | N-02 (#3264) participant identity tiers · N-03 (#3265) auth guard on the past-meeting admin route                                                                                                                                                                                                                                                                                          |
+| Identity & admin            | N-02 (#3264) participant identity tiers (withdrawn) · N-03 (#3265) auth guard on the past-meeting admin route                                                                                                                                                                                                                                                                              |
 | Quality                     | E5-02 (#3260) a11y · E5-03 (#3261) V2 specs · E5-04 (#3262) E2E (content + robust). E5-01 shipped before the epic (#2046) and is not filed                                                                                                                                                                                                                                                 |
 
 E1-04 renders a **single** 4-way privacy chip built on the existing `getMeetingPrivacyLabel` /
@@ -170,9 +170,9 @@ E1-04 renders a **single** 4-way privacy chip built on the existing `getMeetingP
 E2-01 is the resolver-driven action slot with **nine** kinds. Issue bodies that list six predate
 E0-02; see `testid-contract.md`.
 
-N-01 is the pre-2024 RSVP-unavailable state. N-02 is participant identity tiers for past meetings —
-verified · unknown/needs-review · auto-matched · AI-reconciled — plus the `zoom_user_name` vs
-`mapped_invitee_name` distinction.
+N-01 is the pre-2024 RSVP-unavailable state. N-02 (participant identity tiers) and E4-05's past
+roster and admin-page alignment were withdrawn in the 2026-10-20 scope reset: an ended meeting shows
+V1's attended / absent / rate figures only, and the admin page is V1's, plus N-03's guard.
 
 ### Phase 2
 

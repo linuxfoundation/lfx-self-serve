@@ -109,20 +109,8 @@ one, through the participants list; only anonymous viewers have none (FR-032).
 ## Past participants
 
 `PastMeetingParticipant` carries `is_verified`, `is_unknown`, `is_auto_matched`,
-`is_ai_reconciled`, `zoom_user_name` and `mapped_invitee_name`, all optional. N-02 (FR-033) reads
-them through `getPastMeetingIdentityTier`, which gives an attendee one of four tiers. The flags are
-not exclusive: reconciliation sets `is_verified` on every match it makes, automatic or AI, so they are
-read in order. Left unknown or never verified gives `unverified`. Then an AI suggestion an organizer
-confirmed gives `ai-reconciled`, then the automatic exact email or username match gives
-`auto-matched`, and a match with neither gives `verified`. The public roster names every identified
-attendee (and invitees who did not attend) without the tier, and counts the `unverified` ones. The
-admin list shows every tier. `countPastMeetingAttendance` adds `unverified_attended_count`, notetaker
-bots aside, which the admin page's attendance figures show as "N unverified". An attendee an
-organizer left unknown stays in that count: nobody knows who they are. A notetaker bot
-(`isPastMeetingNotetakerBot`, #2253) is never queued for review, so it is neither listed publicly nor
-counted as unverified or unidentified, and the admin list labels it a bot instead of a tier. When the
-BFF merges one person's duplicate attendee records, it keeps the best-identified one
-(`PAST_MEETING_IDENTITY_TIER_RANK`), so the tier does not depend on the order the records arrive in.
+`is_ai_reconciled`, `zoom_user_name` and `mapped_invitee_name`, all optional. Nothing renders them:
+N-02 was withdrawn (FR-033), as V1 shows no tiers.
 
 ## Not in the model yet
 

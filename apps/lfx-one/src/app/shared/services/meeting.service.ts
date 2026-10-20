@@ -49,7 +49,6 @@ import {
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
   PublicPastMeetingResponse,
-  PublicPastMeetingRoster,
   PublicProjectMeetingsResponse,
   QueryServiceCountResponse,
   ReconcilePastMeetingParticipantsResponse,
@@ -627,14 +626,6 @@ export class MeetingService {
 
   public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
     return this.http.get<PastMeetingSummary>(`/api/past-meetings/${encodeURIComponent(pastMeetingUid)}/summary`);
-  }
-
-  /**
-   * The past meeting's public roster (E4-04, E4-05): identified participants with § Public roster
-   * fields, the unidentified-attendee count and the meeting's attendance counts. Needs a session.
-   */
-  public getPublicPastMeetingRoster(pastMeetingId: string): Observable<PublicPastMeetingRoster> {
-    return this.http.get<PublicPastMeetingRoster>(`/public/api/meetings/past/${encodeURIComponent(pastMeetingId)}/participants`);
   }
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {

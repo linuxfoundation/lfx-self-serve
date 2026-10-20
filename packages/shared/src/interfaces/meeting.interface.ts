@@ -382,8 +382,6 @@ export interface Meeting {
   participant_count?: number;
   /** Attended count for past meetings (response only) */
   attended_count?: number;
-  /** Attendees nobody has identified yet (`PastMeetingAttendanceCounts.unverified_attended_count`, N-02). */
-  unverified_attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
   /** RFC3339 start time of the next upcoming occurrence (server-computed by the meeting service).
@@ -1130,88 +1128,6 @@ export interface PastMeetingParticipant {
 }
 
 /**
- * One row of the public past-meeting roster (`GET /public/api/meetings/past/:id/participants`): only
- * the fields `meeting-surface-boundary.md` § Public roster fields allows. No email, job title or
- * committee voting status.
- */
-export interface PublicPastMeetingParticipant {
-  uid: string;
-  first_name: string;
-  last_name: string;
-  avatar_url?: string;
-  org_name?: string;
-  is_attended: boolean;
-  is_invited: boolean;
-}
-
-/** How well a past meeting was attended, by its rate (E4-05): the band its rate bar is coloured by. */
-export type PastMeetingAttendanceTone = 'low' | 'medium' | 'high';
-
-/**
- * How an attendee's identity was established (N-02, FR-033), from the reconciliation flags
- * (`getPastMeetingIdentityTier`): `verified` (matched to a known person), `auto-matched` (matched
- * automatically on an exact email or username), `ai-reconciled` (an AI suggestion an organizer
- * confirmed), or `unverified` (left unknown, or still needing review). Only attendees have one.
- */
-export type PastMeetingIdentityTier = 'verified' | 'auto-matched' | 'ai-reconciled' | 'unverified';
-
-/**
- * The names behind an attendee's row besides the one it shows (N-02, `getPastMeetingIdentityNames`),
- * each null unless it differs from that name: what they joined Zoom as, and the invitee
- * reconciliation matched them to.
- */
-export interface PastMeetingIdentityNames {
-  joinedAs: string | null;
-  matchedTo: string | null;
-}
-
-/** The participant counts a past meeting carries, as the BFF counts them (`countPastMeetingAttendance`). */
-export interface PastMeetingAttendanceCounts {
-  /** Every participant record: each was invited, attended, or both. */
-  participant_count: number;
-  attended_count: number;
-  /** Participants who were invited. */
-  individual_registrants_count: number;
-  /**
-   * Attendees in the `unverified` identity tier (N-02): counted in `attended_count`, but nobody has
-   * established who they are. Notetaker bots are left out, as reconciliation leaves them out.
-   */
-  unverified_attended_count?: number;
-}
-
-/**
- * A past meeting's attendance as both the public page and the admin page show it (E4-05): one source
- * of truth, `getPastMeetingAttendanceFigures` over the BFF's counts. `rate` and `tone` are null when
- * there is nobody to count (no participants), so a page shows the row without inventing a percentage.
- */
-export interface PastMeetingAttendanceFigures {
-  total: number;
-  attended: number;
-  /** Participants who did not attend (`total - attended`). */
-  absent: number;
-  /** Attended as a whole percentage of `total`. */
-  rate: number | null;
-  tone: PastMeetingAttendanceTone | null;
-  /** How many of `attended` are unverified (N-02), so a page can say so; null when not counted. */
-  unverified: number | null;
-}
-
-/**
- * The public past-meeting roster: the identified people (invitees, and attendees in any identity tier
- * but `unverified`), without their tier, plus how many attendees are `unverified` (the identity-tier
- * aggregate, N-02), who are counted but never listed.
- */
-export interface PublicPastMeetingRoster {
-  participants: PublicPastMeetingParticipant[];
-  unidentified_attendees: number;
-  /**
-   * The meeting's attendance counts over every participant, listed or not (`countPastMeetingAttendance`,
-   * E4-05): the figures the V2 page shows, from the same helper as the admin page.
-   */
-  attendance: PastMeetingAttendanceCounts;
-}
-
-/**
  * Past meeting participant enriched with committee membership data from meeting registrants
  */
 export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
@@ -1229,20 +1145,6 @@ export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
   committee_voting_status?: string | null;
   /** Committee category (from committee member data) */
   committee_category?: string | null;
-}
-
-/**
- * A row of the admin participant list (N-02): the enriched participant plus its identity tier, the
- * tier's label (null for someone who did not attend), and the names behind the row
- * (`toPastMeetingParticipantRow`).
- */
-export interface PastMeetingParticipantRow extends EnrichedPastMeetingParticipant {
-  /** Null for someone who did not attend, and for every attending notetaker bot, matched or not. */
-  identity_tier: PastMeetingIdentityTier | null;
-  identity_label: string | null;
-  identity_names: PastMeetingIdentityNames;
-  /** A notetaker or recording bot (#2253): never queued for review, so never shown as needing one. */
-  is_notetaker_bot: boolean;
 }
 
 /**
@@ -2376,18 +2278,6 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
-
-/** The past roster's invitation filter on the V2 page (E4-05). */
-export type PastRosterInvitationFilter = 'all' | 'invited' | 'not-invited';
-
-/** The past roster's attendance filter on the V2 page (E4-05). */
-export type PastRosterAttendanceFilter = 'all' | 'attended' | 'absent';
-
-/** One choice of a past-roster filter on the V2 page (E4-05): its value and its label. */
-export interface PastRosterFilterOption<T extends string> {
-  value: T;
-  label: string;
-}
 
 /** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
 export interface CalendarLinkEvent {

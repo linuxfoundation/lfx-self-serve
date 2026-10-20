@@ -56,7 +56,6 @@ own namespace; the two never share a value.
 | `meeting-header-badge-youtube`              | YouTube upload enabled                                                                                                |
 | `meeting-header-badge-ai-summary`           | AI summary enabled                                                                                                    |
 | `meeting-header-copy-link`                  | Copy meeting link                                                                                                     |
-| `meeting-header-admin-link`                 | Admin view: the organizer's link to `/details`, on an ended meeting's occurrence only (E4-05)                         |
 | `meeting-status-pill`                       | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                     |
 | `meeting-privacy-chip`                      | The single privacy chip (see below)                                                                                   |
 | `meeting-time-banner`                       | The time banner at the top of the rail card (see below)                                                               |
@@ -270,43 +269,28 @@ the row's contents.
 
 ## People
 
-| `data-testid`                            | Element                                                                                         |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `people-section`                         | The roster section                                                                              |
-| `people-section-count`                   | "{n} invited", the fetched roster's length                                                      |
-| `people-section-add`                     | Add guest (organizers, upcoming only)                                                           |
-| `people-section-loading`                 | The roster's first load                                                                         |
-| `people-section-error`                   | The roster failed to load, with nothing to fall back on                                         |
-| `people-section-retry`                   | Its Try again                                                                                   |
-| `people-section-empty`                   | Nobody invited yet (upcoming); nobody listed (past)                                             |
-| `people-section-indexing`                | Added guests counted but not listed yet                                                         |
-| `people-section-tallies`                 | The RSVP tallies (RSVP tracking on only)                                                        |
-| `people-section-tally-${status}`         | One tally: `accepted`, `maybe`, `declined`, `pending`                                           |
-| `people-section-list`                    | The rows shown on the page (the first five; past: all of them after Show all)                   |
-| `participant-row-${uid}`                 | One participant row                                                                             |
-| `people-section-view-all`                | Opens the full list (upcoming: the drawer; past: Show all / Show fewer inline, `aria-expanded`) |
-| `people-drawer`                          | The full list's drawer (V1's guest list inside)                                                 |
-| `people-drawer-title`                    | Its title: Meeting Members (a committee meeting) or Meeting Guests                              |
-| `people-drawer-count`                    | Its "{n} guests" / "{n} members" (a loaded roster only)                                         |
-| `people-drawer-close`                    | Its close button                                                                                |
-| `people-section-no-access`               | Past roster: the BFF refused it (403, E4-05)                                                    |
-| `people-section-sign-in`                 | Past roster: the session lapsed (401), with `people-section-sign-in-link`                       |
-| `people-past-attendance`                 | Past roster: the attendance figures (shared with the admin page)                                |
-| `people-past-rate`                       | Their rate, `—` when nobody is counted                                                          |
-| `people-past-rate-bar[data-tone]`        | The rate bar: `low`, `medium` or `high` (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`)             |
-| `people-past-attended`                   | "{n} of {total} attended"                                                                       |
-| `people-past-absent`                     | "{n} absent"                                                                                    |
-| `people-past-filter-invitation-${value}` | Invitation filter: `all`, `invited`, `not-invited` (`aria-pressed`)                             |
-| `people-past-filter-attendance-${value}` | Attendance filter: `all`, `attended`, `absent` (`aria-pressed`)                                 |
-| `people-past-status`                     | Past roster: the screen-reader status line ("Showing n of m people." / no match)                |
-| `people-past-filter-empty`               | Nobody matches the filters                                                                      |
-| `people-past-unidentified`               | Attendees counted but not listed (identity not verified, N-02)                                  |
+| `data-testid`                    | Element                                                            |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `people-section`                 | The roster section                                                 |
+| `people-section-count`           | "{n} invited", the fetched roster's length                         |
+| `people-section-add`             | Add guest (organizers, upcoming only)                              |
+| `people-section-loading`         | The roster's first load                                            |
+| `people-section-error`           | The roster failed to load, with nothing to fall back on            |
+| `people-section-retry`           | Its Try again                                                      |
+| `people-section-empty`           | Nobody invited yet                                                 |
+| `people-section-indexing`        | Added guests counted but not listed yet                            |
+| `people-section-tallies`         | The RSVP tallies (RSVP tracking on only)                           |
+| `people-section-tally-${status}` | One tally: `accepted`, `maybe`, `declined`, `pending`              |
+| `people-section-list`            | The rows shown on the page (the first five)                        |
+| `participant-row-${uid}`         | One participant row                                                |
+| `people-section-view-all`        | Opens the full list                                                |
+| `people-drawer`                  | The full list's drawer (V1's guest list inside)                    |
+| `people-drawer-title`            | Its title: Meeting Members (a committee meeting) or Meeting Guests |
+| `people-drawer-count`            | Its "{n} guests" / "{n} members" (a loaded roster only)            |
+| `people-drawer-close`            | Its close button                                                   |
 
-Upcoming and past rows come from different data, so they carry different state attributes. An
-upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP
-and no registrant `type`. Never put the upcoming attributes on a past row: calling
-`getRegistrantAttendanceStatus` on a participant returns `pending` for everyone, and
-`data-invitation` has nothing to read.
+The section is for upcoming and live meetings only. An ended meeting has no named roster, as in
+V1; it shows V1's attendance figures instead (§ Attendance).
 
 ### Upcoming rows: `participant-row-${uid}[data-attendance]` and `[data-invitation]`
 
@@ -330,27 +314,18 @@ filter and per-avatar badge alike. An absent attribute is therefore the correct 
 pre-2024 meeting, and a test that expects `data-attendance="none"` there is asserting UI the product
 must not render.
 
-### Past rows: `participant-row-${uid}[data-attended]` and `[data-invited]`
+## Attendance
 
-```text
-data-attended: true | false
-data-invited:  true | false
-```
+An ended meeting's figures, as V1's `attendance-summary` shows them: no names, the same source
+(`/api/past-meetings/:uid/participants`, else the past endpoint's counts) and the same gating
+(signed in, `full_access`). The section renders only when there is at least one participant.
 
-They mirror `PastMeetingParticipant.is_attended` and `.is_invited`, so a test can tell an invited
-no-show from an uninvited attendee. Both are on every past row. The public page lists only identified people
-(an invitee who did not attend, or an attendee in any identity tier but `unverified`) and counts the rest
-(`people-past-unidentified`), so a past row carries no identity-tier attribute (E4-05, N-02).
-
-The admin participant list (`/meetings/:id/details`, outside this page) carries the full tiering on
-the same row testid: `participant-row-${uid}[data-attended][data-invited][data-identity-tier]`, with
-`data-identity-tier` one of `verified | auto-matched | ai-reconciled | unverified`
-(`PastMeetingIdentityTier`) and absent for someone who did not attend. An attending notetaker bot
-has no tier either: it carries `data-notetaker-bot="true"` and a `participant-notetaker-bot` badge
-instead, because reconciliation never queues a bot for review (#2253). Inside the row,
-`participant-identity-tier` is the tier badge, and `participant-joined-as` / `participant-matched-to`
-show the Zoom display name and the matched invitee where they differ from the row's name.
-`attendance-unverified` sits beside the attended count. N-02, FR-033.
+| `data-testid`                 | Element                                    |
+| ----------------------------- | ------------------------------------------ |
+| `attendance-section`          | The attendance section                     |
+| `attendance-section-attended` | "{n} attended"                             |
+| `attendance-section-absent`   | "{n} absent"                               |
+| `attendance-section-rate`     | "{n}% rate", rounded, as V1's attendance % |
 
 ## Tools, join details and discovery
 

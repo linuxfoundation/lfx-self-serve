@@ -128,51 +128,29 @@
 
     <!-- Attendance Stats + Actions -->
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <!-- E4-05: the shared figures (one source of truth with the public page). Shown for a real zero too;
-           replaced by a note while the counts are unknown. -->
-      @if (attendanceFigures(); as figures) {
+      @if (meeting.participant_count) {
         <div class="flex flex-wrap gap-3" data-testid="attendance-section">
           <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
             <i class="fa-light fa-chart-pie text-gray-400 text-sm"></i>
             <span class="text-sm text-gray-500 uppercase tracking-wide">Rate</span>
-            @if (figures.rate !== null) {
-              <span class="text-xl font-bold text-gray-900" data-testid="attendance-rate">{{ figures.rate }}%</span>
-            } @else {
-              <span class="text-xl font-bold text-gray-400" data-testid="attendance-rate">—</span>
-            }
+            <span class="text-xl font-bold text-gray-900">{{ attendancePercentage() }}%</span>
             <div class="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              @if (figures.tone) {
-                <div
-                  class="h-full rounded-full"
-                  [ngClass]="attendanceBarClass[figures.tone]"
-                  [style.width.%]="figures.rate"
-                  [attr.data-tone]="figures.tone"
-                  data-testid="attendance-rate-bar"></div>
-              }
+              <div class="h-full rounded-full" [ngClass]="attendanceBarColor()" [style.width.%]="attendancePercentage()"></div>
             </div>
           </div>
           <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
             <i class="fa-light fa-circle-check text-emerald-500 text-sm"></i>
             <span class="text-sm text-gray-500 uppercase tracking-wide">Attended</span>
-            <span class="text-xl font-bold text-emerald-600" data-testid="attendance-attended">{{ figures.attended }}</span>
-            <span class="text-xs text-gray-400">of {{ figures.total }}</span>
-            @if (figures.unverified) {
-              <!-- Counted as attended, but nobody has established who they are (N-02). -->
-              <span class="text-xs font-medium text-amber-600" data-testid="attendance-unverified">{{ figures.unverified }} unverified</span>
-            }
+            <span class="text-xl font-bold text-emerald-600">{{ meeting.attended_count || 0 }}</span>
+            <span class="text-xs text-gray-400">of {{ meeting.participant_count || 0 }}</span>
           </div>
           <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
             <i class="fa-light fa-circle-xmark text-gray-400 text-sm"></i>
             <span class="text-sm text-gray-500 uppercase tracking-wide">Absent</span>
-            <span class="text-xl font-bold text-gray-400" data-testid="attendance-absent">{{ figures.absent }}</span>
-            <span class="text-xs text-gray-400">of {{ figures.total }}</span>
+            <span class="text-xl font-bold text-gray-400">{{ (meeting.participant_count || 0) - (meeting.attended_count || 0) }}</span>
+            <span class="text-xs text-gray-400">of {{ meeting.participant_count || 0 }}</span>
           </div>
         </div>
-      } @else {
-        <!-- The BFF left the counts out (the participants could not all be read): say so, not a silent gap. -->
-        <p class="m-0 text-sm text-gray-500" data-testid="attendance-unavailable">
-          <i class="fa-light fa-circle-info mr-1.5 text-gray-400" aria-hidden="true"></i>Attendance figures are unavailable. Reload the page to try again.
-        </p>
       }
       <div class="flex flex-wrap gap-3">
         @if (hasRecording()) {
@@ -340,7 +318,7 @@
                 [ngClass]="invitationFilter() === 'uninvited' ? 'bg-white text-amber-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
                 (click)="invitationFilter.set('uninvited')"
                 data-testid="filter-uninvited">
-                Not invited
+                Uninvited
               </button>
             </div>
 
@@ -410,16 +388,13 @@
               }
               <th class="w-24">Attendance</th>
               <th class="w-24">Invitation</th>
+              @if (isRecurring() && uninvitedCount() > 0) {
+                <th class="w-20 text-right">Actions</th>
+              }
             </tr>
           </ng-template>
           <ng-template #body let-p>
-            <!-- Reconciliation state rides on data-* (N-02), never on class names. -->
-            <tr
-              [attr.data-testid]="'participant-row-' + p.uid"
-              [attr.data-attended]="p.is_attended"
-              [attr.data-invited]="p.is_invited"
-              [attr.data-identity-tier]="p.identity_tier"
-              [attr.data-notetaker-bot]="p.is_notetaker_bot || null">
+            <tr>
               <td>
                 <div class="flex items-center gap-2.5">
                   <div class="relative flex-shrink-0">
@@ -432,36 +407,14 @@
                       @if (p.is_attended) {
                         <i class="fa-solid fa-check-circle text-emerald-600 text-sm"></i>
                       } @else {
-                        <!-- Absent is neutral, as on the Attendance pill (E4-05): grey, not red. -->
-                        <i class="fa-solid fa-times-circle text-gray-400 text-sm"></i>
+                        <i class="fa-solid fa-times-circle text-red-400 text-sm"></i>
                       }
                     </div>
                   </div>
-                  <div class="flex min-w-0 flex-col gap-0.5">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <span class="text-sm text-gray-900 truncate">{{ p.first_name }} {{ p.last_name }}</span>
-                      @if (p.host) {
-                        <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" data-testid="participant-organizer-tag"
-                          >Organizer</span
-                        >
-                      }
-                      @if (p.identity_tier && p.identity_label) {
-                        <lfx-tag
-                          [value]="p.identity_label"
-                          [severity]="identityTierSeverity[p.identity_tier]"
-                          styleClass="text-xs"
-                          data-testid="participant-identity-tier"
-                          [attr.data-identity-tier]="p.identity_tier"></lfx-tag>
-                      } @else if (p.is_notetaker_bot) {
-                        <!-- Reconciliation never queues a bot (#2253), so it is not shown as needing review. -->
-                        <lfx-tag [value]="p.identity_label" severity="secondary" styleClass="text-xs" data-testid="participant-notetaker-bot"></lfx-tag>
-                      }
-                    </div>
-                    @if (p.identity_names.matchedTo) {
-                      <span class="text-xs text-gray-500 break-words" data-testid="participant-matched-to">Matched to {{ p.identity_names.matchedTo }}</span>
-                    }
-                    @if (p.identity_names.joinedAs) {
-                      <span class="text-xs text-gray-500 break-words" data-testid="participant-joined-as">Joined Zoom as {{ p.identity_names.joinedAs }}</span>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-sm text-gray-900 truncate">{{ p.first_name }} {{ p.last_name }}</span>
+                    @if (p.host) {
+                      <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded" data-testid="participant-organizer-tag">Organizer</span>
                     }
                   </div>
                 </div>
@@ -509,6 +462,23 @@
                   <span class="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full whitespace-nowrap">Not invited</span>
                 }
               </td>
+              @if (isRecurring() && uninvitedCount() > 0) {
+                <td class="text-right">
+                  @if (!p.is_invited) {
+                    <lfx-button
+                      label="Invite"
+                      icon="fa-light fa-user-plus"
+                      [text]="true"
+                      size="small"
+                      severity="info"
+                      [disabled]="true"
+                      pTooltip="Coming soon"
+                      styleClass="!text-xs"
+                      [attr.data-testid]="'invite-button-' + p.uid">
+                    </lfx-button>
+                  }
+                </td>
+              }
             </tr>
           </ng-template>
         </lfx-table>
