@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { FilterPillOption } from '@lfx-one/shared/interfaces';
 import { Tooltip } from 'primeng/tooltip';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FilterPillsComponent } from './filter-pills.component';
 
@@ -136,5 +136,23 @@ describe('FilterPillsComponent', () => {
     expect(host.classList).toContain('block');
     expect(host.classList).toContain('min-w-0');
     expect(host.classList).toContain('max-w-full');
+  });
+
+  // jsdom has no layout, so the boxes are stubbed: a 100px track whose selected chip sits past its right edge.
+  it('scrolls the track to bring a selected chip past its edge into view', async () => {
+    fixture.componentRef.setInput('variant', 'track');
+    fixture.componentRef.setInput('selectedFilter', 'kubecon');
+    await fixture.whenStable();
+
+    const track = fixture.nativeElement.querySelector('[data-testid="filter-pills-track"]') as HTMLElement;
+    let scrollLeft = 0;
+    Object.defineProperty(track, 'scrollLeft', { configurable: true, get: () => scrollLeft, set: (value: number) => (scrollLeft = value) });
+    vi.spyOn(track, 'getBoundingClientRect').mockReturnValue({ left: 0, right: 100 } as DOMRect);
+    vi.spyOn(pill('kubecon'), 'getBoundingClientRect').mockReturnValue({ left: 90, right: 160 } as DOMRect);
+
+    fixture.componentRef.setInput('options', [...options]);
+    await fixture.whenStable();
+
+    expect(scrollLeft).toBe(60);
   });
 });

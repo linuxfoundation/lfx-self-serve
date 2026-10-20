@@ -26,7 +26,7 @@
 } @else if (variant() === 'track') {
   <!-- One grey track with the selected option as a white chip. It scrolls rather than wraps on overflow, since a
        wrapped track reads as two broken controls. Pixel sizes are exact; the 14px root makes the rem scale undershoot. -->
-  <div class="max-w-full overflow-x-auto" data-testid="filter-pills-track">
+  <div #track class="max-w-full overflow-x-auto" data-testid="filter-pills-track">
     <div class="inline-flex items-center gap-1 rounded-full bg-gray-100 p-1" role="group" [attr.aria-label]="ariaLabel() || null">
       @for (option of options(); track option.id) {
         <button
