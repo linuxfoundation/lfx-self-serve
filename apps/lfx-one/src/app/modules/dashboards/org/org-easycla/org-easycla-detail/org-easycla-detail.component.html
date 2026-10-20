@@ -243,16 +243,8 @@
                 <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
               }
               @if (alreadyDesignee()) {
-                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-designee-identified">{{ designeeStartCopy.identified }}</p>
-                <p class="text-sm text-gray-700">{{ designeeStartCopy.role }}</p>
-                <p class="font-semibold text-sm text-gray-900">{{ designeeStartCopy.stepsHeading }}</p>
-                <ol class="flex list-none flex-col gap-2 p-0" data-testid="org-easycla-detail-designee-steps">
-                  @for (step of designeeStartCopy.steps; track step.label) {
-                    <li class="text-sm text-gray-700">
-                      <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
-                    </li>
-                  }
-                </ol>
+                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-designee-identified">{{ designeeRestingCopy.identified }}</p>
+                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-designee-role">{{ designeeRestingCopy.role }}</p>
               } @else {
                 <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
                 <!--
@@ -299,7 +291,7 @@
             -->
               <div class="flex flex-wrap items-center gap-3">
                 <lfx-button
-                  [label]="notStartedCopy.startLabel"
+                  [label]="startLabel()"
                   icon="fa-light fa-file-signature"
                   [disabled]="startDisabled()"
                   [ariaLabel]="startAriaLabel()"
