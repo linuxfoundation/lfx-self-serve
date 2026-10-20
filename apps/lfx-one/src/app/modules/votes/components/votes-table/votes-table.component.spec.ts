@@ -1256,6 +1256,7 @@ describe('VotesTableComponent — Extend deadline', () => {
         provideNoopAnimations(),
         { provide: VoteService, useValue: { extendVote } },
         { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
       ],
     })
       // DialogService is a component-level provider (see the "deliberately not here" comment on
