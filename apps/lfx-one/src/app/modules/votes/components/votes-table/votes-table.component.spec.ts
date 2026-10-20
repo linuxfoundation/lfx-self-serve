@@ -8,6 +8,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
 import { ClipboardShareService } from '@services/clipboard-share.service';
+import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -200,6 +201,7 @@ describe('VotesTableComponent — status tab counts on initial load', () => {
         { provide: VoteService, useValue: {} },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(LoadingCountsHostComponent);
