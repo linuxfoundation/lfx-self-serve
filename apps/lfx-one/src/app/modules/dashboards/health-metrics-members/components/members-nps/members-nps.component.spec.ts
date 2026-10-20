@@ -155,6 +155,7 @@ describe('MembersNpsComponent', () => {
       ['Q2 26', '+62', '69%'],
     ]);
     expect(query('members-nps-chart')?.getAttribute('aria-label')).toContain('over 2 survey waves');
+    expect(query('members-nps-legend-low-response')).toBeNull();
     expect(text('members-nps-trend-note')).toBe('Response rate is holding around 69%, so the movement in the score is meaningful.');
   });
 
@@ -203,6 +204,7 @@ describe('MembersNpsComponent', () => {
       ['+54', '71%'],
       ['+80 (low response)', '21%'],
     ]);
+    expect(query('members-nps-legend-low-response')).not.toBeNull();
   });
 
   it('dashes an audience the view has no score for, keeping the side stats', async () => {

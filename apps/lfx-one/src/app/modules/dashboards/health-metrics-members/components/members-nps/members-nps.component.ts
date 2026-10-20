@@ -98,6 +98,7 @@ export class MembersNpsComponent {
   protected readonly segments: Signal<HealthMetricsMembersNpsSegmentView[]> = computed(() => buildHealthMetricsMembersNpsSegments(this.selectedAudience()));
   protected readonly trend: Signal<HealthMetricsMembersNpsTrendPointView[]> = computed(() => buildHealthMetricsMembersNpsTrend(this.response().trend));
   protected readonly trendNote: Signal<HealthMetricsMembersNpsTrendNote | null> = computed(() => buildHealthMetricsMembersNpsTrendNote(this.trend()));
+  protected readonly hasLowConfidenceWave = computed(() => this.trend().some((point) => point.isLowConfidence));
   protected readonly noSurvey = computed(() => this.selectedAudience() === null);
   protected readonly distributionLabel = computed(
     () =>
