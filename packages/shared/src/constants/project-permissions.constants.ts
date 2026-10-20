@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FilterOption, ProjectPermissionUser } from '../interfaces';
+import type { FilterOption, FilterPillColor, ProjectPermissionUser } from '../interfaces';
 
 /**
  * Project permission roles, shared by the user form and the permissions table role filter.
@@ -12,3 +12,9 @@ export const PROJECT_PERMISSION_ROLE_OPTIONS: readonly FilterOption<ProjectPermi
   { label: 'View', value: 'view' },
   { label: 'Manage', value: 'manage' },
 ];
+
+/** Filter pill color for each role in the permissions table */
+export const PROJECT_PERMISSION_ROLE_COLOR: Record<ProjectPermissionUser['role'], FilterPillColor> = {
+  manage: 'green',
+  view: 'red',
+};

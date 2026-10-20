@@ -12,15 +12,8 @@
 @if (!loading()) {
   <lfx-card header="Permissions">
     @if (users().length > 0) {
-      <div class="mb-4 w-full sm:w-64">
-        <lfx-select
-          [form]="filterForm"
-          control="role"
-          size="small"
-          [options]="roleOptions"
-          ariaLabel="Filter by role"
-          styleClass="w-full"
-          data-testid="settings-permissions-role-filter"></lfx-select>
+      <div class="mb-4" role="group" aria-label="Filter by role" data-testid="settings-permissions-role-filter">
+        <lfx-filter-pills [options]="roleFilterOptions" [selectedFilter]="selectedRole() ?? ''" (filterChange)="onRoleFilterToggle($event)" />
       </div>
       <lfx-table
         [value]="filteredUsers()"

@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
-import { PROJECT_PERMISSION_ROLE_OPTIONS } from '@lfx-one/shared/constants';
-import { FilterOption, ProjectPermissionUser } from '@lfx-one/shared/interfaces';
+import { PROJECT_PERMISSION_ROLE_COLOR, PROJECT_PERMISSION_ROLE_OPTIONS } from '@lfx-one/shared/constants';
+import { FilterPillOption, ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -23,7 +21,7 @@ import { UserFormComponent } from '../user-form/user-form.component';
 
 @Component({
   selector: 'lfx-user-permissions-table',
-  imports: [TableComponent, TooltipModule, CardComponent, ConfirmDialogModule, ButtonComponent, MenuComponent, SelectComponent],
+  imports: [TableComponent, TooltipModule, CardComponent, ConfirmDialogModule, ButtonComponent, MenuComponent, FilterPillsComponent],
   templateUrl: './user-permissions-table.component.html',
 })
 export class UserPermissionsTableComponent {
@@ -37,16 +35,18 @@ export class UserPermissionsTableComponent {
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
   public canWrite = input<boolean>(false);
-  public readonly roleOptions: FilterOption<ProjectPermissionUser['role'] | null>[] = [{ label: 'All Roles', value: null }, ...PROJECT_PERMISSION_ROLE_OPTIONS];
+  public readonly roleFilterOptions: FilterPillOption[] = PROJECT_PERMISSION_ROLE_OPTIONS.map((option) => ({
+    id: option.value,
+    label: option.label,
+    color: PROJECT_PERMISSION_ROLE_COLOR[option.value],
+  }));
 
-  // Forms
-  public readonly filterForm = new FormGroup({ role: new FormControl<ProjectPermissionUser['role'] | null>(null) });
-
+  // A null selection means "all roles"
+  public readonly selectedRole: WritableSignal<ProjectPermissionUser['role'] | null> = signal(null);
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
 
   // Complex computed/toSignal signals
-  private readonly selectedRole: Signal<ProjectPermissionUser['role'] | null> = this.initSelectedRole();
   public readonly filteredUsers: Signal<ProjectPermissionUser[]> = this.initFilteredUsers();
   public project = computed(() => this.projectContextService.activeContext());
   public userActionMenuItems: MenuItem[] = this.initializeUserActionMenuItems();
@@ -55,6 +55,10 @@ export class UserPermissionsTableComponent {
   public readonly refresh = output<void>();
 
   // Event handlers
+  protected onRoleFilterToggle(role: string): void {
+    this.selectedRole.update((current) => (current === role ? null : (role as ProjectPermissionUser['role'])));
+  }
+
   protected onEditUser(user: ProjectPermissionUser): void {
     if (!user) return;
 
@@ -164,11 +168,6 @@ export class UserPermissionsTableComponent {
       });
   }
 
-  private initSelectedRole(): Signal<ProjectPermissionUser['role'] | null> {
-    return toSignal(this.filterForm.controls.role.valueChanges, { initialValue: null });
-  }
-
-  // A null selection means "all roles"
   private initFilteredUsers(): Signal<ProjectPermissionUser[]> {
     return computed(() => {
       const role = this.selectedRole();

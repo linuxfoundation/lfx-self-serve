@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterRenderEffect, Component, ElementRef, input, output, viewChild } from '@angular/core';
+import { afterRenderEffect, Component, computed, ElementRef, input, output, Signal, viewChild } from '@angular/core';
 import { TooltipModule } from 'primeng/tooltip';
-import { FilterPillOption } from '@lfx-one/shared/interfaces';
+import { FilterPillColor, FilterPillOption } from '@lfx-one/shared/interfaces';
 
 /** @deprecated Use FilterPillOption from @lfx-one/shared/interfaces instead */
 export type FilterOption = FilterPillOption;
@@ -33,6 +33,9 @@ export class FilterPillsComponent {
 
   private readonly track = viewChild<ElementRef<HTMLElement>>('track');
 
+  /** Classes for each `pill` variant option, keyed by option id; an option's `color` replaces the default blue selected style. */
+  protected readonly pillClasses: Signal<Record<string, string>> = this.initPillClasses();
+
   public constructor() {
     // A long track opens scrolled to the start, so bring a selected chip past its edge (e.g. one set by the URL)
     // into view. Only the track scrolls: scrollIntoView could also move the page.
@@ -55,5 +58,23 @@ export class FilterPillsComponent {
 
   public handleFilterChange(filterId: string): void {
     this.filterChange.emit(filterId);
+  }
+
+  private initPillClasses(): Signal<Record<string, string>> {
+    return computed(() => {
+      const base = 'px-3 py-1 rounded-full text-sm transition-colors';
+      const palette: Record<FilterPillColor | 'default', { selected: string; idle: string }> = {
+        default: { selected: 'bg-blue-500 text-white', idle: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+        green: { selected: 'bg-emerald-600 text-white', idle: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+        red: { selected: 'bg-red-600 text-white', idle: 'bg-red-50 text-red-700 hover:bg-red-100' },
+      };
+
+      return Object.fromEntries(
+        this.options().map((option) => {
+          const colors = palette[option.color ?? 'default'];
+          return [option.id, `${base} ${this.selectedFilter() === option.id ? colors.selected : colors.idle}`];
+        })
+      );
+    });
   }
 }
