@@ -1,9 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { IMPERSONATION_TARGET_USER_NOT_FOUND_CODE, IMPERSONATION_USER_NOT_FOUND_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE,
+  IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
+  IMPERSONATION_USER_NOT_FOUND_MESSAGE,
+} from '@lfx-one/shared/constants';
+
 import { ImpersonationService } from '@services/impersonation.service';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { throwError } from 'rxjs';
@@ -21,6 +28,8 @@ describe('ImpersonationDialogComponent', () => {
       imports: [ImpersonationDialogComponent],
       providers: [
         provideNoopAnimations(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
         { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
         {
           provide: ImpersonationService,
@@ -73,5 +82,29 @@ describe('ImpersonationDialogComponent', () => {
     const alert = fixture.nativeElement.querySelector('[data-testid="impersonation-error"]');
     expect(alert?.textContent).toContain('We could not start impersonation. Please try again.');
     expect(alert?.textContent).not.toContain('TIMEOUT');
+  });
+
+  it('renders the name search ahead of the exact email or username field', () => {
+    const search = fixture.nativeElement.querySelector('lfx-user-search');
+    expect(search).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-test="impersonation-target-input"]')).not.toBeNull();
+  });
+
+  it('tells the admin when a picked person has no LF account', async () => {
+    const component = fixture.componentInstance as unknown as { onNameSearchRejected: () => void };
+    component.onNameSearchRejected();
+    await fixture.whenStable();
+
+    const alert = fixture.nativeElement.querySelector('[data-testid="impersonation-error"]');
+    expect(alert?.textContent).toContain(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
+  });
+
+  it('clears a previous error when a person is picked from the name search', async () => {
+    const component = fixture.componentInstance as unknown as { onNameSearchRejected: () => void; onNameSearchSelected: () => void };
+    component.onNameSearchRejected();
+    component.onNameSearchSelected();
+    await fixture.whenStable();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="impersonation-error"]')).toBeNull();
   });
 });

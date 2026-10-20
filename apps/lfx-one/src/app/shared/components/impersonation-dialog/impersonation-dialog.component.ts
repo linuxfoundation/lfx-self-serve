@@ -8,6 +8,8 @@ import { AutocompleteComponent } from '@components/autocomplete/autocomplete.com
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
+import { IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE } from '@lfx-one/shared/constants';
 import { PersonaType, RecentImpersonation } from '@lfx-one/shared/interfaces';
 import { resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
@@ -17,7 +19,7 @@ import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-impersonation-dialog',
-  imports: [AutocompleteComponent, InputTextComponent, SelectComponent, ButtonComponent],
+  imports: [AutocompleteComponent, InputTextComponent, SelectComponent, ButtonComponent, UserSearchComponent],
   templateUrl: './impersonation-dialog.component.html',
 })
 export class ImpersonationDialogComponent {
@@ -114,6 +116,15 @@ export class ImpersonationDialogComponent {
           r.targetUser.toLowerCase().includes(query)
       )
     );
+  }
+
+  protected onNameSearchSelected(): void {
+    // lfx-user-search has already written the picked person's username into targetUser.
+    this.error.set('');
+  }
+
+  protected onNameSearchRejected(): void {
+    this.error.set(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
   }
 
   protected onSuggestionSelected(event: AutoCompleteSelectEvent): void {

@@ -236,6 +236,7 @@ Note that persona detection (step 2) resolves the **target** user's persona even
 
 - **Impersonation banner** (`main-layout.component.html`) — fixed yellow bar at the top showing who is being impersonated and a "Stop" button
 - **Impersonation trigger** (`navbar.component.html`) — user-secret icon in the navbar footer (visible only when `canImpersonate` is true), opens a dialog to enter a target email/username
+- **Impersonation dialog** (`impersonation-dialog.component`) — a "Search by name" field (`lfx-user-search`, the same `GET /api/search/users` typeahead the committee and meeting pickers use, `committee_member` corpus) above the exact email/username field, which also offers the browser's recent impersonations. A pick writes the person's LFID `username` into the target; a result with no username is rejected (`requireLfAccount`) because it cannot be exchanged. The search only finds people who appear as committee members the impersonator can see; anyone else is reached by typing an exact username or email. `POST /api/impersonate` is unchanged — it still receives one string
 
 **Services:**
 
