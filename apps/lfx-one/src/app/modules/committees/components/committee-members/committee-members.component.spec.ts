@@ -89,6 +89,45 @@ describe('CommitteeMembersComponent add-people actions', () => {
       );
     });
 
+    it.each(['membersLoading', 'invitesLoading'])('waits for %s before opening with the current group snapshot', async (loadingInput) => {
+      fixture.componentRef.setInput('committee', { ...WRITER_GROUP, uid: 'committee-2' });
+      fixture.componentRef.setInput(loadingInput, true);
+      await fixture.whenStable();
+
+      const button = query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      button.click();
+      component.openImportMembersDialog();
+      expect(dialogService.open).not.toHaveBeenCalled();
+
+      const members = [{ uid: 'member-2', email: 'lin@example.com' }] as CommitteeMember[];
+      const invites = [{ uid: 'invite-2', invitee_email: 'new@example.com', status: 'pending' }] as CommitteeInvite[];
+      fixture.componentRef.setInput('members', members);
+      fixture.componentRef.setInput('invites', invites);
+      fixture.componentRef.setInput(loadingInput, false);
+      await fixture.whenStable();
+
+      expect(button.disabled).toBe(false);
+      button.click();
+      expect(dialogService.open).toHaveBeenCalledExactlyOnceWith(
+        ImportMembersDialogComponent,
+        expect.objectContaining({ data: { committee: component.committee(), existingMembers: members, existingInvites: invites } })
+      );
+    });
+
+    it('unsubscribes from import close when the host is destroyed', () => {
+      vi.useFakeTimers();
+      component.openImportMembersDialog();
+      expect(dialogClose.observed).toBe(true);
+      fixture.destroy();
+
+      expect(dialogClose.observed).toBe(false);
+      dialogClose.next({ added: 2, conflicts: 0 } satisfies MemberImportDialogResult);
+      vi.advanceTimersByTime(3000);
+      expect(refreshes).toBe(0);
+      expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+    });
+
     it('refreshes and polls for the cumulative added count after an import', () => {
       vi.useFakeTimers();
       component.openImportMembersDialog();

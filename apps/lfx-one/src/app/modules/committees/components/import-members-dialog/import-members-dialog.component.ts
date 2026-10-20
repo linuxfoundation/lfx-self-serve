@@ -251,7 +251,6 @@ export class ImportMembersDialogComponent {
       return;
     }
     const skipNotification = !this.form.controls.send_notification.value;
-    let stopReason: string | null = null;
 
     this.stopReason.set(null);
     this.batchTotal.set(rows.length);
@@ -262,6 +261,7 @@ export class ImportMembersDialogComponent {
     from(rows)
       .pipe(
         mergeMap((row): Observable<Partial<MemberImportRow> & { rowNumber: number }> => {
+          const stopReason = this.stopReason();
           if (stopReason || !row.payload) {
             return of({ rowNumber: row.rowNumber, status: 'failed', reason: `Not sent: ${stopReason ?? 'missing member data.'}` });
           }
@@ -276,10 +276,7 @@ export class ImportMembersDialogComponent {
               // Log only the status: raw errors may contain imported personal data.
               console.error('CSV member import failed', { status: err.status });
               const reason = this.failureReason(err);
-              if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && !stopReason) {
-                stopReason = reason;
-                this.stopReason.set(reason);
-              }
+              this.stopForFatalError(err, reason);
               return of({ rowNumber: row.rowNumber, status: 'failed' as const, reason });
             })
           );
@@ -316,9 +313,18 @@ export class ImportMembersDialogComponent {
       }),
       catchError((err: HttpErrorResponse) => {
         console.error('CSV member import invitation cleanup failed', { status: err.status });
+        const reason = err.status === 404 ? 'The pending invitation could not be found. Review pending invitations before retrying.' : this.failureReason(err);
+        this.stopForFatalError(err, reason);
         return of('Added, but their pending invitation could not be revoked. Revoke it from the Pending tab.');
       })
     );
+  }
+
+  /** Share stop handling across creation and cleanup without changing an already-added row's outcome. */
+  private stopForFatalError(err: HttpErrorResponse, reason: string): void {
+    if (MEMBER_IMPORT_FATAL_HTTP_STATUSES.has(err.status) && !this.stopReason()) {
+      this.stopReason.set(reason);
+    }
   }
 
   private failureReason(err: HttpErrorResponse): string {

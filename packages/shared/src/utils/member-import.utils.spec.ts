@@ -5,8 +5,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { MEMBER_FORM_VOTING_STATUSES } from '../constants/committees.constants';
-import { MEMBER_IMPORT_VOTING_COLUMNS } from '../constants/member-import.constants';
+import { APPOINTED_BY_OPTIONS, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from '../constants/committees.constants';
+import { MEMBER_IMPORT_MAX_RECORDS, MEMBER_IMPORT_VOTING_COLUMNS } from '../constants/member-import.constants';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import type { MemberImportCells, MemberImportGroupRules } from '../interfaces/member-import.interface';
 import {
@@ -60,6 +60,20 @@ describe('getMemberImportTemplateHeaders / getMemberImportFieldGuide', () => {
     for (const column of MEMBER_IMPORT_VOTING_COLUMNS) {
       expect(getMemberImportTemplateHeaders(OPEN)).not.toContain(column);
       expect(messages({ email: 'ada@example.com', [column]: 'unsupported' })).toContain(`${column}: This group does not use voting. Clear the voting columns.`);
+    }
+  });
+
+  it('lists every accepted role and appointment value from the configured options', () => {
+    const guide = getMemberImportFieldGuide(OPEN);
+    expect(guide.find(({ column }) => column === 'role')?.description).toBe(`Allowed values: ${MEMBER_ROLES.map(({ value }) => value).join(', ')}.`);
+    expect(guide.find(({ column }) => column === 'appointed_by')?.description).toBe(
+      `Allowed values: ${APPOINTED_BY_OPTIONS.map(({ value }) => value).join(', ')}. Leave blank for the default.`
+    );
+    for (const { value } of MEMBER_ROLES) {
+      expect(messages({ email: 'ada@example.com', role: value })).toEqual([]);
+    }
+    for (const { value } of APPOINTED_BY_OPTIONS) {
+      expect(messages({ email: 'ada@example.com', appointed_by: value })).toEqual([]);
     }
   });
 
@@ -156,13 +170,31 @@ describe('parseMemberImportCsv', () => {
     expect(parseMemberImportCsv(`${VOTING_HEADER}\n${VOTING_ROW}`, VOTING).errors).toEqual([]);
   });
 
+  it('skips large runs of blank records while preserving logical row numbers and quoting errors', () => {
+    const blanks = '\n'.repeat(100_000);
+    const result = parseMemberImportCsv(`${blanks}email,first_name\n${blanks}ada@example.com,"Ada\nExample"\n,\ngrace@example.com,Grace`, OPEN);
+    expect(result.errors).toEqual([]);
+    expect(result.records).toEqual([
+      { rowNumber: 200_002, cells: { email: 'ada@example.com', first_name: 'Ada\nExample' } },
+      { rowNumber: 200_004, cells: { email: 'grace@example.com', first_name: 'Grace' } },
+    ]);
+    expect(parseMemberImportCsv(`${blanks}email\n"unclosed`, OPEN).errors).toEqual(['Row 100002 has a quote that is never closed.']);
+  });
+
+  it('rejects over-limit input before tokenizing the remaining records', () => {
+    const rows = Array.from({ length: MEMBER_IMPORT_MAX_RECORDS + 1 }, (_, i) => `person${i}@example.com`).join('\n');
+    const result = parseMemberImportCsv(`email\n${rows}\n"unclosed`, OPEN);
+    expect(result.records).toEqual([]);
+    expect(result.errors).toEqual(['The file has more than 500 member rows; up to 500 can be imported at once. Split it into smaller files.']);
+  });
+
   it('accepts exactly the record limit and rejects one more without truncating', () => {
     const rows = (count: number): string => Array.from({ length: count }, (_, i) => `person${i}@example.com`).join('\n');
     expect(parseMemberImportCsv(`email\n${rows(500)}`, OPEN).records).toHaveLength(500);
 
     const over = parseMemberImportCsv(`email\n${rows(501)}`, OPEN);
     expect(over.records).toEqual([]);
-    expect(over.errors[0]).toContain('The file has 501 member rows; up to 500');
+    expect(over.errors[0]).toContain('up to 500');
   });
 });
 
@@ -175,6 +207,24 @@ describe('validateMemberImportRow', () => {
     expect(messages({ email: '' })).toEqual(['email: Email is required.']);
     expect(messages({ email: 'not-an-email' })).toEqual(['email: Email is not a valid address.']);
   });
+
+  it.each([
+    'ada,grace@example.com',
+    'ada;grace@example.com',
+    '.ada@example.com',
+    'ada.@example.com',
+    'ada..grace@example.com',
+    'ada@-example.test',
+    'ada@example..com',
+    `${'a'.repeat(65)}@example.com`,
+  ])('rejects malformed single addresses: %s', (email) => {
+    expect(messages({ email })).toEqual(['email: Email is not a valid address.']);
+  });
+
+  it.each(['ada+group@example.com', "o'connor@example.com", 'Ada.Grace@sub.example.com', 'ada@localhost'])(
+    'accepts single addresses supported by the individual member form: %s',
+    (email) => expect(messages({ email })).toEqual([])
+  );
 
   it('counts name and title lengths in Unicode code points', () => {
     expect(messages({ email: 'ada@example.com', first_name: '😀'.repeat(100) })).toEqual([]);

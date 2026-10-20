@@ -4,13 +4,13 @@
 import { APPOINTED_BY_OPTIONS, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from '../constants/committees.constants';
 import {
   MEMBER_IMPORT_COLUMNS,
+  MEMBER_IMPORT_EMAIL_PATTERN,
   MEMBER_IMPORT_FIELDS,
   MEMBER_IMPORT_HTTP_URL_PATTERN,
   MEMBER_IMPORT_MAX_RECORDS,
   MEMBER_IMPORT_VOTING_COLUMNS,
   MEMBER_IMPORT_VOTING_STATUS_LABELS,
 } from '../constants/member-import.constants';
-import { EMAIL_REGEX } from '../constants/regex.constants';
 import { LINKEDIN_PROFILE_PATTERN } from '../constants/validation.constants';
 import type { CreateCommitteeMemberRequest } from '../interfaces/member.interface';
 import type {
@@ -62,13 +62,13 @@ export function parseMemberImportCsv(text: string, rules: MemberImportGroupRules
     return { headers: [], records: [], errors: [tokenized.error] };
   }
 
-  // Leading blank records are tolerated; the first nonblank record is the header.
-  const headerIndex = tokenized.rows.findIndex((cells) => !isBlankRecord(cells));
-  if (headerIndex === -1) {
+  // Tokenization discards blank records but keeps each retained record's original logical row number.
+  const header = tokenized.rows[0];
+  if (!header) {
     return { headers: [], records: [], errors: ['The file is empty. Download the template and add one member per row.'] };
   }
 
-  const headerResult = readHeaders(tokenized.rows[headerIndex], rules);
+  const headerResult = readHeaders(header.cells, rules);
   if (headerResult.errors.length > 0) {
     return { headers: [], records: [], errors: headerResult.errors };
   }
@@ -76,11 +76,7 @@ export function parseMemberImportCsv(text: string, rules: MemberImportGroupRules
 
   const errors: string[] = [];
   const records: MemberImportRecord[] = [];
-  tokenized.rows.forEach((cells, index) => {
-    const rowNumber = index + 1;
-    if (index <= headerIndex || isBlankRecord(cells)) {
-      return;
-    }
+  tokenized.rows.slice(1).forEach(({ cells, rowNumber }) => {
     if (cells.length !== headers.length) {
       errors.push(`Row ${rowNumber} has ${cells.length} cells but the header has ${headers.length}. Put quotes around values that contain commas.`);
       return;
@@ -92,14 +88,6 @@ export function parseMemberImportCsv(text: string, rules: MemberImportGroupRules
     records.push({ rowNumber, cells: record });
   });
 
-  const recordCount = records.length + errors.length;
-  if (recordCount > MEMBER_IMPORT_MAX_RECORDS) {
-    return {
-      headers: [],
-      records: [],
-      errors: [`The file has ${recordCount} member rows; up to ${MEMBER_IMPORT_MAX_RECORDS} can be imported at once. Split it into smaller files.`],
-    };
-  }
   if (errors.length > 0) {
     return { headers: [], records: [], errors };
   }
@@ -120,7 +108,7 @@ export function validateMemberImportRow(cells: MemberImportCells, rules: MemberI
   const email = value('email');
   if (!email) {
     add('email', 'Email is required.');
-  } else if (!EMAIL_REGEX.test(email)) {
+  } else if (!MEMBER_IMPORT_EMAIL_PATTERN.test(email)) {
     add('email', 'Email is not a valid address.');
   }
 
@@ -263,26 +251,34 @@ function isColumnRequired(requiredWhen: MemberImportFieldDefinition['requiredWhe
   }
 }
 
-/** Splits CSV text into records of raw cells, or the first structural error with its row number. */
-function tokenizeCsv(text: string): { rows: string[][] } | { error: string } {
-  const rows: string[][] = [];
+/** Retains only a header and up to the member limit; blank records still advance the logical row number. */
+function tokenizeCsv(text: string): { rows: { rowNumber: number; cells: string[] }[] } | { error: string } {
+  const rows: { rowNumber: number; cells: string[] }[] = [];
+  let rowNumber = 1;
   let row: string[] = [];
   let cell = '';
   let inQuotes = false;
   let quoteClosed = false;
   let quoteStartRow = 0;
 
-  const endRecord = (): void => {
+  const endRecord = (): string | null => {
     row.push(cell);
-    rows.push(row);
+    if (!isBlankRecord(row)) {
+      // The first retained record is the header, so rows.length is the next member's count.
+      if (rows.length > MEMBER_IMPORT_MAX_RECORDS) {
+        return `The file has more than ${MEMBER_IMPORT_MAX_RECORDS} member rows; up to ${MEMBER_IMPORT_MAX_RECORDS} can be imported at once. Split it into smaller files.`;
+      }
+      rows.push({ rowNumber, cells: row });
+    }
+    rowNumber++;
     row = [];
     cell = '';
     quoteClosed = false;
+    return null;
   };
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    const rowNumber = rows.length + 1;
 
     if (inQuotes) {
       if (char !== '"') {
@@ -305,7 +301,10 @@ function tokenizeCsv(text: string): { rows: string[][] } | { error: string } {
       if (char === '\r' && text[i + 1] === '\n') {
         i++;
       }
-      endRecord();
+      const error = endRecord();
+      if (error) {
+        return { error };
+      }
     } else if (quoteClosed) {
       return { error: `Row ${rowNumber} has text after a closing quote. Quote the whole value, and write a quote inside it as "".` };
     } else if (char === '"') {
@@ -323,7 +322,10 @@ function tokenizeCsv(text: string): { rows: string[][] } | { error: string } {
     return { error: `Row ${quoteStartRow} has a quote that is never closed.` };
   }
   if (cell !== '' || quoteClosed || row.length > 0) {
-    endRecord();
+    const error = endRecord();
+    if (error) {
+      return { error };
+    }
   }
   return { rows };
 }

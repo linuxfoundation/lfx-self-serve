@@ -383,7 +383,7 @@ export class CommitteeMembersComponent implements OnInit {
    */
   public openImportMembersDialog(): void {
     const committee = this.committee();
-    if (!committee?.uid || !this.canManageMembers()) {
+    if (!committee?.uid || !this.canManageMembers() || this.membersLoading() || this.invitesLoading()) {
       return;
     }
     const committeeUid = committee.uid;
@@ -403,7 +403,7 @@ export class CommitteeMembersComponent implements OnInit {
       data,
     });
 
-    dialogRef?.onClose.pipe(take(1)).subscribe((result: MemberImportDialogResult | undefined) => {
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MemberImportDialogResult | undefined) => {
       if (!result || this.committee()?.uid !== committeeUid) {
         return;
       }

@@ -3,7 +3,7 @@
 
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { MemberImportFieldDefinition, MemberImportRowStatus } from '../interfaces/member-import.interface';
-import { MEMBER_FORM_VOTING_STATUSES } from './committees.constants';
+import { APPOINTED_BY_OPTIONS, MEMBER_FORM_VOTING_STATUSES, MEMBER_ROLES } from './committees.constants';
 
 /** Largest member import CSV accepted, checked before the file is read. */
 export const MEMBER_IMPORT_MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -15,6 +15,13 @@ export const MEMBER_IMPORT_TEMPLATE_FILENAME = 'member-import-template.csv';
 
 /** Match the upstream member URL spelling before WHATWG parsing can repair malformed URLs. */
 export const MEMBER_IMPORT_HTTP_URL_PATTERN = /^https?:\/\/[^\s/$.?#][^\s]*$/;
+
+/**
+ * Mirrors Angular 20 Validators.email, used by the individual member form, without an Angular runtime dependency.
+ * Pattern from Angular (Copyright Google LLC, MIT): https://github.com/angular/angular/blob/20.3.15/packages/forms/src/validators.ts
+ */
+export const MEMBER_IMPORT_EMAIL_PATTERN =
+  /^(?=.{1,254}$)(?=.{1,64}@)[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
 /** Display the same voting choices that member validation accepts. */
 export const MEMBER_IMPORT_VOTING_STATUS_LABELS = MEMBER_FORM_VOTING_STATUSES.map(({ label }) => label).join(', ');
@@ -37,11 +44,7 @@ export const MEMBER_IMPORT_COLUMNS = [
   'appointed_by',
 ] as const;
 
-/**
- * Template guidance per column. The allowed role / voting status / appointed-by values are
- * validated against MEMBER_ROLES, MEMBER_FORM_VOTING_STATUSES and APPOINTED_BY_OPTIONS
- * (see member-import.utils) rather than repeated here.
- */
+/** Template guidance derives accepted values from the same configured options used by validation. */
 export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
   { column: 'email', requiredWhen: 'always', votingOnly: false, description: 'Email address of the person to add.' },
   { column: 'first_name', requiredWhen: 'never', votingOnly: false, description: 'Up to 100 characters.' },
@@ -50,7 +53,7 @@ export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
   { column: 'linkedin_profile', requiredWhen: 'never', votingOnly: false, description: 'Full LinkedIn profile URL, e.g. https://www.linkedin.com/in/…' },
   { column: 'organization_name', requiredWhen: 'organization', votingOnly: false, description: 'Up to 200 characters. Provide together with the website.' },
   { column: 'organization_website', requiredWhen: 'organization', votingOnly: false, description: 'Full https:// address. Provide together with the name.' },
-  { column: 'role', requiredWhen: 'voting', votingOnly: false, description: 'One of the group roles, e.g. Chair, Vice Chair, None.' },
+  { column: 'role', requiredWhen: 'voting', votingOnly: false, description: `Allowed values: ${MEMBER_ROLES.map(({ value }) => value).join(', ')}.` },
   { column: 'role_start_date', requiredWhen: 'never', votingOnly: false, description: 'YYYY-MM-DD. Needs a role.' },
   { column: 'role_end_date', requiredWhen: 'never', votingOnly: false, description: 'YYYY-MM-DD, not before the start date. Needs a role.' },
   { column: 'voting_status', requiredWhen: 'voting', votingOnly: true, description: `${MEMBER_IMPORT_VOTING_STATUS_LABELS}.` },
@@ -60,7 +63,7 @@ export const MEMBER_IMPORT_FIELDS: readonly MemberImportFieldDefinition[] = [
     column: 'appointed_by',
     requiredWhen: 'never',
     votingOnly: false,
-    description: 'How the member was appointed, e.g. Community. Leave blank for the default.',
+    description: `Allowed values: ${APPOINTED_BY_OPTIONS.map(({ value }) => value).join(', ')}. Leave blank for the default.`,
   },
 ];
 

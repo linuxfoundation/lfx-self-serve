@@ -142,6 +142,17 @@ describe('ImportMembersDialogComponent', () => {
       expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
     });
 
+    it('blocks a quoted comma in a single email address without sending requests', async () => {
+      await upload('email\n"ada,grace@example.com"');
+      await render();
+
+      expect(component.invalidCount()).toBe(1);
+      expect(component.canImport()).toBe(false);
+      expect(query('import-members-row-issues-2')?.textContent).toContain('Email is not a valid address.');
+      component.startImport();
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+    });
+
     it('lets the user remove an invalid row, then import', async () => {
       await upload('email\nada@example.com\nnot-an-email');
       component.removeRow(3);
@@ -377,6 +388,41 @@ describe('ImportMembersDialogComponent', () => {
         },
       ]);
       expect(query('import-members-guide-voting_status')).not.toBeNull();
+    });
+
+    it.each([401, 403, 404, 429])('stops queued creates after cleanup HTTP %i while retaining the added member', async (status) => {
+      await setup(OPEN_GROUP, [], [{ uid: 'invite-1', invitee_email: 'person0@example.com', status: 'pending' }]);
+      await upload(`email\n${emails(7)}`);
+      component.startImport();
+      succeed(0);
+      expect(pending).toHaveLength(5);
+
+      revokeResponses[0].error(new HttpErrorResponse({ status }));
+      for (let i = 1; i < 5; i++) succeed(i);
+      await render();
+
+      expect(pending).toHaveLength(5);
+      expect(component.rows().map((row) => row.status)).toEqual(['added', 'added', 'added', 'added', 'added', 'failed', 'failed']);
+      expect(component.rows()[0].cleanupWarning).toContain('pending invitation could not be revoked');
+      expect(component.rows()[5].reason).toContain('Not sent');
+      expect(component.stopReason()).toBeTruthy();
+      if (status === 404) {
+        expect(component.stopReason()).toContain('invitation');
+        expect(component.stopReason()).not.toContain('group could not be found');
+      }
+      expect(console.error).toHaveBeenCalledExactlyOnceWith('CSV member import invitation cleanup failed', { status });
+      expect(query('import-members-stop-reason')).not.toBeNull();
+      expect(component.canRetry()).toBe(true);
+
+      component.retryFailed();
+      expect(component.stopReason()).toBeNull();
+      expect(pending.slice(5).map((call) => call.body.email)).toEqual(['person5@example.com', 'person6@example.com']);
+      succeed(5);
+      succeed(6);
+      await render();
+      expect(component.addedCount()).toBe(7);
+      expect(component.canRetry()).toBe(false);
+      expect(committeeService.revokeCommitteeInvite).toHaveBeenCalledTimes(1);
     });
 
     it('revokes a matching pending invite after adding, warns if that fails, and never creates invites', async () => {
