@@ -1,0 +1,26 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. Each run is its own element, so
+     template whitespace never adds a space the text does not carry. -->
+<p class="flex items-start gap-2 border-t border-gray-100 pt-3 text-[12px] leading-[1.55] text-gray-400">
+  <i
+    class="mt-[3px] shrink-0 fa-light"
+    [class.fa-circle-info]="!caution()"
+    [class.fa-triangle-exclamation]="caution()"
+    aria-hidden="true"
+    data-testid="health-metrics-footnote-icon"></i>
+  <span>
+    @for (part of parts(); track $index) {
+      @if (part.route) {
+        <!-- Preserves query params, matching the tab bar's links. -->
+        <a class="text-blue-600 hover:underline" [routerLink]="[basePath, part.route]" queryParamsHandling="preserve">{{ part.text }}</a>
+      } @else if (part.bold) {
+        <b class="font-semibold">{{ part.text }}</b>
+      } @else {
+        <span>{{ part.text }}</span>
+      }
+    }
+    <ng-content />
+  </span>
+</p>

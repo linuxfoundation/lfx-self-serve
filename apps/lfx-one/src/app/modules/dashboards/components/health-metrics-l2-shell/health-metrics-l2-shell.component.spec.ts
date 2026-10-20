@@ -19,9 +19,17 @@ import type { HealthMetricsL2Section, HealthMetricsL2SubNavItem } from '@lfx-one
 // Two data sections and a trailing one the host projects no body for — the shape a tab has while
 // one section's data is still blocked.
 const SECTIONS: HealthMetricsL2Section[] = [
-  { key: 'alpha', label: 'Alpha', heading: 'Alpha heading', description: 'Alpha copy', footnote: '', footnoteCaution: false },
-  { key: 'beta', label: 'Beta', heading: 'Beta heading', description: 'Beta copy', footnote: 'Beta note', footnoteCaution: false, headingBadge: 'Provisional' },
-  { key: 'gamma', label: 'Gamma', heading: 'Gamma heading', description: 'Gamma copy', footnote: 'Gamma caution', footnoteCaution: true },
+  { key: 'alpha', label: 'Alpha', heading: 'Alpha heading', description: 'Alpha copy', footnote: [{ text: 'Alpha caution' }], footnoteCaution: true },
+  {
+    key: 'beta',
+    label: 'Beta',
+    heading: 'Beta heading',
+    description: 'Beta copy',
+    footnote: [{ text: 'Beta note' }],
+    footnoteCaution: false,
+    headingBadge: 'Provisional',
+  },
+  { key: 'gamma', label: 'Gamma', heading: 'Gamma heading', description: 'Gamma copy', footnote: [{ text: 'Gamma note' }], footnoteCaution: false },
 ];
 const DATA_SECTIONS = ['alpha', 'beta'];
 // Stubbed offset for the pane's own top edge in the pane-height tests below.
@@ -274,9 +282,15 @@ describe('HealthMetricsL2ShellComponent', () => {
   });
 
   it('renders footnotes, marking only the cautioned one', () => {
-    expect(fixture.nativeElement.querySelector('[data-testid="test-section-beta"]').textContent).toContain('Beta note');
+    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-beta"]').textContent).toContain('Beta note');
     expect(fixture.nativeElement.querySelectorAll('.fa-triangle-exclamation')).toHaveLength(1);
-    expect(fixture.nativeElement.querySelector('[data-testid="test-section-gamma"] .fa-triangle-exclamation')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-alpha"] .fa-triangle-exclamation')).not.toBeNull();
+  });
+
+  // A footnote explains a body, so a section still awaiting data shows neither.
+  it('hides the footnote of a section awaiting data', () => {
+    expect(fixture.nativeElement.querySelector('[data-testid="test-footnote-gamma"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="test-section-gamma"]').textContent).not.toContain('Gamma note');
   });
 
   it('badges only the heading that carries one', () => {

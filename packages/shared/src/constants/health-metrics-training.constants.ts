@@ -23,8 +23,11 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     label: 'Enrollment & revenue',
     heading: 'Enrollment & revenue',
     description: 'Training is the third revenue stream and the widest top-of-funnel the foundation has — most enrollments are people who are not members yet.',
-    footnote:
-      'Certification exams and free eLearning are counted separately on purpose — one is revenue, the other is reach, and averaging them tells you neither.',
+    footnote: [
+      {
+        text: 'Certification exams and free eLearning are counted separately on purpose — one is revenue, the other is reach, and averaging them tells you neither.',
+      },
+    ],
     footnoteCaution: false,
     headingBadge: 'Provisional',
   },
@@ -33,8 +36,11 @@ export const HEALTH_METRICS_TRAINING_SECTIONS = [
     label: 'Courses',
     heading: 'Courses',
     description: 'Individual courses and certifications by enrollment. Free courses show no revenue — that is reach, not a gap.',
-    footnote:
-      'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member organization.',
+    footnote: [
+      {
+        text: 'Enrollment counts come from LF Education. Revenue is provisional and excludes corporate training agreements, which are tracked per member organization.',
+      },
+    ],
     footnoteCaution: false,
     headingBadge: 'Provisional',
   },

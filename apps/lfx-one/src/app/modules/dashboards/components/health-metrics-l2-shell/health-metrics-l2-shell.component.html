@@ -53,13 +53,12 @@
           <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
         }
 
-        @if (section.footnote) {
-          <p class="border-t border-gray-100 pt-3 text-[12px] text-gray-400">
-            @if (section.footnoteCaution) {
-              <i class="fa-light fa-triangle-exclamation mr-1 text-amber-500" aria-hidden="true"></i>
-            }
-            {{ section.footnote }}
-          </p>
+        <!-- A footnote explains a body, so it waits until there is one. -->
+        @if (body && section.footnote.length) {
+          <lfx-health-metrics-footnote
+            [parts]="section.footnote"
+            [caution]="section.footnoteCaution"
+            [attr.data-testid]="testIdPrefix() + '-footnote-' + section.key" />
         }
       </section>
     }
