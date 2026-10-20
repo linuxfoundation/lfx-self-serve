@@ -160,7 +160,7 @@ describe('MembersBoardAttendanceComponent', () => {
     const sameDay = [meeting({ meetingId: 'm-a', isLatestMeeting: true }), meeting({ meetingId: 'm-b' })];
     await render(response({ trend: sameDay, cohorts: { board: cohort({ isBelowExpectedLevel: false }), voting_members: null } }));
 
-    expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([lfxColors.blue[600], lfxColors.blue[200]]);
+    expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([lfxColors.blue[500], lfxColors.blue[200]]);
   });
 
   it('flags never-attended seats and links to the representatives who never attended', async () => {

@@ -2,26 +2,23 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (overviewEnabled()) {
-  <div class="flex flex-col p-6" data-testid="health-metrics-page">
+  <!-- The same wrapper and header type as the other foundation pages (Meetings, Events). -->
+  <div class="container mx-auto flex flex-col px-4 pb-6 sm:px-6 lg:px-8" data-testid="health-metrics-page">
     <!-- Stays pinned above the scrolling content at the wide layout, matching the design's `.stickyhead`
          (its own `margin-top:-32px;padding-top:32px` trick, mirrored below) — the sticky offset of every
          tab's own rail or sub-nav is measured from this element's rendered height, tab bar included.
-         -mt-12/pt-12 cancel out the two ancestor top paddings above this element (main-layout's
-         router-outlet wrapper `py-6` + this shell's own `p-6` = 3rem total) so the header has zero
-         distance to travel before it locks — otherwise it would visibly shift up by that 3rem on the
-         first bit of scroll before sticking. Page-colored, not white — the design's `.stickyhead`/`.phead`
-         match the page surface; opaque so content scrolls under. Pinned below the fixed impersonation
-         banner while impersonating, so the banner doesn't cover it. -->
+         -mt-6 cancels main-layout's `py-6` so the header has zero distance to travel before it locks, and
+         pt-9 restores that 1.5rem plus the other pages' `mt-3`, so the title sits where theirs does.
+         Page-colored and opaque so content scrolls under; pinned below the impersonation banner. -->
     <header
       #pageHeader
-      class="mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12"
+      class="mt-3 mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-6 lg:bg-gray-50 lg:pt-9"
       [ngClass]="{ 'lg:top-12': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
-      <!-- The design's `.phead`: title and controls share a row, the controls top-aligned to the title. Pixel
-           sizes follow the design; the 14px root makes the rem scale undershoot them. -->
+      <!-- The design's `.phead`: title and controls share a row, the controls top-aligned to the title. -->
       <div class="flex flex-wrap items-start justify-between gap-[20px]">
-        <div class="flex flex-col gap-[4px]">
-          <h1 class="font-display text-[22px] font-light leading-[32px] text-black">Health Metrics</h1>
-          <p class="text-[12px] leading-[16px] text-gray-600">Operational health across your foundation.</p>
+        <div class="flex flex-col gap-1">
+          <h1 class="font-display text-2xl font-light" data-testid="health-metrics-title">Health Metrics</h1>
+          <p class="text-sm text-gray-500" data-testid="health-metrics-subtitle">Operational health across your foundation.</p>
         </div>
 
         <div class="flex flex-wrap items-center gap-[16px]">
@@ -72,7 +69,7 @@
                   <i class="fa-light fa-diagram-project w-5 text-center text-gray-500" aria-hidden="true"></i>
                   <span class="flex-1 truncate font-medium">All projects</span>
                   @if (!chrome.selectedProjectSlug()) {
-                    <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
+                    <i class="fa-light fa-check text-blue-500" aria-hidden="true"></i>
                   }
                 </button>
               </li>
@@ -93,7 +90,7 @@
                     >
                     <span class="min-w-0 flex-1 truncate" [title]="project.name">{{ project.name }}</span>
                     @if (project.slug === chrome.selectedProjectSlug()) {
-                      <i class="fa-light fa-check text-blue-600" aria-hidden="true"></i>
+                      <i class="fa-light fa-check text-blue-500" aria-hidden="true"></i>
                     }
                   </button>
                 </li>
@@ -128,16 +125,17 @@
 
       <!-- Inside the sticky header on purpose (the design's `#tabs` sits in `.stickyhead`), so the
            measured offset a tab's sub-nav pins below already accounts for the bar. -->
-      <nav class="-mb-px flex gap-6 overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
+      <!-- The design's `.tab`: 16px either side of each label, the selected underline spanning the padded tab. -->
+      <nav class="-mb-px flex overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
         @for (tab of tabs; track tab.key) {
           <a
             [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
             queryParamsHandling="preserve"
-            routerLinkActive="!border-blue-600 !text-blue-700"
+            routerLinkActive="!border-blue-500 !text-blue-500"
             [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
             #rla="routerLinkActive"
             [attr.aria-current]="rla.isActive ? 'page' : null"
-            class="border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
+            class="border-b-2 border-transparent px-[16px] pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
             [attr.data-testid]="'health-metrics-tab-' + tab.key">
             {{ tab.label }}
           </a>

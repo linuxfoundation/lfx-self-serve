@@ -66,7 +66,7 @@ export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
     icon: 'fa-light fa-lightbulb',
     dotClass: 'bg-blue-500',
     accentClass: 'border-l-blue-500',
-    textClass: 'text-blue-600',
+    textClass: 'text-blue-500',
     statusTextClass: 'text-blue-500',
   },
   ok: {
