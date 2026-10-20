@@ -132,7 +132,7 @@ and past (`GET /api/past-meetings/:uid`, `GET /public/api/meetings/past/:id`) de
 `name` and, for committees the public group directory lists (`public: true`), the
 `MeetingCommitteeContext` fields: `category`, `behavioral_class` (derived server-side; keys
 `BEHAVIORAL_CLASS_CONFIG` for the group tag), `description`, `total_members` and `join_mode` (E8-01,
-#3593). They come from the committee read that already resolved `name`, so they cost no extra
+#3593); the meeting list payloads get them the same way. They come from the committee read that already resolved `name`, so they cost no extra
 upstream call. A non-public committee gets `name` only: the public page reads with an M2M token, and
 those fields are exactly what the directory withholds for it. The past payload still drops
 `committees` entirely when `full_access` is false. `project.parent` on the public payloads carries

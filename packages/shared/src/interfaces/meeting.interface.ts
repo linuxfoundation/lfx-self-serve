@@ -128,8 +128,9 @@ export interface ImportantLinkFormValue {
 export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES)[number];
 
 /**
- * Committee payload for meeting API requests
- * @description Committee structure used in create/update meeting requests
+ * Committee associated with a meeting
+ * @description Committee structure used in create/update meeting requests, and on meeting
+ * responses, where the BFF also attaches the response-only {@link MeetingCommitteeContext} fields
  */
 export interface MeetingCommittee extends MeetingCommitteeContext {
   /** Unique identifier for the committee */

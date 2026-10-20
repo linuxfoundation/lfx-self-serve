@@ -36,6 +36,9 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // The real masker: the registrant lookup's log must never carry the address itself.
   maskEmailForLogs: (await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils')).maskEmailForLogs,
   buildRecurrenceNeverEndDate: vi.fn(),
+  // The real classifier: the committee context's behavioral class is asserted end to end (#3593).
+  getGroupBehavioralClass: (await vi.importActual<typeof import('@lfx-one/shared/utils/committee.utils')>('@lfx-one/shared/utils/committee.utils'))
+    .getGroupBehavioralClass,
   // The real classifier: the participant merge keeps the better-identified record by its tier (N-02).
   getPastMeetingIdentityTier: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
     .getPastMeetingIdentityTier,
@@ -2723,6 +2726,26 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     expect(proxyRequestWithResponse.mock.calls[0][5].committees).toEqual([
       { uid: 'cmt-public', name: 'Technical Steering Committee', allowed_voting_statuses: ['voting_rep'] },
     ]);
+  });
+
+  it('does not send the response-only context upstream on create either', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('alice');
+    proxyRequest.mockResolvedValueOnce({ id: 'meeting-new', project_uid: 'project-1' }).mockResolvedValue({ resources: [], page_token: undefined });
+
+    await service
+      .createMeeting(req, {
+        project_uid: 'project-1',
+        start_time: '2026-01-01T00:00:00Z',
+        duration: 30,
+        timezone: 'UTC',
+        title: 'Test',
+        description: '',
+        committees: [{ uid: 'cmt-public', name: 'TSC', category: 'TSC', behavioral_class: 'oversight-committee', total_members: 12 }],
+      } as Parameters<MeetingService['createMeeting']>[1])
+      .catch(() => undefined);
+
+    const createCall = proxyRequest.mock.calls.find((call) => call[2] === '/itx/meetings' && call[3] === 'POST');
+    expect(createCall?.[5].committees).toEqual([{ uid: 'cmt-public', name: 'TSC', allowed_voting_statuses: undefined }]);
   });
 
   it('keeps the meeting-supplied committee name when the committee read fails', async () => {

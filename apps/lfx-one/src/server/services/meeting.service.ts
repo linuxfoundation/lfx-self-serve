@@ -48,6 +48,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   buildRecurrenceNeverEndDate,
+  getGroupBehavioralClass,
   getPastMeetingIdentityTier,
   getPastMeetingTranscriptUrl,
   getRecordingDurationSeconds,
@@ -62,7 +63,6 @@ import {
   selectApplicableRsvp,
   selectPrimaryPastMeetingSummary,
 } from '@lfx-one/shared/utils';
-import { getGroupBehavioralClass } from '@lfx-one/shared/utils/committee.utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
