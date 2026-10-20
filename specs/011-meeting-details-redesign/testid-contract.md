@@ -264,7 +264,6 @@ Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | 
 | `agenda-section`                 | Agenda section                                                   |
 | `agenda-section-description`     | The description, links made clickable, collapsed past 200px      |
 | `agenda-section-empty`           | Shown when the meeting has no description                        |
-| `agenda-section-edit`            | The organizer's Edit agenda link to the meeting's edit page      |
 | `materials-section`              | Materials section                                                |
 | `materials-file-${uid}`          | One attached file                                                |
 | `materials-link-${uid}`          | One attached link                                                |

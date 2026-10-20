@@ -93,40 +93,4 @@ describe('MeetingAgendaComponent', () => {
     expect(query('agenda-section-description')).toBeNull();
     expect(query('agenda-section-empty')?.textContent?.trim()).toBe('No agenda has been added for this meeting yet.');
   });
-
-  it('offers Edit agenda to organizers only', () => {
-    expect(query('agenda-section-edit')).toBeNull();
-
-    meeting.set(build({ organizer: true }));
-    fixture.detectChanges();
-
-    expect(query('agenda-section-edit')?.textContent?.trim()).toBe('Edit agenda');
-  });
-
-  it('hides Edit agenda once the meeting has ended', () => {
-    meeting.set(build({ organizer: true }));
-    timeState.set('ended');
-    fixture.detectChanges();
-
-    expect(query('agenda-section-edit')).toBeNull();
-  });
-
-  it("passes the meeting's committee to the edit page, as the meeting cards do", () => {
-    meeting.set(build({ organizer: true, project_slug: 'own-slug', committees: [{ uid: 'c1' }] } as Partial<Meeting>));
-    fixture.detectChanges();
-
-    expect(query('agenda-section-edit')?.getAttribute('href')).toBe('/meetings/meeting-1/edit?project=own-slug&committee_uid=c1');
-  });
-
-  // Built as the meeting cards build it: under the foundation or project when known, with the project.
-  it.each([
-    [true, '/foundation/meetings/meeting-1/edit?project=acme-project'],
-    [false, '/project/meetings/meeting-1/edit?project=acme-project'],
-    [undefined, '/meetings/meeting-1/edit?project=acme-project'],
-  ] as [boolean | undefined, string][])('links Edit agenda to the edit page (is_foundation %s)', (isFoundation, href) => {
-    meeting.set(build({ organizer: true, is_foundation: isFoundation } as Partial<Meeting>));
-    fixture.detectChanges();
-
-    expect(query('agenda-section-edit')?.getAttribute('href')).toBe(href);
-  });
 });
