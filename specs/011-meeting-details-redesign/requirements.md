@@ -125,23 +125,23 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   on the join-details section.
 - **FR-043**: Join details MUST NOT show a passcode or dial-in numbers until upstream U-04 (#2930) / U-05
   (#2931) provide them.
-- **FR-044**: The occurrence strip MUST honour both cancellation sources (`cancelled_occurrences[]`
-  in seconds, `status === 'cancel'`) and MUST show a cancelled occurrence as cancelled, not drop it
-  silently. A `?occurrence=` link to a cancelled occurrence MUST show that it was cancelled and offer the
-  next active occurrence, with no join or RSVP affordance (E6-05).
+- **FR-044**: The occurrence navigation MUST be V1's: Previous / Next and "N of M" over the series
+  timeline, leaving out an occurrence either cancellation source marks (`cancelled_occurrences[]` in
+  seconds, `status === 'cancel'`), as V1 does. The occurrence strip, the browse-all dialog and the
+  cancelled-occurrence state (E6-03 to E6-05) were withdrawn in the scope reset (V1 parity).
 - **FR-045**: "Discover more" MUST use the existing public project-meetings feed and groups
   directory, and MUST link to the public project calendar rather than rebuild it.
 - **FR-046**: An organizer of a recurring meeting MUST get "Edit this occurrence" (reschedule,
-  title, agenda) and "Cancel this occurrence" for the selected upcoming occurrence, as V1 does since
-  #3040 and #3206: signed in, `organizer`, `recurrence` set, not past, with an occurrence selected.
+  title, agenda) and "Cancel this occurrence" for the selected upcoming occurrence, as V1 does
+  since #3040 and #3206: signed in, `organizer`, `recurrence` set, not past, with an occurrence selected.
   This is a port, not new scope.
 
 ### Scope guards
 
-- **FR-047**: Occurrence data MUST come from the public occurrences endpoint, widened to carry
-  each occurrence's title and registrant count (E6-01) and paginated with a bounded page size
-  (E6-02). A per-occurrence attendance figure on past occurrences MUST wait for upstream U-01 (#2927)
-  rather than fan out one participants call per occurrence (E6-06).
+- **FR-047**: Occurrence data MUST come from the public occurrences endpoint as V1 reads it,
+  unpaged and unwidened; the title, registrant count and paging of E6-01 / E6-02 were withdrawn in
+  the scope reset. A per-occurrence attendance figure on past occurrences MUST wait for upstream
+  U-01 (#2927) rather than fan out one participants call per occurrence (E6-06).
 - **FR-048**: A recording's duration MUST be derived from `recording_end − recording_start` on the
   matched recording file and shown only when both ends are present; no duration field exists
   upstream (E4-02).
@@ -240,8 +240,8 @@ V1 parity tracked by its FRs.
 | E5-02 accessibility           | #3260             | FR-061                                              |
 | E5-03 V2 specs                | #3261             | FR-062                                              |
 | E5-04 E2E                     | #3262             | FR-063, SC-001, SC-002, SC-003                      |
-| E6-01 / E6-02 / E6-06         | #3584 #3585 #3589 | FR-047                                              |
-| E6-03 / E6-04 / E6-05         | #3586 #3587 #3588 | FR-044                                              |
+| E6-01 / E6-02 / E6-06         | #3584 #3585 #3589 | FR-047 (E6-01 / E6-02 withdrawn: scope reset)       |
+| E6-03 / E6-04 / E6-05         | #3586 #3587 #3588 | FR-044 (withdrawn: scope reset, V1 navigation)      |
 | V1 parity: occurrence actions | —                 | FR-046                                              |
 | E7-01 / E7-02 join details    | #3590 #3591       | FR-042, FR-043                                      |
 | E7-03 Zoom ID + passcode      | #3592             | FR-043 (blocked on U-04, #2930)                     |

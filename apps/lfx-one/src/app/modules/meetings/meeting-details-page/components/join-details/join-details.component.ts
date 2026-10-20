@@ -163,9 +163,9 @@ export class MeetingJoinDetailsComponent {
     return now.getTime() < windowStart || isWithinHostKeyWindow(timing, now);
   }
 
-  /** An upcoming or live occurrence of a meeting the page loaded as such, not cancelled. */
+  /** An upcoming or live occurrence of a meeting the page loaded as such. */
   private upcoming(): boolean {
-    return this.state.timeState() !== 'ended' && !this.state.loadedViaPastMeetingId() && !this.state.cancelledOccurrence();
+    return this.state.timeState() !== 'ended' && !this.state.loadedViaPastMeetingId();
   }
 
   /**
