@@ -281,14 +281,15 @@ export class VotesTableComponent {
    * asking which list only when the committee has several. Nothing is sent from LFX.
    */
   protected sendMailingListReminder(vote: VoteTableRow): void {
-    // Upstream requires a committee on every vote; a row without one is treated like a committee without lists.
-    if (!vote.committee_uid) {
+    // Committee-tab rows may omit the indexed uid; use the context already resolved for that row.
+    const committeeUid = vote.committee_uid || vote.editQueryParams['committee_uid'];
+    if (!committeeUid) {
       this.showNoMailingListToast();
       return;
     }
 
     this.mailingListService
-      .getMailingListsByCommittee(vote.committee_uid)
+      .getMailingListsByCommittee(committeeUid)
       .pipe(
         take(1),
         // Unsafe addresses never reach a mailto: link — a crafted group_name/domain could add recipients or headers.

@@ -758,6 +758,21 @@ describe('VotesTableComponent — row More menu', () => {
       expect(body).toContain(`${window.location.origin}/votes/active`);
     });
 
+    it.each([
+      { overrides: {}, expectedCommitteeUid: 'committee-fallback' },
+      { overrides: { committee_uid: 'committee-1' }, expectedCommitteeUid: 'committee-1' },
+    ])('resolves the mailing-list committee to $expectedCommitteeUid with a committee-tab fallback', async ({ overrides, expectedCommitteeUid }) => {
+      fixture.componentRef.setInput('editQueryParamsFallback', { committee_uid: 'committee-fallback' });
+      getMailingListsByCommittee.mockReturnValue(of([TSC]));
+      const item = await reminderItem(overrides);
+
+      item.command!({});
+
+      expect(getMailingListsByCommittee).toHaveBeenCalledWith(expectedCommitteeUid);
+      expect(location.href.startsWith('mailto:tsc@lists.example.org?subject=')).toBe(true);
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
     it('asks which list when there are several, then drafts to the picked one', async () => {
       const closed = new Subject<GroupsIOMailingList | undefined>();
       openDialog.mockReturnValue({ onClose: closed });
