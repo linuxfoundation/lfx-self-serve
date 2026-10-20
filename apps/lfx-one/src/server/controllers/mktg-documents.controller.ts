@@ -120,8 +120,9 @@ export class MktgDocumentsController {
     try {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
       const revision = await this.documentStore.approveRevision(req, project, params.type, params.documentId, revisionId);
-      if (!revision)
+      if (!revision) {
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
+      }
       logger.success(req, operation, startTime, { project, revision: revision.revision.number });
       res.json(revision);
     } catch (error) {

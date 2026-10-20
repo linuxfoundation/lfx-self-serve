@@ -65,8 +65,9 @@ export class MktgDocumentStoreService {
           revision.revision.id !== current.revisionId ||
           !revision.revision.approval ||
           revision.approvedCurrent?.revisionId !== current.revisionId
-        )
+        ) {
           throw new Error('The approved current changed. Reload and try again.');
+        }
         return revision;
       })
     );

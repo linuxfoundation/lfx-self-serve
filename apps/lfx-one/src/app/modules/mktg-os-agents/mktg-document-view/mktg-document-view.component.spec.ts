@@ -12,6 +12,8 @@ import { BRAND_KIT_CONTRACT_ID, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/cons
 import { MktgDocumentDetailResponse, MktgDocumentType, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
+import { UserService } from '@services/user.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
@@ -53,6 +55,9 @@ describe('MktgDocumentViewComponent', () => {
     return { ...detail, revision: current, approval: current.approval, markdown: `# Revision ${current.number}\n`, sidecar: null };
   }
 
+  const projectLookup = vi.fn();
+  const impersonating = signal(false);
+  const viewer = signal<{ sub: string } | undefined>({ sub: 'synthetic-writer' });
   let harness: RouterTestingHarness;
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
@@ -60,7 +65,9 @@ describe('MktgDocumentViewComponent', () => {
   let store: {
     getDocument: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
+    getApprovedRevision: ReturnType<typeof vi.fn>;
     restoreRevision: ReturnType<typeof vi.fn>;
+    approveRevision: ReturnType<typeof vi.fn>;
   };
 
   function query(testId: string): HTMLElement | null {
@@ -80,8 +87,7 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   /** A Brand Kit revision's sidecar, as the store serves it: the kit's envelope without its Markdown. */
-  function kitSidecar(): Record<string, unknown> {
-    const kit = brandKitTestRevision();
+  function kitSidecar(kit = brandKitTestRevision()): Record<string, unknown> {
     return {
       contract: BRAND_KIT_CONTRACT_ID,
       project_name: kit.projectName,
@@ -144,7 +150,7 @@ describe('MktgDocumentViewComponent', () => {
     };
     const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
     const jsonRevision = revision(2, { latest: true, format: 'json', status: '', approval });
-    const approvedCurrent = { revisionId: jsonRevision.id, number: 2 };
+    const approvedCurrent = { revisionId: jsonRevision.id, number: jsonRevision.number };
     store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision], approvedCurrent }));
     store.getRevision.mockReturnValue(
       of({
@@ -205,10 +211,17 @@ describe('MktgDocumentViewComponent', () => {
           current: { revisionId: RESTORED.id, changedAt: '2026-10-15T13:00:00.000Z', changedBy: { name: 'The selector' } },
         })
       ),
+      approveRevision: vi.fn(),
+      getApprovedRevision: vi.fn((detail: MktgDocumentDetailResponse, viewed?: MktgRevisionResponse) =>
+        of(detail.approvedCurrent && viewed?.revision.id === detail.approvedCurrent.revisionId ? viewed : null)
+      ),
     };
     resolveBrandKit = vi.fn(() => of(null));
     slidesExport = { last: vi.fn(() => of({ last: null, latestRevision: null })), start: vi.fn(() => of()), poll: vi.fn(() => of()) };
     activeContext = signal<ProjectContext | null>(PROJECT);
+    projectLookup.mockReturnValue(of({ writer: true }));
+    impersonating.set(false);
+    viewer.set({ sub: 'synthetic-writer' });
 
     await TestBed.configureTestingModule({
       providers: [
@@ -222,10 +235,12 @@ describe('MktgDocumentViewComponent', () => {
         ]),
         provideNoopAnimations(),
         MessageService,
-        { provide: MktgDependencyService, useValue: { resolveBrandKit } },
+        { provide: MktgDependencyService, useValue: { resolveBrandKit, notifyDocumentsChanged: vi.fn() } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: MktgDocumentStoreService, useValue: store },
+        { provide: ProjectService, useValue: { getProject: projectLookup } },
+        { provide: UserService, useValue: { impersonating, user: viewer } },
       ],
     }).compileComponents();
   });
@@ -301,7 +316,7 @@ describe('MktgDocumentViewComponent', () => {
     store.getRevision.mockReturnValue(of({ ...detail, revisions: [current, { ...OLDER, latest: !latest }], revision: current, markdown: '# Current' }));
     await render('/documents/brand-kit/living');
     const row = query('mktg-document-view-revision-label-2')?.textContent;
-    expect(row).toBe(`v2 · 13 Oct${latest ? ' · Current' : ''} · revised from 1 comment · ${name || 'name unavailable'}`);
+    expect(row).toBe(`v2 · Draft · 13 Oct${latest ? ' · Current' : ''} · revised from 1 comment · ${name || 'name unavailable'}`);
     expect(query('mktg-document-view-revision-1')?.textContent).toContain('no name (stored before names were recorded)');
   });
 
@@ -352,8 +367,8 @@ describe('MktgDocumentViewComponent', () => {
 
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Messaging framework');
     expect(query('mktg-document-view-document')).toBeNull();
-    expect(query('mktg-framework-view-title')?.textContent).toContain('TestOrbit Messaging framework');
-    expect(query('mktg-framework-view-version')?.textContent).toContain('v2');
+    expect(query('mktg-framework-view-title')).toBeNull();
+    expect(query('mktg-document-view-version')?.textContent).toContain('v2');
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
     expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).toContain('@[800px]:col-span-2');
@@ -368,9 +383,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
     expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
     expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
-    expect(slidesExport.last).toHaveBeenCalledWith(
-      expect.objectContaining({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', revisionId: expect.any(String) })
-    );
+    expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
     expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
     expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
@@ -453,6 +466,217 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it.each(['faq', 'foundation-message', 'boilerplates', 'brand-kit', 'icp'] as const)(
+    'shows a plain error for unreadable %s JSON, never the stored bytes',
+    async (key) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === key);
+      if (!type) throw new Error('Missing document type');
+      const selected = revision(2, { format: 'json' });
+      const text = '{"unexpected":"synthetic source text"}';
+      store.getRevision.mockReturnValue(of({ ...revisionResponse(selected), type, markdown: text }));
+      await render(`/documents/${key}/living?revision=${selected.id}`);
+      expect(query('mktg-document-view-unreadable-json')?.textContent).toContain('This revision could not be displayed. Revision 2.');
+      expect(harness.routeNativeElement?.textContent).not.toContain(text);
+      expect(harness.routeNativeElement?.querySelector('pre, lfx-markdown-renderer')).toBeNull();
+    }
+  );
+
+  function faqResponse(): MktgRevisionResponse {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'faq');
+    if (!type) throw new Error('Missing FAQ type');
+    const selected = revision(2, { format: 'json', latest: true });
+    return { ...revisionResponse(selected), type, markdown: JSON.stringify({ faq: [['About', [['What is it?', 'Open collaboration.', 'Docs']]]] }) };
+  }
+
+  it('approves directly without confirmation and updates saving/state metadata', async () => {
+    const response = faqResponse();
+    const pending = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockReturnValue(of(response));
+    store.approveRevision.mockReturnValue(pending);
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    const status = query('mktg-document-view-saving-status');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(status?.textContent).toBe('');
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    expect(query('mktg-document-view-saving-status')).toBe(status);
+    expect(status?.textContent).toBe('Approving revision 2…');
+    expect(store.approveRevision).toHaveBeenCalledWith(PROJECT.uid, 'faq', 'living', LATEST.id);
+    expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(true);
+    const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
+    pending.next({
+      ...response,
+      approval,
+      revision: { ...response.revision, approval },
+      revisions: response.revisions.map((entry) => ({ ...entry, approval: entry.id === LATEST.id ? approval : null })),
+      approvedCurrent: { revisionId: LATEST.id, number: 2 },
+    });
+    pending.complete();
+    await settle();
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Approved');
+    expect(query('mktg-document-view-approve')).toBeNull();
+    expect(query('mktg-document-view-saving-status')).toBe(status);
+    expect(status?.textContent).toBe('Revision 2 is approved and current.');
+  });
+
+  it.each([
+    ['approve', 'complete'],
+    ['approve', 'error'],
+    ['restore', 'complete'],
+    ['restore', 'error'],
+  ] as const)('blocks both writes while %s is pending and enables them after %s finalizes', async (first, ending) => {
+    const draft = revision(3, { format: 'json' });
+    const response = { ...faqResponse(), revision: draft, revisions: [draft, LATEST, OLDER] };
+    const pending = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockReturnValue(of(response));
+    store[first === 'approve' ? 'approveRevision' : 'restoreRevision'].mockReturnValue(pending);
+    await render(`/documents/faq/living?revision=${draft.id}`);
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    const approve = query('mktg-document-view-approve')?.querySelector('button');
+    const history = query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null;
+    const row = query('mktg-document-view-restore-1') as HTMLButtonElement | null;
+    for (const button of [approve, history, row]) expect(button?.disabled).toBe(false);
+    (first === 'approve' ? approve : history)?.click();
+    await settle();
+    for (const button of [approve, history, row]) expect(button?.disabled).toBe(true);
+    component['onApprove']();
+    component['onRestore'](OLDER);
+    expect(store.approveRevision).toHaveBeenCalledTimes(first === 'approve' ? 1 : 0);
+    expect(store.restoreRevision).toHaveBeenCalledTimes(first === 'restore' ? 1 : 0);
+    if (ending === 'error') {
+      pending.error(new HttpErrorResponse({ status: 500 }));
+    } else {
+      pending.complete();
+    }
+    await settle();
+    for (const button of [approve, history, row]) expect(button?.disabled).toBe(false);
+  });
+
+  it('keeps approval subscribed across an unrelated request recomputation', async () => {
+    const response = faqResponse();
+    const pending = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockReturnValue(of(response));
+    store.approveRevision.mockReturnValue(pending);
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    activeContext.set({ ...PROJECT });
+    await settle();
+    expect(pending.observed).toBe(true);
+    const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
+    pending.next({ ...response, approval, revision: { ...response.revision, approval }, approvedCurrent: { revisionId: LATEST.id, number: 2 } });
+    pending.complete();
+    await settle();
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Approved');
+    expect(query('mktg-document-view-approve')).toBeNull();
+  });
+
+  it('lets approval finish after navigation without replacing the newly opened revision', async () => {
+    const response = faqResponse();
+    const pending = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockReturnValueOnce(of(response));
+    store.approveRevision.mockReturnValue(pending);
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    await harness.navigateByUrl(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    await settle();
+    expect(pending.observed).toBe(true);
+    pending.next(response);
+    pending.complete();
+    await settle();
+    expect(query('mktg-document-view-title')?.textContent).toContain('Brand Kit');
+    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1');
+    expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
+  });
+
+  it('renders the catalog Run again href for both the framework and native FAQ', async () => {
+    useFrameworkRevision();
+    await render('/project/mktg-os-agents/documents/foundation-message/living?project=testorbit');
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/foundation-setup?project=testorbit');
+    store.getRevision.mockReturnValue(of(faqResponse()));
+    await harness.navigateByUrl(`/project/mktg-os-agents/documents/faq/living?project=testorbit&revision=${LATEST.id}`);
+    await settle();
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/faq?project=testorbit');
+  });
+
+  it('blocks a second approval after navigation until the first write finalizes', async () => {
+    const first = faqResponse();
+    const second = { ...first, revision: revision(3, { format: 'json' }) };
+    const older = new Subject<MktgRevisionResponse>();
+    const newer = new Subject<MktgRevisionResponse>();
+    store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) => of(id === first.revision.id ? first : second));
+    store.approveRevision.mockReturnValueOnce(older).mockReturnValueOnce(newer);
+    await render(`/documents/faq/living?revision=${first.revision.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    await harness.navigateByUrl(`/documents/faq/living?revision=${second.revision.id}`);
+    await settle();
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    component['onApprove']();
+    expect(newer.observed).toBe(false);
+    expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(true);
+    expect(store.approveRevision).toHaveBeenCalledTimes(1);
+    older.complete();
+    await settle();
+    expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(false);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    expect(newer.observed).toBe(true);
+    expect(store.approveRevision).toHaveBeenCalledTimes(2);
+    newer.error(new HttpErrorResponse({ status: 500 }));
+    await settle();
+    expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it.each([0, 500])('announces an unconfirmed outcome and keeps the Draft on approval error %s', async (statusCode) => {
+    store.getRevision.mockReturnValue(of(faqResponse()));
+    store.approveRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: statusCode })));
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    const status = query('mktg-document-view-saving-status');
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    const message = 'The approval could not be confirmed. Reload to see the current state before trying again.';
+    expect(query('mktg-document-view-approval-error')?.textContent).toContain(message);
+    expect(query('mktg-document-view-saving-status')).toBe(status);
+    expect(status?.textContent).toBe(message);
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(false);
+  });
+
+  it.each(['reader', 'impersonation'])('omits the approval action for %s', async (mode) => {
+    projectLookup.mockReturnValue(of({ writer: mode !== 'reader' }));
+    impersonating.set(mode === 'impersonation');
+    store.getRevision.mockReturnValue(of(faqResponse()));
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    expect(query('mktg-document-view-approve')).toBeNull();
+    expect(query('mktg-document-view-saving-status')?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('omits Approve for a legacy-only pre-revision document', async () => {
+    const legacy = revision(1, { id: `legacy-${'a'.repeat(64)}`, origin: 'legacy', latest: true });
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(legacy), revisions: [legacy] }));
+    await render(`/documents/brand-kit/living?revision=${legacy.id}`);
+    expect(harness.routeNativeElement?.querySelector('lfx-markdown-renderer')).not.toBeNull();
+    expect(query('mktg-document-view-approve')).toBeNull();
+    expect(store.approveRevision).not.toHaveBeenCalled();
+  });
+
+  it('preserves the exact pointer-contention message for inline approval retry', async () => {
+    const message = 'The document changed while making a revision current. Reload and try again.';
+    store.getRevision.mockReturnValue(of(faqResponse()));
+    store.approveRevision.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412, error: { error: message, code: 'PRECONDITION_FAILED' } })));
+    await render(`/documents/faq/living?revision=${LATEST.id}`);
+    query('mktg-document-view-approve')?.querySelector('button')?.click();
+    await settle();
+    expect(query('mktg-document-view-approval-error')?.textContent?.trim()).toBe(message);
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(query('mktg-document-view-approve')?.querySelector('button')?.disabled).toBe(false);
+  });
+
   it('says the document has no such revision on a 404', async () => {
     store.getRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
     await render('/documents/brand-kit/living?revision=legacy-' + 'f'.repeat(64));
@@ -488,12 +712,31 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-revision-chip')?.textContent).not.toContain('Current');
   });
 
+  it('shows approved/current, approved/noncurrent and Draft states independently in the revision rows', async () => {
+    const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
+    const draft = revision(3);
+    const current = revision(2, { latest: true, approval });
+    const historical = revision(1, { approval: { ...approval, approvedBy: null } });
+    store.getRevision.mockReturnValue(
+      of({ ...revisionResponse(draft), revisions: [draft, current, historical], approvedCurrent: { revisionId: current.id, number: 2 } })
+    );
+    await render(`/documents/brand-kit/living?revision=${draft.id}`);
+    expect(query('mktg-document-view-revision-label-2')?.textContent).toContain('Approved');
+    expect(query('mktg-document-view-current-2')).not.toBeNull();
+    expect(query('mktg-document-view-revision-label-2')?.textContent).toContain('approved by Project writer');
+    expect(query('mktg-document-view-revision-label-1')?.textContent).toContain('Approved');
+    expect(query('mktg-document-view-current-1')).toBeNull();
+    expect(query('mktg-document-view-revision-label-1')?.textContent).toContain('approved by a project writer');
+    expect(query('mktg-document-view-revision-label-3')?.textContent).toContain('Draft');
+    expect(query('mktg-document-view-revision-label-3')?.textContent).not.toContain('approved by');
+  });
+
   it('omits a missing date and its separator from the revision label', async () => {
     const opened = { ...LATEST, createdAt: null };
     store.getRevision.mockReturnValue(of({ ...revisionResponse(opened), revisions: [opened, OLDER] }));
     await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
     expect(query('mktg-document-view-revision-label-2')?.textContent).toBe(
-      'v2 · Current · generated from the form · no name (stored before names were recorded)'
+      'v2 · Draft · Current · generated from the form · no name (stored before names were recorded)'
     );
   });
 
@@ -504,6 +747,7 @@ describe('MktgDocumentViewComponent', () => {
     await settle();
 
     expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
+    expect(TestBed.inject(MktgDependencyService).notifyDocumentsChanged).toHaveBeenCalledWith(PROJECT.uid);
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current. No revision was added.');
@@ -558,8 +802,9 @@ describe('MktgDocumentViewComponent', () => {
   });
   it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
     const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
+    const approved = { ...LATEST, approval };
     store.getRevision.mockReturnValue(
-      of({ ...revisionResponse({ ...LATEST, approval }), approvedCurrent: { revisionId: LATEST.id, number: LATEST.number }, sidecar: kitSidecar() })
+      of({ ...revisionResponse(approved), approval, approvedCurrent: { revisionId: approved.id, number: approved.number }, sidecar: kitSidecar() })
     );
 
     await render('/documents/brand-kit/living');
@@ -568,32 +813,90 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-framework')).toBeNull();
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-document-view-brand-kit')?.parentElement?.className).toContain('@[800px]:col-span-2');
-    expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
-    expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
+    expect(query('brand-kit-web-view-title')).toBeNull();
+    expect(query('mktg-document-view-version')?.textContent?.trim()).toBe(`v${LATEST.number}`);
     expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
     // Only a framework's print reads the project's kit: the kit is its own brand.
     expect(resolveBrandKit).not.toHaveBeenCalled();
     // Export to Google Slides reads this revision of the document, and its last export is looked up.
     expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
-    expect(slidesExport.last).toHaveBeenCalledWith(
-      expect.objectContaining({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: expect.any(String) })
-    );
+    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
   });
 
-  it('exports the older revision in ?revision=, never the latest: the last export is read and the export started for exactly that revision', async () => {
-    store.getRevision.mockImplementation((_project: string, _agentKey: string, _documentId: string, revisionId: string) => {
-      const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
-      const selected = { ...([LATEST, OLDER].find((entry) => entry.id === revisionId) ?? LATEST), latest: true, approval };
-      return of({ ...revisionResponse(selected), approvedCurrent: { revisionId: selected.id, number: selected.number }, sidecar: kitSidecar() });
-    });
-
-    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+  it('exports and prints approved current while the screen shows a different newer Draft', async () => {
+    const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: 'Project writer' } };
+    const approved = revision(1, { latest: true, approval });
+    const draft = revision(3, { latest: false });
+    const approvedCurrent = { revisionId: approved.id, number: 1 };
+    const revisions = [draft, approved];
+    const selected = {
+      ...revisionResponse(draft),
+      revisions,
+      approvedCurrent,
+      sidecar: kitSidecar({ ...brandKitTestRevision(), projectName: 'Synthetic draft only' }),
+    };
+    store.getRevision.mockReturnValue(of(selected));
+    store.getApprovedRevision.mockReturnValue(of({ ...revisionResponse(approved), approval, revisions, approvedCurrent, sidecar: kitSidecar() }));
+    await render(`/documents/brand-kit/living?revision=${draft.id}`);
+    expect(query('mktg-document-view-version')?.textContent).toContain('v3');
+    expect(query('mktg-document-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(query('mktg-document-view-meta')?.textContent).toContain('the kit still shows v1, approved by Project writer');
+    expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+    expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
     query('brand-kit-web-view-export-slides')?.querySelector('button')?.click();
     await settle();
+    expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
+    expect(slidesExport.start).toHaveBeenCalledWith({
+      project: 'proj-1',
+      agentKey: 'brand-kit',
+      documentId: 'living',
+      revisionId: approved.id,
+      mode: 'create',
+    });
+  });
 
+  it.each(['loading', 'error'] as const)('keeps approved PDF/Slides disabled while the approved payload is %s', async (state) => {
+    useFrameworkRevision();
+    store.getApprovedRevision.mockReturnValue(state === 'loading' ? NEVER : throwError(() => new HttpErrorResponse({ status: 500 })));
+    await render('/documents/foundation-message/living');
+    const text = query('mktg-document-view-framework')?.textContent;
+    expect(text).toContain(state === 'loading' ? 'Loading the approved current' : 'The approved current could not be loaded');
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-framework-view-print')).toBeNull();
+    expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'foundation-message', documentId: 'living' });
+  });
+
+  it('keeps document and last-export reads alive when user context resolves before approved bytes', async () => {
+    const pendingApproved = new Subject<MktgRevisionResponse>();
+    const pendingLast = new Subject<{ last: null; latestRevision: null }>();
+    viewer.set(undefined);
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar(), approvedCurrent: { revisionId: OLDER.id, number: 1 } }));
+    store.getApprovedRevision.mockReturnValue(pendingApproved);
+    slidesExport.last.mockReturnValue(pendingLast);
+    await render(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: PROJECT.uid, agentKey: 'brand-kit', documentId: 'living' });
+    expect(pendingLast.observed).toBe(true);
+    viewer.set({ sub: 'synthetic-resolved-subject' });
+    impersonating.set(true);
+    await settle();
+    expect(store.getRevision).toHaveBeenCalledTimes(1);
     expect(slidesExport.last).toHaveBeenCalledTimes(1);
-    expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: OLDER.id });
-    expect(slidesExport.start).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', revisionId: OLDER.id, mode: 'create' });
+    expect(pendingApproved.observed).toBe(true);
+    expect(pendingLast.observed).toBe(true);
+    expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-document-view-approve')).toBeNull();
+    pendingLast.next({ last: null, latestRevision: null });
+    pendingLast.complete();
+  });
+
+  it('shows an asset without approved current but disables its real PDF and Slides actions', async () => {
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
+    await render('/documents/brand-kit/living');
+    expect(query('brand-kit-web-view-print')).toBeNull();
+    expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+    expect(slidesExport.last).toHaveBeenCalledExactlyOnceWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living' });
   });
 
   it('renders a Boilerplates revision (JSON content) on the Boilerplates view, full width, with the sidecar’s report and word counts', async () => {
@@ -628,8 +931,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit Boilerplates');
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-framework-view')).toBeNull();
-    expect(query('mktg-boilerplates-view-title')?.textContent).toContain('TestOrbit Boilerplates');
-    expect(query('mktg-boilerplates-view-version')?.textContent).toContain('v3');
+    expect(query('mktg-boilerplates-view-title')).toBeNull();
+    expect(query('mktg-document-view-version')?.textContent).toContain('v3');
     expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
     expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');
     expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).toContain('@[800px]:col-span-2');
@@ -690,7 +993,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit FAQ');
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-framework-view')).toBeNull();
-    expect(query('mktg-faq-view-version')?.textContent).toContain('v2');
+    expect(query('mktg-document-view-version')?.textContent).toContain('v2');
+    expect(query('mktg-faq-view-title')).toBeNull();
+    expect(query('mktg-faq-view-metadata')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('lfx-mktg-slides-export')).toBeNull();
     expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
     expect(query('mktg-faq-view-needs-answer-0-1')).not.toBeNull();
     expect(query('mktg-faq-view-unanswered-chip')?.textContent).toContain('1 question needs an answer from your team');

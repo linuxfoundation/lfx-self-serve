@@ -244,7 +244,14 @@ export async function openDraftAssetRun(page: Page, receipt = true): Promise<str
 }
 
 /** Stub the FAQ reads; cookie suppression precedes every navigation. */
-export async function openAssetDocument(page: Page, key: 'faq', status = 200, writer = true, unreadable = false): Promise<void> {
+export async function openAssetDocument(
+  page: Page,
+  key: 'faq',
+  status = 200,
+  writer = true,
+  unreadable = false,
+  responseOverride?: MktgRevisionResponse
+): Promise<void> {
   await suppressCookieBanner(page);
   mockProjects[ASSET_PROJECT.slug] = ASSET_PROJECT;
   await ApiMockHelper.setupProjectSlugMock(page, { writer });
@@ -269,7 +276,7 @@ export async function openAssetDocument(page: Page, key: 'faq', status = 200, wr
   });
   await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ json: { sfid: null } }));
   await page.route(`**${MKTG_SLIDES_EXPORT_API_PATH}/last?*`, (route) => route.fulfill({ json: { last: null, latestRevision: null } }));
-  let response = nativeAssetRevisionResponse(key, unreadable);
+  let response = responseOverride ?? nativeAssetRevisionResponse(key, unreadable);
   await page.route(`**/api/mktg-agents/documents/${key}/living/revisions/*/approve?*`, (route) => {
     const approval = { approvedAt: '2026-10-19T11:00:00Z', approvedBy: { name: 'Project writer' } };
     const revision = { ...response.revision, approval };

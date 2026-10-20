@@ -92,8 +92,6 @@ export class MktgFrameworkViewComponent {
   public readonly version = input<number | null>(null);
   public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
   public readonly showMetadata = input(true);
-  /** Compatibility with the preceding document-view layer; not rendered. */
-  public readonly note = input('');
   public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The project's stored Brand Kit, which the print is set in; null for the LF look. */
   public readonly kit = input<BrandKitRevision | null>(null);

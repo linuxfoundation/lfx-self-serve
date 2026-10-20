@@ -138,8 +138,9 @@ export async function setupDocuments(
     const status = writer ? (options.status ?? 200) : 403;
     if (status !== 200) return fulfillDocumentJson(route, { code: status === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, status);
     if (route.request().method() === 'POST' && path.endsWith('/restore')) {
-      if (options.writeStatus)
+      if (options.writeStatus) {
         return fulfillDocumentJson(route, { code: options.writeStatus === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, options.writeStatus);
+      }
       const { revisionId } = route.request().postDataJSON() as { revisionId: string };
       const selected = detail.revisions.find((revision) => revision.id === revisionId);
       if (!selected) return fulfillDocumentJson(route, { code: 'NOT_FOUND' }, 404);
