@@ -213,7 +213,9 @@ export class VotesTableComponent {
       let changed = false;
       for (const vote of votes) {
         const override = next.get(vote.uid);
-        if (override && vote.end_time === override.end_time && vote.end_time_timezone === override.end_time_timezone) {
+        // A later extension landing before this one's refresh must also evict the override — comparing
+        // timestamps (>=) rather than exact string equality (per @greptile-apps, @copilot-pull-request-reviewer).
+        if (override && new Date(vote.end_time).getTime() >= new Date(override.end_time).getTime()) {
           next.delete(vote.uid);
           changed = true;
         }

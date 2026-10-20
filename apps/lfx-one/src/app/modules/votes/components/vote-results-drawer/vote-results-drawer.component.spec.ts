@@ -116,4 +116,34 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     expect(service.getVoteResults).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[data-testid="vote-results-voter-not-participant"]')).toBeTruthy();
   });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uAEES @cursor "Drawer reopen token double-fetches vote"): an effect()
+  // bumping a reopen token fired in addition to combineLatest's own initial emission, so opening the drawer
+  // called getVote twice. Pins the fix: initVote() keys off toObservable(visible) directly (the pattern
+  // initMyResponse already used) instead of an effect()-driven counter, so opening fetches exactly once.
+  it('fetches the vote exactly once when the drawer opens', async () => {
+    const vote = makeVote(PollStatus.ACTIVE);
+    const service = {
+      getVote: vi.fn(() => of(vote)),
+      getMyVoteResponse: vi.fn(() => of(null)),
+      getVoteResults: vi.fn(() => of(null)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', vote.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    service.getVote.mockClear();
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(service.getVote).toHaveBeenCalledTimes(1);
+  });
 });

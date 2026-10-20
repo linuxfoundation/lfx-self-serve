@@ -662,7 +662,13 @@ describe('VotesTableComponent — row More menu', () => {
             }),
         },
       ],
-    }).compileComponents();
+    })
+      // DialogService is a component-level provider (see the "deliberately not here" comment on
+      // VotesTableComponent) — it must be overridden on the component itself, not the TestBed root.
+      .overrideComponent(VotesTableComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: openDialog } }] },
+      })
+      .compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
     table = fixture.componentInstance;
     fixture.componentRef.setInput('votes', ROWS);
@@ -1307,5 +1313,32 @@ describe('VotesTableComponent — Extend deadline', () => {
     await settle();
 
     expect(extendVote).not.toHaveBeenCalled();
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uAB0b @greptile-apps, PRRT_kwDOPMiRQ86uAElJ @copilot-pull-request-reviewer):
+  // the eviction effect only cleared a saved override on an exact end_time match, so a second extension
+  // (e.g. by another manager) landing in a refresh before the first eviction never matched and the
+  // table kept showing — and reseeding the dialog from — the stale, older deadline. Pins the fix:
+  // eviction now compares timestamps (>=) so a later deadline evicts the override too.
+  it('evicts a stale override once a refresh shows a later deadline, not just an exact match', async () => {
+    extendVote.mockReturnValue(of(vote('active', { end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' })));
+    await settle();
+
+    extendButton('active')!.click();
+    await settle();
+    onClose.next({ end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' });
+    await settle();
+
+    // A second, later extension lands in the row before this client's own refresh ever matches exactly.
+    fixture.componentRef.setInput('votes', [vote('active', { end_time: '2026-12-01T23:59:00.000Z', end_time_timezone: 'UTC' })]);
+    await settle();
+
+    extendButton('active')!.click();
+    await settle();
+
+    expect(dialogOpen).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ data: expect.objectContaining({ currentEndTime: '2026-12-01T23:59:00.000Z' }) })
+    );
   });
 });
