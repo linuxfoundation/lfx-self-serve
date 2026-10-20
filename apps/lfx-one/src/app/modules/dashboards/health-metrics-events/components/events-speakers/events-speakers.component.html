@@ -25,7 +25,12 @@
       data-testid="events-speakers-unmeasured" />
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="events-speakers-controls">
-      <lfx-filter-pills [options]="tabOptions" [selectedFilter]="tab()" (filterChange)="onTabChange($event)" data-testid="events-speakers-tab-pills" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="tabOptions"
+        [selectedFilter]="tab()"
+        (filterChange)="onTabChange($event)"
+        data-testid="events-speakers-tab-pills" />
       <span class="text-[13px] text-gray-500" data-testid="events-speakers-count">{{ view().countLabel }}</span>
     </div>
 

@@ -19,7 +19,12 @@
       data-testid="members-at-risk-empty" />
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-at-risk-controls">
-      <lfx-filter-pills [options]="filterOptions" [selectedFilter]="bucket()" (filterChange)="onBucketChange($event)" data-testid="members-at-risk-pills" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="filterOptions"
+        [selectedFilter]="bucket()"
+        (filterChange)="onBucketChange($event)"
+        data-testid="members-at-risk-pills" />
       <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-at-risk-count">
         @if (loading()) {
           &mdash;

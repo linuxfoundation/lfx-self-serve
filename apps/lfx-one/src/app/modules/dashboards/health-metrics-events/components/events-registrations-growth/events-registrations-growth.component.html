@@ -20,6 +20,7 @@
   } @else {
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="events-registrations-growth-controls">
       <lfx-filter-pills
+        variant="track"
         [options]="metricOptions"
         [selectedFilter]="metric()"
         (filterChange)="onMetricChange($event)"

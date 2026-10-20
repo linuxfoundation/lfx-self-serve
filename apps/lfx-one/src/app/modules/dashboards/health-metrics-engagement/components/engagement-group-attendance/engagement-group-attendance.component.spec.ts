@@ -175,8 +175,8 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ projectSlug: 'acme-core', page: 1 }));
   });
 
-  // Each chip's count is its own, so it does not move when another chip is selected.
-  it('labels each chip with its own count and keeps the header count scope-wide under a chip', async () => {
+  // The chips carry labels only, as the design draws them; the header count stays scope-wide under a chip.
+  it('labels each chip without a count and keeps the header count scope-wide under a chip', async () => {
     const typeCounts = [
       { groupType: 'all' as const, groups: 34, dormantGroups: 3 },
       { groupType: 'gov' as const, groups: 12, dormantGroups: 1 },
@@ -195,8 +195,8 @@ describe('EngagementGroupAttendanceComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const labels = fixture.componentInstance['typeFilters']().map((option: { label: string }) => option.label);
-    expect(labels).toEqual(['All types · 34', 'Governance · 12', 'SIG / TAG · 5', 'Working groups · 17']);
+    const labels = fixture.componentInstance['typeFilters'].map((option: { label: string }) => option.label);
+    expect(labels).toEqual(['All types', 'Governance', 'SIG / TAG', 'Working groups']);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('34 groups');
   });
 

@@ -4,7 +4,12 @@
 <!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
 <div class="flex flex-col gap-4" data-testid="members-churn">
   <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-churn-controls">
-    <lfx-filter-pills [options]="modeOptions" [selectedFilter]="mode()" (filterChange)="onModeChange($event)" data-testid="members-churn-mode-pills" />
+    <lfx-filter-pills
+      variant="track"
+      [options]="modeOptions"
+      [selectedFilter]="mode()"
+      (filterChange)="onModeChange($event)"
+      data-testid="members-churn-mode-pills" />
     <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-churn-meta">
       @if (firstRead() || loadFailed() || !view().yearMeasured) {
         &mdash;

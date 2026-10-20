@@ -96,7 +96,7 @@ export interface HealthMetricsEngagementGroupCounts {
   dormantGroups: number;
 }
 
-/** One type chip's own counts, independent of whichever chip is selected. */
+/** One group type's own counts, independent of whichever chip is selected. */
 export interface HealthMetricsEngagementGroupTypeCount extends HealthMetricsEngagementGroupCounts {
   groupType: HealthMetricsEngagementGroupTypeFilter;
 }
@@ -108,7 +108,10 @@ export interface HealthMetricsEngagementGroupAttendance {
   totalRecords: number;
   /** `null` when the all-projects scope has no rows at all — distinct from a real zero. */
   counts: HealthMetricsEngagementGroupCounts | null;
-  /** One entry per type chip, `all` included; empty whenever `counts` is `null`. */
+  /**
+   * One entry per group type, `all` included; empty whenever `counts` is `null`. The chips show labels only, so
+   * nothing renders these yet; they are kept for the group count to follow the selected chip.
+   */
   typeCounts: HealthMetricsEngagementGroupTypeCount[];
 }
 

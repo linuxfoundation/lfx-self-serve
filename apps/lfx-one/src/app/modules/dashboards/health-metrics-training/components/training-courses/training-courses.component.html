@@ -17,7 +17,7 @@
       data-testid="training-courses-empty" />
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="training-courses-controls">
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <div class="w-full sm:w-64">
           <label class="sr-only" for="training-courses-search">Search course</label>
           <lfx-input-text
@@ -30,7 +30,12 @@
             styleClass="w-full"
             dataTest="training-courses-search" />
         </div>
-        <lfx-filter-pills [options]="typeOptions" [selectedFilter]="type()" (filterChange)="onTypeChange($event)" data-testid="training-courses-types" />
+        <lfx-filter-pills
+          variant="track"
+          [options]="typeOptions"
+          [selectedFilter]="type()"
+          (filterChange)="onTypeChange($event)"
+          data-testid="training-courses-types" />
       </div>
       <span class="text-[13px] text-gray-500" data-testid="training-courses-count">
         @if (loading()) {

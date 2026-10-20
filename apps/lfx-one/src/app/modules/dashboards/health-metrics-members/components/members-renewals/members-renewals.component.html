@@ -8,7 +8,12 @@
   } @else {
     <!-- The pills stay up on a failed read, so another window can still be picked. -->
     <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-renewals-controls">
-      <lfx-filter-pills [options]="windowOptions" [selectedFilter]="window()" (filterChange)="onWindowChange($event)" data-testid="members-renewals-window" />
+      <lfx-filter-pills
+        variant="track"
+        [options]="windowOptions"
+        [selectedFilter]="window()"
+        (filterChange)="onWindowChange($event)"
+        data-testid="members-renewals-window" />
       <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-renewals-count">
         @if (loading() || loadFailed()) {
           &mdash;

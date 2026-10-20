@@ -17,7 +17,7 @@
       data-testid="events-orgs-empty" />
   } @else {
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" data-testid="events-orgs-controls">
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
         <div class="w-full sm:w-64">
           <label class="sr-only" for="events-orgs-search">Search organization</label>
           <lfx-input-text
@@ -30,7 +30,12 @@
             styleClass="w-full"
             dataTest="events-orgs-search" />
         </div>
-        <lfx-filter-pills [options]="segmentOptions" [selectedFilter]="segment()" (filterChange)="onSegmentChange($event)" data-testid="events-orgs-segments" />
+        <lfx-filter-pills
+          variant="track"
+          [options]="segmentOptions"
+          [selectedFilter]="segment()"
+          (filterChange)="onSegmentChange($event)"
+          data-testid="events-orgs-segments" />
       </div>
       <span class="text-[13px] text-gray-500" data-testid="events-orgs-count">
         @if (loading()) {
