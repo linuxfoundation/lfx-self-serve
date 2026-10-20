@@ -50,7 +50,7 @@
       } @else {
         <ul class="flex flex-col gap-[8px]">
           @for (row of view().warmest; track row.accountId; let index = $index) {
-            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-4" [attr.data-testid]="'non-members-conversion-warm-' + index">
+            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'non-members-conversion-warm-' + index">
               <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
               <span class="shrink-0 tabular-nums text-gray-900" [attr.data-testid]="'non-members-conversion-warm-' + index + '-value'">{{
                 row.valueLabel

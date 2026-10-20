@@ -67,7 +67,7 @@
         <h4 class="text-[11px] font-semibold uppercase tracking-wide text-gray-500">By status</h4>
         <ul class="flex flex-col gap-[8px]">
           @for (row of view().statusRows; track row.key) {
-            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-4" [attr.data-testid]="'events-speakers-status-' + row.key">
+            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]" [attr.data-testid]="'events-speakers-status-' + row.key">
               <span class="text-gray-600">{{ row.label }}</span>
               <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-speakers-status-' + row.key + '-value'">{{ row.valueLabel }}</span>
             </li>
@@ -107,7 +107,9 @@
       } @else {
         <ul class="flex flex-col gap-[8px]">
           @for (row of view().organizations; track row.key) {
-            <li class="flex items-baseline justify-between gap-[14px] text-[12px] leading-4" [attr.data-testid]="'events-speakers-organization-' + row.key">
+            <li
+              class="flex items-baseline justify-between gap-[14px] text-[12px] leading-[16px]"
+              [attr.data-testid]="'events-speakers-organization-' + row.key">
               <span class="min-w-0 break-words text-gray-600">{{ row.label }}</span>
               <span class="tabular-nums text-gray-900" [attr.data-testid]="'events-speakers-organization-' + row.key + '-value'">{{ row.valueLabel }}</span>
             </li>
