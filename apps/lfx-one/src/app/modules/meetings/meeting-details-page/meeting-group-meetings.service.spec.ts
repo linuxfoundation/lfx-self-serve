@@ -154,6 +154,14 @@ describe('MeetingGroupMeetingsService', () => {
     expect(states.at(-1)).toEqual({ status: 'error', group: null, meetings: [], hasMore: false });
   });
 
+  it('is an error, not none, when the feed answers 404 (a transient slug lookup failure)', () => {
+    fetch([GROUP_UID]);
+    answerDirectory([group(GROUP_UID, 'TOC')]);
+    http.expectOne((r) => r.url === `/public/api/projects/${PROJECT}/meetings`).flush('not found', { status: 404, statusText: 'Not Found' });
+
+    expect(states.at(-1)).toEqual({ status: 'error', group: null, meetings: [], hasMore: false });
+  });
+
   it('is an error when the feed cannot be read', () => {
     fetch([GROUP_UID]);
     answerDirectory([group(GROUP_UID, 'TOC')]);

@@ -298,7 +298,8 @@ function resolveUpcomingActionSlot(input: ActionSlotInput): ActionSlotKind {
  *
  * Past-meeting rows (`meeting_and_occurrence_id` set) are skipped: they are records of occurrences
  * that already ran, and an in-progress one duplicates its live series. Cancelled occurrences are
- * skipped, so a series whose remaining occurrences are all cancelled drops out. `currentMeetingUid`
+ * skipped (a row without occurrences is matched against `cancelled_occurrences` by its start), so a
+ * series whose remaining occurrences are all cancelled drops out. `currentMeetingUid`
  * is the series uid (`getMeetingSeriesUid`), which is what the feed's live rows carry as `id`.
  */
 export function listOtherGroupMeetings(meetings: readonly PublicCalendarMeeting[], currentMeetingUid: string, now: Date): MeetingGroupMeetingItem[] {
@@ -324,7 +325,12 @@ export function listOtherGroupMeetings(meetings: readonly PublicCalendarMeeting[
 function nextOpenOccurrence(meeting: PublicCalendarMeeting, now: Date): Pick<MeetingGroupMeetingItem, 'startTime' | 'durationMinutes'> | null {
   const occurrences = meeting.occurrences ?? [];
   if (occurrences.length === 0) {
-    return isOccurrencePast(meeting.start_time, meeting.duration, now) ? null : { startTime: meeting.start_time, durationMinutes: meeting.duration };
+    // `cancelled_occurrences` holds Unix-second start times, so a cancelled meeting is matched by its own start.
+    const startId = String(Math.floor(new Date(meeting.start_time).getTime() / 1000));
+    if ((meeting.cancelled_occurrences ?? []).includes(startId) || isOccurrencePast(meeting.start_time, meeting.duration, now)) {
+      return null;
+    }
+    return { startTime: meeting.start_time, durationMinutes: meeting.duration };
   }
 
   let next: Pick<MeetingGroupMeetingItem, 'startTime' | 'durationMinutes'> | null = null;

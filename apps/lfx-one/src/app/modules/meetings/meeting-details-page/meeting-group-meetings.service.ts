@@ -61,17 +61,21 @@ export class MeetingGroupMeetingsService {
               meetings: others.slice(0, MEETING_GROUP_MEETINGS_LIMIT),
               hasMore: others.length > MEETING_GROUP_MEETINGS_LIMIT,
             };
-          })
+          }),
+          // Any feed failure is retryable, a 404 included (the feed answers one for a transient slug
+          // lookup failure). Already logged by `MeetingService.getPublicProjectMeetings`.
+          catchError(() => of(this.state('error')))
         );
       }),
+      // Directory failures only: the feed's are handled above.
       catchError((error: unknown) => {
         // The directory answers 404 for a project that is unknown or not publicly discoverable: no
         // group of it is addressable, now or on a retry, so the section hides rather than erroring.
         if (error instanceof HttpErrorResponse && error.status === 404) {
           return of(this.state('none'));
         }
-        // `MeetingService.getPublicProjectMeetings` logs its own failure; `GroupService` does not.
-        console.error(`Failed to load the other meetings of the group for project ${projectIdentifier}:`, error);
+        // `GroupService` does not log its own failure.
+        console.error(`Failed to load the public group directory for project ${projectIdentifier}:`, error);
         return of(this.state('error'));
       }),
       startWith(this.state('loading'))

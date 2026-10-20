@@ -903,6 +903,20 @@ describe('listOtherGroupMeetings (E8-02)', () => {
     expect(items[0].durationMinutes).toBe(90);
   });
 
+  it('drops a row without occurrences whose start is cancelled', () => {
+    // 2026-10-22T15:00:00Z is Unix second 1792681200.
+    const items = listOtherGroupMeetings(
+      [
+        feedRow({ id: 'cancelled', occurrences: [], cancelled_occurrences: ['1792681200'] }),
+        feedRow({ id: 'kept', occurrences: [], cancelled_occurrences: ['1'] }),
+      ],
+      'current',
+      now
+    );
+
+    expect(items.map((item) => item.meetingId)).toEqual(['kept']);
+  });
+
   it('drops a series whose remaining occurrences are all cancelled or ended', () => {
     const items = listOtherGroupMeetings(
       [
