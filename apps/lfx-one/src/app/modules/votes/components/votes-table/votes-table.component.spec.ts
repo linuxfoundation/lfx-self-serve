@@ -868,11 +868,59 @@ describe('VotesTableComponent — participation progress', () => {
     expect(el('votes-participation-bar-zero')?.getAttribute('aria-valuenow')).toBe('0');
   });
 
-  it('keeps the raw response count when progress is not enabled', async () => {
+  it('labels the personal column Your vote without showing response counts', async () => {
     await render(false);
 
-    expect(text('votes-responses-active')).toBe('8');
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>).map((header) => header.textContent?.trim());
+    expect(headers).toContain('Your vote');
+    expect(headers).not.toContain('Responses');
+    expect(el('votes-responses-active')).toBeNull();
     expect(el('votes-participation-active')).toBeNull();
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('shows personal voting status for %s votes independently of response totals', async (status) => {
+    fixture.componentRef.setInput('votes', [
+      vote('voted', { status, response_status: VoteResponseStatus.RESPONDED, num_response_received: 0 }),
+      vote('not-voted', { status, response_status: VoteResponseStatus.AWAITING_RESPONSE, num_response_received: 1 }),
+    ]);
+    await render(false);
+
+    const voted = el('votes-your-vote-voted')!;
+    expect(voted.getAttribute('role')).toBe('img');
+    expect(voted.getAttribute('aria-label')).toBe('Voted');
+    expect(voted.getAttribute('tabindex')).toBe('0');
+    const icon = voted.querySelector('i')!;
+    expect(icon.classList.contains('fa-solid')).toBe(true);
+    expect(icon.classList.contains('fa-circle-check')).toBe(true);
+    expect(icon.classList.contains('text-emerald-600')).toBe(true);
+    expect(icon.getAttribute('aria-hidden')).toBe('true');
+
+    const notVoted = el('votes-your-vote-not-voted')!;
+    expect(notVoted.getAttribute('role')).toBe('img');
+    expect(notVoted.getAttribute('aria-label')).toBe('Not voted');
+    expect(notVoted.textContent?.trim()).toBe('—');
+    expect(notVoted.classList.contains('text-gray-500')).toBe(true);
+    expect(notVoted.querySelector('i')).toBeNull();
+  });
+
+  it.each(['mouseenter', 'focus'])('shows the Voted tooltip on %s', async (event) => {
+    fixture.componentRef.setInput('votes', [vote('voted', { response_status: VoteResponseStatus.RESPONDED })]);
+    await render(false);
+
+    el('votes-your-vote-voted')!.dispatchEvent(new Event(event));
+    await fixture.whenStable();
+
+    expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Voted');
+  });
+
+  it('retains the Responses heading and participation summary in management views', async () => {
+    await render();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('th') as NodeListOf<HTMLElement>).map((header) => header.textContent?.trim());
+    expect(headers).toContain('Responses');
+    expect(headers).not.toContain('Your vote');
+    expect(fixture.nativeElement.querySelector('[data-testid^="votes-your-vote-"]')).toBeNull();
+    expect(text('votes-participation-label-active')).toBe('8 of 12 responded · 67%');
   });
 
   it('never words participation as quorum, approval, or an outcome', async () => {

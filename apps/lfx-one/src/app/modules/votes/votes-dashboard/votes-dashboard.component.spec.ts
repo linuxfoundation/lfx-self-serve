@@ -140,7 +140,7 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(table.showParticipationProgress()).toBe(true);
   });
 
-  it('keeps the raw response count in the Me lens', () => {
+  it('shows personal voting status in the Me lens', () => {
     expect(table.showParticipationProgress()).toBe(false);
   });
 
