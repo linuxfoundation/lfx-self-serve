@@ -1446,8 +1446,13 @@ export interface OrgClaDesigneeNominationValidation {
 
 export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
 
-/** What the viewer answered. Dismissing the dialog closes with `undefined`, which answers neither. */
-export type OrgClaManagerAnswer = 'yes' | 'no';
+/** Dismissing the question closes it with `undefined`, as does an assignment that ends the flow on the overview. */
+export type OrgClaManagerQuestionResult = 'no' | 'assigned';
+
+export interface OrgClaManagerQuestionDialogData {
+  /** Called once, on Yes. The opener performs the assignment and closes the dialog when it answers. */
+  onYes: () => void;
+}
 
 /** The step the viewer chose on the unsigned overview: sign it themselves, or mail it to a signatory. */
 export type OrgClaDesigneeNextStep = 'attest' | 'mail';

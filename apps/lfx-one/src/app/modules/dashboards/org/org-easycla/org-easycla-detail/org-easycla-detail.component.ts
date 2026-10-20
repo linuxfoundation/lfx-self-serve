@@ -16,7 +16,7 @@ import type {
   OrgClaGroupList,
   OrgClaGroupPickerResult,
   OrgClaIdentifyManagerResult,
-  OrgClaManagerAnswer,
+  OrgClaManagerQuestionResult,
   OrgClaSignAttestations,
   OrgClaSignHandoffDialogData,
   OrgClaSignSelection,
@@ -27,7 +27,7 @@ import {
   CCLA_SIGN_COPY,
   ORG_CLA_AUTO_ECLA_LOCKED_HINT,
   ORG_CLA_DESIGNEE_REFUSAL_COPY,
-  ORG_CLA_DESIGNEE_START_COPY,
+  ORG_CLA_DESIGNEE_RESTING_COPY,
   ORG_CLA_DETAIL_TABS,
   ORG_CLA_DOWNLOAD_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
@@ -614,7 +614,7 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly signingChoice = computed(() => this.signingChoiceFrom(this.claGroup()));
 
-  protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
+  protected readonly designeeRestingCopy = ORG_CLA_DESIGNEE_RESTING_COPY;
 
   /** The Sign pair check's answer, tagged with the pair it was asked for so a stale one cannot apply. */
   private readonly signCheck = signal<{ pair: string; allowed: boolean } | null>(null);
@@ -659,9 +659,11 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly startDisabledReason: Signal<string> = this.initStartDisabledReason();
 
+  protected readonly startLabel = computed(() => (this.alreadyDesignee() ? this.designeeRestingCopy.proceedLabel : this.notStartedCopy.startLabel));
+
   protected readonly startAriaLabel = computed(() => {
     const reason = this.startDisabledReason();
-    return reason ? `${this.notStartedCopy.startLabel} — ${reason}` : this.notStartedCopy.startLabel;
+    return reason ? `${this.startLabel()} — ${reason}` : this.startLabel();
   });
 
   protected readonly identifySomeoneElseAriaLabel = computed(() => {
@@ -1080,15 +1082,19 @@ export class OrgEasyclaDetailComponent {
       return;
     }
 
-    const questionRef = this.dialogService.open(OrgEasyclaManagerQuestionDialogComponent, orgClaManagerQuestionDialogConfig()) as DynamicDialogRef;
+    const questionRef = this.dialogService.open(
+      OrgEasyclaManagerQuestionDialogComponent,
+      orgClaManagerQuestionDialogConfig({ onYes: () => this.assignDesignee(orgUid, chosen, next, questionRef) })
+    ) as DynamicDialogRef;
+    nameDynamicDialog(this.dialogService, questionRef, OrgEasyclaManagerQuestionDialogComponent.headingId);
     this.uncommittedSigningDialog = questionRef;
 
-    this.whenSigningDialogEnds(questionRef, (answer: OrgClaManagerAnswer) => {
+    this.whenSigningDialogEnds(questionRef, (result: OrgClaManagerQuestionResult) => {
       // Torn down first for the reason `confirmThenHandOff` gives, and re-checked after, because
-      // the answer names no organization or agreement.
+      // the result names no organization or agreement.
       this.afterDialogTornDown(questionRef, () => {
         if (!this.signingContextHeld(orgUid, chosen)) return;
-        if (answer === 'yes') this.assignDesignee(orgUid, chosen, next);
+        if (result === 'assigned') this.openSendByEmailIfContextHeld(orgUid, chosen);
         else this.openIdentifyManager(orgUid, chosen);
       });
     });
@@ -1114,18 +1120,29 @@ export class OrgEasyclaDetailComponent {
     return false;
   }
 
-  /** Yes: make the viewer the designee, then continue; a refusal leaves them on the overview with the reason. */
-  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+  private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep, questionRef: DynamicDialogRef): void {
+    // A dismissed question stays clickable through its leave animation, still `asking`.
+    if (this.uncommittedSigningDialog !== questionRef) return;
+    if (!this.signingContextHeld(orgUid, chosen)) {
+      questionRef.close();
+      return;
+    }
+
     const write = this.holdDesigneeWrite();
     this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
       next: () => {
         this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
-        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
-        this.openChosenStep(orgUid, chosen, next);
+        // Closed on every branch: the dialog cannot be dismissed while configuring, so a write that
+        // no longer owns the flow must still take it down.
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) {
+          questionRef.close();
+          return;
+        }
+        questionRef.close(next === 'mail' ? ('assigned' satisfies OrgClaManagerQuestionResult) : undefined);
       },
       error: (error: unknown) => {
+        questionRef.close();
         if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
-        this.signingOpen.set(false);
         this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
       },
     });

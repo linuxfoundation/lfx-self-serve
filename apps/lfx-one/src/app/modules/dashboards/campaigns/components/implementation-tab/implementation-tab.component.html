@@ -95,6 +95,13 @@
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-sitelinks-withheld-live">
   {{ googleSitelinksWithheldWarning() }}
 </div>
+<!--
+  The other reason extensions are withheld — the capability, not the channel. Same region shape and
+  same politeness: the campaign is still created, it just carries no extensions.
+-->
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-extensions-capability-live">
+  {{ googleExtensionsCapabilityMessage() }}
+</div>
 
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
 @switch (briefPersistence().status) {
@@ -439,6 +446,40 @@
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ channelLabel }} campaigns do not take campaign languages, so the
           {{ googleLanguages().length }} you picked will not be sent and this campaign will serve in every language. Switch the channel back to keep them.
         </p>
+      }
+
+      <!--
+        Callouts and sitelinks withheld because the create capability is not an explicit yes — the
+        state in which the two channel warnings below cannot speak, because the channel they read is
+        itself null. Create is NOT blocked here (see `googleExtensionsCapabilityBlock`), so Retry is
+        the only action and only where a read could succeed.
+      -->
+      @if (googleExtensionsCapabilityBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-google-extensions-capability-' + block.kind">
+          <!-- Spinner on `pending` only, and no icon in the amber states: the same treatment the
+               bidding block gives these kinds, and the amber ground already carries the signal. -->
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          @if (block.kind === 'failed') {
+            <lfx-button
+              label="Retry"
+              size="small"
+              severity="secondary"
+              [outlined]="true"
+              (onClick)="retryCreateCapabilities.emit()"
+              data-testid="implementation-google-extensions-capability-retry" />
+          }
+        </div>
       }
 
       <!-- Callouts and sitelinks typed under Search and withheld after a switch. Announced by the regions at the top. -->
@@ -1794,7 +1835,7 @@
                       size="small"
                       severity="secondary"
                       [outlined]="true"
-                      (onClick)="retryBiddingCapability.emit()"
+                      (onClick)="retryCreateCapabilities.emit()"
                       data-testid="implementation-reddit-image-asset-block-retry" />
                   }
                   <lfx-button
@@ -1916,7 +1957,7 @@
                 size="small"
                 severity="secondary"
                 [outlined]="true"
-                (onClick)="retryBiddingCapability.emit()"
+                (onClick)="retryCreateCapabilities.emit()"
                 data-testid="implementation-bidding-capability-retry" />
             }
             <lfx-button

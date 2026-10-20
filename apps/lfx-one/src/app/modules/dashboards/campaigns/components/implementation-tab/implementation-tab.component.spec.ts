@@ -6363,6 +6363,40 @@ describe('ImplementationTabComponent google callouts', () => {
   });
 
   /**
+   * The channel reason does not depend on the capability answer, so the sentence must not wait for
+   * one. It used to: the warning read `googleBiddingChannel`, which is null while the capability is
+   * unanswered, so a stalled capability read left a Demand Gen operator with callouts that would
+   * never be sent and nothing on screen saying so — the capability block stays silent here too,
+   * because retrying the check could not rescue the list.
+   */
+  it('still names the channel while the capability answer has not come back', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsWithheldWarning']()).toContain('Demand Gen campaigns do not take callouts');
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The other half of that gate, and the reason it tests the channel rather than
+   * `googleCalloutsAvailable`: that signal is false for EITHER reason, so on Search with the
+   * capability unanswered it would put "Search campaigns do not take callouts" on screen — a
+   * sentence about Search that is simply untrue. The capability block owns this state.
+   */
+  it('never tells Search it takes no callouts while the capability is unanswered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Free shipping');
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleCalloutsWithheldWarning']()).toBeNull();
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+  });
+
+  /**
    * Through `submit()`, not the payload helper: deleting the payload spread would leave every
    * helper-level test above green while every callout an operator adds is dropped.
    */
@@ -6698,6 +6732,28 @@ describe('ImplementationTabComponent google sitelinks', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
   });
 
+  /** The sitelink half of the channel-vs-capability split the callout tests describe in full. */
+  it('still names the channel while the capability answer has not come back', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksWithheldWarning']()).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  it('never tells Search it takes no sitelinks while the capability is unanswered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+  });
+
   /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
   it.each([
     ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
@@ -6724,6 +6780,158 @@ describe('ImplementationTabComponent google sitelinks', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+});
+
+/**
+ * The OTHER reason callouts and sitelinks are withheld: the create capability is not an explicit
+ * yes.
+ *
+ * The two channel warnings above cannot cover this state — both open on `googleBiddingChannel()`,
+ * which is itself null whenever the capability is unanswered — so without this block the create
+ * succeeds, ships no extensions, and says nothing. Each branch of
+ * `googleExtensionsCapabilityBlock` gets its own test, plus the three ways it must stay silent and
+ * the one thing it deliberately does NOT do: block Create.
+ */
+describe('ImplementationTabComponent google extensions capability block', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /** Search, one callout and one sitelink generated, then the capability answer taken away. */
+  function seedWithheld(capability: boolean | null, read: 'unknown' | 'pending' | 'ready' | 'failed', briefId: string | null): Record<string, any> {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Hands-On Labs');
+    c['addGoogleSitelink']({ text: 'Register', finalUrl: 'https://events.example.org/register' });
+    fixture.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+    fixture.componentRef.setInput('createCapabilityRead', read);
+    fixture.componentRef.setInput('googleCreativeEnabled', capability);
+    fixture.detectChanges();
+    return c;
+  }
+
+  const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('names the deployment when the capability answered no, counting both lists', () => {
+    const c = seedWithheld(false, 'ready', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('unsupported');
+    const block = find('implementation-google-extensions-capability-unsupported')?.textContent ?? '';
+    expect(block).toContain('not available on this deployment');
+    expect(block).toContain('1 callout and 1 sitelink');
+    expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe(c['googleExtensionsCapabilityMessage']());
+    // Nothing to retry: a `false` answer is the deployment's, not a failed read.
+    expect(find('implementation-google-extensions-capability-retry')).toBeNull();
+  });
+
+  /**
+   * The pending sentence carries the counts for a reason the other three do not need: this block
+   * does not gate Create, so a create started mid-check is allowed and ships no extensions. A bare
+   * "checking…" would be the one message in this set that lets the lists go without saying so.
+   */
+  it('says it is still checking while the read is in flight, and what creating now would cost', () => {
+    const c = seedWithheld(null, 'pending', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('pending');
+    const block = find('implementation-google-extensions-capability-pending')?.textContent ?? '';
+    expect(block).toContain('Checking whether Google ad extensions can be sent');
+    expect(block).toContain('Creating the campaign before the check finishes');
+    expect(block).toContain('1 callout and 1 sitelink');
+    // Create is deliberately not blocked here — the sentence is the whole mitigation.
+    expect(c['canSubmit']()).toBe(true);
+    expect(find('implementation-google-extensions-capability-retry')).toBeNull();
+  });
+
+  it('asks for the brief to be saved when there is no brief to check against', () => {
+    const c = seedWithheld(null, 'unknown', null);
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('unsaved');
+    expect(find('implementation-google-extensions-capability-unsaved')?.textContent).toContain('Save the brief to send them');
+  });
+
+  /**
+   * `unknown` is treated like a failure, not like `pending` — no read is out and nothing else will
+   * start one, so a spinner would spin forever. Retry is the way out, and it reaches the parent.
+   */
+  it.each([['failed'], ['unknown']])('offers a Retry that asks the parent to re-read when the read is %s', (read) => {
+    const retried = vi.fn();
+    fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
+    const c = seedWithheld(null, read as 'failed' | 'unknown', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('failed');
+    expect(find('implementation-google-extensions-capability-failed')?.textContent).toContain('Could not confirm');
+    (find('implementation-google-extensions-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing once the capability answers yes — the channel warnings own it from there', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+
+    fixture.componentRef.setInput('googleCreativeEnabled', true);
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+    expect(c['googleExtensionsCapabilityMessage']()).toBe('');
+    expect(find('implementation-google-extensions-capability-live')?.textContent?.trim()).toBe('');
+  });
+
+  it('says nothing when there are no extensions to withhold', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    fixture.componentRef.setInput('googleCreativeEnabled', null);
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The message promises the lists go out once the check passes. On a channel that takes no
+   * extensions that promise cannot be kept — the lists are withheld whatever the capability says —
+   * so the block holds its tongue. Silent, but not silence: the channel warning is already telling
+   * the true reason, which is asserted here so the pair can never both go quiet.
+   */
+  it.each([['includeDemandGen'], ['includePerformanceMax']])('says nothing on %s, where the answer would change nothing', (channel) => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['campaignForm'].patchValue({ includeSearch: false, [channel]: true });
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+    expect(c['googleCalloutsWithheldWarning']()).toContain('do not take callouts');
+    expect(c['googleSitelinksWithheldWarning']()).toContain('do not take sitelinks');
+  });
+
+  it('says nothing while no Google channel is ticked', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['campaignForm'].patchValue({ includeSearch: false });
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  it('says nothing when Google is not one of the selected platforms', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+    c['selectedPlatforms'].set([]);
+    fixture.detectChanges();
+
+    expect(c['googleExtensionsCapabilityBlock']()).toBeNull();
+  });
+
+  /**
+   * The deliberate difference from `biddingCapabilityBlock`, which DOES block Create. A withheld
+   * manual bid changes what the campaign does; withheld extensions cost only the extensions, so the
+   * create goes ahead and the block says what was left out.
+   */
+  it('does not block Create', () => {
+    const c = seedWithheld(null, 'failed', 'brief-1');
+
+    expect(c['googleExtensionsCapabilityBlock']()).not.toBeNull();
+    expect(c['canSubmit']()).toBe(true);
   });
 });
 
@@ -7248,7 +7456,7 @@ describe('ImplementationTabComponent bidding control', () => {
       f.componentRef.setInput('draft', draft);
       f.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
       f.componentRef.setInput('biddingEnabled', bidding);
-      f.componentRef.setInput('biddingCapabilityRead', read);
+      f.componentRef.setInput('createCapabilityRead', read);
       f.componentRef.setInput('briefData', brief());
       f.detectChanges();
       await f.whenStable();
@@ -7275,7 +7483,7 @@ describe('ImplementationTabComponent bidding control', () => {
 
       // The answer arrives: the control returns with the retained choice, and it is sent.
       fixture.componentRef.setInput('biddingEnabled', true);
-      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.componentRef.setInput('createCapabilityRead', 'ready');
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -7287,7 +7495,7 @@ describe('ImplementationTabComponent bidding control', () => {
     it('blocks Create with a Retry that asks the parent to re-read when the read failed', async () => {
       fixture = await remount(null, 'failed');
       const retried = vi.fn();
-      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+      fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
 
       expect(component()['canSubmit']()).toBe(false);
       expect(query('implementation-bidding-capability-failed')?.textContent).toContain('Could not confirm that manual bidding is supported');
@@ -7333,7 +7541,7 @@ describe('ImplementationTabComponent bidding control', () => {
     it('offers Retry and Switch to Automatic when no read is in flight (after a foundation switch)', async () => {
       fixture = await remount(null, 'unknown');
       const retried = vi.fn();
-      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+      fixture.componentRef.instance.retryCreateCapabilities.subscribe(retried);
 
       expect(component()['canSubmit']()).toBe(false);
       expect(query('implementation-bidding-capability-pending')).toBeNull();
@@ -7422,7 +7630,7 @@ describe('ImplementationTabComponent bidding control', () => {
       fixture.detectChanges();
 
       fixture.componentRef.setInput('biddingEnabled', true);
-      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.componentRef.setInput('createCapabilityRead', 'ready');
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -7862,7 +8070,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     c.campaignForm.controls['startDate'].setValue('2026-09-01');
     c.campaignForm.controls['endDate'].setValue('2026-09-30');
 
-    f.componentRef.setInput('biddingCapabilityRead', read);
+    f.componentRef.setInput('createCapabilityRead', read);
     f.componentRef.setInput('redditAssetUploadEnabled', upload);
     f.detectChanges();
 
@@ -7888,7 +8096,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     resumeCreativeAssetUpload.mockReturnValue(pending);
 
     const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
-    f.componentRef.setInput('biddingCapabilityRead', 'pending');
+    f.componentRef.setInput('createCapabilityRead', 'pending');
     const c = at(f);
     c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
     c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
@@ -8261,7 +8469,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
       first.fixture.destroy();
       const f = (await mount(upload, creative as boolean, draft)).fixture;
       f.componentRef.setInput('redditCreativeEnabled', creative);
-      f.componentRef.setInput('biddingCapabilityRead', read);
+      f.componentRef.setInput('createCapabilityRead', read);
       const c = at(f);
       c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
       c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
@@ -8285,7 +8493,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
 
       f.componentRef.setInput('redditCreativeEnabled', true);
       f.componentRef.setInput('redditAssetUploadEnabled', true);
-      f.componentRef.setInput('biddingCapabilityRead', 'ready');
+      f.componentRef.setInput('createCapabilityRead', 'ready');
       f.detectChanges();
       await f.whenStable();
 
@@ -8296,7 +8504,7 @@ describe('ImplementationTabComponent reddit image upload', () => {
     it.each(['failed', 'unknown'] as const)('blocks Create with a Retry when the read is %s', async (read) => {
       const f = await remount(null, null, read);
       const retried = vi.fn();
-      f.componentRef.instance.retryBiddingCapability.subscribe(retried);
+      f.componentRef.instance.retryCreateCapabilities.subscribe(retried);
 
       expect(at(f).canSubmit()).toBe(false);
       expect(q(f, 'implementation-reddit-image-asset-block-failed')?.textContent).toContain('Could not confirm that Reddit image upload is supported');

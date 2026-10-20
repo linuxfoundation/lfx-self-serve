@@ -1467,8 +1467,8 @@
               [redditCreativeEnabled]="briefCampaignsRedditCreativeEnabled()"
               [redditAssetUploadEnabled]="briefCampaignsRedditAssetUploadEnabled()"
               [biddingEnabled]="briefCampaignsBiddingEnabled()"
-              [biddingCapabilityRead]="briefCampaignsBiddingRead()"
-              (retryBiddingCapability)="retryBiddingCapability()"
+              [createCapabilityRead]="briefCampaignsCapabilityRead()"
+              (retryCreateCapabilities)="retryCreateCapabilities()"
               (draftChange)="implementationDraft.set($event)"
               data-testid="campaigns-implementation-tab" />
           </div>
