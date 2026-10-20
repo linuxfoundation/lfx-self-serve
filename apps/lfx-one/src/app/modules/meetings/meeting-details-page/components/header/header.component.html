@@ -137,17 +137,44 @@
       </div>
     </div>
 
-    <!-- The prototype's Add to calendar is not built: V2 excludes add-to-calendar and .ics (FR-050). -->
-    <lfx-button
-      icon="fa-light fa-copy"
-      [rounded]="true"
-      [outlined]="true"
-      severity="secondary"
-      size="small"
-      ariaLabel="Copy meeting link"
-      styleClass="flex-none !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !text-[var(--md-text-body)] hover:!bg-[var(--md-surface-hover)] hover:!text-[var(--md-text-heading)] focus-visible:!shadow-[var(--md-shadow-focus)] focus-visible:!outline-none"
-      (onClick)="copyLink()"
-      data-testid="meeting-header-copy-link" />
+    <!-- V1's header actions: Edit / Cancel this occurrence for an organizer of a recurring meeting,
+         then copy link. Add to calendar is in the rail, where V1 offers it. -->
+    <div class="flex flex-none items-center gap-[8px]">
+      @if (canManageOccurrence()) {
+        <lfx-button
+          icon="fa-light fa-calendar-pen"
+          [rounded]="true"
+          [outlined]="true"
+          severity="secondary"
+          size="small"
+          ariaLabel="Edit this occurrence"
+          tooltip="Edit this occurrence"
+          [styleClass]="iconButtonClass"
+          (onClick)="rescheduleOccurrence()"
+          data-testid="meeting-header-edit-occurrence" />
+        <lfx-button
+          icon="fa-light fa-ban"
+          [rounded]="true"
+          [outlined]="true"
+          severity="secondary"
+          size="small"
+          ariaLabel="Cancel this occurrence"
+          tooltip="Cancel this occurrence"
+          [styleClass]="iconButtonClass"
+          (onClick)="cancelOccurrence()"
+          data-testid="meeting-header-cancel-occurrence" />
+      }
+      <lfx-button
+        icon="fa-light fa-copy"
+        [rounded]="true"
+        [outlined]="true"
+        severity="secondary"
+        size="small"
+        ariaLabel="Copy meeting link"
+        [styleClass]="iconButtonClass"
+        (onClick)="copyLink()"
+        data-testid="meeting-header-copy-link" />
+    </div>
   </div>
 }
 

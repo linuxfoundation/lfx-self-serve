@@ -15,6 +15,7 @@ import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.ut
 import { DialogService } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
+import { AddToCalendarComponent } from '../../../components/add-to-calendar/add-to-calendar.component';
 import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingGuestJoinComponent } from '../guest-join/guest-join.component';
@@ -32,13 +33,23 @@ import { MeetingRsvpCardComponent } from '../rsvp-card/rsvp-card.component';
  * (N-01, FR-026) are complete here. Only `tools` still carries one line of copy until E4 builds its
  * full design, so no viewer meets an empty rail meanwhile.
  *
+ * Under the slot, an organizer or invitee gets V1's Add to calendar before the join window.
+ *
  * Inside the join window the slot is Join only, as in V1 (FR-029, decided 2026-10-06). Before the
  * window, a viewer who will be able to join then is told the early-join rule here, under the slot,
  * rather than in the time banner.
  */
 @Component({
   selector: 'lfx-meeting-action-slot',
-  imports: [ButtonComponent, MeetingGuestJoinComponent, MeetingJoinActionComponent, MeetingRsvpCardComponent, NgTemplateOutlet, OpenIntercomDirective],
+  imports: [
+    AddToCalendarComponent,
+    ButtonComponent,
+    MeetingGuestJoinComponent,
+    MeetingJoinActionComponent,
+    MeetingRsvpCardComponent,
+    NgTemplateOutlet,
+    OpenIntercomDirective,
+  ],
   providers: [DialogService],
   templateUrl: './action-slot.component.html',
 })

@@ -133,6 +133,10 @@
         <!-- Deliberately nothing to offer (the resolver's decision); the hint below may still apply. -->
       }
     }
+    @if (state.showAddToCalendar() && state.meeting(); as meeting) {
+      <!-- V1's Add to calendar, for an organizer or invitee before the join window (FR-050). -->
+      <lfx-add-to-calendar [meeting]="meeting" [currentOccurrence]="state.selectedOccurrence()" data-testid="meeting-action-add-to-calendar" />
+    }
     @if (joinHint(); as hint) {
       <p class="m-0 flex items-start gap-[7px] text-[12px] leading-[1.4] text-[var(--md-text-muted)]" data-testid="meeting-action-join-hint">
         <i class="fa-light fa-clock mt-[2px]" aria-hidden="true"></i>

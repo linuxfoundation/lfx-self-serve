@@ -158,6 +158,12 @@ export class MeetingDetailsStateService {
   // Route id the held `meeting()` value actually resolved for. Only a success moves it.
   private readonly resolvedRouteId = signal<string | null>(null);
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
+  private readonly occurrencesRefresh$ = new BehaviorSubject<void>(undefined);
+  /**
+   * Emits when the series timeline must be read again (after an occurrence edit or cancel), as V1's
+   * `seriesOccurrencesRefresh$`; the occurrence navigation re-fetches on it.
+   */
+  public readonly occurrencesRefresh: Observable<void> = this.occurrencesRefresh$.asObservable();
 
   public readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined>;
   /**
@@ -232,6 +238,17 @@ export class MeetingDetailsStateService {
    * composer's navigation-state password never appears in a URL.
    */
   public readonly signInHref: Signal<string> = this.initSignInHref();
+  /**
+   * V1's `canManageOccurrence`: whether the header offers Edit / Cancel for the occurrence on screen.
+   * A signed-in organizer of a recurring meeting, on a live occurrence (not a past record, not ended).
+   * Upstream enforces `organizer` on both writes; this only decides whether to offer them.
+   */
+  public readonly canManageOccurrence: Signal<boolean> = this.initCanManageOccurrence();
+  /**
+   * Where V1 offers Add to calendar: a signed-in organizer or invitee, before the join window opens
+   * (inside it V1's rail is Join only).
+   */
+  public readonly showAddToCalendar: Signal<boolean> = this.initShowAddToCalendar();
 
   public constructor() {
     const routeId = this.activatedRoute.snapshot.paramMap.get('id');
@@ -303,6 +320,42 @@ export class MeetingDetailsStateService {
    */
   public reload(): void {
     this.refresh$.next();
+  }
+
+  /**
+   * V1's `showOccurrenceAfterChange`, after an occurrence edit or cancel: points `?occurrence=` at
+   * `startMs` (an edit can move the occurrence, which makes its start a new one), or drops it when
+   * `null`, then reads the meeting and the series timeline again. The explicit refresh covers an
+   * unchanged URL, which the router treats as a no-op.
+   */
+  public showOccurrenceAfterChange(startMs: number | null): void {
+    void this.router.navigate([], {
+      relativeTo: this.activatedRoute,
+      queryParams: { occurrence: startMs === null ? null : String(startMs) },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+    this.occurrencesRefresh$.next();
+    this.refresh$.next();
+  }
+
+  /**
+   * V1's `nextLiveOccurrenceStartMs`: the start (ms) of the active occurrence after the selected one,
+   * or `null` when there is none. Read before a cancel lands, so the page moves to the cancelled
+   * occurrence's successor rather than back to the series' first upcoming date.
+   */
+  public nextLiveOccurrenceStartMs(): number | null {
+    const meeting = this.meeting();
+    const current = this.selectedOccurrence();
+    if (!meeting || !current) {
+      return null;
+    }
+    const currentMs = new Date(current.start_time).getTime();
+    const next = getActiveOccurrences(meeting.occurrences ?? [], meeting.cancelled_occurrences)
+      .map((occurrence) => new Date(occurrence.start_time).getTime())
+      .filter((startMs) => startMs > currentMs)
+      .sort((a, b) => a - b)[0];
+    return next ?? null;
   }
 
   /** Re-runs the lookup for the current route, e.g. from the error state's retry. */
@@ -425,6 +478,27 @@ export class MeetingDetailsStateService {
     return computed(() => {
       const kind = this.resolveSlotAt('live');
       return kind === 'join' || kind === 'guest-join';
+    });
+  }
+
+  private initCanManageOccurrence(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return (
+        this.userService.authenticated() &&
+        !!meeting?.organizer &&
+        !!meeting.recurrence &&
+        !this.loadedViaPastMeetingId() &&
+        this.timeState() !== 'ended' &&
+        !!this.selectedOccurrence()
+      );
+    });
+  }
+
+  private initShowAddToCalendar(): Signal<boolean> {
+    return computed(() => {
+      const role = this.viewerRole();
+      return this.timeState() === 'before' && (role === 'organizer' || role === 'registrant');
     });
   }
 

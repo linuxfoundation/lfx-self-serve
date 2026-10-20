@@ -26,6 +26,7 @@ describe('MeetingOccurrenceNavComponent', () => {
   let urlPassword: WritableSignal<string | null>;
   let paramMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
+  let occurrencesRefresh$: BehaviorSubject<void>;
 
   // Whole-second instants, so an occurrence id (Unix seconds) round-trips to its start.
   const base = Math.floor(Date.now() / 1000) * 1000;
@@ -71,11 +72,22 @@ describe('MeetingOccurrenceNavComponent', () => {
     urlPassword = signal<string | null>(options.urlPassword ?? null);
     paramMap$ = new BehaviorSubject(convertToParamMap({ id: options.routeId ?? SERIES }));
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of(series));
+    occurrencesRefresh$ = new BehaviorSubject<void>(undefined);
 
     await TestBed.configureTestingModule({
       imports: [MeetingOccurrenceNavComponent],
       providers: [
-        { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence, loadedViaPastMeetingId, password, urlPassword } },
+        {
+          provide: MeetingDetailsStateService,
+          useValue: {
+            meeting,
+            selectedOccurrence,
+            loadedViaPastMeetingId,
+            password,
+            urlPassword,
+            occurrencesRefresh: occurrencesRefresh$.asObservable(),
+          },
+        },
         { provide: MeetingService, useValue: { getPublicMeetingOccurrences } },
         { provide: ActivatedRoute, useValue: { paramMap: paramMap$.asObservable(), snapshot: { paramMap: paramMap$.value } } },
         { provide: PLATFORM_ID, useValue: options.platform ?? 'browser' },
@@ -104,6 +116,15 @@ describe('MeetingOccurrenceNavComponent', () => {
       expect(href('occurrence-nav-section-prev')).toBe(`/meetings/${SERIES}?occurrence=${at(DAY)}`);
       expect(href('occurrence-nav-section-next')).toBe(`/meetings/${SERIES}?occurrence=${at(15 * DAY)}`);
       expect(query('occurrence-nav-section-prev')?.getAttribute('data-enabled')).toBe('true');
+    });
+
+    it('reads the series timeline again after an occurrence edit or cancel', async () => {
+      await setup(recurring([first, second, third]), { past: [], future: [] }, { selected: second });
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+
+      occurrencesRefresh$.next();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
     });
 
     it('greys out Previous on the first occurrence and Next on the last', async () => {

@@ -516,6 +516,121 @@ describe('MeetingDetailsStateService', () => {
 
   // The resolver's own table is in `meeting-view-model.utils.spec.ts`; these check the inputs the
   // service feeds it.
+  describe("V1's occurrence actions and Add to calendar", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const first = new Date(Date.now() + 2 * DAY);
+    const second = new Date(Date.now() + 9 * DAY);
+    const third = new Date(Date.now() + 16 * DAY);
+    const series = (overrides: Partial<Meeting> = {}) =>
+      ({
+        ...buildMeeting(),
+        start_time: first.toISOString(),
+        duration: 60,
+        recurrence: { type: 2 },
+        organizer: true,
+        occurrences: [
+          { occurrence_id: '1', start_time: first.toISOString(), duration: 60 },
+          { occurrence_id: '2', start_time: second.toISOString(), duration: 60 },
+          { occurrence_id: '3', start_time: third.toISOString(), duration: 60 },
+        ],
+        cancelled_occurrences: [],
+        ...overrides,
+      }) as unknown as Meeting;
+
+    async function load(meeting: Meeting): Promise<MeetingDetailsStateService> {
+      getPublicMeeting.mockReturnValue(of({ meeting, project }));
+      const state = create();
+      await settle();
+      return state;
+    }
+
+    it('lets a signed-in organizer of a recurring meeting manage the selected occurrence', async () => {
+      expect((await load(series())).canManageOccurrence()).toBe(true);
+    });
+
+    it.each([
+      ['a non-organizer', { organizer: false }],
+      ['a one-off meeting', { recurrence: null }],
+    ])('offers no occurrence actions for %s', async (_case, overrides) => {
+      expect((await load(series(overrides as Partial<Meeting>))).canManageOccurrence()).toBe(false);
+    });
+
+    it('offers no occurrence actions to a signed-out viewer', async () => {
+      authenticated.set(false);
+      expect((await load(series())).canManageOccurrence()).toBe(false);
+    });
+
+    it('offers no occurrence actions on a past occurrence opened by its composite id', async () => {
+      const pastId = '99152950841-1700000000000';
+      paramMap$.next(convertToParamMap({ id: pastId }));
+      getPublicPastMeeting.mockReturnValue(of({ meeting: series(), project, full_access: true }));
+      const state = create();
+      await settle();
+
+      expect(state.canManageOccurrence()).toBe(false);
+    });
+
+    it('names the next active occurrence as the successor, skipping cancelled ones', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(first.getTime()) }));
+      const state = await load(series({ cancelled_occurrences: ['2'] } as Partial<Meeting>));
+
+      expect(state.nextLiveOccurrenceStartMs()).toBe(third.getTime());
+    });
+
+    it('has no successor after the last occurrence', async () => {
+      queryParamMap$.next(convertToParamMap({ occurrence: String(third.getTime()) }));
+      const state = await load(series());
+
+      expect(state.nextLiveOccurrenceStartMs()).toBeNull();
+    });
+
+    it('after a change, points ?occurrence= at the new start and reads the meeting and the timeline again', async () => {
+      const state = await load(series());
+      const timelineReads = vi.fn();
+      state.occurrencesRefresh.subscribe(timelineReads);
+      const lookups = getPublicMeeting.mock.calls.length;
+
+      state.showOccurrenceAfterChange(second.getTime());
+      await settle();
+
+      expect(navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { occurrence: String(second.getTime()) }, queryParamsHandling: 'merge', replaceUrl: true })
+      );
+      expect(timelineReads).toHaveBeenCalledTimes(2); // the current value on subscribe, then the refresh
+      expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(lookups);
+    });
+
+    it('drops ?occurrence= after a cancel with no successor', async () => {
+      const state = await load(series());
+
+      state.showOccurrenceAfterChange(null);
+
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { occurrence: null } }));
+    });
+
+    it.each([
+      ['an organizer', { organizer: true }, true],
+      ['an invitee', { organizer: false, invited: true }, true],
+      ['a signed-in outsider', { organizer: false, invited: false }, false],
+    ])('offers Add to calendar before the window to %s: %s', async (_case, overrides, expected) => {
+      expect((await load(series(overrides as Partial<Meeting>))).showAddToCalendar()).toBe(expected);
+    });
+
+    it('offers no Add to calendar inside the join window, where the rail is Join only', async () => {
+      const state = await load({
+        ...buildMeeting(),
+        start_time: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+        duration: 60,
+        occurrences: [],
+        invited: true,
+      } as unknown as Meeting);
+
+      expect(state.timeState()).toBe('live');
+      expect(state.showAddToCalendar()).toBe(false);
+    });
+  });
+
   describe('action slot', () => {
     const live = (overrides: Partial<Meeting> = {}) =>
       ({

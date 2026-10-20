@@ -54,6 +54,7 @@ export class MeetingOccurrenceNavComponent {
    * The series timeline, V1's `initializeSeriesOccurrences`: skipped on the server (the browser reads it
    * after hydration), read for a recurring meeting, and for a past occurrence even without a rule, since
    * the past payload omits `recurrence` and the timeline itself tells whether there is anywhere to go.
+   * It is read again whenever the state service's `occurrencesRefresh` emits.
    */
   private initSeriesOccurrences(): Signal<PublicMeetingOccurrencesResponse> {
     const empty: PublicMeetingOccurrencesResponse = { past: [], future: [] };
@@ -65,7 +66,10 @@ export class MeetingOccurrenceNavComponent {
         map((meeting) => (meeting && (meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id) ? getMeetingSeriesUid(meeting) : null)),
         filter((seriesUid): seriesUid is string => !!seriesUid),
         distinctUntilChanged(),
-        switchMap((seriesUid) => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.state.password()))
+        // Read again after an occurrence edit or cancel (V1's `seriesOccurrencesRefresh$`).
+        switchMap((seriesUid) =>
+          this.state.occurrencesRefresh.pipe(switchMap(() => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.state.password())))
+        )
       ),
       { initialValue: empty }
     );

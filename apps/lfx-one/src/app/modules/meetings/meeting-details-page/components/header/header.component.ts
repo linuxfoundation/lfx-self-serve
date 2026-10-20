@@ -1,31 +1,50 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core';
+import { DOCUMENT, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_STATUS_LABELS, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_MEETING_TYPE_CONFIG,
+  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
+  MEETING_STATUS_LABELS,
+  MEETING_TYPE_CONFIGS,
+  MEETING_V2_ENABLED_DEFAULT,
+  MEETING_V2_ENABLED_FLAG,
+} from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
   Meeting,
+  MeetingCancelOccurrenceResult,
   MeetingCommitteeLink,
   MeetingPrivacyState,
   MeetingStatusKind,
   MeetingTimeState,
   MeetingTypeConfig,
   ProjectContext,
+  MeetingRescheduleOccurrenceResult,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
 import { resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
+import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { take } from 'rxjs';
 
+import { CancelOccurrenceConfirmationComponent } from '../../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
+import { RescheduleOccurrenceDialogComponent } from '../../../components/reschedule-occurrence-dialog/reschedule-occurrence-dialog.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 
 /**
- * The meeting details V2 header (E1-03, #1772): project context, title, badge row and copy link.
+ * The meeting details V2 header (E1-03, #1772): project context, title, badge row, copy link and,
+ * for an organizer of a recurring meeting, V1's Edit / Cancel this occurrence.
  * @description The badge row follows the prototype: recurrence, meeting type, committee chips, then
  * the feature badges (Recording, Transcripts, YouTube Upload, AI summary). E1-05's status pill and
  * E1-04's privacy chip lead the row.
@@ -39,6 +58,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
 @Component({
   selector: 'lfx-meeting-header',
   imports: [ButtonComponent, NgTemplateOutlet, TagComponent],
+  providers: [DialogService],
   templateUrl: './header.component.html',
 })
 export class MeetingHeaderComponent {
@@ -46,6 +66,13 @@ export class MeetingHeaderComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly clipboardShare = inject(ClipboardShareService);
+  private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly document = inject(DOCUMENT);
+  private readonly destroyRef = inject(DestroyRef);
+  /** As V1: the reschedule dialog's duration cap follows the composer flag. */
+  private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
 
   /**
    * The prototype's chip on top of `lfx-tag outlined rounded`: 25px tall (15px line + 4px padding +
@@ -54,6 +81,10 @@ export class MeetingHeaderComponent {
    */
   protected readonly chipClass =
     '!gap-[6px] !border-[var(--md-border)] !bg-[var(--md-surface-card)] !px-[11px] !py-[4px] !text-[12.5px] !font-semibold !leading-[15px] !text-[var(--md-text-body)]';
+
+  /** The header's round icon buttons (copy link, and V1's occurrence actions), V2 tokens. */
+  protected readonly iconButtonClass =
+    'flex-none !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !text-[var(--md-text-body)] hover:!bg-[var(--md-surface-hover)] hover:!text-[var(--md-text-heading)] focus-visible:!shadow-[var(--md-shadow-focus)] focus-visible:!outline-none';
 
   /** The prototype's pill colours per status, all V2 tokens; RSVP answers swap the dot for a glyph. */
   protected readonly statusClasses: Record<MeetingStatusKind, { pill: string; dot?: string; glyph?: string }> = {
@@ -121,6 +152,8 @@ export class MeetingHeaderComponent {
    * while it is unknown, which covers everyone it is not loaded for (testid-contract.md).
    */
   protected readonly myRsvpAttr: Signal<string | null> = this.state.myRsvpAttr;
+  /** V1's `canManageOccurrence`: Edit / Cancel this occurrence, beside copy link. */
+  protected readonly canManageOccurrence: Signal<boolean> = this.state.canManageOccurrence;
 
   /**
    * Opens the meeting's foundation overview in a new tab, as v1's context chips do: sets the
@@ -152,6 +185,77 @@ export class MeetingHeaderComponent {
     }
     // The shared service confirms the copy, or reports a failed clipboard write instead of a false success.
     this.clipboardShare.copyLink(url.toString(), 'The meeting link is on your clipboard.');
+  }
+
+  /**
+   * V1's `rescheduleCurrentOccurrence`: the same Edit Occurrence dialog (time, duration, title,
+   * agenda) for the occurrence on screen, then the page follows the occurrence to its new start.
+   */
+  protected rescheduleOccurrence(): void {
+    const meeting = this.meeting();
+    const occurrence = this.state.selectedOccurrence();
+    if (!meeting || !occurrence) {
+      return;
+    }
+
+    const trigger = this.document.activeElement;
+    const dialogRef = this.dialogService.open(RescheduleOccurrenceDialogComponent, {
+      header: 'Edit Occurrence',
+      width: '520px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { meeting, occurrence, maxDuration: this.meetingsV2Enabled() ? MAX_MEETING_DURATION : MAX_CUSTOM_DURATION },
+    });
+    restoreFocusOnDialogClose(dialogRef, trigger);
+
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
+      if (!result?.confirmed || !result.start_time) {
+        return;
+      }
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Occurrence updated',
+        detail: 'Only this occurrence was changed. The rest of the series is unchanged.',
+      });
+      this.state.showOccurrenceAfterChange(new Date(result.start_time).getTime());
+    });
+  }
+
+  /**
+   * V1's `cancelCurrentOccurrence`: the same Cancel Occurrence confirmation, then the page moves to
+   * the cancelled occurrence's successor (read before the cancel lands).
+   */
+  protected cancelOccurrence(): void {
+    const meeting = this.meeting();
+    const occurrence = this.state.selectedOccurrence();
+    if (!meeting || !occurrence) {
+      return;
+    }
+
+    const trigger = this.document.activeElement;
+    const dialogRef = this.dialogService.open(CancelOccurrenceConfirmationComponent, {
+      header: 'Cancel Occurrence',
+      width: '450px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { meeting, occurrence },
+    });
+    restoreFocusOnDialogClose(dialogRef, trigger);
+
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingCancelOccurrenceResult | undefined) => {
+      if (result?.confirmed) {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Occurrence cancelled',
+          detail: 'This occurrence was cancelled. The rest of the series is unchanged.',
+        });
+        this.state.showOccurrenceAfterChange(this.state.nextLiveOccurrenceStartMs());
+      } else if (result?.error) {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: result.error });
+      }
+    });
   }
 
   private initCommittees(): Signal<MeetingCommitteeLink[]> {
