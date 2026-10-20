@@ -296,8 +296,9 @@ export interface HealthMetricsEngagementNonMemberRowView {
   period: HealthMetricsEngagementNonMemberPeriod | null;
 }
 
-/** Sub-nav badge input for `#nonmem`. Period-agnostic, denormalized onto every row. */
-export interface HealthMetricsEngagementNonMemberCounts {
+/** The `#nonmem` caption and sub-nav badge for one period: organizations that attended a meeting in it. */
+export interface HealthMetricsEngagementNonMemberPeriodCounts {
+  range: HealthMetricsRange;
   orgs: number;
 }
 
@@ -305,7 +306,7 @@ export interface HealthMetricsEngagementNonMemberCounts {
 export interface HealthMetricsEngagementNonMemberParticipation {
   rows: HealthMetricsEngagementNonMemberRow[];
   /** `null` when the view reports no scope count on rows that exist — unmeasured, not zero. */
-  counts: HealthMetricsEngagementNonMemberCounts | null;
+  counts: HealthMetricsEngagementNonMemberPeriodCounts[] | null;
 }
 
 /** Wire query for `GET /api/analytics/engagement-non-member-participation`. The view carries no
@@ -370,8 +371,8 @@ export interface HealthMetricsEngagementRepRowView {
 /** The all-time labels of a representatives row, built once per response rather than per period. */
 export type HealthMetricsEngagementRepRowLabels = Omit<HealthMetricsEngagementRepRowView, 'row' | 'period' | 'attendedLabel'>;
 
-/** Scope counts for one period. Unlike the org and non-member captions, this view's scope counts
- * are period-suffixed, so the caption and the sub-nav badge follow the pill. */
+/** Scope counts for one period. Unlike the org caption, this view's scope counts are
+ * period-suffixed, so the caption and the sub-nav badge follow the pill. */
 export interface HealthMetricsEngagementRepPeriodCounts {
   range: HealthMetricsRange;
   reps: number;

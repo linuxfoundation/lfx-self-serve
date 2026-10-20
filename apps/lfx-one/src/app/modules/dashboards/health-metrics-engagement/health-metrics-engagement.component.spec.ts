@@ -17,7 +17,7 @@ import { HealthMetricsEngagementComponent } from './health-metrics-engagement.co
 
 import type {
   HealthMetricsEngagementGroupCounts,
-  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementSectionKey,
@@ -59,7 +59,7 @@ class RepresentativesStubComponent {
 // Same stand-in for Non-member participation.
 @Component({ selector: 'lfx-engagement-non-member-participation', template: '' })
 class NonMemberParticipationStubComponent {
-  public readonly countsChange = output<HealthMetricsEngagementNonMemberCounts | null>();
+  public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<void>();
 }
@@ -215,7 +215,7 @@ describe('HealthMetricsEngagementComponent', () => {
   });
 
   it('badges Non-member participation from the counts that section reports', () => {
-    nonMemberChild().countsChange.emit({ orgs: 63 });
+    nonMemberChild().countsChange.emit({ range: 'YTD', orgs: 63 });
     fixture.detectChanges();
 
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-nonmem"]');

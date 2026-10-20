@@ -40,11 +40,12 @@ import {
   resolveHealthMetricsEngagementDeltaDirection,
   resolveHealthMetricsEngagementOrgTierPillClass,
   selectHealthMetricsEngagementGroupPeriod,
+  selectHealthMetricsEngagementNonMemberCounts,
   selectHealthMetricsEngagementNonMemberPeriod,
   selectHealthMetricsEngagementParticipationPeriod,
   selectHealthMetricsEngagementRepCounts,
   selectHealthMetricsEngagementRepPeriod,
-  sortHealthMetricsEngagementNonMemberRows,
+  filterHealthMetricsEngagementNonMemberRows,
 } from './health-metrics-engagement.utils';
 
 function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): HealthMetricsEngagementSubNavCounts {
@@ -465,22 +466,49 @@ describe('non-member participation rules', () => {
   it('ranks by the selected period, so the period pill re-sorts rather than re-reads', () => {
     const rows = [nonMemberRow('Acme Motors', 4), nonMemberRow('Vendor Corp', 1)];
 
-    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp', 'Acme Motors']);
-    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual(['Acme Motors', 'Vendor Corp']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp', 'Acme Motors']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual(['Acme Motors', 'Vendor Corp']);
   });
 
   // An unranked row is not the best row — sorting it first would put a blank at the top of the table.
   it('sorts an unranked organization last, and breaks a rank tie by name', () => {
     const rows = [nonMemberRow('Unranked Co', null), nonMemberRow('Zeta Labs', 2), nonMemberRow('Alpha Works', 2)];
 
-    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Alpha Works', 'Zeta Labs', 'Unranked Co']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Alpha Works', 'Zeta Labs', 'Unranked Co']);
   });
 
   it("leaves the caller's array untouched, since the rows are shared with the response signal", () => {
     const rows = [nonMemberRow('Zeta Labs', 5), nonMemberRow('Alpha Works', 1)];
-    sortHealthMetricsEngagementNonMemberRows(rows, 'YTD');
+    filterHealthMetricsEngagementNonMemberRows(rows, 'YTD');
 
     expect(rows.map((row) => row.accountName)).toEqual(['Zeta Labs', 'Alpha Works']);
+  });
+
+  // The period caption counts organizations that attended in it, so the table lists only those.
+  it('drops an organization with no meetings attended in the selected period, or none measured', () => {
+    const quiet = nonMemberRow('Quiet Co', 3);
+    quiet.periods[1] = { ...quiet.periods[1], meetingsAttended: 0 };
+    const unmeasured = nonMemberRow('Unmeasured Co', 2);
+    unmeasured.periods[1] = { ...unmeasured.periods[1], meetingsAttended: null };
+    const rows = [quiet, unmeasured, nonMemberRow('Acme Motors', 1)];
+
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Acme Motors']);
+    expect(filterHealthMetricsEngagementNonMemberRows(rows, 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual([
+      'Quiet Co',
+      'Unmeasured Co',
+      'Acme Motors',
+    ]);
+  });
+
+  it('selects the caption count for the selected period, and none when the view reported none', () => {
+    const counts = [
+      { range: 'COMPLETED_YEAR' as const, orgs: 33 },
+      { range: 'YTD' as const, orgs: 19 },
+    ];
+
+    expect(selectHealthMetricsEngagementNonMemberCounts(counts, 'YTD')).toEqual({ range: 'YTD', orgs: 19 });
+    expect(selectHealthMetricsEngagementNonMemberCounts(counts, 'COMPLETED_YEAR')?.orgs).toBe(33);
+    expect(selectHealthMetricsEngagementNonMemberCounts(null, 'YTD')).toBeNull();
   });
 });
 

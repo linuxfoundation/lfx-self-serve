@@ -3,22 +3,26 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TableComponent } from '@components/table/table.component';
 import { HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE, HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED } from '@lfx-one/shared/constants';
-import { selectHealthMetricsEngagementNonMemberPeriod, sortHealthMetricsEngagementNonMemberRows } from '@lfx-one/shared/utils';
+import {
+  filterHealthMetricsEngagementNonMemberRows,
+  selectHealthMetricsEngagementNonMemberCounts,
+  selectHealthMetricsEngagementNonMemberPeriod,
+} from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { TablePageEvent } from 'primeng/table';
 
 import type {
-  HealthMetricsEngagementNonMemberCounts,
   HealthMetricsEngagementNonMemberParticipation,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementNonMemberRowView,
 } from '@lfx-one/shared/interfaces';
@@ -26,7 +30,7 @@ import type {
 /**
  * `#nonmem` — organizations turning up without paying for membership, ranked by the view's
  * `SORT_RANK_<period>`. The view carries no project key, so the section is foundation-scoped and the
- * period pill re-sorts the loaded rows rather than re-reading.
+ * period pill re-filters the loaded rows rather than re-reading.
  */
 @Component({
   selector: 'lfx-engagement-non-member-participation',
@@ -40,10 +44,10 @@ export class EngagementNonMemberParticipationComponent {
   private readonly platformId = inject(PLATFORM_ID);
 
   /**
-   * Feeds the container's sub-nav badge. `null` is "no measured counts" — a read starting, a failed
-   * read, or no foundation selected — and renders no badge rather than a believable zero.
+   * Feeds the container's sub-nav badge. The view counts its scope per period, so the badge follows the
+   * pill; `null` is "no measured counts" and renders no badge rather than a believable zero.
    */
-  public readonly countsChange = output<HealthMetricsEngagementNonMemberCounts | null>();
+  public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
   /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
@@ -67,20 +71,31 @@ export class EngagementNonMemberParticipationComponent {
 
   protected readonly rowViews = computed<HealthMetricsEngagementNonMemberRowView[]>(() => {
     const range = this.chrome.selectedRange();
-    return sortHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) => ({
+    return filterHealthMetricsEngagementNonMemberRows(this.response().rows, range).map((row) => ({
       row,
       period: selectHealthMetricsEngagementNonMemberPeriod(row, range),
     }));
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
-  /** The caption counts the whole foundation's scope, which the view denormalizes onto every row. */
+  /** No row at all is an empty foundation; rows with none active in the period are a measured zero. */
+  protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
+  /** The caption counts the selected period's scope, which the view denormalizes onto every row. */
   protected readonly countLabel = computed(() => {
-    const counts = this.response().counts;
+    const counts = selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange());
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
     return `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'}`;
   });
+
+  public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      // The badge count is per period, so a pill change re-reports it off the loaded response.
+      toObservable(this.chrome.selectedRange)
+        .pipe(skip(1), takeUntilDestroyed())
+        .subscribe(() => this.emitCounts());
+    }
+  }
 
   protected onTablePage(event: TablePageEvent): void {
     this.size.set(event.rows ?? this.size());
@@ -126,7 +141,9 @@ export class EngagementNonMemberParticipationComponent {
               // the table cannot caption an unread scope as "no rows".
               this.loading.set(!foundationSeen);
               // No foundation means no read happened, so there is no measured count to report.
-              this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
+              this.countsChange.emit(
+                query.foundationSlug && !this.loadFailed() ? selectHealthMetricsEngagementNonMemberCounts(response.counts, this.chrome.selectedRange()) : null
+              );
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) this.settled.emit();
@@ -136,5 +153,14 @@ export class EngagementNonMemberParticipationComponent {
       ),
       { initialValue: HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED }
     );
+  }
+
+  /** Re-reports the badge off the already-loaded response; a failed or unread scope stays `null`. */
+  private emitCounts(): void {
+    // A read in flight still holds the previous foundation's payload, so a pill change mid-load
+    // would republish counts the badge has already been told to drop.
+    if (this.loadFailed() || this.loading()) return;
+
+    this.countsChange.emit(selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
   }
 }
