@@ -190,14 +190,12 @@
     <lfx-meeting-registrants-display
       [meeting]="meeting"
       [showAddRegistrant]="organizer()"
-      [showEmail]="organizer()"
       [openAddFormOnShow]="drawerOpensAddForm()"
       [occurrence]="occurrence()"
       [myMeetingRegistrants]="true"
-      [initialRegistrants]="roster().status === 'error' ? null : registrants()"
+      [initialRegistrants]="roster().status === 'error' ? null : roster().registrants"
       [initialRegistrantsLoading]="roster().status === 'loading'"
       [visible]="drawerVisible()"
-      (registrantsRemoved)="onRegistrantsRemoved($event)"
       (refreshRequested)="onRosterChanged($event)" />
   }
 </p-drawer>

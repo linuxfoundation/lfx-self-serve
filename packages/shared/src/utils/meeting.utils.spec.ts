@@ -43,7 +43,6 @@ import {
   buildMeetingOccurrenceRoute,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
-  buildMeetingUpdateRequest,
   buildOccurrenceNavTimeline,
   buildOccurrenceStripItems,
   buildRecurrenceNeverEndDate,
@@ -2256,45 +2255,5 @@ describe('findCancelledOccurrence', () => {
     expect(findCancelledOccurrence(meeting, start + 7 * 86_400_000)).toBeNull();
     expect(findCancelledOccurrence(meeting, Number.NaN)).toBeNull();
     expect(findCancelledOccurrence(meeting, 0)).toBeNull();
-  });
-});
-
-describe('buildMeetingUpdateRequest', () => {
-  const stored = {
-    id: 'meeting-1',
-    project_uid: 'p1',
-    start_time: '2026-07-23T16:00:00Z',
-    duration: 60,
-    timezone: 'UTC',
-    title: 'Weekly Sync',
-    description: 'Old',
-    visibility: 'public',
-    committees: [{ uid: 'c1', allowed_voting_statuses: ['Voting Rep'] }, null],
-    owner: { username: 'ada', email: 'ada@acme-motors.example' },
-    host_key: '123456',
-    password: 'secret',
-    occurrences: [],
-    organizer: true,
-    auto_email_reminder_enabled: false,
-    auto_email_reminder_time: 0,
-  } as unknown as Meeting;
-
-  it("keeps only the update request's keys, with the change applied", () => {
-    const body = buildMeetingUpdateRequest(stored, { description: 'New' });
-
-    expect(body).toEqual(expect.objectContaining({ project_uid: 'p1', title: 'Weekly Sync', visibility: 'public', description: 'New' }));
-    for (const key of ['id', 'host_key', 'password', 'occurrences', 'organizer', 'owner']) {
-      expect(body).not.toHaveProperty(key);
-    }
-  });
-
-  it('normalizes committees as the composer does, and leaves out a disabled reminder time', () => {
-    const body = buildMeetingUpdateRequest(stored);
-
-    expect(body.committees).toEqual([{ uid: 'c1', allowed_voting_statuses: ['voting_rep'] }]);
-    expect(body).not.toHaveProperty('auto_email_reminder_time');
-    expect(buildMeetingUpdateRequest({ ...stored, auto_email_reminder_enabled: true, auto_email_reminder_time: 240 } as Meeting).auto_email_reminder_time).toBe(
-      240
-    );
   });
 });

@@ -14,7 +14,6 @@ import {
   MeetingJoinPageState,
   MeetingOccurrence,
   MeetingOccurrenceStripItem,
-  MeetingAgendaOverride,
   MeetingOccurrenceStripPages,
   MeetingPrivacyState,
   MeetingRosterRequest,
@@ -244,11 +243,6 @@ export class MeetingDetailsStateService {
    * resumes without reading the series again.
    */
   public readonly occurrenceStripPages = signal<MeetingOccurrenceStripPages | null>(null);
-  /**
-   * An agenda the organizer just saved (O-01), shown until the next read of the meeting replaces it, so
-   * the section updates at once rather than after the round trip.
-   */
-  public readonly agendaOverride = signal<MeetingAgendaOverride | null>(null);
   /**
    * The start (Unix ms) of the occurrence the strip last moved the page to, until the strip has shown
    * it: a strip created again by that move puts focus back on its chip when the move left none.
@@ -696,8 +690,6 @@ export class MeetingDetailsStateService {
         this.loadFailed.set(false);
         this.failureCount.set(0);
         this.retrying.set(false);
-        // A fresh read carries any saved agenda itself.
-        this.agendaOverride.set(null);
         this.resolvedRouteId.set(this.routeId());
         if (isPlatformServer(this.platformId)) {
           this.transferState.set(this.stateKey, {

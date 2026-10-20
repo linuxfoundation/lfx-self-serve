@@ -71,12 +71,6 @@ export class MeetingPeopleComponent {
   private readonly addedPad = signal(0);
   /** The confirmed roster length the pad is measured from; `null` without one. */
   private readonly addedPadBaseline = signal<number | null>(null);
-  /**
-   * Guests the organizer removed that the roster may still list (O-04, #3607): the index drops them
-   * after the delete returns. Left out of the rows, and so the count, tallies and faces, until a fetched
-   * roster no longer has them.
-   */
-  private readonly removedUids = signal<ReadonlySet<string>>(new Set());
   /** The last roster fetched, and what for. */
   private lastFetched: { key: MeetingRosterRequest; registrants: MeetingRegistrant[] } | null = null;
   /** The view the roster was last requested for, which the optimistic pad belongs to. */
@@ -84,13 +78,6 @@ export class MeetingPeopleComponent {
 
   protected readonly organizer = computed(() => this.state.viewerRole() === 'organizer');
   protected readonly roster: Signal<MeetingRosterState> = this.initRoster();
-  /**
-   * The roster less guests just removed: what both the People rows and the drawer's list show, so a
-   * drawer reopened before the index drops a guest never brings them back.
-   */
-  protected readonly registrants: Signal<MeetingRegistrant[]> = computed(() =>
-    this.roster().registrants.filter((registrant) => !this.removedUids().has(registrant.uid))
-  );
   protected readonly rows: Signal<MeetingPeopleRow[]> = this.initRows();
   protected readonly previewRows = computed(() => this.rows().slice(0, MEETING_ATTENDEE_PREVIEW_LIMIT));
   /** The faces after the listed rows, for the footer's stack. */
@@ -140,8 +127,7 @@ export class MeetingPeopleComponent {
 
   /**
    * The drawer reports guests added (a positive count) or removed (negative): refetch the roster, and
-   * count added guests until the roster includes them. Removed guests leave the rows at once
-   * (`onRegistrantsRemoved`). The baseline is only a roster confirmed for
+   * count added guests until the roster includes them. The baseline is only a roster confirmed for
    * this meeting and occurrence; anything else would read as guests already absorbed.
    */
   public onRosterChanged(delta: number): void {
@@ -152,11 +138,6 @@ export class MeetingPeopleComponent {
       this.addedPad.update((pad) => pad + delta);
     }
     this.retry();
-  }
-
-  /** Guests the drawer removed: out of the rows now, before the refetch the drawer also asks for. */
-  public onRegistrantsRemoved(uids: string[]): void {
-    this.removedUids.update((removed) => new Set([...removed, ...uids]));
   }
 
   private initRoster(): Signal<MeetingRosterState> {
@@ -176,7 +157,6 @@ export class MeetingPeopleComponent {
           if (!this.isSameRequest(key, this.lastRequested)) {
             this.addedPad.set(0);
             this.addedPadBaseline.set(null);
-            this.removedUids.set(new Set());
           }
           this.lastRequested = key;
           if (!key) {
@@ -188,9 +168,6 @@ export class MeetingPeopleComponent {
               const next = reconcileOptimisticPad({ pad: this.addedPad(), before: this.addedPadBaseline(), current: registrants.length });
               this.addedPad.set(next.pad);
               this.addedPadBaseline.set(next.before);
-              // A removed guest the roster no longer lists needs no hiding any more.
-              const listed = new Set(registrants.map((registrant) => registrant.uid));
-              this.removedUids.update((removed) => new Set([...removed].filter((uid) => listed.has(uid))));
               return { status: 'ready', registrants };
             }),
             catchError((error: unknown) => {
@@ -208,7 +185,7 @@ export class MeetingPeopleComponent {
 
   private initRows(): Signal<MeetingPeopleRow[]> {
     return computed(() =>
-      buildMeetingPeopleRows(this.registrants(), {
+      buildMeetingPeopleRows(this.roster().registrants, {
         inviteResponsesEnabled: this.showRsvpChips(),
         viewer: { username: this.userService.viewerUsername(), email: this.userService.user()?.email },
         // The viewer's answer for the same occurrence the roster is for, ahead of the index.

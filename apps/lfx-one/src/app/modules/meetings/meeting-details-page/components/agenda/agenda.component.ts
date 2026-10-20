@@ -1,18 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DOCUMENT } from '@angular/common';
-import { Component, computed, ElementRef, inject, Signal } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MEETING_AGENDA_COLLAPSED_HEIGHT_PX } from '@lfx-one/shared/constants';
-import { MeetingEditAgendaDialogData } from '@lfx-one/shared/interfaces';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
-import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
-import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
-import { DialogService } from 'primeng/dynamicdialog';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
-import { MeetingEditAgendaDialogComponent } from '../edit-agenda-dialog/edit-agenda-dialog.component';
 
 /**
  * The V2 agenda section, first in the content column (E3-01, #3250, FR-030).
@@ -21,98 +15,20 @@ import { MeetingEditAgendaDialogComponent } from '../edit-agenda-dialog/edit-age
  * on U-07): the description is never parsed into items here.
  *
  * The page renders this section only when `visibleSections().agenda` says so (hidden for an ended
- * meeting without artifact access, as V1 hides it). An organizer of a meeting that has not ended gets
- * Edit agenda, which opens the edit-agenda dialog on the page (O-01, #3604) for what the section shows:
- * the selected occurrence's own agenda, else the series'. A save shows at once (`agendaOverride`) and
- * the page re-reads the meeting.
+ * meeting without artifact access, as V1 hides it). Like V1, the section has no edit control.
  */
 @Component({
   selector: 'lfx-meeting-agenda',
   imports: [ExpandableTextComponent, LinkifyPipe],
-  providers: [DialogService],
   templateUrl: './agenda.component.html',
 })
 export class MeetingAgendaComponent {
   private readonly state = inject(MeetingDetailsStateService);
-  private readonly dialogService = inject(DialogService);
-  private readonly document = inject(DOCUMENT);
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   protected readonly collapsedHeight = MEETING_AGENDA_COLLAPSED_HEIGHT_PX;
   /**
    * The selected occurrence's own agenda first, else the series', as V1 reads it. Each is trimmed
    * before the choice, so a blank occurrence description never hides the series' agenda.
    */
-  protected readonly description: Signal<string> = this.initDescription();
-  /**
-   * Edit agenda: organizers only, and not once the meeting has ended (as V1 hides organizer edits on a
-   * past meeting): a past record's id is not the series the agenda dialog saves to.
-   */
-  protected readonly canEdit = computed(() => this.state.meeting()?.organizer === true && this.state.timeState() !== 'ended');
-  /**
-   * Opens the edit-agenda dialog on what the section shows: the selected occurrence's own agenda through
-   * the occurrence API, else the series'. Inside the page's token scope; focus returns to Edit agenda.
-   */
-  protected openEditor(): void {
-    const meeting = this.state.meeting();
-    if (!meeting || !this.canEdit()) {
-      return;
-    }
-    const occurrence = this.state.selectedOccurrence();
-    const ownAgenda = !!occurrence?.description?.trim();
-    const data: MeetingEditAgendaDialogData = {
-      meetingId: meeting.id,
-      scope: ownAgenda ? 'occurrence' : 'series',
-      occurrence: ownAgenda && occurrence ? { occurrenceId: occurrence.occurrence_id, startTime: occurrence.start_time, duration: occurrence.duration } : null,
-      recurring: !!meeting.recurrence,
-      original: this.description(),
-      // Shown at once, and the page re-reads: also when the dialog was dismissed mid-save.
-      onApplied: (description) => {
-        this.state.agendaOverride.set({ meetingId: meeting.id, occurrenceId: ownAgenda && occurrence ? occurrence.occurrence_id : null, description });
-        this.state.reload();
-      },
-    };
-    const trigger = this.document.activeElement;
-    const ref = this.dialogService.open(MeetingEditAgendaDialogComponent, {
-      showHeader: false,
-      width: '560px',
-      breakpoints: { '600px': 'calc(100vw - 40px)' },
-      modal: true,
-      closable: true,
-      closeOnEscape: true,
-      dismissableMask: false,
-      appendTo: this.host.nativeElement.closest('.meeting-details-v2') ?? 'body',
-      styleClass:
-        '!rounded-[var(--md-radius-dialog)] !border !border-[var(--md-border)] !bg-[var(--md-surface-card)] !shadow-[var(--md-shadow-dialog)] overflow-hidden',
-      data,
-    });
-    if (!ref) {
-      return;
-    }
-    nameDynamicDialog(this.dialogService, ref, MeetingEditAgendaDialogComponent.headingId);
-    restoreFocusOnDialogClose(ref, trigger);
-  }
-
-  /**
-   * The selected occurrence's own agenda first, else the series', as V1 reads it, each trimmed before the
-   * choice so a blank occurrence description never hides the series' agenda. A just-saved agenda (O-01)
-   * shows for what it edited until the next read replaces it; a series one never over an occurrence's own.
-   */
-  private initDescription(): Signal<string> {
-    return computed(() => {
-      const override = this.state.agendaOverride();
-      const meeting = this.state.meeting();
-      const occurrence = this.state.selectedOccurrence();
-      const own = occurrence?.description?.trim() || '';
-      if (override && override.meetingId === meeting?.id) {
-        if (override.occurrenceId !== null && override.occurrenceId === occurrence?.occurrence_id) {
-          return override.description;
-        }
-        if (override.occurrenceId === null && !own) {
-          return override.description;
-        }
-      }
-      return own || meeting?.description?.trim() || '';
-    });
-  }
+  protected readonly description = computed(() => this.state.selectedOccurrence()?.description?.trim() || this.state.meeting()?.description?.trim() || '');
 }
