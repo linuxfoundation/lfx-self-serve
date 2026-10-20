@@ -1258,6 +1258,13 @@ describe('MeetingController', () => {
       });
     });
 
+    it('accepts a 10-hour occurrence, the v2 composer maximum', async () => {
+      await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration: 600 }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.updateOccurrence).toHaveBeenCalledWith(expect.anything(), MEETING_ID, OCCURRENCE_ID, expect.objectContaining({ duration: 600 }));
+    });
+
     it.each([[0], [4], [601], [30.5], ['30'], [undefined]])('rejects duration %s', async (duration) => {
       await controller.updateOccurrence(buildOccurrenceReq({ start_time: futureStart(), duration }), buildRes(), next);
 

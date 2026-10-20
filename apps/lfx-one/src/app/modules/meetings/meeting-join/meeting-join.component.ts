@@ -72,6 +72,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
   getMeetingSelfRemovalMessage,
   getUserTimezone,
@@ -88,6 +89,7 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -176,6 +178,13 @@ export class MeetingJoinComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly plausibleService = inject(PlausibleService);
   private readonly dialogService = inject(DialogService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  /**
+   * Whether meeting v2 is on for this user — read so the occurrence dialog allows the v2 composer's
+   * 10-hour duration, and defaulted off so a slow flag provider keeps the pre-v2 cap. See
+   * `MEETING_V2_ENABLED_FLAG`.
+   */
+  private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
@@ -581,7 +590,7 @@ export class MeetingJoinComponent implements OnInit {
       modal: true,
       closable: true,
       dismissableMask: false,
-      data: { meeting, occurrence },
+      data: { meeting, occurrence, maxDuration: this.meetingsV2Enabled() ? MAX_MEETING_DURATION : MAX_CUSTOM_DURATION },
     }) as DynamicDialogRef;
 
     dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
