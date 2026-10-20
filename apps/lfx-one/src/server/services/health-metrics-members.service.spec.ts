@@ -1190,7 +1190,7 @@ describe('HealthMetricsMembersService.getNps', () => {
     expect((await service.getNps(req, { ...query, audience: 'Ambassador' })).selectedAudience).toBe('Board');
   });
 
-  it('withholds a flagged score and change, and drops blank audiences and undated waves', async () => {
+  it('keeps a flagged score and change with the flag, and drops blank audiences and undated waves', async () => {
     respond({
       audiences: [
         audienceRow('Board', { IS_SAMPLE_TOO_SMALL: true, NPS_SCORE: 80, NPS_SCORE_CHANGE_PP: 12, LAST_UPDATED_QUARTER: null }),
@@ -1206,9 +1206,9 @@ describe('HealthMetricsMembersService.getNps', () => {
     const result = await new HealthMetricsMembersService().getNps(req, query);
 
     expect(result.audiences).toEqual([
-      expect.objectContaining({ audience: 'Board', npsScore: null, scoreChangePp: null, isSampleTooSmall: true, lastUpdatedQuarter: null, responsesCount: 18 }),
+      expect.objectContaining({ audience: 'Board', npsScore: 80, scoreChangePp: 12, isSampleTooSmall: true, lastUpdatedQuarter: null, responsesCount: 18 }),
     ]);
-    expect(result.trend).toEqual([{ quarterStartDate: '2025-04-01', quarterLabel: null, npsScore: null, responseRatePct: null, isSampleTooSmall: true }]);
+    expect(result.trend).toEqual([{ quarterStartDate: '2025-04-01', quarterLabel: null, npsScore: 90, responseRatePct: null, isSampleTooSmall: true }]);
   });
 
   it('reads a foundation never surveyed as no audiences, no selection and no trend', async () => {

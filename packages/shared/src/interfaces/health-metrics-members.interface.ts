@@ -581,7 +581,7 @@ export interface HealthMetricsMembersNpsQuery {
   audience: string | null;
 }
 
-/** One audience surveyed in the period. Scores are `null` when the view flags the sample too small to report. */
+/** One audience surveyed in the period; `isSampleTooSmall` marks a score that rests on too few replies. */
 export interface HealthMetricsMembersNpsAudience {
   audience: string;
   npsScore: number | null;
@@ -628,9 +628,11 @@ export interface HealthMetricsMembersNpsFooterView {
   text: string;
 }
 
-/** The NPS hero as the section renders it; a withheld score renders the dash and the not-enough caption. */
+/** The NPS hero as the section renders it; a missing score renders the dash and the not-enough caption. */
 export interface HealthMetricsMembersNpsSummaryView {
-  isWithheld: boolean;
+  isUnscored: boolean;
+  /** A score on a flagged sample or a below-floor rate, rendered in amber. */
+  isLowConfidence: boolean;
   scoreLabel: string;
   /** `null` renders no change. */
   changeLabel: string | null;
@@ -661,9 +663,13 @@ export interface HealthMetricsMembersNpsTrendPointView {
   label: string;
   score: number | null;
   scoreLabel: string;
+  /** The score as the tooltip and screen-reader table read it, noting a low-response wave. */
+  scoreDescription: string;
   ratePct: number | null;
   rateLabel: string;
   isRateBelowFloor: boolean;
+  /** A score on a flagged sample or a below-floor rate, drawn as an amber bar. */
+  isLowConfidence: boolean;
 }
 
 /** The sentence under the trend: a score rising on a falling rate, a rate below the floor, or a rate holding. */

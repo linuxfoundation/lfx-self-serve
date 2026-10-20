@@ -416,29 +416,32 @@ export function buildHealthMetricsMembersNpsAudienceOptions(audiences: HealthMet
   return audiences.map((audience) => ({ id: audience.audience, label: audience.audience }));
 }
 
-/** The NPS hero, banner and footer for one audience; a flagged sample withholds the score rather than showing it as precise. */
+/** The NPS hero, banner and footer for one audience; a flagged sample keeps its score, marked as low confidence. */
 export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSummaryView {
-  const isWithheld = !audience || audience.isSampleTooSmall || audience.npsScore === null;
+  const isUnscored = !audience || audience.npsScore === null;
   const recipients = audience?.recipientsCount ?? null;
   const responses = audience?.responsesCount ?? null;
   const ratePct = toWholePct(audience?.responseRatePct ?? null);
   const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
-  const change = isWithheld ? null : (audience?.scoreChangePp ?? null);
+  const isSampleTooSmall = audience?.isSampleTooSmall === true;
+  const change = isUnscored ? null : (audience?.scoreChangePp ?? null);
   const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
   const rateLabel = ratePct === null ? '—' : `${ratePct}%`;
 
   return {
-    isWithheld,
-    scoreLabel: isWithheld ? '—' : formatSignedScore(audience?.npsScore ?? null),
+    isUnscored,
+    isLowConfidence: !isUnscored && (isSampleTooSmall || isRateBelowFloor),
+    scoreLabel: isUnscored ? '—' : formatSignedScore(audience?.npsScore ?? null),
     changeLabel: change === null ? null : `${formatSignedScore(change)}pp`,
     changeDirection: directionOf(change),
-    caption: isWithheld ? 'Not enough responses to report a score' : `Net Promoter Score · ${audience?.audience.toLowerCase()} audience`,
+    caption: isUnscored ? 'Not enough responses to report a score' : `Net Promoter Score · ${audience?.audience.toLowerCase()} audience`,
     respondedLabel,
     rateLabel,
     isRateBelowFloor,
-    lowSampleNote: audience?.isSampleTooSmall
-      ? `Only ${respondedLabel} responded (${rateLabel}). Below the confidence threshold — the score is suppressed rather than shown as precise.`
-      : null,
+    lowSampleNote:
+      isSampleTooSmall && !isUnscored
+        ? `Only ${respondedLabel} responded (${rateLabel}). Below the confidence threshold, so read this score with caution.`
+        : null,
     lastUpdatedLabel: audience?.lastUpdatedQuarter ? `Last updated ${audience.lastUpdatedQuarter}` : '',
     surveyedLabel: `out of ${formatCount(recipients)} surveyed`,
     footer: isRateBelowFloor
@@ -476,19 +479,24 @@ export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMemb
   });
 }
 
-/** Trend points, oldest first; a flagged wave keeps its response rate but withholds its score. */
+/** Trend points, oldest first; a flagged or below-floor wave keeps its score, marked as low confidence. */
 export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
   return trend.map((quarter) => {
-    const score = quarter.isSampleTooSmall ? null : quarter.npsScore;
+    const score = quarter.npsScore;
     const ratePct = toWholePct(quarter.responseRatePct);
+    const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+    const isLowConfidence = score !== null && (quarter.isSampleTooSmall || isRateBelowFloor);
+    const scoreLabel = score === null ? '—' : formatSignedScore(score);
     return {
       quarterStartDate: quarter.quarterStartDate,
       label: quarter.quarterLabel ?? '—',
       score,
-      scoreLabel: score === null ? 'Withheld' : formatSignedScore(score),
+      scoreLabel,
+      scoreDescription: isLowConfidence ? `${scoreLabel} (low response)` : scoreLabel,
       ratePct,
       rateLabel: ratePct === null ? '—' : `${ratePct}%`,
-      isRateBelowFloor: ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT,
+      isRateBelowFloor,
+      isLowConfidence,
     };
   });
 }

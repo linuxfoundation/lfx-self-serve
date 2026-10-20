@@ -98,6 +98,7 @@ export class MembersNpsComponent {
   protected readonly segments: Signal<HealthMetricsMembersNpsSegmentView[]> = computed(() => buildHealthMetricsMembersNpsSegments(this.selectedAudience()));
   protected readonly trend: Signal<HealthMetricsMembersNpsTrendPointView[]> = computed(() => buildHealthMetricsMembersNpsTrend(this.response().trend));
   protected readonly trendNote: Signal<HealthMetricsMembersNpsTrendNote | null> = computed(() => buildHealthMetricsMembersNpsTrendNote(this.trend()));
+  protected readonly hasLowConfidenceWave = computed(() => this.trend().some((point) => point.isLowConfidence));
   protected readonly noSurvey = computed(() => this.selectedAudience() === null);
   protected readonly distributionLabel = computed(
     () =>
@@ -211,7 +212,7 @@ export class MembersNpsComponent {
     );
   }
 
-  /** Score bars on the left axis; the response rate as a dashed line on the right, red where it falls below the floor. */
+  /** Score bars on the left axis, amber when low confidence; the response rate as a dashed line on the right, red below the floor. */
   private buildChart(points: HealthMetricsMembersNpsTrendPointView[]): ChartData<'bar' | 'line'> {
     const rateColors = points.map((point) => (point.isRateBelowFloor ? lfxColors.red[600] : lfxColors.amber[600]));
     return {
@@ -235,7 +236,7 @@ export class MembersNpsComponent {
           label: 'NPS score',
           data: points.map((point) => point.score),
           yAxisID: 'y',
-          backgroundColor: lfxColors.blue[300],
+          backgroundColor: points.map((point) => (point.isLowConfidence ? lfxColors.amber[300] : lfxColors.blue[300])),
           borderRadius: 2,
           maxBarThickness: 52,
         },
@@ -246,7 +247,7 @@ export class MembersNpsComponent {
   private tooltipLabel(datasetIndex: number, index: number): string {
     const point = this.trend()[index];
     if (!point) return '';
-    return datasetIndex === 0 ? `Response rate ${point.rateLabel}` : `NPS score ${point.scoreLabel}`;
+    return datasetIndex === 0 ? `Response rate ${point.rateLabel}` : `NPS score ${point.scoreDescription}`;
   }
 
   private syncUrl(): void {
