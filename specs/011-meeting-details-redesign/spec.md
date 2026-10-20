@@ -156,13 +156,13 @@ wait for it.
 
 ### Phase 1 — shell, header, action slot, content
 
-| Group                       | Plan IDs (issues)                                                                                                                                                                                                                                                                                                                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Shell & header              | E1-01 (#1770) · E1-02 (#1771) · E1-03 (#1772) · E1-04 (#1773) · E1-05 (#2877) · E1-06 (#1774)                                                                                                                                                                                                                                                                                              |
-| Action slot & viewer states | E2-01 (#1775) · E2-02 (#2878) · E2-03 (#2879) · E2-04 (#2880) · E2-05 (#2881) · E2-06 (#2882) · N-01 (#3263) pre-2024 RSVP state                                                                                                                                                                                                                                                           |
-| Content                     | E3-01 (#3250) agenda · E3-02 (#3251) materials · E3-03 (#3252) public attachments endpoint (BFF) · E3-04 (#3253) people · E3-05 (#3254) attachment categories · E4-01 (#3255) recording + transcript · E4-02 (#3256) recording duration (withdrawn) · E4-03 (#3257) inline AI summary · E4-04 (#3258) public artifact routes (withdrawn) · E4-05 (#3259) align with admin page (withdrawn) |
-| Identity & admin            | N-02 (#3264) participant identity tiers (withdrawn) · N-03 (#3265) auth guard on the past-meeting admin route                                                                                                                                                                                                                                                                              |
-| Quality                     | E5-02 (#3260) a11y · E5-03 (#3261) V2 specs · E5-04 (#3262) E2E (content + robust). E5-01 shipped before the epic (#2046) and is not filed                                                                                                                                                                                                                                                 |
+| Group                       | Plan IDs (issues)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shell & header              | E1-01 (#1770) · E1-02 (#1771) · E1-03 (#1772) · E1-04 (#1773) · E1-05 (#2877) · E1-06 (#1774)                                                                                                                                                                                                                                                                                                                     |
+| Action slot & viewer states | E2-01 (#1775) · E2-02 (#2878) · E2-03 (#2879) · E2-04 (#2880) · E2-05 (#2881) · E2-06 (#2882) · N-01 (#3263) pre-2024 RSVP state                                                                                                                                                                                                                                                                                  |
+| Content                     | E3-01 (#3250) agenda · E3-02 (#3251) materials · E3-03 (#3252) public attachments endpoint (BFF, withdrawn) · E3-04 (#3253) people · E3-05 (#3254) attachment categories (withdrawn) · E4-01 (#3255) recording + transcript · E4-02 (#3256) recording duration (withdrawn) · E4-03 (#3257) inline AI summary · E4-04 (#3258) public artifact routes (withdrawn) · E4-05 (#3259) align with admin page (withdrawn) |
+| Identity & admin            | N-02 (#3264) participant identity tiers (withdrawn) · N-03 (#3265) auth guard on the past-meeting admin route                                                                                                                                                                                                                                                                                                     |
+| Quality                     | E5-02 (#3260) a11y · E5-03 (#3261) V2 specs · E5-04 (#3262) E2E (content + robust). E5-01 shipped before the epic (#2046) and is not filed                                                                                                                                                                                                                                                                        |
 
 E1-04 renders a **single** 4-way privacy chip built on the existing `getMeetingPrivacyLabel` /
 `getMeetingPrivacyIcon` helpers — four values of one element, not four elements.
@@ -191,7 +191,8 @@ V1's attended / absent / rate figures only, and the admin page is V1's, plus N-0
 Spikes S-01 (#3610, colleague meetings feasibility and privacy) and S-02 (#3611, occurrence
 timeline scale) sit under the epic. The plan's hygiene bugs (§ 10) are filed as standalone issues
 against `main`: H-01 #3612, H-07 #3613, H-08 #3614, H-09 #3615, H-10 #3616. H-04 was already
-fixed, H-05 is folded into E10-01 (#3601), and H-06 was covered by E3-05. Two security findings are held
+fixed, H-05 is folded into E10-01 (#3601), and H-06 was covered by E3-05, which the 2026-10-20 scope
+reset withdrew, so H-06 is open again. Two security findings are held
 for private reporting rather than filed as public issues.
 
 Every remaining Phase 1 and Phase 2 item and both spikes have a tracking issue (2026-10-14); the
@@ -217,8 +218,8 @@ The parts of #1766's deliverable that live beside this spec rather than in it:
   axes do not cover: the selected occurrence and the viewer's own RSVP.
 
 **`contracts/`** (JSON Schema for new or widened BFF responses) moves to the PRs that build each
-endpoint (E3-03; E4-04 and E6-01 were withdrawn), so each schema is reviewed with its code.
-E3-03's is [`contracts/public-meeting-attachments.schema.json`](contracts/public-meeting-attachments.schema.json).
+endpoint, so each schema is reviewed with its code. E3-03's, E4-04's and E6-01's were withdrawn
+with their endpoints (2026-10-20 scope reset).
 
 ### Deviations from #1766's acceptance criteria
 

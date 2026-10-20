@@ -11,12 +11,12 @@
 
   @if (description(); as agendaText) {
     <div class="max-w-[660px] text-[15px] leading-[1.65] text-[var(--md-text-body)]" data-testid="agenda-section-description">
-      <!-- lfx-expandable-text measures its content once, on first render: tracking by the text remounts
+      <!-- lfx-meeting-v2-expandable-text measures its content once, on first render: tracking by the text remounts
            it whenever the description changes (e.g. another occurrence), so See more is never stale. -->
       @for (text of [agendaText]; track text) {
-        <lfx-expandable-text [maxHeight]="collapsedHeight">
+        <lfx-meeting-v2-expandable-text [maxHeight]="collapsedHeight">
           <div class="[&_a]:text-[var(--md-accent-ink)] [&_a]:underline" [innerHTML]="text | linkify"></div>
-        </lfx-expandable-text>
+        </lfx-meeting-v2-expandable-text>
       }
     </div>
   } @else {

@@ -30,8 +30,8 @@
 
 `contracts/` is deliberately not in this change. The JSON Schemas #1766 lists describe responses
 that do not exist yet (public attachments, public artifacts, a widened occurrence summary). Each
-belongs in the PR that builds the endpoint — E3-03 and E6-01 (E4-04 was withdrawn) — where the schema and the
-code can be reviewed together.
+belongs in the PR that builds the endpoint, where the schema and the code can be reviewed together
+(E3-03, E4-04 and E6-01 were withdrawn on 2026-10-20).
 
 License headers are not added to these Markdown files, following `specs/008` and `specs/009`;
 `check-headers.sh` does not scan `*.md`.

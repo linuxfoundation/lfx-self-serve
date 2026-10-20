@@ -108,11 +108,11 @@
           </div>
           @switch (summary.status) {
             @case ('available') {
-              <lfx-expandable-text [maxHeight]="summaryCollapsedHeight">
+              <lfx-meeting-v2-expandable-text [maxHeight]="summaryCollapsedHeight">
                 <div class="text-[14px] leading-[1.55] text-[var(--md-text-body)]" data-testid="tools-summary-content">
                   <lfx-markdown-renderer [content]="summary.content ?? ''" [restricted]="true" />
                 </div>
-              </lfx-expandable-text>
+              </lfx-meeting-v2-expandable-text>
               <lfx-button
                 class="self-start"
                 label="Read full summary"

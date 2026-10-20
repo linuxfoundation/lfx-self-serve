@@ -155,11 +155,9 @@
                 rel="noopener noreferrer"
                 class="flex-shrink-0 hover:opacity-70 transition-opacity"
                 (click)="$event.stopPropagation()"
-                [attr.aria-label]="'LinkedIn profile of ' + registrant.first_name + ' ' + registrant.last_name + ' (opens in a new tab)'"
-                [attr.data-testid]="'registrant-display-linkedin-' + registrant.uid"
                 pTooltip="View LinkedIn Profile"
                 tooltipPosition="top">
-                <i class="fa-brands fa-linkedin text-blue-500 text-base" aria-hidden="true"></i>
+                <i class="fa-brands fa-linkedin text-blue-500 text-base"></i>
               </a>
             }
           </div>

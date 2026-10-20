@@ -242,52 +242,52 @@ browse-all dialog were withdrawn in the scope reset. V1 keeps its own `occurrenc
 
 ## Agenda and materials
 
-| `data-testid`                    | Element                                                          |
-| -------------------------------- | ---------------------------------------------------------------- |
-| `agenda-section`                 | Agenda section                                                   |
-| `agenda-section-description`     | The description, links made clickable, collapsed past 200px      |
-| `agenda-section-empty`           | Shown when the meeting has no description                        |
-| `materials-section`              | Materials section                                                |
-| `materials-file-${uid}`          | One attached file                                                |
-| `materials-link-${uid}`          | One attached link                                                |
-| `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page) |
-| `materials-section-updated`      | The "Updated" pill: a change in the last seven days              |
-| `materials-section-loading`      | The list's first load                                            |
-| `materials-section-sign-in`      | Sign in to view the materials (anonymous and refused)            |
-| `materials-section-sign-in-link` | Its Sign in link                                                 |
-| `materials-section-error`        | The list failed to load, with nothing to fall back on            |
-| `materials-section-retry`        | Its Try again                                                    |
-| `materials-section-empty`        | None attached                                                    |
-| `materials-section-files`        | The files group ("Primary materials")                            |
-| `materials-section-links`        | The links group ("Supporting materials")                         |
-| `materials-section-files-toggle` | Show N more / Show less for files                                |
-| `materials-section-links-toggle` | Show N more / Show less for links                                |
+| `data-testid`                    | Element                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `agenda-section`                 | Agenda section                                                                           |
+| `agenda-section-description`     | The description, links made clickable, collapsed past 200px                              |
+| `agenda-section-empty`           | Shown when the meeting has no description                                                |
+| `materials-section`              | Materials section                                                                        |
+| `materials-file-${uid}`          | One attached file                                                                        |
+| `materials-link-${uid}`          | One attached link                                                                        |
+| `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page)                         |
+| `materials-section-updated`      | The "Updated" pill: a change in the last seven days                                      |
+| `materials-section-loading`      | The list's first load                                                                    |
+| `materials-section-sign-in`      | Sign in to view the materials (anonymous, as on V1, or a session the past route refused) |
+| `materials-section-sign-in-link` | Its Sign in link                                                                         |
+| `materials-section-error`        | A past occurrence's list failed, with nothing to fall back on                            |
+| `materials-section-retry`        | Its Try again                                                                            |
+| `materials-section-empty`        | None attached                                                                            |
+| `materials-section-files`        | The files group ("Primary materials")                                                    |
+| `materials-section-links`        | The links group ("Supporting materials")                                                 |
+| `materials-section-files-toggle` | Show N more / Show less for files                                                        |
+| `materials-section-links-toggle` | Show N more / Show less for links                                                        |
 
-Files and links are separate prefixes rather than one `materials-item-${uid}` because E3-05 groups
-attachments by category, and a test for the grouping needs to assert on type without first reading
-the row's contents.
+Files and links are separate prefixes rather than one `materials-item-${uid}`, so a test can
+assert on type without first reading the row's contents.
 
 ## People
 
-| `data-testid`                    | Element                                                            |
-| -------------------------------- | ------------------------------------------------------------------ |
-| `people-section`                 | The roster section                                                 |
-| `people-section-count`           | "{n} invited", the fetched roster's length                         |
-| `people-section-add`             | Add guest (organizers, upcoming only)                              |
-| `people-section-loading`         | The roster's first load                                            |
-| `people-section-error`           | The roster failed to load, with nothing to fall back on            |
-| `people-section-retry`           | Its Try again                                                      |
-| `people-section-empty`           | Nobody invited yet                                                 |
-| `people-section-indexing`        | Added guests counted but not listed yet                            |
-| `people-section-tallies`         | The RSVP tallies (RSVP tracking on only)                           |
-| `people-section-tally-${status}` | One tally: `accepted`, `maybe`, `declined`, `pending`              |
-| `people-section-list`            | The rows shown on the page (the first five)                        |
-| `participant-row-${uid}`         | One participant row                                                |
-| `people-section-view-all`        | Opens the full list                                                |
-| `people-drawer`                  | The full list's drawer (V1's guest list inside)                    |
-| `people-drawer-title`            | Its title: Meeting Members (a committee meeting) or Meeting Guests |
-| `people-drawer-count`            | Its "{n} guests" / "{n} members" (a loaded roster only)            |
-| `people-drawer-close`            | Its close button                                                   |
+| `data-testid`                        | Element                                                                                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `people-section`                     | The roster section                                                                             |
+| `people-section-count`               | "{n} invited", the fetched roster's length                                                     |
+| `people-section-add`                 | Add guest (organizers, upcoming only)                                                          |
+| `people-section-loading`             | The roster's first load                                                                        |
+| `people-section-error`               | The roster failed to load, with nothing to fall back on                                        |
+| `people-section-retry`               | Its Try again                                                                                  |
+| `people-section-empty`               | Nobody invited yet                                                                             |
+| `people-section-indexing`            | Added guests counted but not listed yet                                                        |
+| `people-section-tallies`             | The RSVP tallies (RSVP tracking on only)                                                       |
+| `people-section-tally-${status}`     | One tally: `accepted`, `maybe`, `declined`, `pending`                                          |
+| `people-section-list`                | The rows shown on the page (the first five)                                                    |
+| `participant-row-${uid}`             | One participant row                                                                            |
+| `people-section-view-all`            | Opens the full list                                                                            |
+| `people-drawer`                      | The full list's drawer (V1's guest list inside)                                                |
+| `people-drawer-title`                | Its title: Meeting Members (a committee meeting) or Meeting Guests                             |
+| `people-drawer-count`                | Its "{n} guests" / "{n} members" (a loaded roster only)                                        |
+| `people-drawer-close`                | Its close button                                                                               |
+| `registrant-display-linkedin-${uid}` | A guest's LinkedIn link in the drawer, named for that guest (V2's own guest-list variant only) |
 
 The section is for upcoming and live meetings only. An ended meeting has no named roster, as in
 V1; it shows V1's attendance figures instead (§ Attendance).

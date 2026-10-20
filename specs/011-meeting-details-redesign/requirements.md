@@ -99,10 +99,10 @@ axis values and `ActionSlotKind` members defined in the state matrix.
 - **FR-031**: Wherever content is visible (every upcoming or live meeting, and an ended meeting with
   artifact access), materials MUST render for signed-in viewers, with the organizer's Manage
   control. An ended meeting without artifact access MUST keep materials hidden for every viewer,
-  signed in or not (state matrix: `ended` / `none`). Where content is visible, an anonymous viewer
-  MUST get a sign-in state whose copy is correct on public meetings too (V1 says
-  "No primary materials available." when materials exist), until a public attachments route exists
-  (E3-03).
+  signed in or not (state matrix: `ended` / `none`). V2 reads them as V1 does: only when signed
+  in, from `/api/meetings/:id/attachments` (or the past occurrence's own list), and an anonymous
+  viewer MUST get a sign-in state, as V1's "Sign in to view materials" (the E3-03 public
+  attachments route and E3-05 categories were withdrawn in the 2026-10-20 scope reset).
 - **FR-032**: On an upcoming or live meeting, the people roster MUST render only for registrants
   and organizers. On an ended meeting there is no named roster, as in V1 (the E4-05 past roster was
   withdrawn in the 2026-10-20 scope reset): the page MUST show V1's attended / absent / rate
@@ -226,9 +226,9 @@ V1 parity tracked by its FRs.
 | N-03 admin route guard        | #3265             | FR-054                                              |
 | E3-01 agenda                  | #3250             | FR-030                                              |
 | E3-02 materials               | #3251             | FR-031                                              |
-| E3-03 public attachments      | #3252             | FR-031                                              |
+| E3-03 public attachments      | #3252             | FR-031 (withdrawn: V1's signed-in read)             |
 | E3-04 people                  | #3253             | FR-032                                              |
-| E3-05 attachment categories   | #3254             | FR-031                                              |
+| E3-05 attachment categories   | #3254             | FR-031 (withdrawn)                                  |
 | E4-01 recording + transcript  | #3255             | FR-028, FR-040                                      |
 | E4-02 recording duration      | #3256             | FR-048 (withdrawn)                                  |
 | E4-03 inline AI summary       | #3257             | FR-040                                              |

@@ -5,7 +5,6 @@ import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRe
 import type {
   AttachmentCategory,
   CardSelectorOption,
-  FilterOption,
   MeetingComposerPreviewFeature,
   MeetingStatusKind,
   MeetingTypeConfig,
@@ -1062,28 +1061,6 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
 
 /**
- * Every `AttachmentCategory`, as the materials drawer offers them (E3-05, #3254). Before this the
- * drawer hard-coded `Other` for links and sent nothing for files, so the other three were
- * unreachable from the meetings UI.
- */
-export const MEETING_ATTACHMENT_CATEGORIES: readonly AttachmentCategory[] = Object.keys({
-  // Keyed by the union, so a category added to `AttachmentCategory` fails to compile here until listed.
-  'Meeting Minutes': true,
-  Notes: true,
-  Presentation: true,
-  Other: true,
-} satisfies Record<AttachmentCategory, true>) as AttachmentCategory[];
-
-/** The category a new attachment starts with in the materials drawer: what links always had. */
-export const DEFAULT_MEETING_ATTACHMENT_CATEGORY: AttachmentCategory = 'Other';
-
-/** `MEETING_ATTACHMENT_CATEGORIES` as select options (label and value are the same string). */
-export const MEETING_ATTACHMENT_CATEGORY_OPTIONS: FilterOption<AttachmentCategory>[] = MEETING_ATTACHMENT_CATEGORIES.map((category) => ({
-  label: category,
-  value: category,
-}));
-
-/**
  * Display label for each meeting status on the meeting details V2 page
  * @description Shared by the status pill (E1-05) and the sticky identity bar's subtitle (E1-02), so
  * the two never disagree about what a meeting is called. Resolve the status with
@@ -1235,13 +1212,6 @@ export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
  * after each of these delays, since the query service indexes a change some time after the write.
  */
 export const MEETING_MATERIALS_REFETCH_DELAYS_MS: readonly number[] = [1000, 5000, 15000];
-
-/**
- * How long a just-added file's row waits (Processing, no download) for the list to return it. Past
- * this the row is released, so a failed refetch cannot leave it stuck; a download then still works
- * once the index has it, and otherwise shows the usual failure toast.
- */
-export const MEETING_MATERIALS_PENDING_MAX_MS = 30_000;
 
 /** What each summary approval state reads as (E4-03); `not-required` shows no status. */
 export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryApprovalState, string | null> = {

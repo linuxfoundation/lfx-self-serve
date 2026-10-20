@@ -14,8 +14,8 @@ import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, Observable, of, startWith, switchMap } from 'rxjs';
 
-import { MeetingRegistrantsDisplayComponent } from '../../../components/meeting-registrants-display/meeting-registrants-display.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingV2RegistrantsDisplayComponent } from '../v2-registrants-display/v2-registrants-display.component';
 
 /**
  * The V2 people section, in the content column after the agenda (E3-04, #3253, FR-032).
@@ -27,12 +27,12 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  *
  * The first rows show here, organizers first, then by RSVP; RSVP chips and tallies render only when
  * the meeting tracks RSVPs (`visibleSections` `rsvpAvatarBadges` / `rsvpSummary`). "View all" opens
- * the full list in a drawer, V1's guest list (`lfx-meeting-registrants-display`) with its search and
- * filters, where an organizer can also add and remove guests, as on V1.
+ * the full list in a drawer, V1's guest list (V2's own `lfx-meeting-v2-registrants-display`, whose
+ * LinkedIn links are named) with its search and filters, where an organizer can also add and remove guests, as on V1.
  */
 @Component({
   selector: 'lfx-meeting-people',
-  imports: [NgClass, DrawerModule, SkeletonModule, PersonAvatarComponent, MeetingRegistrantsDisplayComponent],
+  imports: [NgClass, DrawerModule, SkeletonModule, PersonAvatarComponent, MeetingV2RegistrantsDisplayComponent],
   templateUrl: './people.component.html',
 })
 export class MeetingPeopleComponent {

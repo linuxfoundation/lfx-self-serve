@@ -5,26 +5,26 @@ import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { ExpandableTextComponent } from './expandable-text.component';
+import { MeetingV2ExpandableTextComponent } from './v2-expandable-text.component';
 
 @Component({
-  selector: 'lfx-expandable-text-test-host',
-  imports: [ExpandableTextComponent],
-  template: `<lfx-expandable-text [maxHeight]="20"><p>Long text</p></lfx-expandable-text>`,
+  selector: 'lfx-meeting-v2-expandable-text-test-host',
+  imports: [MeetingV2ExpandableTextComponent],
+  template: `<lfx-meeting-v2-expandable-text [maxHeight]="20"><p>Long text</p></lfx-meeting-v2-expandable-text>`,
 })
 class HostComponent {}
 
-/** #3260: one disclosure toggle that keeps focus and reports its state; the V1-facing testids are kept. */
-describe('ExpandableTextComponent toggle', () => {
+/** #3260: one disclosure toggle that keeps focus and reports its state; the shared component's testids are kept. */
+describe('MeetingV2ExpandableTextComponent toggle', () => {
   let fixture: ComponentFixture<HostComponent>;
-  let text: ExpandableTextComponent;
+  let text: MeetingV2ExpandableTextComponent;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [HostComponent] }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     fixture.detectChanges();
     // The height check needs layout, which jsdom lacks: put the component in the overflowing state.
-    text = fixture.debugElement.children[0].componentInstance as ExpandableTextComponent;
+    text = fixture.debugElement.children[0].componentInstance as MeetingV2ExpandableTextComponent;
     text.needsExpansion.set(true);
     text.isInitialized.set(true);
     fixture.detectChanges();
@@ -36,6 +36,7 @@ describe('ExpandableTextComponent toggle', () => {
     const button = toggle();
     expect(button.getAttribute('data-testid')).toBe('read-more-button');
     expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.textContent?.trim()).toBe('Show more');
 
     button.focus();
     button.click();
@@ -44,6 +45,14 @@ describe('ExpandableTextComponent toggle', () => {
     expect(toggle()).toBe(button);
     expect(button.getAttribute('data-testid')).toBe('see-less-button');
     expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(button.textContent?.trim()).toBe('See less');
+    expect(document.activeElement).toBe(button);
+
+    button.click();
+    fixture.detectChanges();
+
+    expect(toggle()).toBe(button);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(button);
   });
 
@@ -55,5 +64,11 @@ describe('ExpandableTextComponent toggle', () => {
 
   it('hides its chevrons from assistive tech', () => {
     expect(toggle().querySelector('i')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('keeps the shared collapse behaviour: the content is clamped to maxHeight until expanded', () => {
+    const region: HTMLElement = fixture.nativeElement.querySelector('[data-testid="expandable-content"]');
+    expect(region.style.height).toBe('20px');
+    expect(region.classList.contains('collapsed')).toBe(true);
   });
 });

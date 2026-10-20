@@ -5,19 +5,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import {
-  MEETING_MATERIALS_PENDING_MAX_MS,
-  MEETING_MATERIALS_PREVIEW_LIMIT,
-  MEETING_MATERIALS_REFETCH_DELAYS_MS,
-  MEETING_MATERIALS_UPDATED_WINDOW_MS,
-} from '@lfx-one/shared/constants';
-import {
-  MaterialsChangedEvent,
-  MeetingMaterialLink,
-  MeetingMaterialsRequest,
-  MeetingMaterialsState,
-  PublicMeetingAttachment,
-} from '@lfx-one/shared/interfaces';
+import { MEETING_MATERIALS_PREVIEW_LIMIT, MEETING_MATERIALS_REFETCH_DELAYS_MS, MEETING_MATERIALS_UPDATED_WINDOW_MS } from '@lfx-one/shared/constants';
+import { MaterialsChangedEvent, MeetingAttachment, MeetingMaterialLink, MeetingMaterialsRequest, MeetingMaterialsState } from '@lfx-one/shared/interfaces';
 import { getPastMeetingResourceId, getUrlHostname, toSafeExternalHref } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
@@ -28,8 +17,8 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { ButtonComponent } from '@components/button/button.component';
 import { catchError, map, Observable, of, startWith, Subject, switchMap, take, takeUntil, timer } from 'rxjs';
 
-import { MeetingMaterialsDrawerComponent } from '../../../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingV2MaterialsDrawerComponent } from '../v2-materials-drawer/v2-materials-drawer.component';
 
 /**
  * The V2 materials section, in the content column after the people section (E3-02, #3251, FR-031).
@@ -38,20 +27,19 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * intent the data cannot back (real primary/supporting semantics waits on U-06). Each group shows
  * five items, then "Show N more"; "Updated" marks a change in the last seven days.
  *
- * The page renders it where `visibleSections().materials` allows. An upcoming or live meeting's
- * list comes from the public route (E3-03), which gates it as the meeting is gated, and only a
- * viewer it refuses is asked to sign in. The V2 page serves signed-in viewers only until rollout
- * stage 5 (`rollout.md`); the public route is what lets this section serve anonymous visitors to a
- * public meeting from then on, unchanged. A page loaded by a past occurrence's id reads that
- * occurrence's own list, which needs a session.
+ * The page renders it where `visibleSections().materials` allows. The list is read as V1's join
+ * page reads it (`meeting-join.component.ts` `initializeAttachments`): only when signed in, from
+ * `/api/meetings/:id/attachments` (a failed read is an empty list, as the shared client returns it),
+ * or for a page loaded by a past occurrence's id, that occurrence's own list. An anonymous viewer is
+ * asked to sign in, as V1 asks (`meeting-join.component.html` "Sign in to view materials").
  *
  * Files download through a presigned URL (V1's "Download Failed" toast on failure); links open in a
- * new tab. An organizer gets Add material, V1's materials drawer, while the meeting is upcoming or
+ * new tab. An organizer gets Add material, V1's materials drawer (V2's own accessible variant), while the meeting is upcoming or
  * the page is a past occurrence's.
  */
 @Component({
   selector: 'lfx-meeting-materials',
-  imports: [NgTemplateOutlet, SkeletonModule, ButtonComponent, FileSizePipe, FileTypeDisplayPipe, MeetingMaterialsDrawerComponent],
+  imports: [NgTemplateOutlet, SkeletonModule, ButtonComponent, FileSizePipe, FileTypeDisplayPipe, MeetingV2MaterialsDrawerComponent],
   templateUrl: './materials.component.html',
 })
 export class MeetingMaterialsComponent {
@@ -78,28 +66,13 @@ export class MeetingMaterialsComponent {
   private readonly removedUids = signal<ReadonlySet<string>>(new Set());
   /** Emits when the section moves to another meeting (or none), cancelling the last change's follow-up timers. */
   private readonly viewChanged$ = new Subject<void>();
-  /** Additions that have waited `MEETING_MATERIALS_PENDING_MAX_MS` and are no longer held as pending. */
-  private readonly expiredPendingUids = signal<ReadonlySet<string>>(new Set());
-  /** Additions the drawer reported, shown until the list returns them. */
-  private readonly addedAttachments = signal<PublicMeetingAttachment[]>([]);
+  /** Additions the drawer reported (a past occurrence's), shown until the list returns them. */
+  private readonly addedAttachments = signal<MeetingAttachment[]>([]);
 
   protected readonly request: Signal<MeetingMaterialsRequest | null> = this.initRequest();
   protected readonly materials: Signal<MeetingMaterialsState> = this.initMaterials();
-  protected readonly attachments: Signal<PublicMeetingAttachment[]> = this.initAttachments();
+  protected readonly attachments: Signal<MeetingAttachment[]> = this.initAttachments();
   protected readonly files = computed(() => this.attachments().filter((attachment) => attachment.type === 'file'));
-  /**
-   * Files the drawer just added that no fetched list has returned yet: the download route checks
-   * a file against that list, so until it does, a download would fail. Their rows wait, for at most
-   * `MEETING_MATERIALS_PENDING_MAX_MS`, so a refetch that keeps failing cannot leave one stuck.
-   */
-  protected readonly pendingUids = computed(() => {
-    const expired = this.expiredPendingUids();
-    return new Set(
-      this.addedAttachments()
-        .filter((attachment) => !expired.has(attachment.uid))
-        .map((attachment) => attachment.uid)
-    );
-  });
   protected readonly links: Signal<MeetingMaterialLink[]> = this.initLinks();
   protected readonly visibleFiles = computed(() => (this.showAllFiles() ? this.files() : this.files().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
   protected readonly visibleLinks = computed(() => (this.showAllLinks() ? this.links() : this.links().slice(0, MEETING_MATERIALS_PREVIEW_LIMIT)));
@@ -119,8 +92,9 @@ export class MeetingMaterialsComponent {
   protected readonly canManage = computed(
     () =>
       this.state.matchesRoute() &&
-      // An expired session reads as signed in until a request says otherwise: once one has, the
-      // drawer's writes would fail too, so only Sign in is offered.
+      // An expired session reads as signed in until a request says otherwise: once the past route
+      // has (the meeting's list reads a 401 as empty, as on V1), the drawer's writes would fail
+      // too, so only Sign in is offered.
       this.materials().status !== 'sign-in' &&
       this.state.viewerRole() === 'organizer' &&
       (this.state.timeState() !== 'ended' || this.state.loadedViaPastMeetingId())
@@ -140,15 +114,16 @@ export class MeetingMaterialsComponent {
     this.refreshCount.update((count) => count + 1);
   }
 
-  public download(attachment: PublicMeetingAttachment): void {
+  /** V1's `downloadAttachment`: the past occurrence's presign on its own page, else the meeting's. */
+  public download(attachment: MeetingAttachment): void {
     const request = this.request();
-    if (!request || !isPlatformBrowser(this.platformId) || this.pendingUids().has(attachment.uid)) {
+    if (!request || !isPlatformBrowser(this.platformId)) {
       return;
     }
     const download$ =
       request.mode === 'past'
         ? this.meetingService.getPastMeetingAttachmentDownloadUrl(request.id, attachment.uid)
-        : this.meetingService.getPublicMeetingAttachmentDownloadUrl(request.id, attachment.uid, request.password);
+        : this.meetingService.getMeetingAttachmentDownloadUrl(request.id, attachment.uid);
 
     download$.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (response) => {
@@ -165,7 +140,8 @@ export class MeetingMaterialsComponent {
   }
 
   /**
-   * The drawer changed the list: apply its report at once, then refetch now and again after each
+   * The drawer changed the list: apply its report at once (removals, and a past occurrence's
+   * additions; in meeting mode the drawer reports none, as V1 refetches), then refetch now and again after each
    * of `MEETING_MATERIALS_REFETCH_DELAYS_MS` (V1 retries once, after a second), because the query
    * service indexes the change some time after the write returns.
    */
@@ -174,14 +150,8 @@ export class MeetingMaterialsComponent {
       this.removedUids.update((removed) => new Set([...removed, ...event.deletedUids]));
       this.addedAttachments.update((added) => added.filter((attachment) => !event.deletedUids.includes(attachment.uid)));
     }
-    // Past mode reports `addedAttachments`, meeting mode `addedMeetingAttachments`.
-    const reported: PublicMeetingAttachment[] = [...event.addedAttachments, ...(event.addedMeetingAttachments ?? [])];
-    if (reported.length) {
-      this.addedAttachments.update((added) => [...reported, ...added]);
-      const uids = reported.map((attachment) => attachment.uid);
-      timer(MEETING_MATERIALS_PENDING_MAX_MS)
-        .pipe(takeUntil(this.viewChanged$), takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => this.expiredPendingUids.update((expired) => new Set([...expired, ...uids])));
+    if (event.addedAttachments.length) {
+      this.addedAttachments.update((added) => [...event.addedAttachments, ...added]);
     }
     this.retry();
     for (const delay of MEETING_MATERIALS_REFETCH_DELAYS_MS) {
@@ -199,19 +169,20 @@ export class MeetingMaterialsComponent {
           return null;
         }
         if (this.state.loadedViaPastMeetingId()) {
-          return { mode: 'past', id: getPastMeetingResourceId(meeting), password: null };
+          return { mode: 'past', id: getPastMeetingResourceId(meeting) };
         }
-        return { mode: 'upcoming', id: meeting.id, password: this.state.password() };
+        return { mode: 'upcoming', id: meeting.id };
       },
-      { equal: (a, b) => a?.mode === b?.mode && a?.id === b?.id && a?.password === b?.password }
+      { equal: (a, b) => a?.mode === b?.mode && a?.id === b?.id }
     );
   }
 
   private initMaterials(): Signal<MeetingMaterialsState> {
     const trigger = computed(() => ({ request: this.request(), refresh: this.refreshCount(), signedIn: this.userService.authenticated() }));
-    // The last list fetched and what for: a refetch of the same one keeps showing it, and a failed
-    // refetch keeps it rather than replacing the rows with an error.
-    let last: { key: string; attachments: PublicMeetingAttachment[] } | null = null;
+    // The last list fetched and what for: a refetch of the same one keeps showing it. For a past
+    // occurrence a failed refetch keeps it rather than replacing the rows with an error; the
+    // meeting's list reads a failure as empty, as V1 does.
+    let last: { key: string; attachments: MeetingAttachment[] } | null = null;
     // Which meeting (mode and id) the section is on; `undefined` before the first request. The reset
     // below runs only when this changes, not on a retry of the same meeting before its first success.
     let viewKey: string | null | undefined;
@@ -223,10 +194,9 @@ export class MeetingMaterialsComponent {
           if (key !== viewKey) {
             viewKey = key;
             last = null;
-            // The last change's follow-up belongs to the previous meeting: cancel its refetches
-            // and pending expiry, which would otherwise act on this one.
+            // The last change's follow-up belongs to the previous meeting: cancel its refetches,
+            // which would otherwise act on this one.
             this.viewChanged$.next();
-            this.expiredPendingUids.set(new Set());
             // Another meeting (or none yet): a drawer opened for the previous one closes.
             this.drawerVisible.set(false);
             this.removedUids.set(new Set());
@@ -238,14 +208,14 @@ export class MeetingMaterialsComponent {
           if (!request || !key) {
             return of({ status: 'loading', attachments: [] });
           }
-          // A past occurrence's list is behind a session; there is no public route for it.
-          if (request.mode === 'past' && !signedIn) {
+          // V1 reads materials only when signed in, and asks anyone else to sign in.
+          if (!signedIn) {
             return of({ status: 'sign-in', attachments: [] });
           }
-          const list$: Observable<PublicMeetingAttachment[]> =
-            request.mode === 'past'
-              ? this.meetingService.getPastMeetingAttachments(request.id)
-              : this.meetingService.getPublicMeetingAttachments(request.id, request.password);
+          // The meeting's list reads a failure as empty (the shared client's catchError, as on V1);
+          // a past occurrence's list lets it through, to the error state below.
+          const list$: Observable<MeetingAttachment[]> =
+            request.mode === 'past' ? this.meetingService.getPastMeetingAttachments(request.id) : this.meetingService.getMeetingAttachments(request.id);
           return list$.pipe(
             map((attachments): MeetingMaterialsState => {
               last = { key, attachments };
@@ -253,14 +223,10 @@ export class MeetingMaterialsComponent {
               return { status: 'ready', attachments };
             }),
             catchError((error: unknown) => {
-              const status = error instanceof HttpErrorResponse ? error.status : 0;
-              // Not a failure, so not logged: signing in is the way forward, and Try again would loop.
-              // - Upcoming: the optional-auth public route refuses as the meeting route does (400 /
-              //   403), including a viewer whose session expired while the page still reads signed in.
-              //   Its 401 is its own upstream call failing, which signing in cannot fix: an error.
-              // - Past: the session-gated route answers 401 for an expired session.
-              const signInNeeded = request.mode === 'upcoming' ? status === 400 || status === 403 : status === 401;
-              if (signInNeeded) {
+              // Past occurrence only (the meeting's list never errors). Not a failure, so not logged:
+              // the session-gated route answers 401 for a session that expired while the page still
+              // reads signed in; signing in is the way forward.
+              if (error instanceof HttpErrorResponse && error.status === 401) {
                 return of<MeetingMaterialsState>({ status: 'sign-in', attachments: [] });
               }
               console.error('Failed to load the meeting materials', error);
@@ -287,7 +253,7 @@ export class MeetingMaterialsComponent {
     );
   }
 
-  private initAttachments(): Signal<PublicMeetingAttachment[]> {
+  private initAttachments(): Signal<MeetingAttachment[]> {
     return computed(() => {
       const removed = this.removedUids();
       const fetched = this.materials().attachments.filter((attachment) => !removed.has(attachment.uid));
@@ -297,7 +263,7 @@ export class MeetingMaterialsComponent {
   }
 
   /** Drops the drawer's reports once the fetched list reflects them. */
-  private settleOptimistic(attachments: PublicMeetingAttachment[]): void {
+  private settleOptimistic(attachments: MeetingAttachment[]): void {
     const uids = new Set(attachments.map((attachment) => attachment.uid));
     this.removedUids.update((removed) => new Set([...removed].filter((uid) => uids.has(uid))));
     this.addedAttachments.update((added) => added.filter((attachment) => !uids.has(attachment.uid)));

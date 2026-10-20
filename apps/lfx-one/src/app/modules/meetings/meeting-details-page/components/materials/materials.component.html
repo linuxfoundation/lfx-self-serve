@@ -21,8 +21,8 @@
       <lfx-button
         label="Add material"
         icon="fa-light fa-plus"
-        [styleClass]="pillButtonClass"
         ariaHaspopup="dialog"
+        [styleClass]="pillButtonClass"
         (onClick)="openDrawer()"
         data-testid="materials-section-add" />
     }
@@ -73,15 +73,11 @@
                 @for (file of visibleFiles(); track file.uid; let first = $first) {
                   @let fileType = file | fileTypeDisplay;
                   <li class="border-[var(--md-divider)]" [class.border-t]="!first">
-                    @let pending = pendingUids().has(file.uid);
-                    <!-- A file just added waits until the list returns it: its download would fail before then. -->
                     <button
                       type="button"
-                      class="flex w-full cursor-pointer items-center gap-[14px] border-0 bg-transparent px-[16px] py-[14px] text-left hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent"
-                      [disabled]="pending"
+                      class="flex w-full cursor-pointer items-center gap-[14px] border-0 bg-transparent px-[16px] py-[14px] text-left hover:bg-[var(--md-surface-hover)] focus-visible:shadow-[var(--md-shadow-focus)] focus-visible:outline-none"
                       (click)="download(file)"
-                      [attr.data-testid]="'materials-file-' + file.uid"
-                      [attr.data-pending]="pending || null">
+                      [attr.data-testid]="'materials-file-' + file.uid">
                       <span class="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[9px] bg-[var(--md-accent-bg)] text-[var(--md-accent)]">
                         <i [class]="fileType.icon" aria-hidden="true"></i>
                       </span>
@@ -98,11 +94,7 @@
                         </span>
                       </span>
                       <span class="inline-flex flex-none items-center gap-[6px] text-[12.5px] font-semibold text-[var(--md-text-muted)]">
-                        @if (pending) {
-                          Processing…
-                        } @else {
-                          Open <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span>
-                        }
+                        Open <i class="fa-light fa-arrow-up-right" aria-hidden="true"></i><span class="sr-only">(opens in a new tab)</span>
                       </span>
                     </button>
                   </li>
@@ -170,8 +162,8 @@
 </section>
 
 @if (canManage()) {
-  <!-- V1's materials drawer, unchanged: add, edit and remove files and links. -->
-  <lfx-meeting-materials-drawer
+  <!-- V1's materials drawer behaviour (add, edit and remove files and links) in V2's own variant, a named dialog that moves focus in and back. -->
+  <lfx-meeting-v2-materials-drawer
     [(visible)]="drawerVisible"
     [meetingId]="drawerMeetingId()"
     [pastMeetingId]="drawerPastMeetingId()"

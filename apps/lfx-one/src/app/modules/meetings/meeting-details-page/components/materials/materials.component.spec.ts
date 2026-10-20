@@ -4,18 +4,18 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, input, model, output, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MaterialsChangedEvent, Meeting, MeetingTimeState, MeetingViewerRole, PublicMeetingAttachment, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { MaterialsChangedEvent, Meeting, MeetingAttachment, MeetingTimeState, MeetingViewerRole, PublicMeetingProject } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingMaterialsDrawerComponent } from '../../../components/meeting-materials-drawer/meeting-materials-drawer.component';
+import { MeetingV2MaterialsDrawerComponent } from '../v2-materials-drawer/v2-materials-drawer.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingMaterialsComponent } from './materials.component';
 
-@Component({ selector: 'lfx-meeting-materials-drawer', template: '' })
+@Component({ selector: 'lfx-meeting-v2-materials-drawer', template: '' })
 class MaterialsDrawerStubComponent {
   public readonly meetingId = input<string>();
   public readonly pastMeetingId = input<string>();
@@ -27,7 +27,7 @@ type LoadedMeeting = Meeting & { project: PublicMeetingProject };
 
 const NOW = new Date('2026-10-12T12:00:00Z');
 
-const file = (uid: string, overrides: Partial<PublicMeetingAttachment> = {}): PublicMeetingAttachment => ({
+const file = (uid: string, overrides: Partial<MeetingAttachment> = {}): MeetingAttachment => ({
   uid,
   meeting_id: 'meeting-1',
   type: 'file',
@@ -38,7 +38,7 @@ const file = (uid: string, overrides: Partial<PublicMeetingAttachment> = {}): Pu
   ...overrides,
 });
 
-const link = (uid: string, url = 'https://www.github.example/org/repo'): PublicMeetingAttachment => ({
+const link = (uid: string, url = 'https://www.github.example/org/repo'): MeetingAttachment => ({
   uid,
   meeting_id: 'meeting-1',
   type: 'link',
@@ -51,21 +51,20 @@ describe('MeetingMaterialsComponent', () => {
   let fixture: ComponentFixture<MeetingMaterialsComponent>;
   let meeting: WritableSignal<LoadedMeeting | undefined>;
   let loadedViaPastMeetingId: WritableSignal<boolean>;
-  let password: WritableSignal<string | null>;
   let viewerRole: WritableSignal<MeetingViewerRole | null>;
   let timeState: WritableSignal<MeetingTimeState | null>;
   let authenticated: WritableSignal<boolean>;
   let matchesRoute: WritableSignal<boolean>;
   let meetingService: {
-    getPublicMeetingAttachments: ReturnType<typeof vi.fn>;
+    getMeetingAttachments: ReturnType<typeof vi.fn>;
     getPastMeetingAttachments: ReturnType<typeof vi.fn>;
-    getPublicMeetingAttachmentDownloadUrl: ReturnType<typeof vi.fn>;
+    getMeetingAttachmentDownloadUrl: ReturnType<typeof vi.fn>;
     getPastMeetingAttachmentDownloadUrl: ReturnType<typeof vi.fn>;
   };
   let messageService: { add: ReturnType<typeof vi.fn> };
 
-  const setup = async (list: () => Observable<PublicMeetingAttachment[]>): Promise<void> => {
-    meetingService.getPublicMeetingAttachments.mockImplementation(list);
+  const setup = async (list: () => Observable<MeetingAttachment[]>): Promise<void> => {
+    meetingService.getMeetingAttachments.mockImplementation(list);
     meetingService.getPastMeetingAttachments.mockImplementation(list);
     await TestBed.configureTestingModule({
       imports: [MeetingMaterialsComponent],
@@ -76,7 +75,6 @@ describe('MeetingMaterialsComponent', () => {
             meeting,
             matchesRoute,
             loadedViaPastMeetingId,
-            password,
             viewerRole,
             timeState,
             now: signal(NOW),
@@ -88,7 +86,7 @@ describe('MeetingMaterialsComponent', () => {
         { provide: MessageService, useValue: messageService },
       ],
     })
-      .overrideComponent(MeetingMaterialsComponent, { remove: { imports: [MeetingMaterialsDrawerComponent] } })
+      .overrideComponent(MeetingMaterialsComponent, { remove: { imports: [MeetingV2MaterialsDrawerComponent] } })
       .overrideComponent(MeetingMaterialsComponent, { add: { imports: [MaterialsDrawerStubComponent] } })
       .compileComponents();
 
@@ -101,15 +99,14 @@ describe('MeetingMaterialsComponent', () => {
   beforeEach(() => {
     meeting = signal<LoadedMeeting | undefined>({ id: 'meeting-1', project: {} } as unknown as LoadedMeeting);
     loadedViaPastMeetingId = signal(false);
-    password = signal<string | null>(null);
     viewerRole = signal<MeetingViewerRole | null>('visitor');
     timeState = signal<MeetingTimeState | null>('before');
-    authenticated = signal(false);
+    authenticated = signal(true);
     matchesRoute = signal(true);
     meetingService = {
-      getPublicMeetingAttachments: vi.fn(),
+      getMeetingAttachments: vi.fn(),
       getPastMeetingAttachments: vi.fn(),
-      getPublicMeetingAttachmentDownloadUrl: vi.fn(),
+      getMeetingAttachmentDownloadUrl: vi.fn(),
       getPastMeetingAttachmentDownloadUrl: vi.fn(),
     };
     messageService = { add: vi.fn() };
@@ -122,11 +119,11 @@ describe('MeetingMaterialsComponent', () => {
   const drawer = (): MaterialsDrawerStubComponent | undefined =>
     fixture.debugElement.query((el) => el.componentInstance instanceof MaterialsDrawerStubComponent)?.componentInstance;
 
-  it('lists files as primary and links as supporting, from the public route with the page password', async () => {
-    password.set('pw');
+  // V1 parity: `initializeAttachments` reads `/api/meetings/:id/attachments` for a signed-in viewer.
+  it('lists files as primary and links as supporting, from the signed-in route', async () => {
     await setup(() => of([file('f1', { category: 'Presentation' }), link('l1')]));
 
-    expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledWith('meeting-1', 'pw');
+    expect(meetingService.getMeetingAttachments).toHaveBeenCalledWith('meeting-1');
     expect(text('materials-file-f1')).toContain('f1.pdf');
     expect(text('materials-file-f1')).toContain('Presentation · PDF · 2 KB');
     const anchor = query('materials-link-l1') as HTMLAnchorElement;
@@ -185,19 +182,35 @@ describe('MeetingMaterialsComponent', () => {
     expect(text('materials-section-empty')).toBe('No materials have been added to this meeting yet.');
   });
 
-  // FR-031: "sign in" only when materials really require it, never on a public meeting with none.
-  it('asks an anonymous viewer the public route refuses to sign in', async () => {
-    await setup(() => throwError(() => new HttpErrorResponse({ status: 400 })));
+  // V1 parity: an anonymous viewer is never read for, and is asked to sign in (V1 HTML "Sign in to view materials").
+  it('asks an anonymous viewer to sign in, without fetching', async () => {
+    authenticated.set(false);
+    await setup(() => of([file('f1')]));
 
+    expect(meetingService.getMeetingAttachments).not.toHaveBeenCalled();
     expect(query('materials-section-sign-in')?.querySelector('a')?.getAttribute('href')).toBe('/login?returnTo=x');
     // returnTo can carry the meeting password: masked in Session Replay, as the action slot's is.
     expect(query('materials-section-sign-in-link')?.getAttribute('data-dd-privacy')).toBe('mask');
     expect(query('materials-section-empty')).toBeNull();
   });
 
-  it('shows an error with a retry that refetches for any other failure', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  it('reads the list once the viewer signs in', async () => {
+    authenticated.set(false);
+    await setup(() => of([file('f1')]));
+
     authenticated.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(meetingService.getMeetingAttachments).toHaveBeenCalledWith('meeting-1');
+    expect(query('materials-file-f1')).not.toBeNull();
+  });
+
+  it("shows an error with a retry that refetches when a past occurrence's read fails", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    loadedViaPastMeetingId.set(true);
+    meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
     let calls = 0;
     await setup(() => (++calls === 1 ? throwError(() => new HttpErrorResponse({ status: 500 })) : of([file('f1')])));
     expect(query('materials-section-error')).not.toBeNull();
@@ -209,37 +222,22 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-file-f1')).not.toBeNull();
   });
 
-  // An expired session still reads as signed in: the optional-auth public route refuses it as it
-  // refuses anyone (400), and the session-gated past route answers 401. Both ask for sign-in.
-  it('asks a viewer whose session has expired to sign in, on either route', async () => {
-    authenticated.set(true);
-    await setup(() => throwError(() => new HttpErrorResponse({ status: 400 })));
-    expect(query('materials-section-sign-in-link')).not.toBeNull();
-    expect(query('materials-section-error')).toBeNull();
-  });
-
+  // An expired session still reads as signed in: the session-gated past route answers 401.
   it('asks for sign-in on a past occurrence whose session-gated route answers 401', async () => {
-    authenticated.set(true);
     loadedViaPastMeetingId.set(true);
     meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
     await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
 
     expect(query('materials-section-sign-in-link')).not.toBeNull();
-  });
-
-  // The public route's 401 is its own upstream call failing, which signing in cannot fix.
-  it("shows an error, not sign-in, for the public route's 401", async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
-
-    expect(query('materials-section-error')).not.toBeNull();
-    expect(query('materials-section-sign-in')).toBeNull();
+    expect(query('materials-section-error')).toBeNull();
   });
 
   it('offers an organizer whose session has expired Sign in, not Add material', async () => {
-    authenticated.set(true);
     viewerRole.set('organizer');
-    await setup(() => throwError(() => new HttpErrorResponse({ status: 400 })));
+    loadedViaPastMeetingId.set(true);
+    timeState.set('ended');
+    meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
+    await setup(() => throwError(() => new HttpErrorResponse({ status: 401 })));
 
     expect(query('materials-section-sign-in-link')).not.toBeNull();
     expect(query('materials-section-add')).toBeNull();
@@ -248,6 +246,8 @@ describe('MeetingMaterialsComponent', () => {
 
   it('keeps the rows it has when a refetch fails', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    loadedViaPastMeetingId.set(true);
+    meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
     let calls = 0;
     await setup(() => (++calls === 1 ? of([file('f1')]) : throwError(() => new HttpErrorResponse({ status: 500 }))));
 
@@ -260,6 +260,7 @@ describe('MeetingMaterialsComponent', () => {
   });
 
   it("reads a past occurrence's own list, and asks an anonymous viewer to sign in without fetching", async () => {
+    authenticated.set(false);
     loadedViaPastMeetingId.set(true);
     meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
     await setup(() => of([file('f1')]));
@@ -276,21 +277,21 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-file-f1')).not.toBeNull();
   });
 
-  it('downloads a file through the public presign, with the password, in a new tab', async () => {
-    password.set('pw');
+  // V1's downloadAttachment: the meeting's presign, opened in a new tab.
+  it("downloads a file through the meeting's presign, in a new tab", async () => {
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
-    meetingService.getPublicMeetingAttachmentDownloadUrl.mockReturnValue(of({ download_url: 'https://storage.example/presigned' }));
+    meetingService.getMeetingAttachmentDownloadUrl.mockReturnValue(of({ download_url: 'https://storage.example/presigned' }));
     await setup(() => of([file('f1')]));
 
     query('materials-file-f1')?.click();
 
-    expect(meetingService.getPublicMeetingAttachmentDownloadUrl).toHaveBeenCalledWith('meeting-1', 'f1', 'pw');
+    expect(meetingService.getMeetingAttachmentDownloadUrl).toHaveBeenCalledWith('meeting-1', 'f1');
     expect(open).toHaveBeenCalledWith('https://storage.example/presigned', '_blank', 'noopener,noreferrer');
   });
 
   it("keeps V1's toast when a download fails", async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    meetingService.getPublicMeetingAttachmentDownloadUrl.mockReturnValue(throwError(() => new Error('boom')));
+    meetingService.getMeetingAttachmentDownloadUrl.mockReturnValue(throwError(() => new Error('boom')));
     await setup(() => of([file('f1')]));
 
     query('materials-file-f1')?.click();
@@ -347,60 +348,17 @@ describe('MeetingMaterialsComponent', () => {
     expect(drawer()?.pastMeetingId()).toBe('meeting-1-1700000000000');
   });
 
-  // The real drawer reports an upcoming meeting's additions as addedMeetingAttachments.
-  it("shows an upcoming meeting's additions the drawer reports, before the index has them", async () => {
-    await setup(() => of([file('keep')]));
-
-    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
-    fixture.detectChanges();
-
-    expect(query('materials-file-new')).not.toBeNull();
-    expect(query('materials-file-keep')).not.toBeNull();
-  });
-
-  // The download route checks a file against the indexed list, so a just-added file cannot download yet.
-  it('holds a just-added file until the list returns it, then lets it download', async () => {
-    let listed = [file('keep')];
-    meetingService.getPublicMeetingAttachmentDownloadUrl.mockReturnValue(of({ download_url: 'https://storage.example/presigned' }));
+  it("downloads a past occurrence's file through that occurrence's presign", async () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
-    await setup(() => of(listed));
+    meetingService.getPastMeetingAttachmentDownloadUrl.mockReturnValue(of({ download_url: 'https://storage.example/presigned' }));
+    loadedViaPastMeetingId.set(true);
+    meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
+    await setup(() => of([file('f1')]));
 
-    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
-    fixture.detectChanges();
+    query('materials-file-f1')?.click();
 
-    const pendingRow = query('materials-file-new') as HTMLButtonElement;
-    expect(pendingRow.disabled).toBe(true);
-    expect(pendingRow.getAttribute('data-pending')).toBe('true');
-    expect(pendingRow.textContent).toContain('Processing…');
-    fixture.componentInstance.download(file('new'));
-    expect(meetingService.getPublicMeetingAttachmentDownloadUrl).not.toHaveBeenCalled();
-
-    listed = [file('keep'), file('new')];
-    fixture.componentInstance.retry();
-    fixture.detectChanges();
-
-    const row = query('materials-file-new') as HTMLButtonElement;
-    expect(row.disabled).toBe(false);
-    expect(row.hasAttribute('data-pending')).toBe(false);
-  });
-
-  // A refetch that keeps failing must not leave a just-added file stuck on Processing.
-  it('releases a just-added file after the pending window even if no refetch succeeds', async () => {
-    vi.useFakeTimers();
-    vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    let calls = 0;
-    await setup(() => (++calls === 1 ? of([file('keep')]) : throwError(() => new HttpErrorResponse({ status: 500 }))));
-
-    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
-    fixture.detectChanges();
-    expect((query('materials-file-new') as HTMLButtonElement).disabled).toBe(true);
-
-    vi.advanceTimersByTime(30_000);
-    fixture.detectChanges();
-
-    expect((query('materials-file-new') as HTMLButtonElement).disabled).toBe(false);
-    expect(query('materials-file-keep')).not.toBeNull();
-    vi.useRealTimers();
+    expect(meetingService.getPastMeetingAttachmentDownloadUrl).toHaveBeenCalledWith('meeting-1-1700000000000', 'f1');
+    expect(meetingService.getMeetingAttachmentDownloadUrl).not.toHaveBeenCalled();
   });
 
   // The section stays mounted across in-app meeting changes: a change's follow-up must not act on the next meeting.
@@ -410,18 +368,23 @@ describe('MeetingMaterialsComponent', () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     viewerRole.set('organizer');
+    loadedViaPastMeetingId.set(true);
+    meeting.set({ id: 'meeting-1', meeting_and_occurrence_id: 'meeting-1-1700000000000', project: {} } as unknown as LoadedMeeting);
     let calls = 0;
     await setup(() => (++calls <= 2 ? throwError(() => new HttpErrorResponse({ status: 500 })) : of([file('new')])));
     expect(query('materials-section-error')).not.toBeNull();
 
-    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [{ ...file('new') }] });
+    fixture.componentInstance.onMaterialsChanged({
+      deletedUids: [],
+      addedAttachments: [{ ...file('new'), meeting_and_occurrence_id: 'meeting-1-1700000000000' }],
+    });
     fixture.detectChanges();
 
     // The immediate retry fails too; the 1s follow-up must still run, not be cancelled by it.
     vi.advanceTimersByTime(1000);
     fixture.detectChanges();
 
-    expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledTimes(3);
+    expect(meetingService.getPastMeetingAttachments).toHaveBeenCalledTimes(3);
     expect(query('materials-file-new')).not.toBeNull();
     vi.useRealTimers();
   });
@@ -429,39 +392,39 @@ describe('MeetingMaterialsComponent', () => {
   it("cancels a change's follow-up refetches when the section moves to another meeting", async () => {
     vi.useFakeTimers();
     await setup(() => of([file('keep')]));
-    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [], addedMeetingAttachments: [] });
+    fixture.componentInstance.onMaterialsChanged({ deletedUids: [], addedAttachments: [] });
     fixture.detectChanges();
 
     meeting.set({ id: 'meeting-2', project: {} } as unknown as LoadedMeeting);
     fixture.detectChanges();
-    meetingService.getPublicMeetingAttachments.mockClear();
+    meetingService.getMeetingAttachments.mockClear();
 
     vi.advanceTimersByTime(30_000);
     fixture.detectChanges();
 
-    expect(meetingService.getPublicMeetingAttachments).not.toHaveBeenCalled();
+    expect(meetingService.getMeetingAttachments).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
   it("applies the drawer's changes at once, then refetches", async () => {
     vi.useFakeTimers();
     await setup(() => of([file('keep'), file('gone')]));
-    meetingService.getPublicMeetingAttachments.mockClear();
+    meetingService.getMeetingAttachments.mockClear();
 
     fixture.componentInstance.onMaterialsChanged({ deletedUids: ['gone'], addedAttachments: [{ ...file('new'), meeting_and_occurrence_id: 'x' }] });
     fixture.detectChanges();
 
     expect(query('materials-file-gone')).toBeNull();
     expect(query('materials-file-new')).not.toBeNull();
-    expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledTimes(1);
+    expect(meetingService.getMeetingAttachments).toHaveBeenCalledTimes(1);
 
     vi.advanceTimersByTime(1000);
     fixture.detectChanges();
-    expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledTimes(2);
+    expect(meetingService.getMeetingAttachments).toHaveBeenCalledTimes(2);
 
     vi.advanceTimersByTime(14000);
     fixture.detectChanges();
-    expect(meetingService.getPublicMeetingAttachments).toHaveBeenCalledTimes(4);
+    expect(meetingService.getMeetingAttachments).toHaveBeenCalledTimes(4);
     vi.useRealTimers();
   });
 });

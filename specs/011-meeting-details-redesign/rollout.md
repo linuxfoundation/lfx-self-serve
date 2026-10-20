@@ -108,7 +108,7 @@ The release does change what V1 viewers run, even with targeting empty:
 
 - `/meetings/:id` routes to the gate, which renders V1 (V2-01).
 - V1's files moved to `meeting-join-v1/`, byte-identical (V2-02).
-- Every BFF change in the epic (E3-03 and any other; E4-02 and E4-04 were withdrawn) is live for V1 too, because no
+- Every BFF change in the epic (any that remain; E3-03, E4-02 and E4-04 were withdrawn) is live for V1 too, because no
   endpoint is flag-gated (R02).
 
 So the first response is a targeted revert of the offending change, in a normal PR to `main`. If the

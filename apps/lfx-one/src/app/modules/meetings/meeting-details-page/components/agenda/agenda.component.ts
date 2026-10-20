@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject } from '@angular/core';
-import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MEETING_AGENDA_COLLAPSED_HEIGHT_PX } from '@lfx-one/shared/constants';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingV2ExpandableTextComponent } from '../v2-expandable-text/v2-expandable-text.component';
 
 /**
  * The V2 agenda section, first in the content column (E3-01, #3250, FR-030).
@@ -19,7 +19,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  */
 @Component({
   selector: 'lfx-meeting-agenda',
-  imports: [ExpandableTextComponent, LinkifyPipe],
+  imports: [MeetingV2ExpandableTextComponent, LinkifyPipe],
   templateUrl: './agenda.component.html',
 })
 export class MeetingAgendaComponent {

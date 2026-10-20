@@ -27,14 +27,14 @@ const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } =
 
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/utils', async () => ({
+  // The real masker: the registrant lookup's log must never carry the address itself.
+  maskEmailForLogs: (await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils')).maskEmailForLogs,
   // The real predicate, not a double: these tests are the only place the server-side lock is
   // exercised end to end, and a hand-written copy would stop tracking its normalization — the
   // casing, whitespace and string-coercion rules are the whole point of the gate. It is loaded
   // from its own module rather than the mocked barrel because the barrel reaches @angular/forms
   // and @angular/common/http, which this suite mocks the barrel to avoid in the first place.
   ...(await vi.importActual<typeof import('@lfx-one/shared/utils/meeting-attendee-lock.utils')>('@lfx-one/shared/utils/meeting-attendee-lock.utils')),
-  // The real masker: the registrant lookup's log must never carry the address itself.
-  maskEmailForLogs: (await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils')).maskEmailForLogs,
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
   // Intentionally a light behavioral double, not a frozen copy meant to track the real predicate:
@@ -201,80 +201,6 @@ describe('MeetingService.resolveCreatedByForMeetings', () => {
     // First chunk resolved; second chunk failed and was skipped rather than throwing.
     expect(result.size).toBe(50);
     expect(result.has('m50')).toBe(false);
-  });
-});
-
-describe('MeetingService public attachments (E3-03)', () => {
-  let service: MeetingService;
-
-  beforeEach(() => {
-    proxyRequest.mockReset();
-    service = new MeetingService();
-  });
-
-  // An allowlist: who made each attachment, the raw storage URL and any field added upstream later
-  // stay out of what the public route returns.
-  it('projects attachments onto the public allowlist, with the given identity', async () => {
-    proxyRequest.mockResolvedValueOnce({
-      resources: [
-        {
-          data: {
-            uid: 'att-1',
-            meeting_id: 'meeting-abc',
-            type: 'file',
-            name: 'Slides',
-            file_name: 'slides.pdf',
-            file_size: 1024,
-            file_url: 'https://storage.example/raw/slides.pdf',
-            created_at: '2026-01-01T00:00:00Z',
-            created_by: { username: 'organizer', email: 'organizer@example.com', name: 'Org Anizer' },
-            updated_by: { username: 'organizer', email: 'organizer@example.com', name: 'Org Anizer' },
-            future_upstream_field: 'not for the public',
-          },
-        },
-      ],
-    });
-
-    const [attachment] = await service.getPublicMeetingAttachments(req, 'meeting-abc', { bearerToken: 'm2m-token' });
-
-    expect(attachment).toMatchObject({ uid: 'att-1', name: 'Slides', file_name: 'slides.pdf', file_size: 1024 });
-    expect(attachment).not.toHaveProperty('file_url');
-    expect(attachment).not.toHaveProperty('created_by');
-    expect(attachment).not.toHaveProperty('updated_by');
-    expect(attachment).not.toHaveProperty('future_upstream_field');
-    expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
-  });
-
-  // The download route's ownership check needs the whole set, not the first page of it.
-  it('reads every page of attachments, each with the given identity', async () => {
-    proxyRequest
-      .mockResolvedValueOnce({ resources: [{ data: { uid: 'att-1', type: 'file', name: 'a' } }], page_token: 'next' })
-      .mockResolvedValueOnce({ resources: [{ data: { uid: 'att-2', type: 'link', name: 'b' } }] });
-
-    const attachments = await service.getMeetingAttachments(req, 'meeting-abc', { bearerToken: 'm2m-token' });
-
-    expect(attachments.map((attachment) => attachment.uid)).toEqual(['att-1', 'att-2']);
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
-    expect(proxyRequest.mock.calls[1][4]).toMatchObject({ page_token: 'next' });
-    expect(proxyRequest.mock.calls[1][7]).toEqual({ bearerToken: 'm2m-token' });
-  });
-
-  it('presigns a download with the given identity', async () => {
-    proxyRequest.mockResolvedValueOnce({ download_url: 'https://storage.example/presigned' });
-
-    await service.getMeetingAttachmentDownloadUrl(req, 'meeting-abc', 'att-1', { bearerToken: 'm2m-token' });
-
-    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-abc/attachments/att-1/download');
-    expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
-  });
-
-  it('reads a meeting with the given identity rather than the request token', async () => {
-    proxyRequest.mockResolvedValueOnce({ project_uid: 'p1' });
-
-    await service.getMeetingById(req, 'meeting-abc', 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
-
-    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/meeting-abc');
-    expect(proxyRequest.mock.calls[0][7]).toEqual({ bearerToken: 'm2m-token' });
   });
 });
 
@@ -680,18 +606,6 @@ describe('MeetingService.getMeetingRegistrantsByEmail', () => {
 
     const [, , , , query] = proxyRequest.mock.calls[0];
     expect(query.page_size).toBe(1000);
-  });
-
-  // Verified PII: the debug log carries a masked address and no filters that would repeat it.
-  it('never logs the email address it looks up', async () => {
-    vi.mocked(logger.debug).mockClear();
-    proxyRequest.mockResolvedValueOnce({ resources: [] });
-
-    await service.getMeetingRegistrantsByEmail(req, 'meeting-1', 'User@Example.com');
-
-    const logged = JSON.stringify(vi.mocked(logger.debug).mock.calls.filter((call) => call[1] === 'get_meeting_registrants_by_email'));
-    expect(logged).not.toContain('user@example.com');
-    expect(logged).toContain('example.com');
   });
 });
 
