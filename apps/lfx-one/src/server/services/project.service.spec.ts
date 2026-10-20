@@ -2507,7 +2507,8 @@ describe('ProjectService — getHealthOverviewKpis', () => {
                 MEASURED_GROUPS__YTD: 8,
                 DORMANT_GROUPS__YTD: 2,
                 MEASURED_GROUPS__COMPLETED_YEAR: 5,
-                DORMANT_GROUPS__COMPLETED_YEAR: 0,
+                // COUNT_IF with no match can come back NULL; measured groups make that zero dormant.
+                DORMANT_GROUPS__COMPLETED_YEAR: null,
               },
             ],
           }

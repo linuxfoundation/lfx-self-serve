@@ -8607,7 +8607,8 @@ export class ProjectService {
             range,
             {
               totalGroups: ProjectService.toNullableNumber(row['TOTAL_GROUPS']),
-              dormantGroups: ProjectService.toNullableNumber(row[`DORMANT_GROUPS__${range}`]),
+              // Snowflake's COUNT_IF can return NULL when nothing matches; with measured groups that means none.
+              dormantGroups: ProjectService.toNullableNumber(row[`DORMANT_GROUPS__${range}`]) ?? 0,
             },
           ];
         })
