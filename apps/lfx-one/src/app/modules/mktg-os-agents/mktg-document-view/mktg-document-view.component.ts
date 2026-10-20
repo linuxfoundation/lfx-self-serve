@@ -17,12 +17,15 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
+  MKTG_KIT_FAMILIES,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
   MktgBoilerplatesAsset,
   MktgFaqAsset,
   MktgFrameworkAsset,
+  MktgKitAsset,
+  MktgKitFamily,
   MktgRevisionResponse,
   MktgRevisionRow,
   MktgRevisionSummary,
@@ -140,6 +143,7 @@ export class MktgDocumentViewComponent {
   protected readonly title: Signal<string> = this.initTitle();
   protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
+  protected readonly kitBreadcrumb: Signal<{ family: MktgKitFamily; asset: MktgKitAsset; living: boolean } | null> = this.initKitBreadcrumb();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -205,6 +209,7 @@ export class MktgDocumentViewComponent {
   protected readonly fullWidth = computed(() => this.asset() !== null || this.boilerplates() !== null || this.faq() !== null || this.brandKit() !== null);
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
+  protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
   protected readonly hasAssetView = computed(() => Boolean(this.asset() || this.brandKit() || this.boilerplates() || this.faq()));
   protected readonly hasAssetMetadata = computed(() => this.hasAssetView() || this.view()?.revision.format === 'json');
   protected readonly header = computed(() => {
@@ -557,6 +562,15 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       return view?.type.agentKey === LINKEDIN_POST_INTAKE.agentId ? readLinkedinDocumentContent(view.linkedinPost, true) : null;
+    });
+  }
+
+  private initKitBreadcrumb(): Signal<{ family: MktgKitFamily; asset: MktgKitAsset; living: boolean } | null> {
+    return computed(() => {
+      const type = this.view()?.type;
+      const family = MKTG_KIT_FAMILIES.find((candidate) => candidate.assets.some((asset) => asset.agentKey === type?.agentKey));
+      const asset = family?.assets.find((candidate) => candidate.agentKey === type?.agentKey);
+      return type && family && asset ? { family, asset, living: type.kind === 'living' } : null;
     });
   }
 

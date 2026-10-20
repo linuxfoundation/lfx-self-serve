@@ -464,7 +464,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-restore-current')).toBeNull();
     expect(query('mktg-document-view-history-bar')).toBeNull();
     expect(query('mktg-document-view-current-since-2')).toBeNull();
-    expect(query('mktg-document-view-back-link')?.getAttribute('href')).toMatch(/^\/documents\?/);
+    expect(query('mktg-document-crumb-kit')?.getAttribute('href')).toBe('/?project=testorbit');
   });
 
   it('requests an explicit current pointer even when its revision is missing from the summaries', async () => {
@@ -502,9 +502,12 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
   });
 
-  it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps the Documents back link in its %s host', async (host) => {
-    await render(`${host}/documents/brand-kit/living`);
-    expect(query('mktg-document-view-back-link')?.getAttribute('href')).toBe(`${host}/documents?type=brand-kit`);
+  it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps an ungrouped document back link in its %s host', async (host) => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'icp');
+    if (!type) throw new Error('Synthetic ungrouped document type missing');
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type }));
+    await render(`${host}/documents/icp/living`);
+    expect(query('mktg-document-view-back-link')?.getAttribute('href')).toBe(`${host}/documents?project=testorbit&type=icp`);
   });
 
   it.each([
@@ -541,6 +544,41 @@ describe('MktgDocumentViewComponent', () => {
     expect(since).toMatch(/^Current since 14 Oct 2026, \d{2}:\d{2} · /);
     expect(since).toContain(name || 'name unavailable');
     expect(query('mktg-document-view-current-since-1')).toBeNull();
+  });
+
+  it.each([
+    ['brand-kit', 'Positioning & brand', 'positioning-brand', 'Brand kit'],
+    ['linkedin-post', 'Social & community', 'social-community', null],
+    ['icp', null, null, null],
+  ])('maps %s to living crumbs, a run family back, or Documents', async (key, familyName, familyId, assetLabel) => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
+    if (!type) throw new Error('Synthetic document type missing');
+    // An ungrouped run is synthetic: every current run type belongs to a family.
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: { ...type, kind: familyName === null ? 'run' : type.kind } }));
+    await render(`/project/mktg-os-agents/documents/${key}/living?project=proj-1&revision=${LATEST.id}`);
+    expect(query('mktg-document-view-back-link') !== null).toBe(familyName === null);
+    if (familyName) {
+      expect(query('mktg-document-crumb-kit')?.textContent).toContain('TestOrbit kit');
+      expect(query('mktg-document-crumb-kit')?.getAttribute('href')).toBe('/project/mktg-os-agents?project=testorbit');
+      expect(query('mktg-document-crumb-family')?.textContent).toBe(familyName);
+      expect(query('mktg-document-crumb-family')?.getAttribute('href')).toBe(`/project/mktg-os-agents/families/${familyId}?project=testorbit`);
+      expect(harness.routeNativeElement?.querySelector('nav [aria-current="page"]')?.textContent ?? null).toBe(assetLabel);
+    } else expect(query('mktg-document-view-back-link')?.textContent).toContain('Documents');
+    expect(query('mktg-document-view-title')).not.toBeNull();
+    expect(query('mktg-document-view-revision-chip')).not.toBeNull();
+  });
+
+  it('keeps both crumbs on the current context without router navigation, clearing document-only params', async () => {
+    await render(`/project/mktg-os-agents/documents/brand-kit/living?project=stale&type=brand-kit&revision=${LATEST.id}`);
+    activeContext.set({ ...PROJECT, uid: 'next', slug: 'current' });
+    await settle();
+    expect(TestBed.inject(Router).url).toContain('project=stale');
+    for (const id of ['mktg-document-crumb-kit', 'mktg-document-crumb-family']) {
+      const params = new URL(query(id)?.getAttribute('href') ?? '', 'https://synthetic.example').searchParams;
+      expect(params.get('project')).toBe('current');
+      expect(params.has('type')).toBe(false);
+      expect(params.has('revision')).toBe(false);
+    }
   });
 
   it('offers the open non-current revision in a subtle bar with a link back to current', async () => {
