@@ -56,3 +56,12 @@ export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 
 /** Pre-send checks failed before bulk_resend was attempted; retrying cannot duplicate this attempt. */
 export const VOTE_REMINDER_PRECHECK_FAILED = 'VOTE_REMINDER_PRECHECK_FAILED';
+
+/** Code-point cap on the vote title in the mailing-list reminder draft (#3658), so a long title can't crowd the body. */
+export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_CHARS = 120;
+
+/** Encoded-length cap for the same title: it appears in both subject and body, and CJK/emoji expand ~3–9× under `encodeURIComponent`. */
+export const VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS = 400;
+
+/** Upper bound for the reminder `mailto:` href; the caller reports an error when the draft exceeds it. */
+export const VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS = 1900;

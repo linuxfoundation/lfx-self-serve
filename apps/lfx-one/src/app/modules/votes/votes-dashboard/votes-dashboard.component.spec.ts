@@ -10,6 +10,7 @@ import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
 import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
+import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
@@ -109,6 +110,7 @@ describe('VotesDashboardComponent personal summary', () => {
         { provide: PersonaService, useValue: { personaLoaded: signal(true), hasBoardRole: signal(true), hasProjectRole: signal(true) } },
         { provide: ProjectContextService, useValue: { activeContext, canWrite } },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
       ],
     });
     // Keep the real dashboard, summary and table; unrelated drawers never participate in these scenarios.
