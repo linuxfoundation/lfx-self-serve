@@ -117,27 +117,6 @@ describe('MeetingRecordingComponent', () => {
     expect(query('tools-recording-poster')?.getAttribute('aria-hidden')).toBe('true');
   });
 
-  // E4-02: the BFF measures the linked session; the still shows it, and no length when it could not.
-  it("shows the recording's length on the still, and none when it was not measured", async () => {
-    const measured = { ...recording([{ share_url: 'https://zoom.example/r', total_size: 1 }]), duration_seconds: 58 * 60 + 24 };
-    await setup(
-      () => of(measured),
-      () => of(transcript(false))
-    );
-
-    expect(query('tools-recording-duration')?.textContent?.trim()).toBe('58:24');
-    expect(query('tools-recording-link')?.querySelector('a')?.getAttribute('aria-label')).toBe('Watch recording, 58 minutes 24 seconds (opens in a new tab)');
-  });
-
-  it('shows no length when the BFF could not measure it', async () => {
-    await setup(
-      () => of({ ...recording([{ share_url: 'https://zoom.example/r', total_size: 1 }]), duration_seconds: null }),
-      () => of(transcript(false))
-    );
-
-    expect(query('tools-recording-duration')).toBeNull();
-  });
-
   it("opens V1's transcript modal for the occurrence", async () => {
     await setup(
       () => of(recording([])),

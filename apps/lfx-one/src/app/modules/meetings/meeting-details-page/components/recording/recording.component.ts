@@ -11,8 +11,6 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MEETING_AGENDA_COLLAPSED_HEIGHT_PX, PAST_MEETING_SUMMARY_APPROVAL_LABELS } from '@lfx-one/shared/constants';
 import { MeetingArtifactState, MeetingRecordingSectionState, MeetingSummaryArtifactState } from '@lfx-one/shared/interfaces';
 import {
-  formatRecordingDuration,
-  formatRecordingDurationSpoken,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingSummaryApprovalState,
@@ -41,8 +39,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  *
  * The artifact routes need a session and an occurrence record, so an anonymous viewer is asked to
  * sign in (until the public artifact routes, E4-04), and an ended meeting opened by its series id,
- * which has no occurrence record yet, says its recording appears once it is ready. The recording's
- * length (E4-02) shows on the still when the BFF could measure it.
+ * which has no occurrence record yet, says its recording appears once it is ready.
  *
  * The AI summary (E4-03) sits under the actions, rendered from its markdown (no new parser) and
  * collapsed past the agenda's height, with Read full summary opening V1's summary modal. An
@@ -160,10 +157,7 @@ export class MeetingRecordingComponent {
           const recording$ = this.meetingService.getPastMeetingRecording(req.id).pipe(
             map((recording): MeetingArtifactState => {
               const url = toSafeExternalHref(getLargestSessionShareUrl(recording));
-              // The BFF measures the linked session (E4-02); no length is shown rather than a guess.
-              const duration = formatRecordingDuration(recording.duration_seconds) ?? undefined;
-              const durationLabel = formatRecordingDurationSpoken(recording.duration_seconds) ?? undefined;
-              return url ? { status: 'available', url, duration, durationLabel } : { status: 'none' };
+              return url ? { status: 'available', url } : { status: 'none' };
             }),
             catchError((error: unknown) => of(this.artifactFailure(error, 'recording')))
           );

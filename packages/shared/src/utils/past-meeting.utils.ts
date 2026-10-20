@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  MEETING_RECORDING_MEDIA_FILE_TYPES,
-  MEETING_RECORDING_SESSION_TOLERANCE_MS,
   PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS,
   PAST_MEETING_IDENTITY_TIER_LABELS,
   PAST_MEETING_IDENTITY_UNKNOWN_LABEL,
@@ -40,130 +38,14 @@ export function getPastMeetingStartTimeMs(meeting: Pick<PastMeeting, 'scheduled_
   return firstValidTimestampMs(meeting.scheduled_start_time, meeting.start_time);
 }
 
-/**
- * The largest recording session (by total_size), the canonical one: the one Watch recording opens and
- * the one its length is measured on. The first wins a tie.
- */
-export function getLargestRecordingSession(recording: PastMeetingRecording | null | undefined): RecordingSession | null {
-  if (!recording?.sessions?.length) {
-    return null;
-  }
-  return recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
-}
-
 // Largest recording session (by total_size) is canonical; a recording "exists" only if that
 // session has a shareable URL. Single source of truth for recording availability.
 export function getLargestSessionShareUrl(recording: PastMeetingRecording | null): string | null {
-  return getLargestRecordingSession(recording)?.share_url || null;
-}
-
-/**
- * The length in seconds of the session `getLargestSessionShareUrl` opens (E4-02, #3256): the total
- * time its media files (MP4 / M4A) cover.
- * @description Sessions carry a start but no end, and files carry no session id, so a file belongs to
- * the session whose start is the latest one at or before the file's own start (allowing
- * `MEETING_RECORDING_SESSION_TOLERANCE_MS`). A multi-session recording therefore measures only the
- * linked (largest) session, never the sum of all of them. Within it, the files' intervals are merged
- * and summed: views of the same span (speaker, gallery, audio) count once, and a gap where the host
- * stopped and restarted recording does not count. `null` rather than a guess when that session has no
- * media file with valid times, when any session start cannot be read, or when the total is zero.
- */
-export function getRecordingDurationSeconds(recording: PastMeetingRecording | null | undefined): number | null {
-  const largest = getLargestRecordingSession(recording);
-  if (!recording || !largest) {
+  if (!recording?.sessions?.length) {
     return null;
   }
-  // firstValidTimestampMs, not Date.parse: the upstream converter emits Go's zero time
-  // (0001-01-01T00:00:00Z) for a timestamp it could not read, which Date.parse accepts.
-  const sessionStarts = recording.sessions.map((session) => firstValidTimestampMs(session.start_time));
-  if (sessionStarts.some((start) => start === null)) {
-    return null;
-  }
-  const starts = sessionStarts as number[];
-  const largestIndex = recording.sessions.indexOf(largest);
-
-  const intervals: [number, number][] = [];
-  for (const file of recording.recording_files ?? []) {
-    if (!MEETING_RECORDING_MEDIA_FILE_TYPES.includes((file.file_type ?? '').toUpperCase())) {
-      continue;
-    }
-    const start = firstValidTimestampMs(file.recording_start);
-    const end = firstValidTimestampMs(file.recording_end);
-    if (start === null || end === null || end <= start || sessionIndexOf(starts, start) !== largestIndex) {
-      continue;
-    }
-    intervals.push([start, end]);
-  }
-
-  intervals.sort((a, b) => a[0] - b[0]);
-  let totalMs = 0;
-  let current: [number, number] | null = null;
-  for (const [start, end] of intervals) {
-    if (current && start <= current[1]) {
-      current[1] = Math.max(current[1], end);
-    } else {
-      if (current) {
-        totalMs += current[1] - current[0];
-      }
-      current = [start, end];
-    }
-  }
-  if (current) {
-    totalMs += current[1] - current[0];
-  }
-  const seconds = Math.round(totalMs / 1000);
-  return seconds > 0 ? seconds : null;
-}
-
-/**
- * Which session a file starting at `fileStart` belongs to, by index into `sessionStarts`: the session
- * whose start is nearest to it, among those that started no later than
- * `MEETING_RECORDING_SESSION_TOLERANCE_MS` after it. A file usually opens at or just after its
- * session's start, sometimes a moment before (the two come from different sources), so the nearest
- * start wins either way, and sessions starting close together each keep their own files. `-1` when
- * no session qualifies.
- */
-function sessionIndexOf(sessionStarts: number[], fileStart: number): number {
-  let index = -1;
-  sessionStarts.forEach((start, i) => {
-    if (start - fileStart > MEETING_RECORDING_SESSION_TOLERANCE_MS) {
-      return;
-    }
-    if (index === -1 || Math.abs(start - fileStart) < Math.abs(sessionStarts[index] - fileStart)) {
-      index = i;
-    }
-  });
-  return index;
-}
-
-/** A recording length as the prototype shows it: `m:ss` under an hour, `h:mm:ss` from an hour. */
-export function formatRecordingDuration(seconds: number | null | undefined): string | null {
-  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
-    return null;
-  }
-  const total = Math.round(seconds);
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const secs = String(total % 60).padStart(2, '0');
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`;
-}
-
-/**
- * A recording length for a screen reader ("58 minutes 24 seconds"), which can read `58:24` as a time
- * of day. Zero parts are left out; `null` like `formatRecordingDuration`.
- */
-export function formatRecordingDurationSpoken(seconds: number | null | undefined): string | null {
-  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
-    return null;
-  }
-  const total = Math.round(seconds);
-  const parts: [number, string][] = [
-    [Math.floor(total / 3600), 'hour'],
-    [Math.floor((total % 3600) / 60), 'minute'],
-    [total % 60, 'second'],
-  ];
-  const spoken = parts.filter(([value]) => value > 0).map(([value, unit]) => `${value} ${unit}${value === 1 ? '' : 's'}`);
-  return spoken.length ? spoken.join(' ') : '0 seconds';
+  const largest = recording.sessions.reduce((a, b) => (b.total_size > a.total_size ? b : a));
+  return largest.share_url || null;
 }
 
 // Past-meeting sub-resources are keyed by meeting_and_occurrence_id; project-scoped lists may

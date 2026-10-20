@@ -38,13 +38,6 @@
               class="flex h-[60px] w-[60px] items-center justify-center rounded-full border-[1.5px] border-[var(--md-video-still-disc-border)] bg-[var(--md-video-still-disc)] backdrop-blur-sm">
               <i class="fa-solid fa-play text-[22px] text-[var(--md-video-still-glyph)]"></i>
             </span>
-            @if (recording.duration) {
-              <span
-                class="absolute bottom-[12px] left-[14px] rounded-[6px] bg-[var(--md-video-still-badge)] px-[9px] py-[3px] text-[12px] font-semibold tabular-nums text-[var(--md-video-still-ink)]"
-                data-testid="tools-recording-duration"
-                >{{ recording.duration }}</span
-              >
-            }
           </div>
         }
         <div class="flex flex-wrap items-center gap-[10px] px-[18px] py-[16px]">
@@ -52,9 +45,7 @@
             @case ('available') {
               <lfx-button
                 label="Watch recording"
-                [ariaLabel]="
-                  recording.durationLabel ? 'Watch recording, ' + recording.durationLabel + ' (opens in a new tab)' : 'Watch recording (opens in a new tab)'
-                "
+                ariaLabel="Watch recording (opens in a new tab)"
                 icon="fa-light fa-play"
                 [href]="recording.url"
                 target="_blank"

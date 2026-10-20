@@ -1292,16 +1292,6 @@ export const MEETING_MATERIALS_REFETCH_DELAYS_MS: readonly number[] = [1000, 500
  */
 export const MEETING_MATERIALS_PENDING_MAX_MS = 30_000;
 
-/** Recording file types that carry a meeting's media, as opposed to chat, captions or transcripts (E4-02). */
-export const MEETING_RECORDING_MEDIA_FILE_TYPES: readonly string[] = ['MP4', 'M4A'];
-
-/**
- * How far before a recording session's stored start one of its files may begin and still belong to it
- * (E4-02): the session start (the Zoom instance) and the file's own start come from different sources,
- * at second precision, so a file can open a moment earlier.
- */
-export const MEETING_RECORDING_SESSION_TOLERANCE_MS = 60_000;
-
 /** What each summary approval state reads as (E4-03); `not-required` shows no status. */
 export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryApprovalState, string | null> = {
   approved: 'Approved',

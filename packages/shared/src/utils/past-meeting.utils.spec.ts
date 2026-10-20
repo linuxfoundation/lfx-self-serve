@@ -3,15 +3,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingFile, RecordingSession } from '../interfaces';
+import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingSession } from '../interfaces';
 import {
   filterPastMeetingParticipants,
-  formatRecordingDuration,
-  formatRecordingDurationSpoken,
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
-  getRecordingDurationSeconds,
   isPastMeetingCalendarRow,
   countPastMeetingAttendance,
   filterPublicPastMeetingRoster,
@@ -203,15 +200,15 @@ function session(partial: Partial<RecordingSession>): RecordingSession {
   };
 }
 
-/** Builds a PastMeetingRecording fixture around a given set of sessions (and, optionally, files). */
-function recording(sessions: RecordingSession[], files: RecordingFile[] = []): PastMeetingRecording {
+/** Builds a PastMeetingRecording fixture around a given set of sessions. */
+function recording(sessions: RecordingSession[]): PastMeetingRecording {
   return {
     uid: 'rec-1',
     past_meeting_id: 'past-1',
     platform: 'Zoom',
     platform_meeting_id: '123',
     recording_count: sessions.length,
-    recording_files: files,
+    recording_files: [],
     sessions,
     total_size: sessions.reduce((sum, s) => sum + s.total_size, 0),
     created_at: '2024-01-01T00:00:00Z',
@@ -281,115 +278,6 @@ describe('getLargestSessionShareUrl', () => {
   });
 });
 
-describe('getRecordingDurationSeconds', () => {
-  const mediaFile = (type: string, start: string, end: string): RecordingFile => ({
-    id: `${type}-${start}`,
-    download_url: '',
-    play_url: '',
-    file_size: 1,
-    file_type: type,
-    recording_type: 'shared_screen_with_speaker_view',
-    recording_start: start,
-    recording_end: end,
-    status: 'completed',
-    platform_meeting_id: '1',
-  });
-  const twoSessions = (largestFirst: boolean): RecordingSession[] => [
-    session({ start_time: '2026-07-16T09:00:00Z', total_size: largestFirst ? 900 : 100, uuid: 's1' }),
-    session({ start_time: '2026-07-16T10:00:00Z', total_size: largestFirst ? 100 : 900, uuid: 's2' }),
-  ];
-  const files = [
-    mediaFile('MP4', '2026-07-16T09:00:05Z', '2026-07-16T09:20:05Z'),
-    mediaFile('MP4', '2026-07-16T10:00:10Z', '2026-07-16T10:58:34Z'),
-    mediaFile('M4A', '2026-07-16T10:00:00Z', '2026-07-16T10:58:24Z'),
-    mediaFile('CHAT', '2026-07-16T10:00:00Z', '2026-07-16T12:00:00Z'),
-    mediaFile('CC', '2026-07-16T10:00:00Z', '2026-07-16T12:00:00Z'),
-  ];
-
-  it("measures only the largest session's media files, overlapping views counted once", () => {
-    // 10:00:00 (M4A) to 10:58:34 (MP4): chat, captions and the first session's file are left out.
-    expect(getRecordingDurationSeconds(recording(twoSessions(false), files))).toBe(58 * 60 + 34);
-  });
-
-  it('measures the first session when it is the largest, ignoring the later one', () => {
-    expect(getRecordingDurationSeconds(recording(twoSessions(true), files))).toBe(20 * 60);
-  });
-
-  // The host stopped and restarted recording: the gap is not part of what plays.
-  it('does not count the gap between stopped and restarted recording', () => {
-    const restarted = [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T10:20:00Z'), mediaFile('MP4', '2026-07-16T10:40:00Z', '2026-07-16T11:00:00Z')];
-    expect(getRecordingDurationSeconds(recording([session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })], restarted))).toBe(40 * 60);
-  });
-
-  it("keeps a file that opens a moment before its session's stored start", () => {
-    const early = [mediaFile('MP4', '2026-07-16T09:59:59Z', '2026-07-16T10:30:00Z')];
-    expect(getRecordingDurationSeconds(recording([session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })], early))).toBe(30 * 60 + 1);
-  });
-
-  // Two sessions starting less than the tolerance apart: each keeps its own files.
-  it('keeps close-together sessions apart', () => {
-    const close = [
-      session({ start_time: '2026-07-16T10:00:00Z', total_size: 100, uuid: 'a' }),
-      session({ start_time: '2026-07-16T10:00:30Z', total_size: 900, uuid: 'b' }),
-    ];
-    const closeFiles = [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T10:00:20Z'), mediaFile('MP4', '2026-07-16T10:00:30Z', '2026-07-16T10:30:30Z')];
-    expect(getRecordingDurationSeconds(recording(close, closeFiles))).toBe(30 * 60);
-  });
-
-  // A later session's file that opens a moment before that session's stored start is still its own.
-  it("credits a later session's early-opening file to that session, not the earlier one", () => {
-    const sessions = [
-      session({ start_time: '2026-07-16T09:00:00Z', total_size: 100, uuid: 'a' }),
-      session({ start_time: '2026-07-16T10:00:00Z', total_size: 900, uuid: 'b' }),
-    ];
-    const early = [mediaFile('MP4', '2026-07-16T09:00:00Z', '2026-07-16T09:20:00Z'), mediaFile('MP4', '2026-07-16T09:59:58Z', '2026-07-16T10:30:00Z')];
-    expect(getRecordingDurationSeconds(recording(sessions, early))).toBe(30 * 60 + 2);
-  });
-
-  it('returns null rather than guessing', () => {
-    const one = [session({ start_time: '2026-07-16T10:00:00Z', total_size: 1 })];
-    // No media file, only chat.
-    expect(getRecordingDurationSeconds(recording(one, [mediaFile('CHAT', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
-    // A media file without a readable start.
-    expect(getRecordingDurationSeconds(recording(one, [mediaFile('MP4', 'not a time', '2026-07-16T11:00:00Z')]))).toBeNull();
-    // A zero-length file.
-    expect(getRecordingDurationSeconds(recording(one, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T10:00:00Z')]))).toBeNull();
-    // Another session's start is unreadable, so which files are the largest session's is unknown.
-    const unreadable = [session({ start_time: '2026-07-16T10:00:00Z', total_size: 9 }), session({ start_time: 'garbage', total_size: 1, uuid: 'x' })];
-    expect(getRecordingDurationSeconds(recording(unreadable, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
-    // Go's zero time, which the upstream converter emits for a time it could not read.
-    const zero = [session({ start_time: '0001-01-01T00:00:00Z', total_size: 9 })];
-    expect(getRecordingDurationSeconds(recording(zero, [mediaFile('MP4', '2026-07-16T10:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
-    expect(getRecordingDurationSeconds(recording(one, [mediaFile('MP4', '0001-01-01T00:00:00Z', '2026-07-16T11:00:00Z')]))).toBeNull();
-    expect(getRecordingDurationSeconds(recording([], []))).toBeNull();
-    expect(getRecordingDurationSeconds(null)).toBeNull();
-  });
-});
-
-describe('formatRecordingDurationSpoken', () => {
-  it('spells the length out for a screen reader', () => {
-    expect(formatRecordingDurationSpoken(58 * 60 + 24)).toBe('58 minutes 24 seconds');
-    expect(formatRecordingDurationSpoken(3600 + 60 + 1)).toBe('1 hour 1 minute 1 second');
-    expect(formatRecordingDurationSpoken(7200)).toBe('2 hours');
-    expect(formatRecordingDurationSpoken(0)).toBe('0 seconds');
-    expect(formatRecordingDurationSpoken(null)).toBeNull();
-  });
-});
-
-describe('formatRecordingDuration', () => {
-  it('reads m:ss under an hour and h:mm:ss from an hour', () => {
-    expect(formatRecordingDuration(58 * 60 + 24)).toBe('58:24');
-    expect(formatRecordingDuration(65)).toBe('1:05');
-    expect(formatRecordingDuration(3600 + 2 * 60 + 3)).toBe('1:02:03');
-    expect(formatRecordingDuration(0)).toBe('0:00');
-  });
-
-  it('returns null for a missing or invalid length', () => {
-    expect(formatRecordingDuration(null)).toBeNull();
-    expect(formatRecordingDuration(undefined)).toBeNull();
-    expect(formatRecordingDuration(-1)).toBeNull();
-  });
-});
 describe('past-meeting attendance figures (E4-05)', () => {
   it('counts every record, the attended and the invited', () => {
     expect(
