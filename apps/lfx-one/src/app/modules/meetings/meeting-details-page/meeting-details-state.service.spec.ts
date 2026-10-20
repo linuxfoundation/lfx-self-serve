@@ -647,6 +647,34 @@ describe('MeetingDetailsStateService', () => {
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
     });
 
+    it("shows none of the previous series' dates while the next series' timeline is still loading", async () => {
+      getPublicMeetingOccurrences.mockReturnValue(of({ past: [], future: [{ occurrence_id: '9', start_time: third.toISOString(), duration: 60 }] }));
+      const state = await load(series());
+      expect(state.seriesOccurrences().future.length).toBe(1);
+
+      getPublicMeetingOccurrences.mockReturnValue(new Subject());
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await settle();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenLastCalledWith('meeting-2', null);
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+    });
+
+    it('reads a series again after the page passed through a one-off meeting', async () => {
+      await load(series());
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'one-off', uid: 'one-off', recurrence: null } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'one-off' }));
+      await settle();
+      getPublicMeeting.mockReturnValue(of({ meeting: series(), project }));
+      paramMap$.next(convertToParamMap({ id: MEETING_ID }));
+      await settle();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
+    });
+
     it("never reads a one-off meeting's series", async () => {
       await load(series({ recurrence: null }));
 
