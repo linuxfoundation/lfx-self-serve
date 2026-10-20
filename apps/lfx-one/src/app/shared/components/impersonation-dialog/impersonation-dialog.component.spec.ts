@@ -91,6 +91,7 @@ describe('ImpersonationDialogComponent', () => {
   it('renders the name search ahead of the exact email or username field', () => {
     const search = fixture.nativeElement.querySelector('lfx-user-search');
     expect(search).not.toBeNull();
+    expect(search.querySelector('input')?.getAttribute('placeholder')).toBe('e.g. John Doe');
     expect(fixture.nativeElement.querySelector('[data-test="impersonation-target-input"]')).not.toBeNull();
   });
 
@@ -122,6 +123,36 @@ describe('ImpersonationDialogComponent', () => {
     nameSearch().onUserSelected({ value: user } as unknown as AutoCompleteSelectEvent);
   }
 
+  function searchBoxValue(): string {
+    return (fixture.nativeElement.querySelector('lfx-user-search input') as HTMLInputElement).value;
+  }
+
+  it('keeps the picked person’s name in the search box', async () => {
+    pick({ username: 'jdoe' });
+    await fixture.whenStable();
+
+    expect(searchBoxValue()).toBe('Jane Doe');
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+  });
+
+  it('falls back to the username when the picked person has no name', async () => {
+    pick({ username: 'jdoe', first_name: '', last_name: '' });
+    await fixture.whenStable();
+
+    expect(searchBoxValue()).toBe('jdoe');
+  });
+
+  it('drops the shown name once the target is edited to someone else', async () => {
+    pick({ username: 'jdoe' });
+    await fixture.whenStable();
+
+    dialog().targetUserForm.controls.targetUser.setValue('asmith');
+    await fixture.whenStable();
+
+    expect(searchBoxValue()).toBe('');
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('asmith');
+  });
+
   it('puts the picked person’s username in the target and submits it', async () => {
     pick({ username: 'jdoe' });
     await fixture.whenStable();
@@ -150,12 +181,13 @@ describe('ImpersonationDialogComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="impersonation-error"]')).toBeNull();
   });
 
-  it('keeps the target when the name search is cleared', async () => {
+  it('keeps the target when the name search is cleared, and empties the shown name', async () => {
     pick({ username: 'jdoe' });
     nameSearch().onSearchClear();
     await fixture.whenStable();
 
     expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+    expect(searchBoxValue()).toBe('');
   });
 
   it('does not throw or request impersonation when the search is cleared with no target', async () => {

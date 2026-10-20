@@ -11,7 +11,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE } from '@lfx-one/shared/constants';
 import { PersonaType, RecentImpersonation, UserSearchOption } from '@lfx-one/shared/interfaces';
-import { resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
+import { composeFullName, resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -47,7 +47,11 @@ export class ImpersonationDialogComponent {
   protected error = signal('');
   protected recentImpersonations = signal<RecentImpersonation[]>(this.impersonationService.getRecentImpersonations());
   protected suggestions = signal<RecentImpersonation[]>(this.recentImpersonations());
+  // The name lfx-user-search keeps showing after a pick; '' (not null) puts the picker in its
+  // committed-label mode, where it no longer blanks itself on select.
+  protected nameSearchLabel = signal('');
   private selectedRecentTargetUser = signal<string | null>(null);
+  private nameSearchPickedUsername = signal<string | null>(null);
 
   public constructor() {
     // Drop the auto-restored persona context as soon as the user steers the target away from
@@ -58,6 +62,14 @@ export class ImpersonationDialogComponent {
       if (lastSelected && value !== lastSelected) {
         this.selectedRecentTargetUser.set(null);
         this.targetUserForm.controls.personaContext.setValue(null);
+      }
+
+      // The shown name belongs to the username it was picked for — once the target is edited to
+      // something else, drop the name rather than leave it beside a different person's username.
+      const pickedUsername = this.nameSearchPickedUsername();
+      if (pickedUsername && value !== pickedUsername) {
+        this.nameSearchPickedUsername.set(null);
+        this.nameSearchLabel.set('');
       }
     });
   }
@@ -124,8 +136,19 @@ export class ImpersonationDialogComponent {
 
   protected onNameSearchSelected(user: UserSearchOption): void {
     // requireLfAccount guarantees a username on every pick that reaches this handler.
-    this.targetUserForm.controls.targetUser.setValue(user.username?.trim() ?? '');
+    const username = user.username?.trim() ?? '';
+
+    // Record the pick before writing the target so the valueChanges guard above sees them match.
+    this.nameSearchPickedUsername.set(username);
+    this.nameSearchLabel.set(composeFullName(user.first_name, user.last_name) || username);
+    this.targetUserForm.controls.targetUser.setValue(username);
     this.error.set('');
+  }
+
+  protected onNameSearchCleared(): void {
+    // Only the shown name goes; the target keeps whatever it holds until the admin changes it.
+    this.nameSearchPickedUsername.set(null);
+    this.nameSearchLabel.set('');
   }
 
   protected onNameSearchRejected(): void {

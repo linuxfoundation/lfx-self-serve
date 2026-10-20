@@ -19,12 +19,15 @@
       [requireLfAccount]="true"
       [showManualEntry]="false"
       [waitForSearchableQuery]="true"
-      placeholder="Search committee members by name"
+      [displayValue]="nameSearchLabel()"
+      [showClear]="true"
+      placeholder="e.g. John Doe"
       styleClass="w-full"
       inputId="nameSearch"
       dataTestId="impersonation-name-search"
       (onUserSelect)="onNameSearchSelected($event)"
-      (onRejectedSelection)="onNameSearchRejected()" />
+      (onRejectedSelection)="onNameSearchRejected()"
+      (onClear)="onNameSearchCleared()" />
   </div>
   <div class="flex flex-col gap-1" (keydown.enter)="submit()">
     <label for="targetUser" class="text-sm font-medium text-gray-700">Email or Username</label>
