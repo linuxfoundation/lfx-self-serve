@@ -102,7 +102,8 @@ export class ImpersonationDialogComponent {
             picture: response.targetUser.picture,
             personaContext,
           });
-          this.dialogRef.close(true);
+          // Left open (still under its loading overlay) until the reload unloads the page: closing it here would
+          // drop the loading UI for the whole reload.
           window.location.reload();
         },
         error: (err) => {

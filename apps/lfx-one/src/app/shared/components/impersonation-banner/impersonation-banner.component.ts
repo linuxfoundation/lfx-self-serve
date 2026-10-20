@@ -3,6 +3,7 @@
 
 import { Component, computed, inject } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
 import { ImpersonationService } from '@services/impersonation.service';
 import { UserService } from '@services/user.service';
@@ -19,6 +20,10 @@ export class ImpersonationBannerComponent {
   private readonly dialogService = inject(DialogService);
   protected readonly userService = inject(UserService);
   protected readonly transitioning = computed(() => this.impersonationService.transition() !== null);
+  protected readonly transitionMessage = computed(() => {
+    const transition = this.impersonationService.transition();
+    return transition ? IMPERSONATION_TRANSITION_MESSAGES[transition] : null;
+  });
 
   protected openSwitchDialog(): void {
     this.dialogService.open(ImpersonationDialogComponent, {
