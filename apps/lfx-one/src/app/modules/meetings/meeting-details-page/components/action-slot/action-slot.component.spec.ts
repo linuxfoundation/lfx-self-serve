@@ -48,9 +48,6 @@ describe('MeetingActionSlotComponent', () => {
   let openDialog: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
-  let cancelledOccurrence: WritableSignal<MeetingOccurrence | null>;
-  let nextActiveOccurrence: WritableSignal<MeetingOccurrence | null>;
-  let openOccurrence: ReturnType<typeof vi.fn>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -74,9 +71,6 @@ describe('MeetingActionSlotComponent', () => {
     openDialog = vi.fn().mockReturnValue({ onClose: dialogClose.asObservable(), onDestroy: dialogClose.asObservable() });
     add = vi.fn();
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
-    cancelledOccurrence = signal<MeetingOccurrence | null>(null);
-    nextActiveOccurrence = signal<MeetingOccurrence | null>(null);
-    openOccurrence = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
@@ -93,9 +87,6 @@ describe('MeetingActionSlotComponent', () => {
             pastAccessKnown,
             markRegistered,
             selectedOccurrence,
-            cancelledOccurrence,
-            nextActiveOccurrence,
-            openOccurrence,
             signInHref: signal(SIGN_IN_HREF),
           },
         },
@@ -151,31 +142,6 @@ describe('MeetingActionSlotComponent', () => {
     const slot = query('meeting-action-slot');
     expect(slot?.getAttribute('data-kind')).toBe('none');
     expect(slot?.textContent?.trim()).toBe('');
-  });
-
-  describe('on a cancelled occurrence (E6-05)', () => {
-    const cancelled = { occurrence_id: '1700000000', start_time: '2023-11-14T22:13:20.000Z', duration: 60, status: 'cancel' } as MeetingOccurrence;
-    const next = { occurrence_id: '1700604800', start_time: '2023-11-21T22:13:20.000Z', duration: 60 } as MeetingOccurrence;
-
-    it('offers the next active occurrence, and opens it', () => {
-      joinsInWindow.set(false);
-      cancelledOccurrence.set(cancelled);
-      nextActiveOccurrence.set(next);
-      render('none');
-
-      expect(query('meeting-action-slot')?.getAttribute('data-kind')).toBe('none');
-      (query('meeting-cancelled-next')?.querySelector('button') as HTMLButtonElement).click();
-      expect(openOccurrence).toHaveBeenCalledWith(next);
-    });
-
-    it('says there is none left when the series has no active occurrence ahead', () => {
-      joinsInWindow.set(false);
-      cancelledOccurrence.set(cancelled);
-      render('none');
-
-      expect(query('meeting-cancelled-next')).toBeNull();
-      expect(query('meeting-cancelled-no-next')?.textContent).toContain('no upcoming occurrences');
-    });
   });
 
   it('renders no slot before the meeting has loaded', () => {

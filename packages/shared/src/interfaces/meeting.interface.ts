@@ -1050,64 +1050,24 @@ export interface PastOccurrenceSummary {
 }
 
 /**
- * Minimal projection of a live occurrence, as the public project calendar feed publishes it
+ * Minimal projection of a live occurrence for the public occurrences endpoint
  * @description Timestamps and status only — titles, descriptions, and counts are
- * deliberately excluded from that public payload
+ * deliberately excluded from the public payload
  */
 export type MeetingOccurrenceSummary = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status'>;
 
 /**
- * A live occurrence on the public occurrences endpoint, for the occurrence strip and the
- * browse-all dialog (E6-01, #3584)
- * @description Adds the occurrence `title` (any caller who passes the meeting gate sees the series
- * itself) and `registrant_count`, set only for a caller the gate let in as a registrant or
- * organizer; a signed-in registrant of a public meeting, let in by the open gate, gets none.
- * `description` stays excluded: unused, and the largest field.
- */
-export type MeetingTimelineOccurrence = Pick<MeetingOccurrence, 'occurrence_id' | 'start_time' | 'duration' | 'status' | 'title' | 'registrant_count'>;
-
-/** Why the public meeting gate let a caller see a meeting's content: the gate it passed. */
-export type MeetingContentAccess = 'public' | 'password' | 'registrant' | 'organizer';
-
-/**
  * Series timeline for the public meeting occurrences endpoint
- * @description Past occurrences from v1_past_meeting records (timestamps only) plus a projection
- * of the live series' current/future occurrences: timestamps, status and title, and the registrant
- * count for a registrant or organizer only
+ * @description Past occurrences from v1_past_meeting records plus a minimal
+ * projection of the live series' current/future occurrences
  */
 export interface PublicMeetingOccurrencesResponse {
   /** Past occurrences, ascending by scheduled start time */
   past: PastOccurrenceSummary[];
-  /** Current/future occurrences, ascending on a paged request (unpaged, in ITX's order); empty when the series no longer exists */
-  future: MeetingTimelineOccurrence[];
+  /** Current/future occurrences (minimal projection); empty when the series no longer exists */
+  future: MeetingOccurrenceSummary[];
   /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
   cancelled_occurrences?: string[];
-  /** Paged requests only: older past occurrences exist than `past[0]` */
-  past_has_more?: boolean;
-  /** Paged requests only: later occurrences exist than the last of `future` */
-  future_has_more?: boolean;
-  /** Paged requests only, when `past_has_more`: send as `cursor` with `direction=past` for the next older page */
-  past_cursor?: string;
-  /** Paged requests only, when `future_has_more`: send as `cursor` with `direction=future` for the next later page */
-  future_cursor?: string;
-  /** Paged requests only: true when the past history could not be read in full; `past` is then empty rather than a silent prefix */
-  past_incomplete?: boolean;
-}
-
-/** Which side of the timeline a paged occurrences request reads (E6-02, #3585). */
-export type MeetingOccurrenceDirection = 'past' | 'future';
-
-/**
- * The paging parameters of `GET /public/api/meetings/:id/occurrences` (E6-02, #3585), parsed. Absent
- * (null) when the request names none, which keeps the whole-timeline response V1 reads.
- */
-export interface MeetingOccurrencesPageRequest {
-  /** Occurrences per side (the `page_size` parameter), at most `MEETING_OCCURRENCES_PAGE_MAX_LIMIT` */
-  limit: number;
-  /** Read one side only; both sides around now when absent */
-  direction?: MeetingOccurrenceDirection;
-  /** A 13-digit Unix-millisecond start: older than it with `past`, later than it with `future` */
-  cursor?: number;
 }
 
 /**
@@ -2094,8 +2054,7 @@ export interface MeetingAttendeePreviewPerson {
  * builds this shape field-by-field rather than deleting known-sensitive keys off a full `Meeting`, so
  * credentials (`password`, `passcode`, `host_key`, `zoom_config`) and organizer PII (`created_by`,
  * `owner`, `organizers`) stay out of the anonymous payload even as new `Meeting` fields land upstream
- * (LFXV2-2802). Its occurrences use the timestamps-only `MeetingOccurrenceSummary`, stricter than the
- * occurrences endpoint's `MeetingTimelineOccurrence`.
+ * (LFXV2-2802). Mirrors the minimal-projection contract of `PublicMeetingOccurrencesResponse`.
  */
 export interface PublicCalendarMeeting {
   /** Meeting UID of the live series, or of the originating series for a past-meeting row */

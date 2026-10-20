@@ -197,15 +197,6 @@ describe('MeetingIdentityBarComponent', () => {
       expect(query('meeting-identity-bar-subtitle')?.textContent?.trim()).toBe(subtitle);
     });
 
-    it('keeps the project name with no status on a cancelled occurrence (E6-05)', async () => {
-      await create();
-
-      meetingStatus.set(null);
-      fixture.detectChanges();
-
-      expect(query('meeting-identity-bar-subtitle')?.textContent?.trim()).toBe('Acme Project');
-    });
-
     // The date tile follows the page's selected occurrence (?occurrence=), not the meeting's first start.
     it("dates the tile from the page's selected occurrence", async () => {
       await create();
