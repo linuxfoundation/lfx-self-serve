@@ -44,7 +44,6 @@ import {
   PastMeetingSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
-  MeetingOccurrenceDirection,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
@@ -290,36 +289,6 @@ export class MeetingService {
     return this.http
       .get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${id}/occurrences`, { headers })
       .pipe(catchError(() => of({ past: [], future: [] } as PublicMeetingOccurrencesResponse)));
-  }
-
-  /**
-   * One page of the series timeline for the V2 occurrence strip (E6-02 paging, E6-03). Unlike
-   * {@link getPublicMeetingOccurrences}, which V1 reads whole and which degrades to empty, errors
-   * propagate, so the strip can tell a refusal (400 / 403: hidden silently) from an empty timeline.
-   * Any other failure is logged here and rethrown. The password travels in its header.
-   */
-  public getPublicMeetingOccurrencesPage(
-    id: string,
-    password: string | null,
-    page: { pageSize: number; direction?: MeetingOccurrenceDirection; cursor?: string }
-  ): Observable<PublicMeetingOccurrencesResponse> {
-    const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
-    let params = new HttpParams().set('page_size', String(page.pageSize));
-    if (page.direction) {
-      params = params.set('direction', page.direction);
-    }
-    if (page.cursor) {
-      params = params.set('cursor', page.cursor);
-    }
-    return this.http.get<PublicMeetingOccurrencesResponse>(`/public/api/meetings/${encodeURIComponent(id)}/occurrences`, { headers, params }).pipe(
-      catchError((error: unknown) => {
-        // A refusal is the endpoint gating the series, not a failure.
-        if (!(error instanceof HttpErrorResponse && (error.status === 400 || error.status === 403))) {
-          console.error('Failed to load the meeting occurrences', id, error);
-        }
-        return throwError(() => error);
-      })
-    );
   }
 
   /** Public project calendar page — meetings for a project (by UID or slug), optionally scoped to a single committee. */

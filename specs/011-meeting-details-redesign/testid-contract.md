@@ -59,7 +59,7 @@ own namespace; the two never share a value.
 | `meeting-header-admin-link`                 | Admin view: the organizer's link to `/details`, on an ended meeting's occurrence only (E4-05)                         |
 | `meeting-status-pill`                       | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                     |
 | `meeting-privacy-chip`                      | The single privacy chip (see below)                                                                                   |
-| `meeting-time-banner`                       | The time banner at the top of the rail card (see below); `data-cancelled="true"` on a cancelled occurrence (E6-05)    |
+| `meeting-time-banner`                       | The time banner at the top of the rail card (see below)                                                               |
 | `meeting-time-banner-date`                  | Its weekday and date, in the viewer's timezone                                                                        |
 | `meeting-time-banner-time`                  | Its start – end time                                                                                                  |
 | `meeting-time-banner-timezone`              | Its timezone name                                                                                                     |
@@ -67,8 +67,6 @@ own namespace; the two never share a value.
 | `meeting-time-banner-message`               | Its one phase line (starts … / starting soon / in progress / ended)                                                   |
 | `meeting-time-banner-relative`              | Before the meeting, the ticking relative start (not announced)                                                        |
 | `meeting-time-banner-phase`                 | The phase sentence, a polite atomic live region that stays mounted                                                    |
-| `meeting-cancelled-next`                    | On a cancelled occurrence (E6-05): "Go to next occurrence", in the `none` slot                                        |
-| `meeting-cancelled-no-next`                 | On a cancelled occurrence with no active one ahead: "There are no upcoming occurrences in this series."               |
 | `meeting-action-slot`                       | The action slot inside the rail (see below)                                                                           |
 | `meeting-action-join-button`                | The Join control in the `join` kind (see below)                                                                       |
 | `meeting-action-join-error`                 | Its error message (`role="alert"`)                                                                                    |
@@ -232,30 +230,16 @@ data-state: idle | loading | ready | error
 
 ## Occurrences
 
-| `data-testid`                           | Element                                                                                                                             |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `occurrence-strip-section`              | The occurrence strip (E6-03); absent on a refusal, a failure, or a single occurrence                                                |
-| `occurrence-strip-loading`              | Its placeholder, the strip's height, until the first page settles                                                                   |
-| `occurrence-strip-position`             | The browse trigger: "Occurrence N of M" once the whole series is loaded, else "Browse occurrences"; opens the browse dialog (E6-04) |
-| `occurrence-strip-jump-next`            | "Jump to next meeting", when the page shows another occurrence than the next one                                                    |
-| `occurrence-strip-prev`                 | Previous occurrence (pages in older ones at a loaded end)                                                                           |
-| `occurrence-strip-next`                 | Next occurrence (pages in later ones at a loaded end)                                                                               |
-| `occurrence-strip-chips`                | The scrolling row of chips                                                                                                          |
-| `occurrence-chip-${occurrenceId}`       | One occurrence chip; `occurrenceId` is the 10-digit seconds id                                                                      |
-| `occurrence-browse-dialog`              | The browse-all-occurrences dialog (E6-04)                                                                                           |
-| `occurrence-browse-subtitle`            | "N occurrences" (only once the whole series is known) and the cadence                                                               |
-| `occurrence-browse-close`               | The dialog's close button                                                                                                           |
-| `occurrence-browse-tab-${tab}`          | A tab, `upcoming` or `past`; `aria-selected` on the open one                                                                        |
-| `occurrence-browse-row-${occurrenceId}` | A row; `data-selected`, `data-cancelled`, `data-start-ms` as on the chips                                                           |
-| `occurrence-browse-viewing`             | The "Viewing" pill on the page's own occurrence                                                                                     |
-| `occurrence-browse-load-more`           | Load more on the open tab, while that side has more                                                                                 |
-| `occurrence-browse-empty`               | "No upcoming / past occurrences."                                                                                                   |
-| `occurrence-browse-unavailable`         | The Past tab when the history could not be read                                                                                     |
-| `occurrence-browse-partial`             | Under Past rows when the rest of the past history could not be read                                                                 |
+V1's occurrence navigation, restyled (V1 parity): the occurrence strip, its chips and the
+browse-all dialog were withdrawn in the scope reset. V1 keeps its own `occurrence-navigation`,
+`occurrence-nav-prev`, `occurrence-nav-next` and `occurrence-counter`.
 
-Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | `false`), and
-`data-start-ms`, its 13-digit start. The selected one has `aria-current="date"`; a cancelled one is
-`aria-disabled` and never selected.
+| `data-testid`                    | Element                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| `occurrence-nav-section`         | The Previous / Next navigation of a recurring meeting's occurrences                        |
+| `occurrence-nav-section-prev`    | Previous: a link, or with nowhere to go a greyed-out `aria-disabled` label; `data-enabled` |
+| `occurrence-nav-section-next`    | Next, the same                                                                             |
+| `occurrence-nav-section-counter` | "N of M": the page's occurrence and the series' length                                     |
 
 ## Agenda and materials
 

@@ -59,6 +59,9 @@ class RecordingStubComponent {}
 @Component({ selector: 'lfx-meeting-join-details', template: '<span data-testid="join-details-stub"></span>' })
 class JoinDetailsStubComponent {}
 
+@Component({ selector: 'lfx-meeting-occurrence-nav', template: '<span data-testid="occurrence-nav-stub"></span>' })
+class OccurrenceNavStubComponent {}
+
 describe('MeetingDetailsPageComponent', () => {
   let fixture: ComponentFixture<MeetingDetailsPageComponent>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
@@ -74,7 +77,7 @@ describe('MeetingDetailsPageComponent', () => {
 
   beforeEach(async () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
-    visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true, materials: true });
+    visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true, materials: true, occurrences: true });
     rosterRequest = signal<MeetingRosterRequest | null>({ meetingId: 'meeting-1', occurrenceId: undefined });
     refresh = vi.fn();
     retrying = signal(false);
@@ -99,6 +102,7 @@ describe('MeetingDetailsPageComponent', () => {
             ImpersonationBannerStubComponent,
             JoinDetailsStubComponent,
             MaterialsStubComponent,
+            OccurrenceNavStubComponent,
             OrganizerStubComponent,
             PeopleStubComponent,
             PastPeopleStubComponent,
@@ -146,8 +150,9 @@ describe('MeetingDetailsPageComponent', () => {
     expect(skeleton?.getAttribute('aria-live')).toBe('polite');
     expect(query('meeting-content-column')).not.toBeNull();
     expect(query('meeting-header-section')).toBeNull();
-    // The skeleton's columns hold no join details: the state may still hold the previous meeting's key.
+    // The skeleton's columns hold no join details or occurrence navigation: the state may still hold the previous meeting.
     expect(query('join-details-stub')).toBeNull();
+    expect(query('occurrence-nav-stub')).toBeNull();
   });
 
   it('renders the shell with the meeting header once ready', () => {
@@ -157,6 +162,7 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('meeting-header-section')?.querySelector('lfx-meeting-header')).not.toBeNull();
     expect(query('meeting-content-column')).not.toBeNull();
     expect(query('join-details-stub')).not.toBeNull();
+    expect(query('occurrence-nav-stub')).not.toBeNull();
     // #3260: a labelled region (not an <aside> inside <main>), with its own sr-only h2 once loaded.
     const rail = query('meeting-rail');
     expect(rail?.tagName).toBe('SECTION');
@@ -201,6 +207,16 @@ describe('MeetingDetailsPageComponent', () => {
   });
 
   // E3-01: the agenda follows the page's section visibility (hidden for an ended meeting without access).
+  it('renders the occurrence navigation only for a series', () => {
+    show('ready');
+    expect(query('occurrence-nav-stub')).not.toBeNull();
+
+    visibleSections.set({ agenda: true, materials: true, occurrences: false });
+    fixture.detectChanges();
+
+    expect(query('occurrence-nav-stub')).toBeNull();
+  });
+
   it('renders the agenda only where the section visibility allows it', () => {
     show('ready');
     expect(query('agenda-stub')).not.toBeNull();

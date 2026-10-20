@@ -41,8 +41,8 @@ import { canJoinMeeting, hasMeetingEnded } from './meeting.utils';
  * `occurrence` is not optional in practice for a recurring meeting. Both delegates fall back to
  * `meeting.start_time` — the *series'* start — when it is nullish, so a long-running series whose
  * first occurrence is months past resolves to `ended` even while future occurrences exist. The
- * caller owns occurrence selection (the V2 page has an occurrence strip and knows which one it is
- * showing), so this resolver describes the occurrence it is handed rather than picking one itself.
+ * caller owns occurrence selection (the V2 page navigates between occurrences and knows which one
+ * it is showing), so this resolver describes the occurrence it is handed rather than picking one itself.
  * Pass `null` only for a one-time meeting.
  */
 export function resolveTimeState(meeting: Meeting, occurrence: MeetingOccurrence | null | undefined, now: Date): MeetingTimeState {
@@ -191,7 +191,7 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
     agenda: contentVisible,
     joinDetails: !ended && onTheMeeting,
     materials: contentVisible,
-    // Deliberately not gated on artifact access: the occurrence strip is navigation, not content,
+    // Deliberately not gated on artifact access: the occurrence navigation is not content,
     // and a viewer locked out of one past occurrence may still open the upcoming ones.
     occurrences: input.recurring,
     // Upcoming: registrants and organizers only — nobody else has a roster or count source.
