@@ -961,6 +961,48 @@ function buildPermissionsReqRes(uid: string, username: string, body: unknown = {
   return { req, res, next };
 }
 
+describe('ProjectController permissions meetingCoordinator handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('updateUserPermissionRole passes meetingCoordinator through to the service', async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'view', meetingCoordinator: true });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'view', undefined, undefined, true);
+  });
+
+  it("updateUserPermissionRole accepts role 'none' for a coordinator", async () => {
+    const controller = new ProjectController();
+    projectSvc.updateProjectPermissions.mockResolvedValue({});
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'none', meetingCoordinator: true });
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['none without meetingCoordinator', { role: 'none' }],
+    ['none with meetingCoordinator false', { role: 'none', meetingCoordinator: false }],
+    ['a non-boolean meetingCoordinator', { role: 'view', meetingCoordinator: 'yes' }],
+    ['an unknown role', { role: 'owner' }],
+  ])('updateUserPermissionRole rejects %s without calling the service', async (_label, body) => {
+    const controller = new ProjectController();
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', body);
+
+    await controller.updateUserPermissionRole(req, res, next);
+
+    expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
 // GH-3276: `duplicateIdentifiers` on the PUT/DELETE body must reach the service call
 // unmodified so a collapsed dual-role row (#3218) is cleared in the same ETag-guarded
 // write as the primary identifier, instead of a second non-atomic client call (Copilot
@@ -978,9 +1020,16 @@ describe('ProjectController permissions duplicateIdentifiers pass-through', () =
 
     await controller.updateUserPermissionRole(req, res, next);
 
-    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, [
-      'bchen@vendor-corp.example',
-    ]);
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(
+      req,
+      PROJECT_UID,
+      'update',
+      'blairchen',
+      'manage',
+      undefined,
+      ['bchen@vendor-corp.example'],
+      undefined
+    );
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -991,7 +1040,7 @@ describe('ProjectController permissions duplicateIdentifiers pass-through', () =
 
     await controller.updateUserPermissionRole(req, res, next);
 
-    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, undefined);
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, undefined, undefined);
   });
 
   it('removeUserFromProjectPermissions passes duplicateIdentifiers from the body through to the service', async () => {

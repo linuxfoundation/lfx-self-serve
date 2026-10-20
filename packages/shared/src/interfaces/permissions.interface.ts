@@ -143,6 +143,13 @@ export interface UpdateUserPermissionRequest {
 }
 
 /**
+ * Base project access role held through the writers/auditors lists
+ * @description 'view' for auditors, 'manage' for writers, 'none' for a user who holds only the
+ * separate meeting coordinator grant
+ */
+export type ProjectPermissionRole = 'view' | 'manage' | 'none';
+
+/**
  * Simplified user permission for display
  * @description Simplified representation of user permissions for table display
  */
@@ -155,8 +162,10 @@ export interface ProjectPermissionUser {
   username?: string;
   /** URL to user's avatar image (optional) */
   avatar?: string;
-  /** Permission role - 'view' for auditors, 'manage' for writers */
-  role: 'view' | 'manage';
+  /** Permission role - 'view' for auditors, 'manage' for writers, 'none' for a meeting-coordinator-only user */
+  role: ProjectPermissionRole;
+  /** Whether the user also holds the separate meeting coordinator grant (independent of `role`) */
+  meetingCoordinator: boolean;
   /**
    * Set only when this row was collapsed from two or more backend entries (dual
    * auditor+writer assignment for the same project, #3218) whose own identifiers
@@ -178,8 +187,10 @@ export interface AddUserToProjectRequest {
    *  May be omitted for manual adds (user not found in directory), but then
    *  `email` must be provided so the server has a usable routing identifier. */
   username?: string;
-  /** Role to assign - 'view' for auditors, 'manage' for writers */
-  role: 'view' | 'manage';
+  /** Role to assign - 'view' for auditors, 'manage' for writers, 'none' when only the meeting coordinator grant applies */
+  role: ProjectPermissionRole;
+  /** Also grant the meeting coordinator role. 'none' requires this to be true. */
+  meetingCoordinator?: boolean;
   /** User's full name (optional, for manual entry when user not found) */
   name?: string;
   /** User's email address (optional, for manual entry when user not found) */
@@ -236,8 +247,10 @@ export interface StaffEditDialogData {
  * @description Data required to change a user's role in project
  */
 export interface UpdateUserRoleRequest {
-  /** New role to assign - 'view' for auditors, 'manage' for writers */
-  role: 'view' | 'manage';
+  /** New role to assign - 'view' for auditors, 'manage' for writers, 'none' when only the meeting coordinator grant applies */
+  role: ProjectPermissionRole;
+  /** Whether the user holds the meeting coordinator grant. Omitted leaves the current grant unchanged. 'none' requires this to be true. */
+  meetingCoordinator?: boolean;
   /** Other backend entries for the same collapsed row to clear in the same request (see
    *  `ProjectPermissionUser.duplicateIdentifiers`) */
   duplicateIdentifiers?: string[];

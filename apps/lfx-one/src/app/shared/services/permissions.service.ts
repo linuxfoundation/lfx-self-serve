@@ -3,7 +3,14 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { AddUserToProjectRequest, ProjectPermissionUser, ProjectSettings, UpdateProjectStaffRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
+import {
+  AddUserToProjectRequest,
+  ProjectPermissionRole,
+  ProjectPermissionUser,
+  ProjectSettings,
+  UpdateProjectStaffRequest,
+  UpdateUserRoleRequest,
+} from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { catchError, map, Observable, shareReplay, throwError } from 'rxjs';
 
@@ -94,6 +101,7 @@ export class PermissionsService {
               username: userInfo.username || userInfo.email,
               avatar: userInfo.avatar,
               role: 'view' as const,
+              meetingCoordinator: false,
             }))
           );
         }
@@ -107,6 +115,22 @@ export class PermissionsService {
               username: userInfo.username || userInfo.email,
               avatar: userInfo.avatar,
               role: 'manage' as const,
+              meetingCoordinator: false,
+            }))
+          );
+        }
+
+        // Add meeting coordinators. A coordinator who is also a writer/auditor collapses into
+        // that user's row below; one who is neither stays as a coordinator-only ('none') row.
+        if (settings.meeting_coordinators) {
+          users.push(
+            ...settings.meeting_coordinators.map((userInfo) => ({
+              name: userInfo.name,
+              email: userInfo.email,
+              username: userInfo.username || userInfo.email,
+              avatar: userInfo.avatar,
+              role: 'none' as const,
+              meetingCoordinator: true,
             }))
           );
         }
@@ -120,9 +144,11 @@ export class PermissionsService {
     );
   }
 
-  // A v1 permission sync can legitimately leave a user with both auditor (view) and writer
-  // (manage) entries for the same project — the backend does not collapse this. Show a single
-  // row per user, with 'manage' taking precedence over 'view' (see #3218).
+  // A user can legitimately hold several of the auditor (view), writer (manage) and meeting
+  // coordinator entries for the same project — the backend does not collapse this (a v1 permission
+  // sync can leave both auditor and writer, #3218; meeting coordinator is a separate grant). Show a
+  // single row per user, with 'manage' taking precedence over 'view' over a coordinator-only 'none'.
+  // The coordinator flag is kept whenever any entry in the group carries it.
   //
   // Two entries belong to the same person if they share EITHER identifier — email or a real
   // username — not just whichever one a naive `email || username` key happens to pick per
@@ -213,9 +239,12 @@ export class PermissionsService {
     const ownIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email);
     const normalizedIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email.toLowerCase());
 
-    const winner = group.reduce((best, user) => (best.role === 'view' && user.role === 'manage' ? user : best));
+    const roleRank: Record<ProjectPermissionRole, number> = { none: 0, view: 1, manage: 2 };
+    const winner = group.reduce((best, user) => (roleRank[user.role] > roleRank[best.role] ? user : best));
     const withRealUsername = group.find(hasRealUsername);
-    const merged: ProjectPermissionUser = !hasRealUsername(winner) && withRealUsername ? { ...winner, username: withRealUsername.username } : { ...winner };
+    const meetingCoordinator = group.some((user) => user.meetingCoordinator);
+    const merged: ProjectPermissionUser =
+      !hasRealUsername(winner) && withRealUsername ? { ...winner, username: withRealUsername.username, meetingCoordinator } : { ...winner, meetingCoordinator };
 
     const mergedId = normalizedIdentifier(merged);
     const duplicates = group.filter((user) => normalizedIdentifier(user) !== mergedId).map(ownIdentifier);

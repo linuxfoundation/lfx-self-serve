@@ -70,9 +70,22 @@
 
             <!-- Role Column -->
             <td>
-              <span class="text-sm font-inter {{ user.role === 'manage' ? 'text-emerald-700 font-medium' : 'text-blue-600' }}">
-                {{ user.role === 'manage' ? 'Manage' : 'View' }}
-              </span>
+              <div class="flex flex-wrap items-center gap-1" data-testid="user-roles">
+                @if (user.role === 'manage') {
+                  <span class="text-sm font-inter text-emerald-700 font-medium">Manage</span>
+                } @else if (user.role === 'view') {
+                  <span class="text-sm font-inter text-blue-600">View</span>
+                }
+                @if (user.meetingCoordinator) {
+                  <span
+                    class="text-xs font-inter px-2 py-0.5 rounded-full bg-purple-100 text-purple-800"
+                    [class.opacity-60]="user.role === 'manage'"
+                    [pTooltip]="user.role === 'manage' ? 'Already covered by Manage; kept so it remains if the role is reduced' : ''"
+                    data-testid="meeting-coordinator-chip">
+                    Meeting coordinator
+                  </span>
+                }
+              </div>
             </td>
 
             @if (canWrite()) {

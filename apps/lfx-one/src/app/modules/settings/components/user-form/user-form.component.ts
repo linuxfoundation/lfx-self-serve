@@ -6,6 +6,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
 import { PermissionsService } from '@services/permissions.service';
@@ -18,7 +19,7 @@ import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-user-form',
-  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, RadioButtonComponent, TooltipModule, ConfirmDialogModule],
+  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, CheckboxComponent, RadioButtonComponent, TooltipModule, ConfirmDialogModule],
   templateUrl: './user-form.component.html',
 })
 export class UserFormComponent {
@@ -42,10 +43,11 @@ export class UserFormComponent {
   public user = computed(() => (this.config.data?.user as ProjectPermissionUser) || null);
   public project = computed(() => this.projectContextService.activeContext());
 
-  // Permission options - simplified to only View/Manage
+  // Base project role options. 'none' is only valid together with the meeting coordinator grant.
   public permissionLevelOptions = [
     { label: 'View', value: 'view' },
     { label: 'Manage', value: 'manage' },
+    { label: 'None (meeting coordinator only)', value: 'none' },
   ];
 
   public constructor() {
@@ -54,6 +56,11 @@ export class UserFormComponent {
   }
 
   // Public methods
+  // 'none' without the meeting coordinator grant would leave the user with no access at all
+  public roleInvalid(): boolean {
+    return this.form().get('role')?.value === 'none' && !this.form().get('meetingCoordinator')?.value;
+  }
+
   public onSubmit(): void {
     // Mark all form controls as touched and dirty to show validation errors
     Object.keys(this.form().controls).forEach((key) => {
@@ -62,7 +69,7 @@ export class UserFormComponent {
       control?.markAsDirty();
     });
 
-    if (this.form().invalid) {
+    if (this.form().invalid || this.roleInvalid()) {
       return;
     }
 
@@ -79,7 +86,7 @@ export class UserFormComponent {
     this.submitting.set(true);
     const formValue = this.form().value;
 
-    // For editing, update role only
+    // For editing, update role and meeting coordinator grant
     if (this.isEditing()) {
       this.permissionsService
         .updateUserRole(
@@ -87,6 +94,7 @@ export class UserFormComponent {
           this.user()!.username || this.user()!.email,
           {
             role: formValue.role,
+            meetingCoordinator: formValue.meetingCoordinator,
           } as UpdateUserRoleRequest,
           this.user()!.duplicateIdentifiers
         )
@@ -119,6 +127,7 @@ export class UserFormComponent {
         .addUserToProject(project.uid, {
           email: formValue.email,
           role: formValue.role,
+          meetingCoordinator: formValue.meetingCoordinator,
         } as AddUserToProjectRequest)
         .pipe(take(1))
         .subscribe({
@@ -211,6 +220,7 @@ export class UserFormComponent {
       email: formValue.email,
       username: formValue.username,
       role: formValue.role,
+      meetingCoordinator: formValue.meetingCoordinator,
     };
 
     // Only include avatar if it's not empty
@@ -250,6 +260,7 @@ export class UserFormComponent {
       username: new FormControl(''),
       avatar: new FormControl(''),
       role: new FormControl('view', [Validators.required]),
+      meetingCoordinator: new FormControl(false),
     });
   }
 
@@ -266,6 +277,7 @@ export class UserFormComponent {
         username: user.username,
         avatar: user.avatar,
         role: user.role,
+        meetingCoordinator: user.meetingCoordinator,
       });
 
       // Disable username, name, email, and avatar fields when editing (user info is immutable)

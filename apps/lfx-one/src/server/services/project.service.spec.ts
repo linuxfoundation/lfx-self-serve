@@ -3085,6 +3085,99 @@ describe('ProjectService.updateProjectPermissions', () => {
     expect(result.auditors).toEqual([member]);
   });
 
+  describe('meeting coordinators', () => {
+    it('adds a coordinator alongside the view role', async () => {
+      mockFetch({ writers: [], auditors: [] });
+
+      const result = await service.updateProjectPermissions(
+        req,
+        'project-1',
+        'add',
+        'kim.park@partner-corp.example',
+        'view',
+        { name: 'Kim Park', email: 'kim.park@partner-corp.example' },
+        undefined,
+        true
+      );
+
+      const kim = { name: 'Kim Park', email: 'kim.park@partner-corp.example' };
+      expect(result.auditors).toEqual([kim]);
+      expect(result.meeting_coordinators).toEqual([kim]);
+    });
+
+    it("adds a coordinator-only user under role 'none' without a writer or auditor entry", async () => {
+      mockFetch({ writers: [], auditors: [] });
+
+      const result = await service.updateProjectPermissions(
+        req,
+        'project-1',
+        'add',
+        'kim.park@partner-corp.example',
+        'none',
+        { name: 'Kim Park', email: 'kim.park@partner-corp.example' },
+        undefined,
+        true
+      );
+
+      expect(result.writers).toEqual([]);
+      expect(result.auditors).toEqual([]);
+      expect(result.meeting_coordinators).toHaveLength(1);
+    });
+
+    it("rejects role 'none' without the coordinator grant, before persisting anything", async () => {
+      mockFetch({ writers: [member], auditors: [] });
+
+      await expect(service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'none', undefined, undefined, false)).rejects.toMatchObject({
+        statusCode: 400,
+      });
+
+      expect(updateWithETag).not.toHaveBeenCalled();
+    });
+
+    it('keeps an existing coordinator grant when a role change omits meetingCoordinator', async () => {
+      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view');
+
+      expect(result.writers).toEqual([]);
+      expect(result.auditors).toEqual([member]);
+      expect(result.meeting_coordinators).toEqual([member]);
+    });
+
+    it('drops the coordinator grant when the update sets it to false', async () => {
+      mockFetch({ writers: [], auditors: [member], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view', undefined, undefined, false);
+
+      expect(result.auditors).toEqual([member]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('grants coordinator to an existing coordinator-only user who is moved to manage', async () => {
+      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'manage');
+
+      expect(result.writers).toEqual([member]);
+      expect(result.meeting_coordinators).toEqual([member]);
+    });
+
+    it('removes the coordinator entry along with the writer and auditor entries', async () => {
+      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [member] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen');
+
+      expect(result.writers).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([]);
+    });
+
+    it('refuses to re-add a coordinator-only user already on the project', async () => {
+      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
+
+      await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'sam.chen', 'view')).rejects.toMatchObject({ statusCode: 409 });
+    });
+  });
+
   // GH-3276: a collapsed dual-role row (#3218) is removed/role-changed in one ETag-guarded
   // write that also clears its other backend entries, instead of a second client-issued
   // call racing the first (Copilot #3244) or resolving a duplicate email through the NATS

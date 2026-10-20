@@ -86,12 +86,45 @@
       </div>
     </div>
 
+    <!-- Meeting Coordinator add-on -->
+    <div class="flex flex-col gap-1">
+      <lfx-checkbox
+        [form]="form()"
+        control="meetingCoordinator"
+        inputId="meeting-coordinator"
+        label="Meeting coordinator"
+        data-testid="settings-user-form-meeting-coordinator"></lfx-checkbox>
+      <p class="text-xs text-gray-500 ml-6">
+        Can create and organize any meeting in this project and view its committees. Granted separately from View/Manage.
+      </p>
+    </div>
+
+    @if (roleInvalid()) {
+      <p class="text-xs text-red-600" data-testid="settings-user-form-role-error">Select View or Manage, or make this user a meeting coordinator.</p>
+    }
+
     <!-- Permission Summary -->
     <div class="bg-gray-50 p-3 rounded-md text-sm">
       <div class="font-medium text-gray-700 mb-1">Permission Summary:</div>
       <div class="text-gray-600">
-        <strong>{{ form().get('role')?.value === 'view' ? 'View-only' : 'Full management' }}</strong> access to the <strong>entire project</strong> including
-        all committees, meetings, and mailing lists.
+        @switch (form().get('role')?.value) {
+          @case ('manage') {
+            <strong>Full management</strong> access to the <strong>entire project</strong> including all committees, meetings, and mailing lists.
+          }
+          @case ('view') {
+            <strong>View-only</strong> access to the <strong>entire project</strong> including all committees, meetings, and mailing lists.
+          }
+          @default {
+            <strong>Project view</strong> access only, with no access to project settings.
+          }
+        }
+        @if (form().get('meetingCoordinator')?.value) {
+          @if (form().get('role')?.value === 'manage') {
+            Meeting coordinator access is already covered by Manage, but is recorded so it stays if the role is later reduced.
+          } @else {
+            Can also <strong>create and organize meetings</strong>.
+          }
+        }
       </div>
     </div>
   </div>
@@ -120,6 +153,7 @@
   <div class="flex flex-col">
     <div><strong>View:</strong> Read-only access to view and browse all project content</div>
     <div><strong>Manage:</strong> Full access to create, edit, delete, and manage all project content</div>
+    <div><strong>Meeting coordinator:</strong> Add-on that lets the user create and organize meetings. It does not include project settings.</div>
   </div>
 </ng-template>
 

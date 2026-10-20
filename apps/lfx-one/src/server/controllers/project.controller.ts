@@ -24,6 +24,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
+import { validateProjectPermissionRole } from '../helpers/project-permission.helper';
 import { getStringQueryParam, getValidatedDuplicateIdentifiers, validateUidParameter } from '../helpers/validation.helper';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
@@ -297,14 +298,9 @@ export class ProjectController {
       }
 
       // Validate role value
-      if (!['view', 'manage'].includes(userData.role)) {
-        const validationError = ServiceValidationError.forField('role', 'Role must be either "view" or "manage"', {
-          operation: 'add_user_project_permissions',
-          service: 'project_controller',
-          path: req.path,
-        });
-
-        next(validationError);
+      const addRoleError = validateProjectPermissionRole(userData.role, userData.meetingCoordinator, 'add_user_project_permissions', req.path);
+      if (addRoleError) {
+        next(addRoleError);
         return;
       }
 
@@ -326,7 +322,16 @@ export class ProjectController {
       }
 
       // Pass the identifier (username or email fallback) to updateProjectPermissions
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', identifier, userData.role, manualUserInfo);
+      const result = await this.projectService.updateProjectPermissions(
+        req,
+        uid,
+        'add',
+        identifier,
+        userData.role,
+        manualUserInfo,
+        undefined,
+        userData.meetingCoordinator === true
+      );
 
       logger.success(req, 'add_user_project_permissions', startTime, {
         uid,
@@ -391,25 +396,30 @@ export class ProjectController {
       }
 
       // Validate role value
-      if (!['view', 'manage'].includes(roleData.role)) {
-        const validationError = ServiceValidationError.forField('role', 'Role must be either "view" or "manage"', {
-          operation: 'update_user_role_project_permissions',
-          service: 'project_controller',
-          path: req.path,
-        });
-
-        next(validationError);
+      const updateRoleError = validateProjectPermissionRole(roleData.role, roleData.meetingCoordinator, 'update_user_role_project_permissions', req.path);
+      if (updateRoleError) {
+        next(updateRoleError);
         return;
       }
 
       const duplicateIdentifiers = getValidatedDuplicateIdentifiers(roleData.duplicateIdentifiers, 'update_user_role_project_permissions');
 
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role, undefined, duplicateIdentifiers);
+      const result = await this.projectService.updateProjectPermissions(
+        req,
+        uid,
+        'update',
+        username,
+        roleData.role,
+        undefined,
+        duplicateIdentifiers,
+        roleData.meetingCoordinator
+      );
 
       logger.success(req, 'update_user_role_project_permissions', startTime, {
         uid,
         username: maskIdentifierForLogs(username),
         new_role: roleData.role,
+        meeting_coordinator: roleData.meetingCoordinator,
       });
 
       res.json(result);

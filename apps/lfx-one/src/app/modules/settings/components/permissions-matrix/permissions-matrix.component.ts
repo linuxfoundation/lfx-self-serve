@@ -35,5 +35,20 @@ export class PermissionsMatrixComponent {
         severity: 'success',
       },
     },
+    {
+      scope: 'Project',
+      level: 'Meeting Coordinator',
+      description: 'Add-on for running meetings, granted separately from View/Manage',
+      capabilities: [
+        'Create and organize meetings and past meetings',
+        'View the project and its committees',
+        'No access to project settings. Already included in Manage',
+      ],
+      badge: {
+        color: 'text-purple-800',
+        bgColor: 'bg-purple-100',
+        severity: 'secondary',
+      },
+    },
   ];
 }

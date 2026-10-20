@@ -143,6 +143,7 @@ import {
   ProjectIssuesResolutionAggregatedRow,
   ProjectIssuesResolutionResponse,
   ProjectIssuesResolutionRow,
+  ProjectPermissionRole,
   ProjectPullRequestsWeeklyResponse,
   ProjectPullRequestsWeeklyRow,
   ProjectRow,
@@ -746,9 +747,10 @@ export class ProjectService {
     uid: string,
     operation: 'add' | 'update' | 'remove',
     usernameOrEmail: string,
-    role?: 'view' | 'manage',
+    role?: ProjectPermissionRole,
     manualUserInfo?: { name: string; email: string; username?: string; avatar?: string },
-    duplicateIdentifiers?: string[]
+    duplicateIdentifiers?: string[],
+    meetingCoordinator?: boolean
   ): Promise<ProjectSettings> {
     // Step 0: Authorize before touching anything — the gate `updateProjectStaff` runs, for the same
     // reason. Upstream gates the settings PUT at writer, but the directory lookup below runs first
@@ -781,6 +783,7 @@ export class ProjectService {
     // Initialize arrays if they don't exist
     if (!updatedSettings.writers) updatedSettings.writers = [];
     if (!updatedSettings.auditors) updatedSettings.auditors = [];
+    if (!updatedSettings.meeting_coordinators) updatedSettings.meeting_coordinators = [];
 
     // Step 3: Determine the backend identifier for array operations.
     // For emails on update/remove: check settings first. If the user is stored without
@@ -788,7 +791,11 @@ export class ProjectService {
     // email directly — calling NATS for such users would fail with NOT_FOUND.
     const originalEmail = usernameOrEmail.includes('@') ? usernameOrEmail.trim().toLowerCase() : '';
     const matchesByEmail = (u: { username?: string; email?: string }): boolean => !u.username && !!originalEmail && u.email?.toLowerCase() === originalEmail;
-    const existingByEmail = originalEmail ? updatedSettings.writers.find(matchesByEmail) || updatedSettings.auditors.find(matchesByEmail) : undefined;
+    const existingByEmail = originalEmail
+      ? updatedSettings.writers.find(matchesByEmail) ||
+        updatedSettings.auditors.find(matchesByEmail) ||
+        updatedSettings.meeting_coordinators.find(matchesByEmail)
+      : undefined;
 
     let backendIdentifier = usernameOrEmail.trim();
     if (originalEmail) {
@@ -812,7 +819,8 @@ export class ProjectService {
 
     // Capture the user's existing UserInfo before removal — used by the 'update' path to
     // avoid a NATS roundtrip when only the role is changing.
-    const existingUserInfo = updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser);
+    const existingUserInfo =
+      updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser) || updatedSettings.meeting_coordinators.find(matchesUser);
 
     // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
     if (operation === 'add' && existingUserInfo) {
@@ -838,9 +846,15 @@ export class ProjectService {
     const matchesAnyDuplicate = (u: { username?: string; email?: string }): boolean =>
       duplicateIdentifierList.some((id) => (id.includes('@') ? !u.username && u.email?.toLowerCase() === id.toLowerCase() : u.username === id));
 
-    // Remove user from both arrays first (for all operations)
+    // The meeting coordinator grant is independent of the writer/auditor role: an update that
+    // omits `meetingCoordinator` keeps whatever the person holds today instead of dropping it.
+    const wasMeetingCoordinator = updatedSettings.meeting_coordinators.some((u) => matchesUser(u) || matchesAnyDuplicate(u));
+    const isMeetingCoordinator = operation === 'remove' ? false : (meetingCoordinator ?? (operation === 'update' && wasMeetingCoordinator));
+
+    // Remove user from all arrays first (for all operations)
     updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
     updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
+    updatedSettings.meeting_coordinators = updatedSettings.meeting_coordinators.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
 
     // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
@@ -887,13 +901,24 @@ export class ProjectService {
         userInfo = { ...fetchedUserInfo };
       }
 
+      if (role === 'none' && !isMeetingCoordinator) {
+        throw ServiceValidationError.forField('role', 'A user without a View or Manage role must be a meeting coordinator', {
+          operation: `${operation}_user_project_permissions`,
+          service: 'project_service',
+        });
+      }
+
       if (role === 'manage') {
         updatedSettings.writers = [...updatedSettings.writers, userInfo];
-      } else {
+      } else if (role === 'view') {
         updatedSettings.auditors = [...updatedSettings.auditors, userInfo];
       }
+
+      if (isMeetingCoordinator) {
+        updatedSettings.meeting_coordinators = [...updatedSettings.meeting_coordinators, userInfo];
+      }
     }
-    // For 'remove' operation, user is already removed from both arrays above
+    // For 'remove' operation, user is already removed from all arrays above
 
     // Upstream rejects empty strings on validated fields; send null instead so the key is preserved.
     const sanitizedSettings = nullifyEmptyStrings(updatedSettings);
@@ -903,6 +928,7 @@ export class ProjectService {
       project_id: uid,
       username: maskIdentifierForLogs(backendIdentifier),
       role: role || 'N/A',
+      meeting_coordinator: isMeetingCoordinator,
     });
 
     const result = await this.etagService.updateWithETag<ProjectSettings>(
