@@ -4,7 +4,7 @@ description: Create polls, cast votes, and view results for project governance d
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
 tags: [votes, polls, governance, decisions, elections]
-last_updated: 2026-10-15
+last_updated: 2026-10-18
 intercom_collection: Votes
 ---
 
@@ -22,9 +22,9 @@ The Votes section lets you create and manage polls for formal project governance
 
 ## Navigation
 
-To view and cast votes, select **My Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations.
+To view and cast votes, select **My Votes** from the left navigation sidebar in the **Me** lens (route: `/votes`) — this lists the polls you're eligible for across your projects and foundations. My Votes opens on the **Active** tab; select **All** or **Ended** to see your other polls.
 
-To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists all polls for your active project or foundation context. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**.
+To manage polls for a specific context, switch to your **Project** or **Foundation** lens using the lens switcher, then select **Votes** from the left navigation sidebar. The votes dashboard (route: `/project/votes` or `/foundation/votes`) lists the polls for your active project or foundation context and opens on the **Active** tab. Use the tabs to filter: **All**, **Active**, **Draft**, **Ended**. Select **All** to see polls with every status.
 
 In the Project and Foundation lenses, selecting the current status tab again keeps your current page, unless a closing-soon shortcut is selected. Selecting a different status returns to the first page and loads matching polls.
 
@@ -39,13 +39,25 @@ Active status is matched without regard to letter case in both summaries and the
 
 Both counts respect **Group**, cover every matching vote rather than only the visible page, and ignore search, status tabs, and pagination. A Foundation summary uses that foundation's selected context; it does not combine descendant projects.
 
-Select **Votes Closing in the Next 7 Days** to switch to **Active** and show only closing-soon votes. Select it again to clear only the shortcut and keep **Active** selected. Select **Active Votes** to clear closing-only mode and show active votes from page one, even if Active was already selected. Search, Group, and rows per page are preserved. Selecting any status tab clears closing-only mode; **Reset filters** clears it and the table filters. Empty filtered lists retain the controls and Reset action.
+Select **Votes Closing in the Next 7 Days** to switch to **Active** and show only closing-soon votes. Select it again to clear only the shortcut and keep **Active** selected. Select **Active Votes** to clear closing-only mode and show active votes from page one, even if Active was already selected. Search, Group, and rows per page are preserved. Selecting any status tab clears closing-only mode; **Reset filters** clears it and the table filters and selects **All**. Empty filtered lists retain the controls and Reset action.
 
 While the summary loads, counts show dashes and the cells are disabled. A successful empty scope shows zero. A failed summary shows unavailable counts and **Unable to load vote summary** with **Retry**; the list remains usable, and Retry reloads only the summary.
 
 While a replacement list or its total is loading, pagination is hidden so the previous mode's count is not presented as current. Search, Group, and status controls remain available. Pagination returns once the matching rows and total are available.
 
 Changing context or Group, refreshing the list, or returning after creating/editing a vote reloads the totals. Closing selection also refreshes the summary. Totals and list pages use separate time snapshots and may differ near a deadline; they do not update continuously while idle. Changes may take time to appear in the search index. My Votes and existing creation, voting, and result permissions are unchanged.
+
+### Empty lists
+
+When a list has no votes, the message names the situation:
+
+- With only a status tab selected, the message names that status — for example **No active votes**, **No draft votes**, or **No ended votes yet**. On **Active**, select **All** to see votes with other statuses.
+- When a search, Group, foundation or project filter, or a summary shortcut is also applied, **No votes match your filters** appears instead. It does not mean that no votes exist with the selected status.
+- On **All** with no other filters, **No votes yet** appears. In the Project and Foundation lenses, only users who can create votes are offered **Create Vote**; other users are told that votes for the project or foundation will appear there.
+
+Search ignores leading and trailing spaces, so a search of only spaces does not filter the list. **Reset filters** clears every filter and selects **All**.
+
+If **My Votes** returns an incomplete list and no returned votes match your view, **Some votes could not be loaded** appears instead of an empty-status or no-match message. Select **Retry** to reload without changing your status tab or filters. Any returned votes that match your view remain usable.
 
 ### Sharing a link to a vote
 
@@ -64,7 +76,7 @@ Counts describe the returned personal feed within your selected foundation, proj
 
 Select a cell to filter the table and switch to **Active**. Select the same cell again to clear only the summary filter, leaving **Active** selected; select the other cell to switch filters. Search, group, foundation, project, and rows per page are preserved, and the table returns to its first page. Selecting any status tab, including **Active** again, clears the summary filter.
 
-If your filters have no matches, **No results found** keeps the controls available. **Reset filters** clears the summary and table filters. If a scope change removes the selected group, only that group selection is cleared.
+If your filters have no matches, the empty list keeps the controls available. **Reset filters** clears the summary and table filters and selects **All**. If a scope change removes the selected group, only that group selection is cleared.
 
 My Votes group choices use consistent English alphabetical ordering across browser and server locales.
 
