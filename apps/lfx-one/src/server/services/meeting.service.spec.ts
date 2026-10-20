@@ -27,6 +27,8 @@ const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } =
 
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/utils', async () => ({
+  // The real masker: the registrant lookup's log must never carry the address itself.
+  maskEmailForLogs: (await vi.importActual<typeof import('@lfx-one/shared/utils/email.utils')>('@lfx-one/shared/utils/email.utils')).maskEmailForLogs,
   // The real predicate, not a double: these tests are the only place the server-side lock is
   // exercised end to end, and a hand-written copy would stop tracking its normalization — the
   // casing, whitespace and string-coercion rules are the whole point of the gate. It is loaded
