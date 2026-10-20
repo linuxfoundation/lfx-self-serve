@@ -42,10 +42,12 @@ import {
  * starts it, polls it until the deck lands, and reads a document's last
  * export. The deck's logo is the BFF's to draw from the stored kit.
  *
- * It also holds the exports this browser has under way, one per document:
+ * It also holds the exports this tab has under way, one per document:
  * a panel that goes (another version picked, the page left) does not stop
  * the export, and a panel that comes back to the document attaches to it
- * instead of offering Create while its deck is still being made.
+ * instead of offering Create while its deck is still being made. The list
+ * lives in memory, so another tab, or this one after a reload, does not see
+ * an export under way; the server still keeps that export's own record.
  */
 @Injectable({ providedIn: 'root' })
 export class MktgSlidesExportService {

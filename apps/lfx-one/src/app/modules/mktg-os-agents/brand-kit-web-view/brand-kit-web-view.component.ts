@@ -13,7 +13,7 @@ import {
   BrandKitWebViewTabId,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
-import { brandKitChapterSummaries, brandKitWeights, buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { brandKitChapterSummaries, buildBrandKitBookView } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 
 import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
@@ -83,10 +83,14 @@ export class BrandKitWebViewComponent {
         .join(', ')
   );
   protected readonly tabs: Signal<BrandKitWebViewTab[]> = this.initTabs();
-  /** The kit's typeface as Download PDF waits for it: the family the book loads from Google Fonts and its weights; null when it is not there. */
+  /**
+   * The kit's typeface as Download PDF waits for it, read from the book's own
+   * view model so the wait names exactly the family and weights the book
+   * loads from Google Fonts; null when it is not there.
+   */
   private readonly printFont = computed(() => {
-    const type = this.kit().chapters.type;
-    return this.view().fontUrl ? { family: type.family.trim(), weights: brandKitWeights(type.weights) } : null;
+    const view = this.view();
+    return view.fontUrl ? { family: view.type.family.trim(), weights: view.weights.map((entry) => entry.weight) } : null;
   });
   protected readonly printOnlyClass = BRAND_KIT_PRINT_ONLY_CLASS;
 

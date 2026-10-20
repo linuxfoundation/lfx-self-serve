@@ -443,9 +443,10 @@ export class MktgAgentRunService {
   }
 
   /**
-   * Bounded background persistence retry for agents whose result endpoint
-   * persists the validated document (`intake.persistsDocument`, today the
-   * Brand Kit's dec-brand-kit-storage-v2 write path).
+   * Bounded background persistence retry for every agent whose result
+   * endpoint persists the validated document: any intake that sets
+   * `persistsDocument`, not only the Brand Kit (the Messaging Framework's
+   * export, for one, relies on this retry too).
    *
    * A `ready` result with NO persistence receipt means the server-side write
    * did not happen — usually a transient object-store failure, which the BFF
