@@ -188,7 +188,8 @@ verified · unknown/needs-review · auto-matched · AI-reconciled — plus the `
 
 ### Phase 3
 
-Spikes S-01 (#3610, colleague meetings feasibility and privacy) and S-02 (#3611, occurrence
+Spikes S-01 (#3610, colleague meetings feasibility and privacy; decision in
+[`spike-colleague-meetings.md`](spike-colleague-meetings.md)) and S-02 (#3611, occurrence
 timeline scale) sit under the epic. The plan's hygiene bugs (§ 10) are filed as standalone issues
 against `main`: H-01 #3612, H-07 #3613, H-08 #3614, H-09 #3615, H-10 #3616. H-04 was already
 fixed, H-05 is folded into E10-01 (#3601), and H-06 was covered by E3-05. Two security findings are held
@@ -244,4 +245,6 @@ E6-01's is [`contracts/public-meeting-occurrences.schema.json`](contracts/public
 - [`v2-scaffold.md`](v2-scaffold.md) — V1/V2 naming, where V2 code lives, V1-deletion definition
   of done (V2-02).
 - [`rollout.md`](rollout.md) — branch, release, flag stages and retirement (V2-03).
+- [`spike-colleague-meetings.md`](spike-colleague-meetings.md) — colleague meetings feasibility and
+  privacy review: defer (S-01, #3610).
 - `docs/architecture/frontend/docs-portal.md` — the repo's precedent for a spec-shaped doc.
