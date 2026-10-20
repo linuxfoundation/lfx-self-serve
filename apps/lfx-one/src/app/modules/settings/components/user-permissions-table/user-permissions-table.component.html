@@ -21,6 +21,8 @@
         styleClass="p-datatable-sm animate-fade-in-up"
         [paginator]="true"
         [rows]="10"
+        [first]="first()"
+        (onPage)="onPageChange($event)"
         [rowsPerPageOptions]="[10, 25, 50]"
         [showCurrentPageReport]="true"
         currentPageReportTemplate="Showing {first} to {last} of {totalRecords} users">

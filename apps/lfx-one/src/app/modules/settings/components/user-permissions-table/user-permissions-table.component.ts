@@ -13,6 +13,7 @@ import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { TablePageEvent } from 'primeng/table';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
@@ -43,6 +44,8 @@ export class UserPermissionsTableComponent {
 
   // A null selection means "all roles"
   public readonly selectedRole: WritableSignal<ProjectPermissionRole | null> = signal(null);
+  // Offset of the first row on the current page, kept here so a filter change can reset it
+  public readonly first: WritableSignal<number> = signal(0);
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
 
@@ -57,6 +60,12 @@ export class UserPermissionsTableComponent {
   // Event handlers
   protected onRoleFilterToggle(role: string): void {
     this.selectedRole.update((current) => (current === role ? null : (role as ProjectPermissionRole)));
+    // A new filter can shrink the result set below the current page's offset, so start from the first page
+    this.first.set(0);
+  }
+
+  protected onPageChange(event: TablePageEvent): void {
+    this.first.set(event.first);
   }
 
   protected onEditUser(user: ProjectPermissionUser): void {

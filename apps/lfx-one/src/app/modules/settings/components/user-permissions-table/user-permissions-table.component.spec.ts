@@ -97,6 +97,42 @@ describe('UserPermissionsTableComponent role filter', () => {
     expect(component.filteredUsers()).toEqual([]);
   });
 
+  describe('pagination', () => {
+    it('starts on the first page', () => {
+      expect(component.first()).toBe(0);
+    });
+
+    it('tracks the page the table reports', () => {
+      component['onPageChange']({ first: 20, rows: 10 });
+
+      expect(component.first()).toBe(20);
+    });
+
+    it('returns to the first page when a role pill is picked from a later page', () => {
+      component['onPageChange']({ first: 20, rows: 10 });
+      component['onRoleFilterToggle']('view');
+
+      expect(component.first()).toBe(0);
+    });
+
+    it('returns to the first page when switching to another role', () => {
+      component['onRoleFilterToggle']('view');
+      component['onPageChange']({ first: 10, rows: 10 });
+      component['onRoleFilterToggle']('manage');
+
+      expect(component.first()).toBe(0);
+    });
+
+    it('returns to the first page when the active pill is cleared', () => {
+      component['onRoleFilterToggle']('view');
+      component['onPageChange']({ first: 10, rows: 10 });
+      component['onRoleFilterToggle']('view');
+
+      expect(component.selectedRole()).toBeNull();
+      expect(component.first()).toBe(0);
+    });
+  });
+
   it('re-filters when the users input changes', () => {
     component['onRoleFilterToggle']('view');
     expect(component.filteredUsers()).toEqual([VIEWER]);
