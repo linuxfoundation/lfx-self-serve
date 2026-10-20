@@ -139,6 +139,23 @@ describe('MeetingRsvpCardComponent', () => {
     expect(query('meeting-rsvp-card-confirmation')).toBeNull();
   });
 
+  it('does not put a save that completes after a removal back on the page', () => {
+    const pending = new Subject<MeetingRsvp>();
+    createMeetingRsvp.mockReturnValue(pending.asObservable());
+    click('meeting-rsvp-card-accepted');
+
+    // The viewer removes themselves while the save is in flight.
+    rsvpReset.update((count) => count + 1);
+    fixture.detectChanges();
+    pending.next(saved('accepted'));
+    pending.complete();
+    fixture.detectChanges();
+
+    expect(setMyRsvp).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(query('meeting-rsvp-card-confirmation')).toBeNull();
+  });
+
   // The live region stays mounted, so the save is announced; focus moves to the confirmation's Change.
   it('announces a saved answer and moves focus to Change', () => {
     myRsvp.set(undefined);
