@@ -11,8 +11,30 @@
     </div>
   }
   <p class="text-sm text-gray-600">
-    {{ switching ? 'Enter the email or username of the user you want to switch to.' : 'Enter the email or username of the user you want to view the app as.' }}
+    {{
+      switching
+        ? 'Search for the user you want to switch to, or enter their email or username.'
+        : 'Search for the user you want to view the app as, or enter their email or username.'
+    }}
   </p>
+  <div class="flex flex-col gap-1">
+    <label for="nameSearch" class="text-sm font-medium text-gray-700">Search by name</label>
+    <lfx-user-search
+      [form]="nameSearchForm"
+      searchType="committee_member"
+      [requireLfAccount]="true"
+      [showManualEntry]="false"
+      [waitForSearchableQuery]="true"
+      [displayValue]="nameSearchLabel()"
+      [showClear]="true"
+      placeholder="e.g. John Doe"
+      styleClass="w-full"
+      inputId="nameSearch"
+      dataTestId="impersonation-name-search"
+      (onUserSelect)="onNameSearchSelected($event)"
+      (onRejectedSelection)="onNameSearchRejected()"
+      (onClear)="onNameSearchCleared()" />
+  </div>
   <div class="flex flex-col gap-1" (keydown.enter)="submit()">
     <label for="targetUser" class="text-sm font-medium text-gray-700">Email or Username</label>
     @if (recentImpersonations().length > 0) {

@@ -5,65 +5,65 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MKTG_AGENTS } from '@lfx-one/shared/constants';
-import { MktgAgent, MktgDependencyDocument, MktgStoredAgentRun, ProjectContext } from '@lfx-one/shared/interfaces';
-import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MKTG_AGENTS, MKTG_DOCUMENT_TYPES, MKTG_KIT_EXCLUDED_AGENT_IDS } from '@lfx-one/shared/constants';
+import { MktgAgent, MktgDependencyDocument, MktgDocumentsResponse, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgOsAgentsComponent } from './mktg-os-agents.component';
 
-/**
- * The "vN generated" badges AND the dependency gating
- * (dec-agent-dependency-gating) must follow the ACTIVE project, not the first
- * render: the project selector reuses this component on a switch (it only
- * rewrites ?project= via Location.replaceState — no navigation), and the
- * context can also resolve only after the first render. A one-shot load
- * would show one project's versions on another project's marketplace, or no
- * badges at all — the two regressions locked down here.
- */
-describe('MktgOsAgentsComponent — stored-version badges follow the active project', () => {
+/** Last-run dates and dependency gating follow the active project, including late context and re-entry. */
+describe('MktgOsAgentsComponent — catalog states and listing dates', () => {
   const PROJECT_1: ProjectContext = { uid: 'proj-1', name: 'Project One', slug: 'proj-one' };
   const PROJECT_2: ProjectContext = { uid: 'proj-2', name: 'Project Two', slug: 'proj-two' };
 
   let fixture: ComponentFixture<MktgOsAgentsComponent>;
   let activeContext: WritableSignal<ProjectContext | null>;
-  let loadRun: ReturnType<typeof vi.fn>;
+  let listDocuments: ReturnType<typeof vi.fn>;
   let resolveDependencies: ReturnType<typeof vi.fn>;
-  /** Latest stored-run version per projectUid for the brand-kit agent; other agents have none. */
-  let brandKitVersions: Record<string, number>;
+  /** Synthetic last-run day per project; other agents have no document. */
+  let brandKitRunDays: Record<string, number>;
   /** Resolved dependency document per `<projectUid>:<agentId>`, returned by the mocked dependency service. */
   let dependencyDocs: Record<string, MktgDependencyDocument>;
   /** Stand-in for the service's run-completed notifications. */
   let documentsChanged: Subject<string>;
 
-  function storedRun(projectUid: string, version: number): MktgStoredAgentRun {
+  function listing(project: string, day?: number): MktgDocumentsResponse {
     return {
-      agentId: 'brand-kit',
-      projectUid,
-      sessionId: `sess-${projectUid}`,
-      ownerToken: `token-${projectUid}`,
-      answers: {},
-      versions: [{ version, document: '# Doc', createdAt: '2026-08-19T00:00:00.000Z' }],
-      savedAt: '2026-08-19T00:00:00.000Z',
+      project,
+      groups: MKTG_DOCUMENT_TYPES.map((type) => ({
+        type,
+        documents:
+          type.agentKey === 'brand-kit' && day
+            ? [
+                {
+                  agentKey: type.agentKey,
+                  documentId: 'living',
+                  revisionCount: 99,
+                  latestRevisionId: '000003-' + 'a'.repeat(64),
+                  approvedCurrent: null,
+                  createdAt: null,
+                  updatedAt: `2026-10-${String(day).padStart(2, '0')}T12:00:00Z`,
+                },
+              ]
+            : [],
+      })),
     };
   }
 
-  function badge(): HTMLElement | null {
-    return fixture.nativeElement.querySelector('[data-testid="mktg-os-agents-generated-brand-kit"]');
+  function lastRun(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="mktg-os-agents-last-run-brand-kit"]');
   }
 
   beforeEach(async () => {
     activeContext = signal<ProjectContext | null>(null);
-    brandKitVersions = {};
+    brandKitRunDays = {};
     dependencyDocs = {};
     documentsChanged = new Subject<string>();
-    loadRun = vi.fn((projectUid: string, agentId: string) => {
-      const version = brandKitVersions[projectUid];
-      return agentId === 'brand-kit' && version ? storedRun(projectUid, version) : null;
-    });
+    listDocuments = vi.fn((project: string) => of(listing(project, brandKitRunDays[project])));
     resolveDependencies = vi.fn((projectUid: string, agentIds: string[]) =>
       of(Object.fromEntries(agentIds.map((agentId) => [agentId, dependencyDocs[`${projectUid}:${agentId}`] ?? null])))
     );
@@ -77,7 +77,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
         provideRouter([{ path: '**', children: [] }]),
         provideNoopAnimations(),
         { provide: ProjectContextService, useValue: { activeContext } },
-        { provide: MktgAgentRunService, useValue: { loadRun } },
+        { provide: MktgDocumentStoreService, useValue: { listDocuments } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, documentsChanged$: documentsChanged.asObservable() } },
       ],
     }).compileComponents();
@@ -86,9 +86,10 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     await fixture.whenStable();
   });
 
-  it('keeps the relocated grid usable: selecting an active card targets the sibling run route', () => {
+  it('keeps the relocated grid usable: selecting an active card targets the sibling run route', async () => {
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
-    expect(root.querySelector('[data-testid="mktg-kit-tabs"]')?.querySelectorAll('a')).toHaveLength(4);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const button = root.querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]');
     expect(button).not.toBeNull();
@@ -96,54 +97,106 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     expect(navigate).toHaveBeenCalledWith(['../', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
   });
 
-  it('shows the badge once the context resolves AFTER the first render — a one-shot load would never badge at all', async () => {
-    // First render with no context yet (activeContextUid was empty at
-    // afterNextRender time in the regressed one-shot implementation).
-    expect(badge()).toBeNull();
-
-    brandKitVersions = { 'proj-1': 2 };
+  it('clears resolving and shows the defensive message when project context is absent', async () => {
+    const root: HTMLElement = fixture.nativeElement;
+    expect(listDocuments).not.toHaveBeenCalled();
+    expect(fixture.componentInstance['resolving']()).toBe(false);
     activeContext.set(PROJECT_1);
     await fixture.whenStable();
-
-    expect(badge()?.textContent).toContain('v2 generated');
+    expect(root.querySelector('[data-testid="mktg-os-agents-results"]')).not.toBeNull();
+    activeContext.set(null);
+    await fixture.whenStable();
+    expect(fixture.componentInstance['resolving']()).toBe(false);
+    expect(fixture.componentInstance['documents']()).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-os-agents-results"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-os-agents-no-project"]')?.textContent).toBe('Select a project to see its Marketing kit.');
   });
 
-  it('reloads the badges on an in-app project switch instead of keeping the previous project versions', async () => {
-    brandKitVersions = { 'proj-1': 3, 'proj-2': 1 };
+  it('groups board agents with the framework first, Boilerplates next; no standalone ICP or Website Builder', async () => {
     activeContext.set(PROJECT_1);
     await fixture.whenStable();
-    expect(badge()?.textContent).toContain('v3 generated');
+    const root: HTMLElement = fixture.nativeElement;
+    expect(root.querySelectorAll('[data-testid^="mktg-os-agents-run-order-"]')).toHaveLength(1);
+    expect(root.querySelectorAll('[data-testid^="mktg-os-agents-tile-"]')).toHaveLength(
+      MKTG_AGENTS.filter((agent) => !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)).length
+    );
+    expect(root.querySelectorAll('section')).toHaveLength(5);
+    expect(root.querySelector('[data-testid="mktg-os-agents-family-events"]')).toBeNull();
+    const first = root.querySelector('[data-testid="mktg-os-agents-family-positioning-brand"]');
+    expect(first?.textContent).toContain('Run in order: framework first');
+    expect(Array.from(first?.querySelectorAll('button') ?? []).map((button) => button.getAttribute('data-testid'))).toEqual([
+      'mktg-os-agents-tile-foundation-setup',
+      'mktg-os-agents-tile-boilerplates',
+      'mktg-os-agents-tile-faq',
+      'mktg-os-agents-tile-brand-kit',
+    ]);
+  });
 
-    // The selector reuses this component — only the context signal changes.
+  it('keeps resolving tiles neutral and disabled until the snapshot completes', async () => {
+    const pending = new Subject<MktgDocumentsResponse>();
+    listDocuments.mockReturnValueOnce(pending);
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const tile = root.querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]');
+    expect(tile?.disabled).toBe(true);
+    expect(tile?.getAttribute('aria-label')).toContain('Resolving');
+    expect(root.querySelector('[data-testid="mktg-os-agents-state-foundation-setup"]')?.textContent).toContain('—');
+    expect(root.textContent).not.toContain('Needs an approved framework');
+    pending.next(listing('proj-1'));
+    pending.complete();
+    await fixture.whenStable();
+    expect(tile?.disabled).toBe(false);
+    expect(tile?.getAttribute('aria-label')).toBe('Messaging Framework Agent — Live');
+  });
+
+  it('shows a listing date after late context, with no search/Documents control or generated badge', async () => {
+    expect(lastRun()).toBeNull();
+    brandKitRunDays = { 'proj-1': 2 };
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    expect(lastRun()?.textContent).toContain('Last run 2 Oct');
+    expect(fixture.nativeElement.querySelector('lfx-input-text')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-os-agents-documents-link"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('generated');
+  });
+
+  it('reloads dates on a project switch, not the previous project’s version count', async () => {
+    brandKitRunDays = { 'proj-1': 3, 'proj-2': 1 };
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    expect(lastRun()?.textContent).toContain('Last run 3 Oct');
     activeContext.set(PROJECT_2);
     await fixture.whenStable();
-
-    expect(loadRun).toHaveBeenCalledWith('proj-2', 'brand-kit');
-    expect(badge()?.textContent).toContain('v1 generated');
+    expect(listDocuments).toHaveBeenCalledWith('proj-2');
+    expect(lastRun()?.textContent).toContain('Last run 1 Oct');
   });
 
-  it('clears the badges when the switched-to project has no stored runs', async () => {
-    brandKitVersions = { 'proj-1': 2 };
+  it('clears dates for a project with no documents or after deselection', async () => {
+    brandKitRunDays = { 'proj-1': 2 };
     activeContext.set(PROJECT_1);
     await fixture.whenStable();
-    expect(badge()).not.toBeNull();
-
+    expect(lastRun()).not.toBeNull();
     activeContext.set(PROJECT_2);
     await fixture.whenStable();
-
-    expect(badge()).toBeNull();
+    expect(lastRun()).toBeNull();
+    activeContext.set(null);
+    await fixture.whenStable();
+    expect(lastRun()).toBeNull();
   });
 
-  it('does not reload when the context re-emits the same uid (Location.replaceState churn)', async () => {
-    brandKitVersions = { 'proj-1': 2 };
+  it('does not reload for the same uid and does not invent dates after a failed read', async () => {
     activeContext.set(PROJECT_1);
     await fixture.whenStable();
-    const callsAfterFirstLoad = loadRun.mock.calls.length;
-
+    const calls = listDocuments.mock.calls.length;
     activeContext.set({ ...PROJECT_1 });
     await fixture.whenStable();
-
-    expect(loadRun.mock.calls.length).toBe(callsAfterFirstLoad);
+    expect(listDocuments.mock.calls.length).toBe(calls);
+    listDocuments.mockReturnValueOnce(throwError(() => new Error('synthetic listing failure')));
+    activeContext.set(PROJECT_2);
+    await fixture.whenStable();
+    expect(lastRun()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-os-agents-error"]')).not.toBeNull();
   });
 
   /**
@@ -157,7 +210,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
     const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
     const gatedAgent = MKTG_AGENTS.find((agent) => agent.id === 'brand-kit') as MktgAgent;
     const mfTile = (): HTMLButtonElement | null => host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-brand-kit"]');
-    const requiresTag = (): HTMLElement | null => host().querySelector('[data-testid="mktg-os-agents-requires-brand-kit"]');
+    const requiresTag = (): HTMLElement | null => host().querySelector('[data-testid="mktg-os-agents-state-brand-kit"]');
     const kitDoc = (source: 'server' | 'browser' = 'server'): MktgDependencyDocument => ({
       agentId: 'foundation-setup',
       source,
@@ -184,8 +237,8 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       await fixture.whenStable();
 
       expect(mfTile()?.disabled).toBe(true);
-      expect(requiresTag()?.textContent).toContain('Requires Messaging framework');
-      expect(mfTile()?.getAttribute('aria-label')).toContain('requires Messaging framework');
+      expect(requiresTag()?.textContent).toContain('Needs an approved framework');
+      expect(mfTile()?.getAttribute('aria-label')).toContain('Needs an approved framework');
       // The Messaging Framework Agent card itself runs first and stays clickable.
       expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.disabled).toBe(false);
     });
@@ -208,7 +261,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
 
       expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], [], true);
       expect(mfTile()?.disabled).toBe(false);
-      expect(requiresTag()).toBeNull();
+      expect(requiresTag()?.textContent).toContain('Live');
     });
 
     it('keeps the card locked when the approved-only service omits browser Drafts', async () => {
@@ -226,23 +279,18 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
 
       // Disabled by a missing dependency: the accessible name carries the same
       // reason as the visible "Requires Messaging framework" tag.
-      expect(mfTile()?.getAttribute('aria-label')).toBe('Brand Kit Agent (requires Messaging framework)');
+      expect(mfTile()?.getAttribute('aria-label')).toBe('Brand Kit Agent — Needs an approved framework');
       // Disabled for having no live agent yet — never described as dependency-blocked.
-      expect(host().querySelector('[data-testid="mktg-os-agents-tile-pitch-deck"]')?.getAttribute('aria-label')).toBe('Pitch Deck Agent (coming soon)');
+      expect(host().querySelector('[data-testid="mktg-os-agents-tile-pitch-deck"]')?.getAttribute('aria-label')).toBe('Pitch Deck Agent — Coming soon');
       // Enabled cards announce the action instead.
-      expect(host().querySelector('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.getAttribute('aria-label')).toBe('Open Messaging Framework Agent');
+      expect(host().querySelector('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.getAttribute('aria-label')).toBe('Messaging Framework Agent — Live');
     });
 
-    it('leaves the ICP card open with nothing stored — its sibling documents are optional, not gates', async () => {
+    it('does not surface standalone ICP or Website Builder even though the catalog retains them', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-
-      // The ICP agent CONSUMES the Brand Kit and the Messaging Framework but
-      // does not require either, so it carries no `dependsOn`: gating it on
-      // documents the agent runs without would lock out projects it can serve.
-      const icpTile = host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-icp"]');
-      expect(icpTile?.disabled).toBe(false);
-      expect(icpTile?.getAttribute('aria-label')).toBe('Open ICP & Target Markets Agent');
+      expect(host().querySelector('[data-testid="mktg-os-agents-tile-icp"]')).toBeNull();
+      expect(host().querySelector('[data-testid="mktg-os-agents-tile-website-builder"]')).toBeNull();
     });
 
     it('switches the gated card to its action name once the dependency resolves', async () => {
@@ -250,7 +298,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(mfTile()?.getAttribute('aria-label')).toBe('Open Brand Kit Agent');
+      expect(mfTile()?.getAttribute('aria-label')).toBe('Brand Kit Agent — Live');
     });
 
     /**
@@ -308,17 +356,22 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
         expect(resolveDependencies.mock.calls.length).toBe(callsOnEntry);
       });
 
-      it('keeps the unlocked card unlocked while a refresh is in flight — no relock flicker', async () => {
+      it('keeps the current snapshot unlocked during a same-project refresh without relock flicker', async () => {
         dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         expect(mfTile()?.disabled).toBe(false);
 
-        // A refresh that never resolves: the card must not flash back to locked.
-        resolveDependencies.mockReturnValueOnce(new Subject<Record<string, MktgDependencyDocument | null>>().asObservable());
+        const pending = new Subject<Record<string, MktgDependencyDocument | null>>();
+        resolveDependencies.mockReturnValueOnce(pending.asObservable());
         documentsChanged.next('proj-1');
         await fixture.whenStable();
-
+        expect(mfTile()?.disabled).toBe(false);
+        expect(requiresTag()?.textContent).toContain('Live');
+        expect(requiresTag()?.textContent).not.toContain('Needs');
+        pending.next({ 'foundation-setup': kitDoc() });
+        pending.complete();
+        await fixture.whenStable();
         expect(mfTile()?.disabled).toBe(false);
       });
     });

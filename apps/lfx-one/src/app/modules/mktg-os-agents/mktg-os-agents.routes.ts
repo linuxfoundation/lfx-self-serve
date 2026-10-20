@@ -48,6 +48,12 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     canActivate: [authGuard],
   },
   {
+    path: 'families/:familyId',
+    title: 'Marketing family',
+    loadComponent: () => import('./mktg-family/mktg-family.component').then((m) => m.MktgFamilyComponent),
+    canActivate: [authGuard],
+  },
+  {
     path: ':agentId',
     title: 'Agent',
     loadComponent: () => import('./mktg-agent-run/mktg-agent-run.component').then((m) => m.MktgAgentRunComponent),

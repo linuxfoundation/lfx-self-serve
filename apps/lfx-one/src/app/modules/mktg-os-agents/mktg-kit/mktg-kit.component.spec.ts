@@ -3,7 +3,7 @@
 
 import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
@@ -82,6 +82,16 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-asset-brand-kit"]')).toBeNull();
     expect(root.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]')).not.toBeNull();
     expect(root.textContent).toContain('No assets in this state');
+  });
+  it('keeps Family card links current when context changes without router navigation', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?project=stale');
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    context.set({ uid: 'next', slug: 'current' });
+    await fixture.whenStable();
+    expect(router.url).toContain('project=stale');
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-kit-family-link-positioning-brand"]')?.getAttribute('href')).toContain('project=current');
   });
   it('defensively renders no-project while isolated from lens navigation', async () => {
     documents.set(null);

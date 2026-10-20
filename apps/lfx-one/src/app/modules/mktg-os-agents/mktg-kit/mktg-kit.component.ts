@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
@@ -13,7 +14,7 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
 
 @Component({
   selector: 'lfx-mktg-kit',
-  imports: [ButtonComponent, FilterPillsComponent, MktgKitHeaderComponent, MktgKitTabsComponent, MktgKitStatusComponent],
+  imports: [RouterLink, ButtonComponent, FilterPillsComponent, MktgKitHeaderComponent, MktgKitTabsComponent, MktgKitStatusComponent],
   providers: [MktgKitService],
   templateUrl: './mktg-kit.component.html',
 })
