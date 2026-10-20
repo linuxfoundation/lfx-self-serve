@@ -342,7 +342,9 @@ export class MeetingDetailsStateService {
    * not ask again.
    */
   public consumeLeaveRequest(): void {
-    this.consumedLeaveFor = this.leaveRequest()?.meetingId ?? null;
+    // Latched only while the param is actually in the URL: a seeded request V1 already dropped has no
+    // param change coming to clear the latch, which would then swallow a later link to this meeting.
+    this.consumedLeaveFor = this.activatedRoute.snapshot.queryParamMap.get('action') === 'leave' ? (this.leaveRequest()?.meetingId ?? null) : null;
     this.leaveRequest.set(null);
     void this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
@@ -725,7 +727,16 @@ export class MeetingDetailsStateService {
             // return it) is no answer, so a later lookup never undoes a removal's correction.
             map((rsvp) => {
               const meeting = this.meeting();
-              return rsvp && meeting && this.userService.isMeetingRsvpCurrent(rsvp, meeting) ? rsvp : null;
+              if (!rsvp || !meeting || this.userService.isMeetingRsvpCurrent(rsvp, meeting)) {
+                return rsvp ?? null;
+              }
+              // The lookup returned a registration the viewer has removed (indexer lag): fall back to
+              // the surviving answers this session holds, as a partial removal selected them.
+              const occurrenceId = event.key?.occurrenceId;
+              const surviving = this.userService
+                .confirmedMeetingRsvps(meeting.id)
+                .filter((saved) => this.userService.isMeetingRsvpCurrent(saved, meeting) && (!meeting.recurrence || !!occurrenceId || saved.scope === 'all'));
+              return selectApplicableRsvp(occurrenceId, surviving);
             }),
             tap((rsvp) => (this.lastFetchedRsvp = rsvp)),
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),

@@ -74,6 +74,7 @@ describe('MeetingActionSlotComponent', () => {
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let markLeft: ReturnType<typeof vi.fn>;
   let leavingFor: WritableSignal<string | null>;
+  let matchesRoute: WritableSignal<boolean>;
   let markLeaveIncomplete: ReturnType<typeof vi.fn>;
   let consumeLeaveRequest: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
@@ -110,6 +111,7 @@ describe('MeetingActionSlotComponent', () => {
     status = signal<MeetingDetailsLoadStatus>('ready');
     markLeft = vi.fn();
     leavingFor = signal<string | null>(null);
+    matchesRoute = signal(true);
     markLeaveIncomplete = vi.fn();
     consumeLeaveRequest = vi.fn(() => leaveRequest.set(null));
     // A real service, so `<p-confirmDialog>` can subscribe to it; only `confirm` is observed.
@@ -141,6 +143,7 @@ describe('MeetingActionSlotComponent', () => {
             status,
             leaving: signal(false),
             leavingFor,
+            matchesRoute,
             markLeft,
             markLeaveIncomplete,
             consumeLeaveRequest,
@@ -197,11 +200,15 @@ describe('MeetingActionSlotComponent', () => {
     expect(slots[0].getAttribute('data-kind')).toBe(kind);
   });
 
-  it.each(KINDS.filter((kind) => kind !== 'join' && kind !== 'rsvp' && kind !== 'none'))('explains the %s kind instead of leaving the rail empty', (kind) => {
-    render(kind);
+  // `none` and `rsvp-unavailable` are V1's empty rail; each is tested on its own.
+  it.each(KINDS.filter((kind) => kind !== 'join' && kind !== 'rsvp' && kind !== 'none' && kind !== 'rsvp-unavailable'))(
+    'explains the %s kind instead of leaving the rail empty',
+    (kind) => {
+      render(kind);
 
-    expect(text('meeting-action-message')).not.toBe('');
-  });
+      expect(text('meeting-action-message')).not.toBe('');
+    }
+  );
 
   it('renders the Join control for the join kind', () => {
     expect(query('join-action-stub')).not.toBeNull();
@@ -302,12 +309,15 @@ describe('MeetingActionSlotComponent', () => {
     expect(query('meeting-action-message')).toBeNull();
   });
 
-  // N-01 (FR-026, SC-005): a meeting that predates RSVP tracking says so, with no RSVP control.
-  it('explains a meeting without RSVP tracking, and offers nothing to answer', () => {
+  // FR-026 (SC-005): a meeting that predates RSVP tracking gets V1's empty rail, with no RSVP control.
+  it("renders V1's empty rail for a meeting without RSVP tracking, with nothing to answer", () => {
     render('rsvp-unavailable');
 
-    expect(query('meeting-rsvp-unavailable-state')?.textContent).toContain("You're invited");
-    expect(text('meeting-action-message')).toBe("RSVPs aren't tracked for this meeting, so there's nothing to answer.");
+    const slot = query('meeting-action-slot');
+    expect(slot?.getAttribute('data-kind')).toBe('rsvp-unavailable');
+    // Nothing at all inside the slot (outside the join window there is no hint either).
+    expect(slot?.children.length).toBe(0);
+    expect(slot?.textContent?.trim()).toBe('');
     // No control at all, and nothing that carries an answer.
     expect(fixture.nativeElement.querySelector('button, input')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-my-rsvp]')).toBeNull();
@@ -319,7 +329,8 @@ describe('MeetingActionSlotComponent', () => {
     render('rsvp-unavailable');
 
     expect(text('meeting-action-join-hint')).toBe('You can join up to 15 minutes before the start time.');
-    expect(text('meeting-action-message')).not.toContain('join');
+    // The hint is the slot's only content.
+    expect(query('meeting-action-slot')?.children.length).toBe(1);
   });
 
   // E2-06 (FR-025).
@@ -381,7 +392,7 @@ describe('MeetingActionSlotComponent', () => {
     // #3260: Register leaves the slot once registered, so focus moves to the slot's new first control.
     it.each([
       ['its new first control', 'rsvp' as ActionSlotKind],
-      // RSVP tracking off: the new state is plain text, so the slot itself takes focus.
+      // RSVP tracking off: the new state is V1's empty rail, so the slot itself takes focus.
       ['the slot itself when the new state has no control', 'rsvp-unavailable' as ActionSlotKind],
     ])('moves focus to %s once registered, since Register is gone', async (_label, next) => {
       markRegistered.mockImplementation(() => actionSlot.set(next));
@@ -632,6 +643,22 @@ describe('MeetingActionSlotComponent', () => {
       pending.complete();
 
       expect(leavingFor()).toBeNull();
+    });
+
+    // The held meeting is still the old one until the new route's lookup settles.
+    it('keeps a late removal off the next page while its lookup is still in flight', () => {
+      const pending = new Subject<{ remaining_registrant_ids: string[] }>();
+      removeMyMeetingRegistration.mockReturnValue(pending.asObservable());
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+
+      matchesRoute.set(false);
+      pending.next({ remaining_registrant_ids: [] });
+
+      expect(markLeft).toHaveBeenCalledWith('meeting-1');
+      expect(add).not.toHaveBeenCalled();
     });
 
     it("keeps a removal's error off a meeting the page has moved to", () => {

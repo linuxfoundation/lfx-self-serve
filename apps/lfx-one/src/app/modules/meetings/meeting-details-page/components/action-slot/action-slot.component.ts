@@ -33,9 +33,9 @@ import { MeetingRsvpCardComponent } from '../rsvp-card/rsvp-card.component';
  * renders an empty slot, never a missing one (SC-004).
  *
  * `join` (FR-027), `register` (E2-02, FR-021), `invitation-required` (E2-03, FR-022),
- * `guest-join` (E2-06, FR-025), `rsvp` (E2-05, FR-023 / FR-024, its own card) and `rsvp-unavailable`
- * (N-01, FR-026) are complete here. Only `tools` still carries one line of copy until E4 builds its
- * full design, so no viewer meets an empty rail meanwhile.
+ * `guest-join` (E2-06, FR-025) and `rsvp` (E2-05, FR-023 / FR-024, its own card) are complete here.
+ * `rsvp-unavailable` (FR-026) renders V1's empty rail, as `none` does; only the join hint may follow.
+ * `tools` carries one line of copy.
  *
  * Under the slot, an organizer or invitee gets V1's Add to calendar and Remove Myself before the join
  * window, and a `?action=leave` link (invite emails, calendar events) asks them to confirm the removal.
@@ -141,7 +141,7 @@ export class MeetingActionSlotComponent {
         this.state.markRegistered(meeting.id);
         // Register is gone from the slot now, so focus has nowhere to return to: hand it to the slot's
         // new first control once it renders, or to the slot itself when the new state has none (e.g.
-        // `rsvp-unavailable`, plain text), so it never falls to <body> (#3260, WCAG 2.4.3). Only on the
+        // `rsvp-unavailable`, V1's empty rail), so it never falls to <body> (#3260, WCAG 2.4.3). Only on the
         // meeting the registration was for: a late result after the page moved on changes nothing here.
         if (this.state.meeting()?.id === meeting.id) {
           afterNextRender(() => this.focusSlot(), { injector: this.injector });
@@ -267,7 +267,9 @@ export class MeetingActionSlotComponent {
             // `markLeft` guards its own page-local updates.
             this.state.markLeft(meetingId);
           }
-          if (this.state.meeting()?.id !== meetingId) {
+          // `matchesRoute` too: after a navigation the held meeting stays the old one until the new
+          // lookup settles, and the toast and focus must not land on the next page meanwhile.
+          if (!this.state.matchesRoute() || this.state.meeting()?.id !== meetingId) {
             return;
           }
           if (!complete) {
@@ -297,7 +299,7 @@ export class MeetingActionSlotComponent {
         },
         error: (error: unknown) => {
           // As the success path: the error belongs to the page and account the removal was made on.
-          if (this.state.meeting()?.id !== meetingId || this.viewerSubject() !== subject) {
+          if (!this.state.matchesRoute() || this.state.meeting()?.id !== meetingId || this.viewerSubject() !== subject) {
             return;
           }
           const fallback = 'Unable to remove you from this meeting. Please try again.';

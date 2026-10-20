@@ -887,6 +887,36 @@ describe('MeetingDetailsStateService', () => {
       expect(state.myRsvp()).toBeNull();
     });
 
+    it("keeps the surviving answer when a later lookup still returns the removed registration's", async () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      const first = new Date(Date.now() + 2 * DAY);
+      const second = new Date(Date.now() + 9 * DAY);
+      const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
+      const surviving = { id: 'rsvp-2', registrant_id: 'r-2', meeting_id: MEETING_ID, response_type: 'maybe', scope: 'all' } as unknown as MeetingRsvp;
+      getMyRsvp.mockReturnValue(of(removed));
+      const state = await load(
+        upcoming({
+          is_invite_responses_enabled: true,
+          recurrence: { type: 2 },
+          start_time: first.toISOString(),
+          occurrences: [
+            { occurrence_id: '1', start_time: first.toISOString(), duration: 60 },
+            { occurrence_id: '2', start_time: second.toISOString(), duration: 60 },
+          ],
+        } as unknown as Partial<Meeting>)
+      );
+      confirmedMeetingRsvps.mockReturnValue([surviving]);
+      isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
+      state.markLeaveIncomplete(MEETING_ID);
+      expect(state.myRsvp()).toBe('maybe');
+
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      await flush();
+
+      expect(getMyRsvp).toHaveBeenCalledTimes(2);
+      expect(state.myRsvp()).toBe('maybe');
+    });
+
     it('shows no answer after an incomplete removal when none survives', async () => {
       const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
       getMyRsvp.mockReturnValue(of(removed));
@@ -971,6 +1001,19 @@ describe('MeetingDetailsStateService', () => {
       const state = await load(upcoming());
 
       expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: true });
+    });
+
+    // V1 dropped the param already: nothing will clear a latch, so none is set, and a later link asks.
+    it('asks again for a later link after handling one V1 had already dropped from the URL', async () => {
+      leaveLinkFor = MEETING_ID;
+      const state = await load(upcoming());
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: true });
+
+      state.consumeLeaveRequest();
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await flush();
+
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
     });
 
     it('drops the param once the link is handled', async () => {

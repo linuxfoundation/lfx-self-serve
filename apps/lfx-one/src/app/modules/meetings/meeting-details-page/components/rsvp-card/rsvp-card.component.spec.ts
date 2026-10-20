@@ -170,6 +170,19 @@ describe('MeetingRsvpCardComponent', () => {
     expect(add).not.toHaveBeenCalled();
   });
 
+  it('keeps the answers locked while a save is in flight, even across a removal', () => {
+    const pending = new Subject<MeetingRsvp>();
+    createMeetingRsvp.mockReturnValue(pending.asObservable());
+    click('meeting-rsvp-card-maybe');
+
+    rsvpReset.update((count) => count + 1);
+    fixture.detectChanges();
+    // A second answer cannot be sent to race the first.
+    click('meeting-rsvp-card-accepted');
+
+    expect(createMeetingRsvp).toHaveBeenCalledTimes(1);
+  });
+
   it("still lands a surviving registration's answer after a partial removal", () => {
     const pending = new Subject<MeetingRsvp>();
     createMeetingRsvp.mockReturnValue(pending.asObservable());
