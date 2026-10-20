@@ -21,6 +21,7 @@ import type {
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementNonMemberPeriod,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgPeriod,
@@ -236,12 +237,24 @@ export function selectHealthMetricsEngagementNonMemberPeriod(
   return selectPeriod(row.periods, range);
 }
 
-/** Best-first by the view's per-period rank; the pill re-sorts the loaded rows without a re-read. */
-export function sortHealthMetricsEngagementNonMemberRows(
+/**
+ * The organizations that attended a meeting in the selected period, best-first by the view's rank —
+ * the population the period's caption counts, so the table and its caption cannot disagree.
+ */
+export function filterHealthMetricsEngagementNonMemberRows(
   rows: readonly HealthMetricsEngagementNonMemberRow[],
   range: HealthMetricsRange
 ): HealthMetricsEngagementNonMemberRow[] {
-  return [...rows].sort((a, b) => compareByPeriodRank(a, b, range, accountNameOf));
+  // Null is unmeasured, like a real 0 attended — the population the caption counts is missing either way.
+  return rows.filter((row) => !!selectPeriod(row.periods, range)?.meetingsAttended).sort((a, b) => compareByPeriodRank(a, b, range, accountNameOf));
+}
+
+/** The selected period's caption count, which the view counts per period. */
+export function selectHealthMetricsEngagementNonMemberCounts(
+  counts: readonly HealthMetricsEngagementNonMemberPeriodCounts[] | null,
+  range: HealthMetricsRange
+): HealthMetricsEngagementNonMemberPeriodCounts | null {
+  return counts ? selectPeriod(counts, range) : null;
 }
 
 /** The selected period's numbers for one representative, falling back to the newest period held. */
@@ -249,7 +262,7 @@ export function selectHealthMetricsEngagementRepPeriod(row: HealthMetricsEngagem
   return selectPeriod(row.periods, range);
 }
 
-/** The selected period's caption counts. This view counts its scope per period, unlike the others. */
+/** The selected period's caption counts. This view counts its scope per period, unlike the org view. */
 export function selectHealthMetricsEngagementRepCounts(
   counts: readonly HealthMetricsEngagementRepPeriodCounts[] | null,
   range: HealthMetricsRange

@@ -26,7 +26,7 @@ import type {
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementMeetingParticipation,
-  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementNonMemberPeriod,
   HealthMetricsEngagementNonMemberQuery,
@@ -128,7 +128,6 @@ interface NonMemberParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_STATUS: string | null;
-  SCOPE_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
 }
 
@@ -432,14 +431,13 @@ export class HealthMetricsEngagementService {
     // periods; the sentinel parks an org the view left unranked behind every ranked one.
     const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
-    // `scope_orgs_count` is denormalized onto every row and covers the whole scope, so it is read
-    // off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
+    // `scope_orgs_count_<period>` is denormalized onto every row and covers the whole scope, so it is
+    // read off a row rather than counted here — the unsuffixed column is all time, not a period caption.
     const sql = `
       SELECT
         account_id,
         account_name,
         membership_status,
-        scope_orgs_count,
         ${periodColumns}
       FROM ${NON_MEMBER_PARTICIPATION_VIEW}
       WHERE foundation_slug = ?
@@ -639,7 +637,7 @@ function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCount
 }
 
 function nonMemberSelectList(suffix: string): string {
-  return ['meetings_attended_count', 'distinct_people_count', 'sort_rank'].map((column) => `${column}_${suffix}`).join(', ');
+  return ['scope_orgs_count', 'meetings_attended_count', 'distinct_people_count', 'sort_rank'].map((column) => `${column}_${suffix}`).join(', ');
 }
 
 function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberRow {
@@ -665,14 +663,18 @@ function mapNonMemberPeriod(row: NonMemberParticipationRow, range: SupportedEnga
 }
 
 /**
- * The count is period-agnostic and identical on every row, so any row answers for the scope. A null
- * count over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ * Each period's count is identical on every row, so any row answers for the scope. A null count
+ * over rows that exist is unmeasured — reporting 0 there would caption a full table.
  */
-function mapNonMemberCounts(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberCounts | null {
-  const orgs = toNullableNumber(row.SCOPE_ORGS_COUNT);
-  if (orgs === null) return null;
+function mapNonMemberCounts(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberPeriodCounts[] | null {
+  const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => ({
+    range,
+    orgs: toNullableNumber(row[`SCOPE_ORGS_COUNT_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase()}`]),
+  }));
 
-  return { orgs };
+  if (counts.some((count) => count.orgs === null)) return null;
+
+  return counts.map((count) => ({ range: count.range, orgs: count.orgs ?? 0 }));
 }
 
 function participationSelectList(suffix: string): string {
@@ -768,8 +770,8 @@ function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange):
 }
 
 /**
- * Unlike the org and non-member captions, this view counts its scope per period, so every period
- * ships its own pair. A null anywhere is unmeasured — reporting 0 there would caption a full table.
+ * Unlike the org caption, this view counts its scope per period, so every period ships its own pair.
+ * A null anywhere is unmeasured — reporting 0 there would caption a full table.
  */
 function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriodCounts[] | null {
   const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => {

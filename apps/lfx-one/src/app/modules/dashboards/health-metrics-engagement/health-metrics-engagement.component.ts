@@ -20,7 +20,7 @@ import { EngagementRepresentativesComponent } from './components/engagement-repr
 
 import type {
   HealthMetricsEngagementGroupCounts,
-  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementSubNavItem,
@@ -54,7 +54,7 @@ export class HealthMetricsEngagementComponent {
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);
   protected readonly orgCounts = signal<HealthMetricsEngagementOrgCounts | null>(null);
   protected readonly repCounts = signal<HealthMetricsEngagementRepPeriodCounts | null>(null);
-  protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberCounts | null>(null);
+  protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberPeriodCounts | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
     buildHealthMetricsEngagementSubNavItems({

@@ -761,13 +761,16 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
 describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
   const service = new HealthMetricsEngagementService();
 
-  /** One warehouse row: the caption count carries no period suffix, the measures all do. */
+  /** One warehouse row: the caption count and the measures all carry a period suffix. */
   function nonMemberWarehouseRow(overrides: Record<string, unknown> = {}) {
     return {
       ACCOUNT_ID: 'a-1',
       ACCOUNT_NAME: 'Acme Motors',
       MEMBERSHIP_STATUS: 'Non-member',
-      SCOPE_ORGS_COUNT: 63,
+      SCOPE_ORGS_COUNT_3RD_LAST_COMPLETED_YEAR: 41,
+      SCOPE_ORGS_COUNT_PREV_COMPLETED_YEAR: 37,
+      SCOPE_ORGS_COUNT_LAST_COMPLETED_YEAR: 33,
+      SCOPE_ORGS_COUNT_YTD: 19,
       MEETINGS_ATTENDED_COUNT_YTD: 12,
       DISTINCT_PEOPLE_COUNT_YTD: 4,
       SORT_RANK_YTD: 1,
@@ -792,7 +795,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
 
     // The table shows no dates, so the read selects none.
-    expect(lastSql()).toContain('membership_status, scope_orgs_count');
+    expect(lastSql()).toContain('scope_orgs_count_ytd, meetings_attended_count_ytd');
     expect(lastSql()).not.toContain('first_seen_date');
     expect(lastSql()).not.toContain('last_attended_date');
 
@@ -817,12 +820,18 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     expect(response.rows[0]?.membershipStatus).toBe('Prospect');
   });
 
-  // A `COUNT(*)` here would only ever match the row count, which is the same number by accident.
-  it('reads the denormalized caption count off a row rather than counting the rows', async () => {
+  // The unsuffixed count is all time; a `COUNT(*)` here would count rows, not active organizations.
+  it('reads each period caption count off a row rather than the all-time count or a row count', async () => {
     const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
 
     expect(lastSql()).not.toContain('COUNT(');
-    expect(response.counts).toEqual({ orgs: 63 });
+    expect(lastSql()).not.toMatch(/scope_orgs_count,/);
+    expect(response.counts).toEqual([
+      { range: 'COMPLETED_YEAR_3', orgs: 41 },
+      { range: 'COMPLETED_YEAR_2', orgs: 37 },
+      { range: 'COMPLETED_YEAR', orgs: 33 },
+      { range: 'YTD', orgs: 19 },
+    ]);
   });
 
   it('keeps an unranked row null rather than folding it into a real zero', async () => {
@@ -842,8 +851,8 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsAttended: null, distinctPeople: null });
   });
 
-  it('reports no counts at all when the view leaves the scope count null on rows that exist', async () => {
-    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ SCOPE_ORGS_COUNT: null })] });
+  it('reports no counts at all when the view leaves any period scope count null on rows that exist', async () => {
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ SCOPE_ORGS_COUNT_PREV_COMPLETED_YEAR: null })] });
 
     const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
 
