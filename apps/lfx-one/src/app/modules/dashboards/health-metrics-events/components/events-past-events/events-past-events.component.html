@@ -70,11 +70,17 @@
               <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
             </td>
             <td class="w-[220px]">
-              <div class="flex flex-col gap-1">
-                <span class="text-sm tabular-nums text-gray-800">{{ view.registrationsLabel }} / {{ view.goalLabel }}</span>
-                <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-100" aria-hidden="true">
-                  <div class="h-full rounded-full" [class]="view.progressClass" [style.width.%]="view.progressPct ?? 0"></div>
-                </div>
+              <!-- The design's goal cell: the value in bold, then a small grey "/ goal", or "no goal set" under it; no bar. -->
+              <div class="flex flex-col" [attr.data-testid]="'events-past-events-goal-' + view.event.eventId">
+                <span class="text-sm tabular-nums">
+                  <b class="font-semibold text-gray-900">{{ view.registrationsLabel }}</b>
+                  @if (view.hasGoal) {
+                    <span class="text-[10px] text-gray-500"> / {{ view.goalLabel }}</span>
+                  }
+                </span>
+                @if (!view.hasGoal) {
+                  <span class="text-[10px] text-gray-500">no goal set</span>
+                }
               </div>
             </td>
             <td>

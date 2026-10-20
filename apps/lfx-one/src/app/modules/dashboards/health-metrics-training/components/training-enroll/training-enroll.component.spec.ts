@@ -140,8 +140,7 @@ describe('TrainingEnrollComponent', () => {
     expect(text('training-enroll-by-type-title')).toBe('Enrollments by type');
     expect(text('training-enroll-type-0')).toContain('eLearning');
     expect(text('training-enroll-type-0-value')).toBe('9,000');
-    const bars = fixture.nativeElement.querySelectorAll('[data-testid^="training-enroll-type-"] .bg-blue-600');
-    expect((bars[1] as HTMLElement).style.width).toBe(`${(3000 / 9000) * 100}%`);
+    expect(fixture.nativeElement.querySelector('[data-testid^="training-enroll-type-"] [style*="width"]')).toBeNull();
 
     (query('filter-pill-revenue') as HTMLButtonElement).click();
     await settle();

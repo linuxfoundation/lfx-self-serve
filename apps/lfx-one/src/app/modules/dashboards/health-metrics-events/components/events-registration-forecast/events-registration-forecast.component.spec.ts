@@ -338,4 +338,16 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(query('events-registration-forecast-status-none')?.textContent?.trim()).toBe('No goal');
     expect(rows[1].textContent).toContain('400 / 450');
   });
+
+  it('shows each goal cell as the bold count with a grey "/ goal", or "no goal set", and no bar', async () => {
+    await render({ events: [event({ eventId: 'set', registrationsNow: 400 }), event({ eventId: 'none', registrationsNow: 120, goal: null })] });
+    const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(text('events-registration-forecast-goal-set')).toBe('400 / 450');
+    expect(query('events-registration-forecast-goal-set')?.querySelector('b')?.textContent).toBe('400');
+    expect(query('events-registration-forecast-goal-none')?.querySelector('b')?.textContent).toBe('120');
+    expect(text('events-registration-forecast-goal-none')).toContain('no goal set');
+    expect(text('events-registration-forecast-goal-none')).not.toContain('/');
+    expect(query('events-registration-forecast-row-set')?.querySelector('[style*="width"]')).toBeNull();
+  });
 });

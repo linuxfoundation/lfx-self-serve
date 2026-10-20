@@ -20,7 +20,7 @@ import type {
   HealthMetricsNonMembersSectionKey,
   HealthMetricsNonMembersSubNavItem,
   HealthMetricsNonMembersWarmOrg,
-  HealthMetricsNonMembersWarmOrgBarView,
+  HealthMetricsNonMembersWarmOrgRowView,
 } from '../interfaces/health-metrics-non-members.interface';
 
 /** Sub-nav items for the Non-Members tab; a section without a count carries no badge. */
@@ -86,7 +86,7 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
       { key: 'high-fit', label: 'High-fit organizations', value: formatStat(conversion.highFitCount) },
       { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
     ],
-    warmest: buildWarmestBars(conversion.warmest),
+    warmest: buildWarmestRows(conversion.warmest),
     footnote: [
       { text: `Estimated pipeline multiplies high-fit organizations by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only. The ` },
       { text: 'fit score', bold: true },
@@ -111,14 +111,12 @@ function pluralize(count: number, noun: string): string {
   return `${count.toLocaleString('en-US')} ${count === 1 ? noun : `${noun}s`}`;
 }
 
-// Sized by contributions against the largest in the list; a NULL count draws no bar.
-function buildWarmestBars(orgs: HealthMetricsNonMembersWarmOrg[]): HealthMetricsNonMembersWarmOrgBarView[] {
-  const max = Math.max(0, ...orgs.map((org) => org.contributions ?? 0));
+// Name and value only, as the design's ranked list; a NULL count reads as not available.
+function buildWarmestRows(orgs: HealthMetricsNonMembersWarmOrg[]): HealthMetricsNonMembersWarmOrgRowView[] {
   return orgs.map((org) => ({
     accountId: org.accountId,
     label: `${org.accountName} · ${org.meetingsAttended === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.meetingsAttended, 'meeting')}`,
     valueLabel: org.contributions === null ? HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE : pluralize(org.contributions, 'contribution'),
-    widthPct: max > 0 && org.contributions !== null ? (org.contributions / max) * 100 : 0,
   }));
 }
 

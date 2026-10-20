@@ -75,10 +75,10 @@ export interface HealthMetricsTrainingEnrollment {
   trend: HealthMetricsTrainingEnrollmentYear[];
 }
 
-/** What the by-type bars rank by; the trend always shows enrollments. */
+/** What the by-type list ranks by; the trend always shows enrollments. */
 export type HealthMetricsTrainingEnrollmentMetric = 'enrollments' | 'revenue';
 
-/** A toggle option for the by-type bars. */
+/** A toggle option for the by-type list. */
 export interface HealthMetricsTrainingEnrollmentMetricOption extends FilterPillOption {
   id: HealthMetricsTrainingEnrollmentMetric;
 }
@@ -92,12 +92,11 @@ export interface HealthMetricsTrainingEnrollmentStatView {
   deltaDirection: 'up' | 'down' | 'neutral';
 }
 
-/** One ranked bar under the toggle. */
+/** One ranked-list row under the toggle: name and value, no bar. */
 export interface HealthMetricsTrainingEnrollmentTypeView {
   deliveryType: string;
   label: string;
   value: string;
-  barWidthPct: number;
 }
 
 /** One column of the enrollment trend; the running year is partial. */

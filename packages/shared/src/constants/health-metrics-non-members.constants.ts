@@ -145,6 +145,3 @@ export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_WARMEST_LIMIT = 10;
 
 /** A NULL count or estimate is not zero; the section says so in words. */
 export const HEALTH_METRICS_NON_MEMBERS_NOT_AVAILABLE = 'not available';
-
-/** Opportunity styling only: this section carries no risk colours. */
-export const HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS = 'bg-blue-600';

@@ -195,23 +195,23 @@ describe('forecast table helpers', () => {
     expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'suspect']);
   });
 
-  it('sorts an unmeasured registration count last rather than as zero, and draws it no progress', () => {
+  it('sorts an unmeasured registration count last rather than as zero, labelled with a dash', () => {
     const unmeasured = event({ eventId: 'unmeasured', eventName: 'A unmeasured', registrationsNow: null });
     const sorted = sortHealthMetricsEventsForecastRows([unmeasured, event({ eventId: 'behind', registrationsNow: 50 })]);
 
     expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'unmeasured']);
-    expect(buildHealthMetricsEventsForecastRowViews([unmeasured])[0]).toMatchObject({ progressPct: null, progressClass: 'bg-gray-200' });
+    expect(buildHealthMetricsEventsForecastRowViews([unmeasured])[0]).toMatchObject({ registrationsLabel: '—' });
   });
 
-  it('resolves labels and caps the progress bar at 100%', () => {
+  it('resolves labels and flags whether a goal is set', () => {
     const [row] = buildHealthMetricsEventsForecastRowViews([event({ registrationsNow: 1200.4, forecastAvg: 1300, forecastHigh: 1400, goal: 1000 })]);
 
-    expect(row).toMatchObject({ statusLabel: 'On track', registrationsLabel: '1,200', goalLabel: '1,000', progressPct: 100, dateLabel: 'Nov 4, 2026' });
-    expect(buildHealthMetricsEventsForecastRowViews([event({ goal: null })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
+    expect(row).toMatchObject({ statusLabel: 'On track', registrationsLabel: '1,200', goalLabel: '1,000', hasGoal: true, dateLabel: 'Nov 4, 2026' });
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal: null })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', hasGoal: false });
   });
 
   it.each([0, -5])('reads a goal of %i as no goal, labelled with a dash', (goal) => {
-    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', progressPct: null });
+    expect(buildHealthMetricsEventsForecastRowViews([event({ goal })])[0]).toMatchObject({ statusLabel: 'No goal', goalLabel: '—', hasGoal: false });
   });
 
   it('truncates long pill names with an ellipsis', () => {
@@ -313,7 +313,7 @@ describe('buildHealthMetricsEventsPastView', () => {
 
     expect(view.rows.map((row) => row.status)).toEqual(['hit', 'unmeasured', 'near-miss']);
     expect(view).toMatchObject({ goalMetCount: 1, goalSetCount: 2, hasGoals: true });
-    expect(view.rows[1]).toMatchObject({ statusLabel: 'Not tracked', registrationsLabel: '—', progressPct: null });
+    expect(view.rows[1]).toMatchObject({ statusLabel: 'Not tracked', registrationsLabel: '—' });
   });
 
   it('reads a period of only unset and untracked goals as having goals, none of them tracked', () => {
@@ -332,7 +332,7 @@ describe('buildHealthMetricsEventsPastView', () => {
     expect(view).toMatchObject({ goalMetCount: 0, goalSetCount: 0, hasGoals: true });
   });
 
-  it('resolves row labels, capping the bar and drawing none without a goal', () => {
+  it('resolves row labels and flags a missing goal', () => {
     const [hit, noGoal] = buildHealthMetricsEventsPastView(past, 'YTD').rows;
 
     expect(hit).toMatchObject({
@@ -340,17 +340,16 @@ describe('buildHealthMetricsEventsPastView', () => {
       registrationsLabel: '1,200',
       goalLabel: '1,000',
       revenueLabel: '$125K',
-      progressPct: 100,
-      progressClass: 'bg-emerald-500',
+      hasGoal: true,
       dateLabel: 'Mar 10, 2026',
     });
-    expect(noGoal).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null, progressClass: 'bg-gray-200' });
+    expect(noGoal).toMatchObject({ status: 'no-goal', goalLabel: '—', hasGoal: false });
   });
 
-  it.each([0, -5])('labels a past goal of %i with a dash and draws no bar', (goal) => {
+  it.each([0, -5])('labels a past goal of %i with a dash and as no goal set', (goal) => {
     const view = buildHealthMetricsEventsPastView({ ...past, events: [pastEvent({ goal, goalMet: null, registrations: 120 })] }, 'YTD');
 
-    expect(view.rows[0]).toMatchObject({ status: 'no-goal', goalLabel: '—', progressPct: null });
+    expect(view.rows[0]).toMatchObject({ status: 'no-goal', goalLabel: '—', hasGoal: false });
   });
 });
 
@@ -791,12 +790,11 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     expect(buildHealthMetricsEventsSpeakersView(data, 'YTD', 'in-review').countLabel).toBe('1 proposal');
   });
 
-  it('ranks the status bars by count, scaled against the largest', () => {
+  it('ranks the status rows by count, largest first', () => {
     const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
 
-    expect(view.statusBars.map((bar) => bar.key)).toEqual(['in-review', 'declined', 'accepted']);
-    expect(view.statusBars[0]).toMatchObject({ label: 'In review', valueLabel: '3,447', widthPct: 100, barClass: 'bg-amber-500' });
-    expect(view.statusBars[2].widthPct).toBeCloseTo((348 / 3447) * 100);
+    expect(view.statusRows.map((row) => row.key)).toEqual(['in-review', 'declined', 'accepted']);
+    expect(view.statusRows[0]).toEqual({ key: 'in-review', label: 'In review', valueLabel: '3,447' });
   });
 
   it('charts the four years oldest first, marking the open one partial', () => {
@@ -830,8 +828,8 @@ describe('buildHealthMetricsEventsSpeakersView', () => {
     const view = buildHealthMetricsEventsSpeakersView(speakers(), 'YTD', 'all');
 
     expect(view.organizations).toEqual([
-      { key: 'org-a', label: 'Acme Motors', valueLabel: '400', widthPct: 100, barClass: 'bg-blue-500' },
-      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200', widthPct: 50, barClass: 'bg-blue-500' },
+      { key: 'org-a', label: 'Acme Motors', valueLabel: '400' },
+      { key: 'org-b', label: 'Vendor Corp', valueLabel: '200' },
     ]);
     expect(view.individualLabel).toBe('1,351 proposals submitted');
     expect(buildHealthMetricsEventsSpeakersView(speakers(), 'COMPLETED_YEAR', 'all').individualLabel).toBeNull();
@@ -1021,7 +1019,7 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
     return { periods: periods.length ? periods : [sponsorshipPeriod()] };
   }
 
-  it('builds the headline, side stats, progress and tier bars scaled to the top tier', () => {
+  it('builds the headline, side stats, progress and tier rows', () => {
     const view = buildHealthMetricsEventsSponsorshipView(sponsorship(), 'YTD');
 
     expect(view.foundationMeasured).toBe(true);
@@ -1035,10 +1033,10 @@ describe('buildHealthMetricsEventsSponsorshipView', () => {
     ]);
     expect(view.goalSet).toBe(true);
     expect(view.progress).toEqual({ pctLabel: '75%', widthPct: 75 });
-    expect(view.tiers.map((tier) => [tier.label, tier.valueLabel, tier.widthPct])).toEqual([
-      ['Gold', '5', 100],
-      ['Silver', '5', 100],
-      ['Platinum', '2', 40],
+    expect(view.tiers.map((tier) => [tier.label, tier.valueLabel])).toEqual([
+      ['Gold', '5'],
+      ['Silver', '5'],
+      ['Platinum', '2'],
     ]);
   });
 
@@ -1131,7 +1129,7 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     return { periods: periods.length ? periods : [geographyPeriod()] };
   }
 
-  it('builds the headline, the pill and bars scaled to the top country', () => {
+  it('builds the headline, the pill and the top-country rows', () => {
     const view = buildHealthMetricsEventsGeographyView(geography(), 'YTD');
 
     expect(view.foundationMeasured).toBe(true);
@@ -1139,15 +1137,15 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     expect(view.countries).toBe(42);
     expect(view.countriesLabel).toBe('42 countries');
     expect(view.headline).toMatchObject({ label: 'Countries represented', value: '42', delta: '+10%', deltaDirection: 'up' });
-    expect(view.bars.map((bar) => [bar.label, bar.valueLabel, bar.widthPct])).toEqual([
-      ['Canada', '800', 100],
-      ['Germany', '400', 50],
-      ['Japan', '200', 25],
+    expect(view.topCountries.map((row) => [row.label, row.valueLabel])).toEqual([
+      ['Canada', '800'],
+      ['Germany', '400'],
+      ['Japan', '200'],
     ]);
     expect(view.moreLabel).toBe('+37 more');
   });
 
-  it('shows no tail line when the bars cover every country', () => {
+  it('shows no tail line when the list covers every country', () => {
     const view = buildHealthMetricsEventsGeographyView(geography(geographyPeriod({ rankedCountries: 3 })), 'YTD');
 
     expect(view.moreLabel).toBe('');
@@ -1181,7 +1179,7 @@ describe('buildHealthMetricsEventsGeographyView', () => {
     expect(view.countries).toBeNull();
     expect(view.countriesLabel).toBe('');
     expect(view.headline).toMatchObject({ value: 'not available', delta: null });
-    expect(view.bars).toEqual([]);
+    expect(view.topCountries).toEqual([]);
     expect(view.moreLabel).toBe('');
   });
 
