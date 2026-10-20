@@ -2730,7 +2730,8 @@ export class MeetingController {
       registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, email);
     }
 
-    if (registrants.length === 0) {
+    // The verified-email lookup resolves the target's emails; an impersonator is matched as themselves.
+    if (registrants.length === 0 && !isImpersonating(req)) {
       ({ registrants } = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, uid, email));
     }
 

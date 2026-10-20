@@ -1044,6 +1044,7 @@ export class MeetingService {
    * Fetches registrants for a meeting that match the caller's email, username or v1 contact id in a single query.
    * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z, user_id:C]` so the
    * query service resolves the intersection in one call instead of two sequential lookups.
+   * Pass `includeContactId: false` for mutations: upstream only accepts email or username ownership.
    */
   public async getMeetingRegistrantsForUser(
     req: Request,
@@ -1051,13 +1052,14 @@ export class MeetingService {
     email: string | undefined,
     username: string | undefined,
     m2mToken?: string,
-    failOnPartial = false
+    failOnPartial = false,
+    includeContactId = true
   ): Promise<MeetingRegistrant[]> {
     const orClauses: string[] = [];
     if (email) orClauses.push(...this.emailClauses(email.toLowerCase()));
     if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
     // Sync rewrites registrant emails to the meeting-invite preference but keeps `user_id`.
-    const contactId = await this.userVerifiedEmailsService.getContactIdForMatching(req);
+    const contactId = includeContactId ? await this.userVerifiedEmailsService.getContactIdForMatching(req) : null;
     if (contactId) orClauses.push(`user_id:${contactId}`);
 
     logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
@@ -1268,7 +1270,7 @@ export class MeetingService {
     username: string | undefined,
     m2mToken: string
   ): Promise<MeetingRegistrationRemovalResult> {
-    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true);
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true, false);
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Meeting registration', meetingUid, {
@@ -1768,7 +1770,7 @@ export class MeetingService {
     // Resolve registrant_id — single query matches email OR username against this meeting.
     const email = getEffectiveEmail(req) ?? undefined;
     const username = (await getUsernameFromAuth(req)) ?? undefined;
-    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, undefined, false, false);
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Registrant', email || username || 'unknown', {

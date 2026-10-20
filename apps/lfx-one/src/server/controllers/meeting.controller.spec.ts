@@ -1407,6 +1407,21 @@ describe('MeetingController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
+    it('never resolves the impersonated target verified emails, so the operator gets no target join link', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(isImpersonating).mockReturnValue(true);
+      vi.mocked(getRealEmail).mockReturnValueOnce('operator@example.com');
+      vi.mocked(getRealUsername).mockReturnValueOnce(null);
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [{ email: 'target@example.com' }], lookupFailed: false });
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      vi.mocked(isImpersonating).mockReturnValue(false);
+      expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+      expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+    });
+
     it('omits the join link when the verified-email lookup fails rather than failing the download', async () => {
       meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
       vi.mocked(getEffectiveUsername).mockReturnValueOnce(null);

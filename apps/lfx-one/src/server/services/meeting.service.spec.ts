@@ -460,7 +460,7 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
 
     await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
-    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true);
+    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true, false);
   });
 
   it('removes a committee row together with a direct one', async () => {
@@ -654,6 +654,16 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
     expect(getUserVerifiedEmails).not.toHaveBeenCalled();
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the contact id out of the lookup when includeContactId is false, without calling /me', async () => {
+    getContactIdForMatching.mockResolvedValue('lfTESTCONTACT00001');
+    proxyRequest.mockResolvedValueOnce(registrantPage([]));
+
+    await service.getMeetingRegistrantsForUser(req, 'm-1', 'user@example.com', undefined, 'm2m', false, false);
+
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
+    expect(getContactIdForMatching).not.toHaveBeenCalled();
   });
 
   it('adds the contact id to the single-meeting user lookup so a rewritten email still matches', async () => {
@@ -2456,6 +2466,18 @@ describe('MeetingService.createMeetingRsvp — acknowledged response', () => {
     expect(saved.response_type).toBe(answer);
     expect(saved.scope).toBe('single');
     expect(saved.occurrence_id).toBe('1791930600');
+  });
+
+  it('resolves the registrant without the contact id, since upstream only accepts email or username ownership', async () => {
+    vi.clearAllMocks();
+    const service = new MeetingService();
+    const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
+    vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([]);
+    proxyRequest.mockResolvedValueOnce({ id: 'synthetic-rsvp', meeting_id: 'synthetic-meeting', response: 'accepted', scope: 'all' });
+
+    await service.createMeetingRsvp(req, 'synthetic-meeting', { response: 'accepted', scope: 'all' });
+
+    expect(lookup.mock.calls[0].slice(4)).toEqual([undefined, false, false]);
   });
 
   it('keeps a nonempty response supplied by ITX authoritative', async () => {
