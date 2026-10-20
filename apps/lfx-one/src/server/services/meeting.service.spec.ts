@@ -2650,6 +2650,7 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     ],
   });
   const discoverableOwner = { uid: 'project-1', name: 'Project', slug: 'project', public: true, stage: 'Active' };
+  const ownerResources = (project: Record<string, unknown>) => ({ resources: [{ id: `project:${project['uid']}`, data: project }], page_token: undefined });
   const committeeQueries = () => proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources' && call[4]?.type === 'committee');
 
   beforeEach(() => {
@@ -2661,7 +2662,7 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     proxyRequest
       .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
       .mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]))
-      .mockResolvedValueOnce(discoverableOwner);
+      .mockResolvedValueOnce(ownerResources(discoverableOwner));
 
     const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false });
 
@@ -2688,7 +2689,7 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     proxyRequest
       .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
       .mockResolvedValueOnce(committeeResources([publicCommittee]))
-      .mockResolvedValueOnce(discoverableOwner);
+      .mockResolvedValueOnce(ownerResources(discoverableOwner));
 
     await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
 
@@ -2700,7 +2701,7 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     proxyRequest
       .mockResolvedValueOnce(meetingWithCommittees('past-1'))
       .mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]))
-      .mockResolvedValueOnce(discoverableOwner);
+      .mockResolvedValueOnce(ownerResources(discoverableOwner));
 
     const meeting = await service.getPastMeetingById(req, 'past-1', { bearerToken: 'm2m-token' });
 
@@ -2770,8 +2771,8 @@ describe('MeetingService committee context enrichment (#3593)', () => {
       if (path === '/query/resources' && params?.type === 'committee') {
         return committeeResources([publicCommittee, privateCommittee]);
       }
-      if (path === '/projects/project-1') {
-        return discoverableOwner;
+      if (path === '/query/resources' && params?.type === 'project') {
+        return ownerResources(discoverableOwner);
       }
       return { resources: [], page_token: undefined };
     });
@@ -2790,13 +2791,27 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     proxyRequest
       .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
       .mockResolvedValueOnce(committeeResources([publicCommittee]))
-      .mockResolvedValueOnce({ ...discoverableOwner, stage: 'Formation - Confidential' });
+      .mockResolvedValueOnce(ownerResources({ ...discoverableOwner, stage: 'Formation - Confidential' }));
 
     const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
 
-    expect(proxyRequest.mock.calls[2][2]).toBe('/projects/project-1');
+    // The project index, not the relation-gated /projects/:uid (a committee writer may lack project viewer).
+    expect(proxyRequest.mock.calls[2][2]).toBe('/query/resources');
+    expect(proxyRequest.mock.calls[2][4]).toMatchObject({ type: 'project', filters_or: ['uid:project-1'] });
     expect(proxyRequest.mock.calls[2][7]).toEqual({ bearerToken: 'm2m-token' });
     expect(meeting.committees[0]).toEqual({ uid: 'cmt-public', name: 'Technical Steering Committee', allowed_voting_statuses: ['voting_rep'] });
+  });
+
+  it('keeps the context for a signed-in reader the owner index returns, whatever their project relation', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
+      .mockResolvedValueOnce(committeeResources([publicCommittee]))
+      .mockResolvedValueOnce(ownerResources(discoverableOwner));
+
+    const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false });
+
+    expect(proxyRequest.mock.calls.some((call) => typeof call[2] === 'string' && call[2].startsWith('/projects/'))).toBe(false);
+    expect(meeting.committees[0]).toMatchObject({ behavioral_class: 'oversight-committee', total_members: 12 });
   });
 
   it('withholds the context when the owning project read fails', async () => {

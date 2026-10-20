@@ -2523,8 +2523,8 @@ export class MeetingService {
    * the public group directory publishes: `public: true` AND an owning project that is publicly
    * discoverable (the same owner check `PublicGroupsController` applies). Public meeting pages read
    * this with an M2M token, so without the gate a hidden committee's description and headcount
-   * would reach anonymous viewers. The owner check costs one project read per distinct owning
-   * project of a public committee (in practice one); an unresolvable owner keeps the entry name-only.
+   * would reach anonymous viewers. The owner check costs one project-index query; an unresolvable
+   * owner keeps the entry name-only.
    */
   private async getCommitteeContextMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, MeetingCommitteeContextEntry>> {
     const uniqueCommitteeUids = [
@@ -2604,38 +2604,45 @@ export class MeetingService {
   /**
    * Returns the owning-project UIDs of public committees whose project is publicly discoverable —
    * the owner half of the public group directory's visibility gate (private and
-   * `Formation - Confidential` projects are excluded). Reads with the same token as the committee
-   * query. Never throws: an owner that cannot be read is treated as hidden.
+   * `Formation - Confidential` projects are excluded). Reads the project index in one query with the
+   * same token as the committee query, not the relation-gated `/projects/:uid` (a committee writer
+   * without project `viewer` would get a 403 there, as `fetchEntityProject` notes). Never throws: an
+   * owner that cannot be read is treated as hidden.
    */
   private async getDiscoverableCommitteeOwners(req: Request, committees: Committee[], options?: ApiRequestOptions): Promise<Set<string>> {
     const ownerUids = [...new Set(committees.filter((c) => c.public === true && c.project_uid).map((c) => c.project_uid))];
-    const results = await Promise.allSettled(
-      ownerUids.map((uid) =>
-        this.microserviceProxy.proxyRequest<Project>(
-          req,
-          'LFX_V2_SERVICE',
-          `/projects/${encodePathSegment(uid)}`,
-          'GET',
-          undefined,
-          undefined,
-          undefined,
-          options
-        )
-      )
-    );
-
-    const discoverable = new Set<string>();
-    for (const [i, result] of results.entries()) {
-      if (result.status === 'fulfilled' && isPubliclyDiscoverableProject(result.value)) {
-        discoverable.add(ownerUids[i]);
-      } else if (result.status === 'rejected') {
-        logger.warning(req, 'get_meeting_committees', 'Committee owner project read failed; its committee context is withheld', {
-          project_uid: ownerUids[i],
-          err: result.reason,
-        });
-      }
+    if (ownerUids.length === 0) {
+      return new Set();
     }
-    return discoverable;
+
+    try {
+      const projects = await fetchAllQueryResources<Project>(
+        req,
+        (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources',
+            'GET',
+            {
+              type: 'project',
+              filters_or: ownerUids.map((uid) => `uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            },
+            undefined,
+            undefined,
+            options
+          ),
+        { failOnPartial: true }
+      );
+      return new Set(projects.filter((project) => isPubliclyDiscoverableProject(project)).map((project) => project.uid));
+    } catch (error) {
+      logger.warning(req, 'get_meeting_committees', 'Committee owner project read failed; committee context is withheld', {
+        owner_count: ownerUids.length,
+        err: error,
+      });
+      return new Set();
+    }
   }
 
   /**

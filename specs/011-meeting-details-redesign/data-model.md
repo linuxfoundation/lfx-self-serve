@@ -135,8 +135,8 @@ tag), `description`, `total_members` and `join_mode` (E8-01, issue #3593). The m
 payloads get them the same way. "Listed" uses the directory's whole gate: the committee is
 `public: true` and its owning project is publicly discoverable (not private, not
 `Formation - Confidential`). The fields come from the committee read that already resolved `name`;
-the owner check adds one project read per distinct owning project of a public committee, in
-practice one. Any other committee, or one whose owner cannot be read, gets `name` only: the public
+the owner check adds one project-index query (query service, so it does not need the reader to
+hold a project relation). Any other committee, or one whose owner cannot be read, gets `name` only: the public
 page reads with an M2M token, and those fields are exactly what the directory withholds for it. The
 past payload still drops `committees` entirely when `full_access` is false. `project.parent` on the
 public payloads carries the foundation's `logo_url`, and is `null` when the foundation is not
