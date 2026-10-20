@@ -4,9 +4,9 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
-import { FormArray, FormControl, FormGroup } from '@angular/forms';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
 import type { PendingAttachment } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
