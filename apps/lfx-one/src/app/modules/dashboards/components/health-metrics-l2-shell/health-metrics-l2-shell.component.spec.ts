@@ -295,6 +295,7 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   it('badges only the heading that carries one', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.textContent?.trim()).toBe('Provisional');
+    expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-beta"]')?.className).toContain('rounded-[4px]');
     expect(fixture.nativeElement.querySelector('[data-testid="test-heading-badge-alpha"]')).toBeNull();
   });
 
