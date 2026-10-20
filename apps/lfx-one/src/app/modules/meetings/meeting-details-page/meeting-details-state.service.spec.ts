@@ -647,6 +647,34 @@ describe('MeetingDetailsStateService', () => {
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
     });
 
+    it("shows none of the previous series' dates while the next series' timeline is still loading", async () => {
+      getPublicMeetingOccurrences.mockReturnValue(of({ past: [], future: [{ occurrence_id: '9', start_time: third.toISOString(), duration: 60 }] }));
+      const state = await load(series());
+      expect(state.seriesOccurrences().future.length).toBe(1);
+
+      getPublicMeetingOccurrences.mockReturnValue(new Subject());
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await settle();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenLastCalledWith('meeting-2', null);
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+    });
+
+    it('reads a series again after the page passed through a one-off meeting', async () => {
+      await load(series());
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'one-off', uid: 'one-off', recurrence: null } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'one-off' }));
+      await settle();
+      getPublicMeeting.mockReturnValue(of({ meeting: series(), project }));
+      paramMap$.next(convertToParamMap({ id: MEETING_ID }));
+      await settle();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
+    });
+
     it("never reads a one-off meeting's series", async () => {
       await load(series({ recurrence: null }));
 
@@ -884,6 +912,38 @@ describe('MeetingDetailsStateService', () => {
 
       expect(state.leaveRequest()).toBeNull();
       expect(state.claimAutoJoin(MEETING_ID)).toBe(true);
+    });
+
+    // The service outlives an in-app navigation, so the constructor never sees a later link.
+    it('raises a leave request for a ?action=leave link reached by an in-app navigation', async () => {
+      const state = await load(upcoming());
+      expect(state.leaveRequest()).toBeNull();
+
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await settle();
+
+      expect(state.leaveRequest()).toEqual({ meetingId: 'meeting-2', handledByV1: false });
+      expect(state.claimAutoJoin('meeting-2')).toBe(false);
+    });
+
+    it('asks once per link: a handled request is not raised again before the param is dropped', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      state.consumeLeaveRequest();
+      // A re-lookup before the navigation that drops the param lands.
+      state.reload();
+      await settle();
+      expect(state.leaveRequest()).toBeNull();
+
+      // Once the param is gone, a new link raises a new request.
+      queryParamMap$.next(convertToParamMap({}));
+      await settle();
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await settle();
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
     });
 
     it('drops a leave request when the route moves to another meeting before it is handled', async () => {

@@ -161,6 +161,11 @@ export class MeetingDetailsStateService {
    * meeting the link named, and dropped when the route moves on, so it never prompts for another one.
    */
   public readonly leaveRequest = signal<MeetingLeaveRequest | null>(null);
+  /**
+   * The meeting whose `?action=leave` the page has handled, until the param is gone from the URL: the
+   * lookup re-runs before the navigation that drops it lands, and must not ask a second time.
+   */
+  private consumedLeaveFor: string | null = null;
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -335,6 +340,7 @@ export class MeetingDetailsStateService {
    * not ask again.
    */
   public consumeLeaveRequest(): void {
+    this.consumedLeaveFor = this.leaveRequest()?.meetingId ?? null;
     this.leaveRequest.set(null);
     void this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
@@ -745,7 +751,7 @@ export class MeetingDetailsStateService {
   private initMeeting(seed: MeetingJoinPageState | null): Signal<(Meeting & { project: PublicMeetingProject }) | undefined> {
     const meeting$ = combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refresh$]).pipe(
       // Before the lookup is scheduled, so `matchesRoute` turns false the instant the route changes.
-      tap(([params]) => {
+      tap(([params, queryParams]) => {
         const meetingId = params.get('id');
         if (meetingId !== this.routeId()) {
           this.loadFailed.set(false);
@@ -755,6 +761,7 @@ export class MeetingDetailsStateService {
           }
         }
         this.routeId.set(meetingId);
+        this.captureLeaveRequest(meetingId, queryParams);
       }),
       // The one-tick timer coalesces the paramMap / queryParamMap emissions of one navigation into a
       // single lookup. It sits inside `switchMap`, not before it as a `debounceTime`, so a new
@@ -865,6 +872,23 @@ export class MeetingDetailsStateService {
 
     const stated = (history.state as { password?: unknown } | null)?.password;
     return typeof stated === 'string' && stated ? stated : null;
+  }
+
+  /**
+   * A `?action=leave` link reached by an in-app navigation (the service outlives it, so the
+   * constructor never sees it): the same request as on a fresh load, once per link, with auto-join
+   * kept off for that meeting.
+   */
+  private captureLeaveRequest(meetingId: string | null, queryParams: ParamMap): void {
+    if (queryParams.get('action') !== 'leave') {
+      this.consumedLeaveFor = null;
+      return;
+    }
+    if (!isPlatformBrowser(this.platformId) || !meetingId || this.consumedLeaveFor === meetingId || this.leaveRequest()?.meetingId === meetingId) {
+      return;
+    }
+    this.leaveRequest.set({ meetingId, handledByV1: false });
+    this.autoJoinedMeetingIds.add(meetingId);
   }
 
   private lastOccurrence(occurrences: MeetingOccurrence[]): MeetingOccurrence | null {
