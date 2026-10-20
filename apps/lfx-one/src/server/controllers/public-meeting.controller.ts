@@ -914,8 +914,9 @@ export class PublicMeetingController {
    * Resolves a project's foundation (parent) for public meeting responses (LFXV2-3266), so the
    * client never needs its own authenticated `/api/projects/:uid` call to show it. Root-level
    * projects have no meaningful parent — `ROOT_PROJECT_SLUG` maps to `null`, mirroring the
-   * client-side rule this replaces. Never throws: a missing/unresolvable parent degrades to
-   * `null` rather than failing the whole meeting response.
+   * client-side rule this replaces. A parent that is not publicly discoverable (private, or
+   * `Formation - Confidential`) maps to `null` too. Never throws: a missing/unresolvable parent
+   * degrades to `null` rather than failing the whole meeting response.
    */
   private async resolveParentProject(req: Request, project: Pick<Project, 'parent_uid'>): Promise<Project | null> {
     if (!project.parent_uid) {
@@ -923,8 +924,10 @@ export class PublicMeetingController {
     }
 
     try {
-      const parent = await this.projectService.getProjectById(req, project.parent_uid, false);
-      return parent?.slug === ROOT_PROJECT_SLUG ? null : parent;
+      // Same discoverability gate as the public group directory: a private or confidential
+      // foundation is never named (or its logo shown) on an anonymous page.
+      const parent = await this.projectService.getPubliclyDiscoverableProject(req, project.parent_uid);
+      return !parent || parent.slug === ROOT_PROJECT_SLUG ? null : parent;
     } catch (error) {
       logger.warning(req, 'resolve_parent_project', 'Failed to resolve parent project, continuing without it', {
         parent_uid: project.parent_uid,

@@ -129,14 +129,18 @@ BFF merges one person's duplicate attendee records, it keeps the best-identified
 
 Each `committees[]` entry on the upcoming (`GET /api/meetings/:uid`, `GET /public/api/meetings/:id`)
 and past (`GET /api/past-meetings/:uid`, `GET /public/api/meetings/past/:id`) detail payloads carries
-`name` and, for committees the public group directory lists (`public: true`), the
-`MeetingCommitteeContext` fields: `category`, `behavioral_class` (derived server-side; keys
-`BEHAVIORAL_CLASS_CONFIG` for the group tag), `description`, `total_members` and `join_mode` (E8-01,
-issue #3593). The meeting list payloads get them the same way. They come from the committee read
-that already resolved `name`, so they cost no extra upstream call. A non-public committee gets
-`name` only: the public page reads with an M2M token, and those fields are exactly what the
-directory withholds for it. The past payload still drops `committees` entirely when `full_access`
-is false. `project.parent` on the public payloads carries the foundation's `logo_url`.
+`name` and, for committees the public group directory lists, the `MeetingCommitteeContext` fields:
+`category`, `behavioral_class` (derived server-side; keys `BEHAVIORAL_CLASS_CONFIG` for the group
+tag), `description`, `total_members` and `join_mode` (E8-01, issue #3593). The meeting list
+payloads get them the same way. "Listed" uses the directory's whole gate: the committee is
+`public: true` and its owning project is publicly discoverable (not private, not
+`Formation - Confidential`). The fields come from the committee read that already resolved `name`;
+the owner check adds one project read per distinct owning project of a public committee, in
+practice one. Any other committee, or one whose owner cannot be read, gets `name` only: the public
+page reads with an M2M token, and those fields are exactly what the directory withholds for it. The
+past payload still drops `committees` entirely when `full_access` is false. `project.parent` on the
+public payloads carries the foundation's `logo_url`, and is `null` when the foundation is not
+publicly discoverable.
 
 ## Not in the model yet
 

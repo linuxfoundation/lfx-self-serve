@@ -39,6 +39,10 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // The real classifier: the committee context's behavioral class is asserted end to end (#3593).
   getGroupBehavioralClass: (await vi.importActual<typeof import('@lfx-one/shared/utils/committee.utils')>('@lfx-one/shared/utils/committee.utils'))
     .getGroupBehavioralClass,
+  // The real visibility rule: the committee context's owner gate is asserted end to end (#3868).
+  isPubliclyDiscoverableProject: (
+    await vi.importActual<typeof import('@lfx-one/shared/utils/project-stage.utils')>('@lfx-one/shared/utils/project-stage.utils')
+  ).isPubliclyDiscoverableProject,
   // The real classifier: the participant merge keeps the better-identified record by its tier (N-02).
   getPastMeetingIdentityTier: (await vi.importActual<typeof import('@lfx-one/shared/utils/past-meeting.utils')>('@lfx-one/shared/utils/past-meeting.utils'))
     .getPastMeetingIdentityTier,
@@ -2645,6 +2649,7 @@ describe('MeetingService committee context enrichment (#3593)', () => {
       { uid: 'cmt-private', name: 'stale name' },
     ],
   });
+  const discoverableOwner = { uid: 'project-1', name: 'Project', slug: 'project', public: true, stage: 'Active' };
   const committeeQueries = () => proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources' && call[4]?.type === 'committee');
 
   beforeEach(() => {
@@ -2653,11 +2658,14 @@ describe('MeetingService committee context enrichment (#3593)', () => {
   });
 
   it('adds the public committee context to the detail payload with a single committee read', async () => {
-    proxyRequest.mockResolvedValueOnce(meetingWithCommittees('meeting-1')).mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]));
+    proxyRequest
+      .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
+      .mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]))
+      .mockResolvedValueOnce(discoverableOwner);
 
     const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false });
 
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
     expect(committeeQueries()).toHaveLength(1);
     expect(meeting.committees).toEqual([
       {
@@ -2677,7 +2685,10 @@ describe('MeetingService committee context enrichment (#3593)', () => {
   });
 
   it('reads with the explicit bearer token a public route passes', async () => {
-    proxyRequest.mockResolvedValueOnce(meetingWithCommittees('meeting-1')).mockResolvedValueOnce(committeeResources([publicCommittee]));
+    proxyRequest
+      .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
+      .mockResolvedValueOnce(committeeResources([publicCommittee]))
+      .mockResolvedValueOnce(discoverableOwner);
 
     await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
 
@@ -2686,11 +2697,14 @@ describe('MeetingService committee context enrichment (#3593)', () => {
   });
 
   it('adds the same context to the past-meeting payload with a single committee read', async () => {
-    proxyRequest.mockResolvedValueOnce(meetingWithCommittees('past-1')).mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]));
+    proxyRequest
+      .mockResolvedValueOnce(meetingWithCommittees('past-1'))
+      .mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]))
+      .mockResolvedValueOnce(discoverableOwner);
 
     const meeting = await service.getPastMeetingById(req, 'past-1', { bearerToken: 'm2m-token' });
 
-    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenCalledTimes(3);
     expect(committeeQueries()).toHaveLength(1);
     expect(meeting.committees[0]).toMatchObject({ behavioral_class: 'oversight-committee', total_members: 12, join_mode: 'open' });
     expect(meeting.committees[1]).toEqual({ uid: 'cmt-private', name: 'Security Response', allowed_voting_statuses: undefined });
@@ -2756,6 +2770,9 @@ describe('MeetingService committee context enrichment (#3593)', () => {
       if (path === '/query/resources' && params?.type === 'committee') {
         return committeeResources([publicCommittee, privateCommittee]);
       }
+      if (path === '/projects/project-1') {
+        return discoverableOwner;
+      }
       return { resources: [], page_token: undefined };
     });
 
@@ -2767,6 +2784,30 @@ describe('MeetingService committee context enrichment (#3593)', () => {
     expect(committeeQueries()).toHaveLength(1);
     expect(data[0].committees[0]).toMatchObject({ behavioral_class: 'oversight-committee', total_members: 12, join_mode: 'open' });
     expect(data[0].committees[1]).toEqual({ uid: 'cmt-private', name: 'Security Response', allowed_voting_statuses: undefined });
+  });
+
+  it('keeps a public committee name-only when its owning project is not publicly discoverable', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
+      .mockResolvedValueOnce(committeeResources([publicCommittee]))
+      .mockResolvedValueOnce({ ...discoverableOwner, stage: 'Formation - Confidential' });
+
+    const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
+
+    expect(proxyRequest.mock.calls[2][2]).toBe('/projects/project-1');
+    expect(proxyRequest.mock.calls[2][7]).toEqual({ bearerToken: 'm2m-token' });
+    expect(meeting.committees[0]).toEqual({ uid: 'cmt-public', name: 'Technical Steering Committee', allowed_voting_statuses: ['voting_rep'] });
+  });
+
+  it('withholds the context when the owning project read fails', async () => {
+    proxyRequest
+      .mockResolvedValueOnce(meetingWithCommittees('meeting-1'))
+      .mockResolvedValueOnce(committeeResources([publicCommittee]))
+      .mockRejectedValueOnce(new Error('project service down'));
+
+    const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false });
+
+    expect(meeting.committees[0]).toEqual({ uid: 'cmt-public', name: 'Technical Steering Committee', allowed_voting_statuses: ['voting_rep'] });
   });
 
   it('keeps the meeting-supplied committee name when the committee read fails', async () => {

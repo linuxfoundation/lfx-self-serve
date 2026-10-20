@@ -38,6 +38,7 @@ import {
   PastOccurrenceSummary,
   PresignAttachmentRequest,
   PresignAttachmentResponse,
+  Project,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateMeetingAttachmentRequest,
@@ -54,6 +55,7 @@ import {
   getRecordingDurationSeconds,
   isPastMeetingNotetakerBot,
   isMeetingAttendeeListShared,
+  isPubliclyDiscoverableProject,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
@@ -2518,9 +2520,11 @@ export class MeetingService {
    *
    * Every entry carries the committee `name` (as before). The `MeetingCommitteeContext` fields
    * (category, behavioral class, description, member count, join mode) are kept only for committees
-   * with `public: true` — the set the public group directory publishes. Public meeting pages read
-   * this with an M2M token, so without the gate a non-public committee's description and headcount
-   * would reach anonymous viewers.
+   * the public group directory publishes: `public: true` AND an owning project that is publicly
+   * discoverable (the same owner check `PublicGroupsController` applies). Public meeting pages read
+   * this with an M2M token, so without the gate a hidden committee's description and headcount
+   * would reach anonymous viewers. The owner check costs one project read per distinct owning
+   * project of a public committee (in practice one); an unresolvable owner keeps the entry name-only.
    */
   private async getCommitteeContextMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, MeetingCommitteeContextEntry>> {
     const uniqueCommitteeUids = [
@@ -2574,14 +2578,10 @@ export class MeetingService {
       )
     );
 
-    const contextMap = new Map<string, MeetingCommitteeContextEntry>();
+    const committees: Committee[] = [];
     for (const [i, result] of results.entries()) {
       if (result.status === 'fulfilled') {
-        for (const committee of result.value) {
-          if (committee?.uid) {
-            contextMap.set(committee.uid, this.toMeetingCommitteeContextEntry(committee));
-          }
-        }
+        committees.push(...result.value.filter((committee) => committee?.uid));
       } else {
         logger.warning(req, 'get_meeting_committees', 'Batch committee fetch failed; affected meetings will have no committee name', {
           batch_index: i,
@@ -2592,16 +2592,62 @@ export class MeetingService {
       }
     }
 
+    const discoverableOwners = await this.getDiscoverableCommitteeOwners(req, committees, options);
+    const contextMap = new Map<string, MeetingCommitteeContextEntry>();
+    for (const committee of committees) {
+      contextMap.set(committee.uid, this.toMeetingCommitteeContextEntry(committee, discoverableOwners.has(committee.project_uid)));
+    }
+
     return contextMap;
   }
 
-  /** Keeps a committee's `name`, plus its `MeetingCommitteeContext` fields when the committee is public. */
-  private toMeetingCommitteeContextEntry(committee: Committee): MeetingCommitteeContextEntry {
+  /**
+   * Returns the owning-project UIDs of public committees whose project is publicly discoverable —
+   * the owner half of the public group directory's visibility gate (private and
+   * `Formation - Confidential` projects are excluded). Reads with the same token as the committee
+   * query. Never throws: an owner that cannot be read is treated as hidden.
+   */
+  private async getDiscoverableCommitteeOwners(req: Request, committees: Committee[], options?: ApiRequestOptions): Promise<Set<string>> {
+    const ownerUids = [...new Set(committees.filter((c) => c.public === true && c.project_uid).map((c) => c.project_uid))];
+    const results = await Promise.allSettled(
+      ownerUids.map((uid) =>
+        this.microserviceProxy.proxyRequest<Project>(
+          req,
+          'LFX_V2_SERVICE',
+          `/projects/${encodePathSegment(uid)}`,
+          'GET',
+          undefined,
+          undefined,
+          undefined,
+          options
+        )
+      )
+    );
+
+    const discoverable = new Set<string>();
+    for (const [i, result] of results.entries()) {
+      if (result.status === 'fulfilled' && isPubliclyDiscoverableProject(result.value)) {
+        discoverable.add(ownerUids[i]);
+      } else if (result.status === 'rejected') {
+        logger.warning(req, 'get_meeting_committees', 'Committee owner project read failed; its committee context is withheld', {
+          project_uid: ownerUids[i],
+          err: result.reason,
+        });
+      }
+    }
+    return discoverable;
+  }
+
+  /**
+   * Keeps a committee's `name`, plus its `MeetingCommitteeContext` fields when the committee is
+   * public and its owning project is publicly discoverable.
+   */
+  private toMeetingCommitteeContextEntry(committee: Committee, ownerDiscoverable: boolean): MeetingCommitteeContextEntry {
     const entry: MeetingCommitteeContextEntry = {};
     if (committee.name) {
       entry.name = committee.name;
     }
-    if (committee.public !== true) {
+    if (committee.public !== true || !ownerDiscoverable) {
       return entry;
     }
     entry.behavioral_class = getGroupBehavioralClass(committee.category);

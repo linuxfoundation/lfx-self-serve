@@ -8,6 +8,7 @@ import '@angular/compiler';
 import { PUBLIC_REGISTRATION_FIELD_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { ArtifactVisibility, MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
+import { isPubliclyDiscoverableProject } from '@lfx-one/shared/utils/project-stage.utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthenticationError } from '../errors/authentication.error';
@@ -62,7 +63,7 @@ const {
     getMeetingAttachmentDownloadUrl: vi.fn(),
     getMeetingRegistrantsForUser: vi.fn(),
   },
-  projectSvc: { getProjectById: vi.fn() },
+  projectSvc: { getProjectById: vi.fn(), getPubliclyDiscoverableProject: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
   checkPastMeetingAccessMock: vi.fn(),
 }));
@@ -223,7 +224,7 @@ function buildProject(overrides: Record<string, unknown> = {}) {
 }
 
 function buildParentProject(overrides: Record<string, unknown> = {}) {
-  return { name: 'Foundation', slug: 'foundation', logo_url: 'flogo', uid: 'parent', parent_uid: '', ...overrides };
+  return { name: 'Foundation', slug: 'foundation', logo_url: 'flogo', uid: 'parent', parent_uid: '', public: true, ...overrides };
 }
 
 function buildReqRes(authenticated: boolean, hasUserToken = true) {
@@ -241,6 +242,13 @@ function buildReqRes(authenticated: boolean, hasUserToken = true) {
   const next = vi.fn();
   return { req, res, next };
 }
+
+// Mirrors ProjectService.getPubliclyDiscoverableProject over the per-test getProjectById mock:
+// the real visibility rule applies (#3868 review).
+projectSvc.getPubliclyDiscoverableProject.mockImplementation(async (req: any, uid: string) => {
+  const project = await projectSvc.getProjectById(req, uid, false);
+  return isPubliclyDiscoverableProject(project) ? project : null;
+});
 
 describe('PublicMeetingController.getMeetingById host_key gating', () => {
   let controller: PublicMeetingController;
@@ -631,6 +639,20 @@ describe('PublicMeetingController.getMeetingById parent project resolution (LFXV
     const payload = res.json.mock.calls[0][0];
     expect(payload.project.parent).toBeNull();
   });
+
+  it('omits a parent foundation that is not publicly discoverable, logo included', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) =>
+      uid === PROJECT_UID ? buildProject() : buildParentProject({ public: false })
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+    expect(projectSvc.getPubliclyDiscoverableProject).toHaveBeenCalledWith(expect.anything(), 'parent');
+  });
 });
 
 describe('PublicMeetingController.getPublicPastMeetingById parent project resolution (LFXV2-3266)', () => {
@@ -695,6 +717,20 @@ describe('PublicMeetingController.getPublicPastMeetingById parent project resolu
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
     expect(payload.project.parent).toBeNull();
+  });
+
+  it('omits a parent foundation that is not publicly discoverable, logo included', async () => {
+    projectSvc.getProjectById.mockImplementation(async (_req: any, uid: string) =>
+      uid === PROJECT_UID ? buildProject() : buildParentProject({ public: false })
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.project.parent).toBeNull();
+    expect(projectSvc.getPubliclyDiscoverableProject).toHaveBeenCalledWith(expect.anything(), 'parent');
   });
 });
 
