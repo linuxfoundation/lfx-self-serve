@@ -95,7 +95,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private scrollStartObserver?: IntersectionObserver;
   // One of the observers' inputs, so a content change that leaves it alone costs nothing. The sticky
   // offset is another, rebuilt from its own subscription rather than compared here.
-  private spyAreaScrolls?: boolean;
+  private spyPageScrolls?: boolean;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
@@ -125,8 +125,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
         this.setupScrollSpy(offset);
       });
 
-    // Resize fires per animation frame while dragging; rebuilding two observers each time is wasteful.
-    // The page may have just started or stopped scrolling, which decides whether the end sentinel is observed.
+    // Resize fires per animation frame while dragging; rebuilding the observers each time is wasteful.
+    // The page may have just started or stopped scrolling, which decides whether the sentinels are observed.
     this.resize$.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => this.rebuildScrollSpyIfScrollingChanged());
   }
 
@@ -248,11 +248,11 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   /**
-   * Whether the page overflows decides if the end sentinel is observed at all, and a read can flip
+   * Whether the page overflows decides if the sentinels are observed at all, and a read can flip
    * it. Sections re-emit constantly, so nothing is rebuilt unless that decision moved.
    */
   private rebuildScrollSpyIfScrollingChanged(): void {
-    if (this.pageScrolls() !== this.spyAreaScrolls) this.setupScrollSpy();
+    if (this.pageScrolls() !== this.spyPageScrolls) this.setupScrollSpy();
   }
 
   /** Bounds the pending key's life, so a read that never settles cannot leave the deep link armed. */
@@ -298,7 +298,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.scrollTo(key);
   }
 
-  /** A page that fits needs no end sentinel: its last heading is already reachable. */
+  /** A page that fits needs no sentinels: its first and last headings are already reachable. */
   private pageScrolls(): boolean {
     return document.documentElement.scrollHeight > window.innerHeight + 1;
   }
@@ -338,12 +338,12 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     );
     keyByHeading.forEach((_, heading) => observer.observe(heading));
     this.scrollSpyObserver = observer;
-    this.spyAreaScrolls = this.pageScrolls();
+    this.spyPageScrolls = this.pageScrolls();
 
     // The last section is short enough that its heading never reaches the activation band, so an
     // invisible end sentinel snaps to it. Guarding on the heading's position instead would be dead
     // code: a heading that clears the band's top edge has already activated itself above.
-    if (!this.spyAreaScrolls) return;
+    if (!this.spyPageScrolls) return;
 
     // A jump back to the top (Home, or an instant scroll) never sweeps the first heading through the
     // band, so a sentinel at the column's top edge re-entering below the header lights it instead.
@@ -383,6 +383,6 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.scrollSpyObserver = undefined;
     this.scrollEndObserver = undefined;
     this.scrollStartObserver = undefined;
-    this.spyAreaScrolls = undefined;
+    this.spyPageScrolls = undefined;
   }
 }

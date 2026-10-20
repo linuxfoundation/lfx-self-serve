@@ -146,7 +146,6 @@ describe('HealthMetricsL2ShellComponent', () => {
     return fixture.nativeElement.querySelector(`#sec-test-${key}-heading`);
   }
 
-  /** The heading observer — the end sentinel's is always constructed second. */
   // Each observer is found by what it watches: the headings, or one of the two hidden sentinels.
   function latestObserver(watches: (target: Element) => boolean): FakeIntersectionObserver {
     const observer = [...FakeIntersectionObserver.instances].reverse().find((candidate) => candidate.observed.some(watches));
@@ -308,13 +307,17 @@ describe('HealthMetricsL2ShellComponent', () => {
   it('lands a picked section, and pins the sub-nav, just below the sticky header', () => {
     const alpha = fixture.nativeElement.querySelector('[data-testid="test-section-alpha"]') as HTMLElement;
 
-    expect(alpha.style.scrollMarginTop).toBe(`${chrome.stickyTopPx()}px`);
+    const column = alpha.parentElement as HTMLElement;
+
+    // The header only sticks at `lg`, so the margin is a `lg:` utility reading the offset the column carries.
+    expect(alpha.className).toContain('lg:scroll-mt-[var(--l2-sticky-top)]');
+    expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
     expect(fixture.nativeElement.querySelector('lfx-health-metrics-l2-sub-nav').style.top).toBe(`${chrome.stickyTopPx()}px`);
 
     chrome.headerHeightPx.set(120);
     fixture.detectChanges();
 
-    expect(alpha.style.scrollMarginTop).toBe(`${chrome.stickyTopPx()}px`);
+    expect(column.style.getPropertyValue('--l2-sticky-top')).toBe(`${chrome.stickyTopPx()}px`);
   });
 
   it('leaves the scroll spy alone when a document resize keeps the page scrolling', async () => {

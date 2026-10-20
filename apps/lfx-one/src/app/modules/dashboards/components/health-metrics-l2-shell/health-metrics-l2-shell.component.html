@@ -17,15 +17,15 @@
 
   <!-- The design's `.panes`: the page scrolls them, beside the sticky sub-nav. `relative` anchors
        absolutely-positioned descendants rendered inline (e.g. icon-field decorations) to the column. -->
-  <div class="relative flex min-w-0 flex-col gap-[28px]">
+  <!-- The header only sticks at `lg`, so only there does a section need its offset as a scroll margin. -->
+  <div class="relative flex min-w-0 flex-col gap-[28px]" [style.--l2-sticky-top]="chrome.stickyTopPx() + 'px'">
     <!-- Lights the first section when the reader lands back at the top, which a jump there never crosses the band for. -->
     <div #startSentinel class="absolute inset-x-0 top-0 h-px" aria-hidden="true"></div>
     @for (section of sectionViews(); track section.key) {
       @let body = bodyByKey().get(section.key);
       <section
         [id]="section.id"
-        [style.scroll-margin-top.px]="chrome.stickyTopPx()"
-        class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5"
+        class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5 lg:scroll-mt-[var(--l2-sticky-top)]"
         [attr.data-testid]="testIdPrefix() + '-section-' + section.key">
         <div class="flex flex-col gap-[6px]" [id]="section.headingId">
           <div class="flex flex-wrap items-center gap-2">
