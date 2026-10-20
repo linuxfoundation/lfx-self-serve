@@ -5,10 +5,12 @@ import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { HEALTH_METRICS_EVENTS_AT_A_GLANCE_FOOTNOTE } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEventsAtAGlanceView } from '@lfx-one/shared/utils';
 import { Skeleton } from 'primeng/skeleton';
 import { combineLatest } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, HealthMetricsEventsAtAGlanceView } from '@lfx-one/shared/interfaces';
@@ -19,7 +21,7 @@ import type { HealthMetricsEventsAtAGlance, HealthMetricsEventsAtAGlanceStatus, 
  */
 @Component({
   selector: 'lfx-events-at-a-glance',
-  imports: [EmptyStateComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, Skeleton],
   templateUrl: './events-at-a-glance.component.html',
 })
 export class EventsAtAGlanceComponent {
@@ -33,6 +35,8 @@ export class EventsAtAGlanceComponent {
   public readonly reading = output<void>();
   /** Fires once the read lands and on every period change — this section's height moves either way. */
   public readonly settled = output<void>();
+
+  protected readonly footnote = HEALTH_METRICS_EVENTS_AT_A_GLANCE_FOOTNOTE;
 
   protected readonly view: Signal<HealthMetricsEventsAtAGlanceView> = computed(() =>
     buildHealthMetricsEventsAtAGlanceView(this.glance(), this.chrome.selectedRange())

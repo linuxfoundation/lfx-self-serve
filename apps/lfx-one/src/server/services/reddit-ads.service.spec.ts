@@ -376,8 +376,8 @@ describe('executeRedditCampaignCreation — the authored post', () => {
    * Same load-bearing assertion as the image case above, for the same reason: `video_views` has no
    * static optimization goal, and a request that names the objective without a usable `videoGoal`
    * has to be refused before the campaign POST rather than after one exists in PAUSED (#3449).
-   * Nothing in the Implementation tab collects a goal yet, so this is every `video_views` request
-   * reaching this creator today, not an edge case.
+   * The Implementation tab blocks this shape, but `POST /api/campaigns/create` forwards
+   * `redditConfig` unvalidated, so the creator must still refuse it on its own.
    */
   it('refuses video_views with no usable goal before ANY upstream call', async () => {
     await expect(executeRedditCampaignCreation(undefined, config({ objective: 'video_views' }))).rejects.toThrow(/must be one of VIDEO_VIEW_6S/);

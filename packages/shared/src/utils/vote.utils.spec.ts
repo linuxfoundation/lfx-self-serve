@@ -11,8 +11,10 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
-import { PollStatus, VoteResponseStatus } from '../enums';
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
@@ -20,8 +22,13 @@ import {
   buildUpdateVoteRequest,
   compareVotesByRecency,
   computeVoteParticipationStats,
+  computeVoteRowParticipation,
+  isVoteClosingSoon,
+  mapFiltersToEligibility,
+  mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
+  votePermalinkPath,
 } from './vote.utils';
 
 /** Minimal VoteFormValue fixture — the request builders only read the fields set here. */
@@ -64,6 +71,7 @@ describe('matchesMyVotesQuickFilter', () => {
     ['invalid', false],
   ])('matches deadline %s: %s', (end_time, expected) => {
     expect(matchesMyVotesQuickFilter(vote({ end_time }), 'closing-soon', nowMs)).toBe(expected);
+    expect(isVoteClosingSoon(vote({ end_time }), nowMs)).toBe(expected);
   });
 
   it('includes responded votes only in the deadline summary', () => {
@@ -82,12 +90,14 @@ describe('matchesMyVotesQuickFilter', () => {
 
   it.each([PollStatus.DISABLED, PollStatus.ENDED, 'unknown'])('excludes inactive status %s from both summaries', (status) => {
     expect(matchesMyVotesQuickFilter(vote({ status: status as PollStatus }), 'closing-soon', nowMs)).toBe(false);
+    expect(isVoteClosingSoon(vote({ status: status as PollStatus }), nowMs)).toBe(false);
     expect(matchesMyVotesQuickFilter(vote({ status: status as PollStatus }), 'needs-vote', nowMs)).toBe(false);
   });
 
   it('normalizes mixed-case ACTIVE status', () => {
     const active = vote({ status: 'AcTiVe' as PollStatus });
     expect(matchesMyVotesQuickFilter(active, 'closing-soon', nowMs)).toBe(true);
+    expect(isVoteClosingSoon(active, nowMs)).toBe(true);
     expect(matchesMyVotesQuickFilter(active, 'needs-vote', nowMs)).toBe(true);
   });
 });
@@ -254,6 +264,107 @@ describe('mapVoteToFormValue', () => {
   });
 });
 
+describe('mapVoteToCloneFormValue', () => {
+  /** Minimal Vote fixture — the mapper only reads the fields set here. */
+  function vote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.DISABLED,
+      project_uid: 'project-uid',
+      ...overrides,
+    };
+  }
+
+  const NOW = Date.parse('2025-05-01T00:00:00Z');
+
+  it('prefixes the title with "Copy of "', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('does not double-prefix when cloning an already-cloned vote', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Copy of Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('clamps the prefixed title to the 200-character form limit', () => {
+    const longName = 'B'.repeat(199);
+    const form = mapVoteToCloneFormValue(vote({ name: longName }), NOW);
+    expect(form.title.length).toBe(200);
+    expect(form.title.startsWith('Copy of ')).toBe(true);
+  });
+
+  it('keeps the source deadline when it is still in the future', () => {
+    const source = mapVoteToFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }));
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }), NOW);
+
+    expect(cloned.close_date?.getTime()).toBe(source.close_date?.getTime());
+    expect(cloned.close_time).toBe(source.close_time);
+  });
+
+  it('resets the deadline to 7 days out in the organizer timezone when the source deadline has already passed', () => {
+    // NOW is 2025-05-01T00:00Z; +7 days in UTC is 2025-05-08 — host pinned to UTC so the carrier's
+    // calendar fields land on that day regardless of the source's own stored zone (here, Tokyo).
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: 'Asia/Tokyo' }), NOW);
+
+      expect(cloned.timezone).toBe(getUserTimezone());
+      expect(cloned.close_date?.getFullYear()).toBe(2025);
+      expect(cloned.close_date?.getMonth()).toBe(4);
+      expect(cloned.close_date?.getDate()).toBe(8);
+      expect(cloned.close_time).toBe('11:59 PM');
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+
+  it("resets into the organizer's own timezone, not the legacy-vote fallback, when the source stored no zone", () => {
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: undefined }), NOW);
+    expect(cloned.timezone).toBe(getUserTimezone());
+  });
+
+  it('preserves committee, eligibility and questions from the source vote', () => {
+    const source = vote({
+      committee_uid: 'committee-uid',
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Who should join?',
+          type: 'single_choice',
+          choices: [
+            { choice_id: 'c1', choice_text: 'Alice' },
+            { choice_id: 'c2', choice_text: 'Bob' },
+          ],
+        },
+      ],
+    });
+    const cloned = mapVoteToCloneFormValue(source, NOW);
+
+    expect(cloned.committee?.uid).toBe('committee-uid');
+    expect(cloned.eligible_participants).toBe('voting_rep,alternate_voting_rep');
+    expect(cloned.questions).toEqual([{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }]);
+  });
+});
+
+describe('mapFiltersToEligibility', () => {
+  // Pins the real widening rule: it keys on presence of Observer/Emeritus, not on absence of
+  // Alternate/Emeritus — a set missing Alternate/Emeritus but containing neither Observer nor
+  // Emeritus is NOT widened to 'all'.
+  it("widens to 'all' when the filter set contains Observer or Emeritus", () => {
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.EMERITUS])).toBe('all');
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP])).toBe('voting_rep');
+  });
+});
+
 describe('computeVoteParticipationStats', () => {
   /** Minimal VoteResultsResponse fixture — the stats computation only reads the num_* fields. */
   function results(overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
@@ -286,6 +397,171 @@ describe('computeVoteParticipationStats', () => {
 
   it('keeps participationRate as the share of eligible voters (abstentions count as responses)', () => {
     expect(computeVoteParticipationStats(results()).participationRate).toBe(75);
+  });
+
+  it.each([
+    [0, 200, 0],
+    [1, 200, 1],
+    [8, 12, 67],
+    [198, 200, 99],
+    [199, 200, 99],
+    [200, 200, 100],
+    [240, 200, 100],
+  ])('matches table participation for %i of %i responses at %i percent', (responses, invited, expectedPercent) => {
+    const stats = computeVoteParticipationStats(results({ num_votes_cast: responses, num_recipients: invited }));
+
+    expect(stats.participationRate).toBe(expectedPercent);
+    expect(stats.totalResponses).toBe(responses);
+    expect(stats.eligibleVoters).toBe(invited);
+
+    for (const status of [PollStatus.ACTIVE, PollStatus.ENDED]) {
+      const vote: Vote = {
+        uid: 'vote-uid',
+        name: 'Board election',
+        end_time: '2025-06-01T00:00:00Z',
+        status,
+        project_uid: 'project-uid',
+        num_response_received: responses,
+        total_voting_request_invitations: invited,
+      };
+
+      expect(computeVoteRowParticipation(vote).percent).toBe(stats.participationRate);
+    }
+  });
+
+  it('keeps a zero-person electorate at zero in the results drawer', () => {
+    expect(computeVoteParticipationStats(results({ num_votes_cast: 0, num_recipients: 0 })).participationRate).toBe(0);
+  });
+});
+
+describe('computeVoteRowParticipation', () => {
+  /** Minimal Vote fixture — the participation summary only reads status and the two indexed counts. */
+  function rowVote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.ACTIVE,
+      project_uid: 'project-uid',
+      num_response_received: 8,
+      total_voting_request_invitations: 12,
+      ...overrides,
+    };
+  }
+
+  it('summarises an active vote as responses of invited with a rounded percent', () => {
+    expect(computeVoteRowParticipation(rowVote())).toEqual({
+      state: VoteRowParticipationState.PROGRESS,
+      responses: 8,
+      invited: 12,
+      percent: 67,
+      label: '8 of 12 responded · 67%',
+      secondaryLabel: null,
+      ariaLabel: 'Participation: 8 of 12 responded, 67%',
+    });
+  });
+
+  it('applies the same math to an ended vote, whatever the raw status casing', () => {
+    const participation = computeVoteRowParticipation(rowVote({ status: 'ENDED' as PollStatus }));
+
+    expect(participation.state).toBe(VoteRowParticipationState.PROGRESS);
+    expect(participation.label).toBe('8 of 12 responded · 67%');
+    expect(participation.ariaLabel).toBeNull();
+  });
+
+  it('shows a draft as not open, even when the payload carries counts', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: PollStatus.DISABLED }))).toMatchObject({
+      state: VoteRowParticipationState.NOT_OPEN,
+      responses: null,
+      invited: null,
+      percent: null,
+      label: 'Not open yet',
+      ariaLabel: null,
+    });
+  });
+
+  it('reports missing responses as unavailable rather than zero', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: undefined }))).toMatchObject({
+      state: VoteRowParticipationState.UNAVAILABLE,
+      responses: null,
+      percent: null,
+      label: 'Unavailable',
+      ariaLabel: null,
+    });
+  });
+
+  it('never coerces a string count from upstream', () => {
+    // @ts-expect-error: malformed upstream data intentionally violates the numeric count contract.
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: '8' }));
+
+    expect(participation.state).toBe(VoteRowParticipationState.UNAVAILABLE);
+    expect(participation.ariaLabel).toBeNull();
+  });
+
+  it('shows the response count alone when the invited total is missing', () => {
+    expect(computeVoteRowParticipation(rowVote({ total_voting_request_invitations: undefined }))).toMatchObject({
+      state: VoteRowParticipationState.COUNT_ONLY,
+      responses: 8,
+      invited: null,
+      percent: null,
+      label: '8 responded',
+      secondaryLabel: 'Total unavailable',
+      ariaLabel: null,
+    });
+  });
+
+  it('never produces a percent for a zero-person electorate', () => {
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: 0, total_voting_request_invitations: 0 }));
+
+    expect(participation).toMatchObject({ state: VoteRowParticipationState.NO_ELECTORATE, percent: null, label: 'No one invited', ariaLabel: null });
+    expect(participation.label).not.toMatch(/%/);
+  });
+
+  it('treats zero responses with a known electorate as a confirmed 0%', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 0 }))).toMatchObject({
+      state: VoteRowParticipationState.PROGRESS,
+      percent: 0,
+      label: '0 of 12 responded · 0%',
+    });
+  });
+
+  it('provides a progress-bar summary for an active vote with raw uppercase status', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: 'ACTIVE' as PollStatus })).ariaLabel).toBe('Participation: 8 of 12 responded, 67%');
+  });
+
+  it.each([PollStatus.ACTIVE, PollStatus.ENDED])('caps incomplete participation at 99%% for a %s vote', (status) => {
+    expect(computeVoteRowParticipation(rowVote({ status, num_response_received: 199, total_voting_request_invitations: 200 }))).toMatchObject({
+      percent: 99,
+      label: '199 of 200 responded · 99%',
+      ariaLabel: status === PollStatus.ACTIVE ? 'Participation: 199 of 200 responded, 99%' : null,
+    });
+  });
+
+  it('shows 100% when every invited voter has responded', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 200, total_voting_request_invitations: 200 }))).toMatchObject({
+      percent: 100,
+      label: '200 of 200 responded · 100%',
+      ariaLabel: 'Participation: 200 of 200 responded, 100%',
+    });
+  });
+
+  it('clamps the percent to 100 under index lag but keeps the raw counts in the label', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 13 }))).toMatchObject({ percent: 100, label: '13 of 12 responded · 100%' });
+  });
+
+  it('never words participation as quorum, approval, or an outcome', () => {
+    const rows = [
+      rowVote(),
+      rowVote({ status: PollStatus.DISABLED }),
+      rowVote({ num_response_received: undefined }),
+      rowVote({ total_voting_request_invitations: undefined }),
+      rowVote({ total_voting_request_invitations: 0 }),
+    ];
+
+    for (const participation of rows.map(computeVoteRowParticipation)) {
+      const text = [participation.label, participation.secondaryLabel, participation.ariaLabel].join(' ');
+      expect(text).not.toMatch(/quorum|approv|pass|win/i);
+    }
   });
 });
 
@@ -370,5 +646,15 @@ describe('compareVotesByRecency', () => {
     ].sort(compareVotesByRecency);
 
     expect(uids(sorted)).toEqual(['aaa', 'bbb', 'ccc']);
+  });
+});
+
+describe('votePermalinkPath', () => {
+  it('builds the flat, lens-independent permalink path', () => {
+    expect(votePermalinkPath('abc')).toBe('/votes/abc');
+  });
+
+  it('encodes reserved characters so the uid stays one path segment', () => {
+    expect(votePermalinkPath('a/b?c#d')).toBe('/votes/a%2Fb%3Fc%23d');
   });
 });

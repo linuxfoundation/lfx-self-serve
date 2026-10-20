@@ -83,7 +83,7 @@ async function openEditDrawer(page: Page): Promise<void> {
 }
 
 async function addSkill(page: Page, skill: string): Promise<void> {
-  await page.locator('[data-test="mentor-profile-edit-skill"]').click();
+  await page.getByTestId('mentor-profile-edit-skill').locator('input').fill(skill);
   await page.getByRole('option', { name: skill, exact: true }).click();
   await page.getByTestId('mentor-profile-edit-add-skill').click();
   await expect(page.getByTestId('mentor-profile-edit-skill-list')).toContainText(skill);

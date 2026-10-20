@@ -464,6 +464,19 @@
                     borderColor="border-gray-200"
                     (addClicked)="showRegistrants.set(true)">
                   </lfx-meeting-rsvp-details>
+                  @if (canLeaveMeeting()) {
+                    <lfx-button
+                      class="w-full"
+                      styleClass="w-full"
+                      icon="fa-light fa-user-xmark"
+                      label="Remove Myself"
+                      size="small"
+                      severity="secondary"
+                      [loading]="leavingMeeting()"
+                      (onClick)="confirmLeaveMeeting()"
+                      data-testid="leave-meeting-button">
+                    </lfx-button>
+                  }
                 </div>
               } @else if (authenticated() && !isPastMeeting()) {
                 <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->

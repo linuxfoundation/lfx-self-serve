@@ -5,7 +5,7 @@ import { lfxColors } from './colors.constants';
 import { HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS } from './health-metrics-engagement.constants';
 
 import type { FilterOption } from '../interfaces/filter.interface';
-import type { HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRisk,
   HealthMetricsMembersAtRiskBucket,
@@ -18,7 +18,6 @@ import type {
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartures,
   HealthMetricsMembersChurnModeOption,
-  HealthMetricsMembersChurnRisk,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryTierOption,
@@ -33,6 +32,7 @@ import type {
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsMembersRenewalsWindowOption,
   HealthMetricsMembersTiers,
+  HealthMetricsMembersTiersMode,
   HealthMetricsMembersTiersModeOption,
 } from '../interfaces/health-metrics-members.interface';
 
@@ -47,7 +47,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     heading: 'Membership & revenue by tier',
     description:
       'The most-used view. Composition over time rather than a total-members line — where the base is shifting is the question a total cannot answer.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -56,17 +56,29 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     heading: 'All members',
     description:
       "The full directory — PCC's most-used table, carried over with its columns intact and the engagement touchpoints added. Sorted by annual dues, highest first, so the accounts that carry the revenue lead; within a tier, least engaged first.",
-    footnote:
-      'This is the whole table at Level 2, not behind a drill-in — it is the most-used view in PCC, so it stays one click from the tab. PCC\'s Period column is replaced by Renews: the term start is rarely acted on, the end date always is. Contribution, Sponsorship, Training and Events show — where not yet tracked — a data gap reads as "not tracked", never as zero.',
+    footnote: [
+      { text: 'This is the ' },
+      { text: 'whole table at Level 2', bold: true },
+      { text: ", not behind a drill-in — it is the most-used view in PCC, so it stays one click from the tab. PCC's " },
+      { text: 'Period', bold: true },
+      { text: ' column is replaced by ' },
+      { text: 'Renews', bold: true },
+      {
+        text: ': the term start is rarely acted on, the end date always is. Contribution, Sponsorship, Training and Events show — where not yet tracked — a data gap reads as "not tracked", never as zero.',
+      },
+    ],
     footnoteCaution: false,
   },
   {
     key: 'risk',
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
-    description: 'Act-now view. Sorted by dues at risk rather than days overdue — the money order, not the calendar order.',
-    footnote:
-      'Overdue balance and lapsed engagement together are the strongest churn predictor available today — which is why this sits above churn, not below it.',
+    description: 'Act-now view. Sorted by dues at risk rather than days overdue — the ED needs the money order, not the calendar order.',
+    footnote: [
+      {
+        text: 'Overdue balance and lapsed engagement together are the strongest churn predictor available today — which is why this sits above churn, not below it.',
+      },
+    ],
     footnoteCaution: false,
   },
   {
@@ -74,8 +86,12 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     label: 'Renewals',
     heading: 'Renewals',
     description: 'The forward-looking view: what is up for renewal and what it is worth, while there is still time to act.',
-    footnote:
-      'Organization, tier, dues and renewal date come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
+    footnote: [
+      { text: 'Organization, tier, dues and renewal date', bold: true },
+      {
+        text: ' come from the membership record — the term end date PCC shows as "Period". Renewal status (Confirmed / In discussion / Unconfirmed) is a CRM pipeline stage no system we read carries, so it is left out rather than every row reading Unconfirmed.',
+      },
+    ],
     footnoteCaution: true,
   },
   {
@@ -84,7 +100,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     heading: 'Board & voting-member attendance',
     description:
       'Governance participation. This lives in Members rather than Engagement because it sits next to dues and renewals — an unused board seat is a paid benefit going to waste.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -93,7 +109,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     heading: 'Satisfaction (NPS)',
     description:
       'Deliberately low in this section — NPS moves once a quarter at most, so it is context rather than a signal to act on. Non-responses are shown at full weight.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -102,7 +118,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     heading: 'Membership churn',
     description:
       'Lagging by definition and deliberately last: it reports members already gone. Revenue churn leads — logo churn counts a top-tier and an entry-tier loss as one each.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
 ] as const;
@@ -144,6 +160,15 @@ export const HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS: readonly HealthMetricsMe
   { id: 'members', label: 'Members' },
   { id: 'revenue', label: 'Revenue' },
 ];
+
+/** The matrix caption per mode: the design's counts wording, with the unit swapped for revenue. */
+export const HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS: Record<HealthMetricsMembersTiersMode, string> = {
+  members: 'the most-used table in PCC — exact counts',
+  revenue: 'the most-used table in PCC — in USD',
+};
+
+/** The composition chart's caption, in either mode. */
+export const HEALTH_METRICS_MEMBERS_TIERS_COMPOSITION_CAPTION = 'the same table as shares, so a shifting mix is visible';
 
 /** Upper bound on tier rows read; the busiest foundation has around a hundred. */
 export const HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP = 500;
@@ -191,8 +216,11 @@ export const HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS: Record<Exclude<HealthMet
 };
 
 /** Under the bridge: why it stands in for a total-members line. */
-export const HEALTH_METRICS_MEMBERS_BRIDGE_FOOTER =
-  "The bridge replaces PCC's total-members all-time line: it says why the number moved — adds, upgrades, downgrades and churn — rather than only that it did.";
+export const HEALTH_METRICS_MEMBERS_BRIDGE_FOOTER: readonly HealthMetricsFootnotePart[] = [
+  { text: "The bridge replaces PCC's total-members all-time line: it says " },
+  { text: 'why', bold: true },
+  { text: ' the number moved — adds, upgrades, downgrades and churn — rather than only that it did.' },
+];
 
 /** Each movement drawer's copy, from the design's named lists. The from-tier is not in the data yet. */
 export const HEALTH_METRICS_MEMBERS_MOVEMENT_DRAWER_COPY: Record<HealthMetricsMembersMovementListType, HealthMetricsMembersMovementDrawerCopy> = {
@@ -321,13 +349,6 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS: readonly HealthMetri
 
 /** `MEMBERSHIP_AT_RISK`'s `churn_risk` bands, highest first. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS = ['High', 'Medium', 'Low'] as const;
-
-/** Each churn-risk chip's colours, applied via `[class]`. */
-export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES: Record<HealthMetricsMembersChurnRisk, string> = {
-  High: 'bg-red-50 text-red-700',
-  Medium: 'bg-amber-50 text-amber-700',
-  Low: 'bg-gray-100 text-gray-500',
-};
 
 /** Read-failed / no-foundation value: no members, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED: HealthMetricsMembersAtRisk = {
@@ -476,6 +497,13 @@ export const HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT = 25;
 
 /** The share-of-loss bar fill. */
 export const HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS = 'bg-red-600';
+
+/** Under the churn trend: why churn leads rather than renewal rate. */
+export const HEALTH_METRICS_MEMBERS_CHURN_FOOTER: readonly HealthMetricsFootnotePart[] = [
+  {
+    text: 'Renewal rate is unreliable mid-year because renewals are lumpy, so churn leads instead. Not on the landing page at all — it is an outcome, not a decision.',
+  },
+];
 
 /** Read-failed value for "Who left". */
 export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED: HealthMetricsMembersChurnDepartures = { rows: [], totalRecords: 0 };

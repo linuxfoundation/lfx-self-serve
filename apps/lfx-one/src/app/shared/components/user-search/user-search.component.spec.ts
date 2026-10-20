@@ -3,6 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { TemplateRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
@@ -91,6 +92,29 @@ describe('UserSearchComponent', () => {
     fixture.componentInstance.onSearchComplete({ query: text } as AutoCompleteCompleteEvent);
     await fixture.whenStable();
   };
+
+  describe('waitForSearchableQuery', () => {
+    const minLength = (): number => queryAutocomplete().minLength();
+
+    it('keeps the default one-character panel when not opted in', async () => {
+      await render();
+      expect(minLength()).toBe(1);
+    });
+
+    it('holds the panel until two characters for a directory search', async () => {
+      await render();
+      fixture.componentRef.setInput('waitForSearchableQuery', true);
+      await fixture.whenStable();
+      expect(minLength()).toBe(2);
+    });
+
+    it('ignores the option for a local candidate list', async () => {
+      await render({ candidates: [] });
+      fixture.componentRef.setInput('waitForSearchableQuery', true);
+      await fixture.whenStable();
+      expect(minLength()).toBe(1);
+    });
+  });
 
   // #2594: local mode — a caller-supplied list (the formation assignee picker's people on the
   // project) searched client-side, with rows that can be listed but not picked.
@@ -452,6 +476,43 @@ describe('UserSearchComponent', () => {
       await render({ showManualEntry: false });
 
       expect(queryAutocomplete().footerTemplate).toBeFalsy();
+    });
+  });
+
+  describe('manual entry placement and add hint', () => {
+    // Renders one of the autocomplete's projected templates on its own, to read what it would show.
+    const renderTemplate = (template: TemplateRef<unknown> | undefined, context: object = {}): string => {
+      const view = template!.createEmbeddedView(context);
+      view.detectChanges();
+      return view.rootNodes.map((node: Node) => node.textContent ?? '').join(' ');
+    };
+
+    it('keeps manual entry in the footer, with its old copy, by default', async () => {
+      await render();
+
+      expect(queryAutocomplete().footerTemplate).toBeTruthy();
+      expect(renderTemplate(queryAutocomplete().footerTemplate)).toContain('Enter details manually');
+      expect(renderTemplate(queryAutocomplete().emptyTemplate)).not.toContain('Enter details manually');
+    });
+
+    it('moves manual entry into the empty state, with its own label, when placed there', async () => {
+      await render();
+      fixture.componentRef.setInput('manualEntryPlacement', 'empty');
+      fixture.componentRef.setInput('manualEntryLabel', 'Add guest manually');
+      await fixture.whenStable();
+
+      expect(queryAutocomplete().footerTemplate).toBeFalsy();
+      expect(renderTemplate(queryAutocomplete().emptyTemplate)).toContain('Add guest manually');
+    });
+
+    it('renders the "Add" cue on options only when opted in', async () => {
+      const user = { uid: 'u-1', email: 'ada@acme.example', first_name: 'Ada', last_name: 'Byron', fullName: 'Ada Byron', displayName: 'Ada Byron' };
+      await render();
+      expect(renderTemplate(queryAutocomplete().itemTemplate, { $implicit: user })).not.toContain('Add');
+
+      fixture.componentRef.setInput('showAddHint', true);
+      await fixture.whenStable();
+      expect(renderTemplate(queryAutocomplete().itemTemplate, { $implicit: user })).toContain('Add');
     });
   });
 });

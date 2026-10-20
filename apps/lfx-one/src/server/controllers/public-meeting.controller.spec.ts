@@ -10,6 +10,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../../../../../packages/shared/src/constants/public-past-meeting.constants';
 import { AuthenticationError } from '../errors/authentication.error';
 import type { ServiceValidationError } from '../errors/service-validation.error';
 
@@ -90,6 +91,8 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   // exists to avoid.
   PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS: (await import('../../../../../packages/shared/src/constants/meeting-registrant.constants'))
     .PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
+  PUBLIC_ANONYMOUS_PAST_MEETING_KEYS: (await import('../../../../../packages/shared/src/constants/public-past-meeting.constants'))
+    .PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
   HOST_KEY_EARLY_MINUTES: 70,
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',
@@ -740,6 +743,70 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     checkPastMeetingAccessMock.mockResolvedValue(false);
   });
 
+  it('projects an anonymous full-access response through the anonymous allowlist (lfx-self-serve-ops#51)', async () => {
+    checkPastMeetingAccessMock.mockResolvedValue(true);
+    meetingSvc.getPastMeetingById.mockResolvedValue(
+      buildPastMeeting({
+        organizers: ['meeting-organizer'],
+        created_by: createdBy,
+        owner,
+        meeting_and_occurrence_id: 'meeting-orig-1111-occurrence-1',
+        start_time: '2026-01-01T10:00:00Z',
+        scheduled_start_time: '2026-01-01T10:00:00Z',
+        scheduled_end_time: '2026-01-01T11:00:00Z',
+        show_meeting_attendees: true,
+        recording_enabled: true,
+        transcript_enabled: false,
+        youtube_upload_enabled: false,
+        ai_summary_enabled: true,
+        title: 'Public sync',
+        description: 'Agenda',
+        password: 'pass-123',
+        zoom_config: { ai_companion_enabled: true },
+        future_identity_field: 'leak',
+      } as Partial<PastMeeting>)
+    );
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.full_access).toBe(true);
+    expect(payload.meeting.organizers).toBeUndefined();
+    expect(payload.meeting.created_by).toBeUndefined();
+    expect(payload.meeting.owner).toBeUndefined();
+    expect(payload.meeting.platform_meeting_id).toBeUndefined();
+    expect(payload.meeting.sessions).toBeUndefined();
+    expect(payload.meeting.zoom_config).toBeUndefined();
+    expect(payload.meeting.host_key).toBeUndefined();
+    expect(payload.meeting.future_identity_field).toBeUndefined();
+    expect(Object.keys(payload.meeting).every((key) => (PUBLIC_ANONYMOUS_PAST_MEETING_KEYS as readonly string[]).includes(key))).toBe(true);
+    expect(payload.meeting).toMatchObject({
+      id: MEETING_ID,
+      meeting_id: 'meeting-orig-1111',
+      meeting_and_occurrence_id: 'meeting-orig-1111-occurrence-1',
+      project_uid: PROJECT_UID,
+      committees: [],
+      title: 'Public sync',
+      description: 'Agenda',
+      password: 'pass-123',
+      visibility: MeetingVisibility.PUBLIC,
+      restricted: false,
+      start_time: '2026-01-01T10:00:00Z',
+      scheduled_start_time: '2026-01-01T10:00:00Z',
+      scheduled_end_time: '2026-01-01T11:00:00Z',
+      duration: 60,
+      show_meeting_attendees: true,
+      recording_enabled: true,
+      transcript_enabled: false,
+      youtube_upload_enabled: false,
+      ai_summary_enabled: true,
+      organizer: false,
+    });
+    expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
+  });
+
   it('strips organizer identity fields after an optional-auth refresh failure, even with full access', async () => {
     checkPastMeetingAccessMock.mockResolvedValue(true);
     const { req, res, next } = buildReqRes(true, /* hasUserToken */ false);
@@ -752,6 +819,7 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     expect(payload.meeting.organizers).toBeUndefined();
     expect(payload.meeting.created_by).toBeUndefined();
     expect(payload.meeting.owner).toBeUndefined();
+    expect(Object.keys(payload.meeting).every((key) => (PUBLIC_ANONYMOUS_PAST_MEETING_KEYS as readonly string[]).includes(key))).toBe(true);
     expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
   });
 

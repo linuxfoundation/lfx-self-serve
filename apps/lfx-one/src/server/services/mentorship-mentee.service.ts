@@ -21,8 +21,7 @@ import {
   MentorshipMenteeUpdatableTaskStatus,
   MentorshipUpstreamApplication,
   MentorshipUpstreamListResponse,
-  MentorshipUpstreamProgram,
-  MentorshipUpstreamProgramTerm,
+  MentorshipUpstreamProgramTermApplyTarget,
   MentorshipUpstreamTask,
   MentorshipUpstreamTaskFileUpload,
   MentorshipUpstreamTaskSubmissionUpdate,
@@ -290,24 +289,23 @@ export class MentorshipMenteeService {
   }
 
   /**
-   * Header fields for the mentee apply page, from the program and the term read in parallel. The
-   * term read 404s when the term is not in that program, is deleted, or the program is not visible
-   * to the caller; that and any other failure propagate so the page can say why. Only the program
-   * and term names are read, never the program's applicants.
+   * Header fields for the mentee apply page, from upstream's apply-target read, which returns the program
+   * and term names and whether the term takes applications in one call. Its 404 (the term is not in that
+   * program, is deleted, or the program is not visible to the caller) and any other failure propagate so
+   * the page can say why. Only the program and term names are read, never the program's applicants.
    */
   public async getMenteeApplyTarget(req: Request, programId: string, programTermId: string): Promise<MentorshipMenteeApplyTarget> {
     logger.debug(req, 'mentorship_get_mentee_apply_target', 'Resolving mentee apply target', { programId, programTermId });
-    const programPath = `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}`;
-    const [program, term] = await Promise.all([
-      proxyMentorshipRequest<MentorshipUpstreamProgram>(this.microserviceProxy, req, programPath),
-      proxyMentorshipRequest<MentorshipUpstreamProgramTerm>(this.microserviceProxy, req, `${programPath}/terms/${encodeURIComponent(programTermId)}`),
-    ]);
+    const upstream = await proxyMentorshipRequest<MentorshipUpstreamProgramTermApplyTarget>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_PROGRAMS_PATH}/${encodeURIComponent(programId)}/terms/${encodeURIComponent(programTermId)}/apply-target`
+    );
 
-    const target = mapMentorshipMenteeApplyTarget(program, term, new Date());
+    const target = mapMentorshipMenteeApplyTarget(upstream);
     logger.debug(req, 'mentorship_get_mentee_apply_target', 'Mentee apply target resolved', {
       programId,
       programTermId,
-      termStatus: term.status,
       acceptingApplications: target.acceptingApplications,
     });
     return target;
@@ -315,7 +313,7 @@ export class MentorshipMenteeService {
 
   /**
    * Applies the signed-in user to a program term as a mentee. Upstream takes the applicant from the
-   * token, so the body carries only the role. Its 422 (the term is not taking applications), 409
+   * token, so the body carries only the role. Its 422 (an eligibility rule failed, named in the message), 409
    * (the user already has an application for the term) and 404 (the term is not in the program)
    * propagate so the page can say why. The created application carries no program or term, so it is
    * dropped and the pages re-read the applications instead.

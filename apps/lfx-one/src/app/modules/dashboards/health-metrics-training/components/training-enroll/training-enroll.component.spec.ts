@@ -121,6 +121,8 @@ describe('TrainingEnrollComponent', () => {
     await render();
 
     expect(text('training-enroll-headline-value')).toBe('12,000');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('training-enroll-hero')?.classList).not.toContain('border');
     expect(text('training-enroll-headline-delta')).toBe('+20%');
     expect(query('training-enroll-headline-delta')?.classList).toContain('text-emerald-600');
     expect(text('training-enroll-side-certifications-value')).toBe('300');
@@ -138,8 +140,7 @@ describe('TrainingEnrollComponent', () => {
     expect(text('training-enroll-by-type-title')).toBe('Enrollments by type');
     expect(text('training-enroll-type-0')).toContain('eLearning');
     expect(text('training-enroll-type-0-value')).toBe('9,000');
-    const bars = fixture.nativeElement.querySelectorAll('[data-testid^="training-enroll-type-"] .bg-blue-600');
-    expect((bars[1] as HTMLElement).style.width).toBe(`${(3000 / 9000) * 100}%`);
+    expect(fixture.nativeElement.querySelector('[data-testid^="training-enroll-type-"] [style*="width"]')).toBeNull();
 
     (query('filter-pill-revenue') as HTMLButtonElement).click();
     await settle();

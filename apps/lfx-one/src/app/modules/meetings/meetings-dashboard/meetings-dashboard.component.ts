@@ -18,6 +18,7 @@ import { EventClickArg, EventInput } from '@fullcalendar/core';
 import {
   MEETING_RECORDING_COUNT_FETCH_CONCURRENCY,
   MEETING_TYPE_CONFIGS,
+  MEETING_V2_ENABLED_DEFAULT,
   MEETING_V2_ENABLED_FLAG,
   MY_MEETINGS_STATS_WINDOW_DAYS,
 } from '@lfx-one/shared/constants';
@@ -162,7 +163,7 @@ export class MeetingsDashboardComponent {
    * button in place rather than a dropdown into a composer this user isn't targeted for. See
    * `MEETING_V2_ENABLED_FLAG`.
    */
-  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   protected readonly publicCalendarUrl: Signal<string | null> = this.initPublicCalendarUrl();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);

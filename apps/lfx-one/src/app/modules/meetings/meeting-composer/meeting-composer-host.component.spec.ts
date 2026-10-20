@@ -852,7 +852,8 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
     expect(body()?.hasAttribute('inert')).toBe(false);
     expect(cancelButton()?.disabled).toBe(false);
     expect(closeIcon()).not.toBeNull();
-    expect(drawer().dismissible).toBe(true);
+    // A backdrop click never closes the composer — only the X, Cancel or Escape do.
+    expect(drawer().dismissible).toBe(false);
     expect(drawer().closeOnEscape).toBe(true);
   });
 
@@ -926,7 +927,8 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
     expect(body()?.hasAttribute('inert')).toBe(false);
     expect(cancelButton()?.disabled).toBe(false);
     expect(closeIcon()).not.toBeNull();
-    expect(drawer().dismissible).toBe(true);
+    // A backdrop click never closes the composer — only the X, Cancel or Escape do.
+    expect(drawer().dismissible).toBe(false);
     expect(drawer().closeOnEscape).toBe(true);
   });
 });

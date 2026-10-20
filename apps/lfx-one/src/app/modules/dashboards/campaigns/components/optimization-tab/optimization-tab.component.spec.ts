@@ -6,16 +6,36 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { By } from '@angular/platform-browser';
 import {
+  CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON,
   CAMPAIGN_BID_CONFLICT_MESSAGE,
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON,
+  CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON,
   CAMPAIGN_BUDGET_CONFLICT_MESSAGE,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON,
   CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_BUDGET_X_LIFETIME_REASON,
   CAMPAIGN_FINDING_ALREADY_PAUSED_REASON,
+  CAMPAIGN_RESUME_REFUSED_CODE,
   CAMPAIGN_TOGGLE_FAILURE_MESSAGES,
   CAMPAIGN_TOGGLE_UNCONFIRMED_MESSAGES,
+  CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON,
+  META_AD_SET_BLOCKED_STALE_REASON,
+  META_AD_SET_CONFLICT_MESSAGE,
+  META_AD_SET_DELIBERATE_PAUSE_ADVICE,
+  META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED,
+  META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
+  META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON,
+  META_AD_SET_STATUS_OUTCOME_UNCONFIRMED,
+  META_AD_SET_STATUS_UNCONFIRMED_CODE,
+  META_AD_SET_UNCONFIRMED_MESSAGE,
+  META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
+  campaignResumeAdoptedReason,
+  campaignResumeRefusedAdoptedMessage,
+  campaignResumeRefusedMessage,
 } from '@lfx-one/shared/constants';
 import {
   BriefMetrics,
@@ -25,18 +45,27 @@ import {
   CampaignIndexDoc,
   CampaignNegativeKeywordsResult,
   CampaignRow,
+  CampaignServiceMetaAdSet,
+  CampaignServiceMetaAdSets,
+  CampaignServiceSettingsReadback,
   CampaignStatusUpdateResult,
 } from '@lfx-one/shared/interfaces';
+import { CampaignKeywordTargetingService } from '@services/campaign-keyword-targeting.service';
 import { CampaignNegativeKeywordsService } from '@services/campaign-negative-keywords.service';
 import { CampaignService } from '@services/campaign.service';
-import { MessageService } from 'primeng/api';
-import { of, Subject, throwError } from 'rxjs';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CampaignBidFormComponent } from '../campaign-bid-form/campaign-bid-form.component';
+import { CampaignSettingsDrawerComponent } from '../campaign-settings-drawer/campaign-settings-drawer.component';
 import { CampaignBudgetFormComponent } from '../campaign-budget-form/campaign-budget-form.component';
+import { CampaignKeywordTargetingPanelComponent } from '../campaign-keyword-targeting-panel/campaign-keyword-targeting-panel.component';
+import { CampaignLiveMetricsComponent } from '../campaign-live-metrics/campaign-live-metrics.component';
 import { CampaignNegativeKeywordsFormComponent } from '../campaign-negative-keywords-form/campaign-negative-keywords-form.component';
+import { MetaAdSetsPanelComponent } from '../meta-ad-sets-panel/meta-ad-sets-panel.component';
 import { MicrosoftKeywordsTableComponent } from '../microsoft-keywords-table/microsoft-keywords-table.component';
+import { RedditKeywordsTableComponent } from '../reddit-keywords-table/reddit-keywords-table.component';
 import { OptimizationTabComponent } from './optimization-tab.component';
 
 /**
@@ -93,6 +122,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -129,6 +159,27 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     render(null);
 
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-controls"]')).toBeNull();
+  });
+
+  /**
+   * The bidding campaign-service RECORDED (#3299), read-only on the row. Absent fields render
+   * nothing — an unrecorded strategy is never shown as automatic — and only the two documented
+   * strategies are echoed.
+   */
+  it('shows the recorded bidding read-only, and nothing when none is recorded', () => {
+    render([
+      doc({ id: 'c-1', platform: 'linkedin-ads', bidding_strategy: 'manual', max_cpc_bid: 2.5 }),
+      doc({ id: 'c-2', platform: 'meta-ads', bidding_strategy: 'automatic' }),
+      doc({ id: 'c-3', platform: 'reddit-ads' }),
+      doc({ id: 'c-4', platform: 'meta-ads', bidding_strategy: 'Manual' }),
+    ]);
+
+    const bidding = (id: string): string | null =>
+      (fixture.nativeElement.querySelector(`[data-testid="optimization-campaign-bidding-${id}"]`) as HTMLElement | null)?.textContent?.trim() ?? null;
+    expect(bidding('c-1')).toBe('Bidding: manual · max CPC bid 2.5 USD');
+    expect(bidding('c-2')).toBe('Bidding: automatic');
+    expect(bidding('c-3')).toBeNull();
+    expect(bidding('c-4')).toBeNull();
   });
 
   it('renders an empty state only when the read succeeded and returned nothing', () => {
@@ -421,6 +472,7 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     [500, 'created', 'Could not pause this campaign. It is still running — try again.'],
     [409, 'created', 'Could not pause this campaign. It is still running — try again.'],
     [500, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
+    [409, 'paused', 'Could not resume this campaign. It is still paused — try again.'],
   ])('keeps the per-direction copy for a BFF %s failure on a %s campaign', (status, campaignStatus, expected) => {
     updateCampaignStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status, statusText: 'nope', error: { error: 'refused', code: 'X' } })));
     render([doc({ status: campaignStatus })]);
@@ -431,6 +483,98 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent).toContain(expected);
     // And no conflict banner: nothing proved this list is stale.
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // campaign-service refuses ACTIVATE on every adopted campaign (409). The BFF re-codes that answer
+  // CAMPAIGN_RESUME_REFUSED with a message naming where to resume, which replaces the "try again"
+  // copy, which cannot help an adopted campaign. Branched on the code, so any other 409 keeps the per-direction copy.
+  it('shows the BFF message for a resume refused as CAMPAIGN_RESUME_REFUSED, not "try again"', () => {
+    const refusal = campaignResumeRefusedMessage('LinkedIn Ads', 'campaign is not fully provisioned');
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_CODE } }))
+    );
+    render([doc({ status: 'paused', platform: 'linkedin-ads' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain(refusal);
+    expect(message).toContain('resume it in LinkedIn Ads itself');
+    expect(message).not.toContain('try again.');
+    // Still offering Resume, and no conflict banner: nothing proved this list is stale.
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').textContent).toContain('Resume');
+    expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaigns-conflict"]')).toBeNull();
+  });
+
+  // The BFF's CAMPAIGN_RESUME_REFUSED_ADOPTED (campaign-service's 409 `reason: campaign_adopted`)
+  // replaces the "try again" copy the same way, with the unhedged message.
+  it('shows the BFF message for a resume refused as CAMPAIGN_RESUME_REFUSED_ADOPTED', () => {
+    const refusal = campaignResumeRefusedAdoptedMessage('Reddit Ads');
+    updateCampaignStatus.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { error: refusal, code: CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE } }))
+    );
+    render([doc({ status: 'paused', platform: 'reddit-ads' })]);
+
+    fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]').click();
+    fixture.detectChanges();
+
+    const message = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]').textContent;
+    expect(message).toContain('This campaign was adopted from Reddit Ads');
+    expect(message).not.toContain('try again.');
+  });
+
+  describe('an adopted campaign', () => {
+    // campaign-service never resumes an adopted campaign (409 `campaign_adopted`), so a row it marks
+    // `adopted: true` withholds Resume up front: aria-disabled (still focusable), described, inert.
+    it('shows Resume aria-disabled and described, and a click sends nothing', () => {
+      render([doc({ status: 'paused', platform: 'linkedin-ads', adopted: true })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]');
+      expect(button.textContent).toContain('Resume');
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBe(false);
+      expect(reason.textContent.trim()).toBe(campaignResumeAdoptedReason('LinkedIn Ads'));
+      expect(reason.textContent).toContain(
+        'This campaign was adopted from LinkedIn Ads, so LFX One can pause it but not resume it — resume it in LinkedIn Ads itself.'
+      );
+      expect(button.getAttribute('aria-describedby')?.split(' ')).toContain(reason.id);
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-error-c-1"]')).toBeNull();
+    });
+
+    it('keeps Pause available on a running adopted campaign', () => {
+      render([doc({ status: 'created', platform: 'linkedin-ads', adopted: true })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      expect(button.textContent).toContain('Pause');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]')).toBeNull();
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves Resume as today when adopted is absent', () => {
+      render([doc({ status: 'paused', platform: 'linkedin-ads' })]);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      expect(button.getAttribute('aria-describedby')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-resume-adopted-c-1"]')).toBeNull();
+
+      button.click();
+      fixture.detectChanges();
+
+      expect(updateCampaignStatus).toHaveBeenCalledTimes(1);
+    });
   });
 
   // A non-HTTP failure — a thrown TypeError, an rxjs error with no status — must not be mistaken
@@ -544,15 +688,11 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
-  // Platform, not just status. X is `disabled: true` in CAMPAIGN_PLATFORMS, so the BFF's
-  // CAMPAIGN_SERVICE_STATUS_PLATFORMS refuses it outright — a `created` row of X's is pausable
-  // UPSTREAM but not through this app, and status alone would enable a doomed button.
-  //
-  // Microsoft was the other example until LFXV2-3312 ENABLED it. `TOGGLEABLE_CAMPAIGN_PLATFORMS`
-  // is derived from the same `!p.disabled` flag, so Microsoft now belongs in the companion test
-  // below rather than here — keeping it in this list would have asserted the opposite of the
-  // shipped behaviour.
-  it.each(['twitter-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
+  // Platform, not just status. A platform outside TOGGLEABLE_CAMPAIGN_PLATFORMS is refused by the
+  // BFF's CAMPAIGN_SERVICE_STATUS_PLATFORMS outright, so status alone would enable a doomed
+  // button. Every paid platform is toggleable now that adopted X campaigns are, so the subject is
+  // a platform string this app does not know.
+  it.each(['tiktok-ads'])('disables the toggle for the unsupported platform %s', (platform) => {
     render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
@@ -568,16 +708,40 @@ describe('OptimizationTabComponent — pause/resume (LFXV2-3224)', () => {
     expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
-  // The other half of the derivation (LFXV2-3312): Microsoft is now an offered platform, so a
-  // `created` Microsoft row must be pausable from this tab. Re-adding `disabled: true` to the
-  // shared constant would silently strand the channel — selectable in Plan, unpausable here —
-  // and this fails if that happens.
-  it('enables the toggle for microsoft-ads, which this app now offers', () => {
-    render([doc({ platform: 'microsoft-ads', status: 'created' })]);
+  // Microsoft (LFXV2-3312) and X are offered for pause. X's CREATE stays disabled, but an adopted
+  // X campaign is live and spending, so the toggle is decoupled from the create flag: a `created`
+  // X row must be pausable from this tab.
+  it.each(['microsoft-ads', 'twitter-ads'])('enables the toggle for %s', (platform) => {
+    render([doc({ platform, status: 'created' })]);
 
     const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
     expect(button.disabled).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]')).toBeNull();
+  });
+
+  it('offers Pause on a running X row and dispatches PAUSED', () => {
+    render([doc({ platform: 'twitter-ads', status: 'created' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toContain('Pause');
+
+    button.click();
+    expect(updateCampaignStatus).toHaveBeenCalledWith(expect.objectContaining({ platform: 'twitter-ads', status: 'PAUSED' }));
+  });
+
+  // Upstream refuses ACTIVE on every adopted row with 409, and every X row is adopted while X
+  // create is off: Resume would be a dead control, so it is withheld with where to resume instead.
+  it('withholds Resume on a paused X row, with the reason, and dispatches nothing', () => {
+    render([doc({ platform: 'twitter-ads', status: 'paused' })]);
+
+    const button = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-toggle-c-1"]');
+    expect(button.disabled).toBe(true);
+    const reason = fixture.nativeElement.querySelector('[data-testid="optimization-campaign-unavailable-c-1"]');
+    expect(reason.textContent).toContain(CAMPAIGN_UNAVAILABLE_RESUME_PLATFORM_REASON);
+
+    button.click();
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
   });
 
   // The platform guard must not swallow the platforms this app DOES offer — the mutation that
@@ -1981,6 +2145,7 @@ describe('OptimizationTabComponent — wasted-keyword all-clear completeness', (
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2123,6 +2288,7 @@ describe('OptimizationTabComponent — keyword action outcome states', () => {
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2413,7 +2579,19 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   let fixture: ComponentFixture<OptimizationTabComponent>;
   let updateCampaignBudget: ReturnType<typeof vi.fn>;
   let updateCampaignStatus: ReturnType<typeof vi.fn>;
+  let getCampaignSettings: ReturnType<typeof vi.fn>;
   let messageAdd: ReturnType<typeof vi.fn>;
+
+  /** A live settings readback whose upstream `budget_type` is `pacing` (absent when undefined). */
+  const settingsWith = (pacing?: string): CampaignServiceSettingsReadback => ({
+    campaign_id: 'c-1',
+    platform_campaign_id: '1234567890',
+    platform: 'twitter-ads',
+    read_at: '2026-10-15T10:00:00Z',
+    fields: [{ field: 'budget_type', ...(pacing === undefined ? {} : { upstream: pacing }), comparison: 'unknown' }],
+    diverged_count: 0,
+    unknown_count: 1,
+  });
 
   const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
     id: 'c-1',
@@ -2440,6 +2618,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
   beforeEach(async () => {
     updateCampaignBudget = vi.fn().mockReturnValue(of(budgetResult()));
+    getCampaignSettings = vi.fn().mockReturnValue(of(settingsWith('daily')));
     updateCampaignStatus = vi
       .fn()
       .mockReturnValue(of({ platform: 'google-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"5"' }));
@@ -2455,9 +2634,11 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
           useValue: {
             updateCampaignBudget,
             updateCampaignStatus,
+            getCampaignSettings,
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -2515,11 +2696,12 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
     submit(id);
   }
 
-  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget editor for %s', (platform) => {
+  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget editor for %s', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
     expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
     expect(button.getAttribute('aria-label')).toBe('Change budget for KubeCon EU');
     expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(q('optimization-campaign-budget-unavailable-c-1')).toBeNull();
@@ -2533,18 +2715,25 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
   });
 
   it('withholds the editor, with its reason, for a platform without budget-write support', () => {
-    render([doc({ platform: 'twitter-ads' })]);
+    render([doc({ platform: 'hubspot' })]);
 
+    // aria-disabled, not disabled: it stays focusable, and a click opens nothing.
     const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-expanded')).toBeNull();
     expect(button.getAttribute('aria-describedby')).toBe('campaign-budget-unavailable-c-1');
     expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_UNAVAILABLE_PLATFORM_REASON);
+
+    button.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
   });
 
   it('withholds the editor for a campaign that was never created on its platform', () => {
     render([doc({ platform_campaign_id: undefined })]);
 
-    expect((q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('optimization-campaign-budget-edit-c-1')!.getAttribute('aria-disabled')).toBe('true');
     expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_UNAVAILABLE_UNPROVISIONED_REASON);
   });
 
@@ -2556,6 +2745,7 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
 
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
     expect((q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).disabled).toBe(false);
+    expect(q('optimization-campaign-budget-edit-c-1')!.getAttribute('aria-disabled')).toBeNull();
   });
 
   it.each([
@@ -2611,6 +2801,165 @@ describe('OptimizationTabComponent — budget change (#3299)', () => {
       budget: 1234.567,
       budgetType: 'lifetime',
       etag: '"9"',
+      platform: 'google-ads',
+    });
+  });
+
+  // Only a daily-only platform needs its pacing read; every other one takes either pacing.
+  it('does not read live settings for a platform that takes either pacing', () => {
+    render([doc()]);
+    openEditor();
+
+    expect(getCampaignSettings).not.toHaveBeenCalled();
+    expect(budgetForm().dailyOnly()).toBe(false);
+  });
+
+  /**
+   * X (#3299): campaign-service writes X budgets as a daily amount only and refuses `lifetime` with
+   * 409, so the editor offers Daily alone and a lifetime-budgeted campaign is told so up front.
+   */
+  describe('X (daily only)', () => {
+    const xDoc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => doc({ platform: 'twitter-ads', ...over });
+
+    it('reads the live pacing when the editor opens and offers Daily alone, pre-selected', () => {
+      render([xDoc()]);
+      openEditor();
+
+      expect(getCampaignSettings).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+      expect(budgetForm().dailyOnly()).toBe(true);
+      expect(budgetForm().form.controls.budgetType.value).toBe('daily');
+      expect(fixture.nativeElement.querySelector('#campaign-budget-type-c-1-lifetime')).toBeNull();
+    });
+
+    it('sends a daily change with the X platform hint', () => {
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budget: 40, budgetType: 'daily', platform: 'twitter-ads' }));
+    });
+
+    // A pure read: leaving the tab cancels it rather than letting it write after teardown.
+    it('cancels an in-flight pacing read when the Optimize tab is destroyed', () => {
+      const inFlight = new Subject<CampaignServiceSettingsReadback>();
+      getCampaignSettings.mockReturnValue(inFlight.asObservable());
+      render([xDoc()]);
+      openEditor();
+      expect(inFlight.observed).toBe(true);
+
+      fixture.destroy();
+
+      expect(inFlight.observed).toBe(false);
+    });
+
+    it('cannot submit while the pacing read is out', () => {
+      getCampaignSettings.mockReturnValue(NEVER);
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_BLOCKED_PACING_CHECK_REASON);
+    });
+
+    it('withholds the lever, with its reason, for a lifetime-budgeted campaign rather than letting a 409 happen', () => {
+      getCampaignSettings.mockReturnValue(of(settingsWith('lifetime')));
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-budget-blocked-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
+      expect(q('optimization-campaign-budget-unavailable-c-1')!.textContent).toContain(CAMPAIGN_BUDGET_X_LIFETIME_REASON);
+
+      // Still closable from its disclosure, then aria-disabled (still focusable) with the reason described.
+      const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.getAttribute('aria-describedby')).toBe('campaign-budget-unavailable-c-1');
+
+      // And it stays shut: a click on the unavailable disclosure opens nothing.
+      button.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+
+      // Known for the session: not read again.
+      expect(getCampaignSettings).toHaveBeenCalledTimes(1);
+    });
+
+    // Cancel hands focus back to the disclosure; were the now-unavailable disclosure `disabled`, it would be lost.
+    it('returns focus to the disclosure when Cancel closes an editor the pacing read made unavailable', () => {
+      getCampaignSettings.mockReturnValue(of(settingsWith('lifetime')));
+      render([xDoc()]);
+      openEditor();
+      const cancel = q('optimization-campaign-budget-cancel-c-1')!.querySelector('button') as HTMLButtonElement;
+      cancel.focus();
+      cancel.click();
+      fixture.detectChanges();
+
+      const disclosure = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(fixture.nativeElement.querySelector('#campaign-budget-panel-c-1')).toBeNull();
+      expect(disclosure.getAttribute('aria-disabled')).toBe('true');
+      expect(document.activeElement).toBe(disclosure);
+    });
+
+    // A failed read or an unreported pacing does not block: upstream stays the authority.
+    it.each([
+      ['a failed read', () => throwError(() => new HttpErrorResponse({ status: 503, statusText: 'x' }))],
+      ['an unreported pacing', () => of(settingsWith())],
+    ])('lets a daily change through after %s, and reads again on the next opening', (_label, answer) => {
+      getCampaignSettings.mockImplementation(answer);
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(updateCampaignBudget).toHaveBeenCalledWith(expect.objectContaining({ budgetType: 'daily', platform: 'twitter-ads' }));
+      openEditor();
+      expect(getCampaignSettings).toHaveBeenCalledTimes(2);
+    });
+
+    // A read that answers after a project/brief switch belongs to the abandoned context.
+    it('drops a pacing read that answers after the context changed, and reads again in the new one', () => {
+      const late = new Subject<CampaignServiceSettingsReadback>();
+      getCampaignSettings.mockReturnValue(late.asObservable());
+      render([xDoc()]);
+      openEditor();
+
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      late.next(settingsWith('lifetime'));
+      late.complete();
+      fixture.detectChanges();
+
+      const button = q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(q('optimization-campaign-budget-unavailable-c-1')).toBeNull();
+
+      getCampaignSettings.mockReturnValue(of(settingsWith('daily')));
+      openEditor();
+      expect(getCampaignSettings).toHaveBeenCalledTimes(2);
+      expect(getCampaignSettings).toHaveBeenLastCalledWith('tlf', 'b-2', 'c-1');
+    });
+
+    it("shows the BFF's X explanation of a 409 in full", () => {
+      updateCampaignBudget.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, statusText: 'x', error: { error: CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE, code: 'CONFLICT' } }))
+      );
+      render([xDoc()]);
+      openEditor();
+      typeAmount('40');
+      submit();
+
+      expect(q('optimization-campaign-budget-error-c-1')!.textContent!.trim()).toBe(CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE);
     });
   });
 
@@ -2855,6 +3204,7 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getMetaAccounts: vi.fn().mockReturnValue(of([])),
@@ -3019,15 +3369,8 @@ describe('OptimizationTabComponent — monitor findings and their levers', () =>
     expect(q('optimization-finding-no-lever-c-1-paused_should_run')).not.toBeNull();
   });
 
-  // X has no budget write; offering the editor would invite a change upstream refuses.
-  it('offers no budget lever on an X campaign', async () => {
-    await render([doc({ platform: 'twitter-ads' })], [item({ platform: 'twitter-ads' })]);
-
-    expect(lever('c-1-underspending')).toBeNull();
-    expect(q('optimization-finding-no-lever-c-1-underspending')).not.toBeNull();
-  });
-
-  it.each(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget lever on %s', async (platform) => {
+  // X budgets are writable (daily only) since #3299, so its findings get the lever too.
+  it.each(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget lever on %s', async (platform) => {
     await render([doc({ platform })], [item({ platform })]);
 
     expect(lever('c-1-underspending')).not.toBeNull();
@@ -3136,6 +3479,7 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
       providers: [
         provideNoopAnimations(),
         { provide: MessageService, useValue: { add: messageAdd } },
+        ConfirmationService,
         {
           provide: CampaignService,
           useValue: {
@@ -3143,9 +3487,18 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
             updateCampaignBudget,
             updateCampaignStatus: vi.fn().mockReturnValue(of(null)),
             addNegativeKeywords: vi.fn(),
+            getCampaignSettings: vi
+              .fn()
+              .mockReturnValue(
+                of({ campaign_id: 'c-1', platform_campaign_id: '1', platform: 'linkedin-ads', read_at: '', fields: [], diverged_count: 0, unknown_count: 0 })
+              ),
+            getKeywordTargeting: vi
+              .fn()
+              .mockReturnValue(of({ campaign_id: 'c-1', platform: 'reddit-ads', targeting_entity_id: 'ag-1', keywords: [], revision: 'sha256:r1' })),
             getMonitorData: vi.fn().mockReturnValue(of(null)),
             getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
             getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
             getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
             getRedditAccounts: vi.fn().mockReturnValue(of([])),
             getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
@@ -3185,7 +3538,8 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     fixture.detectChanges();
   }
 
-  it.each(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads'])('offers the bid editor for %s', (platform) => {
+  // LinkedIn joined with campaign-service #318 (its campaign `unitCost`).
+  it.each(['microsoft-ads', 'reddit-ads', 'meta-ads', 'twitter-ads', 'linkedin-ads'])('offers the bid editor for %s', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-bid-edit-c-1') as HTMLButtonElement;
@@ -3194,14 +3548,135 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect(q('optimization-campaign-bid-unavailable-c-1')).toBeNull();
   });
 
-  // Upstream refuses Google and LinkedIn bids with 400; the row says so rather than offering a doomed form.
-  it.each(['google-ads', 'linkedin-ads'])('withholds the bid editor for %s and says which platforms it supports', (platform) => {
+  // Upstream refuses Google Ads bids with 400; the row says so rather than offering a doomed form.
+  it.each(['google-ads'])('withholds the bid editor for %s and says which platforms it supports', (platform) => {
     render([doc({ platform })]);
 
     const button = q('optimization-campaign-bid-edit-c-1') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('aria-describedby')).toBe('campaign-bid-unavailable-c-1');
     expect(q('optimization-campaign-bid-unavailable-c-1')!.textContent!.trim()).toBe(CAMPAIGN_BID_UNAVAILABLE_PLATFORM_REASON);
+  });
+
+  /**
+   * The recorded-bidding line after a bid change (#3299). The index is asynchronous, so right after
+   * a change it still holds the old `max_cpc_bid`; the confirmed bid wins, for that campaign only,
+   * through refreshes that lag or have caught up, until the brief changes.
+   */
+  describe('recorded bidding after a bid change', () => {
+    const bidding = (id = 'c-1'): string | null => q(`optimization-campaign-bidding-${id}`)?.textContent?.trim() ?? null;
+
+    it('shows the confirmed bid, and keeps it through lagging and caught-up refreshes', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 }), doc({ id: 'c-2', bidding_strategy: 'manual', max_cpc_bid: 0.75, etag: '"7"' })]);
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 0.5 in the ad account currency');
+
+      changeBid(1.25);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+      // Only the campaign that was changed.
+      expect(bidding('c-2')).toBe('Bidding: manual · max CPC bid 0.75 in the ad account currency');
+
+      // A refresh whose index has not caught up must not flip it back to the old bid.
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 }), doc({ id: 'c-2', bidding_strategy: 'manual', max_cpc_bid: 0.75, etag: '"7"' })]);
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+
+      // One that has caught up (the write's own version) shows its own value — the same bid.
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 1.25, etag: '"4"', version: 4 })]);
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+    });
+
+    it('keeps the confirmed bid against a lagging index (a strictly older version)', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // the write answered version 4 ("4")
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5, etag: '"3"' })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')?.textContent).toContain('1.25');
+    });
+
+    it('lets an index that has caught up (the SAME version) win', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // version 4
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 1.3, etag: '"4"', version: 4 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.3 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('shows a v5 refresh at 2.50 over a bid confirmed at v4', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25); // version 4
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2.5, etag: '"5"', version: 5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 2.5 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('gives way to a NEWER indexed bid someone else set, in the row line and the "set here" note alike', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2, etag: '"5"', version: 5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 2 in the ad account currency');
+      expect(q('optimization-campaign-bid-current-c-1')).toBeNull();
+    });
+
+    it('keeps the confirmed bid when the write returned no parseable version', () => {
+      updateCampaignBid.mockReturnValue(of(bidResult({ etag: undefined })));
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 2, etag: '"9"', version: 9 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+    });
+
+    it('reads a confirmed bid as manual, even on a row the index recorded as automatic or not at all', () => {
+      render([doc({ bidding_strategy: 'automatic' })]);
+
+      changeBid(1.25);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 1.25 in the ad account currency');
+    });
+
+    it('keeps the indexed value when the bid change fails', () => {
+      updateCampaignBid.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'automatic strategy' } })));
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+
+      changeBid(1.25);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 0.5 in the ad account currency');
+    });
+
+    it('drops the confirmed bid when the brief changes', () => {
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+      changeBid(1.25);
+
+      fixture.componentRef.setInput('briefCampaigns', null);
+      fixture.componentRef.setInput('briefId', 'b-2');
+      fixture.detectChanges();
+      render([doc({ bidding_strategy: 'manual', max_cpc_bid: 0.5 })]);
+
+      expect(bidding()).toBe('Bidding: manual · max CPC bid 0.5 in the ad account currency');
+    });
+  });
+
+  it('opens the live-settings drawer for the row it was asked from', () => {
+    render([doc({ platform: 'linkedin-ads' })]);
+
+    const button = q('optimization-campaign-settings-c-1') as HTMLButtonElement;
+    expect(button.getAttribute('aria-label')).toBe('Live settings for KubeCon EU');
+    button.click();
+    fixture.detectChanges();
+
+    const drawer = fixture.debugElement.query(By.directive(CampaignSettingsDrawerComponent)).componentInstance as CampaignSettingsDrawerComponent;
+    expect(drawer.visible()).toBe(true);
+    expect(drawer.campaign()?.id).toBe('c-1');
+    expect(drawer.briefId()).toBe('b-1');
   });
 
   it('withholds the bid editor for a campaign never created on its platform', () => {
@@ -3275,16 +3750,119 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('offers negative keywords on Microsoft rows only', () => {
-    render([doc(), doc({ id: 'c-2', platform: 'google-ads', campaign_name: 'Other' })]);
+  it('offers negative keywords on Google, Microsoft, Reddit and X rows only', () => {
+    render([
+      doc(),
+      doc({ id: 'c-2', platform: 'linkedin-ads', campaign_name: 'Other' }),
+      doc({ id: 'c-3', platform: 'reddit-ads', campaign_name: 'Reddit one' }),
+      doc({ id: 'c-4', platform: 'twitter-ads', campaign_name: 'X one' }),
+      doc({ id: 'c-5', platform: 'google-ads', campaign_name: 'Google one' }),
+    ]);
 
     expect(q('optimization-campaign-negatives-edit-c-1')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-2')).toBeNull();
+    expect(q('optimization-campaign-negatives-edit-c-3')).not.toBeNull();
+    expect(q('optimization-campaign-negatives-edit-c-4')).not.toBeNull();
+    expect(q('optimization-campaign-negatives-edit-c-5')).not.toBeNull();
 
     (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(q('optimization-campaign-negatives-form-c-1')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-1')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  // The editor offers what the row's platform takes: on Reddit, Broad only, and it reads the revision.
+  it("hands the row's platform to the negative-keyword editor", () => {
+    render([doc({ platform: 'reddit-ads' })]);
+    (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const form = fixture.debugElement.query(By.directive(CampaignNegativeKeywordsFormComponent)).componentInstance as CampaignNegativeKeywordsFormComponent;
+    expect(form.platform()).toBe('reddit-ads');
+    expect(form.form.controls.matchType.value).toBe('Broad');
+    expect(TestBed.inject(CampaignService).getKeywordTargeting).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+  });
+
+  it('offers keyword targeting on Reddit and X rows only, and opens the panel for the row', () => {
+    render([
+      doc(),
+      doc({ id: 'c-3', platform: 'reddit-ads', campaign_name: 'Reddit one' }),
+      doc({ id: 'c-4', platform: 'twitter-ads', campaign_name: 'X one' }),
+    ]);
+
+    expect(q('optimization-campaign-targeting-edit-c-1')).toBeNull();
+    expect(q('optimization-campaign-targeting-edit-c-3')).not.toBeNull();
+    const disclosure = q('optimization-campaign-targeting-edit-c-4') as HTMLButtonElement;
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+
+    disclosure.click();
+    fixture.detectChanges();
+    const panel = fixture.debugElement.query(By.directive(CampaignKeywordTargetingPanelComponent)).componentInstance as CampaignKeywordTargetingPanelComponent;
+    expect(panel.platform()).toBe('twitter-ads');
+    expect(panel.campaignId()).toBe('c-4');
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+    expect(disclosure.getAttribute('aria-controls')).toBe('campaign-targeting-panel-c-4');
+
+    (q('optimization-campaign-targeting-close-c-4')!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-4')).toBeNull();
+  });
+
+  it("names the brief's Reddit campaigns in the Reddit keyword table and re-reads it on Refresh", () => {
+    render([doc({ platform: 'reddit-ads', platform_campaign_id: 't3_abc', campaign_name: 'Reddit one' }), doc({ id: 'c-2', platform_campaign_id: '99' })]);
+
+    const table = fixture.debugElement.query(By.directive(RedditKeywordsTableComponent)).componentInstance as RedditKeywordsTableComponent;
+    expect(table.campaignNames()).toEqual({ t3_abc: 'Reddit one' });
+    const getRedditKeywords = TestBed.inject(CampaignService).getRedditKeywords as ReturnType<typeof vi.fn>;
+    const reads = getRedditKeywords.mock.calls.length;
+
+    q('optimization-refresh')!.click();
+    fixture.detectChanges();
+    expect(getRedditKeywords.mock.calls.length).toBe(reads + 1);
+  });
+
+  // Closing the panel mid-removal would hide the per-keyword outcome of an irreversible change.
+  it('holds the keyword-targeting panel open while its removal is in flight', () => {
+    const pending = new Subject<unknown>();
+    (TestBed.inject(CampaignService) as unknown as { removeKeywordTargeting: unknown }).removeKeywordTargeting = vi.fn().mockReturnValue(pending);
+    render([doc({ platform: 'reddit-ads' })]);
+    const disclosure = q('optimization-campaign-targeting-edit-c-1') as HTMLButtonElement;
+    disclosure.click();
+    fixture.detectChanges();
+
+    TestBed.inject(CampaignKeywordTargetingService).remove({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      campaignName: 'KubeCon EU',
+      platform: 'reddit-ads',
+      request: { briefId: 'b-1', keywords: [{ keyword: 'kubernetes' }], revision: 'sha256:r1' },
+      sent: ['kubernetes'],
+    });
+    fixture.detectChanges();
+
+    expect(disclosure.disabled).toBe(true);
+    // The handler refuses too, not only the disabled button.
+    (fixture.componentInstance as unknown as { closeTargetingPanel(id: string): void }).closeTargetingPanel('c-1');
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-1')).not.toBeNull();
+
+    pending.next({ campaign_id: 'c-1', applied_count: 1, results: [{ keyword: 'kubernetes', outcome: 'APPLIED' }] });
+    pending.complete();
+    fixture.detectChanges();
+    expect(disclosure.disabled).toBe(false);
+    disclosure.click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-targeting-panel-c-1')).toBeNull();
+  });
+
+  it('disables keyword targeting, saying why, for a campaign not yet created on its platform', () => {
+    render([doc({ platform: 'reddit-ads', platform_campaign_id: '' })]);
+
+    const disclosure = q('optimization-campaign-targeting-edit-c-1') as HTMLButtonElement;
+    expect(disclosure.disabled).toBe(true);
+    expect(disclosure.getAttribute('aria-describedby')).toBe('campaign-targeting-unavailable-c-1');
+    expect(q('optimization-campaign-targeting-unavailable-c-1')!.textContent).toContain('has not been created');
   });
 
   // Closing the editor mid-request would destroy the form and lose the per-keyword outcomes.
@@ -3419,7 +3997,15 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     const service = TestBed.inject(CampaignNegativeKeywordsService);
     // A second campaign's request, still running.
     (TestBed.inject(CampaignService).addNegativeKeywords as ReturnType<typeof vi.fn>).mockReturnValue(new Subject());
-    service.submit({ projectSlug: 'tlf', briefId: 'b-1', campaignId: 'c-2', campaignName: 'Other', keywords: ['x'], matchType: 'Exact' });
+    service.submit({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-2',
+      campaignName: 'Other',
+      platform: 'microsoft-ads',
+      keywords: ['x'],
+      matchType: 'Exact',
+    });
 
     q('optimization-refresh')!.click();
     fixture.detectChanges();
@@ -3630,5 +4216,837 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
 
     const component = fixture.componentInstance as unknown as { actionResults(): Record<string, { state: string }> };
     expect(component.actionResults()['microsoft-ads:11-22'].state).toBe('failed');
+  });
+});
+
+describe('OptimizationTabComponent — Meta ad sets (#3299)', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let updateMetaAdSetStatus: ReturnType<typeof vi.fn>;
+  let listMetaAdSets: ReturnType<typeof vi.fn>;
+  let updateCampaignStatus: ReturnType<typeof vi.fn>;
+  let getCampaignRecord: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+
+  const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'meta-ads',
+    platform_campaign_id: '120210000000000555',
+    campaign_name: 'KubeCon EU',
+    status: 'created',
+    version: 3,
+    etag: '"3"',
+    ...over,
+  });
+
+  const adSet = (over: Partial<CampaignServiceMetaAdSet> = {}): CampaignServiceMetaAdSet => ({
+    id: '120210000000000888',
+    listed: true,
+    name: 'Leads — US',
+    status: 'ACTIVE',
+    effective_status: 'ACTIVE',
+    budget_type: 'daily',
+    budget_amount: '50.00',
+    impressions: 10,
+    clicks: 1,
+    cost_micros: 1,
+    ctr: 0.1,
+    recorded: true,
+    deliberately_paused: false,
+    ...over,
+  });
+
+  const adSets = (sets: CampaignServiceMetaAdSet[]): CampaignServiceMetaAdSets => ({
+    campaign_id: 'c-1',
+    platform_campaign_id: '120210000000000555',
+    window: 'last_30_days',
+    currency: 'USD',
+    read_at: '2026-10-13T09:30:00Z',
+    ad_sets: sets,
+    ad_set_count: sets.length,
+  });
+
+  /** A BFF error, in its own `{ error, code }` envelope. */
+  const bffError = (status: number, code: string, error: string): HttpErrorResponse => new HttpErrorResponse({ status, error: { error, code } });
+
+  beforeEach(async () => {
+    updateMetaAdSetStatus = vi
+      .fn()
+      .mockReturnValue(of({ campaign_id: 'c-1', ad_set_id: '120210000000000888', requested_status: 'PAUSED', outcome: 'APPLIED', etag: '"4"' }));
+    listMetaAdSets = vi.fn().mockReturnValue(of(adSets([adSet()])));
+    // The authoritative row read does not answer unless a test says so, so the index path is what
+    // releases a hold by default.
+    getCampaignRecord = vi.fn().mockReturnValue(NEVER);
+    updateCampaignStatus = vi
+      .fn()
+      .mockReturnValue(of({ platform: 'meta-ads', campaignId: 'c-1', newStatus: 'PAUSED', success: true, serviceStatus: 'paused', etag: '"9"' }));
+    messageAdd = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: messageAdd } },
+        ConfirmationService,
+        {
+          provide: CampaignService,
+          useValue: {
+            updateMetaAdSetStatus,
+            listMetaAdSets,
+            getCampaignRecord,
+            updateCampaignStatus,
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+            executeKeywordActions: vi.fn().mockReturnValue(of({ results: [] })),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+  });
+
+  function render(campaigns: CampaignIndexDoc[] | null): void {
+    fixture.componentRef.setInput('briefCampaigns', campaigns);
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.detectChanges();
+  }
+
+  const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  function openPanel(): void {
+    (q('optimization-campaign-ad-sets-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
+  function clickToggle(id = '120210000000000888'): void {
+    (q(`meta-ad-set-toggle-${id}`) as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
+
+  it('offers the ad-set panel on Meta rows only', () => {
+    render([doc(), doc({ id: 'c-2', platform: 'google-ads' })]);
+
+    expect(q('optimization-campaign-ad-sets-c-1')).not.toBeNull();
+    expect(q('optimization-campaign-ad-sets-c-2')).toBeNull();
+  });
+
+  it('withholds the panel, with its reason, for a campaign never created on Meta', () => {
+    render([doc({ platform_campaign_id: undefined })]);
+
+    expect((q('optimization-campaign-ad-sets-c-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('optimization-campaign-ad-sets-unavailable-c-1')!.textContent).toContain(META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON);
+  });
+
+  it('lists the ad sets with status, budget and the deliberately-paused badge', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', effective_status: 'PAUSED', deliberately_paused: true })])));
+    render([doc()]);
+    openPanel();
+
+    expect(listMetaAdSets).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+    expect(q('meta-ad-set-row-120210000000000888')!.textContent).toContain('Leads — US');
+    expect(q('meta-ad-set-status-120210000000000888')!.textContent).toContain('PAUSED');
+    expect(q('meta-ad-set-budget-120210000000000888')!.textContent).toContain('50.00 USD daily');
+    expect(q('meta-ad-set-deliberately-paused-120210000000000888')).not.toBeNull();
+    expect(q('meta-ad-set-toggle-120210000000000888')!.textContent).toContain('Resume');
+  });
+
+  it('sends the row ETag as the validator and adopts the one the change returns', () => {
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+    expect(updateMetaAdSetStatus).toHaveBeenCalledWith({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      adSetId: '120210000000000888',
+      status: 'PAUSED',
+      etag: '"3"',
+    });
+    expect(q('meta-ad-sets-outcome-applied')!.textContent).toContain('Paused Leads — US.');
+
+    // The pause bumped the row's version: the next write on the row must send the NEW validator.
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"4"');
+  });
+
+  it('disables every write on the row while the change is in flight, and never sends a second one', () => {
+    const response = new Subject<never>();
+    updateMetaAdSetStatus.mockReturnValue(response.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+    clickToggle();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+
+    // The budget editor states why it cannot submit.
+    (q('optimization-campaign-budget-edit-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(CAMPAIGN_BUDGET_BLOCKED_AD_SET_REASON);
+  });
+
+  it('on a 412 re-reads the ad sets, says nothing was changed, and marks the row stale', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(412, 'PRECONDITION_FAILED', 'This campaign changed since it was loaded.')));
+    render([doc()]);
+    openPanel();
+    expect(listMetaAdSets).toHaveBeenCalledTimes(1);
+    clickToggle();
+
+    expect(listMetaAdSets).toHaveBeenCalledTimes(2);
+    expect(q('meta-ad-sets-outcome-conflict')!.textContent).toContain(META_AD_SET_CONFLICT_MESSAGE);
+    expect(q('meta-ad-sets-blocked')!.textContent).toContain(META_AD_SET_BLOCKED_STALE_REASON);
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('on an UNCONFIRMED pause says it may or may not have applied, re-reads, and prompts a deliberately-paused check', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc()]);
+    openPanel();
+    // The re-read shows the ad set paused but NOT recorded as deliberately paused.
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: false })])));
+    clickToggle();
+
+    expect(listMetaAdSets).toHaveBeenCalledTimes(2);
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_UNCONFIRMED_MESSAGE);
+    expect(q('meta-ad-sets-record-check-advice')!.textContent).toContain(META_AD_SET_DELIBERATE_PAUSE_ADVICE);
+    expect(q('meta-ad-sets-record-check-missing')).not.toBeNull();
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', sticky: true }));
+    // Never retried.
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the row on an UNKNOWN validator after an unconfirmed change until a fresh campaign-list read lands, then adopts its etag', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    // The record write may have bumped the row's version: every write on the row waits, and the banner offers Refresh.
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect(q('meta-ad-sets-blocked')!.textContent).toContain(META_AD_SET_BLOCKED_STALE_REASON);
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+
+    // The campaign list is re-read (the parent pushes null, then the fresh rows) — even with the SAME
+    // indexed etag, a read that started after the change answers the unknown.
+    render(null);
+    render([doc({ etag: '"7"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"7"');
+  });
+
+  it('keeps the hold while the index LAGS (a fresh read still carries the pre-write etag)', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    render(null);
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+    expect(updateCampaignStatus).not.toHaveBeenCalled();
+  });
+
+  it('releases the hold with the AUTHORITATIVE etag read from campaign-service, without waiting for the index', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    getCampaignRecord.mockReturnValue(of({ campaign: { id: 'c-1', etag: '"11"' }, statusToggleEnabled: true }));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(getCampaignRecord).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"11"');
+  });
+
+  it.each([
+    ['another campaign', { campaign: { id: 'c-2', etag: '"11"' }, statusToggleEnabled: true }],
+    ['no etag', { campaign: { id: 'c-1' }, statusToggleEnabled: true }],
+  ])('keeps the hold when the authoritative read names %s', (_label, answer) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    getCampaignRecord.mockReturnValue(of(answer));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+  });
+
+  it('asks campaign-service again on Refresh, and keeps the hold when that read fails', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    getCampaignRecord.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    expect(getCampaignRecord).toHaveBeenCalledTimes(1);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    getCampaignRecord.mockReturnValue(of({ campaign: { id: 'c-1', etag: '"12"' }, statusToggleEnabled: true }));
+    render(null);
+    expect(getCampaignRecord).toHaveBeenCalledTimes(2);
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+  });
+
+  it('keeps the confirmed status overlay while the hold lasts, then hands over to the index that moved past it', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc({ status: 'active' })]);
+    // A confirmed campaign pause first: the row shows "paused" over the index.
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    openPanel();
+    clickToggle();
+    expect(updateMetaAdSetStatus.mock.calls[0][0].etag).toBe('"9"');
+
+    // The index lags on both status and etag: the overlay stays.
+    render(null);
+    render([doc({ status: 'active', etag: '"9"' })]);
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    // The index moves past the pre-write etag: released, and from here the index (now carrying the
+    // pause) is the row's status and validator, as on any refresh that advanced.
+    render(null);
+    render([doc({ status: 'paused', etag: '"10"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls.at(-1)?.[0].etag).toBe('"10"');
+  });
+
+  it.each([
+    [
+      409,
+      'CONFLICT',
+      "the ad set's status was changed on Meta, but this campaign was modified or deleted by another request meanwhile; read the ad sets before retrying",
+    ],
+    [
+      503,
+      'SERVICE_UNAVAILABLE',
+      'the ad set WAS paused on Meta, but recording it on the campaign failed: a campaign resume would re-activate it; pause it here again',
+    ],
+    [500, 'INTERNAL_SERVER_ERROR', 'Internal server error'],
+  ])('holds the row on an unknown validator after a version-uncertain %i', (status, code, message) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(status, code, message)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-failed')!.textContent).toContain(message);
+    expect(getCampaignRecord).toHaveBeenCalledWith('tlf', 'b-1', 'c-1');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each([
+    [400, 'VALIDATION_ERROR'],
+    [404, 'NOT_FOUND'],
+    [428, 'PRECONDITION_REQUIRED'],
+  ])('does not hold the row after a pre-send refusal (%i): the version is known', (status, code) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(status, code, 'refused before anything was sent')));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(getCampaignRecord).not.toHaveBeenCalled();
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('ignores an OLDER authoritative read that answers after a newer one released the hold', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const initial = new Subject<unknown>();
+    const refresh = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(initial.asObservable()).mockReturnValueOnce(refresh.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    render(null); // Refresh: a second, overlapping record read for the same hold.
+    expect(getCampaignRecord).toHaveBeenCalledTimes(2);
+
+    refresh.next({ campaign: { id: 'c-1', etag: '"13"' }, statusToggleEnabled: true });
+    initial.next({ campaign: { id: 'c-1', etag: '"12"' }, statusToggleEnabled: true });
+    render([doc()]);
+
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"13"');
+  });
+
+  it('ignores an older read that answers FIRST while a newer read for the same hold is still out (last request wins)', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const initial = new Subject<unknown>();
+    const refresh = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(initial.asObservable()).mockReturnValueOnce(refresh.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    render(null);
+
+    initial.next({ campaign: { id: 'c-1', etag: '"12"' }, statusToggleEnabled: true });
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    refresh.next({ campaign: { id: 'c-1', etag: '"13"' }, statusToggleEnabled: true });
+    fixture.detectChanges();
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"13"');
+  });
+
+  it("never lets a released hold's late read touch the NEW hold that replaced it", () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const holdARead = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(holdARead.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    // Hold A is released by the index moving past its pre-write etag ("3" -> "5").
+    render(null);
+    render([doc({ etag: '"5"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+
+    // Hold B: a second uncertain write, sent with "5".
+    updateMetaAdSetStatus.mockReturnValue(
+      throwError(() => bffError(409, 'CONFLICT', "the ad set's status was changed on Meta, but this campaign was modified"))
+    );
+    clickToggle();
+    expect(updateMetaAdSetStatus.mock.calls.at(-1)?.[0].etag).toBe('"5"');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    // A's read finally answers: it must neither release B nor install its etag.
+    holdARead.next({ campaign: { id: 'c-1', etag: '"4"' }, statusToggleEnabled: true });
+    fixture.detectChanges();
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('keeps a confirmed pause through a Refresh whose index moved but is still OLDER, while held on an unconfirmed ad-set change', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    render([doc({ status: 'active' })]);
+    // A confirmed campaign pause: overlay "paused", validator "9".
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    openPanel();
+    clickToggle();
+
+    // Refresh: the index has moved ("3" -> "5") but is behind the confirmed "9", and still says active.
+    render(null);
+    render([doc({ status: 'active', etag: '"5"' })]);
+
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+  });
+
+  it('keeps a confirmed pause through a Refresh whose index is older, with no hold at all, and hands over once the index catches up', () => {
+    render([doc({ status: 'active' })]);
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    render(null);
+    render([doc({ status: 'active', etag: '"5"' })]);
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · paused');
+    expect(q('optimization-campaign-toggle-c-1')!.textContent).toContain('Resume');
+    // The next write still sends the CONFIRMED validator, not the older indexed one.
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls.at(-1)?.[0].etag).toBe('"9"');
+  });
+
+  it('lets an authoritative record read supersede the confirmed status overlay', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED)));
+    const record = new Subject<unknown>();
+    getCampaignRecord.mockReturnValueOnce(record.asObservable());
+    render([doc({ status: 'active' })]);
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    openPanel();
+    clickToggle();
+
+    record.next({ campaign: { id: 'c-1', etag: '"14"', status: 'active' }, statusToggleEnabled: true });
+    fixture.detectChanges();
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+    expect(q('optimization-campaign-row-c-1')!.textContent).toContain('meta-ads · active');
+  });
+
+  it('does not release an unknown validator on a list read that was already in flight when the change answered', () => {
+    const response = new Subject<never>();
+    updateMetaAdSetStatus.mockReturnValue(response.asObservable());
+    render([doc()]);
+    openPanel();
+    clickToggle();
+    render(null);
+    response.error(bffError(503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED));
+    fixture.detectChanges();
+    // That read began before the answer: its rows may predate the record write.
+    render([doc()]);
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+
+    render(null);
+    render([doc({ etag: '"8"' })]);
+    expect(q('optimization-campaigns-conflict')).toBeNull();
+  });
+
+  it.each([
+    ['another ad set', { ad_set_id: '999', requested_status: 'PAUSED', outcome: 'APPLIED' }],
+    ['another status', { ad_set_id: '120210000000000888', requested_status: 'ACTIVE', outcome: 'APPLIED' }],
+    ['an outcome campaign-service does not define', { ad_set_id: '120210000000000888', requested_status: 'PAUSED', outcome: 'QUEUED' }],
+    ['an empty body', {}],
+  ])('treats a 2xx naming %s as UNCONFIRMED: no success toast, no etag adopted, the row held', (_label, body) => {
+    updateMetaAdSetStatus.mockReturnValue(of({ campaign_id: 'c-1', etag: '"99"', ...body }));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_UNCONFIRMED_MESSAGE);
+    expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+    expect(q('optimization-campaigns-conflict')).not.toBeNull();
+    // Released by a fresh read, whose etag — not the unverified '"99"' — is what the next write sends.
+    render(null);
+    render([doc({ etag: '"5"' })]);
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"5"');
+  });
+
+  it('returns focus to the Ad sets disclosure when the panel is closed', () => {
+    render([doc()]);
+    openPanel();
+    const disclosure = q('optimization-campaign-ad-sets-c-1') as HTMLButtonElement;
+    expect(disclosure.id).toBe('campaign-ad-sets-edit-c-1');
+    (q('meta-ad-sets-close')!.querySelector('button') as HTMLButtonElement).focus();
+    (q('meta-ad-sets-close')!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(q('meta-ad-sets-panel-c-1')).toBeNull();
+    expect(document.activeElement).toBe(disclosure);
+  });
+
+  it("keeps the BFF's own sentence when only the RECORD is unconfirmed after a pause, and confirms it once the re-read shows it", () => {
+    updateMetaAdSetStatus.mockReturnValue(
+      throwError(() => bffError(503, META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED))
+    );
+    render([doc()]);
+    openPanel();
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED);
+    expect(q('meta-ad-sets-record-check-confirmed')).not.toBeNull();
+  });
+
+  it('runs the record check in the RESUME direction when only the record clear is unconfirmed after a resume', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    updateMetaAdSetStatus.mockReturnValue(
+      throwError(() => bffError(503, META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED))
+    );
+    render([doc()]);
+    openPanel();
+    // Meta is ACTIVE now, but the re-read still holds the record.
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'ACTIVE', deliberately_paused: true })])));
+    clickToggle();
+
+    expect(updateMetaAdSetStatus.mock.calls[0][0].status).toBe('ACTIVE');
+    expect(q('meta-ad-sets-record-check-missing')!.textContent).toContain('still shows Leads — US as deliberately paused');
+    expect(q('meta-ad-set-record-action-120210000000000888')!.textContent).toContain('Resume again (clear record)');
+  });
+
+  it('treats a response with no BFF envelope (lost connection) as unconfirmed, never as a failure', () => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 0, error: new ProgressEvent('error') })));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-unconfirmed')!.textContent).toContain(META_AD_SET_UNCONFIRMED_MESSAGE);
+  });
+
+  it('shows a 409 verbatim and re-reads the ad sets', () => {
+    const message = "this campaign's ad sets cannot be activated here: the campaign records no ad set of its own";
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(409, 'CONFLICT', message)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    expect(q('meta-ad-sets-outcome-failed')!.textContent).toContain(message);
+    expect(listMetaAdSets).toHaveBeenCalledTimes(2);
+    expect(q('meta-ad-sets-record-check-advice')).toBeNull();
+  });
+
+  it('records an unrecorded pause with PAUSED again — never ACTIVE — under the same If-Match, lock and no-retry rules', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: false })])));
+    const response = new Subject<{ campaign_id: string; ad_set_id: string; requested_status: 'PAUSED'; outcome: 'ALREADY_IN_STATE'; etag: string }>();
+    updateMetaAdSetStatus.mockReturnValue(response.asObservable());
+    render([doc()]);
+    openPanel();
+
+    (q('meta-ad-set-record-action-120210000000000888') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledWith({
+      projectSlug: 'tlf',
+      briefId: 'b-1',
+      campaignId: 'c-1',
+      adSetId: '120210000000000888',
+      status: 'PAUSED',
+      etag: '"3"',
+    });
+    // In flight: both of the ad set's actions and the row's own toggle are locked; a second click sends nothing.
+    expect((q('meta-ad-set-record-action-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(true);
+    (q('meta-ad-set-record-action-120210000000000888') as HTMLButtonElement).click();
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+
+    // campaign-service answers ALREADY_IN_STATE and records the pause, bumping the row's version.
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    response.next({ campaign_id: 'c-1', ad_set_id: '120210000000000888', requested_status: 'PAUSED', outcome: 'ALREADY_IN_STATE', etag: '"4"' });
+    response.complete();
+    fixture.detectChanges();
+
+    expect(q('meta-ad-sets-outcome-already')).not.toBeNull();
+    expect(q('meta-ad-set-deliberately-paused-120210000000000888')).not.toBeNull();
+    expect(q('meta-ad-set-record-action-120210000000000888')).toBeNull();
+    (q('optimization-campaign-toggle-c-1') as HTMLButtonElement).click();
+    expect(updateCampaignStatus.mock.calls[0][0].etag).toBe('"4"');
+  });
+
+  it.each([
+    [
+      409,
+      'CONFLICT',
+      "the ad set's status was changed on Meta, but this campaign was modified or deleted by another request meanwhile",
+      'Ad set change needs attention',
+    ],
+    [412, 'PRECONDITION_FAILED', 'This campaign changed since it was loaded.', 'Ad set not changed'],
+    [503, META_AD_SET_STATUS_UNCONFIRMED_CODE, META_AD_SET_STATUS_OUTCOME_UNCONFIRMED, 'Ad set change not confirmed'],
+  ])('titles the toast for a %i truthfully', (status, code, message, title) => {
+    updateMetaAdSetStatus.mockReturnValue(throwError(() => bffError(status, code, message)));
+    render([doc()]);
+    openPanel();
+    clickToggle();
+
+    const toast = messageAdd.mock.calls.at(-1)?.[0] as { summary: string };
+    expect(toast.summary).toBe(`${title}: Leads — US (KubeCon EU)`);
+  });
+
+  it("passes a created_degraded campaign's state to the panel: Pause allowed, Resume refused with the reason", () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', deliberately_paused: true })])));
+    render([doc({ status: 'created_degraded' })]);
+    openPanel();
+
+    // The read panel stays available under a non-toggleable campaign state.
+    expect(q('meta-ad-set-row-120210000000000888')).not.toBeNull();
+    expect(q('meta-ad-sets-campaign-state')!.textContent).toContain(META_AD_SET_RESUME_BLOCKED_DEGRADED_REASON);
+    const resume = q('meta-ad-set-toggle-120210000000000888') as HTMLButtonElement;
+    expect(resume.textContent).toContain('Resume');
+    expect(resume.disabled).toBe(true);
+    resume.click();
+    expect(updateMetaAdSetStatus).not.toHaveBeenCalled();
+  });
+
+  it('refuses, without sending, a direction the campaign state forbids even if one reaches the write', () => {
+    render([doc({ status: 'created_degraded' })]);
+    const tab = fixture.componentInstance as unknown as {
+      campaignRows: () => CampaignRow[] | null;
+      changeMetaAdSetStatus(row: CampaignRow, request: { adSetId: string; adSetName: string; status: 'ACTIVE' | 'PAUSED'; kind: 'toggle' | 'record' }): void;
+    };
+    const row = tab.campaignRows()![0];
+
+    tab.changeMetaAdSetStatus(row, { adSetId: '120210000000000888', adSetName: 'Leads — US', status: 'ACTIVE', kind: 'record' });
+    expect(updateMetaAdSetStatus).not.toHaveBeenCalled();
+
+    tab.changeMetaAdSetStatus(row, { adSetId: '120210000000000888', adSetName: 'Leads — US', status: 'PAUSED', kind: 'toggle' });
+    expect(updateMetaAdSetStatus).toHaveBeenCalledTimes(1);
+    expect(updateMetaAdSetStatus.mock.calls[0][0].status).toBe('PAUSED');
+  });
+
+  it('offers no Resume on a paused ad set this service did not create', () => {
+    listMetaAdSets.mockReturnValue(of(adSets([adSet({ status: 'PAUSED', recorded: false })])));
+    render([doc()]);
+    openPanel();
+
+    expect(q('meta-ad-set-toggle-120210000000000888')).toBeNull();
+    expect(q('meta-ad-set-no-action-120210000000000888')).not.toBeNull();
+  });
+
+  it('mounts the panel with the row it belongs to', () => {
+    render([doc()]);
+    openPanel();
+
+    const panel = fixture.debugElement.query(By.directive(MetaAdSetsPanelComponent)).componentInstance as MetaAdSetsPanelComponent;
+    expect(panel.campaignId()).toBe('c-1');
+  });
+});
+
+/**
+ * Live counters on each campaign row (#3299): rendered from the brief-wide metrics read the tab
+ * already makes, so opening the tab adds no per-campaign read; a row reads campaign-service for
+ * itself only on Refresh, or when clicked after the brief-wide read could not measure it.
+ */
+describe('OptimizationTabComponent — live counters (#3299)', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let getCampaignMetrics: ReturnType<typeof vi.fn>;
+
+  const doc = (over: Partial<CampaignIndexDoc> = {}): CampaignIndexDoc => ({
+    id: 'c-1',
+    project_id: 'tlf',
+    brief_id: 'b-1',
+    platform: 'meta-ads',
+    platform_campaign_id: '1234567890',
+    campaign_name: 'KubeCon EU',
+    status: 'created',
+    version: 3,
+    etag: '"3"',
+    ...over,
+  });
+
+  const briefMetrics: BriefMetrics = {
+    brief_id: 'b-1',
+    window: 'last_30_days',
+    rows: [
+      {
+        campaign_id: 'c-1',
+        platform: 'meta-ads',
+        status: 'ok',
+        metrics: {
+          campaign_id: 'c-1',
+          platform_campaign_id: '1234567890',
+          window: 'last_30_days',
+          impressions: 1000,
+          clicks: 40,
+          cost_micros: 5000000,
+          ctr: 0.04,
+        },
+        pacing: { label: 'normal', pct: 100 },
+      },
+      { campaign_id: 'c-2', platform: 'twitter-ads', status: 'failed', reason: 'the platform read failed' },
+    ],
+    ok_count: 1,
+    action_items: [],
+  };
+
+  beforeEach(async () => {
+    getCampaignMetrics = vi
+      .fn()
+      .mockReturnValue(
+        of({ campaign_id: 'c-2', platform_campaign_id: '99', window: 'last_7_days', impressions: 500, clicks: 25, cost_micros: 12500000, ctr: 0.05 })
+      );
+
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [
+        provideNoopAnimations(),
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            getCampaignMetrics,
+            getMonitorData: vi.fn().mockReturnValue(of(null)),
+            getKeywords: vi.fn().mockReturnValue(of({ keywords: [] })),
+            getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+            getRedditKeywords: vi.fn().mockReturnValue(of(null)),
+            getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+            getRedditAccounts: vi.fn().mockReturnValue(of([])),
+            getBriefMetrics: vi.fn().mockReturnValue(of(briefMetrics)),
+            getMetaAccounts: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+    fixture.componentRef.setInput('statusToggleEnabled', true);
+    fixture.componentRef.setInput('briefCampaigns', [doc(), doc({ id: 'c-2', platform: 'twitter-ads', campaign_name: 'OSS Summit' })]);
+    fixture.detectChanges();
+  });
+
+  const q = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it("hands every row its brief-wide row and shows an ok row's counters without a read of its own", () => {
+    const panels = fixture.debugElement.queryAll(By.directive(CampaignLiveMetricsComponent)).map((de) => de.componentInstance as CampaignLiveMetricsComponent);
+
+    expect(panels.map((p) => [p.projectSlug(), p.briefId(), p.campaignId(), p.campaignName(), p.platform(), p.briefRow()?.status])).toEqual([
+      ['tlf', 'b-1', 'c-1', 'KubeCon EU', 'meta-ads', 'ok'],
+      ['tlf', 'b-1', 'c-2', 'OSS Summit', 'twitter-ads', 'failed'],
+    ]);
+    expect(q('optimization-campaign-row-c-1')!.contains(q('optimization-campaign-live-counters-c-1'))).toBe(true);
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('40');
+    expect(q('optimization-campaign-live-counters-c-2')).toBeNull();
+    expect(getCampaignMetrics).not.toHaveBeenCalled();
+  });
+
+  it('reads one campaign only when its row is clicked, for the precise answer', () => {
+    (q('optimization-campaign-live-load-c-2') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+    expect(getCampaignMetrics).toHaveBeenCalledWith('tlf', 'b-1', 'c-2');
+    expect(q('optimization-campaign-live-counters-c-2')).not.toBeNull();
+    expect(q('optimization-campaign-live-window-c-2')!.textContent).toContain('the last 7 days');
+  });
+
+  // The tab's Refresh clears its brief-wide read first; a failed re-read must not take a row's own answer with it.
+  it("keeps a row's own refreshed counters through a tab Refresh whose brief-wide read fails", () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+
+    service.getBriefMetrics.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' })));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(service.getBriefMetrics).toHaveBeenCalledTimes(2);
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('25');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the fresh brief-wide counters once a tab Refresh succeeds after a row Refresh', () => {
+    const service = TestBed.inject(CampaignService) as unknown as { getBriefMetrics: ReturnType<typeof vi.fn> };
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const fresh = structuredClone(briefMetrics);
+    fresh.rows[0].metrics!.clicks = 77;
+    service.getBriefMetrics.mockReturnValue(of(fresh));
+    (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+    fixture.detectChanges();
+
+    expect(q('optimization-campaign-live-clicks-c-1')!.textContent?.trim()).toBe('77');
+    expect(getCampaignMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the row read-only: refreshing counters calls no write', () => {
+    const service = TestBed.inject(CampaignService) as unknown as Record<string, ReturnType<typeof vi.fn>>;
+    (q('optimization-campaign-live-load-c-1') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const called = Object.entries(service)
+      .filter(([, fn]) => fn.mock.calls.length > 0)
+      .map(([name]) => name);
+    expect(called).not.toContain('updateCampaignStatus');
+    expect(called).not.toContain('updateCampaignBudget');
+    expect(called).toContain('getCampaignMetrics');
   });
 });

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AUDIENCE_CUSTOM_OPERATORS, AUDIENCE_SPEAKER_SCOPES } from '@lfx-one/shared/constants';
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,6 +29,9 @@ const proxyMethods = {
   composeMaster: vi.fn(),
   attachExisting: vi.fn(),
   runQa: vi.fn(),
+  interpretCustom: vi.fn(),
+  previewCustom: vi.fn(),
+  createCustom: vi.fn(),
 };
 
 // One mock stands in for all nine upstream calls, because the controller no longer holds any
@@ -717,5 +721,181 @@ describe('attachExisting', () => {
 
     expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
     expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+});
+
+describe('runQa event name', () => {
+  it('forwards a trimmed event name so the current-registrants check can run', async () => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', eventName: '  KubeCon Japan 2026 ' }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      listRef: '10',
+      targetsEu: false,
+      targetsCa: false,
+      eventName: 'KubeCon Japan 2026',
+    });
+  });
+
+  it('omits a blank event name rather than sending one', async () => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '10', eventName: '   ' }), buildRes(), next);
+
+    expect(proxyMethods.runQa).toHaveBeenCalledWith(expect.anything(), 'tlf', { listRef: '10', targetsEu: false, targetsCa: false });
+  });
+});
+
+describe('custom audiences', () => {
+  const criteria = { cities: [' Seoul '], countries: [], contactLocation: true, gateListId: '26716', propertyFilters: [] };
+
+  it('interprets a request with its answers', async () => {
+    proxyMethods.interpretCustom.mockResolvedValue({ criteria: {}, questions: [], notes: [] });
+
+    await controller.interpretCustom(buildReq({ request: ' Seoul contacts ', answers: [{ questionId: 'mailability', answer: 'Stricter' }] }), buildRes(), next);
+
+    expect(proxyMethods.interpretCustom).toHaveBeenCalledWith(expect.anything(), 'tlf', {
+      request: 'Seoul contacts',
+      answers: [{ questionId: 'mailability', answer: 'Stricter' }],
+    });
+  });
+
+  it.each([
+    ['an empty request', { request: '  ' }, 'request'],
+    ['an over-long request', { request: 'x'.repeat(2001) }, 'request'],
+    ['answers that are not an array', { request: 'x', answers: 'yes' }, 'answers'],
+    ['a non-string answer', { request: 'x', answers: [{ answer: 1 }] }, 'answers'],
+    ['a blank answer', { request: 'x', answers: [{ answer: '   ' }] }, 'answers'],
+    ['an over-long question id (refused, never cut)', { request: 'x', answers: [{ answer: 'a', questionId: 'q'.repeat(65) }] }, 'answers'],
+    ['an over-long question', { request: 'x', answers: [{ answer: 'a', question: 'q'.repeat(501) }] }, 'answers'],
+    ['more than 12 answers', { request: 'x', answers: Array.from({ length: 13 }, () => ({ answer: 'a' })) }, 'answers'],
+  ])('refuses %s before calling the model', async (_label, body, field) => {
+    await controller.interpretCustom(buildReq(body), buildRes(), next);
+
+    expect(proxyMethods.interpretCustom).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
+  it('forwards an event URL for an event audience after the SSRF pre-check', async () => {
+    proxyMethods.interpretCustom.mockResolvedValue({ criteria: {}, questions: [], notes: [], similar: [] });
+
+    await controller.interpretCustom(buildReq({ request: 'Plan it', eventUrl: ' https://events.example.org/x ' }), buildRes(), next);
+
+    expect(validateScrapeUrl).toHaveBeenCalledWith('https://events.example.org/x');
+    expect(proxyMethods.interpretCustom.mock.calls[0][2]).toMatchObject({ eventUrl: 'https://events.example.org/x' });
+  });
+
+  it('refuses an event URL the SSRF guard rejects, before calling the model', async () => {
+    scrapeUrl.mockRejectedValueOnce(new Error('private address'));
+
+    await controller.interpretCustom(buildReq({ request: 'Plan it', eventUrl: 'http://10.0.0.1/' }), buildRes(), next);
+
+    expect(proxyMethods.interpretCustom).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'eventUrl' }]);
+  });
+
+  it('accepts every operator and speaker scope the UI offers', async () => {
+    proxyMethods.previewCustom.mockResolvedValue({ name: 'n', criteria, branchCount: 1, warnings: [] });
+    const propertyFilters = AUDIENCE_CUSTOM_OPERATORS.map((o) => ({ property: 'jobtitle', operator: o.value, values: [] }));
+
+    for (const scope of AUDIENCE_SPEAKER_SCOPES) {
+      await controller.previewCustom(
+        buildReq({ criteria: { ...criteria, propertyFilters, speakers: { scope: scope.key, eventNames: [] } } }),
+        buildRes(),
+        next
+      );
+    }
+
+    expect(proxyMethods.previewCustom).toHaveBeenCalledTimes(AUDIENCE_SPEAKER_SCOPES.length);
+  });
+
+  it('rebuilds previewed criteria from checked fields only', async () => {
+    proxyMethods.previewCustom.mockResolvedValue({ name: 'n', criteria, branchCount: 2, warnings: [] });
+
+    await controller.previewCustom(buildReq({ criteria: { ...criteria, injected: 'filterBranch' } }), buildRes(), next);
+
+    const sent = proxyMethods.previewCustom.mock.calls[0][2];
+    expect(sent.criteria).not.toHaveProperty('injected');
+    expect(sent.criteria.cities).toEqual(['Seoul']);
+    expect(sent.criteria.eventRegistered, 'an omitted flag is false, never undefined').toBe(false);
+  });
+
+  it.each([
+    ['a non-object criteria', { criteria: [] }, 'criteria'],
+    ['a string flag', { criteria: { ...criteria, contactLocation: 'true' } }, 'contactLocation'],
+    [
+      'a property name with spaces',
+      { criteria: { ...criteria, propertyFilters: [{ property: 'job title', operator: 'contains', values: ['x'] }] } },
+      'propertyFilters',
+    ],
+    ['an unknown operator', { criteria: { ...criteria, propertyFilters: [{ property: 'jobtitle', operator: 'like', values: [] }] } }, 'propertyFilters'],
+    ['an unknown speaker scope', { criteria: { ...criteria, speakers: { scope: 'future', eventNames: [] } } }, 'speakers'],
+    ['too many cities', { criteria: { ...criteria, cities: Array.from({ length: 26 }, (_u, i) => `c${i}`) } }, 'cities'],
+    ['a non-string name', { criteria, name: 5 }, 'name'],
+    ['an over-long name', { criteria, name: 'n'.repeat(251) }, 'name'],
+    [
+      'more than 10 filters',
+      { criteria: { ...criteria, propertyFilters: Array.from({ length: 11 }, () => ({ property: 'jobtitle', operator: 'is_known', values: [] })) } },
+      'propertyFilters',
+    ],
+    [
+      'more than 25 filter values',
+      { criteria: { ...criteria, propertyFilters: [{ property: 'jobtitle', operator: 'is_any_of', values: Array.from({ length: 26 }, (_u, i) => `v${i}`) }] } },
+      'propertyFilters',
+    ],
+    [
+      'more than 10 page URLs (upstream caps them at 10)',
+      { criteria: { ...criteria, pageViewUrls: Array.from({ length: 11 }, (_u, i) => `https://e.org/p${i}`) } },
+      'pageViewUrls',
+    ],
+    ['an over-long label (refused, never silently cut)', { criteria: { ...criteria, label: 'l'.repeat(201) } }, 'label'],
+    ['an over-long gate list id', { criteria: { ...criteria, gateListId: '1'.repeat(65) } }, 'gateListId'],
+    ['an over-long speakers list id', { criteria: { ...criteria, speakers: { scope: 'current', eventNames: [], listId: '1'.repeat(65) } } }, 'speakers'],
+  ])('refuses %s without reaching the create', async (_label, body, field) => {
+    await controller.createCustom(buildReq(body), buildRes(), next);
+
+    expect(proxyMethods.createCustom).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field }]);
+  });
+
+  it('answers a created list with 201', async () => {
+    const created = { listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' };
+    proxyMethods.createCustom.mockResolvedValue(created);
+    const res = buildRes();
+
+    await controller.createCustom(buildReq({ criteria, name: ' Seoul ' }), res, next);
+
+    expect(proxyMethods.createCustom.mock.calls[0][2].name).toBe('Seoul');
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith(created);
+  });
+
+  it('answers an unconfirmed create with 502 and the name to search for, never a retryable error', async () => {
+    proxyMethods.createCustom.mockRejectedValue(new AudienceComposePartialError('unconfirmed', undefined, undefined, 'Seoul test'));
+    const res = buildRes();
+
+    await controller.createCustom(buildReq({ criteria }), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith({ masterName: 'Seoul test', error: 'unconfirmed' });
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('runQa send-time suppression', () => {
+  it('forwards the send-time suppression lists', async () => {
+    proxyMethods.runQa.mockResolvedValue({ needsDisambiguation: true, candidates: [] });
+
+    await controller.runQa(buildReq({ listRef: '31594', sendSuppressionListIds: ['201', ' 202 '] }), buildRes(), next);
+
+    expect(proxyMethods.runQa.mock.calls.at(-1)?.[2]).toMatchObject({ sendSuppressionListIds: ['201', '202'] });
+  });
+
+  it('refuses a malformed list of send-time suppressions', async () => {
+    await controller.runQa(buildReq({ listRef: '31594', sendSuppressionListIds: '201' }), buildRes(), next);
+
+    expect(proxyMethods.runQa).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'sendSuppressionListIds' }]);
   });
 });

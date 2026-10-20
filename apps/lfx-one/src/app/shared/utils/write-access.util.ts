@@ -12,6 +12,24 @@ export function hasMeetingWriteAccess(project: Project | null): boolean {
   return project?.writer === true || project?.meetingCoordinator === true;
 }
 
+/**
+ * Tri-state meeting write-access read: true/false are confirmed grant/deny, `undefined` means
+ * the check couldn't be confirmed (lookup failed, or the BFF omitted `meetingCoordinator` because
+ * its FGA check itself failed — HTTP 200, field absent). Callers that evict on a `false` transition
+ * (e.g. evictOnWriteAccessLoss) must treat `undefined` as "keep provisional access", the same
+ * unknown-vs-denied distinction writerGuard already makes for the route guard (linuxfoundation/lfx-self-serve-ops#500) — otherwise
+ * a transient BFF blip reads as a flat denial and silently evicts a legitimate meeting coordinator.
+ */
+export function meetingWriteAccessState(project: Project | null): boolean | undefined {
+  if (project === null) {
+    return undefined;
+  }
+  if (hasMeetingWriteAccess(project)) {
+    return true;
+  }
+  return project.meetingCoordinator === undefined ? undefined : false;
+}
+
 // Prefers the BFF-enriched slug, falling back to the uid — `GET /api/projects/:slug` sniffs UUIDs,
 // so either resolves. `fallback` covers an entity carrying neither. `||` (not `??`) is deliberate:
 // `enrichWithProjectData` writes `''` (not null) when the relation-gated project lookup fails, and a

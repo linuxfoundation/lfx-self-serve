@@ -256,6 +256,51 @@ describe('OrgClaService.listClaGroups — empty versus failed', () => {
   });
 });
 
+describe('OrgClaService.listClaGroups — an EasyCLA refusal (#3631)', () => {
+  function upstreamFailure(statusCode: number, options: { transportFailure?: boolean } = {}): MicroserviceErrorType {
+    return new MicroserviceError('Failed to fetch organization CLA groups', statusCode, 'UPSTREAM_ERROR', {
+      operation: 'org_cla_list_cla_groups',
+      service: 'org_cla_service',
+      errorBody: { message: 'user contributor@example.org does not have access' },
+      ...options,
+    });
+  }
+
+  it('relabels an upstream 403 as a missing EasyCLA role, keeping the status', async () => {
+    gatewayFetch.mockRejectedValue(upstreamFailure(403));
+
+    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'EASYCLA_ROLE_MISSING',
+    });
+  });
+
+  it('answers the client with the role-missing sentence and not the upstream body', async () => {
+    gatewayFetch.mockRejectedValue(upstreamFailure(403));
+
+    const error = (await new OrgClaService().listClaGroups(req(), ORG_UID).catch((e: unknown) => e)) as MicroserviceErrorType;
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error.errorBody).toBeUndefined();
+    expect(error.toResponse()).toMatchObject({ error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' });
+    expect(JSON.stringify(error.toResponse())).not.toContain('contributor@example.org');
+  });
+
+  it.each([400, 401, 404, 500, 502])('passes an upstream %i through unchanged', async (statusCode) => {
+    const failure = upstreamFailure(statusCode);
+    gatewayFetch.mockRejectedValue(failure);
+
+    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toBe(failure);
+  });
+
+  it('passes a 403 marked as a transport failure through unchanged', async () => {
+    const failure = upstreamFailure(403, { transportFailure: true });
+    gatewayFetch.mockRejectedValue(failure);
+
+    await expect(new OrgClaService().listClaGroups(req(), ORG_UID)).rejects.toBe(failure);
+  });
+});
+
 describe('OrgClaService.listClaGroups — what must not cross to the client', () => {
   it('carries no CLA manager identity or username anywhere in the response', async () => {
     gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry()));
@@ -2199,7 +2244,7 @@ describe('OrgClaService.updateEclaAutoCreate — the outcomes that are not failu
     await expect(new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-b', true)).rejects.toMatchObject({
       statusCode: 409,
       code: 'AMBIGUOUS_AGREEMENT_TARGET',
-      message: 'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+      message: 'This CLA shares its company and CLA group with another agreement, so its Auto Acknowledge setting cannot be changed here yet.',
     });
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
     expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/ecla-auto-create'), expect.anything());

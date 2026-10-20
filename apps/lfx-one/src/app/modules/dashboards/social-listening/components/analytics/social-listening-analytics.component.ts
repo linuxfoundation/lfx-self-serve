@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { DatePipe, DecimalPipe, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, effect, ElementRef, inject, input, model, output, PLATFORM_ID, Signal, untracked, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
@@ -18,7 +18,14 @@ import {
   lfxColors,
   SENTIMENT_BAR_LABEL_MIN_PERCENT,
 } from '@lfx-one/shared/constants';
-import { buildAnalyticsDelta, buildOverTimeChartData, mapPlatformDistributionRows, mapSentimentRows, mapTagRows } from '@lfx-one/shared/utils';
+import {
+  buildAnalyticsDelta,
+  buildOverTimeChartData,
+  mapPlatformDistributionRows,
+  mapSentimentRows,
+  mapTagRows,
+  normalizeSnowflakeTimestamp,
+} from '@lfx-one/shared/utils';
 import { SocialListeningService } from '@services/social-listening.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
@@ -38,17 +45,18 @@ import type {
   SocialListeningSentimentRow,
   SocialListeningSentimentTrends,
   SocialListeningTagRow,
+  SocialListeningTagsRequest,
   SocialListeningTopProject,
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 
 /**
- * Social Listening Analytics tab (LFXV2-3018, PCC port): six panels over the feed-derived 3015
- * endpoints, refetched when the page's scope or feed predicate changes; each panel degrades independently.
+ * Social Listening Analytics tab: five governed scope-only panels plus feed-filtered Mentions by Tag.
+ * Each panel degrades independently; content changes do not invalidate the governed scope.
  */
 @Component({
   selector: 'lfx-social-listening-analytics',
-  imports: [DecimalPipe, CardComponent, ChartComponent, EmptyStateComponent, MessageComponent, StatCardGridComponent, SkeletonModule, TooltipModule],
+  imports: [DatePipe, DecimalPipe, CardComponent, ChartComponent, EmptyStateComponent, MessageComponent, StatCardGridComponent, SkeletonModule, TooltipModule],
   templateUrl: './social-listening-analytics.component.html',
   styleUrl: './social-listening-analytics.component.scss',
 })
@@ -63,7 +71,7 @@ export class SocialListeningAnalyticsComponent {
   public readonly period = input('');
   /** Display-only: the per-platform % label is meaningful on the unfiltered view. The request itself takes `filters.platform`. */
   public readonly platform = input('all');
-  /** The feed predicate — analytics panels filter identically to the feed so the two tabs agree. */
+  /** Page predicate: only project/platform scope governed panels; Mentions by Tag takes the full read-blind predicate. */
   public readonly filters = input<MentionFilters>({});
 
   // === Export (page-triggered via nonce; progress reported back via model) ===
@@ -77,30 +85,37 @@ export class SocialListeningAnalyticsComponent {
 
   private readonly analyticsContent = viewChild<ElementRef<HTMLElement>>('analyticsContent');
 
-  private readonly analyticsRequest: Signal<SocialListeningAnalyticsRequest | null> = this.initAnalyticsRequest();
+  private readonly scopeRequest: Signal<SocialListeningAnalyticsRequest | null> = this.initScopeRequest();
+  private readonly tagsRequest: Signal<SocialListeningTagsRequest | null> = this.initTagsRequest();
 
   // === Panel states (each pipeline degrades independently) ===
   private readonly overviewState: Signal<LoadableState<SocialListeningAnalyticsOverview | null>> = this.initAnalyticsState(
+    this.scopeRequest,
     (req) => this.socialListeningService.getAnalyticsOverview(req),
     null
   );
   private readonly overTimeState: Signal<LoadableState<ChartData<'line'> | null>> = this.initAnalyticsState(
+    this.scopeRequest,
     (req) => this.socialListeningService.getAnalyticsOverTime(req).pipe(map(buildOverTimeChartData)),
     null
   );
   private readonly platformState: Signal<LoadableState<SocialListeningPlatformRow[]>> = this.initAnalyticsState(
+    this.scopeRequest,
     (req) => this.socialListeningService.getAnalyticsPlatformDistribution(req).pipe(map((rows) => mapPlatformDistributionRows(rows))),
     []
   );
   private readonly tagsState: Signal<LoadableState<SocialListeningTagRow[]>> = this.initAnalyticsState(
+    this.tagsRequest,
     (req) => this.socialListeningService.getMentionsTags(req).pipe(map(mapTagRows)),
     []
   );
   private readonly sentimentState: Signal<LoadableState<SocialListeningSentimentRow[]>> = this.initAnalyticsState(
+    this.scopeRequest,
     (req) => this.socialListeningService.getAnalyticsSentimentDistribution(req).pipe(map(mapSentimentRows)),
     []
   );
   private readonly topProjectsState: Signal<LoadableState<SocialListeningTopProject[]>> = this.initAnalyticsState(
+    this.scopeRequest,
     (req) => this.socialListeningService.getAnalyticsTopProjects({ ...req, limit: ANALYTICS_TOP_PROJECTS_LIMIT }),
     []
   );
@@ -109,6 +124,7 @@ export class SocialListeningAnalyticsComponent {
   public readonly statCards: Signal<StatCardItem[]> = this.initStatCards();
   public readonly overviewLoading = computed(() => this.overviewState().loading);
   public readonly overviewError = computed(() => this.overviewState().error);
+  public readonly analyticsComputedAt: Signal<Date | null> = this.initAnalyticsComputedAt();
 
   public readonly overTimeData = computed(() => this.overTimeState().data);
   public readonly overTimeLoading = computed(() => this.overTimeState().loading);
@@ -234,8 +250,28 @@ export class SocialListeningAnalyticsComponent {
     }
   }
 
-  /** Scope + feed predicate shared by all six analytics requests; null until the page has a foundation + period. */
-  private initAnalyticsRequest(): Signal<SocialListeningAnalyticsRequest | null> {
+  /** Content-filter edits retain the same governed scope, preventing refetches and skeleton flashes. */
+  private initScopeRequest(): Signal<SocialListeningAnalyticsRequest | null> {
+    return computed(
+      () => {
+        const foundationSlug = this.foundationSlug();
+        const period = this.period();
+        if (!foundationSlug || !period) return null;
+        const { sourceProjectId, platform } = this.filters();
+        return { foundationSlug, period, sourceProjectId, platform };
+      },
+      {
+        equal: (previous, next) =>
+          previous?.foundationSlug === next?.foundationSlug &&
+          previous?.period === next?.period &&
+          previous?.sourceProjectId === next?.sourceProjectId &&
+          previous?.platform === next?.platform,
+      }
+    );
+  }
+
+  /** Mentions by Tag continues to follow all read-blind feed filters. */
+  private initTagsRequest(): Signal<SocialListeningTagsRequest | null> {
     return computed(() => {
       const foundationSlug = this.foundationSlug();
       const period = this.period();
@@ -248,9 +284,9 @@ export class SocialListeningAnalyticsComponent {
    * Shared declarative-state pipeline for the analytics panels: `debounceTime(0)` coalesces
    * synchronous scope changes, `startWith`/`catchError` give per-panel loading/error.
    */
-  private initAnalyticsState<T>(fetchFn: (req: SocialListeningAnalyticsRequest) => Observable<T>, empty: T): Signal<LoadableState<T>> {
+  private initAnalyticsState<R, T>(source: Signal<R | null>, fetchFn: (req: R) => Observable<T>, empty: T): Signal<LoadableState<T>> {
     return toSignal(
-      toObservable(this.analyticsRequest).pipe(
+      toObservable(source).pipe(
         debounceTime(0),
         switchMap((req) => {
           if (req === null) {
@@ -265,6 +301,15 @@ export class SocialListeningAnalyticsComponent {
       ),
       { initialValue: { loading: false, error: null, data: empty } }
     );
+  }
+
+  private initAnalyticsComputedAt(): Signal<Date | null> {
+    return computed(() => {
+      const timestamp = this.overviewState().data?.COMPUTED_AT;
+      if (!timestamp) return null;
+      const date = new Date(normalizeSnowflakeTimestamp(timestamp));
+      return Number.isNaN(date.getTime()) ? null : date;
+    });
   }
 
   /** Trend chips for the sentiment card; an overview error drops the chips without touching the card's own counts. */

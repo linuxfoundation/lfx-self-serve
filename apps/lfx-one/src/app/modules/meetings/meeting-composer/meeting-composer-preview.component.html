@@ -4,10 +4,13 @@
 <section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3.5" data-testid="meeting-composer-preview">
   <span class="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Preview</span>
 
-  <div class="flex items-start gap-2.5">
-    <div class="flex w-[26px] shrink-0 flex-col overflow-hidden rounded border border-gray-200 text-center">
-      <span class="bg-blue-600 text-[8px] font-bold uppercase leading-[13px] text-white" aria-hidden="true">{{ dateChip().month }}</span>
-      <span class="text-[11px] font-bold leading-[15px] text-gray-900" aria-hidden="true">{{ dateChip().day }}</span>
+  <!-- Stretched so the date tile always spans the full height of the title + when lines beside it;
+       the day number fills whatever the month band leaves. Tile sizes are exact px from the design
+       (36px wide, 9px month on a 14px band, 15px day): the 14px root shrinks the rem scale. -->
+  <div class="flex items-stretch gap-2.5">
+    <div class="flex w-[36px] shrink-0 flex-col overflow-hidden rounded-md border border-gray-200 text-center">
+      <span class="bg-blue-600 text-[9px] font-bold uppercase leading-[14px] text-white" aria-hidden="true">{{ dateChip().month }}</span>
+      <span class="flex flex-1 items-center justify-center text-[15px] font-bold leading-none text-gray-900" aria-hidden="true">{{ dateChip().day }}</span>
     </div>
 
     <div class="flex min-w-0 flex-1 flex-col gap-1">

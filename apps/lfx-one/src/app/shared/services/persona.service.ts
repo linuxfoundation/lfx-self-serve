@@ -44,6 +44,15 @@ export class PersonaService {
   public readonly personaLoaded: WritableSignal<boolean>;
   /** True once enriched persona data has been fetched this session — guards against redundant refetches on re-navigation. */
   public readonly enrichedPersonasLoaded: WritableSignal<boolean> = signal<boolean>(false);
+  /**
+   * True when the latest root (unscoped) persona lookup failed (network error or an upstream `error`
+   * payload) rather than answering. Last-known-good state is kept either way; consumers that would
+   * read an empty result as "no access" use this to show a retryable error instead. Cleared by the
+   * next answer, scoped or not — every answer carries the full persona set. A failed project-scoped
+   * probe leaves it alone: it says nothing about the root lookup, and callers track it per project
+   * (a late failure for a project the user has left must not flag the one now selected).
+   */
+  public readonly personaLookupFailed: WritableSignal<boolean> = signal<boolean>(false);
   /** `writer_guard` on the tenant root project — bypasses nav persona filtering; does not imply writer on a named project */
   public readonly isRootWriter: WritableSignal<boolean> = signal<boolean>(false);
   /** Member of the lf-staff team — unlocks executive-tier dashboards without granting the ED persona */
@@ -115,7 +124,16 @@ export class PersonaService {
    * on to actually apply moves this mark forward (Cursor Bugbot finding, PR #1835: "Global probe
    * gate drops grant slug").
    */
-  private latestAppliedGrantProbeId = 0;
+  // Per relation: a probe that verified only one relation must not mark the other relation's grant
+  // from an older probe as stale (Copilot finding, PR #3783).
+  private readonly latestAppliedGrantProbeId: Record<'marketing' | 'campaign', number> = { marketing: 0, campaign: 0 };
+  /**
+   * Last probeId that wrote {@link marketingGrantSlug}. The slug is one scalar covering both relations,
+   * so the per-relation marks above can't guard it: an older probe that applies only the relation a
+   * newer probe left untouched would still pass its own relation's gate and repoint the slug at an
+   * older foundation (#3824).
+   */
+  private latestAppliedGrantSlugProbeId = 0;
   /**
    * Last probeId that actually **applied** (wrote the signals for) a given scope (`projectSlug`, or
    * `undefined` for root) — used only by {@link confirmActiveGrant} to tell a genuine cross-scope
@@ -133,7 +151,8 @@ export class PersonaService {
    * findings, PR #1835). Only a probe that actually goes on to write moves this forward, matching
    * {@link latestAppliedGrantProbeId}'s same rationale one level down, per scope.
    */
-  private readonly latestAppliedGrantProbeIdByScope = new Map<string | undefined, number>();
+  // Keyed per relation and queried scope ({@link scopeRecencyKey}), for the same reason as above.
+  private readonly latestAppliedGrantProbeIdByScope = new Map<string, number>();
   /**
    * Last probeId that actually wrote a given **resolved** map key (`null` for ROOT, or the exact
    * `projectSlug` string) in {@link _grantsByScope} — distinct from
@@ -220,8 +239,12 @@ export class PersonaService {
           // `isMarketingAuditor`/`isCampaignManager` always move together off the same
           // most-recently-issued response — a root-scoped call (no `projectSlug`) leaves this
           // untouched, since a ROOT grant isn't tied to one project.
-          if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager) && probeId >= this.latestAppliedGrantProbeId) {
-            this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
+          if (
+            projectSlug &&
+            ((response.isMarketingAuditor && probeId >= this.latestAppliedGrantProbeId.marketing) ||
+              (response.isCampaignManager && probeId >= this.latestAppliedGrantProbeId.campaign))
+          ) {
+            this.writeGrantSlug(response, projectSlug, probeId);
           }
         }
       })
@@ -253,18 +276,32 @@ export class PersonaService {
    * must only invoke this with an authoritative, non-errored response.
    */
   public confirmActiveGrant(
-    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    response: Pick<
+      PersonaApiResponse,
+      | 'isMarketingAuditor'
+      | 'isCampaignManager'
+      | 'isMarketingAuditorRootGrant'
+      | 'isCampaignManagerRootGrant'
+      | 'marketingAuditorUnverified'
+      | 'campaignManagerUnverified'
+    >,
     projectSlug?: string
   ): void {
+    // An unverified relation is not an answer to force-apply; keep its last-known-good value.
+    const verified = this.verifiedGrantRelations(response);
+    if (!verified.marketing && !verified.campaign) return;
     const probeId = this.grantProbeIdByResponse.get(response);
-    const latestAppliedForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
-    if (probeId !== undefined && latestAppliedForScope !== undefined && probeId < latestAppliedForScope) {
-      return;
-    }
-    this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
-    this.isCampaignManager.set(response.isCampaignManager ?? false);
-    if (projectSlug && (response.isMarketingAuditor || response.isCampaignManager)) {
-      this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
+    // Stale per relation: a later probe for this scope that applied one relation leaves the other open.
+    const isFresh = (relation: 'marketing' | 'campaign'): boolean => {
+      const latest = this.latestAppliedGrantProbeIdByScope.get(this.scopeRecencyKey(relation, projectSlug));
+      return probeId === undefined || latest === undefined || probeId >= latest;
+    };
+    const apply = { marketing: verified.marketing && isFresh('marketing'), campaign: verified.campaign && isFresh('campaign') };
+    if (!apply.marketing && !apply.campaign) return;
+    if (apply.marketing) this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+    if (apply.campaign) this.isCampaignManager.set(response.isCampaignManager ?? false);
+    if (projectSlug && ((apply.marketing && response.isMarketingAuditor) || (apply.campaign && response.isCampaignManager))) {
+      this.writeGrantSlug(response, projectSlug, probeId);
     }
     // Also write to per-scope map — same rationale as the write in applyPersonaResponse.
     // After this point the component reads from the map (not the global signals), so a later
@@ -272,10 +309,8 @@ export class PersonaService {
     // (Copilot finding, PR #1835: confirmActiveGrant force-write overwritten by later probe).
     // Gating against the resolved map key (not this queried `projectSlug`) is handled inside
     // writeGrantForScope itself — see latestAppliedGrantProbeIdByResolvedKey.
-    this.writeGrantForScope(response, projectSlug, probeId);
-    if (probeId !== undefined && probeId > (latestAppliedForScope ?? -Infinity)) {
-      this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
-    }
+    this.writeGrantForScope(response, projectSlug, probeId, apply);
+    this.markScopeApplied(apply, projectSlug, probeId);
   }
 
   /**
@@ -314,6 +349,44 @@ export class PersonaService {
   }
 
   /**
+   * Points {@link marketingGrantSlug} at this probe's foundation unless a newer probe already wrote it,
+   * then advances the slug's own mark. A response with no recorded probe (`probeId` undefined) always
+   * writes, as it does for the grant signals.
+   */
+  private writeGrantSlug(
+    response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
+    projectSlug: string,
+    probeId: number | undefined
+  ): void {
+    if (probeId !== undefined && probeId < this.latestAppliedGrantSlugProbeId) return;
+    this.marketingGrantSlug.set(this.resolveGrantSlug(response, projectSlug));
+    if (probeId !== undefined) this.latestAppliedGrantSlugProbeId = probeId;
+  }
+
+  private scopeRecencyKey(relation: 'marketing' | 'campaign', projectSlug?: string): string {
+    return `${relation}:${projectSlug ?? '__root__'}`;
+  }
+
+  /** Advances the queried scope's applied-probe mark for each relation that applied, never moving it back. */
+  private markScopeApplied(applied: { marketing: boolean; campaign: boolean }, projectSlug?: string, probeId?: number): void {
+    if (probeId === undefined) return;
+    for (const relation of ['marketing', 'campaign'] as const) {
+      if (!applied[relation]) continue;
+      const key = this.scopeRecencyKey(relation, projectSlug);
+      const latest = this.latestAppliedGrantProbeIdByScope.get(key);
+      if (latest === undefined || probeId > latest) this.latestAppliedGrantProbeIdByScope.set(key, probeId);
+    }
+  }
+
+  /** Which marketing relations a response actually verified — an unverified one is `false` for "couldn't check". */
+  private verifiedGrantRelations(response: Pick<PersonaApiResponse, 'marketingAuditorUnverified' | 'campaignManagerUnverified'>): {
+    marketing: boolean;
+    campaign: boolean;
+  } {
+    return { marketing: !response.marketingAuditorUnverified, campaign: !response.campaignManagerUnverified };
+  }
+
+  /**
    * Writes a grant result into {@link _grantsByScope}. Each relation (`isMarketingAuditor`,
    * `isCampaignManager`) is resolved to its own scope key independently:
    *
@@ -342,7 +415,8 @@ export class PersonaService {
   private writeGrantForScope(
     response: Pick<PersonaApiResponse, 'isMarketingAuditor' | 'isCampaignManager' | 'isMarketingAuditorRootGrant' | 'isCampaignManagerRootGrant'>,
     projectSlug?: string,
-    probeId?: number
+    probeId?: number,
+    verified: { marketing: boolean; campaign: boolean } = { marketing: true, campaign: true }
   ): void {
     const marketingGranted = response.isMarketingAuditor ?? false;
     const campaignGranted = response.isCampaignManager ?? false;
@@ -376,17 +450,21 @@ export class PersonaService {
       }
     };
 
+    // An unverified relation writes nothing, so its last-known-good entries stand.
     const marketingWriteKey =
-      marketingGranted && marketingGrantedKey !== undefined && canWrite('marketing', marketingGrantedKey) ? marketingGrantedKey : undefined;
+      verified.marketing && marketingGranted && marketingGrantedKey !== undefined && canWrite('marketing', marketingGrantedKey)
+        ? marketingGrantedKey
+        : undefined;
     // A granted response also resolves the other key to known-false; a fully-denied response
     // clears both keys — either way the untargeted key(s) get an explicit false write.
-    const marketingClearKeys = (marketingGranted ? denialKeys.filter((key) => key !== marketingGrantedKey) : denialKeys).filter((key) =>
-      canWrite('marketing', key)
-    );
-    const campaignWriteKey = campaignGranted && campaignGrantedKey !== undefined && canWrite('campaign', campaignGrantedKey) ? campaignGrantedKey : undefined;
-    const campaignClearKeys = (campaignGranted ? denialKeys.filter((key) => key !== campaignGrantedKey) : denialKeys).filter((key) =>
-      canWrite('campaign', key)
-    );
+    const marketingClearKeys = verified.marketing
+      ? (marketingGranted ? denialKeys.filter((key) => key !== marketingGrantedKey) : denialKeys).filter((key) => canWrite('marketing', key))
+      : [];
+    const campaignWriteKey =
+      verified.campaign && campaignGranted && campaignGrantedKey !== undefined && canWrite('campaign', campaignGrantedKey) ? campaignGrantedKey : undefined;
+    const campaignClearKeys = verified.campaign
+      ? (campaignGranted ? denialKeys.filter((key) => key !== campaignGrantedKey) : denialKeys).filter((key) => canWrite('campaign', key))
+      : [];
 
     if (marketingWriteKey !== undefined) markWritten('marketing', marketingWriteKey);
     marketingClearKeys.forEach((key) => markWritten('marketing', key));
@@ -462,10 +540,12 @@ export class PersonaService {
         currentPersona: this.currentPersona(),
         allPersonas: this.allPersonas(),
       });
+      if (!projectSlug) this.personaLookupFailed.set(true);
       this.personaLoaded.set(true);
       return;
     }
 
+    this.personaLookupFailed.set(false);
     console.info('[PersonaService] Persona detection response:', response);
     this.personaProjects.set(response.personaProjects);
     this.detectedProjects.set(response.projects);
@@ -478,12 +558,18 @@ export class PersonaService {
     // current foundation (LFXV2-2235). Gating on the applied high-water mark rather than the
     // issuance counter also means a later-issued probe that itself never writes (error/empty
     // response) can't block this one just by having been issued — see `latestAppliedGrantProbeId`.
-    if (probeId === undefined || probeId >= this.latestAppliedGrantProbeId) {
+    // A grant whose check failed upstream (`marketingAuditorUnverified` / `campaignManagerUnverified`)
+    // is `false` for "couldn't check", not "denied": keep that relation's last-known-good value — in
+    // the signals and the per-scope map — while still applying the relation that was verified.
+    const verified = this.verifiedGrantRelations(response);
+    const anyVerified = verified.marketing || verified.campaign;
+    if (verified.marketing && (probeId === undefined || probeId >= this.latestAppliedGrantProbeId.marketing)) {
       this.isMarketingAuditor.set(response.isMarketingAuditor ?? false);
+      if (probeId !== undefined) this.latestAppliedGrantProbeId.marketing = probeId;
+    }
+    if (verified.campaign && (probeId === undefined || probeId >= this.latestAppliedGrantProbeId.campaign)) {
       this.isCampaignManager.set(response.isCampaignManager ?? false);
-      if (probeId !== undefined) {
-        this.latestAppliedGrantProbeId = probeId;
-      }
+      if (probeId !== undefined) this.latestAppliedGrantProbeId.campaign = probeId;
     }
     // The per-scope map write must not share the global gate above — nesting it there meant a
     // probe for scope A could be dropped entirely (including its per-scope write) just because an
@@ -493,20 +579,15 @@ export class PersonaService {
     // this queried `projectSlug`), so two differently-queried probes that both resolve to the same
     // ROOT key correctly race against each other (Cursor Bugbot finding, PR #1835: "Stale ROOT
     // grant race").
-    if (!skipGrantScopeWrite) {
-      this.writeGrantForScope(response, projectSlug, probeId);
+    if (anyVerified && !skipGrantScopeWrite) {
+      this.writeGrantForScope(response, projectSlug, probeId, verified);
     }
     // Record that this queried scope was applied here, independent of the write gating above —
     // confirmActiveGrant's own same-queried-scope recency check reads this same map, and it must
     // see every probe that applied via this method (not only ones that applied via
     // confirmActiveGrant itself), or it can no longer detect a same-scope probe that has already
     // superseded it.
-    if (probeId !== undefined) {
-      const latestForScope = this.latestAppliedGrantProbeIdByScope.get(projectSlug);
-      if (latestForScope === undefined || probeId > latestForScope) {
-        this.latestAppliedGrantProbeIdByScope.set(projectSlug, probeId);
-      }
-    }
+    this.markScopeApplied(verified, projectSlug, probeId);
 
     if (response.personas.length > 0) {
       const current = this.currentPersona();

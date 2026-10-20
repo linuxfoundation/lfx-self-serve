@@ -31,41 +31,80 @@ export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 // `@handle` mention on text messages, and composes the Guild-resolvable
 // agent identifier as `<GUILD_WORKSPACE_OWNER>~<handle>` for the explicit
 // `agent_id` (the bare name is not a Guild identifier — it 404s).
-// `brand-kit` is live (Guild agent linux-foundation~brand-kit).
+// `brand-kit` is live (Guild agent linux-foundation~brand-kit), and so is `faq`
+// (linux-foundation~faq).
 export const MKTG_AGENTS: MktgAgent[] = [
+  // Live Guild agent (linux-foundation~foundation-message), the Messaging
+  // Framework Agent since 4.0.0 (messaging-framework-output/v1: one JSON
+  // bundle, never a Markdown document); the catalog id and Guild name are
+  // unchanged. It runs first and needs no other document
+  // (dec-run-order-messaging-brand-guidelines-icp), so it has no `dependsOn`
+  // and its intake attaches nothing.
+  {
+    id: 'foundation-setup',
+    number: 1,
+    name: 'Messaging Framework Agent',
+    tags: ['Messaging', 'Positioning'],
+    status: 'active',
+    description:
+      'Vision, mission, positioning, tagline, goal columns, ideal customer profiles, message house and key numbers. Reads your website, links and documents and researches on its own, then asks only what they leave open. Needs no other document.',
+    icon: 'fa-light fa-landmark',
+    accent: 'blue',
+    guildAgentHandle: 'foundation-message',
+  },
+  // Live Guild agent (linux-foundation~brand-kit 2.0.0): the kit's tokens
+  // come from the project's real logo files, the site's CSS and the approved
+  // messaging framework, every colour sourced; the result is a 16-page kit.
   {
     id: 'brand-kit',
-    number: 1,
+    number: 2,
     name: 'Brand Kit Agent',
     tags: ['Brand', 'Identity'],
     status: 'active',
     description:
-      'Develops a full project brand kit — positioning, voice, visual identity brief, palette, typography, and taglines — from seven intake questions. Logos, colors, and fonts are generated output, not inputs.',
+      'Builds the project’s brand kit from its real logo files and website: the logo system, the palette with every colour sourced and its contrast checked, the typeface, the visual rules, example usage and the voice — a 16-page kit you can print to PDF.',
     icon: 'fa-light fa-droplet',
     accent: 'violet',
     guildAgentHandle: 'brand-kit',
   },
-  // Live Guild agent (linux-foundation~foundation-message) with its batch
-  // intake form registered in MKTG_AGENT_INTAKES (wi-mf-lfx-selfserve).
-  // Consumes the Brand Kit (dec-agent-dependency-gating): the card stays
-  // disabled until the active project has a stored Brand Kit, and the intake
-  // auto-attaches that document instead of asking for it.
+  // Live Guild agent (linux-foundation~boilerplates 1.0.0): the one-liner and
+  // the 25, 50 and 100-word boilerplates from the project's messaging
+  // framework (boilerplates-output/v1, one JSON asset). It runs after the
+  // framework, which its intake attaches as a required attachment; like the
+  // Brand Kit, not `dependsOn`, so the card stays open and the run page says
+  // what is needed, with the link to the Messaging Framework page.
   {
-    id: 'foundation-setup',
-    number: 2,
-    name: 'Message Foundation Agent',
-    tags: ['Messaging', 'Summaries'],
+    id: 'boilerplates',
+    number: 3,
+    name: 'Boilerplates Agent',
+    tags: ['Copy', 'Descriptions'],
     status: 'active',
     description:
-      'Builds the messaging foundation for a Linux Foundation project — positioning, audiences, pillars, talking points, plus the 25/50-word summaries, boilerplate, llms.txt, and elevator pitch.',
-    icon: 'fa-light fa-landmark',
-    accent: 'blue',
-    guildAgentHandle: 'foundation-message',
-    dependsOn: ['brand-kit'],
+      'Writes the project’s one-liner and its 25, 50 and 100-word descriptions, each within its word limit, from your Messaging Framework and the project’s own website, press release and LFX record.',
+    icon: 'fa-light fa-paragraph',
+    accent: 'amber',
+    guildAgentHandle: 'boilerplates',
+  },
+  // Live Guild agent (linux-foundation~faq 1.0.0, faq-output/v1): one JSON
+  // FAQ, grouped questions each answered from the sources or flagged for the
+  // team. It runs after the messaging framework: the project's latest stored
+  // framework is a REQUIRED attachment on its intake (never `dependsOn`, so
+  // the card stays open and the page itself says to run the framework first).
+  {
+    id: 'faq',
+    number: 4,
+    name: 'FAQ Agent',
+    tags: ['FAQ', 'Messaging'],
+    status: 'active',
+    description:
+      'Eight to ten questions people ask about the project, in three or four groups, each answered in one to three sentences from your sources and worded from your messaging framework, every answer naming its source. A question the sources do not answer is flagged for your team.',
+    icon: 'fa-light fa-circle-question',
+    accent: 'amber',
+    guildAgentHandle: 'faq',
   },
   // Live Guild agent (linux-foundation~icp) with its batch intake form
   // registered in MKTG_AGENT_INTAKES (wi-icp-lfx-selfserve). It CONSUMES the
-  // Brand Kit and the Message Foundation, but only when the project has them:
+  // Brand Kit and the Messaging Framework, but only when the project has them:
   // both are optional attachments on the intake, never `dependsOn`, because
   // the agent's own contract makes them optional and its author explicitly
   // allows proceeding on the interview answers plus the README with the
@@ -73,19 +112,19 @@ export const MKTG_AGENTS: MktgAgent[] = [
   // the agent does not require would lock out projects it can serve today.
   {
     id: 'icp',
-    number: 3,
+    number: 5,
     name: 'ICP & Target Markets Agent',
     tags: ['Personas', 'Research'],
     status: 'active',
     description:
-      'Defines one to two organization-level ideal customer profiles with their buyer personas, fit and warmth scoring inputs, and the messaging handoff — grounded in your project’s README, Brand Kit and Message Foundation.',
+      'Defines one to two organization-level ideal customer profiles with their buyer personas, fit and warmth scoring inputs, and the messaging handoff — grounded in your project’s README, Brand Kit and Messaging Framework.',
     icon: 'fa-light fa-user-group',
     accent: 'emerald',
     guildAgentHandle: 'icp',
   },
   {
     id: 'pitch-deck',
-    number: 4,
+    number: 6,
     name: 'Pitch Deck Agent',
     tags: ['Slides', 'Narrative'],
     status: 'coming-soon',
@@ -95,7 +134,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'qtrly-plan',
-    number: 5,
+    number: 7,
     name: 'Quarterly Plan Agent',
     tags: ['Planning'],
     status: 'coming-soon',
@@ -105,7 +144,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'linkedin-post',
-    number: 6,
+    number: 8,
     name: 'LinkedIn Post Agent',
     tags: ['Social', 'Copy'],
     status: 'coming-soon',
@@ -115,7 +154,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'website-builder',
-    number: 7,
+    number: 9,
     name: 'Website Builder Agent',
     tags: ['Web'],
     status: 'coming-soon',
@@ -125,7 +164,7 @@ export const MKTG_AGENTS: MktgAgent[] = [
   },
   {
     id: 'aeo-geo',
-    number: 8,
+    number: 10,
     name: 'AEO / GEO Agent',
     tags: ['Search', 'AI visibility'],
     status: 'coming-soon',

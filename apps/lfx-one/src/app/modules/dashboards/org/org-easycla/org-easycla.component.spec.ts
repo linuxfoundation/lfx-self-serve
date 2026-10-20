@@ -3,12 +3,15 @@
 
 import '@angular/compiler';
 
-import { ApplicationRef, computed, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ApplicationRef, computed, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
 import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { IntercomService } from '@services/intercom.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -22,6 +25,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaComponent } from './org-easycla.component';
+
+function roleMissingError(): HttpErrorResponse {
+  return new HttpErrorResponse({
+    status: 403,
+    error: { error: "You don't have an EasyCLA role at this organization.", code: 'EASYCLA_ROLE_MISSING' },
+  });
+}
 
 describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
@@ -140,6 +150,15 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).toContain('Vertex Robotics');
     });
 
+    it('links the page to the EasyCLA documentation', async () => {
+      const fixture = await render();
+
+      const link = byTestId(fixture, 'org-easycla-docs-link') as HTMLAnchorElement;
+      expect(link.getAttribute('href')).toBe('/docs/organization/easycla');
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.textContent?.trim()).toBe('Learn more about EasyCLA →');
+    });
+
     it('falls back to the bare title before an account resolves', async () => {
       selectedAccount.set(null);
 
@@ -227,6 +246,18 @@ describe('OrgEasyclaComponent', () => {
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
       expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
+    });
+
+    it('cannot be used when EasyCLA refused the list for a missing role, and says so', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+
+      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+      expect(button?.disabled).toBe(true);
+      expect(button?.getAttribute('aria-label')).toBe("Sign a corporate CLA — you don't have an EasyCLA role at this organization");
+      consoleError.mockRestore();
     });
 
     // Pair grain lives on attestation Continue. A company-level inventory would hide Sign from
@@ -881,6 +912,53 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
       // Sign CLA is in the header rather than the toolbar, so the failure state does not take it.
       expect(byTestId(fixture, 'org-easycla-sign-cla')).toBeTruthy();
+      consoleError.mockRestore();
+    });
+
+    it('shows the missing-role state, not the load failure, when EasyCLA refuses the list', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+      const state = byTestId(fixture, 'org-easycla-role-missing-state');
+
+      expect(state).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-role-missing-state')?.querySelector('h3')?.textContent?.trim()).toBe("We couldn't load your CLAs");
+      expect(byTestId(fixture, 'org-easycla-role-missing-description')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        "You don't have an EasyCLA role at this organization. Please contact support if you need EasyCLA assistance."
+      );
+      expect(state?.textContent).not.toContain('Refresh');
+      expect(byTestId(fixture, 'org-easycla-error-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
+      consoleError.mockRestore();
+    });
+
+    it('opens the Intercom messenger from the contact support link', async () => {
+      getClaGroups.mockReturnValue(throwError(() => roleMissingError()));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const fixture = await render();
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+      const openMessenger = vi.spyOn(TestBed.inject(IntercomService), 'openMessenger').mockImplementation(() => undefined);
+      const link = byTestId(fixture, 'org-easycla-role-missing-contact-support') as HTMLButtonElement | null;
+
+      expect(link?.tagName).toBe('BUTTON');
+      expect(link?.getAttribute('type')).toBe('button');
+      expect(link?.textContent?.trim()).toBe('contact support');
+      link?.click();
+
+      expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function));
+      consoleError.mockRestore();
+    });
+
+    it('keeps the load failure for a 403 without the missing-role code', async () => {
+      getClaGroups.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Forbidden', code: 'FORBIDDEN' } })));
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-error-state')).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-role-missing-state')).toBeNull();
       consoleError.mockRestore();
     });
   });

@@ -13,37 +13,34 @@
 export interface GwHostContext {
   /** Router basename the embed should mount under, e.g. `/foundation/gw`. */
   basename: string;
+  /**
+   * `url` is LFX One's own Supabase proxy (`<origin>/api/gatewaze/supabase`), which must be absolute
+   * and on the page's origin. `publicUrl` is the real Supabase project URL, used for saved public
+   * storage URLs. `anonKey` is the publishable key.
+   */
   supabase: {
     url: string;
     anonKey: string;
+    publicUrl: string;
   };
-  /** Empty string defaults to `/api/gw` inside the embed. */
+  /**
+   * The Gatewaze API proxy's mount. The embed calls `${apiBaseUrl}/api/...`, so LFX One passes
+   * `/api/gatewaze` and the calls land on `/api/gatewaze/api/...`.
+   */
   apiBaseUrl: string;
   enabled: {
     moduleIds: string[];
     features: string[];
   };
   /**
-   * Where LFID sign-in starts, and where it should come back to.
-   *
-   * Informational. The HOST owns the sign-in round trip, and an embed-initiated one built from
-   * these two values cannot complete: adoption is bound to a single-use nonce that only the host
-   * mints, `returnUrl` deliberately carries none, and a return leg without it has its tokens
-   * discarded rather than adopted. The embed asks for sign-in by calling `navigateHost('/login')`,
-   * which the host answers by minting a nonce and starting the flow itself.
-   *
-   * The nonce is not simply added here: this value is built while the mount context is assembled,
-   * which happens BEFORE the host consumes a nonce arriving from a completed sign-in. Minting one
-   * at that point would overwrite the pending nonce and break every host-initiated return.
+   * Host-session mode, the only mode LFX One uses: LFX One holds the Gatewaze session on the server,
+   * and the browser sees only a placeholder token, so no Gatewaze token reaches page scripts,
+   * `localStorage` or the URL. Both routes are same-origin. The loader refuses to mount a bundle whose
+   * manifest does not advertise the `host-session` capability (`gw_embed_capability_missing`).
    */
-  signIn: {
-    /** The host's own sign-in entry point (LFID here). The embed never implements sign-in itself. */
-    startUrl: string;
-    returnUrl: string;
-  };
+  session: GwEmbedHostSession;
   /** Where the loader fetches the embed from (`GW_EMBED_URL`) and how its stylesheet reaches the page. */
   source: GwEmbedSource;
-  storageKeySuffix?: string;
   portalContainer?: HTMLElement;
   /**
    * Host notification sink. With it set, `toast()` calls inside the embed render through the
@@ -57,13 +54,23 @@ export interface GwHostContext {
   telemetry?: (event: { name: string; [key: string]: unknown }) => void;
 }
 
+/** `GwHostContext.session`: the routes LFX One serves for host-session mode (`gatewaze.route.ts`). */
+export interface GwEmbedHostSession {
+  mode: 'host';
+  /** `GET`: the signed-in Gatewaze user, or the reason there is none (see `gw-host-session.md`). */
+  meUrl: string;
+  /** `POST`: ends the Gatewaze session. The LFX session is left alone. */
+  logoutUrl: string;
+}
+
 /**
  * The hosted embed's location, passed to the loader as `GwHostContext.source`.
  *
  * `@gatewaze/admin-embed` is a loader: the admin bundle itself is served by the Gatewaze
  * deployment under `<baseUrl>/` (a `manifest.json` naming the current content-hashed entry and
  * stylesheet, plus the files). The host picks up admin changes on the next page load with no
- * release of its own; only a change to the loader's host contract needs the package bumped.
+ * release of its own. The package is bumped only for a change to the loader's host contract, or to
+ * use a capability the loader checks for, such as `host-session`.
  */
 export interface GwEmbedSource {
   /** Absolute URL of the deployment's embed directory, e.g. `https://admin.example.org/embed`. */
@@ -78,11 +85,27 @@ export interface GwEmbedSource {
 
 /**
  * One scoped embed stylesheet as the server caches and serves it (`GwEmbedStylesheetService`):
- * the contained Gatewaze CSS with the LFX theme layer appended, and the ETag derived from it.
+ * the contained Gatewaze CSS with the LFX theme layer appended, the ETag derived from it, and the
+ * body compressed once per encoding so no request pays for compressing several megabytes.
  */
 export interface GwEmbedScopedStylesheet {
   css: string;
   etag: string;
+  /** The UTF-8 body as sent uncompressed, encoded once rather than per request. */
+  identity: Uint8Array;
+  /**
+   * The UTF-8 body, compressed with gzip. `Uint8Array` (which `Buffer` satisfies) so this
+   * browser-consumed package does not couple its types to Node's `Buffer` global.
+   */
+  gzip: Uint8Array;
+  /** The UTF-8 body, compressed with Brotli. */
+  br: Uint8Array;
+}
+
+/** One encoding of a scoped embed stylesheet, as picked for a request. */
+export interface GwEmbedStylesheetVariant {
+  encoding: 'br' | 'gzip' | 'identity';
+  body: Uint8Array;
 }
 
 /** Fatal error shape reported by `@gatewaze/admin-embed` via `GwHostContext.onFatal`. */
@@ -135,6 +158,11 @@ export interface GwEmbedManifest {
   stylesheet: string;
   modules: string[];
   builtAt: string;
+  /**
+   * Optional features the bundle supports, e.g. `host-session`. Absent on bundles built before the
+   * field existed, which support none.
+   */
+  capabilities?: string[];
 }
 
 /**

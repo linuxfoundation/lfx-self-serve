@@ -546,7 +546,7 @@ export class MeetingService {
     };
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // to opt a board meeting into sharing its guest list. A restricted meeting
     // keeps any explicit `true` from a caller allowed to edit it — in practice only the meeting v2
     // composer sends one, since the pre-v2 wizard locks the control off — and is forced off otherwise.
     if (
@@ -627,7 +627,7 @@ export class MeetingService {
     const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board meeting into sharing its guest list in calendar invites. A restricted meeting
+    // to opt a board meeting into sharing its guest list. A restricted meeting
     // keeps any explicit `true` from a caller allowed to edit it (in practice only the meeting v2
     // composer sends one; the pre-v2 wizard locks the control off) and is forced off otherwise.
     if (isShowMeetingAttendeesLocked(meetingType, restricted, { allowRestricted: meetingData.show_meeting_attendees === true })) {
@@ -1216,9 +1216,8 @@ export class MeetingService {
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
    * The caller's registrant records are resolved server-side (by email or username) so the client
    * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
-   * record. A committee-sourced registration is re-created by committee sync (and the ITX delete refuses it),
-   * so when the caller has one the request is rejected before anything is deleted: removing only their other
-   * rows would leave them invited while reporting success.
+   * record. Committee and mailing list registrations are removed like any other: the meeting service flags
+   * the delete as a self removal, so ITX records an exclusion that keeps later syncs from adding the user back.
    * The lookup must be complete, since a partial page walk would delete only a prefix of the caller's rows.
    * Every matching row is attempted; the call fails only when none could be removed, and a partial result is
    * returned to the client and logged rather than reported as a failure, since the rows already deleted stay deleted.
@@ -1235,13 +1234,6 @@ export class MeetingService {
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Meeting registration', meetingUid, {
-        operation: 'remove_meeting_registrant_self',
-        service: 'meeting_service',
-      });
-    }
-
-    if (registrants.some((registrant) => registrant.type === 'committee')) {
-      throw ServiceValidationError.forField('registrant', 'You were added to this meeting through a committee. Leave the committee to stop being invited.', {
         operation: 'remove_meeting_registrant_self',
         service: 'meeting_service',
       });

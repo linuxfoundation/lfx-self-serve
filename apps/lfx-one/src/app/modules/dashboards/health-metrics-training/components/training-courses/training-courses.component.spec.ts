@@ -226,12 +226,28 @@ describe('TrainingCoursesComponent', () => {
     expect(query('training-courses-search')).toBeNull();
   });
 
-  it('keeps the controls and shows the no-match state when a filter matches nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }));
+  it('keeps the controls and the table, with a no-match row spanning every column, when a filter matches nothing', async () => {
+    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { trnType: 'certifications' });
+    const cell = query('training-courses-no-match') as HTMLTableCellElement | null;
 
-    expect(query('training-courses-no-match')).not.toBeNull();
+    expect(cell?.tagName).toBe('TD');
+    expect(cell?.colSpan).toBe(4);
+    expect(cell?.textContent?.trim()).toBe('No course matches this filter.');
+    expect(cell?.closest('[data-testid="training-courses-table"]')).not.toBeNull();
     expect(query('training-courses-controls')).not.toBeNull();
     expect(query('training-courses-empty')).toBeNull();
+  });
+
+  it('names the search in the no-match row when a search matches nothing', async () => {
+    await render(response({ rows: [], totalRecords: 0, scopeTotal: 40 }), { trnSearch: 'zeta' });
+
+    expect(query('training-courses-no-match')?.textContent?.trim()).toBe('No course matches “zeta”.');
+  });
+
+  it('uses the ellipsis character in the search placeholder', async () => {
+    await render();
+
+    expect((fixture.nativeElement.querySelector('#training-courses-search') as HTMLInputElement).placeholder).toBe('Search course…');
   });
 
   // A failed read must not render copy that asserts the foundation had no courses.

@@ -13,6 +13,8 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
 }));
 
+import { GW_EMBED_STYLESHEET_KEY_PATTERN } from '@lfx-one/shared/constants';
+
 import { buildGwRuntimeConfig } from './gw-runtime-config.helper';
 
 const req = { path: '/' } as Request;
@@ -26,7 +28,6 @@ describe('buildGwRuntimeConfig', () => {
     vi.stubEnv('GW_SUPABASE_URL', 'https://supabase.example.test');
     vi.stubEnv('GW_SUPABASE_ANON_KEY', 'sb_publishable_synthetic');
     vi.stubEnv('PCC_AUTH0_SECRET', 'synthetic-secret');
-    vi.stubEnv('GW_LFID_START_URL', '');
     vi.stubEnv('GW_EMBED_URL', 'https://admin.example.test/embed');
   });
 
@@ -36,10 +37,28 @@ describe('buildGwRuntimeConfig', () => {
     expect(buildGwRuntimeConfig(req)).toEqual({
       gwSupabaseUrl: 'https://supabase.example.test',
       gwSupabaseAnonKey: 'sb_publishable_synthetic',
-      gwLfidStartUrl: '',
       gwEmbedUrl: 'https://admin.example.test/embed',
       gwHostSession: true,
+      gwEmbedStylesheetKey: expect.stringMatching(GW_EMBED_STYLESHEET_KEY_PATTERN),
     });
+  });
+
+  it('works out no stylesheet key while host-session mode is off, since the outlet never mounts then', async () => {
+    vi.stubEnv('LFX_GATEWAZE_HOST_SESSION', '');
+    const helper = await import('./gw-embed.helper');
+    const getKey = vi.spyOn(helper, 'getGwEmbedStylesheetKey');
+
+    expect(buildGwRuntimeConfig(req).gwEmbedStylesheetKey).toBe('');
+    expect(getKey).not.toHaveBeenCalled();
+  });
+
+  it('withholds the stylesheet key, rather than failing the page, when the theme cannot be read', async () => {
+    const helper = await import('./gw-embed.helper');
+    vi.spyOn(helper, 'getGwEmbedStylesheetKey').mockImplementation(() => {
+      throw new Error('theme unavailable');
+    });
+
+    expect(buildGwRuntimeConfig(req).gwEmbedStylesheetKey).toBe('');
   });
 
   it.each([

@@ -22,8 +22,6 @@ function nonMemberRow(overrides: Partial<HealthMetricsEngagementNonMemberRow> = 
     accountId: 'a-1',
     accountName: 'Acme Motors',
     membershipStatus: 'Non-member',
-    firstSeenDate: '2024-03-02',
-    lastAttendedDate: '2026-08-14',
     periods: [
       { range: 'COMPLETED_YEAR_3', meetingsAttended: 3, distinctPeople: 1, sortRank: 4 },
       { range: 'COMPLETED_YEAR_2', meetingsAttended: 5, distinctPeople: 2, sortRank: 3 },
@@ -86,14 +84,26 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('12');
     expect(row.textContent).toContain('Non-member');
-    expect(row.textContent).toContain('Mar 2, 2024');
-    expect(row.textContent).toContain('Aug 14, 2026');
   });
 
-  it('renders a missing first-seen or last-attended date as an em dash', async () => {
-    await render(response({ rows: [nonMemberRow({ firstSeenDate: null, lastAttendedDate: null })] }));
+  // The design's columns: no First seen or Last attended.
+  it('renders the organization, meetings, people and membership columns only', async () => {
+    await render();
 
-    expect(fixture.componentInstance['rowViews']()[0]).toEqual(expect.objectContaining({ firstSeenLabel: '\u2014', lastAttendedLabel: '\u2014' }));
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Organization', 'Meetings attended', 'People', 'Membership']);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="engagement-non-member-participation-row-a-1"] td')).toHaveLength(4);
+  });
+
+  it('shows membership as the small hollow-dot status, with the glyph hidden from assistive tech', async () => {
+    await render();
+
+    const status = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-row-a-1-status"]') as HTMLElement;
+    expect(status.textContent?.replace(/\s+/g, ' ').trim()).toBe('○ Non-member');
+    expect(status.className).toContain('text-[11.5px]');
+    expect(status.className).toContain('text-gray-400');
+    expect(status.className).toContain('lg:whitespace-nowrap');
+    expect(status.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('○');
   });
 
   // The view carries no project key, so the section stays on the foundation whatever project is picked.

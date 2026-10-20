@@ -4,19 +4,35 @@
 import { describe, expect, it } from 'vitest';
 
 import { GoogleCreativeEitherOrRule, GoogleCreativeFieldSpec, RedditObjective } from '../interfaces/campaign.interface';
+import { CAMPAIGN_ADOPT_PLATFORMS } from './campaign-optimize.constants';
+import { lfxColors } from './colors.constants';
 import {
   isCanonicalGoogleAdsResourceId,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  isCreativeAssetMimeType,
+  sniffCreativeAssetMimeType,
+  BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
+  DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   CAMPAIGN_ALERT_THRESHOLDS,
+  CAMPAIGN_PLATFORMS,
+  MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_EMAIL_TYPES,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   DEFAULT_REDDIT_CALL_TO_ACTION,
   DEFAULT_REDDIT_OBJECTIVE,
+  GOOGLE_ADS_AGE_RANGE_MAP,
+  GOOGLE_ADS_AGE_RANGES,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_CHANNEL_TYPE_ENUMS,
   GOOGLE_ADS_CONVERSION_ACTION_PATTERN,
+  GOOGLE_ADS_DEVICES,
+  GOOGLE_ADS_GENDERS,
   GOOGLE_ADS_LANGUAGE_LABELS,
   GOOGLE_ADS_LANGUAGE_MAP,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
+  GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -25,6 +41,8 @@ import {
   GOOGLE_BIDDING_TARGET_REQUIRED_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS,
+  GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS,
   GOOGLE_CONVERSION_ACTION_CHANNELS,
   GOOGLE_CREATIVE_EITHER_OR_RULES,
   GOOGLE_CREATIVE_FIELD_SPECS,
@@ -38,7 +56,9 @@ import {
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_OBJECTIVE_PARAMS,
   REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOAL_LABELS,
   REDDIT_VIDEO_GOALS,
+  TOGGLEABLE_CAMPAIGN_PLATFORMS,
   campaignToggleAction,
   canonicalMicrosoftMatchType,
   isMicrosoftMatchType,
@@ -46,9 +66,38 @@ import {
   normalizeMicrosoftGeoTargets,
   resolveRedditOptimizationGoal,
   googleAdsEchoed,
+  googleAdsBoundExtensionText,
   googleAdsToLower,
   googleAdsTrimSpace,
+  googleAdsUrlGoParseFlaw,
+  isGoogleAdsServableUrl,
+  isGoSpaceCode,
+  PAUSE_ONLY_CAMPAIGN_PLATFORMS,
+  campaignResumeWithheldForPlatform,
 } from './campaign.constants';
+
+/**
+ * The toggle is decoupled from the CREATE flow's `disabled` flag. A campaign reaches this app by
+ * being created here or by being adopted, and an adopted campaign is live and spending, so it must
+ * be pausable whether or not its platform can be created. X is the case that proves it: create
+ * stays off, pause is on.
+ */
+describe('TOGGLEABLE_CAMPAIGN_PLATFORMS', () => {
+  it('is exactly the create-enabled platforms plus the adoptable ones', () => {
+    const createEnabled = CAMPAIGN_PLATFORMS.filter((p) => !p.disabled).map((p) => p.id);
+    const expected = [...new Set<string>([...createEnabled, ...CAMPAIGN_ADOPT_PLATFORMS])].sort();
+    expect([...TOGGLEABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(expected);
+  });
+
+  it('pins the toggleable set, including X', () => {
+    expect([...TOGGLEABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads']);
+  });
+
+  it('keeps X create disabled while its adopted campaigns are toggleable', () => {
+    expect(CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled).toBe(true);
+    expect(TOGGLEABLE_CAMPAIGN_PLATFORMS.has('twitter-ads')).toBe(true);
+  });
+});
 
 describe('campaignToggleAction', () => {
   it('offers pause for the statuses that are running upstream', () => {
@@ -79,29 +128,30 @@ describe('campaignToggleAction', () => {
   });
 
   /**
-   * Narrowed to `twitter-ads` by LFXV2-3312, which ENABLED Microsoft.
-   * `TOGGLEABLE_CAMPAIGN_PLATFORMS` is derived from `CAMPAIGN_PLATFORMS.filter((p) => !p.disabled)`,
-   * so dropping that flag admits microsoft-ads here BY DESIGN. X stays disabled — a capability gap
-   * rather than missing plumbing — so it remains the subject and the guard still binds: make X
-   * toggleable and this goes red.
-   *
-   * Both statuses are still exercised, just both against X, so "at any status" stays true of the
-   * assertion rather than becoming a claim only the deleted line supported.
+   * A platform outside `TOGGLEABLE_CAMPAIGN_PLATFORMS` is refused at any status, because the BFF
+   * rejects it before the status is consulted. Every paid platform is toggleable now that X is
+   * (adopted X campaigns), so the subject is a platform string this app does not know at all.
    */
   it('refuses a platform this app does not offer, at any status', () => {
-    expect(campaignToggleAction('created', 'twitter-ads')).toBe('unavailable');
-    expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+    expect(campaignToggleAction('created', 'tiktok-ads')).toBe('unavailable');
+    expect(campaignToggleAction('paused', 'tiktok-ads')).toBe('unavailable');
   });
 
-  /**
-   * The other half of the same derivation, and the reason the case above could be narrowed safely
-   * rather than simply deleted: Microsoft is now OFFERED, so its campaigns must be pausable. If
-   * `disabled: true` is ever restored to the shared constant, this fails — which is what stops the
-   * enablement from being silently reverted at the one site that has no other test.
-   */
-  it('offers pause and resume for microsoft-ads, which this app now enables', () => {
+  it('offers pause and resume for microsoft-ads', () => {
     expect(campaignToggleAction('created', 'microsoft-ads')).toBe('pause');
     expect(campaignToggleAction('paused', 'microsoft-ads')).toBe('resume');
+    expect(campaignResumeWithheldForPlatform('paused', 'microsoft-ads')).toBe(false);
+  });
+
+  // Every X row is adopted (X create is off) and upstream 409s ACTIVE on an adopted row, so X is
+  // pause-only: Resume is withheld rather than offered as a button whose every click fails.
+  it('offers pause but withholds resume for twitter-ads', () => {
+    expect([...PAUSE_ONLY_CAMPAIGN_PLATFORMS]).toEqual(['twitter-ads']);
+    expect(campaignToggleAction('created', 'twitter-ads')).toBe('pause');
+    expect(campaignToggleAction('paused', 'twitter-ads')).toBe('unavailable');
+    expect(campaignResumeWithheldForPlatform('paused', 'twitter-ads')).toBe(true);
+    expect(campaignResumeWithheldForPlatform('created', 'twitter-ads')).toBe(false);
+    expect(campaignResumeWithheldForPlatform('deleted', 'twitter-ads')).toBe(false);
   });
 
   /** Optional so the status-only question stays askable; absence is not "unsupported". */
@@ -834,6 +884,11 @@ describe('Reddit promoted-post contract', () => {
     expect([...REDDIT_VIDEO_GOALS]).toEqual(['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S']);
   });
 
+  /** Every goal the picker offers has a readable name, and nothing else does. */
+  it('labels exactly the video goals upstream accepts', () => {
+    expect(Object.keys(REDDIT_VIDEO_GOAL_LABELS)).toEqual([...REDDIT_VIDEO_GOALS]);
+  });
+
   /**
    * The picker's set is a SUBSET of `RedditObjective`, never a value outside it.
    *
@@ -959,6 +1014,17 @@ describe('Google Ads string rules', () => {
     expect(googleAdsTrimSpace(input)).toBe(expected);
   });
 
+  it("matches Go's `unicode.IsSpace` on every UTF-16 code unit", () => {
+    // `\t`–`\r`, U+0085 and category Z: Go's set, written as a regex only here, as the reference.
+    const goSpace = /^[\t\n\v\f\r\u0085\p{Z}]$/u;
+    const mismatches: number[] = [];
+    for (let code = 0; code <= 0xffff; code++) {
+      if (isGoSpaceCode(code) !== goSpace.test(String.fromCharCode(code))) mismatches.push(code);
+    }
+
+    expect(mismatches).toEqual([]);
+  });
+
   it('trims a long interior whitespace run in linear time', () => {
     // A `[ws]+$` regex backtracks quadratically here: 40,000 spaces took about 2.5 s.
     const text = `x${' '.repeat(1_000_000)}x`;
@@ -976,11 +1042,225 @@ describe('Google Ads string rules', () => {
     expect(googleAdsEchoed(input)).toBe(expected);
   });
 
+  // The extension bound the brief generator and the brief restore both call, so a callout or a
+  // sitelink label arriving from a model response or from an opaque stored row is held to the
+  // same rule the editor's own add-guard applies.
+  it.each([
+    ['a non-string', 42, 25, ''],
+    ['text inside the cap, trimmed', '  Free Admission  ', 25, 'Free Admission'],
+    ['U+0085, which Go trims and JS `trim` keeps', '\u0085Free\u0085', 25, 'Free'],
+    ['U+FEFF, which JS `trim` strips and Go keeps', '\ufeffFree', 25, '\ufeffFree'],
+    // Counted in runes, not UTF-16 units: `.slice(0, 3)` would cut this after the lone high
+    // surrogate of the second emoji and leave an unpaired one behind.
+    ['astral characters, counted as runes', '🎉🎉🎉🎉', 3, '🎉🎉🎉'],
+    // The cut lands immediately after a space, and a trailing space is a difference upstream's
+    // own duplicate check sees — so the bound re-trims after cutting.
+    ['a cut that lands on a space', 'Free Admission Today', 5, 'Free'],
+  ])('bounds %s', (_label, value, maxRunes, expected) => {
+    expect(googleAdsBoundExtensionText(value, maxRunes)).toBe(expected);
+  });
+
   it.each([
     ['a final sigma, with no word-end rule', 'ΟΔΟΣ', 'οδοσ'],
     ['a dotted capital I, to a plain i', 'İnfo', 'info'],
     ['ASCII', 'Free Shipping', 'free shipping'],
   ])('lower-cases %s as Go does', (_label, input, expected) => {
     expect(googleAdsToLower(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register?utm=a&b=c#top', false],
+    ['an uppercase scheme', 'HTTPS://events.example.org/', false],
+    ['a valid percent escape', 'https://events.example.org/a%20b', false],
+    ['a semicolon in the fragment, which is not the query', 'https://events.example.org/#a;b', false],
+    ['a semicolon in the query', 'https://events.example.org/?a=1;b=2', true],
+    ['a stray percent sign', 'https://events.example.org/50%off', true],
+    ['a percent sign with one hex digit', 'https://events.example.org/?q=%2', true],
+    ['no `//` after the scheme', 'https:events.example.org', true],
+    ['backslashes for slashes', 'https:\\\\events.example.org', true],
+    // Found by running Go's `url.Parse` and this helper over the same generated corpus.
+    ['a newline inside the host, which `new URL()` deletes', 'https://exa\nmple.org/path', true],
+    ['a tab inside the path', 'https://events.example.org/pa\tth', true],
+    ['a C0 control in the query', 'https://events.example.org/?a=\u0001', true],
+    ['DEL in the path', 'https://events.example.org/a\u007fb', true],
+    ['a control character in the fragment, which Go cuts off before checking', 'https://events.example.org/#a\u0001b', false],
+    ['a backslash inside the authority', 'https://events.example.org\\path', true],
+    ['a backslash in the path, which both parsers accept', 'https://events.example.org/a\\b', false],
+    ['a brace in the host', 'https://{events.example.org/', true],
+    ['a backtick in the host', 'https://ev`ents.example.org/', true],
+    ['a percent escape in the host', 'https://ev%41nts.example.org/', true],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', true],
+    ['an empty authority', 'https:///register', true],
+  ])("flags %s as Go's parser would", (_label, url, expected) => {
+    expect(googleAdsUrlGoParseFlaw(url)).toBe(expected);
+  });
+});
+
+/**
+ * Every Monitor tab platform button's SELECTED colours must clear WCAG AA (4.5:1) for its 12px
+ * label. Recomputed from the hex values, so a brand-colour change that breaks AA fails here.
+ */
+describe('MONITOR_PLATFORM_BUTTON_COLORS', () => {
+  function luminance(hex: string): number {
+    const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  function contrast(a: string, b: string): number {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  it.each(Object.entries(MONITOR_PLATFORM_BUTTON_COLORS))('%s clears 4.5:1, with a text class that renders its foreground', (_platform, colors) => {
+    expect(contrast(colors.background, colors.foreground)).toBeGreaterThanOrEqual(4.5);
+    expect(colors.textClass).toBe(colors.foreground === lfxColors.white ? 'text-white' : 'text-gray-950');
+    expect(colors.foreground === lfxColors.white || colors.foreground === lfxColors.gray[950]).toBe(true);
+  });
+
+  it('covers every platform the Monitor tab offers', () => {
+    expect(Object.keys(MONITOR_PLATFORM_BUTTON_COLORS).sort()).toEqual(['google', 'hubspot', 'linkedin', 'meta', 'microsoft', 'reddit', 'twitter']);
+  });
+});
+
+describe('Google Ads campaign criteria vocabularies', () => {
+  it('caps the device bid modifier list at the number of devices it accepts, as upstream does', () => {
+    // The cap's whole claim is "a longer list must repeat a device", and `maxDeviceBidModifiers`
+    // upstream tracks `len(deviceTypes)` with a test of its own saying so. A device added to the
+    // vocabulary without raising the cap would refuse a list that repeats nothing.
+    expect(GOOGLE_ADS_MAX_DEVICE_BID_MODIFIERS).toBe(GOOGLE_ADS_DEVICES.length);
+  });
+
+  it('accepts both spellings of every age range, since upstream resolves them to the same enum', () => {
+    // `ageRangeTypes` carries the friendly spelling and Google's own `AGE_RANGE_*` name for each
+    // range deliberately. A friendly spelling without its enum twin — or an enum name that resolved
+    // somewhere else — would refuse here what upstream accepts.
+    for (const range of GOOGLE_ADS_AGE_RANGES) {
+      const enumName = GOOGLE_ADS_AGE_RANGE_MAP[range as keyof typeof GOOGLE_ADS_AGE_RANGE_MAP];
+
+      expect(enumName).toMatch(/^AGE_RANGE_/);
+      expect(GOOGLE_ADS_AGE_RANGE_MAP[enumName]).toBe(enumName);
+    }
+  });
+
+  it('offers only the friendly spellings in a refusal, so a message is not both halves of the map', () => {
+    expect(GOOGLE_ADS_AGE_RANGES).toEqual(['18-24', '25-34', '35-44', '45-54', '55-64', '65+', 'UNDETERMINED']);
+  });
+
+  it('keeps UNDETERMINED in both vocabularies, since it is an ordinary member of each', () => {
+    // Not a placeholder for "unset": excluding it is how a campaign skips the users Google could
+    // not classify, which is a real targeting choice and one Google accepts on both criteria.
+    expect(GOOGLE_ADS_AGE_RANGES).toContain('UNDETERMINED');
+    expect(GOOGLE_ADS_GENDERS).toContain('UNDETERMINED');
+  });
+
+  it('fences both criteria off the same two channels today, from two separate lists', () => {
+    // Separate constants because `validateCriteriaPlan` fences them in separate branches for
+    // separate reasons — a bid Performance Max does not set, against demographics it takes as
+    // asset-group signals — so either could move without the other.
+    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('demand-gen');
+    expect(GOOGLE_CHANNELS_WITH_DEVICE_BID_MODIFIERS).not.toContain('performance-max');
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('demand-gen');
+    expect(GOOGLE_CHANNELS_WITH_DEMOGRAPHIC_EXCLUSIONS).not.toContain('performance-max');
+  });
+
+  it('caps each demographic exclusion list at 20, the per-list bound upstream checks twice', () => {
+    expect(GOOGLE_ADS_MAX_DEMOGRAPHIC_EXCLUSIONS).toBe(20);
+  });
+});
+
+describe('creative-asset upload allowlist', () => {
+  // campaign-service's `upload-creative-asset` content_type enum; anything else is refused upstream.
+  it('admits exactly PNG and JPEG', () => {
+    expect([...CREATIVE_ASSET_MIME_TYPES]).toEqual(['image/png', 'image/jpeg']);
+    expect(isCreativeAssetMimeType('image/png')).toBe(true);
+    expect(isCreativeAssetMimeType('image/jpeg')).toBe(true);
+    for (const other of ['image/gif', 'image/webp', 'image/jpg', 'IMAGE/PNG', '', undefined, 42]) {
+      expect(isCreativeAssetMimeType(other)).toBe(false);
+    }
+  });
+
+  // Below campaign-service's own 30 MiB decoded ceiling, so nothing this app sends is refused there for size.
+  it('bounds an upload at 10 MiB, inside the upstream 30 MiB ceiling', () => {
+    expect(CREATIVE_ASSET_MAX_BYTES).toBe(10 * 1024 * 1024);
+    expect(CREATIVE_ASSET_MAX_BYTES).toBeLessThan(30 * 1024 * 1024);
+  });
+
+  it('sniffs the PNG signature and the JPEG SOI marker, and nothing else', () => {
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))).toBe('image/png');
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    // A truncated PNG signature, a GIF and an empty body are not images this upload accepts.
+    expect(sniffCreativeAssetMimeType(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new TextEncoder().encode('GIF89a'))).toBeNull();
+    expect(sniffCreativeAssetMimeType(new Uint8Array())).toBeNull();
+    // Only a real byte buffer is read: a request body tampered into an array or a string whose
+    // indexes spell a PNG signature is not an image (CodeQL type confusion).
+    expect(sniffCreativeAssetMimeType([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])).toBeNull();
+    expect(sniffCreativeAssetMimeType('\x89PNG\r\n\x1a\n')).toBeNull();
+    expect(sniffCreativeAssetMimeType(undefined)).toBeNull();
+  });
+});
+
+describe('budget-writable platforms (#3299)', () => {
+  // campaign-service's `update-campaign-budget` serves Google, LinkedIn, Meta, Microsoft, Reddit
+  // and X (docs/api-catalog.md); every other platform is a 400 upstream.
+  it('includes X alongside the other five platforms campaign-service writes budgets on', () => {
+    expect([...BUDGET_WRITABLE_CAMPAIGN_PLATFORMS].sort()).toEqual(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads']);
+  });
+
+  // X budgets are written as a daily amount only: a `lifetime` request is always a 409 upstream.
+  it('marks X, and only X, as daily-only', () => {
+    expect([...DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS]).toEqual(['twitter-ads']);
+  });
+
+  it('never marks a platform daily-only that it cannot write a budget on', () => {
+    for (const platform of DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS) {
+      expect(BUDGET_WRITABLE_CAMPAIGN_PLATFORMS.has(platform)).toBe(true);
+    }
+  });
+});
+
+/**
+ * The accept set the editor's add guard, the brief-restore path and the sitelink generator all
+ * share, and whose refusals `describeDestinationUrl` (`campaign.controller.ts`) reports by name.
+ *
+ * It existed as three hand-written copies before, and the third had drifted to a scheme check
+ * alone — so these cases pin the set itself rather than any one tier's use of it.
+ */
+describe('isGoogleAdsServableUrl', () => {
+  it.each([
+    ['a plain https URL', 'https://events.example.org/register', true],
+    ['a plain http URL, which four of five platforms accept', 'http://events.example.org/register', true],
+    ['a URL with an ordinary & query', 'https://events.example.org/r?a=1&b=2', true],
+    ['an empty string', '', false],
+    ['a relative path', '/register', false],
+    ['an unparseable value', 'not a url', false],
+    ['a javascript: destination', 'javascript:alert(1)', false],
+    ['a mailto: destination', 'mailto:hello@example.org', false],
+    ['a URL with no hostname', 'https:///register', false],
+    ['embedded credentials', 'https://user:pw@events.example.org/', false],
+    ['an empty userinfo, which Go still refuses', 'https://@events.example.org/', false],
+    ['no // after the scheme', 'https:events.example.org/register', false],
+    ['a `;` separating query parameters', 'https://events.example.org/r?a=1;b=2', false],
+    ['a stray `%` that is not an escape', 'https://events.example.org/r?q=100%', false],
+    ['a backslash in the authority', 'https://events.example.org\\evil/', false],
+  ])('judges %s', (_label, url, expected) => {
+    expect(isGoogleAdsServableUrl(url)).toBe(expected);
+  });
+
+  /**
+   * The contract the docblock states: the argument must ALREADY be trimmed, with
+   * `googleAdsTrimSpace` rather than `String.prototype.trim`. The two disagree on U+0085 and
+   * U+FEFF, and the trimmed value is the one the caller goes on to store — so trimming inside
+   * would judge a string no caller keeps.
+   */
+  it('refuses an untrimmed value rather than trimming it', () => {
+    const url = 'https://events.example.org/register';
+    expect(isGoogleAdsServableUrl(` ${url} `)).toBe(false);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(` ${url} `))).toBe(true);
+    // U+0085 is whitespace to Go and not to `String.prototype.trim`, which is why callers must use
+    // `googleAdsTrimSpace`: `.trim()` would leave it in and this would still refuse.
+    expect(`\u0085${url}`.trim()).toBe(`\u0085${url}`);
+    expect(isGoogleAdsServableUrl(googleAdsTrimSpace(`\u0085${url}`))).toBe(true);
   });
 });

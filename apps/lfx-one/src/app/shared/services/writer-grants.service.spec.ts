@@ -6,8 +6,8 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient } from '@angular/common/http';
 import { WriterSummary } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { of, Subject } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectService } from './project.service';
 import { UserService } from './user.service';
@@ -61,5 +61,75 @@ describe('WriterGrantsService', () => {
     expect(getWriterSummary).toHaveBeenCalledTimes(1);
     expect(service.hasWriterFoundation()).toBe(true);
     expect(service.hasWriterProject()).toBe(false);
+  });
+
+  describe('summaryResolved', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('is resolved at once when there is no session', () => {
+      userService.authenticated.set(false);
+      const service = TestBed.inject(WriterGrantsService);
+
+      TestBed.inject(ApplicationRef).tick();
+
+      expect(service.summaryResolved()).toBe(true);
+    });
+
+    it('resolves when the fast path settles, without waiting for the deferred sweep', () => {
+      vi.useFakeTimers();
+      const summary = new Subject<WriterSummary>();
+      getWriterSummary.mockReturnValue(summary);
+      getProjects.mockReturnValue(new Subject<never[]>());
+      userService.authenticated.set(true);
+      const service = TestBed.inject(WriterGrantsService);
+
+      TestBed.inject(ApplicationRef).tick();
+      expect(service.summaryResolved()).toBe(false);
+
+      summary.next({ hasWriterFoundation: false, hasWriterProject: false } as WriterSummary);
+      summary.complete();
+      expect(service.summaryResolved()).toBe(true);
+
+      // The sweep still runs afterwards (and is left in flight here) — it no longer gates resolution.
+      vi.runAllTimers();
+      expect(getProjects).toHaveBeenCalledTimes(1);
+      expect(service.summaryResolved()).toBe(true);
+    });
+  });
+
+  describe('lookupFailed', () => {
+    it('flags a failed fast path apart from "no grants", and retrySummary clears it with the answer', () => {
+      getWriterSummary.mockReturnValue(of(null));
+      userService.authenticated.set(true);
+      const service = TestBed.inject(WriterGrantsService);
+
+      TestBed.inject(ApplicationRef).tick();
+      expect(service.summaryResolved()).toBe(true);
+      expect(service.lookupFailed()).toBe(true);
+
+      getWriterSummary.mockReturnValue(of({ hasWriterFoundation: true, hasWriterProject: false } as WriterSummary));
+      service.retrySummary().subscribe();
+
+      expect(service.lookupFailed()).toBe(false);
+      expect(service.hasWriterFoundation()).toBe(true);
+    });
+
+    it('shares one in-flight retry between concurrent callers', () => {
+      userService.authenticated.set(true);
+      const service = TestBed.inject(WriterGrantsService);
+      const pending = new Subject<WriterSummary | null>();
+      getWriterSummary.mockReturnValue(pending);
+      getWriterSummary.mockClear();
+
+      service.retrySummary().subscribe();
+      service.retrySummary().subscribe();
+      expect(getWriterSummary).toHaveBeenCalledTimes(1);
+
+      pending.next({ hasWriterFoundation: false, hasWriterProject: false } as WriterSummary);
+      pending.complete();
+      getWriterSummary.mockReturnValue(of(null));
+      service.retrySummary().subscribe();
+      expect(getWriterSummary).toHaveBeenCalledTimes(2);
+    });
   });
 });

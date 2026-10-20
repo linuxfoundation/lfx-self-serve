@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable, Signal, signal } from '@angular/core';
-import type { CampaignNegativeKeywordOutcomeRow, CampaignNegativeKeywordsRequestState, CampaignNegativeKeywordsSubmission } from '@lfx-one/shared/interfaces';
+import { CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES } from '@lfx-one/shared/constants';
+import type {
+  CampaignNegativeKeywordOutcomeRow,
+  CampaignNegativeKeywordsRequestState,
+  CampaignNegativeKeywordsSubmission,
+  NegativeKeywordCampaignPlatform,
+} from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import {
   campaignNegativeKeywordsFailureOutcome,
@@ -68,37 +74,48 @@ export class CampaignNegativeKeywordsService {
    * Sends one request, unless one is already in flight for the campaign. `onAllSettled` runs once,
    * and only when every keyword was added or already present, so the caller may clear its input.
    *
-   * `take(1)`, never cancelled: aborting would lose the outcome of keywords that may already have
-   * been added.
+   * `revision` is sent for a REDDIT campaign only, and the request is refused here without one:
+   * Reddit requires it, and Google Ads, Microsoft Advertising and X answer a present revision (even
+   * an empty one) with 400, so a stray one must never reach them.
+   *
+   * `take(1)`, never cancelled and never retried: aborting would lose the outcome of keywords that
+   * may already have been added, and a resend could add them twice.
    */
   public submit(submission: CampaignNegativeKeywordsSubmission, onAllSettled?: () => void): void {
-    const { projectSlug, briefId, campaignId, campaignName, keywords, matchType } = submission;
+    const { projectSlug, briefId, campaignId, campaignName, platform, keywords, matchType } = submission;
     const key = campaignNegativeKeywordsKey(projectSlug, briefId, campaignId);
     if (this.state()[key]?.pending) {
       return;
     }
-    this.set(key, { pending: true, outcomeRows: [], batchOutcome: null, batchKeywords: [], sent: keywords, matchType });
+    const revision = CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision ? submission.revision : undefined;
+    if (CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[platform].requiresRevision && !revision) {
+      return;
+    }
+    const settleCount = this.state()[key]?.settleCount ?? 0;
+    const base = { sent: keywords, matchType, platform };
+    this.set(key, { pending: true, outcomeRows: [], batchOutcome: null, batchKeywords: [], ...base, settleCount });
 
     this.campaignService
       .addNegativeKeywords(
         projectSlug,
         briefId,
         campaignId,
-        keywords.map((text) => ({ text, matchType }))
+        keywords.map((text) => ({ text, matchType })),
+        revision
       )
       .pipe(take(1))
       .subscribe({
         next: (result) => {
-          const rows = negativeKeywordOutcomeRows(keywords, matchType, result);
-          this.settle(key, { pending: false, outcomeRows: rows, batchOutcome: null, batchKeywords: [], sent: keywords, matchType });
+          const rows = negativeKeywordOutcomeRows(keywords, matchType, result, platform);
+          this.settle(key, { pending: false, outcomeRows: rows, batchOutcome: null, batchKeywords: [], ...base, settleCount: settleCount + 1 });
           if (!rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED')) {
             onAllSettled?.();
           }
-          this.announceResult(campaignName, rows);
+          this.announceResult(campaignName, rows, platform);
         },
         error: (err: unknown) => {
           const outcome = campaignNegativeKeywordsFailureOutcome(err);
-          this.settle(key, { pending: false, outcomeRows: [], batchOutcome: outcome, batchKeywords: keywords, sent: keywords, matchType });
+          this.settle(key, { pending: false, outcomeRows: [], batchOutcome: outcome, batchKeywords: keywords, ...base, settleCount: settleCount + 1 });
           this.messageService.add({
             severity: outcome.state === 'unconfirmed' ? 'warn' : 'error',
             summary: outcome.state === 'unconfirmed' ? `Negative keywords not confirmed for ${campaignName}` : `Negative keywords not added to ${campaignName}`,
@@ -197,7 +214,7 @@ export class CampaignNegativeKeywordsService {
   }
 
   /** One toast for the whole request; the per-keyword detail stays with the editor. */
-  private announceResult(campaignName: string, rows: CampaignNegativeKeywordOutcomeRow[]): void {
+  private announceResult(campaignName: string, rows: CampaignNegativeKeywordOutcomeRow[], platform: NegativeKeywordCampaignPlatform): void {
     const unsettled = rows.some((row) => row.outcome === 'FAILED' || row.outcome === 'UNCONFIRMED');
     const unconfirmed = rows.some((row) => row.outcome === 'UNCONFIRMED');
     let severity: 'success' | 'warn' | 'error' = 'success';
@@ -210,8 +227,8 @@ export class CampaignNegativeKeywordsService {
       severity,
       summary: `Negative keywords for ${campaignName}`,
       detail: unsettled
-        ? `${summarizeNegativeKeywordOutcomes(rows)} Open the campaign's negative keywords on the Optimize tab to see which.`
-        : summarizeNegativeKeywordOutcomes(rows),
+        ? `${summarizeNegativeKeywordOutcomes(rows, platform)} Open the campaign's negative keywords on the Optimize tab to see which.`
+        : summarizeNegativeKeywordOutcomes(rows, platform),
       ...(unsettled ? { sticky: true } : { life: 5000 }),
     });
   }

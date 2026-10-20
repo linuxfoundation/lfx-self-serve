@@ -624,3 +624,63 @@ describe('EnrollDetailsStepComponent — logo file', () => {
     expect(fixture.componentInstance.logoFile()).toBeNull();
   });
 });
+
+describe('EnrollDetailsStepComponent — technologies', () => {
+  let fixture: ComponentFixture<EnrollDetailsStepComponent>;
+  let form: FormGroup;
+
+  const add = (value: string): void => {
+    fixture.componentInstance['draftTechForm'].controls.technology.setValue(value);
+    fixture.componentInstance['addTechnology']();
+    fixture.detectChanges();
+  };
+
+  beforeEach(async () => {
+    TestBed.overrideComponent(EnrollDetailsStepComponent, { set: { imports: [ReactiveFormsModule, StubSelectComponent], schemas: [CUSTOM_ELEMENTS_SCHEMA] } });
+
+    await TestBed.configureTestingModule({
+      imports: [EnrollDetailsStepComponent],
+      providers: [
+        { provide: MentorshipAdminService, useValue: { getPrograms: () => of({ data: [] }) } },
+        {
+          provide: MentorshipService,
+          useValue: {
+            getLfProjects: () => of({ data: [] }),
+            getCiiBadge: () => of(null),
+            isProgramNameAvailable: () => of({ available: true }),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const defaults = createEmptyMentorshipEnrollForm() as unknown as Record<string, unknown>;
+    form = new FormGroup(Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, new FormControl(value)])));
+
+    fixture = TestBed.createComponent(EnrollDetailsStepComponent);
+    fixture.componentRef.setInput('form', form);
+    fixture.detectChanges();
+  });
+
+  it('adds a custom technology that is not in the catalog, trimmed, and clears the draft', () => {
+    add('  My Custom Tech  ');
+
+    expect(form.controls['technologies'].value).toEqual(['My Custom Tech']);
+    expect(fixture.componentInstance['draftTechForm'].controls.technology.value).toBe('');
+  });
+
+  it('splits a typed comma into separate technologies, dropping blanks and case-insensitive repeats', () => {
+    add('Go');
+    add('Rust, , go,  WebAssembly ');
+
+    expect(form.controls['technologies'].value).toEqual(['Go', 'Rust', 'WebAssembly']);
+  });
+
+  it('adds several technologies in one entry even when the whole entry is longer than one technology may be', () => {
+    const first = 'a'.repeat(200);
+    const second = 'b'.repeat(200);
+
+    add(`${first}, ${second}`);
+
+    expect(form.controls['technologies'].value).toEqual([first, second]);
+  });
+});

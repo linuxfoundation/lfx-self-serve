@@ -18,6 +18,7 @@ import { getStringQueryParam, getValidatedPeriod } from './validation.helper';
 
 import type {
   ResolvedPeriodRange,
+  SocialListeningAnalyticsParams,
   SocialListeningFeedParams,
   SocialListeningCountParams,
   SocialListeningFeedCursor,
@@ -26,9 +27,9 @@ import type {
 } from '@lfx-one/shared/interfaces';
 
 /**
- * Query-parameter parsing for the Social Listening endpoints: every value is validated and bounded
- * here so the service only binds vetted values. No logging — `apiErrorHandler` logs every
- * `ServiceValidationError` at WARN. Array values arrive as repeated params.
+ * JSON-body and query-parameter parsing for the Social Listening endpoints: every value is validated
+ * and bounded here so the service only binds vetted values. No logging — `apiErrorHandler` logs every
+ * `ServiceValidationError` at WARN. Query array values arrive as repeated params.
  */
 
 /** Foundation slugs are alphanumeric + hyphens. Case-insensitive because the dashboard-access middleware compares slugs case-insensitively and the client sends `project.slug` verbatim — the parsed value is normalized to lowercase before it reaches the Snowflake bind / cache key. */
@@ -116,6 +117,24 @@ export function parseSocialListeningScope(req: Request, operation: string): Soci
   };
 }
 
+/** Governed analytics scope only: content filters and feed read state are deliberately not inspected. */
+export function parseSocialListeningAnalyticsScope(req: Request, operation: string): SocialListeningAnalyticsParams {
+  const period = getValidatedPeriod(req, operation);
+  let periodKey = 'ytd';
+  if (period?.type === 'month') {
+    periodKey = period.startDate.slice(0, 7);
+  } else if (period?.type === 'trailing') {
+    periodKey = getStringQueryParam(req, 'period') as string;
+  }
+
+  return {
+    foundationSlug: parseFoundationSlug(req, operation),
+    periodKey,
+    sourceProjectId: parseTextParam(req, 'sourceProjectId', FILTER_VALUE_MAX_LENGTH, operation),
+    platform: parseTextParam(req, 'platform', FILTER_VALUE_MAX_LENGTH, operation)?.toLowerCase(),
+  };
+}
+
 /** Complete JSON read payload; query readers share the same value normalization below. */
 export function parseSocialListeningCountBody(body: unknown, operation: string): SocialListeningCountParams {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -198,7 +217,7 @@ function bodyBoolean(fields: Record<string, unknown>, name: string, operation: s
   return value === true;
 }
 
-/** Analytics + tag filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, so non-feed/count queries stay read-blind (the page strips them too). */
+/** Tags endpoint filters — omits `mentionIds` and the unread read-state params: bookmarks are all-time and read state is per-user view state, so tags stay read-blind (the page strips them too). */
 export function parseSocialListeningAnalyticsFilters(req: Request, operation: string): SocialListeningReadBlindFilterParams {
   return {
     ...parseSocialListeningAuthorFilters(req, operation),

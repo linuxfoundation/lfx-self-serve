@@ -32,6 +32,8 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_ORDER,
+  MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES,
+  MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES,
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
   MENTORSHIP_MENTEE_COUNTRY_CODES,
   MENTORSHIP_MENTEE_COUNTRY_REQUIRED_MESSAGE,
@@ -43,8 +45,6 @@ import {
   MENTORSHIP_MENTEE_PAST_OUTCOME_BY_STATUS,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
   MENTORSHIP_MENTEE_PROFILE_UPDATE_KEYS,
   MENTORSHIP_MENTEE_TASK_FILE_EXTENSIONS,
   MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED,
@@ -72,7 +72,10 @@ import {
   MENTORSHIP_REGISTER_ERROR_CONFLICT,
   MENTORSHIP_REGISTER_ERROR_FALLBACK,
   MENTORSHIP_REGISTER_ERROR_READ_ONLY,
-  MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL,
+  MENTORSHIP_SKILL_MAX_LENGTH,
+  MENTORSHIP_SKILLS_LIMIT_MESSAGE,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
+  MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE,
 } from '../constants/mentorship.constants';
 import type {
   MentorshipApplicantDisplayStatus,
@@ -128,6 +131,8 @@ import type {
   MentorshipMenteeApplicationStatus,
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyIds,
+  MentorshipMenteeApplyBlockedReason,
+  MentorshipMenteeApplyBlockedState,
   MentorshipMenteeApplicationView,
   MentorshipMenteeDemographicGroupName,
   MentorshipMenteeDemographics,
@@ -701,6 +706,7 @@ export function getMentorshipEnrollStepErrors(
       errors.projectId = MENTORSHIP_ENROLL_PROJECT_REQUIRED;
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
+    else if (isMentorshipSkillListOverLimit(form.technologies)) errors.technologies = MENTORSHIP_TECHNOLOGIES_LIMIT_MESSAGE;
     const descriptionError = mentorshipRichTextError(
       form.description,
       MENTORSHIP_ENROLL_DESCRIPTION_MAX,
@@ -734,6 +740,7 @@ export function getMentorshipEnrollStepErrors(
   if (step === 'setup') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (!form.skills.length) errors.skills = 'Add at least one skill.';
+    else if (isMentorshipSkillListOverLimit(form.skills)) errors.skills = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
     // A program being edited that had only closed terms may stay that way; upstream keeps a program's last open term otherwise.
     if (!form.terms.length && (!edit || edit.terms.length > 0)) {
       errors.terms = 'Add at least one program term.';
@@ -799,9 +806,7 @@ export function getMentorshipEnrollStepErrors(
  *
  * Program requests are deliberately unvalidated. They are optional: a mentor may register
  * a profile now and apply to programs later, so the request list is not checked here and
- * does not reach this function at all. A skill outside `MENTORSHIP_SKILL_OPTIONS`
- * can only come from a tampered request (the picker offers nothing else), so it gets its
- * own message after the required check.
+ * does not reach this function at all.
  */
 export function getMentorshipMentorRegisterErrors(
   form: Pick<MentorshipMentorRegisterForm, 'introduction' | 'skills' | 'complianceAccepted' | 'termsAccepted'>
@@ -816,9 +821,8 @@ export function getMentorshipMentorRegisterErrors(
 /**
  * The introduction and skills rules a mentor profile is held to, on register and on edit, in the browser
  * and in the BFF. Only the fields present are checked, so an edit that leaves one out is not refused for
- * what is already stored. A skill outside `MENTORSHIP_SKILL_OPTIONS` can only come from a stored legacy
- * value or a tampered request (the picker offers nothing else), so it gets its own message after the
- * required check.
+ * what is already stored. Skills are free-form, held only to `MENTORSHIP_SKILLS_MAX_ITEMS` and
+ * `MENTORSHIP_SKILL_MAX_LENGTH`.
  */
 export function getMentorshipMentorProfileErrors(input: MentorshipMentorProfileUpdateRequest): MentorshipMentorProfileFieldErrors {
   const errors: MentorshipMentorProfileFieldErrors = {};
@@ -834,7 +838,7 @@ export function getMentorshipMentorProfileErrors(input: MentorshipMentorProfileU
   }
   if (input.skills !== undefined) {
     if (!input.skills.length) errors.skills = 'Add at least one skill.';
-    else if (hasUnknownMentorshipSkill(input.skills)) errors.skills = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+    else if (isMentorshipSkillListOverLimit(input.skills)) errors.skills = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
   }
 
   return errors;
@@ -900,6 +904,20 @@ export function mentorshipMenteeApplyIds(params: { get(name: string): string | n
   const programTermId = trimmedParam(params, 'programTermId');
   if (!programId || !programTermId) return null;
   return { programId, programTermId };
+}
+
+/**
+ * The state the apply page shows for a refused application: the entry of
+ * `MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES` whose fragment the upstream message contains, or the
+ * status's own state when there is no message or none matches.
+ */
+export function mentorshipMenteeApplyBlockedState(
+  reason: MentorshipMenteeApplyBlockedReason,
+  upstreamMessage?: string | null
+): MentorshipMenteeApplyBlockedState {
+  const message = upstreamMessage?.toLowerCase() ?? '';
+  const match = message ? MENTORSHIP_MENTEE_APPLY_UPSTREAM_ERROR_STATES.find((entry) => message.includes(entry.match)) : undefined;
+  return match?.state ?? MENTORSHIP_MENTEE_APPLY_BLOCKED_STATES[reason];
 }
 
 /**
@@ -987,11 +1005,9 @@ export function getMentorshipMenteeCountryError(country: string): string | undef
 
 /**
  * The register rules, expressed over the wire request so the browser and the BFF share them. Keys are
- * assigned in form order because the submit toast shows `Object.values(errors)[0]`. A skill outside
- * `MENTORSHIP_SKILL_OPTIONS` can only come from a tampered request (the picker offers nothing else),
- * so it gets its own message after the required check. Each list is held to the profile edit's
- * `MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS`: the picker offers more options than that, and a profile
- * registered over the cap could never be saved from the profile drawer again.
+ * assigned in form order because the submit toast shows `Object.values(errors)[0]`. Skills are
+ * free-form, and each list is held to the same `MENTORSHIP_SKILLS_MAX_ITEMS` and
+ * `MENTORSHIP_SKILL_MAX_LENGTH` as the profile edit, so a registered profile stays editable.
  */
 export function getMentorshipMenteeRegisterRequestErrors(
   input: Pick<
@@ -1004,11 +1020,9 @@ export function getMentorshipMenteeRegisterRequestErrors(
   const introductionError = getMentorshipMenteeIntroductionError(input.introduction);
   if (introductionError) errors.introduction = introductionError;
   if (!input.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
-  else if (input.skillsHave.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsHave = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsHave)) errors.skillsHave = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (isMentorshipSkillListOverLimit(input.skillsHave)) errors.skillsHave = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
   if (!input.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
-  else if (input.skillsWant.length > MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS) errors.skillsWant = MENTORSHIP_MENTEE_PROFILE_SKILLS_LIMIT_MESSAGE;
-  else if (hasUnknownMentorshipSkill(input.skillsWant)) errors.skillsWant = MENTORSHIP_REGISTER_ERROR_UNKNOWN_SKILL;
+  else if (isMentorshipSkillListOverLimit(input.skillsWant)) errors.skillsWant = MENTORSHIP_SKILLS_LIMIT_MESSAGE;
   const countryError = getMentorshipMenteeCountryError(input.country);
   if (countryError) errors.country = countryError;
   if (!isMentorshipTermsAccepted(input.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';
@@ -1020,8 +1034,16 @@ export function getMentorshipMenteeRegisterRequestErrors(
   return errors;
 }
 
-function hasUnknownMentorshipSkill(skills: string[]): boolean {
-  return skills.some((skill) => !MENTORSHIP_SKILL_OPTIONS.includes(skill));
+/** True when a skill or technology list has more than `MENTORSHIP_SKILLS_MAX_ITEMS` items or an item over `MENTORSHIP_SKILL_MAX_LENGTH`. */
+export function isMentorshipSkillListOverLimit(skills: readonly string[]): boolean {
+  return skills.length > MENTORSHIP_SKILLS_MAX_ITEMS || skills.some((skill) => skill.trim().length > MENTORSHIP_SKILL_MAX_LENGTH);
+}
+
+/** Catalog skills containing `query` (case-insensitive), leaving out any already in `chosen`. */
+export function mentorshipSkillSuggestions(query: string, chosen: readonly string[]): string[] {
+  const needle = query.trim().toLowerCase();
+  const selected = new Set(chosen.map((item) => item.toLowerCase()));
+  return MENTORSHIP_SKILL_OPTIONS.filter((skill) => !selected.has(skill.toLowerCase()) && skill.toLowerCase().includes(needle));
 }
 
 /**

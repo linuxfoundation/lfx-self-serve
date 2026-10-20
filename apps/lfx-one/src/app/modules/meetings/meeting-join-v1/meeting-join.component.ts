@@ -57,6 +57,7 @@ import {
   MeetingRescheduleOccurrenceResult,
   getMeetingSeriesUid,
   MeetingRegistrant,
+  MeetingRemovalSource,
   MeetingRsvp,
   OccurrenceNavItem,
   resolveOccurrenceRecurrence,
@@ -71,7 +72,9 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
+  getMeetingSelfRemovalMessage,
   getUserTimezone,
   isHostKeyVisible,
   isMeetingAttendeeListShared,
@@ -86,6 +89,7 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -174,6 +178,13 @@ export class MeetingJoinComponent implements OnInit {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly plausibleService = inject(PlausibleService);
   private readonly dialogService = inject(DialogService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  /**
+   * Whether meeting v2 is on for this user — read so the occurrence dialog allows the v2 composer's
+   * 10-hour duration, and defaulted off so a slow flag provider keeps the pre-v2 cap. See
+   * `MEETING_V2_ENABLED_FLAG`.
+   */
+  private readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, MEETING_V2_ENABLED_DEFAULT);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transferState = inject(TransferState);
@@ -276,6 +287,8 @@ export class MeetingJoinComponent implements OnInit {
   // Set immediately on self-registration success so the UI responds before the meeting refetch
   // settles the invited flag (query-service indexing lag).
   private optimisticInvited = signal(false);
+  // Where a removal came from: the page itself, or the link in an invite email or calendar event.
+  private leaveSource = signal<MeetingRemovalSource>('meeting-join');
   // True once the user has removed themselves from the meeting on screen, so the UI responds before the meeting
   // refetch settles the invited flag (same query-service indexing lag, in the other direction). Keyed by meeting
   // id in the service, so a page that stays mounted across meetings never carries one meeting's removal to another.
@@ -509,8 +522,7 @@ export class MeetingJoinComponent implements OnInit {
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
     this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
-    // A committee-sourced registration follows committee membership, so it cannot be removed from here.
-    this.canLeaveMeeting = computed(() => this.effectivelyInvited() && !this.meeting()?.invited_via_committee);
+    this.canLeaveMeeting = computed(() => this.effectivelyInvited());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canRespondAsOrganizer = this.initializeCanRespondAsOrganizer();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -530,6 +542,7 @@ export class MeetingJoinComponent implements OnInit {
     this.registrants = this.initializeRegistrants();
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
+    this.initializeLeaveFromLink();
     this.initializePublicMeetingPageviewTracking();
 
     // Runs after first render so the SSR skeleton hydrates before swapping to the timezone tag.
@@ -577,7 +590,7 @@ export class MeetingJoinComponent implements OnInit {
       modal: true,
       closable: true,
       dismissableMask: false,
-      data: { meeting, occurrence },
+      data: { meeting, occurrence, maxDuration: this.meetingsV2Enabled() ? MAX_MEETING_DURATION : MAX_CUSTOM_DURATION },
     }) as DynamicDialogRef;
 
     dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MeetingRescheduleOccurrenceResult | undefined) => {
@@ -762,12 +775,13 @@ export class MeetingJoinComponent implements OnInit {
   public confirmLeaveMeeting(): void {
     this.confirmationService.confirm({
       header: 'Remove Yourself',
-      message: `Remove yourself from "${this.meetingTitle()}"? You will no longer be invited to any occurrence and will lose your RSVP.`,
+      message: getMeetingSelfRemovalMessage(this.meetingTitle(), { viaCommittee: this.meeting()?.invited_via_committee, organizer: this.meeting()?.organizer }),
       acceptLabel: 'Remove Me',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => this.leaveMeeting(),
+      reject: () => this.leaveSource.set('meeting-join'),
     });
   }
 
@@ -890,6 +904,11 @@ export class MeetingJoinComponent implements OnInit {
         const meetingId = params.get('id');
         this.applyPassword(queryParams);
 
+        // A signed-out visitor is sent to login by the browser; fetching here would bounce a private meeting to not-found first.
+        if (isPlatformServer(this.platformId) && queryParams.get('action') === 'leave' && !this.authenticated()) {
+          return EMPTY;
+        }
+
         if (!meetingId) {
           this.router.navigate(['/meetings/not-found']);
           return EMPTY;
@@ -905,7 +924,8 @@ export class MeetingJoinComponent implements OnInit {
               this.pastMeetingFullAccess.set(res.full_access);
             }),
             map((res: PublicPastMeetingResponse) => ({
-              meeting: res.meeting,
+              // Preserve the legacy join-page view model without claiming a complete PastMeeting at the HTTP boundary.
+              meeting: res.meeting as Meeting,
               project: res.project,
             })),
             catchError((error) => {
@@ -936,7 +956,8 @@ export class MeetingJoinComponent implements OnInit {
                     this.pastMeetingFullAccess.set(res.full_access);
                   }),
                   map((res: PublicPastMeetingResponse) => ({
-                    meeting: res.meeting,
+                    // Preserve the legacy join-page view model without claiming a complete PastMeeting at the HTTP boundary.
+                    meeting: res.meeting as Meeting,
                     project: res.project,
                   })),
                   catchError((fallbackError) => {
@@ -1767,16 +1788,67 @@ export class MeetingJoinComponent implements OnInit {
     );
   }
 
+  /**
+   * Handles the "remove yourself" link in invite emails and calendar events (`?action=leave`).
+   * A signed-out visitor goes through login and comes back to the same link; a signed-in one gets the
+   * usual removal confirmation once the meeting has loaded. Removal itself never runs from the link,
+   * only from the confirmation, so a prefetched or forwarded link changes nothing.
+   */
+  private initializeLeaveFromLink(): void {
+    if (!isPlatformBrowser(this.platformId) || this.activatedRoute.snapshot.queryParamMap.get('action') !== 'leave') {
+      return;
+    }
+
+    // A new Zoom tab would bury the confirmation; stays off for the visit, including after the param is dropped.
+    this.hasAutoJoined.set(true);
+
+    const { paramMap, queryParamMap } = this.activatedRoute.snapshot;
+    const leaveRouteId = paramMap.get('id');
+
+    if (!this.authenticated()) {
+      // `router.url` still holds the previous URL while the first navigation is in flight, so the link is rebuilt from the route.
+      const returnParams = new URLSearchParams({ action: 'leave' });
+      const password = queryParamMap.get('password');
+      if (password) {
+        returnParams.set('password', password);
+      }
+      window.location.href = `/login?returnTo=${encodeURIComponent(`/meetings/${encodeURIComponent(leaveRouteId ?? '')}?${returnParams.toString()}`)}`;
+      return;
+    }
+
+    combineLatest([toObservable(this.meeting), toObservable(this.meetingMatchesRoute)])
+      .pipe(
+        // Tied to the meeting the link named, so a reused component navigating elsewhere never prompts for another meeting.
+        filter(([meeting, matchesRoute]) => matchesRoute && !!meeting?.id && this.meetingRouteId() === leaveRouteId),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        // Drop the param so a refresh or a later visit doesn't ask again.
+        this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
+
+        if (!this.canLeaveMeeting()) {
+          this.messageService.add({ severity: 'info', summary: 'Not registered', detail: 'You are not registered for this meeting.' });
+          return;
+        }
+        this.leaveSource.set('email-link');
+        this.confirmLeaveMeeting();
+      });
+  }
+
   private leaveMeeting(): void {
     const meetingId = this.meeting().id;
     const subject = this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
     this.leavingMeeting.set(true);
 
     this.meetingService
-      .removeMyMeetingRegistration(meetingId)
+      .removeMyMeetingRegistration(meetingId, this.leaveSource())
       .pipe(
         take(1),
-        finalize(() => this.leavingMeeting.set(false))
+        finalize(() => {
+          this.leavingMeeting.set(false);
+          this.leaveSource.set('meeting-join');
+        })
       )
       .subscribe({
         next: (result) => {

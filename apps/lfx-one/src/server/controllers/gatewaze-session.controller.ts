@@ -5,6 +5,7 @@ import { isSameSite, SESSION_EXPIRED, SESSION_HEADER } from '@gatewaze/host-sess
 import { NextFunction, Request, Response } from 'express';
 
 import { gatewazeHostSessionNotFound } from '../middleware/require-gatewaze-host-session.middleware';
+import { getGatewazeRealtimeService } from '../services/gatewaze-realtime.service';
 import { getGatewazeSessionService, resolveGatewazeHostSessionConfig } from '../services/gatewaze-session.service';
 import { logger } from '../services/logger.service';
 
@@ -78,6 +79,22 @@ export class GatewazeSessionController {
       const result = await getGatewazeSessionService().endGatewazeSession(req, { blockReMint: false });
       logger.success(req, operation, startTime, { status_code: 204, ...result });
       res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/gatewaze/supabase/realtime/v1/websocket`: hands a WebSocket upgrade that passed every gate
+   * to the Realtime service, which answers it on the socket. Nothing is written to `res` then, so there
+   * is no `startOperation` here; the service logs the upgrade. A plain GET with no upgrade behind it
+   * gets the uniform 404.
+   */
+  public async realtime(req: Request, _res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (!(await getGatewazeRealtimeService().handleRoute(req))) {
+        next(gatewazeHostSessionNotFound(req));
+      }
     } catch (error) {
       next(error);
     }

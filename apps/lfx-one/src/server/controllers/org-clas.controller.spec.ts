@@ -1102,7 +1102,7 @@ describe('OrgClasController.updateEclaAutoCreate — applying the write', () => 
     await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: true }, SIGNATURE_UUID), res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+    expect(res.json).toHaveBeenCalledWith({ message: 'This CLA has not been signed yet, so its Auto Acknowledge setting cannot be changed' });
   });
 
   it('answers 403 with its own copy for a caller off the roster', async () => {
@@ -1112,7 +1112,7 @@ describe('OrgClasController.updateEclaAutoCreate — applying the write', () => 
     await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: true }, SIGNATURE_UUID), res, vi.fn());
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith({ message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' });
+    expect(res.json).toHaveBeenCalledWith({ message: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting' });
   });
 
   it('hands an upstream failure to the error handler rather than answering it', async () => {
@@ -1150,7 +1150,7 @@ describe('OrgClasController.checkPermission', () => {
 
     await new OrgClasController().checkPermission(req({ action: 'sign', projectSfid: PROJECT, companySfid: '0014100000OtherOrgAA' }), res, vi.fn());
 
-    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'sign', PROJECT);
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'sign', PROJECT, undefined);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
 
@@ -1170,7 +1170,7 @@ describe('OrgClasController.checkPermission', () => {
 
     await new OrgClasController().checkPermission(req({ action: 'cla-manager-delete', projectSfid: PROJECT }), res, vi.fn());
 
-    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'cla-manager-delete', PROJECT);
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'cla-manager-delete', PROJECT, undefined);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
 
@@ -1183,8 +1183,90 @@ describe('OrgClasController.checkPermission', () => {
 
     await new OrgClasController().checkPermission(req({ action: 'auto-ecla-update', projectSfid: PROJECT }), res, vi.fn());
 
-    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'auto-ecla-update', PROJECT);
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'auto-ecla-update', PROJECT, undefined);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
+  });
+
+  it('passes the trimmed foundation id through for the foundation pair', async () => {
+    checkAcs.mockResolvedValue(true);
+    // The sanitize helper re-derives the authoritative pair from the organization's own CLA Group
+    // list — without a matching row the controller drops the client's foundation id to undefined,
+    // so this case has to seed the list with the row the client claims.
+    listClaGroups.mockResolvedValue({
+      orgUid: ORG,
+      claGroups: [
+        { id: 'sig', pairProjectSfid: PROJECT, foundationSfid: 'a09410000182dFOUND', projects: [], signed: true, status: 'signed', claGroupName: 'g' },
+      ],
+    });
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(
+      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: ' a09410000182dFOUND ' }),
+      res,
+      vi.fn()
+    );
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'approval-list-update', PROJECT, 'a09410000182dFOUND');
+  });
+
+  it('drops a foundation id that is not a string', async () => {
+    checkAcs.mockResolvedValue(false);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(
+      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: ['a09410000182dFOUND'] }),
+      res,
+      vi.fn()
+    );
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'approval-list-update', PROJECT, undefined);
+  });
+
+  // A client that sends a `foundationSfid` the organization's own CLA Group row does not sit
+  // under would, without this guard, turn the preview into an authorization-exploration oracle:
+  // the viewer could probe their `cla-manager` grants on any pair of their choosing. The
+  // controller re-derives the authoritative pair and drops the client's value when it mismatches,
+  // so ACS still answers the project pair alone and the browser still gets a 200 with
+  // `{ allowed }` — never a 5xx on a preview request.
+  it('drops a foundation id the organization CLA Group row does not match', async () => {
+    // Both ids are 18 chars so SALESFORCE_ID_PATTERN admits them and the sanitizer actually
+    // calls `listClaGroups`; the mismatch is exercised against the row rather than short-circuited
+    // on the first regex check.
+    checkAcs.mockResolvedValue(true);
+    listClaGroups.mockResolvedValue({
+      orgUid: ORG,
+      claGroups: [
+        { id: 'sig', pairProjectSfid: PROJECT, foundationSfid: 'a09410000182dREALX', projects: [], signed: true, status: 'signed', claGroupName: 'g' },
+      ],
+    });
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(
+      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: 'a09410000182dOTHRX' }),
+      res,
+      vi.fn()
+    );
+
+    expect(listClaGroups).toHaveBeenCalledWith(expect.anything(), ORG);
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'approval-list-update', PROJECT, undefined);
+    expect(res.json).toHaveBeenCalledWith({ allowed: true });
+  });
+
+  it('degrades to the project pair rather than 5xx-ing when the CLA Group list lookup fails', async () => {
+    checkAcs.mockResolvedValue(false);
+    listClaGroups.mockRejectedValue(new Error('upstream down'));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().checkPermission(
+      req({ action: 'approval-list-update', projectSfid: PROJECT, foundationSfid: 'a09410000182dFOUND' }),
+      res,
+      next
+    );
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'approval-list-update', PROJECT, undefined);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ allowed: false });
   });
 });
 

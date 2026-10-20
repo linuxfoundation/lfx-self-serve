@@ -101,17 +101,19 @@ describe('EventsGeographyComponent', () => {
     expect(query('events-geo-loading')).toBeNull();
   });
 
-  it('renders the headline, its delta, the pill and the ranked countries with the tail line', async () => {
+  it('renders the headline, its delta, the pill and the ranked countries with no "+N more" line', async () => {
     await render();
 
     expect(text('events-geo-headline-value')).toBe('42');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('events-geo-headline')?.classList).not.toContain('border');
     expect(text('events-geo-headline-delta')).toBe('+10%');
     expect(query('events-geo-headline-delta')?.className).toContain('text-emerald-600');
     expect(text('events-geo-countries')).toBe('42 countries');
     expect(text('events-geo-country-0')).toContain('Canada');
     expect(text('events-geo-country-0-value')).toBe('800');
     expect(text('events-geo-country-1-value')).toBe('400');
-    expect(text('events-geo-more')).toBe('+40 more');
+    expect(query('events-geo-top')?.textContent).not.toContain('more');
   });
 
   it('re-projects a period change without re-reading and re-reports the count', async () => {
@@ -124,7 +126,6 @@ describe('EventsGeographyComponent', () => {
     expect(lifecycle).toEqual(['settled']);
     expect(text('events-geo-countries')).toBe('1 country');
     expect(query('events-geo-headline-delta')).toBeNull();
-    expect(query('events-geo-more')).toBeNull();
     expect(counts.at(-1)).toBe(1);
   });
 

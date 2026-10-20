@@ -5,7 +5,26 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
-import { probeCommitteeWriters, resolveSurveyCommitteeCandidates } from './write-access.util';
+import { meetingWriteAccessState, probeCommitteeWriters, resolveSurveyCommitteeCandidates } from './write-access.util';
+
+describe('meetingWriteAccessState', () => {
+  it('grants access for a project writer or meeting coordinator', () => {
+    expect(meetingWriteAccessState({ writer: true } as never)).toBe(true);
+    expect(meetingWriteAccessState({ meetingCoordinator: true } as never)).toBe(true);
+  });
+
+  it('denies access when both checks come back a confirmed false', () => {
+    expect(meetingWriteAccessState({ writer: false, meetingCoordinator: false } as never)).toBe(false);
+  });
+
+  it('reports unknown (not denied) when the lookup itself failed', () => {
+    expect(meetingWriteAccessState(null)).toBeUndefined();
+  });
+
+  it('reports unknown (not denied) when meetingCoordinator is omitted — the BFF FGA-check-failed shape (linuxfoundation/lfx-self-serve-ops#500)', () => {
+    expect(meetingWriteAccessState({ writer: false, meetingCoordinator: undefined } as never)).toBeUndefined();
+  });
+});
 
 describe('resolveSurveyCommitteeCandidates', () => {
   const committees = [{ committee_uid: 'primary' }, { committee_uid: 'secondary' }, { committee_uid: 'third' }];

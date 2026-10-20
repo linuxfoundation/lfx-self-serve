@@ -5,7 +5,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REFUSALS, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerRefusal, OrgClaManagerRow } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerMailto, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { buildMeetingOrganizerMailto, orgClaPairFoundationSfid, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -66,25 +66,23 @@ export class OrgEasyclaManagersComponent implements OnInit {
   /**
    * ACS grants for the two manager writes (#1984). Separate strings: Add is the same
    * `signature_approval_list:update` Corporate Console uses for that button; Remove is
-   * `cla_manager_delete:remove`. Null while the hop has not arrived — hide, do not guess.
+   * `cla_manager_delete:remove`.
    */
   private readonly addGrant = signal<boolean | null>(null);
   private readonly removeGrant = signal<boolean | null>(null);
 
-  protected readonly canAdd = computed(() => this.addGrant() === true && !this.loadFailed());
-  protected readonly canRemove = computed(() => this.removeGrant() === true);
+  private readonly onRoster = computed(() => this.claGroup().viewerIsClaManager === true);
+
+  protected readonly canAdd = computed(() => this.onRoster() && this.addGrant() === true && !this.loadFailed());
+  protected readonly canRemove = computed(() => this.onRoster() && this.removeGrant() === true);
+
+  protected readonly addBlockedReason = computed(() => (this.onRoster() ? undefined : this.copy.offRosterReason));
+  protected readonly addAriaLabel = computed(() => this.initAddAriaLabel());
 
   public constructor() {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onContextChanged());
 
-    toObservable(
-      computed(() => {
-        if (!this.signed()) return '';
-        const orgUid = this.orgUid();
-        const projectSfid = orgClaPairProjectSfid(this.claGroup());
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
-      })
-    )
+    toObservable(computed(() => this.initWriteGrantPair()))
       .pipe(
         distinctUntilChanged(),
         tap(() => {
@@ -93,10 +91,11 @@ export class OrgEasyclaManagersComponent implements OnInit {
         }),
         switchMap((pair) => {
           if (!pair) return of({ add: false, remove: false });
-          const [orgUid, projectSfid] = pair.split('::');
+          const [orgUid, projectSfid, foundationSfid] = pair.split('::');
+          const foundation = foundationSfid || undefined;
           return forkJoin({
-            add: this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
-            remove: this.claService.checkPermission(orgUid, 'cla-manager-delete', projectSfid),
+            add: this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid, foundation),
+            remove: this.claService.checkPermission(orgUid, 'cla-manager-delete', projectSfid, foundation),
           });
         }),
         takeUntilDestroyed(this.destroyRef)
@@ -175,6 +174,20 @@ export class OrgEasyclaManagersComponent implements OnInit {
 
   protected isSelf(manager: OrgClaManager): boolean {
     return manager.isViewer === true;
+  }
+
+  private initWriteGrantPair(): string {
+    if (!this.signed()) return '';
+    const orgUid = this.orgUid();
+    const group = this.claGroup();
+    const projectSfid = orgClaPairProjectSfid(group);
+    const foundationSfid = orgClaPairFoundationSfid(group) ?? '';
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}::${foundationSfid}` : '';
+  }
+
+  private initAddAriaLabel(): string {
+    const reason = this.addBlockedReason();
+    return reason ? `${this.copy.addAction}. ${reason}` : this.copy.addAction;
   }
 
   private initRows(): OrgClaManagerRow[] | null {

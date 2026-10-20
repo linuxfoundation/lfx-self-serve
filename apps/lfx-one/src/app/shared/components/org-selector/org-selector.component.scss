@@ -37,3 +37,12 @@
     // `top` is set at runtime in onPopoverShow() to match the selector trigger's viewport position.
   }
 }
+
+// Navbar (sidebar v2) variant — the floating navbar is 8px inset + 280px wide, so the panel sits
+// 8px to its right. Both classes stacked so this wins on specificity, not on source order.
+::ng-deep .org-selector-panel.org-selector-panel-navbar.p-popover {
+  @media (min-width: 1024px) {
+    // stylelint-disable-next-line declaration-no-important
+    left: 296px !important;
+  }
+}

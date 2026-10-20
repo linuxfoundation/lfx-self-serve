@@ -149,11 +149,33 @@ describe('EngagementMeetingParticipationComponent', () => {
   it('takes the hero from the roll-up row rather than the type rows', async () => {
     await render();
 
-    expect(text('engagement-meeting-participation-active-groups')).toBe('6 / 8');
-    expect(text('engagement-meeting-participation-never-attended')).toBe('3');
+    expect(text('engagement-meeting-participation-active-groups-value')).toBe('6 / 8');
+    expect(text('engagement-meeting-participation-never-attended-value')).toBe('3');
   });
 
-  it('swaps the hero and the side row in meetings mode, and drops the attendance column', async () => {
+  it('lays the hero out as the design does: delta inline, side stats as columns, never attended in red', async () => {
+    await render();
+
+    const hero = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-hero"]');
+    expect(hero.querySelector('[data-testid="engagement-meeting-participation-delta"] .sr-only').textContent).toBe(' vs prior period');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-side"]').classList).toContain('flex-wrap');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').textContent).toContain('Active groups');
+    // Labels use gray-500, a shade darker than the design's gray-400, so the 11.5px text clears WCAG AA contrast.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"] span').classList).toContain('text-gray-500');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]').classList).toContain('text-red-600');
+  });
+
+  it('keeps Never attended in ink when nobody has missed every meeting', async () => {
+    const total = participationRow();
+    total.periods = total.periods.map((period) => ({ ...period, neverAttended: 0 }));
+    await render(response({ total }));
+
+    const value = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended-value"]');
+    expect(value.classList).toContain('text-gray-900');
+    expect(value.classList).not.toContain('text-red-600');
+  });
+
+  it('swaps the hero and the side row in meetings mode', async () => {
     await render();
 
     fixture.componentInstance['onModeChange']('meetings');
@@ -161,9 +183,53 @@ describe('EngagementMeetingParticipationComponent', () => {
 
     expect(text('engagement-meeting-participation-hero')).toContain('Meetings held');
     expect(text('engagement-meeting-participation-hero')).toContain('12');
-    expect(text('engagement-meeting-participation-delta')).toBe('+20.0% vs prior period');
+    // The design shows no delta for meetings held.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-delta"]')).toBeNull();
     expect(text('engagement-meeting-participation-secondary')).toBe('70%');
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
+  });
+
+  // The design's meetings mode keeps three columns: a blank middle one, and the count drawn as a bar.
+  it('keeps three columns in meetings mode, with a count bar scaled to the busiest type row', async () => {
+    const base = participationRow();
+    const withYtdMeetings = (meetingsHeld: number) => base.periods.map((period) => (period.range === 'YTD' ? { ...period, meetingsHeld } : period));
+    await render(
+      response({
+        // The roll-up's own count is larger than any type row, and must not set the scale.
+        total: participationRow({ periods: withYtdMeetings(40) }),
+        rows: [
+          participationRow({ level: 'group', group: 'Board', label: 'Board', governance: true, periods: withYtdMeetings(6) }),
+          participationRow({ level: 'group', group: 'Marketing', label: 'Marketing', periods: withYtdMeetings(24) }),
+        ],
+      })
+    );
+
+    fixture.componentInstance['onModeChange']('meetings');
+    fixture.detectChanges();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-meeting-participation-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Meeting type', '', 'Meetings held']);
+
+    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]') as HTMLElement;
+    const cells = Array.from(board.querySelectorAll('td')) as HTMLElement[];
+    expect(cells).toHaveLength(3);
+    expect(cells[1].textContent?.trim()).toBe('');
+    expect(cells[2].querySelector('[data-testid="engagement-attendance-bar-label"]')?.textContent?.trim()).toBe('6');
+    const boardFill = cells[2].querySelector('[data-testid="engagement-attendance-bar-track"] > div') as HTMLElement;
+    expect(boardFill.style.width).toBe('25%');
+    expect(boardFill.className).toContain('bg-blue-500');
+
+    const marketing = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]') as HTMLElement;
+    expect((marketing.querySelector('[data-testid="engagement-attendance-bar-track"] > div') as HTMLElement).style.width).toBe('100%');
+  });
+
+  it('keeps the meetings count and attendance bar columns in attendance mode', async () => {
+    await render();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-meeting-participation-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Meeting type', 'Meetings', 'Attendance']);
+    const board = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]') as HTMLElement;
+    expect(board.querySelectorAll('td')[1].textContent?.trim()).toBe('12');
+    expect(board.querySelector('[data-testid="engagement-attendance-bar-label"]')?.textContent?.trim()).toBe('70%');
   });
 
   // The server can emit a present roll-up row whose cells are all unmeasured; none may read as zero.
@@ -186,14 +252,14 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-count')).toBe('Meetings in period not available yet');
     expect(text('engagement-meeting-participation-hero')).toContain('—');
     expect(text('engagement-meeting-participation-secondary')).toBe('—');
-    expect(text('engagement-meeting-participation-active-groups')).toBe('—');
-    expect(text('engagement-meeting-participation-never-attended')).toBe('—');
+    expect(text('engagement-meeting-participation-delta')).toBe('— vs prior period');
+    expect(text('engagement-meeting-participation-active-groups-value')).toBe('—');
+    expect(text('engagement-meeting-participation-never-attended-value')).toBe('—');
 
     fixture.componentInstance['onModeChange']('meetings');
     fixture.detectChanges();
 
     expect(text('engagement-meeting-participation-hero')).toContain('—');
-    expect(text('engagement-meeting-participation-delta')).toBe('— vs prior period');
     expect(text('engagement-meeting-participation-secondary')).toBe('—');
   });
 
@@ -239,14 +305,57 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-hero')).toContain('No data');
   });
 
-  it('cross-links the hero counts to the sections that own them', async () => {
+  it('cross-links the hero counts, landing Never attended on its filter', async () => {
     const picked: unknown[] = [];
     await render(response(), {}, (key) => picked.push(key));
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
     fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-active-groups"]').click();
     fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-never-attended"]').click();
 
-    expect(picked).toEqual(['committees', 'reps']);
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { repFilter: 'never' }, queryParamsHandling: 'merge', preserveFragment: true, replaceUrl: true })
+    );
+    await vi.waitFor(() => expect(picked).toEqual(['committees', 'reps']));
+  });
+
+  it('links the governance name to Members board attendance, clearing a cohort the URL carries', async () => {
+    await render();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board-link"]');
+    expect(link.tagName).toBe('A');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members#board');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').getAttribute('tabindex')).toBeNull();
+    // Plain row text, not a blue underlined link: the row itself carries the click affordance.
+    expect(link.classList).toContain('!text-gray-900');
+    expect(link.classList).toContain('!no-underline');
+  });
+
+  it('opens Members board attendance from anywhere on the governance row', async () => {
+    await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Board"]').click();
+
+    expect(navigate).toHaveBeenCalledWith(['/foundation/health-metrics', 'members'], {
+      fragment: 'board',
+      queryParams: { boardCohort: null, boardPage: null },
+      queryParamsHandling: 'merge',
+    });
+  });
+
+  it('scrolls any other meeting type to Group attendance, once per click on the row or its name button', async () => {
+    const picked: unknown[] = [];
+    await render(response(), {}, (key) => picked.push(key));
+
+    fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing"]').click();
+    const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-row-Marketing-link"]');
+    expect(button.tagName).toBe('BUTTON');
+    expect(button.className).not.toContain('underline');
+    button.click();
+
+    expect(picked).toEqual(['committees', 'committees']);
   });
 
   // The container holds a deep link until every section settles and re-holds it on the next

@@ -601,6 +601,15 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     // The table itself is not rendered when the panel is in the empty state.
     expect(byTestId(fixture, 'org-easycla-acknowledgments-table')).toBeNull();
   });
+
+  it('asks ACS for Invalidate and Add-to-list with the foundation pair alongside the project pair when the CLA Group has a distinct foundation SFID', async () => {
+    const PAIR_PROJECT = 'a09410000182dD3AAI';
+    const FOUNDATION = 'a09410000182dFOUND';
+    await render(claGroup({ pairProjectSfid: PAIR_PROJECT, foundationSfid: FOUNDATION }));
+
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'ecla-invalidate', PAIR_PROJECT, FOUNDATION);
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'approval-list-update', PAIR_PROJECT, FOUNDATION);
+  });
   /**
    * Per-row invalidate (#2807).
    *

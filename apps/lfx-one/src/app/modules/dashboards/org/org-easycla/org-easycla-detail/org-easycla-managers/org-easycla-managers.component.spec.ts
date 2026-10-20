@@ -4,6 +4,7 @@
 import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager } from '@lfx-one/shared/interfaces';
@@ -11,6 +12,7 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import { Tooltip } from 'primeng/tooltip';
 import { of, Subject, throwError } from 'rxjs';
 import type { MockInstance } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,7 +52,7 @@ describe('OrgEasyclaManagersComponent', () => {
       status: 'signed',
       needsClaManager: false,
       claManagersCount: 2,
-      viewerIsClaManager: false,
+      viewerIsClaManager: true,
       ...overrides,
     };
   }
@@ -68,6 +70,19 @@ describe('OrgEasyclaManagersComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  function addButton(): HTMLButtonElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"] button');
+  }
+
+  function addAriaLabel(): string | null | undefined {
+    return fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"] [aria-label]')?.getAttribute('aria-label');
+  }
+
+  function addTooltip(): string | undefined {
+    const host = fixture.debugElement.query(By.css('[data-testid="org-easycla-managers-add"] p-button'));
+    return host?.injector.get(Tooltip, null)?.content as string | undefined;
   }
 
   function acceptConfirmation(): void {
@@ -176,7 +191,7 @@ describe('OrgEasyclaManagersComponent', () => {
     const html = fixture.nativeElement.textContent as string;
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-error"]')).toBeTruthy();
     expect(html).not.toContain('no CLA Managers yet');
-    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+    expect(addButton()?.disabled).toBe(true);
     expect(component['canAdd']()).toBe(false);
   });
 
@@ -512,11 +527,11 @@ describe('OrgEasyclaManagersComponent', () => {
   });
 
   describe('ACS write grants', () => {
-    it('asks ACS for Add and Remove as two strings, not one', async () => {
+    it('asks ACS for Add and Remove as two strings, not one, and carries the foundation pair alongside the project pair', async () => {
       await render();
 
-      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'approval-list-update', PAIR_PROJECT);
-      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'cla-manager-delete', PAIR_PROJECT);
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'approval-list-update', PAIR_PROJECT, PROJECT);
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'cla-manager-delete', PAIR_PROJECT, PROJECT);
     });
 
     it('does not ask ACS for an unsigned agreement', async () => {
@@ -525,26 +540,28 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(checkPermission).not.toHaveBeenCalled();
     });
 
-    it('hides Add and Remove when ACS denies both', async () => {
+    it('disables Add without a reason and hides Remove when ACS denies both for a viewer on the roster', async () => {
       checkPermission.mockReturnValue(of(false));
       await render();
       component.loadIfNeeded();
       await fixture.whenStable();
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+      expect(addButton()?.disabled).toBe(true);
+      expect(addTooltip()).toBeUndefined();
+      expect(addAriaLabel()).toBe(ORG_CLA_MANAGERS_COPY.addAction);
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-table"]')).toBeTruthy();
     });
 
-    it('shows Add only when approval-list-update is allowed', async () => {
+    it('enables Add only when approval-list-update is allowed', async () => {
       checkPermission.mockImplementation((_org: string, action: string) => of(action === 'approval-list-update'));
       await render();
       component.loadIfNeeded();
       await fixture.whenStable();
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeTruthy();
+      expect(addButton()?.disabled).toBe(false);
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
     });
 
@@ -555,7 +572,7 @@ describe('OrgEasyclaManagersComponent', () => {
       await fixture.whenStable();
       fixture.detectChanges();
 
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+      expect(addButton()?.disabled).toBe(true);
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeTruthy();
     });
 
@@ -573,7 +590,7 @@ describe('OrgEasyclaManagersComponent', () => {
       fixture.detectChanges();
 
       expect(checkPermission).not.toHaveBeenCalled();
-      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+      expect(addButton()?.disabled).toBe(true);
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
     });
 
@@ -615,6 +632,69 @@ describe('OrgEasyclaManagersComponent', () => {
       component['confirmRemove'](manager());
 
       expect(confirm).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('viewer off the CCLA roster', () => {
+    it('disables Add and says who can use it, even though ACS allows the write', async () => {
+      await render(true, group({ viewerIsClaManager: false }));
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addButton()?.disabled).toBe(true);
+      expect(addTooltip()).toBe(ORG_CLA_MANAGERS_COPY.offRosterReason);
+      expect(addAriaLabel()).toContain(ORG_CLA_MANAGERS_COPY.offRosterReason);
+    });
+
+    it('offers no Remove, blocked Remove, or last-manager hint on any row', async () => {
+      await render(true, group({ viewerIsClaManager: false }));
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-managers-row"]')).toHaveLength(2);
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove-blocked"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-last-manager-hint"]')).toBeFalsy();
+    });
+
+    it('offers no blocked Remove on a sole manager either', async () => {
+      getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager()] }));
+      await render(true, group({ viewerIsClaManager: false }));
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove-blocked"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-last-manager-hint"]')).toBeFalsy();
+    });
+
+    it('opens neither the add dialog nor a remove confirmation when reached another way', async () => {
+      await render(true, group({ viewerIsClaManager: false }));
+      component.loadIfNeeded();
+      await fixture.whenStable();
+
+      component['openAdd']();
+      component['confirmRemove'](manager());
+
+      expect(openDialog).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('enables Add, with no reason attached, once the page re-reads the viewer onto the roster', async () => {
+      await render(true, group({ viewerIsClaManager: false }));
+      component.loadIfNeeded();
+      await fixture.whenStable();
+
+      fixture.componentRef.setInput('claGroup', group());
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addButton()?.disabled).toBe(false);
+      expect(addTooltip()).toBeUndefined();
+      expect(addAriaLabel()).toBe(ORG_CLA_MANAGERS_COPY.addAction);
     });
   });
 });

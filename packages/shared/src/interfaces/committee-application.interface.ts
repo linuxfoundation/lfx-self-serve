@@ -27,9 +27,17 @@ export interface CommitteeJoinApplication {
   updated_at?: string;
 }
 
-/** A pending application the caller can review, enriched with its group display name. */
+/** A pending application the caller can review, enriched with its group display name and the context a reviewer needs to decide. */
 export interface ManagedPendingApplication extends CommitteeJoinApplication {
   committee_name: string;
+  /** Owning project (or foundation) display name; absent when the project lookup failed. */
+  project_name?: string;
+  /** Group category (e.g. "Technical Steering Committee"); absent when the group record has none. */
+  committee_category?: string;
+  /** Owning project slug — drives the `?project=` query param on the group link; absent when the project lookup failed. */
+  project_slug?: string;
+  /** Whether the owning project is a foundation — picks the `/foundation` vs `/project` route prefix; absent when unknown. */
+  is_foundation?: boolean;
 }
 
 /** Request payload to approve a committee join application */

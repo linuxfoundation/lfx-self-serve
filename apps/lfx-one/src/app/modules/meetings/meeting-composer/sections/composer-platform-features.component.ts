@@ -16,9 +16,11 @@ import {
   EMAIL_REMINDER_FEATURE,
   EMAIL_REMINDER_TOOLTIP,
   MAX_EMAIL_REMINDER_HOURS,
+  MAX_EMAIL_REMINDER_MINUTES,
   MEETING_FEATURE_BY_KEY,
   MEETING_PLATFORMS,
   MIN_EMAIL_REMINDER_HOURS,
+  MIN_EMAIL_REMINDER_MINUTES,
   RECORDING_DEPENDENCY_NOTES,
   REMINDER_MINUTES_ERROR_KEYS,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
@@ -49,6 +51,8 @@ export class ComposerPlatformFeaturesComponent {
 
   protected readonly minReminderHours = MIN_EMAIL_REMINDER_HOURS;
   protected readonly maxReminderHours = MAX_EMAIL_REMINDER_HOURS;
+  protected readonly minReminderMinutes = MIN_EMAIL_REMINDER_MINUTES;
+  protected readonly maxReminderMinutes = MAX_EMAIL_REMINDER_MINUTES;
 
   protected readonly recordingFeature = MEETING_FEATURE_BY_KEY.recording_enabled;
   protected readonly aiSummaryFeature = MEETING_FEATURE_BY_KEY.zoom_ai_enabled;

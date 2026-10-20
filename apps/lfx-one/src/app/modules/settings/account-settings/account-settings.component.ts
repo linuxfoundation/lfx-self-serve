@@ -328,7 +328,11 @@ export class AccountSettingsComponent {
           }
         },
         error: (error) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error?.message || 'Failed to send verification code' });
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: error.error?.message || error.error?.error || 'Failed to send verification code',
+          });
         },
       });
   }

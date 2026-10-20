@@ -10,8 +10,8 @@ import type {
   MeetingRegistrantWithState,
   UpdateMeetingRegistrantRequest,
 } from '@lfx-one/shared/interfaces';
-import { firstValueFrom, of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingService } from './meeting.service';
 
@@ -250,10 +250,16 @@ describe('MeetingService.removeMyMeetingRegistration', () => {
   });
 
   it('sends a body-less DELETE to the self registrant route, with no registrant id from the client', () => {
-    service.removeMyMeetingRegistration(MEETING_UID).subscribe();
+    service.removeMyMeetingRegistration(MEETING_UID, 'meeting-card').subscribe();
 
     expect(del).toHaveBeenCalledTimes(1);
-    expect(del).toHaveBeenCalledWith(`/api/meetings/${MEETING_UID}/registrants/self`);
+    expect(del.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self`);
+  });
+
+  it.each(['meeting-card', 'meeting-join'] as const)('names the %s surface in the removal-source header', (source) => {
+    service.removeMyMeetingRegistration(MEETING_UID, source).subscribe();
+
+    expect(del.mock.calls[0][1].headers.get('x-lfx-removal-source')).toBe(source);
   });
 });
 
@@ -428,5 +434,110 @@ describe('MeetingService registrant batch chunking', () => {
     expect(del.mock.calls[0]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, { body: uids.slice(0, 25) }]);
     expect(del.mock.calls[1]).toEqual([`/api/meetings/${MEETING_UID}/registrants`, { body: uids.slice(25) }]);
     expect(response.summary).toEqual({ total: 30, successful: 30, failed: 0 });
+  });
+});
+
+// #501: a meeting just created by this user can 403/404 for a few seconds while the ITX index /
+// FGA organizer tuple it reads from catches up with the write. getMeetingDetail is the one place
+// both the writerGuard's `meetings` probe and this edit-page load go through, so retrying there
+// (via retryPropagationLag, unit-tested on its own in http-error.utils.spec.ts) fixes the race for
+// both callers at once. These tests pin the end-to-end wiring: the retry only applies to an id this
+// client just created (via createMeeting), the cache, and that a terminal failure logs exactly once
+// (not once per attempt). A plain read of an id nobody just created still fails on the first 403/404
+// — see 'does not retry a 403 for a meeting id nobody just created'.
+describe('MeetingService.getMeetingDetail propagation-lag retry (#501)', () => {
+  let get: ReturnType<typeof vi.fn>;
+  let post: ReturnType<typeof vi.fn>;
+  let service: MeetingService;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    TestBed.resetTestingModule();
+    get = vi.fn();
+    post = vi.fn();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get, post } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // `getMeetingDetail` calls `this.http.get(...)` once and pipes `retryPropagationLag()` directly
+  // onto that Observable, so a retry resubscribes to the SAME Observable instance rather than
+  // re-invoking `get()` — exactly how a real HttpClient Observable behaves (cold: each subscribe
+  // re-fires the request). These mocks track subscriptions, not calls to `get`.
+  function flakyGet(status: number, failuresBeforeSuccess: number, value: unknown) {
+    let attempts = 0;
+    return new Observable((subscriber) => {
+      attempts += 1;
+      if (attempts <= failuresBeforeSuccess) {
+        subscriber.error(new HttpErrorResponse({ status }));
+        return;
+      }
+      subscriber.next(value);
+      subscriber.complete();
+    });
+  }
+
+  function countingErrorGet(status: number, onSubscribe: () => void) {
+    return new Observable((subscriber) => {
+      onSubscribe();
+      subscriber.error(new HttpErrorResponse({ status }));
+    });
+  }
+
+  /** Puts `id` in the service's recently-created window, the way a real create-then-edit navigation does. */
+  async function createMeeting(id: string): Promise<void> {
+    post.mockReturnValueOnce(of({ id, project_uid: 'project-1' }));
+    await firstValueFrom(service.createMeeting({ project_uid: 'project-1' } as never));
+  }
+
+  it('retries a 403 that resolves before the schedule is exhausted, never surfacing the error', async () => {
+    await createMeeting(MEETING_UID);
+    const meeting = { id: MEETING_UID, project_uid: 'project-1' };
+    get.mockReturnValue(flakyGet(403, 1, meeting));
+
+    const result = firstValueFrom(service.getMeetingDetail(MEETING_UID));
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual(meeting);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs once (not once per attempt) and evicts the cache on a terminal 404', async () => {
+    await createMeeting(MEETING_UID);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let attempts = 0;
+    get.mockReturnValue(countingErrorGet(404, () => (attempts += 1)));
+
+    // `.rejects` attaches its handler synchronously, before the timers below resolve the
+    // rejection — asserting on a separately-awaited promise would otherwise let the rejection
+    // go briefly unhandled and fail the run.
+    const assertion = expect(firstValueFrom(service.getMeetingDetail(MEETING_UID))).rejects.toBeInstanceOf(HttpErrorResponse);
+    await vi.advanceTimersByTimeAsync(1000 + 2000);
+    await assertion;
+
+    // 1 initial attempt + 2 retries (PROPAGATION_LAG_RETRY_DELAYS_MS has 2 entries) = 3 subscriptions
+    // to the same source Observable, but only the single terminal failure reaches the logging catchError.
+    expect(attempts).toBe(3);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+
+    // The cache was evicted on the terminal failure, so a later call issues a fresh request
+    // rather than replaying the same rejected observable.
+    get.mockReturnValue(of({ id: MEETING_UID, project_uid: 'project-1' }));
+    await expect(firstValueFrom(service.getMeetingDetail(MEETING_UID))).resolves.toEqual({ id: MEETING_UID, project_uid: 'project-1' });
+
+    consoleError.mockRestore();
+  });
+
+  it('does not retry a 403 for a meeting id nobody just created', async () => {
+    let attempts = 0;
+    get.mockReturnValue(countingErrorGet(403, () => (attempts += 1)));
+
+    await expect(firstValueFrom(service.getMeetingDetail(MEETING_UID))).rejects.toBeInstanceOf(HttpErrorResponse);
+
+    // No retry schedule applied: a single subscription, failing immediately — a genuine denial
+    // (or a stale/unrelated id) must not pay the propagation-lag retry delay.
+    expect(attempts).toBe(1);
   });
 });

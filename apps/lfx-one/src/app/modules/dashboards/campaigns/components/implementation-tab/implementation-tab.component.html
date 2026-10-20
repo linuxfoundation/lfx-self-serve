@@ -85,12 +85,15 @@
 </div>
 
 <!--
-  Google callouts withheld, announced. Top-level for the same reason as the three regions above:
+  Google callouts and sitelinks withheld, announced. Top-level for the same reason as the three regions above:
   the visible notice is created by the change that gives it its text. Polite, because the campaign
   is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
 -->
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-callouts-withheld-live">
   {{ googleCalloutsWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-sitelinks-withheld-live">
+  {{ googleSitelinksWithheldWarning() }}
 </div>
 
 <!-- Nothing renders in the 'off' state — see briefPersistence. -->
@@ -314,7 +317,7 @@
                 <button
                   type="button"
                   (click)="removeGoogleGeoTarget(i)"
-                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
                   [attr.aria-label]="'Remove ' + geo"
                   [attr.data-testid]="'implementation-google-geo-remove-' + geo">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -388,7 +391,7 @@
                 <button
                   type="button"
                   (click)="removeGoogleLanguage(i)"
-                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
                   [attr.aria-label]="'Remove ' + chip.name"
                   [attr.data-testid]="'implementation-google-language-remove-' + chip.code">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -438,9 +441,14 @@
         </p>
       }
 
-      <!-- Callouts typed under Search and withheld after a switch. Announced by the region at the top. -->
+      <!-- Callouts and sitelinks typed under Search and withheld after a switch. Announced by the regions at the top. -->
       @if (googleCalloutsWithheldWarning(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-callouts-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googleSitelinksWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-sitelinks-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
@@ -466,7 +474,7 @@
                 <button
                   type="button"
                   (click)="removeGoogleCallout(i)"
-                  class="ml-0.5 text-blue-400 hover:text-blue-600"
+                  class="ml-0.5 text-blue-600 hover:text-blue-800"
                   [attr.aria-label]="'Remove ' + callout"
                   [attr.data-testid]="'implementation-google-callout-remove-' + callout">
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -517,6 +525,153 @@
             <span class="mt-2 block text-xs text-gray-500" data-testid="implementation-google-callouts-empty">
               No callouts added — this campaign is created without callout extensions.
             </span>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: sitelink extensions.
+
+        Same gate as the callouts above, and for the same reason: `validateAssetPlan` counts EVERY
+        extension list together and refuses the whole create on any channel but Search, before the
+        budget mutate. Four fields per entry rather than one string, so this is a sub-form with its
+        own add button instead of an enter-to-add box — a sitelink is only addable once both of its
+        required fields are filled, which no single input can express.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-sitelinks-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-sitelink-text">
+            Google Sitelinks ({{ googleSitelinks().length }}/{{ googleMaxSitelinks }})
+          </label>
+          @if (googleSitelinks().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (sitelink of googleSitelinks(); track sitelink.text; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ sitelink.text }}</span>
+                    <span class="break-all text-[10px] text-blue-700">{{ sitelink.finalUrl }}</span>
+                    @if (sitelink.description1) {
+                      <span class="break-words text-[10px] text-blue-700">{{ sitelink.description1 }} · {{ sitelink.description2 }}</span>
+                    }
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGoogleSitelink(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + sitelink.text"
+                    [attr.data-testid]="'implementation-google-sitelink-remove-' + sitelink.text">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-sitelinks-empty">
+              No sitelinks added — this campaign is created without sitelink extensions.
+            </span>
+          }
+          @if (!googleSitelinksFull()) {
+            <!--
+              No maxlength on the two rune-bounded inputs: the add trims BEFORE it counts, and a
+              browser cap counts UTF-16 units, so it would clip an emoji-bearing label that Google
+              would have accepted. The message lines below carry the feedback instead.
+
+              The section's `<label for>` names only the link-text box — the other three carry an
+              `aria-label`, because a placeholder is not an accessible name and disappears as soon
+              as the operator types. Each box points at its own message line with
+              `aria-describedby`, as the Meta pixel field does.
+            -->
+            <div class="flex flex-col gap-2">
+              <input
+                id="google-sitelink-text"
+                type="text"
+                placeholder="Link text"
+                [value]="googleSitelinkDraft().text"
+                (input)="onGoogleSitelinkDraftInput('text', $event)"
+                [attr.aria-invalid]="googleSitelinkTextTooLong() || googleSitelinkDuplicate() ? 'true' : null"
+                [attr.aria-describedby]="googleSitelinkTextErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-sitelink-text" />
+              <input
+                type="url"
+                placeholder="Destination URL"
+                aria-label="Sitelink destination URL"
+                [value]="googleSitelinkDraft().finalUrl"
+                (input)="onGoogleSitelinkDraftInput('finalUrl', $event)"
+                [attr.aria-invalid]="googleSitelinkUrlErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSitelinkUrlErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-sitelink-url" />
+              <input
+                type="text"
+                placeholder="Description line 1 (optional)"
+                aria-label="Sitelink description line 1"
+                [value]="googleSitelinkDraft().description1"
+                (input)="onGoogleSitelinkDraftInput('description1', $event)"
+                [attr.aria-invalid]="googleSitelinkDescriptionErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSitelinkDescriptionErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-sitelink-description1" />
+              <input
+                type="text"
+                placeholder="Description line 2 (optional)"
+                aria-label="Sitelink description line 2"
+                [value]="googleSitelinkDraft().description2"
+                (input)="onGoogleSitelinkDraftInput('description2', $event)"
+                [attr.aria-invalid]="googleSitelinkDescriptionErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSitelinkDescriptionErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-sitelink-description2" />
+              <button
+                type="button"
+                (click)="onGoogleSitelinkAdd()"
+                [disabled]="googleSitelinkAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-sitelink-add">
+                + Add sitelink
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-sitelinks-full">
+              Maximum of {{ googleMaxSitelinks }} sitelinks reached — remove one to add another.
+            </span>
+          }
+          <!--
+            One line per upstream refusal the sub-form can still hit, named while it is editable.
+            Every one of them is a whole-create refusal at the other end — `validateSitelinks` runs
+            inside the preflight — so each costs the operator the entire campaign and comes back as
+            the orchestrator's opaque "platform campaign creation failed".
+          -->
+          @if (googleSitelinkTextTooLong()) {
+            <p id="google-sitelink-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-too-long">
+              Link text is {{ googleSitelinkTextLength() }} characters — Google's limit is {{ googleMaxSitelinkRunes }}.
+            </p>
+          } @else if (googleSitelinkDuplicate()) {
+            <p id="google-sitelink-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-duplicate">
+              That link text is already on the list — Google refuses a campaign that lists the same sitelink twice.
+            </p>
+          }
+          @if (googleSitelinkDescriptionHalfFilled()) {
+            <p id="google-sitelink-half-described" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-half-described">
+              Google renders the two description lines together and refuses a sitelink carrying only one — fill both or neither.
+            </p>
+          } @else if (googleSitelinkDescriptionTooLong()) {
+            <p
+              id="google-sitelink-description-too-long"
+              role="alert"
+              class="text-xs text-red-600"
+              data-testid="implementation-google-sitelink-description-too-long">
+              Each description line is limited to {{ googleMaxSitelinkDescriptionRunes }} characters.
+            </p>
+          }
+          @if (googleSitelinkUrlInvalid()) {
+            <p id="google-sitelink-url-invalid" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-url-invalid">
+              Destination must be a full http:// or https:// URL with a hostname, no embedded credentials, no semicolons in the query and no stray % signs.
+            </p>
+          } @else if (googleSitelinkUrlBytesOver() > 0) {
+            <p id="google-sitelink-url-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-url-too-long">
+              Destination URL is {{ googleSitelinkUrlBytesOver() }} bytes — Google's limit is {{ googleMaxFinalUrlBytes }}.
+            </p>
           }
         </div>
       }
@@ -618,7 +773,9 @@
           }
 
           @if (googleBiddingError()) {
-            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">{{ googleBiddingError() }}</p>
+            <p role="alert" class="text-xs text-red-600" data-testid="implementation-google-bidding-error">
+              {{ googleBiddingError() }}
+            </p>
           }
         </div>
       }
@@ -817,7 +974,7 @@
               @for (geo of linkedInGeoTargets(); track geo.urn; let i = $index) {
                 <span class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
                   {{ geo.label }}
-                  <button type="button" (click)="removeGeoTarget(i)" class="ml-0.5 text-blue-400 hover:text-blue-600" [attr.aria-label]="'Remove ' + geo.label">
+                  <button type="button" (click)="removeGeoTarget(i)" class="ml-0.5 text-blue-600 hover:text-blue-800" [attr.aria-label]="'Remove ' + geo.label">
                     <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                   </button>
                 </span>
@@ -893,6 +1050,13 @@
               </label>
             </div>
           </div>
+
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['linkedin-ads']" (biddingChange)="onBiddingChange('linkedin-ads', $event)" />
+            </div>
+          }
 
           <!-- Variant Preview -->
           @if (linkedInVariants().length > 0) {
@@ -1055,7 +1219,7 @@
                   <button
                     type="button"
                     (click)="removeMetaGeoTarget(i)"
-                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    class="ml-0.5 text-blue-600 hover:text-blue-800"
                     [attr.aria-label]="'Remove ' + geo"
                     [attr.data-testid]="'implementation-meta-geo-remove-' + geo">
                     <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -1095,6 +1259,13 @@
               }
             </div>
           </div>
+
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['meta-ads']" (biddingChange)="onBiddingChange('meta-ads', $event)" />
+            </div>
+          }
 
           <!-- Variant Preview -->
           @if (metaVariants().length > 0) {
@@ -1159,35 +1330,45 @@
               -->
               <span class="text-xs text-gray-400">Whole units of the ad account's currency, charged daily.</span>
             </div>
-            <div class="flex flex-col gap-1">
-              <label class="text-xs font-medium text-gray-700" for="microsoft-cpc-bid">Max CPC Bid (optional)</label>
-              <input
-                id="microsoft-cpc-bid"
-                type="number"
-                [value]="microsoftCpcBid()"
-                (input)="onMicrosoftCpcBidInput($event)"
-                [min]="microsoftMinCpcBid"
-                [max]="microsoftMaxCpcBid"
-                step="0.01"
-                placeholder="Account minimum"
-                [attr.aria-invalid]="microsoftCpcBidValid() ? null : 'true'"
-                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                data-testid="implementation-microsoft-cpc-bid" />
-              @if (microsoftCpcBidValid()) {
-                <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
-              } @else {
-                <!--
-                  Names the RANGE and the consequence rather than "invalid": Microsoft refuses an
-                  out-of-range bid during dispatch, and because creation is asynchronous that
-                  refusal arrives as a failed job rather than as an error on the click.
-                -->
-                <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-cpc-bid-error">
-                  Enter a bid between {{ microsoftMinCpcBid }} and {{ microsoftMaxCpcBid }}, or leave it blank — Microsoft rejects anything outside that range
-                  and the campaign would fail after submission.
-                </p>
-              }
-            </div>
+            <!-- The legacy max CPC field; the Bidding control below replaces it when offered (#3299). -->
+            @if (!biddingAvailable()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="microsoft-cpc-bid">Max CPC Bid (optional)</label>
+                <input
+                  id="microsoft-cpc-bid"
+                  type="number"
+                  [value]="microsoftCpcBid()"
+                  (input)="onMicrosoftCpcBidInput($event)"
+                  [min]="microsoftMinCpcBid"
+                  [max]="microsoftMaxCpcBid"
+                  step="0.01"
+                  placeholder="Account minimum"
+                  [attr.aria-invalid]="microsoftCpcBidValid() ? null : 'true'"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-microsoft-cpc-bid" />
+                @if (microsoftCpcBidValid()) {
+                  <span class="text-xs text-gray-400">Leave blank to use the account-currency minimum.</span>
+                } @else {
+                  <!--
+                    Names the RANGE and the consequence rather than "invalid": Microsoft refuses an
+                    out-of-range bid during dispatch, and because creation is asynchronous that
+                    refusal arrives as a failed job rather than as an error on the click.
+                  -->
+                  <p role="alert" class="text-xs text-red-600" data-testid="implementation-microsoft-cpc-bid-error">
+                    Enter a bid between {{ microsoftMinCpcBid }} and {{ microsoftMaxCpcBid }}, or leave it blank — Microsoft rejects anything outside that range
+                    and the campaign would fail after submission.
+                  </p>
+                }
+              </div>
+            }
           </div>
+
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['microsoft-ads']" (biddingChange)="onBiddingChange('microsoft-ads', $event)" />
+            </div>
+          }
 
           <!-- Keywords -->
           <div class="mb-4">
@@ -1211,7 +1392,7 @@
                   <button
                     type="button"
                     (click)="removeMicrosoftKeyword(i)"
-                    class="text-blue-400 hover:text-blue-600"
+                    class="text-blue-600 hover:text-blue-800"
                     [attr.aria-label]="'Remove ' + keyword.text"
                     [attr.data-testid]="'implementation-microsoft-keyword-remove-' + i">
                     <i class="fa-light fa-xmark text-xs" aria-hidden="true"></i>
@@ -1289,7 +1470,7 @@
                   <button
                     type="button"
                     (click)="removeMicrosoftGeoTarget(i)"
-                    class="ml-0.5 text-blue-400 hover:text-blue-600"
+                    class="ml-0.5 text-blue-600 hover:text-blue-800"
                     [attr.aria-label]="'Remove ' + geo"
                     [attr.data-testid]="'implementation-microsoft-geo-remove-' + geo">
                     <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
@@ -1402,6 +1583,32 @@
                 }
               </select>
             </div>
+
+            <!-- Video goal, only for Video Views. Reddit has no bare VIDEO_VIEWS goal, so both
+                 creators refuse that objective without one; the empty first option is "not chosen
+                 yet", and canSubmit blocks until a real goal is picked. -->
+            @if (redditNeedsVideoGoal()) {
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-medium text-gray-700" for="reddit-video-goal">Video goal</label>
+                <select
+                  id="reddit-video-goal"
+                  (change)="onRedditVideoGoalChange($event)"
+                  required
+                  [attr.aria-invalid]="redditVideoGoalError() !== null"
+                  [attr.aria-describedby]="redditVideoGoalError() !== null ? 'reddit-video-goal-error' : 'reddit-video-goal-hint'"
+                  class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  data-testid="implementation-reddit-video-goal">
+                  <option value="" [selected]="redditEffectiveVideoGoal() === null" disabled>Select a video goal</option>
+                  @for (goal of redditVideoGoalOptions; track goal) {
+                    <option [value]="goal" [selected]="goal === redditEffectiveVideoGoal()">{{ redditVideoGoalLabels[goal] }}</option>
+                  }
+                </select>
+                <p id="reddit-video-goal-hint" class="text-xs text-gray-500">How long a view must last to count.</p>
+                @if (redditVideoGoalError(); as error) {
+                  <p id="reddit-video-goal-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-video-goal-error">{{ error }}</p>
+                }
+              </div>
+            }
           </div>
 
           <!-- The ad itself. Without one of these two routes the create still succeeds and still
@@ -1427,10 +1634,15 @@
                 data-testid="implementation-reddit-post-url" />
               <p class="text-xs text-gray-500">
                 An existing Reddit post to promote — a reddit.com post link, a redd.it link, or the post id on its own.
-                @if (redditCreativeAvailable()) {
+                @if (redditNeedsVideoGoal()) {
+                  Video Views needs an existing video post here; an image post cannot earn video views.
+                } @else if (redditCreativeAvailable()) {
                   Leave it blank to have one composed from the image below instead.
                 }
               </p>
+              @if (redditVideoPostError(); as error) {
+                <p role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-video-post-error">{{ error }}</p>
+              }
             </div>
 
             <!-- Compose a NEW post. Withheld unless the capability says yes: the other creator
@@ -1481,6 +1693,65 @@
                   <p class="text-xs text-gray-500">Button on the composed post. Ignored when a post URL is set.</p>
                 </div>
               </div>
+
+              <!-- Upload the image instead of pasting a URL (decision D3). Offered only on an explicit
+                   yes from `redditAssetUploadAvailable()`: the legacy creator never reads an uploaded
+                   image, and campaign-service refuses one until its URL signing is configured. The
+                   image URL above stays offered either way; the upload wins when both are present. -->
+              <!-- Always mounted, like the asset block's region below: a live region created with the
+                   control as upload support settles would miss its first announcement. -->
+              <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-image-status-live">
+                {{ redditImageUploadLiveMessage() }}
+              </div>
+              @if (redditAssetUploadAvailable()) {
+                <div class="flex flex-col gap-1" data-testid="implementation-reddit-image-upload">
+                  <label class="text-xs font-medium text-gray-700" for="reddit-image-file">Or upload an image</label>
+                  <input
+                    id="reddit-image-file"
+                    type="file"
+                    [attr.accept]="creativeAssetAccept"
+                    (change)="onRedditImageFileChange($event)"
+                    [attr.aria-describedby]="redditImageFileDescribedBy()"
+                    [attr.aria-invalid]="redditImageUploadStatus() === 'error' ? 'true' : null"
+                    class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                    data-testid="implementation-reddit-image-file" />
+                  <p id="reddit-image-file-hint" class="text-xs text-gray-500">
+                    PNG or JPEG, up to 10 MB. Used instead of the image URL; ignored when a post URL is set.
+                  </p>
+                  <!-- Progress and success are announced by the always-mounted live region above the
+                       control; this is the visible line the input is described by. The refusal is its
+                       own alert. -->
+                  <p id="reddit-image-file-status" class="text-xs text-gray-700" data-testid="implementation-reddit-image-status">
+                    {{ redditImageUploadStatusMessage() }}
+                  </p>
+                  @if (redditImageUploadStatus() === 'uploading') {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onRedditImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-reddit-image-cancel">
+                        Cancel upload
+                      </button>
+                    </div>
+                  } @else if (redditImageAssetId()) {
+                    <div>
+                      <button
+                        type="button"
+                        (click)="onRedditImageAssetRemove()"
+                        class="text-xs font-medium text-blue-600 hover:underline"
+                        data-testid="implementation-reddit-image-remove">
+                        Remove uploaded image
+                      </button>
+                    </div>
+                  }
+                  @if (redditImageUploadStatus() === 'error') {
+                    <p id="reddit-image-file-error" role="alert" class="text-xs text-red-600" data-testid="implementation-reddit-image-error">
+                      {{ redditImageUploadError() }}
+                    </p>
+                  }
+                </div>
+              }
             }
 
             <!-- Said BEFORE the create, beside the controls that answer it. The same product
@@ -1493,6 +1764,48 @@
                  the contrast reason the Google warning records. -->
             @if (redditNoAdWarning()) {
               <p class="text-xs text-amber-700" data-testid="implementation-reddit-no-ad-warning">{{ redditNoAdWarning() }}</p>
+            }
+
+            <!-- A retained uploaded image the request cannot carry yet (the upload control above is
+                 hidden while the capability is not an explicit yes). Outside that control so its
+                 actions stay reachable; the live region is always mounted and only its text changes. -->
+            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-reddit-image-asset-block-live">
+              {{ redditImageAssetBlockMessage() }}
+            </div>
+            @if (redditImageAssetBlock(); as block) {
+              <div
+                class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+                [class.bg-gray-50]="block.kind === 'pending'"
+                [class.text-gray-700]="block.kind === 'pending'"
+                [class.bg-amber-50]="block.kind !== 'pending'"
+                [class.text-amber-800]="block.kind !== 'pending'"
+                [attr.data-testid]="'implementation-reddit-image-asset-block-' + block.kind">
+                <p class="flex items-center gap-2">
+                  @if (block.kind === 'pending') {
+                    <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+                  }
+                  {{ block.message }}
+                </p>
+                <!-- Remove is offered in EVERY state, pending included: a read can stall. -->
+                <div class="flex items-center gap-2">
+                  @if (block.kind === 'failed') {
+                    <lfx-button
+                      label="Retry"
+                      size="small"
+                      severity="secondary"
+                      [outlined]="true"
+                      (onClick)="retryBiddingCapability.emit()"
+                      data-testid="implementation-reddit-image-asset-block-retry" />
+                  }
+                  <lfx-button
+                    label="Remove uploaded image"
+                    size="small"
+                    severity="secondary"
+                    [text]="true"
+                    (onClick)="onRedditImageAssetRemove()"
+                    data-testid="implementation-reddit-image-asset-block-remove" />
+                </div>
+              </div>
             }
           </div>
 
@@ -1545,6 +1858,13 @@
             </div>
           }
 
+          <!-- Bidding (#3299): offered only when this deployment can honour it; see `biddingAvailable`. -->
+          @if (biddingAvailable()) {
+            <div class="mb-4">
+              <lfx-campaign-bidding-control [view]="biddingViews()['reddit-ads']" (biddingChange)="onBiddingChange('reddit-ads', $event)" />
+            </div>
+          }
+
           <!-- Variant Preview -->
           @if (redditVariants().length > 0) {
             <div>
@@ -1562,6 +1882,51 @@
               </div>
             </div>
           }
+        </div>
+      }
+
+      <!--
+        A retained Manual bidding choice the deployment has not confirmed it can send (#3299). The
+        live region is always mounted and only its text changes, like the brief-status region at
+        the top of this template; the visible block below carries the actions.
+      -->
+      <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-bidding-capability-live">
+        {{ biddingCapabilityMessage() }}
+      </div>
+      @if (biddingCapabilityBlock(); as block) {
+        <div
+          class="flex flex-col items-start gap-2 rounded-md px-3 py-2 text-xs"
+          [class.bg-gray-50]="block.kind === 'pending'"
+          [class.text-gray-700]="block.kind === 'pending'"
+          [class.bg-amber-50]="block.kind !== 'pending'"
+          [class.text-amber-800]="block.kind !== 'pending'"
+          [attr.data-testid]="'implementation-bidding-capability-' + block.kind">
+          <p class="flex items-center gap-2">
+            @if (block.kind === 'pending') {
+              <i class="fa-light fa-spinner-third fa-spin" aria-hidden="true"></i>
+            }
+            {{ block.message }}
+          </p>
+          <!-- Switch to Automatic is offered in EVERY state, pending included: a read can stall, and the
+               operator must always have a way out that does not depend on it. -->
+          <div class="flex items-center gap-2">
+            @if (block.kind === 'failed') {
+              <lfx-button
+                label="Retry"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="retryBiddingCapability.emit()"
+                data-testid="implementation-bidding-capability-retry" />
+            }
+            <lfx-button
+              label="Switch to Automatic"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="switchRetainedBiddingToAutomatic()"
+              data-testid="implementation-bidding-capability-automatic" />
+          </div>
         </div>
       }
 
@@ -1744,7 +2109,7 @@
             <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
           }
           <h3 class="text-sm font-semibold text-gray-900">
-            {{ anyPlatformCreated() ? 'Campaigns Created' : 'Campaign Status Unconfirmed' }}
+            {{ platformResultsHeading() }}
           </h3>
         </div>
         <div class="flex flex-col gap-2">
@@ -1754,8 +2119,9 @@
             database write failed — `campaignId` is populated on purpose so the id is not lost)
             and an id-less remainder that mixes genuine rejections, concurrent-dispatch skips and
             responses whose upstream id was lost. Only the first is safely reportable as an
-            absence, and nothing on the wire distinguishes them. The classification and the
-            reasoning live in `platformOutcomes`.
+            absence, and nothing on the wire distinguishes them — except the fixed pre-create
+            sentences campaign-service #208 added, which render as `nothing-created`. The
+            classification and the reasoning live in `platformOutcomes`.
           -->
           @for (pr of platformOutcomes(); track pr.platform) {
             @let outcome = pr.outcome;
@@ -1771,6 +2137,9 @@
                   }
                   @case ('orphaned') {
                     <i class="fa-light fa-triangle-exclamation text-amber-600" aria-hidden="true"></i>
+                  }
+                  @case ('nothing-created') {
+                    <i class="fa-light fa-circle-xmark text-amber-600" aria-hidden="true"></i>
                   }
                   @default {
                     <i class="fa-light fa-circle-question text-amber-600" aria-hidden="true"></i>
@@ -1791,6 +2160,9 @@
                       @case ('orphaned') {
                         created upstream but not recorded — needs reconciliation
                       }
+                      @case ('nothing-created') {
+                        not created
+                      }
                       @default {
                         could not be confirmed — check the ad account before creating it again
                       }
@@ -1801,10 +2173,18 @@
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
                 }
               </div>
-              @if (pr.error) {
-                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
-                  {{ pr.error }}
+              @if (outcome === 'nothing-created') {
+                <p class="mt-1 text-xs font-medium text-gray-700" data-testid="implementation-platform-result-nothing-created">
+                  Nothing was created on the platform.
                 </p>
+              }
+              @if (pr.displayError) {
+                <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
+                  {{ pr.displayError }}
+                </p>
+              }
+              @if (pr.nextStep) {
+                <p class="mt-1 text-xs font-medium text-gray-900" data-testid="implementation-platform-result-next-step">{{ pr.nextStep }}</p>
               }
             </div>
           }

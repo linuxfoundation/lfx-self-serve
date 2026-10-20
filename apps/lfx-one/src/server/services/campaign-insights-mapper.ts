@@ -15,6 +15,11 @@ import type {
   KeywordTotals,
   MicrosoftKeywordMetrics,
   MicrosoftKeywordMetricsResponse,
+  CampaignServiceRedditKeywords,
+  CampaignServiceRedditKeywordRow,
+  RedditKeywordMetrics,
+  RedditKeywordMetricsResponse,
+  RedditKeywordTotals,
 } from '@lfx-one/shared/interfaces';
 
 // ---------------------------------------------------------------------------
@@ -209,6 +214,52 @@ export function toMicrosoftKeywordMetricsResponse(payload: CampaignServiceMicros
     conversionsComplete: payload.conversions_complete === true,
     dataIncomplete: payload.data_incomplete === true,
     totals: keywordTotals(keywords),
+    keywords,
+  };
+}
+
+function toRedditKeywordRow(row: CampaignServiceRedditKeywordRow, index: number): RedditKeywordMetrics {
+  const keyword = typeof row.text === 'string' && row.text !== '' ? row.text : null;
+  return {
+    // Unique within one read: upstream returns one row per (campaign, keyword), and at most one
+    // keyword-less row per campaign. The index keeps it unique even if that ever stops holding.
+    key: `${row.campaign_id}|${keyword ?? ''}|${index}`,
+    campaignId: row.campaign_id,
+    keyword,
+    impressions: row.impressions,
+    clicks: row.clicks,
+    ctr: percentFromFraction(row.ctr),
+    spend: spendFromMicros(row.cost_micros),
+  };
+}
+
+function redditKeywordTotals(keywords: readonly RedditKeywordMetrics[]): RedditKeywordTotals {
+  const impressions = keywords.reduce((sum, k) => sum + k.impressions, 0);
+  const clicks = keywords.reduce((sum, k) => sum + k.clicks, 0);
+  return {
+    impressions,
+    clicks,
+    // One ad account per project (upstream reads the bound account only), so one currency.
+    spend: keywords.reduce((sum, k) => sum + k.spend, 0),
+    avgCtr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+  };
+}
+
+/**
+ * Convert campaign-service's Reddit keyword read (`get-reddit-ads-keywords`, #331) into the UI's
+ * `RedditKeywordMetricsResponse`: micro-units to currency, CTR fraction to percentage, a keyword
+ * Reddit left null kept as `null` (delivery attributed to no keyword). Rows keep upstream's order
+ * (impressions descending). No conversions and no report-freshness fields: the read is live and
+ * requests none.
+ */
+export function toRedditKeywordMetricsResponse(payload: CampaignServiceRedditKeywords, pulledAt: string): RedditKeywordMetricsResponse {
+  const keywords = (Array.isArray(payload.rows) ? payload.rows : []).map(toRedditKeywordRow);
+  return {
+    pulledAt,
+    window: payload.window,
+    totalKeywords: keywords.length,
+    truncated: payload.truncated === true,
+    totals: redditKeywordTotals(keywords),
     keywords,
   };
 }

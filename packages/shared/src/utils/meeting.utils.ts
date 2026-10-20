@@ -1808,3 +1808,19 @@ export function isBatchRegistrantOperationResponse<T>(value: unknown): value is 
   const { total, successful, failed } = summary as Partial<Record<keyof BatchRegistrantOperationResponse<T>['summary'], unknown>>;
   return typeof total === 'number' && typeof successful === 'number' && typeof failed === 'number';
 }
+
+/**
+ * Confirmation text for a user removing themselves from a meeting. A committee invitee is told the committee
+ * will not add them back, since the removal is recorded and committee syncs honor it. An organizer is told the
+ * removal only ends their invitation, not their organizer access.
+ */
+export function getMeetingSelfRemovalMessage(title: string, options: { viaCommittee?: boolean; organizer?: boolean } = {}): string {
+  const parts = [`Remove yourself from "${title}"? You will no longer be invited to any occurrence and will lose your RSVP.`];
+  if (options.organizer) {
+    parts.push('You will still be an organizer of this meeting.');
+  }
+  if (options.viaCommittee) {
+    parts.push("You stay in the committee, but it won't invite you to this meeting again.");
+  }
+  return parts.join(' ');
+}

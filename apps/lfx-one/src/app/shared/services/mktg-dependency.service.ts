@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse, HttpStatusCode } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
-import { MktgDependencyDocument } from '@lfx-one/shared/interfaces';
-import { catchError, forkJoin, map, Observable, of, Subject } from 'rxjs';
+import { BRAND_KIT_INTAKE, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+import { BrandKitRevision, MktgDependencyDocument, MktgRevisionFormat } from '@lfx-one/shared/interfaces';
+import { readBrandKitRevision, readFoundationMessageContent, renderFoundationMessageMarkdown } from '@lfx-one/shared/utils';
+import { catchError, forkJoin, map, Observable, of, Subject, switchMap, throwError } from 'rxjs';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
 import { MktgArtifactService } from './mktg-artifact.service';
@@ -63,10 +65,48 @@ export class MktgDependencyService {
    * Resolve one dependency agent's stored output for a project, or null when
    * neither source has one. Any server error (404 nothing stored, 403 not
    * entitled, transient failure) degrades to the browser-stored fallback.
+   *
+   * `withSidecar`: the server's LATEST stored revision read with its date
+   * and its sidecar JSON, which a `json` attachment submits (the Brand Kit's
+   * messaging framework — the latest regardless of its review status, since
+   * LFX One has no Approve action yet; Approve is a later item). There is
+   * no browser fallback then — a browser-stored run carries no sidecar —
+   * and an agent with no stored read endpoint resolves to null. Only a 404
+   * is "no revision": any other failure (403, a 5xx, the network) is logged
+   * and rethrown, because a null here reads as a measured absence — "Run
+   * the messaging framework first" — and the run page must show a failed
+   * check instead.
    */
-  public resolveDependency(projectUid: string, agentId: string): Observable<MktgDependencyDocument | null> {
-    const browserFallback$ = of(this.loadBrowserDocument(projectUid, agentId));
+  public resolveDependency(projectUid: string, agentId: string, withSidecar = false): Observable<MktgDependencyDocument | null> {
     const storedEndpoint = MKTG_AGENT_INTAKES[agentId]?.endpoints.stored;
+    if (withSidecar) {
+      if (!storedEndpoint) {
+        return of(null);
+      }
+      return this.artifactService.getStored(storedEndpoint, projectUid, true).pipe(
+        map(
+          (stored): MktgDependencyDocument => ({
+            agentId,
+            source: 'server',
+            // The chip names the revision attached as Documents numbers it; the receipt's version is the agent's draft version within its run.
+            version: stored.revisionNumber ?? stored.receipt.version,
+            // The document is Markdown like on every read; what a `json` attachment submits is the sidecar, untouched.
+            // A JSON revision with no Markdown reading still answers: the gate reads the sidecar, not this.
+            document: this.markdownOf(stored.documentMarkdown, stored.format) ?? '',
+            ...(stored.storedAt && { storedAt: stored.storedAt }),
+            ...(stored.sidecar && { sidecar: stored.sidecar }),
+          })
+        ),
+        catchError((error: unknown) => {
+          if (error instanceof HttpErrorResponse && error.status === HttpStatusCode.NotFound) {
+            return of(null);
+          }
+          console.error('[mktg-dependency] latest revision read failed', { agentId, projectUid, error });
+          return throwError(() => error);
+        })
+      );
+    }
+    const browserFallback$ = of(this.loadBrowserDocument(projectUid, agentId));
     if (!storedEndpoint) {
       // No stored read endpoint is registered for this agent — browser-stored
       // run only. This is not the same as "persists nothing": an intake can
@@ -76,43 +116,86 @@ export class MktgDependencyService {
       return browserFallback$;
     }
     return this.artifactService.getStored(storedEndpoint, projectUid).pipe(
-      map(
-        (stored): MktgDependencyDocument => ({
-          agentId,
-          source: 'server',
-          version: stored.receipt.version,
-          document: stored.documentMarkdown,
-        })
-      ),
+      switchMap((stored): Observable<MktgDependencyDocument | null> => {
+        const document = this.markdownOf(stored.documentMarkdown, stored.format);
+        // Stored JSON that is not a framework has no Markdown reading: the browser copy, like any other miss.
+        return document === null ? browserFallback$ : of({ agentId, source: 'server', version: stored.receipt.version, document });
+      }),
       catchError(() => browserFallback$)
+    );
+  }
+
+  /**
+   * The project's stored Brand Kit — its latest revision, read from the
+   * revision's sidecar — or null when the project has none. A print of
+   * another asset (Download PDF) is set in the kit's colours, typeface and
+   * logo when there is one, and in the LF look otherwise; so here, unlike a
+   * gate, any failed read (403, a 5xx, the network) is also null: the
+   * document still prints, in the LF look.
+   */
+  public resolveBrandKit(projectUid: string): Observable<BrandKitRevision | null> {
+    if (!projectUid) {
+      return of(null);
+    }
+    return this.resolveDependency(projectUid, BRAND_KIT_INTAKE.agentId, true).pipe(
+      map((document) => readBrandKitRevision(document?.sidecar ?? null)),
+      catchError(() => of(null))
     );
   }
 
   /**
    * Resolve several dependency agents at once, keyed by agent id. Emits a
    * single complete record (unresolved dependencies map to null); an empty
-   * dependency list resolves immediately to an empty record.
+   * dependency list resolves immediately to an empty record. The ids in
+   * `sidecarIds` resolve from the server's latest revision with its sidecar.
    */
-  public resolveDependencies(projectUid: string, agentIds: string[]): Observable<Record<string, MktgDependencyDocument | null>> {
+  public resolveDependencies(projectUid: string, agentIds: string[], sidecarIds: string[] = []): Observable<Record<string, MktgDependencyDocument | null>> {
     const uniqueIds = [...new Set(agentIds)];
     if (uniqueIds.length === 0) {
       return of({});
     }
+    const sidecar = new Set(sidecarIds);
     return forkJoin(
-      Object.fromEntries(uniqueIds.map((agentId) => [agentId, this.resolveDependency(projectUid, agentId)])) as Record<
+      Object.fromEntries(uniqueIds.map((agentId) => [agentId, this.resolveDependency(projectUid, agentId, sidecar.has(agentId))])) as Record<
         string,
         Observable<MktgDependencyDocument | null>
       >
     );
   }
 
-  /** This browser's stored run for the agent, reduced to its latest version's document. */
+  /**
+   * This browser's stored run for the agent, reduced to its latest version's
+   * document. An agent that writes an asset (the Messaging Framework) stores
+   * an empty document and the asset beside it, so its document is the
+   * asset content read exactly as the server's stored JSON is read
+   * ({@link markdownOf}): shape-checked, then rendered to Markdown. Browser
+   * storage is not re-validated on load, so the check is what keeps a stale
+   * or hand-edited asset from reaching the renderer.
+   */
   private loadBrowserDocument(projectUid: string, agentId: string): MktgDependencyDocument | null {
     const run = this.runService.loadRun(projectUid, agentId);
     const latest = run?.versions.at(-1);
-    if (!latest?.document) {
+    // Only the framework has a Markdown reading; another asset (the Boilerplates, the FAQ) is not a document anything attaches.
+    const framework = latest?.asset?.kind === 'messaging-framework' ? latest.asset : null;
+    const document = latest?.document || (framework ? (this.markdownOf(JSON.stringify(framework.content), 'json') ?? '') : '');
+    if (!latest || !document) {
       return null;
     }
-    return { agentId, source: 'browser', version: latest.version, document: latest.document };
+    return { agentId, source: 'browser', version: latest.version, document };
+  }
+
+  /**
+   * A stored document as a dependent agent reads it. Every consumer takes a
+   * Markdown document (the ICP's `message_foundation_markdown` among them),
+   * so a JSON revision — the Messaging Framework's — is rendered to Markdown
+   * rather than handed over as JSON text. Null for JSON that is not a
+   * framework, which has no Markdown reading.
+   */
+  private markdownOf(text: string, format: MktgRevisionFormat | undefined): string | null {
+    if (format !== 'json') {
+      return text;
+    }
+    const content = readFoundationMessageContent(text);
+    return content ? renderFoundationMessageMarkdown(content) : null;
   }
 }

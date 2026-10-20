@@ -6,12 +6,21 @@ import { describe, expect, it } from 'vitest';
 import {
   CAMPAIGN_ACTION_RULE_LEVERS,
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
 } from '../constants/campaign.constants';
 import type { BriefMetricsActionRule, CampaignOptimizeLever } from '../interfaces/campaign.interface';
-import { campaignActionItemLever, campaignActionRuleLever, keywordActionKey, normalizeSponsors, parseNegativeKeywordInput } from './campaign.utils';
+import {
+  campaignActionItemLever,
+  campaignActionRuleLever,
+  campaignEtagVersion,
+  describeCampaignDispatchFailure,
+  keywordActionKey,
+  normalizeSponsors,
+  parseNegativeKeywordInput,
+} from './campaign.utils';
 
 /**
  * Sponsor entries arrive from a SCRAPED page: attacker-influenced names and logo urls that reach
@@ -150,15 +159,10 @@ describe('campaignActionRuleLever', () => {
 describe('campaignActionItemLever', () => {
   const allPlatforms = ['google-ads', 'microsoft-ads', 'linkedin-ads', 'meta-ads', 'reddit-ads', 'twitter-ads'];
 
-  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads'])('offers the budget lever on %s', (platform) => {
+  // X included since #3299: campaign-service writes its budget as a daily amount.
+  it.each(['google-ads', 'linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads', 'twitter-ads'])('offers the budget lever on %s', (platform) => {
     expect(campaignActionItemLever('underspending', platform)).toBe('budget');
     expect(campaignActionItemLever('budget_constrained', platform)).toBe('budget');
-  });
-
-  // X has no budget write upstream; offering the lever would open an editor whose every save 400s.
-  it('offers no budget lever on X', () => {
-    expect(campaignActionItemLever('underspending', 'twitter-ads')).toBe('none');
-    expect(campaignActionItemLever('budget_constrained', 'twitter-ads')).toBe('none');
   });
 
   // Gated on the SAME set the row toggle uses, so the lever can never be offered where the toggle
@@ -231,6 +235,17 @@ describe('parseNegativeKeywordInput', () => {
     expect(parseNegativeKeywordInput('a'.repeat(MAX_NEGATIVE_KEYWORD_TEXT_LENGTH + 1)).problems[0].reason).toContain(`${MAX_NEGATIVE_KEYWORD_TEXT_LENGTH}`);
   });
 
+  // A caller that knows the platform passes its own, shorter cap — Google Ads' 80 against the
+  // shared 100 — and a text that clears the shared limit is then still refused.
+  it('applies a caller-supplied text limit instead of the shared one', () => {
+    const text = 'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1);
+    expect(parseNegativeKeywordInput(text).problems).toEqual([]);
+    const parsed = parseNegativeKeywordInput(text, MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+    expect(parsed.keywords).toEqual([]);
+    expect(parsed.problems[0].reason).toContain(`${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH}`);
+    expect(parseNegativeKeywordInput('a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH), MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH).problems).toEqual([]);
+  });
+
   it.each([null, undefined, 42])('treats a non-string (%s) as empty', (value) => {
     expect(parseNegativeKeywordInput(value)).toEqual({ keywords: [], problems: [] });
   });
@@ -240,5 +255,105 @@ describe('keywordActionKey', () => {
   it('keeps the Google key unchanged and qualifies the Microsoft one', () => {
     expect(keywordActionKey('google-ads', '11', '22')).toBe('11-22');
     expect(keywordActionKey('microsoft-ads', '11', '22')).toBe('microsoft-ads:11-22');
+  });
+});
+
+describe('campaignEtagVersion', () => {
+  it.each([
+    ['"3"', 3],
+    ['"120"', 120],
+  ])('reads the version of %s', (etag, version) => {
+    expect(campaignEtagVersion(etag)).toBe(version);
+  });
+
+  it.each([undefined, null, '', '3', 'W/"3"', '"3a"', '"-1"', '"1234567890123456"'])('refuses %s as not comparable', (etag) => {
+    expect(campaignEtagVersion(etag as string | null | undefined)).toBeNull();
+  });
+});
+
+describe('describeCampaignDispatchFailure', () => {
+  // Built exactly as DispatchFailureMessage + reasonSuffix build it (internal/service/dispatch_failure.go).
+  const notUsable = (provider: string, token: string) =>
+    `this project's ${provider} connection cannot be used as configured (reason: ${token}); nothing was sent`;
+
+  it.each([
+    ['account_not_selected', 'meta-ads', "Ask an LFX administrator to choose an ad account on this project's Meta Ads connection, then create again."],
+    ['connection_inactive', 'reddit-ads', "Ask an LFX administrator to reactivate this project's Reddit Ads connection, then create again."],
+    [
+      'credentials_undecodable',
+      'linkedin-ads',
+      "Ask an LFX administrator to reconnect this project's LinkedIn Ads connection to save fresh credentials, then create again.",
+    ],
+    [
+      'credentials_incomplete',
+      'microsoft-ads',
+      "Ask an LFX administrator to reconnect this project's Microsoft Ads connection to save fresh credentials, then create again.",
+    ],
+    [
+      'credential_blob_malformed',
+      'google-ads',
+      "Ask an LFX administrator to reconnect this project's Google Ads connection to save fresh credentials, then create again.",
+    ],
+    [
+      'credentials_absent',
+      'meta-ads',
+      "Ask an LFX administrator to reconnect this project's Meta Ads connection to save fresh credentials, then create again.",
+    ],
+    ['credentials_expired', 'linkedin-ads', "Ask an LFX administrator to re-authorize this project's LinkedIn Ads connection, then create again."],
+  ])('maps %s on %s to a next step and drops the raw reason fragment', (token, provider, step) => {
+    const d = describeCampaignDispatchFailure(notUsable(provider, token));
+    expect(d.nextStep).toBe(step);
+    expect(d.message).toBe(`this project's ${provider} connection cannot be used as configured; nothing was sent`);
+    expect(d.nothingCreated).toBe(true);
+  });
+
+  it('falls back to the raw platform id when the provider has no label', () => {
+    expect(describeCampaignDispatchFailure(notUsable('hubspot', 'connection_inactive')).nextStep).toBe(
+      "Ask an LFX administrator to reactivate this project's hubspot connection, then create again."
+    );
+  });
+
+  it('leaves an unknown token verbatim with no next step', () => {
+    const error = notUsable('meta-ads', 'token_request_rejected');
+    expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: true });
+  });
+
+  it('does not map an inherited object key as a token', () => {
+    const error = notUsable('meta-ads', 'constructor');
+    expect(describeCampaignDispatchFailure(error).nextStep).toBeNull();
+  });
+
+  it('does not map the LF system connection sentence, which the project cannot repair', () => {
+    const error = 'the LF system meta-ads connection is not usable as configured (reason: account_not_selected); nothing was sent';
+    expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: true });
+  });
+
+  it('ignores a reason fragment embedded in any other text', () => {
+    const error = "upstream said: this project's meta-ads connection cannot be used as configured (reason: account_not_selected); nothing was sent";
+    expect(describeCampaignDispatchFailure(error).nextStep).toBeNull();
+    const trailing = `${notUsable('meta-ads', 'account_not_selected')} — extra`;
+    expect(describeCampaignDispatchFailure(trailing)).toEqual({ message: trailing, nextStep: null, nothingCreated: false });
+  });
+
+  it.each([
+    'no meta-ads connection is configured for this project; nothing was sent',
+    'the stored reddit-ads credentials could not be decrypted; nothing was sent',
+    'the LF system google-ads connection is not installed; nothing was sent',
+    'linkedin-ads token refresh failed, so nothing was sent; the connection may need re-authorizing',
+    'meta-ads answered HTTP 503 before anything was created (a retry may succeed); nothing was created',
+    'reddit-ads refused the request (HTTP 400) before anything was created; nothing was created',
+    'meta-ads campaign creation was stopped before anything was sent by a defect in this service; the connection is not at fault',
+  ])('flags the pre-create sentence %j as nothing created', (error) => {
+    expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: true });
+  });
+
+  it.each([
+    'meta-ads campaign creation could not be confirmed; something may have been created — verify on the platform before retrying',
+    'meta-ads campaign creation could not be confirmed (the platform answered HTTP 502); something may have been created — verify on the platform before retrying',
+    'platform campaign creation failed',
+    'skipped: another concurrent dispatch owns this platform',
+    'dispatcher returned no campaign',
+  ])('does not flag %j as nothing created', (error) => {
+    expect(describeCampaignDispatchFailure(error)).toEqual({ message: error, nextStep: null, nothingCreated: false });
   });
 });

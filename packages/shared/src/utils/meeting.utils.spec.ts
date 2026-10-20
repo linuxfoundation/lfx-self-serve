@@ -41,6 +41,7 @@ import {
   buildMeetingEditQueryParams,
   buildMeetingOccurrenceOptions,
   buildMeetingOccurrenceRoute,
+  getMeetingSelfRemovalMessage,
   buildMeetingOrganizerChip,
   buildMeetingOrganizerMailto,
   buildOccurrenceNavTimeline,
@@ -1998,5 +1999,34 @@ describe('isBatchRegistrantOperationResponse', () => {
     ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
   ])('rejects %s', (_label, value) => {
     expect(isBatchRegistrantOperationResponse(value)).toBe(false);
+  });
+});
+
+describe('getMeetingSelfRemovalMessage', () => {
+  it('names the meeting and warns about losing the RSVP', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync')).toBe(
+      'Remove yourself from "Weekly sync"? You will no longer be invited to any occurrence and will lose your RSVP.'
+    );
+  });
+
+  it.each([[undefined], [false]])('does not mention a committee when invited_via_committee is %s', (viaCommittee) => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', { viaCommittee })).not.toContain('committee');
+  });
+
+  it('tells a committee invitee the committee will not invite them again', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', { viaCommittee: true })).toContain(
+      "You stay in the committee, but it won't invite you to this meeting again."
+    );
+  });
+
+  it('tells an organizer they stay an organizer', () => {
+    expect(getMeetingSelfRemovalMessage('Weekly sync', { organizer: true })).toContain('You will still be an organizer of this meeting.');
+  });
+
+  it('says both when an organizer was invited through a committee', () => {
+    const message = getMeetingSelfRemovalMessage('Weekly sync', { organizer: true, viaCommittee: true });
+
+    expect(message).toContain('still be an organizer');
+    expect(message).toContain("it won't invite you to this meeting again");
   });
 });

@@ -14,7 +14,6 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 const getPersonas = vi.fn();
 const checkRootMarketingAuditor = vi.fn();
 const checkRootCampaignManager = vi.fn();
-const checkRootCampaignManagerCascade = vi.fn();
 const checkProjectWriter = vi.fn();
 const checkSingleAccess = vi.fn();
 const getProjectIdBySlug = vi.fn();
@@ -24,7 +23,6 @@ vi.mock('../utils/persona-helper', () => ({
     getPersonas: (...args: unknown[]) => getPersonas(...args),
     checkRootMarketingAuditor: (...args: unknown[]) => checkRootMarketingAuditor(...args),
     checkRootCampaignManager: (...args: unknown[]) => checkRootCampaignManager(...args),
-    checkRootCampaignManagerCascade: (...args: unknown[]) => checkRootCampaignManagerCascade(...args),
     checkProjectWriter: (...args: unknown[]) => checkProjectWriter(...args),
   },
 }));
@@ -77,8 +75,6 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
     getPersonas.mockReset();
     checkRootMarketingAuditor.mockReset();
     checkRootCampaignManager.mockReset();
-    checkRootCampaignManagerCascade.mockReset();
-    checkRootCampaignManagerCascade.mockResolvedValue(false);
     checkProjectWriter.mockReset();
     checkSingleAccess.mockReset();
     getProjectIdBySlug.mockReset();
@@ -264,20 +260,6 @@ describe('requireMarketingAuditor / requireCampaignManager', () => {
       expect(verdict(next)).toBe('deny');
       expect(checkRootCampaignManager).not.toHaveBeenCalled();
       expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'uid-child', access: 'campaign_manager' });
-    });
-
-    // ROOT `marketing_ops` cascades, so it answers a named project without the slug lookup, whose
-    // timeout or 503 would otherwise deny it as `project_not_found`.
-    it('allows a named-project campaign request via the cascading ROOT marketing_ops grant, before the slug lookup', async () => {
-      getPersonas.mockResolvedValue(nonEd());
-      checkRootCampaignManagerCascade.mockResolvedValue(true);
-      const next = vi.fn();
-
-      await requireCampaignManager(buildReq({ project: 'child' }), {} as Response, next as unknown as NextFunction);
-
-      expect(verdict(next)).toBe('allow');
-      expect(getProjectIdBySlug).not.toHaveBeenCalled();
-      expect(checkRootCampaignManager).not.toHaveBeenCalled();
     });
   });
 

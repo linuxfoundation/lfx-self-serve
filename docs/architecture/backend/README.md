@@ -46,6 +46,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Authentication](./authentication.md)                                 | Auth0 integration, selective auth middleware, M2M tokens, session management    |
 | [Logging & Monitoring](./logging-monitoring.md)                       | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
 | [Error Handling](./error-handling-architecture.md)                    | Error classification, ServiceValidationError, error middleware                  |
+| [Marketing OS Document Revisions](./mktg-document-revisions.md)       | Immutable revision history, conditional current pointers, reads and attribution |
 | [Server Helpers](./server-helpers.md)                                 | Validation type guards, pagination helper, polling, URL validation              |
 | [Pagination](./pagination.md)                                         | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
 | [AI Service](./ai-service.md)                                         | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
@@ -56,9 +57,8 @@ Request → Controller → Service → Microservice/Data Layer
 | [Mentorship Mentor BFF](./mentorship-mentor.md)                       | Mentor route map, sub-router, controller and services, data source              |
 | [Mentorship Admin BFF](./mentorship-admin.md)                         | Admin route map, sub-router, controller and services, shared mappers            |
 | [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md)     | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
-| [Gatewaze Embed Proxy](./gw-proxy.md)                                 | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
-| [Gatewaze Host Session](./gw-host-session.md)                         | Server-held Gatewaze session, id_token grant, keys, flag, me and logout routes  |
-| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, M2M Key Contact check, server-side LaunchDarkly flag bypass  |
+| [Gatewaze Host Session](./gw-host-session.md)                         | Server-held Gatewaze session, routes, BFF proxies, authorization, keys, flag    |
+| [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, server-side LaunchDarkly access flag                         |
 | [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
 
 ### Committee Management

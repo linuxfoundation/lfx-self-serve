@@ -36,6 +36,12 @@ export interface EnrichedPersonaProject {
   projectName: string | null;
   parentProjectUid: string | null;
   isFoundation: boolean;
+  /**
+   * True once enrichment merged this project's record, so `isFoundation` reflects its real tier.
+   * Absent on raw detection and on entries the metadata batch missed, where `isFoundation` is just
+   * the detection default (`false`) and must not be read as "not a foundation".
+   */
+  tierResolved?: boolean;
   logoUrl: string | null;
   description: string | null;
   detections: PersonaDetection[];
@@ -90,11 +96,23 @@ export interface PersonaApiResponse extends PersonaDetections {
    */
   isMarketingAuditorRootGrant: boolean;
   /**
-   * True only when {@link isCampaignManager} is backed by the cascading ROOT `marketing_ops` grant.
-   * ROOT `global_marketing_ops` does not cascade, so it leaves this `false` even when it satisfied an
-   * unscoped {@link isCampaignManager}.
+   * Always `false`: this no longer reads the cascading ROOT `marketing_ops` grant it used to report,
+   * whose ROOT tuple is removed before this ships, and ROOT `global_marketing_ops` does not cascade.
+   * Kept so the frontend contract is unchanged.
    */
   isCampaignManagerRootGrant: boolean;
+  /**
+   * True when either marketing grant is unverified ({@link marketingAuditorUnverified} /
+   * {@link campaignManagerUnverified}): a marketing grant check behind {@link isMarketingAuditor} / {@link isCampaignManager}
+   * (ROOT or project-scoped, including its slug lookup) failed upstream instead of answering. Those
+   * booleans still fail closed to `false`; this tells the client the `false` means "couldn't check",
+   * not "denied", so it can offer a retry. Absent on responses that never ran the checks.
+   */
+  marketingGrantCheckFailed?: boolean;
+  /** {@link isMarketingAuditor} is `false` only because its check failed upstream: unverified, not denied. */
+  marketingAuditorUnverified?: boolean;
+  /** {@link isCampaignManager} is `false` only because its check failed upstream: unverified, not denied. */
+  campaignManagerUnverified?: boolean;
 }
 
 export interface SsrPersonaResult {
@@ -117,8 +135,7 @@ export interface PersonaApiResponseCacheEntry {
   expiresAt: number;
 }
 
-/** The caller's ROOT `marketing_ops` and `global_marketing_ops` grants, read in one batched check. */
+/** The caller's ROOT `global_marketing_ops` grant. */
 export interface RootMarketingOpsGrants {
-  marketingOps: boolean;
   globalMarketingOps: boolean;
 }

@@ -19,22 +19,21 @@ export const INSIGHTS_PUBLIC_API_EXAMPLE_URL = 'https://api.insights.linuxfounda
 export const INSIGHTS_TOKEN_ERROR_CODES = {
   NAME_TAKEN: 'token_name_taken',
   LIMIT_REACHED: 'token_limit_reached',
-  NOT_KEY_CONTACT: 'not_key_contact',
-  ELIGIBILITY_UNAVAILABLE: 'eligibility_unavailable',
+  NOT_ENABLED: 'not_enabled',
 } as const;
 
 /** Characters rejected in token names (C0 controls and DEL). */
 // eslint-disable-next-line no-control-regex
 export const INSIGHTS_TOKEN_NAME_CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
-/** Fail-closed eligibility for a caller confirmed not to be a Key Contact. */
-export const INSIGHTS_TOKEN_INELIGIBLE: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: false };
+/** Eligibility for a caller the `insights-public-api-token-access` flag is off for. */
+export const INSIGHTS_TOKEN_INELIGIBLE: InsightsTokenEligibility = { canCreate: false, checkFailed: false };
 
-/** Eligibility for a user the `insights-public-api-token-access` flag targets: treated as a Key Contact without an org lookup. */
-export const INSIGHTS_TOKEN_FLAG_ELIGIBLE: InsightsTokenEligibility = { canCreate: true, orgs: [], checkFailed: false };
+/** Eligibility for a caller the `insights-public-api-token-access` flag is on for. */
+export const INSIGHTS_TOKEN_ELIGIBLE: InsightsTokenEligibility = { canCreate: true, checkFailed: false };
 
-/** Fail-closed eligibility when the Key Contact check itself could not complete (upstream error). */
-export const INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE: InsightsTokenEligibility = { canCreate: false, orgs: [], checkFailed: true };
+/** Fail-closed eligibility the browser uses when the eligibility request itself fails. */
+export const INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE: InsightsTokenEligibility = { canCreate: false, checkFailed: true };
 
 /**
  * LFX Insights documentation, linked from the token group and reveal dialog.
@@ -49,8 +48,7 @@ export const INSIGHTS_TOKEN_COPIED_RESET_MS = 2000;
 export const INSIGHTS_TOKEN_ERROR_MESSAGES: Record<InsightsTokenErrorCode, string> = {
   [INSIGHTS_TOKEN_ERROR_CODES.NAME_TAKEN]: 'You already have a token with this name. Choose a different name.',
   [INSIGHTS_TOKEN_ERROR_CODES.LIMIT_REACHED]: "You've reached the maximum number of LFX Insights API tokens. Revoke one you no longer use, then try again.",
-  [INSIGHTS_TOKEN_ERROR_CODES.NOT_KEY_CONTACT]: 'Only Key Contacts can create LFX Insights tokens.',
-  [INSIGHTS_TOKEN_ERROR_CODES.ELIGIBILITY_UNAVAILABLE]: "We couldn't verify your Key Contact status right now. Please try again in a few minutes.",
+  [INSIGHTS_TOKEN_ERROR_CODES.NOT_ENABLED]: "LFX Insights API tokens aren't enabled for your account yet.",
 };
 
 export const INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR = "We couldn't create the token. Please try again.";

@@ -1,84 +1,65 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, signal, TransferState } from '@angular/core';
+import { BrowserPlatformLocation, PlatformLocation } from '@angular/common';
+import { Component, PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { NavigationEnd, NavigationStart, provideRouter, Router, Event as RouterEvent } from '@angular/router';
 import {
-  GW_EMBED_AUTO_SIGNIN_KEY,
-  GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS,
-  GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS,
-  GW_EMBED_SESSION_RECOVERY_KEY,
-  GW_EMBED_SIGNIN_STATE_KEY,
-  GW_EMBED_SIGNIN_STATE_PARAM,
-  GW_EMBED_STORAGE_KEY_PREFIX,
-  GW_EMBED_STORAGE_KEY_SUFFIX,
+  GW_EMBED_CAPABILITY_MISSING_CODE,
+  GW_EMBED_FIRST_PAINT_TIMEOUT_MS,
+  GW_EMBED_HOST_SESSION_LOGOUT_URL,
+  GW_EMBED_HOST_SESSION_ME_URL,
   GW_EMBED_STYLESHEET_ROUTE,
 } from '@lfx-one/shared/constants';
 import { GwEmbedManifest, GwHostContext, RuntimeConfig } from '@lfx-one/shared/interfaces';
-import { EMPTY } from 'rxjs';
+import { EMPTY, filter, Subject } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { UserService } from '../../../shared/services/user.service';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '../../../shared/providers/runtime-config.provider';
-import { GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
+import { GwEmbedWarmupService } from '../../../shared/services/gw-embed-warmup.service';
+import { buildGwEmbedStylesheetUrl, gwEmbedHasPaintedContent, GwModuleOutletComponent, resolveGwEmbedStylesheetName } from './gw-module-outlet.component';
 
 // The loader is a real npm dependency that the unit-test builder bundles, so it cannot be mocked
 // at the module level; the mount path below stands it in through the component's loadEmbedLoader
 // seam, with a `ready` promise each test controls.
 const loaderMount = vi.fn();
 
+/** Route target for the real-router cases; the outlet under test is created on its own. */
+@Component({ selector: 'lfx-gw-empty-route', template: '' })
+class EmptyRouteComponent {}
+
 /**
- * These cover the host-side decisions the embed can't make for itself — session adoption, the
- * /login loop-breaker, and the notification bridge. The mount path itself isn't exercised: the
- * component is created under a server PLATFORM_ID so `afterNextRender` never fires and no attempt
- * is made to import the embed bundle, which isn't resolvable in a test environment.
+ * These cover the host-side decisions the embed can't make for itself: the host-session context,
+ * failing closed when that mode is off, the /login loop-breaker, and the notification bridge. Most
+ * cases create the component under a server PLATFORM_ID so `afterNextRender` never fires and no
+ * attempt is made to import the embed bundle; the mount cases switch to a browser platform.
  */
 describe('GwModuleOutletComponent', () => {
-  const SESSION_KEY = `${GW_EMBED_STORAGE_KEY_PREFIX}${GW_EMBED_STORAGE_KEY_SUFFIX}`;
-  const RECOVERY_KEY = GW_EMBED_SESSION_RECOVERY_KEY;
-
   let fixture: ComponentFixture<GwModuleOutletComponent>;
   let component: GwModuleOutletComponent;
   let navigateByUrl: ReturnType<typeof vi.fn>;
-  let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
-  let selectedProject: ReturnType<typeof signal<{ slug: string } | null>>;
   let add: ReturnType<typeof vi.fn>;
+  let routerEvents: Subject<RouterEvent>;
 
   /** Private by design — these are internal decisions, not API, but they're where the risk lives. */
   const callPrivate = <T>(name: string, ...args: unknown[]): T => (component as unknown as Record<string, (...a: unknown[]) => T>)[name](...args);
 
-  const futureSession = (): string => JSON.stringify({ access_token: 'token', expires_at: Math.floor(Date.now() / 1000) + 3600 });
-
-  /**
-   * Burns the automatic sign-in budget so a /login bounce falls through to the manual panel.
-   *
-   * The host attempts an automatic LFID redirect BEFORE offering the button, because a user who is
-   * already signed in to LFX should never be asked to sign in a second time. Every manual-fallback
-   * case below is therefore reachable only once that budget is spent, and each one says so.
-   */
-  const exhaustAutoSignIn = (): void => window.sessionStorage.setItem(GW_EMBED_AUTO_SIGNIN_KEY, String(GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS));
-
   beforeEach(() => {
     navigateByUrl = vi.fn();
-    selectedFoundation = signal<{ slug: string } | null>(null);
-    selectedProject = signal<{ slug: string } | null>(null);
     add = vi.fn();
-    window.localStorage.clear();
-    window.sessionStorage.clear();
+    routerEvents = new Subject<RouterEvent>();
 
     TestBed.configureTestingModule({
       imports: [GwModuleOutletComponent],
       providers: [
-        { provide: Router, useValue: { navigateByUrl } },
+        { provide: Router, useValue: { navigateByUrl, events: routerEvents } },
         { provide: MessageService, useValue: { add } },
         // Stubbed rather than real: UserService pulls in HttpClient and a chain of app providers,
-        // and all this component asks it for is the signed-in user's email.
+        // and all this component asks it for is whether the user is impersonating.
         { provide: UserService, useValue: { user: signal(null), impersonating: signal(false) } },
-        // Stubbed for the same reason as UserService; ensureProjectParam reads one signal per lens.
-        { provide: ProjectContextService, useValue: { selectedFoundation: () => selectedFoundation(), selectedProject: () => selectedProject() } },
         // Server platform keeps afterNextRender (and therefore the embed import) out of the test.
         { provide: PLATFORM_ID, useValue: 'server' },
       ],
@@ -90,63 +71,6 @@ describe('GwModuleOutletComponent', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    window.localStorage.clear();
-    window.sessionStorage.clear();
-  });
-
-  describe('hasUsableStoredSession', () => {
-    it('accepts a stored session that has not expired', () => {
-      window.localStorage.setItem(SESSION_KEY, futureSession());
-
-      expect(callPrivate<boolean>('hasUsableStoredSession')).toBe(true);
-    });
-
-    it('rejects an expired session', () => {
-      window.localStorage.setItem(SESSION_KEY, JSON.stringify({ access_token: 'token', expires_at: Math.floor(Date.now() / 1000) - 1 }));
-
-      expect(callPrivate<boolean>('hasUsableStoredSession')).toBe(false);
-    });
-
-    it('rejects a session with no access token', () => {
-      window.localStorage.setItem(SESSION_KEY, JSON.stringify({ expires_at: Math.floor(Date.now() / 1000) + 3600 }));
-
-      expect(callPrivate<boolean>('hasUsableStoredSession')).toBe(false);
-    });
-
-    it('rejects when nothing is stored', () => {
-      expect(callPrivate<boolean>('hasUsableStoredSession')).toBe(false);
-    });
-
-    it('rejects malformed JSON rather than throwing', () => {
-      window.localStorage.setItem(SESSION_KEY, 'not json');
-
-      expect(callPrivate<boolean>('hasUsableStoredSession')).toBe(false);
-    });
-  });
-
-  describe('claimSessionRecoveryAttempt', () => {
-    it('grants the first claim', () => {
-      expect(callPrivate<boolean>('claimSessionRecoveryAttempt')).toBe(true);
-    });
-
-    it('refuses a second claim inside the cooldown, so a bad session cannot reload forever', () => {
-      expect(callPrivate<boolean>('claimSessionRecoveryAttempt')).toBe(true);
-      expect(callPrivate<boolean>('claimSessionRecoveryAttempt')).toBe(false);
-    });
-
-    it('grants again once the cooldown has elapsed', () => {
-      window.sessionStorage.setItem(RECOVERY_KEY, String(Date.now() - GW_EMBED_SESSION_RECOVERY_COOLDOWN_MS - 1));
-
-      expect(callPrivate<boolean>('claimSessionRecoveryAttempt')).toBe(true);
-    });
-
-    it('refuses when storage is unavailable, rather than risking an unbounded reload loop', () => {
-      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-        throw new Error('blocked');
-      });
-
-      expect(callPrivate<boolean>('claimSessionRecoveryAttempt')).toBe(false);
-    });
   });
 
   describe('handleHostNavigation', () => {
@@ -168,335 +92,23 @@ describe('GwModuleOutletComponent', () => {
       expect(component['mountError']()).toContain('/foundation/gw/nope');
     });
 
-    it('asks for sign-in when the embed bounces to /login with no usable session', () => {
-      exhaustAutoSignIn();
+    it('answers a /login bounce with the error panel, since the server holds the session', () => {
+      // There is no sign-in for the host to start, so a round trip here could not fix anything.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
       callPrivate('handleHostNavigation', '/foundation/gw/login');
 
-      expect(component['signInRequired']()).toBe(true);
       expect(navigateByUrl).not.toHaveBeenCalled();
+      expect(component['mountError']()).toContain('Reload the page');
+      expect(warn).toHaveBeenCalled();
     });
 
-    it('spends an automatic sign-in attempt before ever showing the manual panel', () => {
-      // The whole point of the automatic path: a user with a live LFX session must not be asked to
-      // sign in again. The redirect itself is a window.location.assign jsdom won't follow, so the
-      // assertion is on the budget being claimed and the panel being withheld.
-      callPrivate('handleHostNavigation', '/foundation/gw/login');
+    it('ignores a query string and a trailing slash when matching the login path', () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-      expect(window.sessionStorage.getItem(GW_EMBED_AUTO_SIGNIN_KEY)).toBe('1');
-      expect(component['signInRequired']()).toBe(false);
-    });
+      callPrivate('handleHostNavigation', '/foundation/gw/login/?returnTo=%2Ffoundation%2Fgw');
 
-    it('does not ask for sign-in when a usable session is present and a recovery reload is available', () => {
-      // The branch ends in a window.location.assign, which jsdom will not navigate and will not let
-      // us redefine. Asserting the observable side effects is enough: the one-shot claim is spent
-      // and we did NOT fall through to the sign-in prompt.
-      window.localStorage.setItem(SESSION_KEY, futureSession());
-
-      callPrivate('handleHostNavigation', '/foundation/gw/login');
-
-      expect(window.sessionStorage.getItem(RECOVERY_KEY)).not.toBeNull();
-      expect(component['signInRequired']()).toBe(false);
-    });
-
-    it('falls back to the sign-in prompt when the one-shot recovery claim is already spent', () => {
-      exhaustAutoSignIn();
-      window.localStorage.setItem(SESSION_KEY, futureSession());
-      window.sessionStorage.setItem(RECOVERY_KEY, String(Date.now()));
-
-      callPrivate('handleHostNavigation', '/foundation/gw/login');
-
-      expect(component['signInRequired']()).toBe(true);
-    });
-
-    it('ignores a query string when matching the login path', () => {
-      exhaustAutoSignIn();
-
-      callPrivate('handleHostNavigation', '/foundation/gw/login?returnTo=%2Ffoundation%2Fgw');
-
-      expect(component['signInRequired']()).toBe(true);
-      expect(component['mountError']()).toBeNull();
-    });
-  });
-
-  describe('claimAutoSignInAttempt', () => {
-    // The ceiling is the only thing standing between a failed adoption and an unbounded host -> IdP
-    // -> host redirect loop, so it is asserted directly rather than through handleHostNavigation.
-    it('allows attempts up to the ceiling and refuses after it', () => {
-      const claims = Array.from({ length: GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS + 1 }, () => callPrivate<boolean>('claimAutoSignInAttempt'));
-
-      expect(claims.slice(0, GW_EMBED_AUTO_SIGNIN_MAX_ATTEMPTS).every(Boolean)).toBe(true);
-      expect(claims.at(-1)).toBe(false);
-    });
-
-    it('refuses when the stored counter is not a number', () => {
-      // Number('') is 0, so the guard has to reject non-numeric text specifically — a corrupted
-      // counter must fail closed to the manual panel, not reset the budget to zero.
-      window.sessionStorage.setItem(GW_EMBED_AUTO_SIGNIN_KEY, 'tampered');
-
-      expect(callPrivate<boolean>('claimAutoSignInAttempt')).toBe(false);
-    });
-  });
-
-  describe('adoptAuthFragment', () => {
-    // The function that writes a Supabase session into localStorage from whatever is on the URL.
-    // Its invariants: the nonce is the gate that fails closed; the email gate ALSO fails closed —
-    // an absent or mismatched address on either side is a REFUSAL; expires_at must never be NaN;
-    // and the fragment is cleared on every path — success or refusal — so tokens do not linger in
-    // the address bar or in history.
-    //
-    // That second invariant used to read the other way, and the tests below were changed without
-    // it. Anyone trusting the stale wording would have "fixed" the it.each back to the vulnerable
-    // behaviour, which is why it is spelled out rather than left implied.
-    const SUPABASE = 'https://data.example.test';
-    const ANON = 'anon-key';
-
-    const withFragment = (fragment: string, nonce: string | null = 'nonce-1'): void => {
-      const url = new URL(window.location.href);
-      if (nonce === null) {
-        url.searchParams.delete(GW_EMBED_SIGNIN_STATE_PARAM);
-      } else {
-        url.searchParams.set(GW_EMBED_SIGNIN_STATE_PARAM, nonce);
-        window.sessionStorage.setItem(GW_EMBED_SIGNIN_STATE_KEY, nonce);
-      }
-      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${fragment}`);
-    };
-
-    const tokens = (extra = ''): string => `#access_token=at&refresh_token=rt${extra}`;
-
-    const stubUser = (body: unknown, ok = true): ReturnType<typeof vi.fn> => {
-      const f = vi.fn().mockResolvedValue({ ok, json: async () => body });
-      vi.stubGlobal('fetch', f);
-      return f;
-    };
-
-    const storedSession = (): { expires_at?: number; user?: unknown } | null => {
-      const raw = window.localStorage.getItem(SESSION_KEY);
-      return raw ? JSON.parse(raw) : null;
-    };
-
-    afterEach(() => {
-      vi.unstubAllGlobals();
-      window.history.replaceState(window.history.state, '', window.location.pathname);
-    });
-
-    it('stores the session when the nonce matches and the emails agree', async () => {
-      TestBed.inject(UserService).user.set({ email: 'Person@example.test' } as never);
-      stubUser({ email: 'person@example.test' });
-      withFragment(tokens('&expires_in=120'));
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(storedSession()).not.toBeNull();
-      expect(window.location.hash).toBe('');
-    });
-
-    it('refuses a fragment whose nonce this browser never issued — the crafted-link case', async () => {
-      // The control that actually fails closed: without it, a crafted link carrying an attacker's
-      // valid tokens would be adopted and the victim would work inside the attacker's tenant.
-      const f = stubUser({ email: 'person@example.test' });
-      withFragment(tokens(), null);
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(storedSession()).toBeNull();
-      expect(f).not.toHaveBeenCalled();
-      expect(window.location.hash).toBe('');
-    });
-
-    it('stores nothing when the token lookup fails, and still clears the fragment', async () => {
-      // The nonce is already spent by this point, so no retry can succeed — leaving the tokens on
-      // the URL would only risk them being carried somewhere else.
-      stubUser(null, false);
-      withFragment(tokens());
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(storedSession()).toBeNull();
-      expect(window.location.hash).toBe('');
-    });
-
-    it('refuses a session belonging to someone other than the signed-in LFX user', async () => {
-      TestBed.inject(UserService).user.set({ email: 'person@example.test' } as never);
-      stubUser({ email: 'someone-else@example.test' });
-      withFragment(tokens());
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(storedSession()).toBeNull();
-    });
-
-    it.each([
-      ['the LFX side reports no email', { lfx: undefined, gw: 'person@example.test' }],
-      ['the Gatewaze side reports no email', { lfx: 'person@example.test', gw: undefined }],
-      ['neither side reports an email', { lfx: undefined, gw: undefined }],
-    ])('refuses when %s, rather than passing a check it cannot evaluate', async (_label, { lfx, gw }) => {
-      // This assertion is the reverse of what it used to be. The old version adopted in these
-      // cases, on the reasoning that a profile need not carry an address — but `User.email` is
-      // required by the interface contract and LFID always supplies one, so an absent address is
-      // an unexplained state on the one path that binds a Gatewaze session to an LFX identity.
-      TestBed.inject(UserService).user.set({ email: lfx } as never);
-      stubUser({ email: gw });
-      withFragment(tokens());
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(storedSession()).toBeNull();
-      expect(window.location.hash).toBe('');
-    });
-
-    it.each([
-      ['absent', ''],
-      ['non-numeric', '&expires_in=soon'],
-      ['negative', '&expires_in=-60'],
-    ])('falls back to the default TTL when expires_in is %s, never NaN', async (_label, extra) => {
-      // A NaN expires_at would make every later hasUsableStoredSession() read the session as
-      // expired, which presents as a sign-in loop rather than as a parsing bug.
-      // Identities must match for adoption to get as far as the TTL — see the identity gate above.
-      TestBed.inject(UserService).user.set({ email: 'person@example.test' } as never);
-      stubUser({ email: 'person@example.test' });
-      withFragment(tokens(extra));
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      const expiresAt = storedSession()?.expires_at;
-      expect(Number.isFinite(expiresAt)).toBe(true);
-      expect(expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
-    });
-
-    it.each([['id_token'], ['provider_token'], ['provider_refresh_token']])(
-      'clears a malformed callback carrying only %s, not just the access/refresh pair',
-      async (key) => {
-        // AUTH_FRAGMENT_KEYS classifies five keys as credential material. Checking only the two
-        // this function needs left the other three sitting in the address bar and in history.
-        const f = stubUser({ email: 'person@example.test' });
-        withFragment(`#${key}=leaked-value`);
-
-        await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-        expect(window.location.hash).toBe('');
-        expect(f).not.toHaveBeenCalled();
-      }
-    );
-
-    it('leaves a plain in-page anchor alone', async () => {
-      // The same branch catches fragments that are not ours at all; clearing unconditionally would
-      // break in-page links.
-      stubUser({ email: 'person@example.test' });
-      withFragment('#section-two');
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(window.location.hash).toBe('#section-two');
-    });
-
-    it('clears the fragment BEFORE the identity lookup, not after it', async () => {
-      // The tokens used to sit in window.location.hash for the whole round trip — up to
-      // GW_EMBED_ADOPTION_TIMEOUT_MS — because every clear ran after this fetch resolved. Anything
-      // reading the page URL in that window captures a live credential, and AppComponent boots
-      // Intercom, which records the current URL when its async widget processes the boot call.
-      //
-      // Asserted from inside the fetch, which is the only place the ordering is observable.
-      const email = 'person@example.test';
-      TestBed.inject(UserService).user.set({ email } as never);
-      let hashDuringLookup = 'not captured';
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockImplementation(() => {
-          hashDuringLookup = window.location.hash;
-          return Promise.resolve({ ok: true, json: () => Promise.resolve({ email }) });
-        })
-      );
-      withFragment(tokens());
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(hashDuringLookup).toBe('');
-      // And the adoption still succeeds — every value it needs was read off the hash beforehand.
-      expect(storedSession()).not.toBeNull();
-    });
-
-    it('bounds the identity lookup so a hung gateway cannot strand the mount', async () => {
-      // The bound no longer limits how long tokens sit in the address bar (see above); it stops a
-      // hung Supabase gateway leaving `mounting` true forever, which is a permanent skeleton since
-      // the embed's dynamic import has not started. The abort lands in the fail-closed catch.
-      const f = vi.fn().mockRejectedValue(Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }));
-      vi.stubGlobal('fetch', f);
-      withFragment(tokens());
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(f.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
-      expect(storedSession()).toBeNull();
-      expect(window.location.hash).toBe('');
-    });
-
-    it('does nothing at all when the URL carries no tokens', async () => {
-      const f = stubUser({ email: 'person@example.test' });
-      withFragment('');
-
-      await callPrivate<Promise<void>>('adoptAuthFragment', SUPABASE, ANON);
-
-      expect(f).not.toHaveBeenCalled();
-      expect(storedSession()).toBeNull();
-    });
-  });
-
-  describe('buildLandingUrl project guarantee (GH-3286)', () => {
-    it('injects the project slug so the recovery reload cannot land param-less', () => {
-      // The stored-session recovery branch navigates to buildLandingUrl() directly,
-      // so the guarantee must live here too, not only in the sign-in composition.
-      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
-      const out = new URL(callPrivate<string>('buildLandingUrl'));
-      expect(out.searchParams.get('project')).toBe('agentic-ai-foundation');
-    });
-  });
-
-  describe('buildSignInReturnUrl (GH-3286)', () => {
-    // The composition startSignIn navigates with: state nonce + project-param guarantee.
-    // jsdom will not let window.location.assign be stubbed, so this pure method is the
-    // call-site coverage — deleting the ensureProjectParam wiring fails this spec.
-
-    it('carries both the sign-in state and the injected project slug', () => {
-      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
-      const out = new URL(callPrivate<string>('buildSignInReturnUrl', 'https://app.example/foundation/gw/newsletters', 'nonce-123'));
-      expect(out.searchParams.get(GW_EMBED_SIGNIN_STATE_PARAM)).toBe('nonce-123');
-      expect(out.searchParams.get('project')).toBe('agentic-ai-foundation');
-    });
-  });
-
-  describe('ensureProjectParam (GH-3286)', () => {
-    // The sign-in return is a full page load: without ?project= the tenant guard and the
-    // newsletter guard's legacy chain fall back to a context service that has not rehydrated
-    // at guard time, and the return bounces before this outlet can adopt the session.
-
-    it('injects the foundation slug when the return URL lacks ?project', () => {
-      selectedFoundation.set({ slug: 'agentic-ai-foundation' });
-      const url = new URL('https://app.example/foundation/gw/newsletters');
-      callPrivate('ensureProjectParam', url);
-      expect(url.searchParams.get('project')).toBe('agentic-ai-foundation');
-    });
-
-    it('sources the slug from the project context on the project mount', () => {
-      (component as unknown as { routePrefix: string }).routePrefix = '/project/gw';
-      selectedFoundation.set({ slug: 'wrong-side' });
-      selectedProject.set({ slug: 'some-project' });
-      const url = new URL('https://app.example/project/gw/newsletters');
-      callPrivate('ensureProjectParam', url);
-      expect(url.searchParams.get('project')).toBe('some-project');
-    });
-
-    it('never overwrites an existing ?project param', () => {
-      selectedFoundation.set({ slug: 'context-slug' });
-      const url = new URL('https://app.example/foundation/gw/newsletters?project=url-slug');
-      callPrivate('ensureProjectParam', url);
-      expect(url.searchParams.get('project')).toBe('url-slug');
-    });
-
-    it('leaves the URL unchanged when there is no param and no context', () => {
-      const url = new URL('https://app.example/foundation/gw/newsletters');
-      callPrivate('ensureProjectParam', url);
-      expect(url.searchParams.has('project')).toBe(false);
+      expect(component['mountError']()).toContain('Reload the page');
     });
   });
 
@@ -508,8 +120,6 @@ describe('GwModuleOutletComponent', () => {
     let browserComponent: GwModuleOutletComponent;
     let impersonating: ReturnType<typeof signal<boolean>>;
 
-    const withTokenFragment = (): void => window.history.replaceState(window.history.state, '', `${window.location.pathname}#access_token=at&refresh_token=rt`);
-
     beforeEach(() => {
       impersonating = signal(true);
       TestBed.resetTestingModule();
@@ -519,28 +129,17 @@ describe('GwModuleOutletComponent', () => {
           { provide: Router, useValue: { navigateByUrl: vi.fn(), events: EMPTY } },
           { provide: MessageService, useValue: { add: vi.fn() } },
           { provide: UserService, useValue: { user: signal(null), impersonating } },
-          { provide: ProjectContextService, useValue: { selectedFoundation: () => null, selectedProject: () => null } },
           { provide: PLATFORM_ID, useValue: 'browser' },
         ],
       });
       browserComponent = TestBed.createComponent(GwModuleOutletComponent).componentInstance;
     });
 
-    afterEach(() => window.history.replaceState(window.history.state, '', window.location.pathname));
-
     const mount = async (): Promise<void> => (browserComponent as unknown as { mountEmbed: () => Promise<void> }).mountEmbed();
 
-    it('clears the auth fragment rather than leaving tokens in the address bar', async () => {
-      withTokenFragment();
-
-      await mount();
-
-      expect(window.location.hash).toBe('');
-    });
-
     it('refuses to mount, and says why', async () => {
-      // The route's two identities diverge while impersonating. The server-side block in
-      // requireGwEmbedAccess is the real boundary; this avoids a pointless mount and explains it.
+      // The server-side 403 in requireGwEmbedAccess is the real boundary; this avoids a pointless
+      // mount and explains it.
       await mount();
 
       expect(browserComponent['mountError']()).toContain('impersonating');
@@ -553,6 +152,8 @@ describe('GwModuleOutletComponent', () => {
     // loader. The stand-in's `ready` is a deferred promise so the skeleton can be observed in
     // flight, resolved with a manifest, or resolved with null (the loader's "nothing mounted").
     let browserComponent: GwModuleOutletComponent;
+    let browserFixture: ComponentFixture<GwModuleOutletComponent>;
+    let warmSession: ReturnType<typeof vi.spyOn>;
     let resolveReady: (manifest: GwEmbedManifest | null) => void;
     let innerUnmount: ReturnType<typeof vi.fn>;
 
@@ -574,7 +175,6 @@ describe('GwModuleOutletComponent', () => {
           { provide: Router, useValue: { navigateByUrl: vi.fn(), events: EMPTY } },
           { provide: MessageService, useValue: { add: vi.fn() } },
           { provide: UserService, useValue: { user: signal(null), impersonating: signal(false) } },
-          { provide: ProjectContextService, useValue: { selectedFoundation: () => null, selectedProject: () => null } },
           { provide: PLATFORM_ID, useValue: 'browser' },
         ],
       });
@@ -582,13 +182,22 @@ describe('GwModuleOutletComponent', () => {
         ...DEFAULT_RUNTIME_CONFIG,
         gwSupabaseUrl: 'https://data.example.test',
         gwSupabaseAnonKey: 'anon',
-        gwLfidStartUrl: 'https://sso.example.test/start',
         gwEmbedUrl: EMBED_URL,
+        gwHostSession: true,
         ...runtimeConfig,
       });
-      browserComponent = TestBed.createComponent(GwModuleOutletComponent).componentInstance;
+      warmSession = vi.spyOn(TestBed.inject(GwEmbedWarmupService), 'warmSession').mockImplementation(() => undefined);
+      browserFixture = TestBed.createComponent(GwModuleOutletComponent);
+      browserComponent = browserFixture.componentInstance;
       (browserComponent as unknown as { loadEmbedLoader: () => Promise<unknown> }).loadEmbedLoader = async () => ({ mount: loaderMount });
+      // The test DOM does no layout, so nothing ever has height: by default the embed counts as
+      // painted at once, and the paint cases below swap in a child-count test of their own.
+      setPaintTest(() => true);
     };
+    const setPaintTest = (test: (root: HTMLElement) => boolean): void => {
+      (browserComponent as unknown as { embedHasPainted: (root: HTMLElement) => boolean }).embedHasPainted = test;
+    };
+    const embedRootEl = (): HTMLElement => browserFixture.nativeElement.querySelector('#gw-embed-root');
 
     beforeEach(() => {
       innerUnmount = vi.fn();
@@ -602,9 +211,27 @@ describe('GwModuleOutletComponent', () => {
     });
 
     const mount = (): Promise<void> => (browserComponent as unknown as { mountEmbed: () => Promise<void> }).mountEmbed();
-    // The loader is reached after the auth-fragment step and the dynamic import, so wait for the
-    // call rather than counting microtask ticks.
+    // The loader is reached after the dynamic import, so wait for the call rather than counting
+    // microtask ticks.
     const settle = (): Promise<void> => vi.waitFor(() => expect(loaderMount).toHaveBeenCalledTimes(1));
+
+    it('fails closed with the not-configured panel when host-session mode is off, before touching the loader', async () => {
+      // Host-session mode is the only mode. With it off every /api/gatewaze call answers 404, so
+      // mounting would only show an embed that cannot load anything.
+      configure({ gwHostSession: false });
+      await mount();
+      expect(loaderMount).not.toHaveBeenCalled();
+      expect(browserComponent['mountError']()).toContain('not configured');
+      expect(browserComponent['mountError']()).toContain('host-session');
+      expect(browserComponent['mounting']()).toBe(false);
+    });
+
+    it.each([['gwSupabaseUrl'], ['gwSupabaseAnonKey']])('refuses to mount when %s is empty, before touching the loader', async (field) => {
+      configure({ [field]: '' });
+      await mount();
+      expect(loaderMount).not.toHaveBeenCalled();
+      expect(browserComponent['mountError']()).toContain('not configured');
+    });
 
     it('refuses to mount when GW_EMBED_URL is unset, before touching the loader', async () => {
       configure({ gwEmbedUrl: '' });
@@ -619,23 +246,106 @@ describe('GwModuleOutletComponent', () => {
       expect(loaderMount).toHaveBeenCalledTimes(1);
       const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
       expect(ctx.source.baseUrl).toBe(EMBED_URL);
-      expect(ctx.signIn.startUrl).toBe('https://sso.example.test/start');
       expect(ctx.source.resolveStylesheetUrl?.(`${EMBED_URL}/admin-embed-def.css`)).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/admin-embed-def.css`);
       resolveReady(MANIFEST);
       await pending;
     });
 
-    it('keeps the skeleton up until the loader reports the embed mounted', async () => {
+    it("puts the server's stylesheet key in the path, so the URL is content-addressed", async () => {
+      configure({ gwEmbedStylesheetKey: 'ownKey0123456789' });
       const pending = mount();
+      await settle();
+      const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+      expect(ctx.source.resolveStylesheetUrl?.(`${EMBED_URL}/admin-embed-def.css`)).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/ownKey0123456789/admin-embed-def.css`);
+      resolveReady(MANIFEST);
+      await pending;
+    });
+
+    it('starts warming the Gatewaze session as soon as it starts mounting, before the loader', async () => {
+      const pending = mount();
+      expect(warmSession).toHaveBeenCalledTimes(1);
+      expect(loaderMount).not.toHaveBeenCalled();
+      await settle();
+      resolveReady(MANIFEST);
+      await pending;
+    });
+
+    it('keeps the skeleton up past the loader reporting the embed mounted, until the embed paints', async () => {
+      setPaintTest((root) => root.childElementCount > 0);
+      // Rendered for real, so the template bindings can be checked: afterNextRender starts the mount.
+      await browserFixture.whenStable();
       await settle();
       // The loader has returned, but nothing is on screen yet.
       expect(browserComponent['mounting']()).toBe(true);
       expect(browserComponent['mountError']()).toBeNull();
 
+      // Mounted, but React has drawn nothing yet: this is the gap that used to show a blank pane.
       resolveReady(MANIFEST);
-      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(browserComponent['mounting']()).toBe(true);
+      expect(embedRootEl().style.visibility).toBe('hidden');
+
+      // The embed's first paint may be its own spinner; that is enough to hand over to.
+      const spinner = document.createElement('div');
+      spinner.className = 'gw-spinner';
+      embedRootEl().appendChild(spinner);
+      // Microtasks only, no timer: the browser renders no frame in between, so the swap below is
+      // already in the DOM for the frame the spinner first paints in. Waiting on Angular's own
+      // scheduled change detection would need a timer here, and could show a blank frame.
+      for (let i = 0; i < 10; i++) {
+        await Promise.resolve();
+      }
       expect(browserComponent['mounting']()).toBe(false);
       expect(browserComponent['mountError']()).toBeNull();
+      expect(browserFixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]')).toBeNull();
+      expect(embedRootEl().style.visibility).toBe('');
+    });
+
+    it('shows the embed anyway once the first-paint wait runs out', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        setPaintTest(() => false);
+        const pending = mount();
+        await vi.waitFor(() => expect(loaderMount).toHaveBeenCalledTimes(1));
+        resolveReady(MANIFEST);
+        await vi.advanceTimersByTimeAsync(GW_EMBED_FIRST_PAINT_TIMEOUT_MS - 1);
+        expect(browserComponent['mounting']()).toBe(true);
+        await vi.advanceTimersByTimeAsync(1);
+        await pending;
+        expect(browserComponent['mounting']()).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('painted nothing'));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('drops the skeleton at once when a terminal error arrives while waiting for the first paint', async () => {
+      setPaintTest(() => false);
+      await browserFixture.whenStable();
+      await settle();
+      resolveReady(MANIFEST);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(browserComponent['mounting']()).toBe(true);
+
+      const onFatal = (loaderMount.mock.calls[0][1] as GwHostContext).onFatal;
+      onFatal?.({ error_type: 'render_crash', code: 'GW_RENDER_CRASH', message: 'The embed crashed.', recoverable: false });
+      await browserFixture.whenStable();
+
+      // Well inside the 10s paint cap: the error panel ended the wait, not the timeout.
+      await vi.waitFor(() => expect(browserComponent['mounting']()).toBe(false), { timeout: 1000 });
+      expect(browserFixture.nativeElement.querySelector('[data-testid="gw-embed-loading"]')).toBeNull();
+      expect(browserFixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain('The embed crashed.');
+    });
+
+    it('stops waiting for the first paint when the outlet is torn down', async () => {
+      setPaintTest(() => false);
+      const pending = mount();
+      await settle();
+      resolveReady(MANIFEST);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      browserFixture.destroy();
+      await expect(pending).resolves.toBeUndefined();
     });
 
     it('treats a null ready result as terminal and shows the error panel', async () => {
@@ -656,6 +366,68 @@ describe('GwModuleOutletComponent', () => {
       expect(browserComponent['mountError']()).toBeNull();
     });
 
+    describe('host-session context', () => {
+      it('hands the loader the host-session context: proxies on this origin, the real URL as publicUrl', async () => {
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+        expect(ctx.session).toEqual({ mode: 'host', meUrl: GW_EMBED_HOST_SESSION_ME_URL, logoutUrl: GW_EMBED_HOST_SESSION_LOGOUT_URL });
+        expect(ctx.supabase).toEqual({
+          url: `${window.location.origin}/api/gatewaze/supabase`,
+          anonKey: 'anon',
+          publicUrl: 'https://data.example.test',
+        });
+        // The embed calls `${apiBaseUrl}/api/...`, so this lands on the /api/gatewaze/api proxy.
+        expect(ctx.apiBaseUrl).toBe('/api/gatewaze');
+        expect(ctx.source.baseUrl).toBe(EMBED_URL);
+        resolveReady(MANIFEST);
+        await pending;
+      });
+
+      it('passes no sign-in entry point and no storage key, so the embed keeps no token in the browser', async () => {
+        // The host must never send these embed fields: with them set, an embed would hold its own
+        // session in localStorage.
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as unknown as Record<string, unknown>;
+        expect(ctx['signIn']).toBeUndefined();
+        expect(ctx['storageKeySuffix']).toBeUndefined();
+        resolveReady(MANIFEST);
+        await pending;
+      });
+
+      it('fails closed with the error panel, and logs it, when the deployment lacks the host-session capability', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+        const fatal = {
+          error_type: 'import_failed' as const,
+          code: GW_EMBED_CAPABILITY_MISSING_CODE,
+          message: 'The hosted embed (1.3.100) does not support host-session mode. Upgrade the Gatewaze deployment.',
+          recoverable: false,
+        };
+        ctx.onFatal?.(fatal);
+        resolveReady(null);
+        await pending;
+
+        expect(browserComponent['mountError']()).toContain('newer Gatewaze deployment');
+        expect(error).toHaveBeenCalledWith(expect.stringContaining('host-session'), fatal);
+      });
+
+      it('fails closed on a capability-missing fatal even if it were marked recoverable', async () => {
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const pending = mount();
+        await settle();
+        const ctx = loaderMount.mock.calls[0][1] as GwHostContext;
+        ctx.onFatal?.({ error_type: 'import_failed', code: GW_EMBED_CAPABILITY_MISSING_CODE, message: 'missing', recoverable: true });
+        resolveReady(null);
+        await pending;
+
+        expect(browserComponent['mountError']()).toContain('newer Gatewaze deployment');
+      });
+    });
+
     it('leaves a panel that onFatal already raised in place', async () => {
       const pending = mount();
       await settle();
@@ -668,20 +440,25 @@ describe('GwModuleOutletComponent', () => {
   });
 
   describe('syncEmbedToHostUrl', () => {
-    // Re-dispatches popstate so the embed's own router follows a host navigation. The lastSyncedUrl
-    // guard is the only thing between this and the unbounded NavigationEnd -> dispatch ->
-    // NavigationEnd loop that shipped once already, so it is asserted directly.
+    // Re-dispatches popstate so the embed's own router follows a host navigation. Whether it fires
+    // is decided by what started the navigation, not by comparing URLs: the embed's own pushState
+    // calls are invisible to the host, so a remembered URL goes stale and swallowed the sidebar
+    // link back to it. Skipping popstate-triggered navigations is what keeps our own dispatch from
+    // looping, so both sides of that rule are asserted through the router events.
     let dispatched: number;
     let onPopState: () => void;
+    let nextId: number;
 
     beforeEach(() => {
       dispatched = 0;
+      nextId = 1;
       onPopState = (): void => {
         dispatched += 1;
       };
       window.addEventListener('popstate', onPopState);
       // The guard returns early without a mount handle, which would make every case below vacuous.
       (component as unknown as { mountHandle: unknown }).mountHandle = { unmount: vi.fn() };
+      callPrivate('watchHostNavigation');
     });
 
     afterEach(() => {
@@ -691,29 +468,37 @@ describe('GwModuleOutletComponent', () => {
 
     const at = (path: string): void => window.history.replaceState(window.history.state, '', path);
 
-    it('tells the embed about an in-prefix navigation', () => {
-      at('/foundation/gw/newsletters');
+    /** Runs one host navigation through the router events, landing the address bar on `path`. */
+    const navigate = (path: string, trigger: NavigationStart['navigationTrigger']): void => {
+      const id = nextId++;
+      routerEvents.next(new NavigationStart(id, path, trigger));
+      at(path);
+      routerEvents.next(new NavigationEnd(id, path, path));
+    };
 
-      callPrivate('syncEmbedToHostUrl');
+    it('redraws the embed when a host link returns to the mount URL after the embed moved on its own', () => {
+      // The reported shape: the host showed the list, the embed pushed an edition URL itself, then
+      // the sidebar's Newsletters link navigated back to the list.
+      navigate('/foundation/gw/newsletters', 'imperative');
+      dispatched = 0;
+      window.history.pushState(window.history.state, '', '/foundation/gw/newsletters/editions/abc');
+
+      navigate('/foundation/gw/newsletters', 'imperative');
 
       expect(dispatched).toBe(1);
     });
 
-    it('does not re-dispatch for a URL it has already synced', () => {
-      at('/foundation/gw/newsletters');
-      callPrivate('syncEmbedToHostUrl');
+    it('dispatches nothing for a popstate-triggered navigation', () => {
+      // Back/Forward already reached the embed's router, and our own dispatch produces exactly
+      // this kind of navigation, so answering it would loop.
+      navigate('/foundation/gw/newsletters', 'popstate');
 
-      callPrivate('syncEmbedToHostUrl');
-
-      expect(dispatched).toBe(1);
+      expect(dispatched).toBe(0);
     });
 
-    it('dispatches again once the query string changes', () => {
-      at('/foundation/gw/newsletters');
-      callPrivate('syncEmbedToHostUrl');
-
-      at('/foundation/gw/newsletters?page=2');
-      callPrivate('syncEmbedToHostUrl');
+    it('dispatches on every imperative navigation, even to the same URL twice', () => {
+      navigate('/foundation/gw/newsletters', 'imperative');
+      navigate('/foundation/gw/newsletters', 'imperative');
 
       expect(dispatched).toBe(2);
     });
@@ -735,6 +520,53 @@ describe('GwModuleOutletComponent', () => {
 
       expect(dispatched).toBe(0);
     });
+
+    describe('against the real Angular router', () => {
+      // The cases above feed router events by hand, so they cannot show that Angular runs a host
+      // link back to its own last URL once the embed has moved the address bar. The fix depends on
+      // that, and the doc this replaced said the opposite, so it is pinned against the real router.
+      let router: Router;
+
+      /** Lets Angular's setTimeout-wrapped popstate handling run, so a loop would show up here. */
+      const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+      beforeEach(async () => {
+        TestBed.resetTestingModule();
+        TestBed.configureTestingModule({
+          imports: [GwModuleOutletComponent],
+          providers: [
+            provideRouter([{ path: '**', component: EmptyRouteComponent }]),
+            // The real address bar, so the embed-side pushState below is visible to Angular.
+            { provide: PlatformLocation, useClass: BrowserPlatformLocation },
+            { provide: MessageService, useValue: { add: vi.fn() } },
+            { provide: UserService, useValue: { user: signal(null), impersonating: signal(false) } },
+            { provide: PLATFORM_ID, useValue: 'server' },
+          ],
+        });
+        component = TestBed.createComponent(GwModuleOutletComponent).componentInstance;
+        (component as unknown as { mountHandle: unknown }).mountHandle = { unmount: vi.fn() };
+        router = TestBed.inject(Router);
+        // Starts Angular's own popstate listener, which our synthetic dispatch also reaches.
+        router.initialNavigation();
+        callPrivate('watchHostNavigation');
+        await router.navigateByUrl('/foundation/gw/newsletters');
+        await flush();
+        dispatched = 0;
+      });
+
+      it('runs a host link back to the list after the embed moved, and redraws the embed once', async () => {
+        window.history.pushState(window.history.state, '', '/foundation/gw/newsletters/editions/abc');
+        const ends: string[] = [];
+        router.events.pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd)).subscribe((event) => ends.push(event.urlAfterRedirects));
+
+        await router.navigateByUrl('/foundation/gw/newsletters');
+        await flush();
+
+        expect(ends).toEqual(['/foundation/gw/newsletters']);
+        expect(window.location.pathname).toBe('/foundation/gw/newsletters');
+        expect(dispatched).toBe(1);
+      });
+    });
   });
 
   describe('onFatal', () => {
@@ -755,96 +587,6 @@ describe('GwModuleOutletComponent', () => {
 
       expect(component['mountError']()).toBe('gone');
       expect(add).not.toHaveBeenCalled();
-    });
-
-    it('never leaves both host panels showing', () => {
-      // The two signals drive independent @if siblings. Reached here by raising the sign-in panel
-      // first and then taking a terminal fatal — the real sequence is an auto-sign-in round trip
-      // that fails, followed by a mount crash.
-      exhaustAutoSignIn();
-      callPrivate('handleHostNavigation', '/foundation/gw/login');
-      expect(component['signInRequired']()).toBe(true);
-
-      callPrivate('onFatal', { error_type: 'render_crash', code: 'GW_Z', message: 'crashed', recoverable: false });
-
-      expect(component['signInRequired']()).toBe(false);
-      expect(component['mountError']()).toBe('crashed');
-    });
-
-    it('does not leave a stale error panel under the sign-in prompt', () => {
-      // The other order, and the one a partial config actually produces: GW_LFID_START_URL unset
-      // makes startSignIn set an error, then the attempt ceiling raises the sign-in panel on top.
-      callPrivate('startSignIn');
-      expect(component['mountError']()).toContain('GW_LFID_START_URL');
-
-      exhaustAutoSignIn();
-      callPrivate('handleHostNavigation', '/foundation/gw/login');
-
-      expect(component['signInRequired']()).toBe(true);
-      expect(component['mountError']()).toBeNull();
-    });
-  });
-
-  describe('startSignIn', () => {
-    it('reports missing configuration rather than failing silently', () => {
-      // getRuntimeConfig returns gwLfidStartUrl: '' under TestBed.
-      callPrivate('startSignIn');
-
-      expect(component['mountError']()).toContain('GW_LFID_START_URL is unset');
-    });
-
-    it('does not spend the sign-in nonce when it cannot start', () => {
-      window.sessionStorage.removeItem(GW_EMBED_SIGNIN_STATE_KEY);
-
-      callPrivate('startSignIn');
-
-      expect(window.sessionStorage.getItem(GW_EMBED_SIGNIN_STATE_KEY)).toBeNull();
-    });
-  });
-
-  describe('buildLandingUrl', () => {
-    // Both /login exits rebuild this URL — startSignIn's return target and the session-recovery
-    // reload. Tested here rather than through either caller because the bug was in the rebuild
-    // itself, and startSignIn cannot reach it under TestBed (gwLfidStartUrl is empty, so it bails
-    // before building anything).
-    afterEach(() => window.history.replaceState(window.history.state, '', '/'));
-
-    it('carries the query string through, so the tenant survives the round trip', () => {
-      // gwEmbedTenantGuard reads ?project= from the route and falls back to persisted context only
-      // when it is absent — a fallback it was rewritten specifically to stop trusting. Dropping the
-      // parameter here meant a shared AAIF link came back from a SUCCESSFUL sign-in without it and
-      // was then refused by the guard.
-      window.history.replaceState(window.history.state, '', '/foundation/gw/login?project=agentic-ai-foundation');
-
-      expect(callPrivate<string>('buildLandingUrl')).toContain('?project=agentic-ai-foundation');
-    });
-
-    it('lands on the embed landing path rather than back on the login dead end', () => {
-      window.history.replaceState(window.history.state, '', '/foundation/gw/login?project=agentic-ai-foundation');
-
-      const url = new URL(callPrivate<string>('buildLandingUrl'));
-
-      expect(url.pathname).not.toContain('/login');
-      expect(url.origin).toBe(window.location.origin);
-    });
-
-    it('appends no empty query when there is none to carry', () => {
-      // A bare `?` is harmless to the guard but would show up in the address bar and in whatever
-      // the identity provider logs as the return URL.
-      window.history.replaceState(window.history.state, '', '/foundation/gw/login');
-
-      expect(callPrivate<string>('buildLandingUrl')).not.toContain('?');
-    });
-
-    it('preserves every parameter, not just the tenant', () => {
-      // The non-dead-end branch of startSignIn returns the whole current URL including its query,
-      // so singling out `project` would make two paths that should agree disagree.
-      window.history.replaceState(window.history.state, '', '/foundation/gw/login?project=agentic-ai-foundation&tab=sent');
-
-      const url = new URL(callPrivate<string>('buildLandingUrl'));
-
-      expect(url.searchParams.get('project')).toBe('agentic-ai-foundation');
-      expect(url.searchParams.get('tab')).toBe('sent');
     });
   });
 
@@ -884,64 +626,6 @@ describe('GwModuleOutletComponent', () => {
     });
   });
 
-  describe('consumeSignInState', () => {
-    // This is the gate that stops a crafted link handing the user someone else's Supabase session.
-    const withStateOnUrl = (value: string | null): void => {
-      const url = new URL(window.location.href);
-      if (value === null) {
-        url.searchParams.delete('gw_state');
-      } else {
-        url.searchParams.set('gw_state', value);
-      }
-      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}`);
-    };
-
-    afterEach(() => withStateOnUrl(null));
-
-    it('accepts a nonce that matches the one this browser stored', () => {
-      window.sessionStorage.setItem(GW_EMBED_SIGNIN_STATE_KEY, 'nonce-1');
-      withStateOnUrl('nonce-1');
-
-      expect(callPrivate<boolean>('consumeSignInState')).toBe(true);
-    });
-
-    it('rejects a fragment that arrives with no nonce at all — the crafted-link case', () => {
-      window.sessionStorage.setItem(GW_EMBED_SIGNIN_STATE_KEY, 'nonce-1');
-      withStateOnUrl(null);
-
-      expect(callPrivate<boolean>('consumeSignInState')).toBe(false);
-    });
-
-    it('rejects a mismatched nonce', () => {
-      window.sessionStorage.setItem(GW_EMBED_SIGNIN_STATE_KEY, 'nonce-1');
-      withStateOnUrl('nonce-2');
-
-      expect(callPrivate<boolean>('consumeSignInState')).toBe(false);
-    });
-
-    it('rejects when this browser never started a sign-in', () => {
-      withStateOnUrl('nonce-1');
-
-      expect(callPrivate<boolean>('consumeSignInState')).toBe(false);
-    });
-
-    it('is single-use, so a replayed return cannot reuse the same nonce', () => {
-      window.sessionStorage.setItem(GW_EMBED_SIGNIN_STATE_KEY, 'nonce-1');
-      withStateOnUrl('nonce-1');
-
-      expect(callPrivate<boolean>('consumeSignInState')).toBe(true);
-      expect(callPrivate<boolean>('consumeSignInState')).toBe(false);
-    });
-
-    it('fails closed when storage throws', () => {
-      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-        throw new Error('blocked');
-      });
-
-      expect(callPrivate<boolean>('consumeSignInState')).toBe(false);
-    });
-  });
-
   describe('showHostToast', () => {
     it('renders an embed notification through LFX toasts rather than the embed toaster', () => {
       callPrivate('showHostToast', { level: 'success', message: 'Edition duplicated', id: 'a' });
@@ -972,6 +656,54 @@ describe('GwModuleOutletComponent', () => {
 
       expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info' }));
     });
+  });
+});
+
+describe('gwEmbedHasPaintedContent', () => {
+  // The real predicate, with layout stood in: the test DOM gives every element a zero-size rect.
+  const rootWith = (html: string, height = 900): HTMLElement => {
+    const root = document.createElement('div');
+    root.innerHTML = html;
+    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ height } as DOMRect);
+    return root;
+  };
+
+  it("does not count the embed's empty provider wrappers, even with height", () => {
+    // What the embed renders while FeatureGuard is still loading: Radix's root Theme (min-height
+    // 100vh in the scoped stylesheet) around an empty router, plus an empty toaster region.
+    const root = rootWith('<div class="radix-themes" data-is-root-theme="true"><section aria-label="Notifications" tabindex="-1"></section></div>');
+
+    expect(gwEmbedHasPaintedContent(root)).toBe(false);
+  });
+
+  it("counts the embed's spinner, which has no visible text", () => {
+    const root = rootWith(
+      '<div class="radix-themes" data-is-root-theme="true"><div class="flex justify-center py-16" role="status"><div class="animate-spin"></div></div></div>'
+    );
+
+    expect(gwEmbedHasPaintedContent(root)).toBe(true);
+  });
+
+  it('counts routed content by its text', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<div class="radix-themes"><main><h1>Newsletters</h1></main></div>'))).toBe(true);
+  });
+
+  it('ignores text inside style, script and template elements', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<div><style>.a{color:red}</style><template><p>later</p></template></div>'))).toBe(false);
+  });
+
+  it('counts nothing while the root has no height', () => {
+    expect(gwEmbedHasPaintedContent(rootWith('<h1>Newsletters</h1>', 0))).toBe(false);
+  });
+});
+
+describe('buildGwEmbedStylesheetUrl', () => {
+  it('puts the key between the route and the name when there is one', () => {
+    expect(buildGwEmbedStylesheetUrl('admin-embed-def.css', 'ownKey0123456789')).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/ownKey0123456789/admin-embed-def.css`);
+  });
+
+  it('falls back to the unkeyed form without one', () => {
+    expect(buildGwEmbedStylesheetUrl('admin-embed-def.css', '')).toBe(`${GW_EMBED_STYLESHEET_ROUTE}/admin-embed-def.css`);
   });
 });
 

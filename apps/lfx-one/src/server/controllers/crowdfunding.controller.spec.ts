@@ -7,13 +7,29 @@ import '@angular/compiler';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { getAccessAwareOrgs, getDirectGrantProjectRows } = vi.hoisted(() => ({
+  getAccessAwareOrgs: vi.fn(),
+  getDirectGrantProjectRows: vi.fn(),
+}));
+
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth: vi.fn(async () => 'alice') }));
+vi.mock('../services/org-role-grants.service', () => ({
+  OrgRoleGrantsService: class {
+    public getAccessAwareOrgs = getAccessAwareOrgs;
+  },
+}));
+vi.mock('../services/project.service', () => ({
+  ProjectService: class {
+    public getDirectGrantProjectRows = getDirectGrantProjectRows;
+  },
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
 
 import { ServiceValidationError } from '../errors';
 import { CrowdfundingService } from '../services/crowdfunding.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 import { CrowdfundingController } from './crowdfunding.controller';
 
 const PROJECT_UID = '00000000-0000-4000-8000-000000000001';
@@ -189,5 +205,183 @@ describe('CrowdfundingController initiative writer routes (#259)', () => {
     await expect(call(new CrowdfundingService())).rejects.toMatchObject({ statusCode: 403 });
     expect(lastCall()[0]).toBe(`https://cf.example${path}`);
     expect(lastCall()[1].method).toBe(method);
+  });
+});
+
+describe('CrowdfundingController initiative attribution (lfx-crowdfunding#342)', () => {
+  const INITIATIVE_ID = '00000000-0000-4000-8000-000000000003';
+  const OTHER_ORG_UID = '001000000000001AAA';
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  const respondWith = (status: number, body: unknown = {}) =>
+    fetchMock.mockResolvedValue({ ok: status >= 200 && status < 300, status, json: async () => body, text: async () => '' });
+  const lastCall = (): [string, RequestInit] => fetchMock.mock.calls.at(-1) as [string, RequestInit];
+  const sentBody = (): Record<string, unknown> => JSON.parse(lastCall()[1].body as string);
+  const putReq = (body: Record<string, unknown>, id = INITIATIVE_ID) => ({ ...buildReq(), params: { id }, body }) as any;
+
+  beforeEach(() => {
+    vi.stubEnv('CROWDFUNDING_API_BASE_URL', 'https://cf.example');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    getAccessAwareOrgs.mockReset().mockResolvedValue({
+      upstreamFailed: false,
+      resolved: new Map([
+        [ORG_UID, { roleSource: 'direct-auditor' }],
+        [OTHER_ORG_UID, { roleSource: 'inherited-writer', parentUid: ORG_UID }],
+      ]),
+      orgDocByUid: new Map([[ORG_UID, { uid: ORG_UID, name: 'Acme Motors', logo_url: 'https://logos.example/acme.png' }]]),
+    });
+    getDirectGrantProjectRows.mockReset().mockResolvedValue([{ uid: PROJECT_UID, name: 'Vendor Project', logo_url: 'http://logos.example/p.png' }]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('offers direct organization grants and direct-grant projects, not inherited organizations', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController().getAttributionOptions(buildReq(), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getAccessAwareOrgs).toHaveBeenCalledWith(expect.anything(), 'alice');
+    expect(res.json).toHaveBeenCalledWith({
+      organizations: [{ id: ORG_UID, name: 'Acme Motors', logoUrl: 'https://logos.example/acme.png' }],
+      projects: [{ id: PROJECT_UID, name: 'Vendor Project', logoUrl: 'http://logos.example/p.png' }],
+    });
+  });
+
+  it('fails the options read when the organization roster lookup failed, instead of returning an empty list', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ upstreamFailed: true, resolved: new Map(), orgDocByUid: new Map() });
+    const next = vi.fn();
+    await new CrowdfundingController().getAttributionOptions(buildReq(), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 502 });
+  });
+
+  it.each([
+    ['an unknown type', { type: 'Organization', entityUid: ORG_UID }],
+    ['a missing type', { entityUid: ORG_UID }],
+    ['personal with an entityUid', { type: 'personal', entityUid: ORG_UID }],
+    ['an organization without an entityUid', { type: 'organization' }],
+    ['a 15-char organization id', { type: 'organization', entityUid: '001000000000000' }],
+    ['an injection attempt', { type: 'organization', entityUid: `${ORG_UID}"}` }],
+    ['a non-UUID project id', { type: 'project', entityUid: 'not-a-uuid' }],
+  ])('rejects %s with a 400 before calling CF', async (_label, body) => {
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq(body), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-UUID initiative id with a 400', async () => {
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'personal' }, 'my-fund'), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('PUTs an organization with the display name and logo from the options', async () => {
+    respondWith(200, { id: INITIATIVE_ID, status: 'submitted', attribution: { type: 'organization', entity_uid: ORG_UID, name: 'Acme Motors' } });
+    const res = buildRes();
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'organization', entityUid: ORG_UID }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(lastCall()[0]).toBe(`https://cf.example/crowdfunding/initiatives/${INITIATIVE_ID}/attribution`);
+    expect(lastCall()[1].method).toBe('PUT');
+    expect(sentBody()).toEqual({ type: 'organization', entity_uid: ORG_UID, name: 'Acme Motors', logo_url: 'https://logos.example/acme.png' });
+    expect(res.json.mock.calls[0][0].attribution).toEqual({ type: 'organization', entityUid: ORG_UID, name: 'Acme Motors', logoUrl: undefined });
+  });
+
+  it('lowercases a project UUID and drops a non-https logo', async () => {
+    respondWith(200, { id: INITIATIVE_ID, status: 'submitted' });
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'project', entityUid: PROJECT_UID.toUpperCase() }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentBody()).toEqual({ type: 'project', entity_uid: PROJECT_UID, name: 'Vendor Project' });
+  });
+
+  it('sends personal without looking up options', async () => {
+    respondWith(200, { id: INITIATIVE_ID, status: 'submitted' });
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'personal' }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentBody()).toEqual({ type: 'personal' });
+    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+  });
+
+  it('rejects a target missing from the options with a 403, so CF never stores a nameless attribution', async () => {
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'organization', entityUid: OTHER_ORG_UID }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails with a 502 when the options lookup fails, without calling CF', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ upstreamFailed: true, resolved: new Map(), orgDocByUid: new Map() });
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'organization', entityUid: ORG_UID }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 502 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('truncates a long display name to the upstream limit', async () => {
+    getDirectGrantProjectRows.mockResolvedValue([{ uid: PROJECT_UID, name: 'P'.repeat(300) }]);
+    respondWith(200, { id: INITIATIVE_ID, status: 'submitted' });
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'project', entityUid: PROJECT_UID }), buildRes(), next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentBody()['name']).toBe('P'.repeat(255));
+  });
+
+  it('rejects an unauthenticated caller with a 401', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValueOnce(null);
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'personal' }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 401 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 400])('propagates a %s from CF', async (status) => {
+    respondWith(status);
+    const next = vi.fn();
+    await new CrowdfundingController().updateInitiativeAttribution(putReq({ type: 'personal' }), buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: status });
+  });
+
+  it('maps is_owner and attribution from the manage read', async () => {
+    respondWith(200, {
+      id: INITIATIVE_ID,
+      slug: 'my-fund',
+      status: 'submitted',
+      is_owner: true,
+      attribution: { type: 'project', entity_uid: PROJECT_UID, name: 'Vendor Project' },
+    });
+    const res = buildRes();
+    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, vi.fn());
+
+    expect(res.json.mock.calls[0][0]).toMatchObject({
+      isOwner: true,
+      attribution: { type: 'project', entityUid: PROJECT_UID, name: 'Vendor Project' },
+    });
+  });
+
+  it('reads a missing is_owner as false', async () => {
+    respondWith(200, { id: INITIATIVE_ID, slug: 'my-fund', status: 'submitted' });
+    const res = buildRes();
+    await new CrowdfundingController().getInitiativeBySlug({ ...buildReq(), params: { slug: 'my-fund' } }, res, vi.fn());
+
+    expect(res.json.mock.calls[0][0].isOwner).toBe(false);
   });
 });

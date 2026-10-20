@@ -576,7 +576,8 @@ export class MeetingDetailsStateService {
         this.loadedViaPastMeetingId.set(true);
         this.pastMeetingFullAccess.set(res.full_access);
       }),
-      map((res: PublicPastMeetingResponse) => ({ meeting: res.meeting, project: res.project })),
+      // Same view model as V1's join page (#3778): the anonymous projection is a partial PastMeeting at the HTTP boundary.
+      map((res: PublicPastMeetingResponse) => ({ meeting: res.meeting as Meeting, project: res.project })),
       catchError((error) => {
         // `getPublicMeeting` logs its own failures; `getPublicPastMeeting` does not, so this path logs here.
         console.error('Failed to load past meeting details', meetingId, error);

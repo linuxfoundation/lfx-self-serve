@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SlicePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, input, OnInit, output, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
@@ -18,9 +19,17 @@ import {
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import {
+  CAMPAIGN_BIDDING_CREATE_PLATFORMS,
+  CAMPAIGN_BIDDING_PLATFORMS,
+  CAMPAIGN_BIDDING_RULES,
   CAMPAIGN_BUDGET_DEFAULTS,
   CAMPAIGN_CHAR_LIMITS,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+  isCreativeAssetMimeType,
   LINKEDIN_CHAR_LIMITS,
   LINKEDIN_GEO_RESOLVE_MAP,
   META_CHAR_LIMITS,
@@ -54,6 +63,10 @@ import {
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_BIDDING_CPA_STRATEGIES,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_ROAS_STRATEGIES,
@@ -80,18 +93,29 @@ import {
   REDDIT_MAX_BUDGET_USD,
   REDDIT_OBJECTIVE_LABELS,
   REDDIT_SELECTABLE_OBJECTIVES,
+  REDDIT_VIDEO_GOAL_LABELS,
+  REDDIT_VIDEO_GOALS,
   googleAdsToLower,
   googleAdsTrimSpace,
+  isGoogleAdsServableUrl,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
-import { filter, map, merge, scan, skip, startWith, Subscription, take } from 'rxjs';
+import { filter, map, merge, Observable, scan, skip, startWith, Subscription, take } from 'rxjs';
 
 import type { Signal } from '@angular/core';
 import type {
+  CampaignBiddingCapabilityBlock,
+  CampaignBiddingConfig,
+  CampaignBiddingContext,
+  CampaignBiddingControlView,
+  CampaignBiddingDraft,
+  CampaignBiddingDrafts,
+  CampaignBiddingPlatform,
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
+  CampaignCapabilityReadState,
   CampaignCreateRequest,
   CampaignCreateResult,
   CampaignImplementationDraft,
@@ -99,7 +123,11 @@ import type {
   CampaignKeyword,
   CampaignPlatform,
   CampaignPlatformResult,
+  CampaignRedditImageAssetBlock,
+  CampaignSitelink,
   CampaignType,
+  CreativeAssetUploadResult,
+  CreativeAssetUploadStatus,
   GoogleBiddingOption,
   GoogleBiddingStrategy,
   GoogleCampaignChannel,
@@ -118,13 +146,23 @@ import type {
   RedditAdVariant,
   RedditCallToAction,
   RedditObjective,
+  RedditVideoGoal,
 } from '@lfx-one/shared/interfaces';
-import { codePointLength } from '@lfx-one/shared/utils';
+import {
+  campaignBiddingError,
+  campaignBiddingPayload,
+  codePointLength,
+  defaultCampaignBiddingDraft,
+  describeCampaignDispatchFailure,
+} from '@lfx-one/shared/utils';
+
+import { CampaignBiddingControlComponent } from '../campaign-bidding-control/campaign-bidding-control.component';
 
 type ImplementationStep = 'form' | 'creating' | 'results';
 
 /**
- * One campaign-service platform result paired with the three-state outcome the row renders.
+ * One campaign-service platform result paired with the outcome the row renders, and the
+ * operator-facing reading of its `error` (`describeCampaignDispatchFailure`).
  *
  * A local intersection rather than a `@lfx-one/shared` interface: it is this component's view
  * model, derived from `CampaignPlatformResult` and consumed only by this template, so it is not
@@ -133,19 +171,31 @@ type ImplementationStep = 'form' | 'creating' | 'results';
  * `apps/lfx-one/`, while ESLint's `@typescript-eslint/consistent-type-definitions` rejects a
  * plain `type X = { … }` object literal.
  */
-type PlatformResultRow = CampaignPlatformResult & { outcome: 'created' | 'orphaned' | 'unconfirmed' };
+type PlatformResultRow = CampaignPlatformResult & {
+  outcome: 'created' | 'orphaned' | 'nothing-created' | 'unconfirmed';
+  displayError: string | null;
+  nextStep: string | null;
+};
 
 /** See `ImplementationTabComponent.platformOutcomes` for why `ok` alone is not the test. */
 function toPlatformResultRow(result: CampaignPlatformResult): PlatformResultRow {
+  const failure = result.error ? describeCampaignDispatchFailure(result.error) : null;
+  const displayError = failure?.message ?? result.error ?? null;
+  // Pre-create rows only: an id-bearing row has a campaign upstream, and "create again" there is
+  // the duplicate-spend move this panel exists to prevent.
+  const nextStep = !result.ok && !result.campaignId ? (failure?.nextStep ?? null) : null;
   if (result.ok) {
-    return { ...result, outcome: 'created' };
+    return { ...result, outcome: 'created', displayError, nextStep };
   }
-  return { ...result, outcome: result.campaignId ? 'orphaned' : 'unconfirmed' };
+  if (result.campaignId) {
+    return { ...result, outcome: 'orphaned', displayError, nextStep };
+  }
+  return { ...result, outcome: failure?.nothingCreated ? 'nothing-created' : 'unconfirmed', displayError, nextStep };
 }
 
 @Component({
   selector: 'lfx-implementation-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe],
+  imports: [ReactiveFormsModule, ButtonComponent, SlicePipe, CampaignBiddingControlComponent],
   templateUrl: './implementation-tab.component.html',
   styleUrl: './implementation-tab.component.scss',
 })
@@ -288,6 +338,40 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditCreativeAvailable = computed<boolean>(() => this.redditCreativeEnabled() === true);
 
   /**
+   * Whether the Reddit section may offer an image UPLOAD (`CampaignListResult.redditAssetUploadEnabled`,
+   * decision D3). `null` (unknown) withholds it; nothing uploaded is ever cleared on a `false`.
+   *
+   * Read only together with `redditCreativeAvailable()`: an upload is one more way to supply the
+   * authored post's image, so it can never be offered where the image URL is not. The pasted image
+   * URL stays offered whatever this answers.
+   */
+  public readonly redditAssetUploadEnabled = input<boolean | null>(null);
+
+  /** @see redditAssetUploadEnabled — both capabilities an explicit yes. */
+  protected readonly redditAssetUploadAvailable = computed<boolean>(() => this.redditCreativeAvailable() && this.redditAssetUploadEnabled() === true);
+
+  /**
+   * Whether this deployment can honour a per-platform Bidding choice (#3299) —
+   * `CampaignListResult.biddingEnabled`, behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`. `null`
+   * (unanswered) and `false` hide the control and send no `bidding` at all, which is the create
+   * exactly as it was before the control existed.
+   */
+  public readonly biddingEnabled = input<boolean | null>(null);
+
+  /** @see biddingEnabled — an explicit yes, never a `null`. */
+  protected readonly biddingAvailable = computed<boolean>(() => this.biddingEnabled() === true);
+
+  /**
+   * Where the read behind `biddingEnabled` stands — what tells "still checking" from "the check
+   * failed" while `biddingEnabled` is `null`. Read only when a retained Manual choice needs the
+   * answer; see `biddingCapabilityBlock`.
+   */
+  public readonly biddingCapabilityRead = input<CampaignCapabilityReadState>('unknown');
+
+  /** Asks the parent to re-read the create capabilities after a failed read. */
+  public readonly retryBiddingCapability = output<void>();
+
+  /**
    * Emitted whenever a user-editable field changes, so the parent's copy is current at the moment
    * the tab is destroyed.
    *
@@ -370,9 +454,12 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Read from `REDDIT_SELECTABLE_OBJECTIVES`, not from the labels map's keys, for the reason
    * `metaObjectiveOptions` is: the labels map stays total over `RedditObjective` so a withheld
-   * objective still renders a name, and `video_views` is hidden from the picker only.
+   * objective would still render a name. Today the list holds all four objectives.
    */
   protected readonly redditObjectiveOptions = REDDIT_SELECTABLE_OBJECTIVES;
+  /** The goals offered for `video_views`, and their readable names. */
+  protected readonly redditVideoGoalOptions = REDDIT_VIDEO_GOALS;
+  protected readonly redditVideoGoalLabels = REDDIT_VIDEO_GOAL_LABELS;
   /**
    * The full CTA list, with no selectable/withheld split: upstream accepts every one of these,
    * resolving the value case-insensitively and rejecting anything outside the set. The empty
@@ -383,7 +470,9 @@ export class ImplementationTabComponent implements OnInit {
   /** Named in the empty option's label, so "send nothing" shows what upstream will apply. */
   protected readonly redditDefaultCallToAction = DEFAULT_REDDIT_CALL_TO_ACTION;
   /**
-   * True when the current objective is one the picker does not offer — today only `video_views`.
+   * True when the current objective is one the picker does not offer. Latent today — every
+   * `RedditObjective` is selectable now that `video_views` has its goal picker — and kept so an
+   * objective withheld later fails safe rather than silently showing index 0.
    *
    * Exactly the Meta case, and it fails the same way if left out: the template binds `[selected]`
    * per `<option>` rather than `[value]` on the select, so with no matching option the browser
@@ -407,12 +496,10 @@ export class ImplementationTabComponent implements OnInit {
    * it ends in a campaign built on the wrong objective; here it ends in an upstream refusal, since
    * `redditCTAs` rejects any label outside the set.
    *
-   * The two sets are not withheld the same way, which is why this one is latent rather than live:
-   * `REDDIT_SELECTABLE_OBJECTIVES` is deliberately a SUBSET of `RedditObjective` (`video_views` is
-   * held back — see {@link RedditCampaignCreateRequest.videoGoal}), so an unavailable objective is
-   * reachable by design, while `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA
-   * only becomes possible once Reddit retires a label. Guarded anyway: the failure is identical in
-   * kind and the control is a sibling of the objective's, so the two should not drift.
+   * Both guards are latent today: `REDDIT_SELECTABLE_OBJECTIVES` currently offers every
+   * `RedditObjective`, and `REDDIT_CALL_TO_ACTIONS` is the whole upstream set, so a stale CTA only
+   * becomes possible once Reddit retires a label. Guarded anyway: the failure is identical in kind
+   * and the control is a sibling of the objective's, so the two should not drift.
    *
    * The empty string is NOT unavailable — it is the real "let upstream default" selection the
    * first `<option>` carries.
@@ -539,7 +626,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly platformResults = signal<CampaignPlatformResult[]>([]);
 
   /**
-   * `platformResults` with each row's outcome resolved to three states rather than the boolean
+   * `platformResults` with each row's outcome resolved to four states rather than the boolean
    * the wire carries. Derived here rather than in the template because only signal reads,
    * computed values and pipes may appear there (`docs/reviews/frontend-checklist.md` §4).
    *
@@ -552,14 +639,15 @@ export class ImplementationTabComponent implements OnInit {
    * being spent, so calling it a plain failure is wrong in the expensive direction: the reader's
    * next move is to create it again.
    *
-   * The third state is `unconfirmed`, NOT "not created", and the absence of a `campaign_id` is
-   * not evidence that nothing was created. `orchestrator.go` emits `ok: false` with no id for at
-   * least four distinct situations: a genuine upstream rejection (:869), a concurrent dispatch
-   * that skipped this platform (:780 — which campaign-service explicitly calls a skip, not a
-   * failure), and two responses in which an upstream campaign may well exist but its id did not
-   * survive — "dispatcher returned no campaign" (:879) and "dispatcher returned no upstream
-   * campaign id" (:887). Rendering all four as a definite "not created" tells an ED that no paid
-   * artifact exists, and their next move is to create a second one that really does spend money.
+   * The fallback state for an id-less failure is `unconfirmed`, NOT "not created", and the
+   * absence of a `campaign_id` is not evidence that nothing was created. `orchestrator.go` emits
+   * `ok: false` with no id for at least four distinct situations: a genuine upstream rejection
+   * (:869), a concurrent dispatch that skipped this platform (:780 — which campaign-service
+   * explicitly calls a skip, not a failure), and two responses in which an upstream campaign may
+   * well exist but its id did not survive — "dispatcher returned no campaign" (:879) and
+   * "dispatcher returned no upstream campaign id" (:887). Rendering all four as a definite "not
+   * created" tells an ED that no paid artifact exists, and their next move is to create a second
+   * one that really does spend money.
    *
    * So the row states what is known — this platform's campaign could not be confirmed — and
    * leaves the reader to check. That over-warns on the genuine-rejection and skip cases, which is
@@ -567,6 +655,17 @@ export class ImplementationTabComponent implements OnInit {
    * campaign costs budget. Note the skip is NOT detected by matching its human-readable sentence;
    * the wire has no dedicated `skipped` field yet (LFXV2-2665 tracks adding one) and a message
    * reworded upstream would silently flip the UI's verdict.
+   *
+   * The one exception is `nothing-created`, and it is matched on text deliberately. Since
+   * campaign-service #208 a failure the service PROVED happened before anything was created (the
+   * claim was released) carries a fixed sentence whose ending says so —
+   * `CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES`, mirrored from `DispatchFailureMessage`. That
+   * differs from the skip in the one way the rule above cares about: the direction of drift. A
+   * reworded skip sentence would flip a row AWAY from the warning; a reworded pre-create sentence
+   * simply stops matching and the row falls back to `unconfirmed`, the over-warning direction. No
+   * sentence for the possibly-created case ends in those suffixes, and none of them is built from
+   * upstream text, so a match cannot downgrade a real campaign to "nothing was sent". An id-bearing
+   * row stays `orphaned` whatever its message says.
    */
   protected readonly platformOutcomes = computed<PlatformResultRow[]>(() => this.platformResults().map(toPlatformResultRow));
 
@@ -578,11 +677,24 @@ export class ImplementationTabComponent implements OnInit {
    * is how an orphaned `campaignId` reaches the page at all — so an all-failed result would
    * otherwise be announced as a success in green.
    *
-   * The negative case is headed "Campaign Status Unconfirmed" rather than "No Campaigns Created"
-   * for the same reason the row state is named `unconfirmed`: a heading is the one line a reader
-   * acts on without reading further, and this one must not assert an absence nobody verified.
+   * Drives the panel's colour and icon; the heading text is `platformResultsHeading`.
    */
-  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome !== 'unconfirmed'));
+  protected readonly anyPlatformCreated = computed(() => this.platformOutcomes().some((r) => r.outcome === 'created' || r.outcome === 'orphaned'));
+
+  /**
+   * The results panel heading. The negative case is "Campaign Status Unconfirmed" rather than "No
+   * Campaigns Created" for the same reason the row state is named `unconfirmed`: a heading is the
+   * one line a reader acts on without reading further, and it must not assert an absence nobody
+   * verified. The exception is when EVERY row is a proven pre-create failure — see
+   * `platformOutcomes` for what `nothing-created` is and is not.
+   */
+  protected readonly platformResultsHeading = computed(() => {
+    if (this.anyPlatformCreated()) {
+      return 'Campaigns Created';
+    }
+    const rows = this.platformOutcomes();
+    return rows.length > 0 && rows.every((r) => r.outcome === 'nothing-created') ? 'No Campaigns Created' : 'Campaign Status Unconfirmed';
+  });
 
   protected readonly errors = signal<string[]>([]);
   protected readonly briefKeywords = signal<CampaignKeyword[]>([]);
@@ -608,6 +720,39 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditObjective = signal<RedditObjective>(DEFAULT_REDDIT_OBJECTIVE);
   /**
+   * The concrete video goal a `video_views` campaign optimizes for. Reddit has no bare
+   * `VIDEO_VIEWS` goal, so both creators refuse that objective without one of `REDDIT_VIDEO_GOALS`.
+   * Starts unset (`''`) rather than on a default, so the operator picks the view length on purpose;
+   * `canSubmit` blocks a Video Views create until they do. Remembered across objective changes —
+   * only the request is gated on the objective.
+   */
+  protected readonly redditVideoGoal = signal<RedditVideoGoal | ''>('');
+  /** True when the objective needs a video goal — the condition that shows the goal picker. */
+  protected readonly redditNeedsVideoGoal = computed(() => this.redditObjective() === 'video_views');
+  /**
+   * The video goal as the request carries it, or `null` when Video Views is chosen without a usable
+   * goal. Read by the payload, by `canSubmit` and by the template's message, so all three agree.
+   * Membership-checked rather than truthiness-checked because a restored draft is not type-checked
+   * at runtime and both creators refuse anything outside `REDDIT_VIDEO_GOALS`.
+   */
+  protected readonly redditEffectiveVideoGoal = computed<RedditVideoGoal | null>(() => {
+    const goal = this.redditVideoGoal();
+    return (REDDIT_VIDEO_GOALS as readonly string[]).includes(goal) ? (goal as RedditVideoGoal) : null;
+  });
+  /** The message shown under the goal picker while Video Views has no usable goal, else `null`. */
+  protected readonly redditVideoGoalError = computed(() =>
+    this.redditNeedsVideoGoal() && this.redditEffectiveVideoGoal() === null ? 'Choose a video goal — Reddit needs one for a Video Views campaign.' : null
+  );
+  /**
+   * The message shown under the Post URL while Video Views has no post, else `null`. A video-views
+   * campaign has to promote an existing video post: the image-URL route authors an IMAGE post, which
+   * can never earn a video view, and with neither the campaign is created with no ad at all. Neither
+   * creator checks the creative against the objective, so this is the only place it is enforced.
+   */
+  protected readonly redditVideoPostError = computed(() =>
+    this.redditNeedsVideoGoal() && !this.redditPostUrl() ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null
+  );
+  /**
    * Link to an EXISTING Reddit post to promote. Ungated, because both creators read it: the
    * legacy path extracts the post id and builds the ad from it (`reddit-ads.service.ts`), exactly
    * as campaign-service does.
@@ -627,6 +772,42 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditImageUrl = signal('');
   protected readonly redditCallToAction = signal<RedditCallToAction | ''>('');
+  /**
+   * An image UPLOADED for this brief — the creative-asset id campaign-service returned and the file
+   * name it was chosen as. Sent as `imageAssetId` in place of `imageUrl` while
+   * `redditAssetUploadAvailable()`; see `redditImageField`.
+   */
+  protected readonly redditImageAssetId = signal('');
+  protected readonly redditImageAssetName = signal('');
+  /** The brief the asset was uploaded to; upstream refuses the id for any other brief. */
+  protected readonly redditImageAssetBriefId = signal('');
+  protected readonly redditImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  /** The file name of the upload in flight, carried in the draft so a remount can resume it. */
+  private readonly redditImageUploadPendingName = signal('');
+  /**
+   * The brief the upload in flight was started for, carried in the draft beside its name: a remount
+   * resumes by THIS brief, not whichever one is current (a foundation switch clears the current).
+   */
+  private readonly redditImageUploadPendingBriefId = signal('');
+  /** The brief a failed upload was for; empty for a pick refused before any upload started. */
+  private readonly redditImageUploadFailedBriefId = signal('');
+  /** The readable reason the last upload was refused; empty unless the status is `error`. */
+  protected readonly redditImageUploadError = signal('');
+  /** The `accept` list for the file picker — the same allowlist the BFF route enforces. */
+  protected readonly creativeAssetAccept = CREATIVE_ASSET_MIME_TYPES.join(',');
+  /**
+   * The file input's descriptions: hint and live status always, the refusal while there is one, so
+   * returning to the input re-reads why the last file was refused. The input stays enabled during
+   * an upload (disabling it would drop keyboard focus); a new pick replaces the one in flight.
+   */
+  protected readonly redditImageFileDescribedBy = computed(() =>
+    ['reddit-image-file-hint', 'reddit-image-file-status', ...(this.redditImageUploadStatus() === 'error' ? ['reddit-image-file-error'] : [])].join(' ')
+  );
+  /**
+   * This component's subscription to the upload in flight. Unsubscribing only detaches it (a tab
+   * switch must not abort the upload); `clearRedditImageAsset` cancels the request itself.
+   */
+  private redditImageUploadSub: Subscription | null = null;
   /**
    * Microsoft's four editable inputs (LFXV2-3312). Signal-backed like the Meta and Reddit blocks,
    * so `campaignForm.valueChanges` never sees them and each handler must `emitDraft()` by hand.
@@ -659,6 +840,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly microsoftKeywords = signal<MicrosoftKeyword[]>([]);
   protected readonly microsoftBudgetUsd = signal(500);
   protected readonly microsoftCpcBid = signal('');
+
+  /**
+   * The Bidding choice per platform (#3299). A platform with no entry is on the default, automatic.
+   * Kept for every platform whatever is selected, like the other per-platform fields, so
+   * deselecting and reselecting a platform does not lose a typed bid.
+   */
+  protected readonly biddingDrafts = signal<CampaignBiddingDrafts>({});
   /**
    * Google's own geo targets, as ISO-2 country codes.
    *
@@ -738,6 +926,23 @@ export class ImplementationTabComponent implements OnInit {
    * ADDED, exactly as {@link microsoftKeywordDraft} does.
    */
   protected readonly googleCalloutDraft = signal('');
+  /**
+   * Google's sitelink extensions — extra links rendered under the Search ad.
+   *
+   * Four fields rather than the callout's one, so the draft is an OBJECT and the add guard has more
+   * to say. An entry arrives through {@link addGoogleSitelink} or a restored draft; the BFF guard
+   * re-checks every entry against `validateSitelinks` before anything is sent.
+   */
+  protected readonly googleSitelinks = signal<CampaignSitelink[]>([]);
+  protected readonly googleMaxSitelinks = GOOGLE_ADS_MAX_SITELINKS;
+  protected readonly googleMaxFinalUrlBytes = GOOGLE_ADS_MAX_FINAL_URL_BYTES;
+  protected readonly googleMaxSitelinkRunes = GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES;
+  protected readonly googleMaxSitelinkDescriptionRunes = GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES;
+  /**
+   * The sitelink sub-form's live values, on the same rule as {@link googleCalloutDraft}: transient,
+   * reaching the saved draft only when a sitelink is added.
+   */
+  protected readonly googleSitelinkDraft = signal<CampaignSitelink>({ text: '', description1: '', description2: '', finalUrl: '' });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(500);
@@ -1111,6 +1316,110 @@ export class ImplementationTabComponent implements OnInit {
 
   protected readonly googleCalloutsFull = computed(() => this.googleCallouts().length >= GOOGLE_ADS_MAX_CALLOUTS);
 
+  /** Rune length of the in-progress sitelink link text. Spread, not `.length` — as the callout. */
+  protected readonly googleSitelinkTextLength = computed(() => [...googleAdsTrimSpace(this.googleSitelinkDraft().text)].length);
+
+  protected readonly googleSitelinkTextTooLong = computed(() => this.googleSitelinkTextLength() > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES);
+
+  /**
+   * Whether either description line is over its own bound.
+   *
+   * EACH line separately, not their total: upstream applies `maxSitelinkDescriptionRunes` to
+   * `desc1` and `desc2` in turn, so a pair of 30-rune lines is fine and one 36-rune line is not.
+   */
+  protected readonly googleSitelinkDescriptionTooLong = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return [draft.description1 ?? '', draft.description2 ?? ''].some((d) => [...googleAdsTrimSpace(d)].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+  });
+
+  /**
+   * Whether exactly one description line is filled in.
+   *
+   * Google renders the two lines together and rejects an asset carrying only one, so upstream
+   * refuses the whole create on this. Both filled or both empty are the two legal states.
+   */
+  protected readonly googleSitelinkDescriptionHalfFilled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    return (googleAdsTrimSpace(draft.description1 ?? '') === '') !== (googleAdsTrimSpace(draft.description2 ?? '') === '');
+  });
+
+  /** Case-folded with Go's rules, as the callout sibling is — upstream refuses, not de-duplicates. */
+  protected readonly googleSitelinkDuplicate = computed(() => {
+    const key = googleAdsToLower(googleAdsTrimSpace(this.googleSitelinkDraft().text));
+    if (key === '') return false;
+    return this.googleSitelinks().some((s) => googleAdsToLower(s.text) === key);
+  });
+
+  /**
+   * Whether the destination in the box is one the ad platforms will refuse.
+   *
+   * False while the box is EMPTY: an unfilled field is not yet a mistake, and the add button's own
+   * disabled state is what withholds the add until it is filled. This warns only about text that
+   * is present and unservable.
+   */
+  protected readonly googleSitelinkUrlInvalid = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '') return false;
+    return !this.isServableDestination(url);
+  });
+
+  /** UTF-8 byte length of a servable destination over upstream's `maxFinalURLBytes`, else 0. */
+  protected readonly googleSitelinkUrlBytesOver = computed(() => {
+    const url = googleAdsTrimSpace(this.googleSitelinkDraft().finalUrl);
+    if (url === '' || this.googleSitelinkUrlInvalid()) return 0;
+    const bytes = new TextEncoder().encode(url).length;
+    return bytes > GOOGLE_ADS_MAX_FINAL_URL_BYTES ? bytes : 0;
+  });
+
+  /** The message line describing the destination box, or null when it is clean. */
+  protected readonly googleSitelinkUrlErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkUrlInvalid()) return 'google-sitelink-url-invalid';
+    if (this.googleSitelinkUrlBytesOver() > 0) return 'google-sitelink-url-too-long';
+    return null;
+  });
+
+  /**
+   * Ids of the message lines currently describing the link-text box and the two description boxes,
+   * or `null` when each is clean. Same reason as {@link googleCalloutDraftErrorId}: `aria-invalid`
+   * marks the field wrong and `aria-describedby` is what says why once focus returns to it. One
+   * computed per group rather than a template ternary, because each group's messages are mutually
+   * exclusive and `.claude/rules/styling.md` forbids nesting ternaries in a binding.
+   */
+  protected readonly googleSitelinkTextErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkTextTooLong()) return 'google-sitelink-too-long';
+    if (this.googleSitelinkDuplicate()) return 'google-sitelink-duplicate';
+    return null;
+  });
+
+  protected readonly googleSitelinkDescriptionErrorId = computed<string | null>(() => {
+    if (this.googleSitelinkDescriptionHalfFilled()) return 'google-sitelink-half-described';
+    if (this.googleSitelinkDescriptionTooLong()) return 'google-sitelink-description-too-long';
+    return null;
+  });
+
+  protected readonly googleSitelinksFull = computed(() => this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS);
+
+  /**
+   * Whether the add button is withheld. A computed rather than an expression in the template, so
+   * the button's condition and `addGoogleSitelink`'s refusals stay one list in one place.
+   *
+   * The two required fields are withheld as "not filled in yet" rather than warned about, which is
+   * why the empty cases live here and not in {@link googleSitelinkUrlInvalid}.
+   */
+  protected readonly googleSitelinkAddDisabled = computed(() => {
+    const draft = this.googleSitelinkDraft();
+    if (googleAdsTrimSpace(draft.text) === '' || googleAdsTrimSpace(draft.finalUrl) === '') return true;
+    return (
+      this.googleSitelinksFull() ||
+      this.googleSitelinkTextTooLong() ||
+      this.googleSitelinkDuplicate() ||
+      this.googleSitelinkDescriptionHalfFilled() ||
+      this.googleSitelinkDescriptionTooLong() ||
+      this.googleSitelinkUrlInvalid() ||
+      this.googleSitelinkUrlBytesOver() > 0
+    );
+  });
+
   /**
    * The effective geo list as a display string. A computed rather than `.join()` in the template:
    * `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes in bindings but
@@ -1226,6 +1535,60 @@ export class ImplementationTabComponent implements OnInit {
     return accounts.find((a) => a.accountId === this.linkedInAccountId()) ?? accounts[0];
   });
 
+  /**
+   * What each platform's Bidding control renders (#3299): the choice, and why it cannot be sent —
+   * validated against the rest of that platform's config by the same shared rules
+   * `biddingPayloads` applies, so the message on screen is the reason the create is blocked.
+   */
+  protected readonly biddingViews: Signal<Record<CampaignBiddingPlatform, CampaignBiddingControlView>> = this.initBiddingViews();
+
+  /**
+   * The `bidding` object each platform's config carries, or `null` where the choice cannot be sent.
+   * `canSubmit` blocks on a `null` for a selected platform, so `submit` never has to choose between
+   * dropping a refused manual bid (which would create the campaign automatic) and sending it.
+   */
+  protected readonly biddingPayloads: Signal<Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>> = this.initBiddingPayloads();
+
+  /**
+   * Why Create is blocked for a Manual bidding choice this tab still holds but cannot send (#3299),
+   * or `null`. While the capability is not an explicit yes the control is hidden and `bidding` is
+   * not sent — and campaign-service reads an absent `bidding` as AUTOMATIC. So a Manual choice
+   * retained in the draft (made earlier, before a tab round-trip left the capability unanswered or
+   * false) must block the create rather than be dropped: pending says it is checking, failed offers
+   * a Retry, and an explicit no asks the operator to switch to Automatic themselves.
+   */
+  protected readonly biddingCapabilityBlock: Signal<CampaignBiddingCapabilityBlock | null> = this.initBiddingCapabilityBlock();
+  /** The always-mounted live region's text for `biddingCapabilityBlock`; `''` when nothing blocks. */
+  protected readonly biddingCapabilityMessage = computed(() => this.biddingCapabilityBlock()?.message ?? '');
+
+  /**
+   * Why Create is blocked for an uploaded Reddit image this tab still holds but cannot send, or
+   * `null`. `redditImageField` withholds the asset unless the upload capability is an explicit yes,
+   * so after a tab round-trip clears the capabilities (Optimize, then back) a restored upload would
+   * be silently left out of the request — creating the campaign with no image at all. The block
+   * keeps the operator's choice explicit instead: pending says it is checking, failed offers a
+   * Retry, and an explicit no asks them to remove the image. Not raised while a post URL is set: the
+   * asset is withheld then by design, since that post already has its image.
+   */
+  protected readonly redditImageAssetBlock: Signal<CampaignRedditImageAssetBlock | null> = this.initRedditImageAssetBlock();
+  /** Whether the draft holds an uploaded Reddit image made for the brief now open — the only one sent. */
+  protected readonly redditImageAssetForThisBrief = computed(
+    () => this.redditImageAssetId() !== '' && this.redditImageAssetBriefId() === (this.briefPersistence().briefId ?? '')
+  );
+  /** The always-mounted live region's text for `redditImageAssetBlock`; `''` when nothing blocks. */
+  protected readonly redditImageAssetBlockMessage = computed(() => this.redditImageAssetBlock()?.message ?? '');
+  /** The upload control's progress or success line; empty when there is nothing to report. */
+  protected readonly redditImageUploadStatusMessage = computed(() => {
+    if (this.redditImageUploadStatus() === 'uploading') return 'Uploading image…';
+    return this.redditImageAssetForThisBrief() ? `Uploaded: ${this.redditImageAssetName() || 'image'}` : '';
+  });
+  /**
+   * What the always-mounted live region announces: the control's status while it is shown. Kept out
+   * of the control so the region is not created and destroyed as upload support settles, which
+   * drops the first announcement; while the control is hidden, the asset block's region speaks.
+   */
+  protected readonly redditImageUploadLiveMessage = computed(() => (this.redditAssetUploadAvailable() ? this.redditImageUploadStatusMessage() : ''));
+
   protected readonly canSubmit = computed(() => {
     // Read FIRST and for its side effect only — see `campaignFormRevision`. Every direct form read
     // below is non-reactive, so without this dependency the memo never re-runs on a form edit.
@@ -1313,16 +1676,21 @@ export class ImplementationTabComponent implements OnInit {
     // must be a positive number"), and because creation is async that surfaces as a dead job
     // rather than an error on the request. Refuse locally instead.
     //
-    // Budget only: unlike Meta and LinkedIn, Reddit's remaining inputs are all AI-recommended
-    // from the brief and rendered read-only for review, so there is no user-entered value left to
-    // validate. The section exists so the operator SEES what will dispatch. Deliberately not an
-    // enumeration — listing which inputs those are is a claim the next added field falsifies.
+    // Most of Reddit's other inputs are AI-recommended from the brief and rendered read-only for
+    // review; the user-entered ones that can make a create fail are checked here and below (the
+    // video goal). Deliberately not an enumeration — a list is a claim the next field falsifies.
     if (redditSelected && !this.redditBudgetIsUsable()) return false;
     // No usable geo at all — the brief recommended none AND the country code is blank. The
     // request would carry [''], which Reddit cannot target and the operator cannot see, because
     // the preview correctly renders nothing. countryCode has no validator, so this state is
     // reachable by clearing one optional field.
     if (redditSelected && this.redditEffectiveGeoTargets().length === 0) return false;
+    // Video Views with no usable goal: both creators refuse it before anything is created, and
+    // because creation is async that refusal would arrive as a dead job. The message is on screen
+    // under the goal picker.
+    if (redditSelected && this.redditVideoGoalError() !== null) return false;
+    // Video Views without a post would build an image-post ad or no ad — never a video view.
+    if (redditSelected && this.redditVideoPostError() !== null) return false;
     if (metaSelected && !this.metaVariants().some((v) => v.primaryText.trim() && v.headline.trim())) return false;
     if (metaSelected && !this.metaHasPlacement()) return false;
     if (metaSelected && !this.metaPixelValid()) return false;
@@ -1354,7 +1722,16 @@ export class ImplementationTabComponent implements OnInit {
       return false;
     if (microsoftSelected && this.microsoftEffectiveKeywords().length === 0) return false;
     if (microsoftSelected && this.microsoftEffectiveGeoTargets().length === 0) return false;
-    if (microsoftSelected && !this.microsoftCpcBidValid()) return false;
+    // The legacy max CPC field is hidden — and not sent — while the Bidding control is offered, so
+    // a stale value in it must not block a create the operator cannot see the reason for.
+    if (microsoftSelected && this.microsoftLegacyCpcBidApplies() && !this.microsoftCpcBidValid()) return false;
+    // A selected platform whose Bidding choice cannot be sent (#3299): its message is on screen,
+    // under that platform's control.
+    if (this.biddingAvailable() && CAMPAIGN_BIDDING_CREATE_PLATFORMS.some((p) => platforms.includes(p) && this.biddingPayloads()[p] === null)) return false;
+    // A retained Manual choice the deployment has not (yet) confirmed it can send: never dropped.
+    if (this.biddingCapabilityBlock() !== null) return false;
+    // Likewise a retained Reddit image upload: never silently left out of the request.
+    if (this.redditImageAssetBlock() !== null) return false;
     // Backstop for a state the add handlers cannot produce but a RESTORED DRAFT can: a draft
     // written before these caps existed carries whatever list it had, and `applyDraft` replays it
     // verbatim by design (an emptied list must stay emptied). Without this the form would look
@@ -1372,11 +1749,12 @@ export class ImplementationTabComponent implements OnInit {
     // `error` splits in two, and the brief id is what tells them apart — blocking the whole
     // status was too broad, blocking none of it was too narrow.
     //
-    //   error + a briefId  → a CONFLICT (`stale-brief`, `unverified-validator`,
-    //     `superseded-after-write`). That id is the STORED row's, which by definition is not the
-    //     brief on screen — the save was refused precisely because the two disagree. Creating
-    //     from it would launch paid campaigns off another writer's version while the user reads
-    //     their own unsaved copy. BLOCKED, and the id being present is what makes it dangerous.
+    //   error + a briefId  → the STORED row and the brief on screen are known to disagree, and
+    //     that id is the stored row's. A save conflict says so outright (`stale-brief`,
+    //     `unverified-validator`, `superseded-after-write`); so does a refused approval of a
+    //     restored brief, and so does a restore whose cached content predates a write this
+    //     session made. Creating from it would launch paid campaigns off a version the user is
+    //     not reading. BLOCKED, and the id being present is what makes it dangerous.
     //
     //   error + no briefId → the save simply FAILED. Its own banner says "You can continue
     //     setting up the campaign", and with the cutover dark the legacy create needs no brief id
@@ -1388,14 +1766,20 @@ export class ImplementationTabComponent implements OnInit {
     // straight after Proceed submitted an empty brief id and hit the terminal refusal. The
     // dedicated input answers "is a save running" for every save, first or not.
     if (this.briefSaveInFlight()) return false;
+    // A create sent mid-upload would go out with the pasted URL (or no image) instead of the file
+    // the operator just chose, and the upload would then land for a create already sent. Held here
+    // while the upload control is shown, where its status and Remove live; while it is hidden,
+    // `redditImageAssetBlock` holds Create instead and shows the upload's state with a Remove. Not
+    // with a post URL, which `redditImageField` sends in place of any image, as the block agrees.
+    if (this.showRedditSection() && this.redditAssetUploadAvailable() && !this.redditPostUrl() && this.redditImageUploadStatus() === 'uploading') return false;
 
     const persistence = this.briefPersistence();
     if (persistence.status === 'saving') return false;
     if (persistence.status === 'error' && persistence.briefId !== null) return false;
 
     // A durable but UNAPPROVED brief cannot create campaigns: campaign-service refuses outright —
-    // `internal/service/brief.go:439` returns 400 "brief must be approved before creating
-    // campaigns". The state is `saved` because the write genuinely landed, and its banner already
+    // campaign-service's `BriefService.CreateCampaigns` (`internal/service/brief.go`) returns 400
+    // "brief must be approved before creating campaigns". The state is `saved` because the write genuinely landed, and its banner already
     // says the brief is stored but not usable; leaving Create enabled invited the user to prove it
     // the hard way. Read from the explicit `approved` field rather than the banner prose, which
     // would break the first time the copy is edited.
@@ -1438,6 +1822,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleBiddingChannel: Signal<GoogleCampaignChannel | null> = this.initGoogleBiddingChannel();
   protected readonly googleCalloutsAvailable: Signal<boolean> = this.initGoogleCalloutsAvailable();
   protected readonly googleCalloutsWithheldWarning: Signal<string | null> = this.initGoogleCalloutsWithheldWarning();
+  protected readonly googleSitelinksWithheldWarning: Signal<string | null> = this.initGoogleSitelinksWithheldWarning();
   protected readonly googleBiddingOptions: Signal<GoogleBiddingOption[]> = this.initGoogleBiddingOptions();
   protected readonly googleBiddingStrategy: Signal<GoogleBiddingStrategy | null> = this.initGoogleBiddingStrategy();
   protected readonly googleBiddingDefaultLabel: Signal<string> = this.initGoogleBiddingDefaultLabel();
@@ -1554,6 +1939,18 @@ export class ImplementationTabComponent implements OnInit {
       if (this.seeding) return;
       this.emitDraft();
     });
+
+    // When the Bidding control becomes available, a bid typed into the legacy Microsoft field while
+    // it was not (#3299) would otherwise vanish with that field and Automatic would be sent. It is
+    // carried into the control as the Manual choice it always meant upstream (a `cpcBid` without
+    // `bidding` is a manual bid). Subscribed after the draft-restore effect is created, so a
+    // restored legacy value is seen too.
+    toObservable(this.biddingEnabled)
+      .pipe(
+        filter((enabled) => enabled === true),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.adoptLegacyMicrosoftCpcBid());
 
     // Re-run the two ad-copy array validators when the answer `searchCopyRequired` reads moves.
     //
@@ -1780,6 +2177,11 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  protected onRedditVideoGoalChange(event: Event): void {
+    this.redditVideoGoal.set((event.target as HTMLSelectElement).value as RedditVideoGoal | '');
+    this.emitDraft();
+  }
+
   protected onRedditPostUrlInput(event: Event): void {
     this.redditPostUrl.set((event.target as HTMLInputElement).value.trim());
     this.emitDraft();
@@ -1787,6 +2189,53 @@ export class ImplementationTabComponent implements OnInit {
 
   protected onRedditImageUrlInput(event: Event): void {
     this.redditImageUrl.set((event.target as HTMLInputElement).value.trim());
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen image for this brief and keep its asset id.
+   *
+   * Type and size are checked here against the same shared allowlist the BFF route enforces, so
+   * the common refusals need no round trip and read the same either way. The input is cleared
+   * afterwards so choosing the same file again (after a failure) fires `change` again.
+   */
+  protected onRedditImageFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+
+    // A new pick replaces the previous upload outright, so a refusal below can never leave an older
+    // image silently in place while the screen reports this one as refused. Emitted at once: the
+    // parent's draft still holds the old asset, and a tab switch before any other edit would
+    // restore it — and Create would send the image the operator replaced.
+    this.clearRedditImageAsset();
+    this.emitDraft();
+
+    if (!isCreativeAssetMimeType(file.type)) {
+      this.failRedditImageUpload(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+      return;
+    }
+    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
+      this.failRedditImageUpload(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
+      return;
+    }
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.projectContextService.activeContext()?.slug ?? '';
+    if (!briefId || !projectSlug) {
+      this.failRedditImageUpload('Save the brief before uploading an image for it.');
+      return;
+    }
+
+    this.followRedditImageUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId), briefId, file.name);
+    // Told to the parent at once: a tab switch now destroys this component but not the request,
+    // and the remount resumes it from the draft (`resumeRedditImageUpload`).
+    this.emitDraft();
+  }
+
+  /** Forget the uploaded image (the stored asset stays upstream, unused) and fall back to the image URL. */
+  protected onRedditImageAssetRemove(): void {
+    this.clearRedditImageAsset();
     this.emitDraft();
   }
 
@@ -1874,7 +2323,43 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   protected onMicrosoftCpcBidInput(event: Event): void {
-    this.microsoftCpcBid.set((event.target as HTMLInputElement).value);
+    const value = (event.target as HTMLInputElement).value;
+    this.microsoftCpcBid.set(value);
+    // Typing a bid into the legacy field is the operator's newest choice, so it supersedes an
+    // earlier explicit Automatic — otherwise the typed bid would be silently not sent
+    // (`microsoftLegacyCpcBidApplies`).
+    if (value.trim() !== '' && this.biddingDrafts()['microsoft-ads']?.strategy === 'automatic') {
+      this.biddingDrafts.update((drafts) => {
+        const next = { ...drafts };
+        delete next['microsoft-ads'];
+        return next;
+      });
+    }
+    this.emitDraft();
+  }
+
+  /**
+   * The explicit way out of an `unsupported` or `failed` block: the operator moves the retained
+   * Manual choices of the selected platforms to Automatic. The typed amounts are kept, so turning
+   * Manual back on later does not lose them.
+   */
+  protected switchRetainedBiddingToAutomatic(): void {
+    const platforms = this.retainedManualBiddingPlatforms();
+    this.biddingDrafts.update((drafts) => {
+      const next = { ...drafts };
+      for (const platform of platforms) {
+        const draft = next[platform];
+        if (draft) next[platform] = { ...draft, strategy: 'automatic' };
+      }
+      return next;
+    });
+    if (platforms.includes('microsoft-ads')) this.clearLegacyMicrosoftCpcBid();
+    this.emitDraft();
+  }
+
+  protected onBiddingChange(platform: CampaignBiddingPlatform, draft: CampaignBiddingDraft): void {
+    this.biddingDrafts.update((drafts) => ({ ...drafts, [platform]: { ...draft } }));
+    if (platform === 'microsoft-ads' && draft.strategy === 'automatic') this.clearLegacyMicrosoftCpcBid();
     this.emitDraft();
   }
 
@@ -2012,6 +2497,63 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * Add one sitelink, reporting whether it was actually added.
+   *
+   * Boolean for the same reason {@link addGoogleCallout} is: a refusal must leave the sub-form
+   * filled so the operator can fix the field the warning names, not retype four of them.
+   *
+   * One refusal per branch of upstream's `validateSitelinks`, in its order — cap on the raw list,
+   * blank link text, the rune bound, the case-folded duplicate, the all-or-nothing description
+   * pair, each description line's own rune bound, then the destination and its byte bound. A
+   * sitelink that passes every one is one upstream accepts, short of the utm-tagging margin
+   * documented on {@link GOOGLE_ADS_MAX_FINAL_URL_BYTES}.
+   */
+  protected addGoogleSitelink(sitelink: CampaignSitelink): boolean {
+    const text = googleAdsTrimSpace(sitelink.text);
+    const description1 = googleAdsTrimSpace(sitelink.description1 ?? '');
+    const description2 = googleAdsTrimSpace(sitelink.description2 ?? '');
+    const finalUrl = googleAdsTrimSpace(sitelink.finalUrl);
+
+    if (this.googleSitelinks().length >= GOOGLE_ADS_MAX_SITELINKS) return false;
+    if (!text) return false;
+    if ([...text].length > GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES) return false;
+    if (this.googleSitelinks().some((s) => googleAdsToLower(s.text) === googleAdsToLower(text))) return false;
+    if ((description1 === '') !== (description2 === '')) return false;
+    if ([description1, description2].some((d) => [...d].length > GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES)) return false;
+    // Upstream treats a sitelink with no destination as UNSERVABLE, not as a lesser sitelink, and
+    // refuses the whole create — so an empty URL is a refusal here, not an omitted optional field.
+    if (!this.isServableDestination(finalUrl)) return false;
+    if (new TextEncoder().encode(finalUrl).length > GOOGLE_ADS_MAX_FINAL_URL_BYTES) return false;
+
+    this.googleSitelinks.update((sitelinks) => [
+      ...sitelinks,
+      // Descriptions omitted together when neither is filled, so the request carries absence rather
+      // than two empty strings — the shape the BFF helper and upstream both expect.
+      { text, ...(description1 !== '' || description2 !== '' ? { description1, description2 } : {}), finalUrl },
+    ]);
+    this.emitDraft();
+    return true;
+  }
+
+  protected onGoogleSitelinkDraftInput(field: keyof CampaignSitelink, event: Event): void {
+    // Draft only — no `emitDraft()`, matching the callout box. It reaches the draft on ADD.
+    const value = (event.target as HTMLInputElement).value;
+    this.googleSitelinkDraft.update((draft) => ({ ...draft, [field]: value }));
+  }
+
+  protected onGoogleSitelinkAdd(): void {
+    // Cleared ONLY on success, so a refused sitelink keeps all four fields and its warning.
+    if (this.addGoogleSitelink(this.googleSitelinkDraft())) {
+      this.googleSitelinkDraft.set({ text: '', description1: '', description2: '', finalUrl: '' });
+    }
+  }
+
+  protected removeGoogleSitelink(index: number): void {
+    this.googleSitelinks.update((sitelinks) => sitelinks.filter((_, i) => i !== index));
+    this.emitDraft();
+  }
+
   protected removeMicrosoftGeoTarget(index: number): void {
     this.microsoftGeoTargets.update((targets) => targets.filter((_, i) => i !== index));
     this.emitDraft();
@@ -2141,6 +2683,9 @@ export class ImplementationTabComponent implements OnInit {
       // are, and already narrowed by `googleCalloutsAvailable` to the one channel upstream accepts
       // extensions on.
       ...(platforms.includes('google-ads') ? this.googleCalloutsPayload() : {}),
+      // The sitelink extensions, on the same gate as the callouts — both are ad extensions, and
+      // upstream refuses the whole create when any extension list reaches a non-Search campaign.
+      ...(platforms.includes('google-ads') ? this.googleSitelinksPayload() : {}),
       driveFolderUrl: this.briefDriveFolderUrl() || undefined,
       platforms,
       ...(platforms.includes('linkedin-ads')
@@ -2159,6 +2704,7 @@ export class ImplementationTabComponent implements OnInit {
               targetingProfile: this.linkedInTargetingProfile(),
               variants: this.linkedInVariants(),
               adAccountId: this.linkedInAccountId(),
+              ...this.biddingField('linkedin-ads'),
             },
           }
         : {}),
@@ -2187,17 +2733,15 @@ export class ImplementationTabComponent implements OnInit {
               // back to the same objective when it is absent, so an explicit value is the only
               // thing that makes the payload say what the screen shows.
               //
-              // Sent even when `redditObjectiveIsUnavailable()`, and that is the deliberate half.
-              // The only withheld objective is `video_views`, which BOTH creators refuse outright
-              // unless a `videoGoal` accompanies it and nothing in this tier can set one. So such a
-              // create fails before anything is built rather than succeeding — where omitting
-              // the field would fall back to `conversions` and quietly build a campaign the
-              // operator never chose, against an objective the select is at that moment showing
-              // them as "(no longer available)". A refusal they can see and act on beats a
-              // substitution they cannot. Unreachable today: the signal seeds from
-              // DEFAULT_REDDIT_OBJECTIVE and the picker offers only the selectable three, so the
-              // sole route in is a draft written against a wider set.
+              // Sent even when `redditObjectiveIsUnavailable()`, and that is the deliberate half:
+              // omitting the field would fall back to `conversions` and quietly build a campaign the
+              // operator never chose, against an objective the select is showing them as
+              // "(no longer available)". Unreachable today — every objective is selectable.
               objective: this.redditObjective(),
+              // Only with `video_views`: both creators require it there and ignore it elsewhere, so
+              // a goal left over from an earlier Video Views choice is not sent with another
+              // objective. `canSubmit` guarantees it is present whenever the objective needs it.
+              ...this.redditVideoGoalPayload(),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -2207,9 +2751,12 @@ export class ImplementationTabComponent implements OnInit {
               // creative is: with the cutover dark these two reach a creator that reads neither,
               // and a create that silently discards them still reports success. The draft keeps
               // what was typed; only the request drops it.
-              ...(this.redditCreativeAvailable() && this.redditImageUrl() ? { imageUrl: this.redditImageUrl() } : {}),
+              //
+              // The image is ONE of an uploaded asset or the pasted URL — see `redditImageField`.
+              ...this.redditImageField(),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('reddit-ads'),
             },
           }
         : {}),
@@ -2235,6 +2782,7 @@ export class ImplementationTabComponent implements OnInit {
               // reasonably take as meaningful. Trimmed to match the upstream trim.
               ...(this.metaRequiresPixel() ? { pixelId: this.metaPixelId().trim() } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('meta-ads'),
             },
           }
         : {}),
@@ -2255,8 +2803,12 @@ export class ImplementationTabComponent implements OnInit {
               keywords: this.microsoftEffectiveKeywords(),
               // Sent only when set. An explicit 0 would claim a bid the account does not have,
               // whereas omitting it lets Microsoft apply the account-currency minimum.
-              ...(this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
+              //
+              // Never beside `bidding` (#3299): the Bidding control replaces this field, and
+              // campaign-service refuses an automatic `bidding` with any `cpcBid`.
+              ...(this.microsoftLegacyCpcBidApplies() && this.microsoftEffectiveCpcBid() !== null ? { cpcBid: this.microsoftEffectiveCpcBid() as number } : {}),
               project: this.briefData()?.eventDetails?.themes?.[0] || undefined,
+              ...this.biddingField('microsoft-ads'),
             },
           }
         : {}),
@@ -2338,6 +2890,181 @@ export class ImplementationTabComponent implements OnInit {
    */
   private acceptedMetaGeos(codes: readonly string[]): string[] {
     return normalizeGeoTargets(codes).filter((c) => !META_INELIGIBLE_COUNTRIES.has(c));
+  }
+
+  /**
+   * The Reddit image field the create request carries: the uploaded asset, else the pasted URL.
+   *
+   * Exactly one, because campaign-service refuses `imageAssetId` alongside `imageUrl` (or
+   * `postUrl`) with a 400. The asset is withheld while a post URL is set — that post already has
+   * its image, and the combination is refused rather than ignored — and while the upload
+   * capability is off, where the legacy creator would drop it or campaign-service refuse it. The
+   * pasted URL keeps its existing rule: sent on `redditCreativeAvailable()`, and ignored upstream
+   * when a post URL is set.
+   */
+  private redditImageField(): { imageAssetId: string } | { imageUrl: string } | Record<string, never> {
+    if (this.redditAssetUploadAvailable() && this.redditImageAssetForThisBrief() && !this.redditPostUrl()) {
+      return { imageAssetId: this.redditImageAssetId() };
+    }
+    if (this.redditCreativeAvailable() && this.redditImageUrl()) return { imageUrl: this.redditImageUrl() };
+    return {};
+  }
+
+  private initRedditImageAssetBlock(): Signal<CampaignRedditImageAssetBlock | null> {
+    return computed(() => {
+      if (!this.showRedditSection() || this.redditPostUrl()) return null;
+      // An upload made for another brief, retained across a brief switch: `redditImageField` never
+      // sends it, whatever the capability says, so it must not read as usable either.
+      const briefId = this.briefPersistence().briefId;
+      if (this.redditImageAssetId() !== '' && briefId && this.redditImageAssetBriefId() !== briefId) {
+        return {
+          kind: 'otherBrief',
+          message:
+            'The uploaded Reddit image was uploaded for a different brief, so it cannot be sent with this one. Remove it, then upload it again or use an image URL.',
+        };
+      }
+      // An upload still in flight counts as the image too: resumed after a tab switch it has no
+      // asset id yet, and while the upload control is hidden (support unknown, unconfirmed or off)
+      // this block is the only place its state shows and the only way to remove it.
+      const hasImage = this.redditImageAssetForThisBrief() || this.redditImageUploadStatus() === 'uploading';
+      if (this.redditAssetUploadAvailable()) return null;
+      // A failed upload's reason lives in the upload control, so while that is hidden (a resumed
+      // upload that failed after a tab switch) it is shown here, holding Create until the operator
+      // removes it: otherwise the campaign would go out without the image they chose, unannounced.
+      // Only for an upload made for the OPEN brief: one for a brief left behind (a foundation
+      // switch with the tab still open) could never have been sent with this one.
+      if (this.redditImageUploadStatus() === 'error' && briefId && this.redditImageUploadFailedBriefId() === briefId) {
+        return {
+          kind: 'uploadFailed',
+          message: `The Reddit image upload did not complete: ${this.redditImageUploadError()} Remove it to create the campaign without the image.`,
+        };
+      }
+      if (!hasImage) return null;
+      if (this.redditCreativeEnabled() === false || this.redditAssetUploadEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message:
+            'Image upload is not available on this deployment, so the uploaded Reddit image cannot be sent. Remove it to create the campaign without it.',
+        };
+      }
+      // The same create-capability read answers this and the bidding capability, so its state says
+      // whether a read is out; see `initBiddingCapabilityBlock` for why `unknown` gets a Retry.
+      if (this.biddingCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking Reddit image upload support…' };
+      }
+      if (!this.briefPersistence().briefId) {
+        return {
+          kind: 'unsaved',
+          message: "Reddit image upload support can't be checked until this brief is saved. Save the brief, or remove the uploaded image.",
+        };
+      }
+      return {
+        kind: 'failed',
+        message:
+          'Could not confirm that Reddit image upload is supported, so the uploaded image cannot be sent yet. Retry the check, or remove the uploaded image.',
+      };
+    });
+  }
+
+  /**
+   * Show an upload in flight and keep its answer. Unsubscribing on destroy only detaches this
+   * component: the service's shared request runs on, so a tab switch does not abort the upload.
+   */
+  private followRedditImageUpload(upload$: Observable<CreativeAssetUploadResult>, briefId: string, fileName: string): void {
+    this.redditImageUploadStatus.set('uploading');
+    this.redditImageUploadError.set('');
+    this.redditImageUploadPendingName.set(fileName);
+    this.redditImageUploadPendingBriefId.set(briefId);
+    this.redditImageUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload(upload$);
+        this.redditImageUploadPendingName.set('');
+        this.redditImageUploadPendingBriefId.set('');
+        // The brief changed while the upload was in flight: the asset belongs to the old one.
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failRedditImageUpload('The brief changed during the upload. Choose the image again.', briefId);
+          this.emitDraft();
+          return;
+        }
+        this.redditImageAssetId.set(asset.id);
+        this.redditImageAssetName.set(fileName);
+        this.redditImageAssetBriefId.set(briefId);
+        this.redditImageUploadStatus.set('idle');
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload(upload$);
+        this.redditImageUploadPendingName.set('');
+        this.redditImageUploadPendingBriefId.set('');
+        this.failRedditImageUpload(this.redditImageUploadErrorMessage(err), briefId);
+        this.emitDraft();
+      },
+    });
+  }
+
+  /**
+   * Pick an upload back up after a remount. The request outlived the previous mount, so the
+   * service still has it, finished or not; with none (a reload ended it) the operator is told
+   * rather than left with an image that silently never arrived.
+   */
+  private resumeRedditImageUpload(fileName: string, uploadBriefId: string): void {
+    const currentBriefId = this.briefPersistence().briefId ?? '';
+    const briefId = uploadBriefId || currentBriefId;
+    if (briefId !== currentBriefId) {
+      // The upload belongs to a brief that is not the open one (a foundation switch clears the
+      // current brief but keeps the draft). Its asset could never be sent with this brief, so
+      // following it would only hold Create and then discard the answer as "brief changed". Keep it
+      // parked in the draft instead, untouched in the service, so reopening that brief resumes it.
+      this.redditImageUploadPendingName.set(fileName);
+      this.redditImageUploadPendingBriefId.set(briefId);
+      return;
+    }
+    const upload$ = briefId ? this.campaignService.resumeCreativeAssetUpload(briefId) : null;
+    if (!upload$) {
+      this.failRedditImageUpload(`The upload of ${fileName} was interrupted. Choose the image again.`, briefId);
+      return;
+    }
+    this.followRedditImageUpload(upload$, briefId, fileName);
+  }
+
+  private clearRedditImageAsset(): void {
+    this.redditImageUploadSub?.unsubscribe();
+    this.redditImageUploadSub = null;
+    // Aborted, not just detached: a replaced or removed upload would otherwise run on, compete
+    // with the next one for campaign-service's upload budget, and store an asset nobody uses. A
+    // parked upload (another brief's, kept across a foundation switch) is replaced the same way: a
+    // new pick replaces the previous upload outright, so it is cancelled, not left running unowned.
+    if (this.redditImageUploadStatus() === 'uploading' || this.redditImageUploadPendingName() !== '') {
+      this.campaignService.cancelCreativeAssetUpload();
+    }
+    this.redditImageUploadPendingName.set('');
+    this.redditImageUploadPendingBriefId.set('');
+    this.redditImageAssetId.set('');
+    this.redditImageAssetName.set('');
+    this.redditImageAssetBriefId.set('');
+    this.redditImageUploadStatus.set('idle');
+    this.redditImageUploadError.set('');
+    this.redditImageUploadFailedBriefId.set('');
+  }
+
+  private failRedditImageUpload(message: string, briefId = ''): void {
+    this.redditImageUploadStatus.set('error');
+    this.redditImageUploadError.set(message);
+    this.redditImageUploadFailedBriefId.set(briefId);
+  }
+
+  /**
+   * A readable reason for a refused upload. Size and type use the shared copy the pre-upload check
+   * shows; an unreachable or overloaded service (0, 503 — campaign-service sheds concurrent uploads
+   * with a 503) says to retry; any other refusal shows what the server wrote, since campaign-service
+   * names the problem with the image (not decodable, too many pixels, …).
+   */
+  private redditImageUploadErrorMessage(err: unknown): string {
+    const status = err instanceof HttpErrorResponse ? err.status : 0;
+    if (status === 413) return CREATIVE_ASSET_TOO_LARGE_MESSAGE;
+    if (status === 415) return CREATIVE_ASSET_WRONG_TYPE_MESSAGE;
+    if (status === 0 || status === 503) return 'The image service is unavailable right now. Try again in a moment, or paste an image URL instead.';
+    return serverAuthoredMessage(err, 'The image could not be uploaded. Try again, or paste an image URL instead.');
   }
 
   private loadLinkedInAccounts(): void {
@@ -2496,6 +3223,12 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.googleCallouts !== undefined) {
       this.googleCallouts.set([...draft.googleCallouts]);
     }
+    // Each entry copied as well as the array: a sitelink is an object, so a shallow array spread
+    // would still hand the draft's own entries to the signal, and a later edit here would reach
+    // back into the stored draft.
+    if (draft.googleSitelinks !== undefined) {
+      this.googleSitelinks.set(draft.googleSitelinks.map((s) => ({ ...s })));
+    }
     // The bidding controls, each on the same present-only rule. One `if` per field rather than a
     // single patch, because a draft saved before this section shipped carries some of these and
     // not others only as the section grows — and a blanket patch of `undefined` would clear a
@@ -2560,6 +3293,20 @@ export class ImplementationTabComponent implements OnInit {
     if (draft.redditCallToAction !== undefined) {
       this.redditCallToAction.set(draft.redditCallToAction);
     }
+    if (draft.redditImageAssetId !== undefined) {
+      this.redditImageAssetId.set(draft.redditImageAssetId);
+      this.redditImageAssetName.set(draft.redditImageAssetName ?? '');
+      this.redditImageAssetBriefId.set(draft.redditImageAssetBriefId ?? '');
+    }
+    if (draft.redditImageUploadFailedMessage && draft.redditImageUploadFailedBriefId) {
+      this.failRedditImageUpload(draft.redditImageUploadFailedMessage, draft.redditImageUploadFailedBriefId);
+    }
+    if (draft.redditImageUploadPendingName) {
+      this.resumeRedditImageUpload(draft.redditImageUploadPendingName, draft.redditImageUploadPendingBriefId ?? '');
+    }
+    if (draft.redditVideoGoal !== undefined) {
+      this.redditVideoGoal.set(draft.redditVideoGoal);
+    }
 
     // Microsoft (LFXV2-3312), on the same present-only rule. The arrays restore on `!== undefined`
     // rather than on truthiness, which is the whole point: an EMPTY list is a deliberate clear the
@@ -2576,6 +3323,9 @@ export class ImplementationTabComponent implements OnInit {
     }
     if (draft.microsoftCpcBid !== undefined) {
       this.microsoftCpcBid.set(draft.microsoftCpcBid);
+    }
+    if (draft.bidding !== undefined) {
+      this.biddingDrafts.set(Object.fromEntries(Object.entries(draft.bidding).map(([platform, choice]) => [platform, { ...choice }])));
     }
   }
 
@@ -2648,6 +3398,8 @@ export class ImplementationTabComponent implements OnInit {
       googleGeoTargets: [...this.googleGeoTargets()],
       googleLanguages: [...this.googleLanguages()],
       googleCallouts: [...this.googleCallouts()],
+      // Entries copied too, for the reason the restore above gives in the other direction.
+      googleSitelinks: this.googleSitelinks().map((s) => ({ ...s })),
       // The bidding plan as TYPED, not as resolved: the raw strategy the operator picked, not the
       // channel default standing in for it, and the raw text of each number. A draft gives back
       // the form that was left, and resolving here would make a reopened draft claim a choice
@@ -2674,6 +3426,9 @@ export class ImplementationTabComponent implements OnInit {
       microsoftGeoTargets: [...this.microsoftGeoTargets()],
       microsoftKeywords: this.microsoftKeywords().map((k) => ({ ...k })),
       microsoftCpcBid: this.microsoftCpcBid(),
+      // Snapshotted whatever `biddingAvailable()` says, like the Reddit creative below: a capability
+      // decides what is sent, not what the draft remembers. Entries copied so the parent holds values.
+      bidding: Object.fromEntries(Object.entries(this.biddingDrafts()).map(([platform, draft]) => [platform, { ...draft }])),
       // The remaining signal-backed values, on the same terms as the Meta block above: snapshotted
       // rather than referenced, and named explicitly rather than spread.
       //
@@ -2716,6 +3471,16 @@ export class ImplementationTabComponent implements OnInit {
       redditPostUrl: this.redditPostUrl(),
       redditImageUrl: this.redditImageUrl(),
       redditCallToAction: this.redditCallToAction(),
+      redditImageAssetId: this.redditImageAssetId(),
+      redditImageAssetName: this.redditImageAssetName(),
+      redditImageAssetBriefId: this.redditImageAssetBriefId(),
+      redditImageUploadPendingName: this.redditImageUploadPendingName(),
+      redditImageUploadPendingBriefId: this.redditImageUploadPendingBriefId(),
+      // A failed upload stays until the operator removes or replaces it, across tab switches too:
+      // dropping it on remount would lift the block and let Create go out without the image.
+      redditImageUploadFailedMessage: this.redditImageUploadFailedBriefId() ? this.redditImageUploadError() : '',
+      redditImageUploadFailedBriefId: this.redditImageUploadFailedBriefId(),
+      redditVideoGoal: this.redditVideoGoal(),
     });
   }
 
@@ -2762,6 +3527,35 @@ export class ImplementationTabComponent implements OnInit {
 
       this.replaceCopyArray(this.campaignForm.controls.headlines as FormArray, headlines, CAMPAIGN_CHAR_LIMITS.searchHeadline, true);
       this.replaceCopyArray(this.campaignForm.controls.descriptions as FormArray, descriptions, CAMPAIGN_CHAR_LIMITS.searchDescription, true);
+    }
+
+    // Seeded on PRESENCE, not unconditionally, and NOT dead the way the `linkedInCopy` guard below
+    // was. `applyDraft` runs after this and makes the same present-only distinction for both fields,
+    // so on a mount that HAS a draft this gate changes nothing. The mount that has none is what it
+    // is for: a brief generated before extension generation shipped — or restored from a row written
+    // then — carries neither field, and `set([])` for it is indistinguishable from "the generator
+    // produced nothing". On a re-mount where the operator has typed their own entries and no draft
+    // has been written yet (drafts are saved on tab LEAVE, and a brief can re-emit before one), this
+    // is their only protection. Mutation-tested one `if` at a time: replacing either with
+    // `if (true)` fails `leaves hand-typed entries alone for a brief that carries no lists`, which
+    // adds to BOTH editors for exactly that reason — it did not, and the sitelink gate could be
+    // deleted green.
+    //
+    // Capped and de-duplicated server-side already; the editors' own add-guards are what hold the
+    // line against everything the operator does after this point.
+    //
+    // Seeded regardless of the selected Google channel, deliberately, exactly as the draft restore
+    // below does: `googleCalloutsPayload` and `googleSitelinksPayload` both gate on
+    // `googleCalloutsAvailable`, so a list seeded under Performance Max is HELD and not sent, and
+    // is still there if the operator switches to Search. `googleCalloutsWithheldWarning` is what
+    // tells them that is happening.
+    if (brief.googleCallouts !== undefined) {
+      this.googleCallouts.set([...brief.googleCallouts]);
+    }
+    // Each entry copied as well as the array, for the reason the draft restore gives: a sitelink is
+    // an object, and a shallow spread would leave the brief's own entries reachable from the editor.
+    if (brief.googleSitelinks !== undefined) {
+      this.googleSitelinks.set(brief.googleSitelinks.map((s) => ({ ...s })));
     }
 
     if (brief.linkedInCopy) {
@@ -3226,6 +4020,15 @@ export class ImplementationTabComponent implements OnInit {
       return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take callouts, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
     });
   }
+  /** The sitelink twin of {@link initGoogleCalloutsWithheldWarning}, on the same Search gate. */
+  private initGoogleSitelinksWithheldWarning(): Signal<string | null> {
+    return computed(() => {
+      const channel = this.googleBiddingChannel();
+      const count = this.googleSitelinks().length;
+      if (!channel || this.googleCalloutsAvailable() || count === 0) return null;
+      return `${GOOGLE_CAMPAIGN_CHANNEL_LABELS[channel]} campaigns do not take sitelinks, so the ${count} you added will not be sent. Switch back to Search to keep them.`;
+    });
+  }
 
   /**
    * Whether the campaign this form will dispatch can carry ad extensions at all.
@@ -3313,6 +4116,97 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       const strategy = this.googleBiddingStrategy();
       return strategy !== null && (GOOGLE_BIDDING_ROAS_STRATEGIES as readonly string[]).includes(strategy);
+    });
+  }
+
+  private initBiddingCapabilityBlock(): Signal<CampaignBiddingCapabilityBlock | null> {
+    return computed(() => {
+      if (this.biddingAvailable()) return null;
+      const platforms = this.retainedManualBiddingPlatforms();
+      if (platforms.length === 0) return null;
+      const names = platforms.map((p) => CAMPAIGN_BIDDING_RULES[p].label).join(', ');
+      if (this.biddingEnabled() === false) {
+        return {
+          kind: 'unsupported',
+          message: `Manual bidding is not available on this deployment, so the manual max CPC bid chosen for ${names} cannot be sent. Switch to Automatic to create the campaign.`,
+        };
+      }
+      // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
+      // foundation switch — is treated like a failure: it gets a Retry, because nothing else will
+      // start the read the block is waiting for.
+      if (this.biddingCapabilityRead() === 'pending') {
+        return { kind: 'pending', message: 'Checking bidding support…' };
+      }
+      // No read out and no brief id to read against (none saved yet, or a save in flight): a Retry
+      // would be a no-op, since the parent's read needs a brief id. Saving the brief starts the read
+      // itself — the parent's persist success arm calls `loadCreateCapabilitiesFor` with the new
+      // id — so that is what the message asks for, and Retry is offered only when it can read.
+      if (!this.briefPersistence().briefId) {
+        return { kind: 'unsaved', message: "Bidding support can't be checked until this brief is saved. Save the brief, or switch to Automatic." };
+      }
+      return {
+        kind: 'failed',
+        message: `Could not confirm that manual bidding is supported, so the manual max CPC bid chosen for ${names} cannot be sent yet. Retry the check, or switch to Automatic.`,
+      };
+    });
+  }
+
+  /**
+   * Whether the legacy Microsoft max CPC field still speaks for the operator. Not while the Bidding
+   * control is offered (it replaces the field), and not once the operator has explicitly chosen
+   * Automatic for Microsoft: campaign-service reads a `cpcBid` without `bidding` as a MANUAL bid, so
+   * sending it then would create the campaign manual against the choice on screen.
+   */
+  private microsoftLegacyCpcBidApplies(): boolean {
+    return !this.biddingAvailable() && this.biddingDrafts()['microsoft-ads']?.strategy !== 'automatic';
+  }
+
+  /**
+   * Moves a legacy Microsoft max CPC into the Bidding control as a Manual choice, then clears the
+   * legacy field so the bid cannot be sent twice. Only when there is a value and no explicit
+   * Microsoft choice yet — an explicit choice is newer than the legacy field and wins.
+   */
+  private adoptLegacyMicrosoftCpcBid(): void {
+    const raw = this.microsoftCpcBid().trim();
+    if (raw === '' || this.biddingDrafts()['microsoft-ads'] !== undefined) return;
+    const amount = Number(raw);
+    this.biddingDrafts.update((drafts) => ({ ...drafts, 'microsoft-ads': { strategy: 'manual', bidAmount: Number.isFinite(amount) ? amount : null } }));
+    this.clearLegacyMicrosoftCpcBid();
+    this.emitDraft();
+  }
+
+  /** Choosing Automatic for Microsoft retires the legacy max CPC value, so it cannot resurface as a manual bid. */
+  private clearLegacyMicrosoftCpcBid(): void {
+    this.microsoftCpcBid.set('');
+  }
+
+  /** The selected bidding platforms whose retained choice is Manual. */
+  private retainedManualBiddingPlatforms(): CampaignBiddingPlatform[] {
+    const drafts = this.biddingDrafts();
+    const selected = this.selectedPlatforms();
+    return CAMPAIGN_BIDDING_CREATE_PLATFORMS.filter((p) => selected.includes(p) && drafts[p]?.strategy === 'manual');
+  }
+
+  private initBiddingViews(): Signal<Record<CampaignBiddingPlatform, CampaignBiddingControlView>> {
+    return computed(() => {
+      const drafts = this.biddingDrafts();
+      const views = {} as Record<CampaignBiddingPlatform, CampaignBiddingControlView>;
+      for (const platform of CAMPAIGN_BIDDING_PLATFORMS) {
+        const value = drafts[platform] ?? defaultCampaignBiddingDraft();
+        views[platform] = { platform, value, error: campaignBiddingError(platform, value, this.biddingContext(platform)) };
+      }
+      return views;
+    });
+  }
+
+  private initBiddingPayloads(): Signal<Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>> {
+    return computed(() => {
+      const views = this.biddingViews();
+      const payloads = {} as Record<CampaignBiddingPlatform, CampaignBiddingConfig | null>;
+      for (const platform of CAMPAIGN_BIDDING_PLATFORMS) {
+        payloads[platform] = campaignBiddingPayload(platform, views[platform].value, this.biddingContext(platform));
+      }
+      return payloads;
     });
   }
 
@@ -3537,6 +4431,12 @@ export class ImplementationTabComponent implements OnInit {
     });
   }
 
+  /** `{ videoGoal }` for a Video Views campaign with a usable goal, otherwise `{}`. */
+  private redditVideoGoalPayload(): { videoGoal?: RedditVideoGoal } {
+    const goal = this.redditEffectiveVideoGoal();
+    return this.redditNeedsVideoGoal() && goal ? { videoGoal: goal } : {};
+  }
+
   /**
    * That a Reddit create is about to make a campaign with no ad in it, or null when it is not.
    *
@@ -3563,7 +4463,7 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() => {
       if (!this.showRedditSection()) return null;
       if (this.redditPostUrl()) return null;
-      if (this.redditCreativeAvailable() && this.redditImageUrl()) return null;
+      if (Object.keys(this.redditImageField()).length > 0) return null;
       // Names only the fields the operator can actually see: with the authored-post controls
       // withheld, an image URL is not a remedy and telling them to supply one would be advice they
       // cannot take.
@@ -3652,6 +4552,38 @@ export class ImplementationTabComponent implements OnInit {
     if (!this.googleCalloutsAvailable()) return {};
     const callouts = this.googleCallouts();
     return callouts.length > 0 ? { callouts: [...callouts] } : {};
+  }
+
+  /**
+   * The sitelink extensions as the request carries them, or `{}` when there is nothing to send.
+   *
+   * Gate, withholding and omit-when-empty are {@link googleCalloutsPayload}'s exactly. The entries
+   * are COPIED rather than passed by reference, so a later chip edit cannot reach a request that
+   * has already been built.
+   */
+  private googleSitelinksPayload(): Partial<CampaignCreateRequest> {
+    if (!this.googleCalloutsAvailable()) return {};
+    const sitelinks = this.googleSitelinks();
+    return sitelinks.length > 0 ? { sitelinks: sitelinks.map((s) => ({ ...s })) } : {};
+  }
+
+  /**
+   * Whether a destination URL is one the ad platforms will serve.
+   *
+   * The accept set itself is {@link isGoogleAdsServableUrl}, which the brief-restore path
+   * (`asSitelinks` in `campaign-service.service.ts`) also calls. The controller's dispatch refusal,
+   * `googleSitelinkUrlRefusal`, does NOT: it goes through its own `describeDestinationUrl`, which
+   * judges brief destinations for all five platforms and reports WHICH refusal a URL hits so the
+   * error message can name it. That second copy of the accept set is kept in step BY HAND, and this
+   * tier must never be the stricter of the two — a URL this guard refuses and that one would accept
+   * is refused with no explanation at all, because the message that would have named the reason
+   * only exists on the path that never runs.
+   *
+   * The trim stays at this tier rather than moving into the shared predicate: the trimmed value is
+   * what {@link addGoogleSitelink} goes on to STORE, so this must judge exactly the string it keeps.
+   */
+  private isServableDestination(raw: string): boolean {
+    return isGoogleAdsServableUrl(googleAdsTrimSpace(raw));
   }
 
   /** One typed bidding number, or `undefined` when the field is blank or cannot be a number. */
@@ -3892,6 +4824,36 @@ export class ImplementationTabComponent implements OnInit {
         group.controls[field.control].setValue(value, { emitEvent: false });
       }
     }
+  }
+
+  /**
+   * The rest of a platform's config its bidding rules read: Meta's objective and DAILY budget (a
+   * lifetime budget has no 5× rule), Reddit's objective. The same signals `submit` sends, so the
+   * check and the request cannot disagree.
+   */
+  private biddingContext(platform: CampaignBiddingPlatform): CampaignBiddingContext {
+    switch (platform) {
+      case 'meta-ads':
+        return { objective: this.metaObjective(), dailyBudget: this.metaLifetimeBudget() ? null : this.metaBudgetUsd() };
+      case 'reddit-ads':
+        return { objective: this.redditObjective() };
+      default:
+        return {};
+    }
+  }
+
+  /**
+   * The `bidding` key for one platform's config (#3299): nothing at all while the control is not
+   * offered, otherwise ALWAYS an explicit object — `{"strategy":"automatic"}` or
+   * `{"strategy":"manual","bidAmount":N}`. campaign-service treats an explicit automatic exactly as
+   * an omitted `bidding`, so the explicit form costs nothing and makes the request say what the
+   * screen shows. It also keeps the Microsoft request unambiguous: without `bidding`, a legacy
+   * `cpcBid` there means manual. Never `null` and never `''`, which campaign-service refuses.
+   */
+  private biddingField(platform: CampaignBiddingPlatform): { bidding?: CampaignBiddingConfig } {
+    if (!this.biddingAvailable()) return {};
+    const bidding = this.biddingPayloads()[platform];
+    return bidding === null ? {} : { bidding };
   }
 
   /**

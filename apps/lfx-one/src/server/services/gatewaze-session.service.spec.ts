@@ -7,11 +7,14 @@ import type { KeyValue, SetIfLockHeldResult } from '@gatewaze/host-session';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { loggerMock } = vi.hoisted(() => ({
+const { loggerMock, lfxSessionGet } = vi.hoisted(() => ({
   loggerMock: { warning: vi.fn(), debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+  lfxSessionGet: vi.fn(),
 }));
 
 vi.mock('./logger.service', () => ({ logger: loggerMock }));
+// The LFX session a Realtime socket checks before each refresh.
+vi.mock('./session-store.service', () => ({ sessionStoreService: { get: lfxSessionGet } }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn() }));
 // The utils barrel pulls in @angular/forms. valkey.service.ts (for the key prefix) needs only these
 // two modules from it, as valkey.service.spec.ts does.
@@ -432,6 +435,25 @@ describe('GatewazeSessionService.getGatewazeSession', () => {
     expect(upstreams.calls).toEqual([]);
   });
 
+  it('warns once per process when only one of the two flags is on, and not when both are off', async () => {
+    // A fresh module, so the once-per-process latch starts unset whatever ran before.
+    vi.resetModules();
+    const fresh = await import('./gatewaze-session.service');
+    const mismatchWarnings = (): unknown[][] => loggerMock.warning.mock.calls.filter((call) => call[1] === 'resolve_gatewaze_host_session_config');
+    loggerMock.warning.mockClear();
+
+    vi.stubEnv('LFX_GATEWAZE_HOST_SESSION', '');
+    vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', '');
+    expect(fresh.resolveGatewazeHostSessionConfig()).toBeNull();
+    expect(mismatchWarnings()).toHaveLength(0);
+
+    vi.stubEnv('LFX_GATEWAZE_EMBED_ENABLED', 'true');
+    expect(fresh.resolveGatewazeHostSessionConfig()).toBeNull();
+    expect(fresh.resolveGatewazeHostSessionConfig()).toBeNull();
+    expect(mismatchWarnings()).toHaveLength(1);
+    expect(mismatchWarnings()[0][3]).toEqual({ flag_on: 'LFX_GATEWAZE_EMBED_ENABLED', flag_off: 'LFX_GATEWAZE_HOST_SESSION' });
+  });
+
   it.each([
     ['no appSession cookie', null],
     ['a cookie-mode (JWE) appSession', 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..synthetic'],
@@ -730,5 +752,119 @@ describe('GatewazeSessionService me and logout', () => {
 
       await expect(pending).resolves.toEqual({ found: false, revoked: false, deleted: false });
     });
+  });
+});
+
+describe('GatewazeSessionService.openRealtimeSession', () => {
+  let kv: FakeKeyValue;
+  let upstreams: ReturnType<typeof fakeUpstreams>;
+  let service: GatewazeSessionService;
+
+  /** The LFX session record as the session store returns it. */
+  function lfxSession(overrides: { exp?: number; data?: Record<string, unknown> } = {}) {
+    const now = Math.floor(Date.now() / 1000);
+    return { header: { iat: now, uat: now, exp: overrides.exp ?? now + 3600 }, data: overrides.data ?? {}, cookie: { expires: 0, maxAge: 0 } };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    enableHostSession();
+    kv = new FakeKeyValue();
+    upstreams = fakeUpstreams();
+    vi.stubGlobal('fetch', upstreams.fetchMock);
+    service = new GatewazeSessionService((() => kv) as unknown as (url: string) => KeyValue);
+    lfxSessionGet.mockResolvedValue(lfxSession());
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens with a stored or minted session and binds the bridge callbacks to it', async () => {
+    const result = await service.openRealtimeSession(buildReq());
+
+    expect(result.outcome).toBe('ok');
+    if (result.outcome !== 'ok') return;
+    expect(result.session.session).toEqual(expect.objectContaining({ access_token: 'gw-access-1', sub: SUB_A, is_admin: true }));
+    await expect(result.session.fresh()).resolves.toEqual(expect.objectContaining({ access_token: 'gw-access-1' }));
+    expect(lfxSessionGet).toHaveBeenCalledWith(LFX_SID);
+    expect(upstreams.count(ID_TOKEN_GRANT)).toBe(1);
+  });
+
+  it('ends the socket at the next refresh once the LFX session is gone, expired or impersonating', async () => {
+    const result = await service.openRealtimeSession(buildReq());
+    if (result.outcome !== 'ok') throw new Error('expected a session');
+
+    lfxSessionGet.mockResolvedValueOnce(null);
+    await expect(result.session.fresh()).resolves.toBeNull();
+    lfxSessionGet.mockResolvedValueOnce(lfxSession({ exp: Math.floor(Date.now() / 1000) - 1 }));
+    await expect(result.session.fresh()).resolves.toBeNull();
+    lfxSessionGet.mockResolvedValueOnce(
+      lfxSession({ data: { impersonationToken: 'synthetic-target-token', impersonationExpiresAt: Date.now() + 60_000, impersonationUser: { sub: SUB_B } } })
+    );
+    await expect(result.session.fresh()).resolves.toBeNull();
+    // The Gatewaze record itself is untouched: the LFX side decides, the HTTP routes still see it.
+    expect(kv.data.has(SESSION_KEY)).toBe(true);
+  });
+
+  it('tells the bridge about a sign-out published by any pod', async () => {
+    const result = await service.openRealtimeSession(buildReq());
+    if (result.outcome !== 'ok') throw new Error('expected a session');
+    const listener = vi.fn();
+    result.session.onSignedOut(listener);
+
+    await service.endGatewazeSession(buildReq(null), { blockReMint: true });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a sign-out that lands before the bridge listens, until release', async () => {
+    const result = await service.openRealtimeSession(buildReq());
+    if (result.outcome !== 'ok') throw new Error('expected a session');
+    expect(result.session.signedOut()).toBe(false);
+
+    await service.endGatewazeSession(buildReq(null), { blockReMint: false });
+    expect(result.session.signedOut()).toBe(true);
+
+    const second = await service.openRealtimeSession(buildReq());
+    if (second.outcome !== 'ok') throw new Error('expected a session');
+    second.session.release();
+    second.session.release();
+    await service.endGatewazeSession(buildReq(null), { blockReMint: false });
+    expect(second.session.signedOut()).toBe(false);
+  });
+
+  it('a repeated release does not drop another socket listening on the same session', async () => {
+    const first = await service.openRealtimeSession(buildReq());
+    if (first.outcome !== 'ok') throw new Error('expected a session');
+    first.session.release();
+    const second = await service.openRealtimeSession(buildReq());
+    if (second.outcome !== 'ok') throw new Error('expected a session');
+
+    first.session.release();
+    await service.endGatewazeSession(buildReq(null), { blockReMint: true });
+
+    expect(second.session.signedOut()).toBe(true);
+  });
+
+  it('maps the failures as getGatewazeSession does', async () => {
+    await expect(service.openRealtimeSession(buildReq(SUB_A, null))).resolves.toEqual({ outcome: 'host_session_unavailable' });
+    await expect(service.openRealtimeSession(buildReq(null))).resolves.toEqual({ outcome: 'ended' });
+
+    await service.getGatewazeSession(buildReq());
+    await service.endGatewazeSession(buildReq(null), { blockReMint: true });
+    await expect(service.openRealtimeSession(buildReq())).resolves.toEqual({ outcome: 'ended' });
+
+    kv.failGet = true;
+    await expect(service.openRealtimeSession(buildReq(SUB_A, OTHER_LFX_SID))).resolves.toEqual({ outcome: 'unavailable' });
+  });
+
+  it('is host_session_unavailable with the flag off, without touching Valkey', async () => {
+    vi.stubEnv('LFX_GATEWAZE_HOST_SESSION', 'false');
+
+    await expect(service.openRealtimeSession(buildReq())).resolves.toEqual({ outcome: 'host_session_unavailable' });
+    expect(kv.data.size).toBe(0);
+    expect(upstreams.fetchMock).not.toHaveBeenCalled();
   });
 });

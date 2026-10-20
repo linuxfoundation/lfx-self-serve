@@ -432,6 +432,13 @@ export const MEETING_QUICK_CREATE_SECTIONS = ['details-access', 'date-schedule',
 export const MEETING_COMPOSER_OCCURRENCE_SECTIONS = ['details-access', 'date-schedule', 'guests', 'agenda-resources'] as const;
 
 /**
+ * UI surfaces a viewer can remove themselves from a meeting on.
+ * @description Sent with the self-removal request and logged by the BFF so removals can be broken
+ * down by where they came from. A value outside this list is logged as `unknown`.
+ */
+export const MEETING_REMOVAL_SOURCES = ['meeting-card', 'meeting-join', 'email-link'] as const;
+
+/**
  * Feature rows the composer preview lists, in display order.
  * @description Only the labels are the preview's own — shorter wording than the section's toggle
  * titles. Controls and icons come from {@link MEETING_FEATURE_BY_KEY}, so renaming a feature key
@@ -524,6 +531,18 @@ export const MIN_EMAIL_REMINDER_HOURS = 2;
  * @description Latest the automatic reminder email can be sent before the meeting starts
  */
 export const MAX_EMAIL_REMINDER_HOURS = 24;
+
+/**
+ * Minimum minutes component of the reminder email lead time
+ * @description Lower bound for the minutes field alongside the reminder hours
+ */
+export const MIN_EMAIL_REMINDER_MINUTES = 0;
+
+/**
+ * Maximum minutes component of the reminder email lead time
+ * @description Upper bound for the minutes field; a full hour rolls into the hours field
+ */
+export const MAX_EMAIL_REMINDER_MINUTES = 59;
 
 /**
  * Default reminder email lead time in hours
@@ -783,15 +802,15 @@ export const RESTRICTED_MEETING_FEATURE = {
 
 /**
  * Show meeting attendees feature configuration
- * @description Feature toggle config for sharing the guest list with guests: as ATTENDEE lines in
- * each calendar invite, and as the guest list on the meeting card and meeting page, which the BFF
- * withholds from non-organizers when this is off.
+ * @description Feature toggle config for sharing the guest list with guests in LFX: the guest list
+ * on the meeting card and meeting page, which the BFF withholds from non-organizers when this is off.
+ * Calendar invites never list other guests, whatever this is set to.
  */
 export const SHOW_MEETING_ATTENDEES_FEATURE = {
   key: 'show_meeting_attendees',
   icon: 'fa-light fa-users',
   title: 'Show attendees to guests',
-  description: "Let guests see who else is invited, and who has accepted, in LFX and in their calendar app's invite",
+  description: 'Let guests see who else is invited, and who has accepted, on the meeting in LFX',
   recommended: false,
   color: lfxColors.blue[500],
 };
@@ -867,13 +886,26 @@ export const PUBLIC_REGISTRATION_FIELD_LABELS = {
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 
-/** Upper bound for the custom meeting duration, in minutes */
+/**
+ * Upper bound for a custom duration on the pre-v2 screens, in minutes (8 hours)
+ * @description The reschedule-occurrence dialog's cap. Kept at 8 hours so flag-off screens don't
+ * change while the meeting v2 composer, behind its feature flag, uses {@link MAX_MEETING_DURATION}.
+ */
 export const MAX_CUSTOM_DURATION = 480;
+
+/**
+ * Upper bound for a meeting duration, in minutes (10 hours)
+ * @description Matches the meeting service's own `duration` maximum (`Maximum(600)` in
+ * lfx-v2-meeting-service `design/itx_types.go`) and what PCC allows. Used by the meeting v2 composer
+ * and by the BFF occurrence-update check, which the composer's single-occurrence edit also calls —
+ * pre-v2 clients stop at {@link MAX_CUSTOM_DURATION} before reaching it.
+ */
+export const MAX_MEETING_DURATION = 600;
 
 /**
  * Duration chips for the meeting composer's Date & Schedule section
  * @description `custom` reveals the `customDuration` control; `MeetingComposerFormService` owns that
- * control's `MIN_CUSTOM_DURATION` / `MAX_CUSTOM_DURATION` validators.
+ * control's `MIN_CUSTOM_DURATION` / `MAX_MEETING_DURATION` validators.
  */
 export const MEETING_DURATION_CHIP_OPTIONS = [
   { label: '15 min', value: 15 },

@@ -138,3 +138,95 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(retry).toHaveBeenCalledTimes(2);
   });
 });
+
+/** The navbar variant's single-organization static card and its plain-language role description. */
+describe('OrgSelectorComponent navbar card', () => {
+  const UID_A = '0014100000MgaAAAAA';
+  const UID_B = '0014100000MgbBBBBB';
+  const UID_PARENT = '0014100000MgpPPPPP';
+  const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
+  const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
+  const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
+
+  interface NavbarCardView {
+    isSingleOrg(): boolean;
+    navbarRoleTooltip(): string;
+  }
+
+  interface CardSetup {
+    items?: OrgItem[];
+    isStaff?: boolean;
+    hasMore?: boolean;
+    writers?: string[];
+    inheritedWriters?: string[];
+  }
+
+  const createCard = async ({ items = [rowA], isStaff = false, hasMore = false, writers = [], inheritedWriters = [] }: CardSetup): Promise<NavbarCardView> => {
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgSelectorComponent],
+      providers: [
+        provideNoopAnimations(),
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal(acme), setAccount: vi.fn(), refreshCanonicalRecord: vi.fn(), getStoredUid: () => null },
+        },
+        {
+          provide: OrgNavigationService,
+          useValue: {
+            items: signal(items),
+            loading: signal(false),
+            hasMore: signal(hasMore),
+            upstreamFailed: signal(false),
+            searchTerm: () => signal(''),
+            setSearchTerm: vi.fn(),
+            resetAndReload: vi.fn(),
+            loadNextPage: vi.fn(),
+          },
+        },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(isStaff),
+            writerSet: signal(new Set(writers)),
+            auditorSet: signal(new Set<string>()),
+            inheritedWriterSet: signal(new Set(inheritedWriters)),
+            inheritedAuditorSet: signal(new Set<string>()),
+            parentNameByUid: signal(new Map([[UID_A, 'Parent Holdings']])),
+          },
+        },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg: vi.fn(), isOnNotFound: vi.fn(() => false) } },
+        { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying: signal(false), retry: vi.fn() } },
+      ],
+    })
+      // Signal logic only — the template's viewport-deferred list needs an IntersectionObserver jsdom lacks.
+      .overrideComponent(OrgSelectorComponent, { set: { template: '' } })
+      .compileComponents();
+    const fixture = TestBed.createComponent(OrgSelectorComponent);
+    fixture.componentRef.setInput('enabled', false);
+    await fixture.whenStable();
+    return fixture.componentInstance as unknown as NavbarCardView;
+  };
+
+  it('is a static card only for a non-staff viewer whose complete list holds just the selected organization', async () => {
+    expect((await createCard({})).isSingleOrg()).toBe(true);
+    expect((await createCard({ items: [rowA, rowB] })).isSingleOrg()).toBe(false);
+    expect((await createCard({ hasMore: true })).isSingleOrg()).toBe(false);
+    expect((await createCard({ isStaff: true })).isSingleOrg()).toBe(false);
+  });
+
+  it('keeps the panel when the one listed organization is not the selected one', async () => {
+    expect((await createCard({ items: [rowB] })).isSingleOrg()).toBe(false);
+  });
+
+  it('describes an inherited role through the organization it comes from', async () => {
+    const card = await createCard({ inheritedWriters: [UID_A] });
+
+    expect(card.navbarRoleTooltip()).toContain('Parent Holdings');
+  });
+
+  it('marks a direct role as direct only when the viewer also holds inherited access', async () => {
+    expect((await createCard({ writers: [UID_A] })).navbarRoleTooltip()).not.toContain('Granted directly');
+    expect((await createCard({ writers: [UID_A], inheritedWriters: [UID_PARENT] })).navbarRoleTooltip()).toContain('Granted directly');
+  });
+});

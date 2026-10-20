@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { createHash } from 'node:crypto';
+import { promisify } from 'node:util';
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
 import { Request } from 'express';
 import {
   GW_EMBED_STYLESHEET_CACHE_MAX_ENTRIES,
@@ -18,6 +20,9 @@ import { getGwEmbedBaseUrl, loadGwEmbedTheme } from '../helpers/gw-embed.helper'
 import { logger } from './logger.service';
 
 const OPERATION = 'gw_embed_stylesheet';
+
+const gzipAsync = promisify(gzip);
+const brotliAsync = promisify(brotliCompress);
 const SERVICE = 'gw_embed';
 
 /**
@@ -28,7 +33,10 @@ const SERVICE = 'gw_embed';
  * hashed file name; this service fetches that file from `GW_EMBED_URL`, runs the same containment
  * transform the old build step ran (`scripts/lib/contain-gw-embed-css.mjs`), appends the LFX
  * theme layer and caches the result by name. The transform therefore runs once per Gatewaze
- * release per pod rather than once per page view, and no CSS parser ships to the browser.
+ * release per pod rather than once per page view, and no CSS parser ships to the browser. The
+ * result is compressed once too, with gzip and Brotli, and the controller sends whichever the
+ * client accepts; the app-wide compression middleware used to re-gzip several megabytes on every
+ * request.
  *
  * The route in front of this is anonymous, so the service brakes itself: failures are remembered
  * per name for a short while, only a few upstream fetches run at once, the upstream must answer
@@ -177,7 +185,21 @@ export class GwEmbedStylesheetService {
     }
     // The LFX theme layer goes after the contained CSS so its overrides win on source order.
     const css = `${contained}\n${theme}\n`;
-    const entry: GwEmbedScopedStylesheet = { css, etag: `"${createHash('sha256').update(css).digest('base64url')}"` };
+    const body = Buffer.from(css, 'utf8');
+    // Both run on libuv's thread pool, so the event loop stays free. Brotli quality 9 rather than
+    // the default 11: about a quarter larger, but tens of milliseconds instead of several seconds
+    // on a sheet this size, and the first page view after a release waits for it.
+    const [gzipped, brotli] = await Promise.all([
+      gzipAsync(body, { level: 9 }),
+      brotliAsync(body, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 9, [zlibConstants.BROTLI_PARAM_SIZE_HINT]: body.length } }),
+    ]);
+    const entry: GwEmbedScopedStylesheet = {
+      css,
+      etag: `"${createHash('sha256').update(body).digest('base64url')}"`,
+      identity: body,
+      gzip: gzipped,
+      br: brotli,
+    };
 
     if (this.cache.size >= GW_EMBED_STYLESHEET_CACHE_MAX_ENTRIES) {
       // Insertion order is eviction order: the oldest release's sheet goes first.
@@ -191,7 +213,9 @@ export class GwEmbedStylesheetService {
     logger.info(req, OPERATION, 'Scoped and cached the embed stylesheet', {
       name,
       bytes_in: raw.length,
-      bytes_out: css.length,
+      bytes_out: body.length,
+      bytes_gzip: gzipped.length,
+      bytes_br: brotli.length,
       rules: stats.rules,
       keyframes: stats.keyframes,
       dropped: stats.dropped,

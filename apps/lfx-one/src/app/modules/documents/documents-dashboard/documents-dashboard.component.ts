@@ -330,10 +330,7 @@ export class DocumentsDashboardComponent {
     // project/foundation context (or the folder was deleted), fall through to the root
     // view instead of rendering an empty table that requires a manual breadcrumb click.
     if (currentFolderUid && folderUids.has(currentFolderUid)) {
-      return nonFolders
-        .filter((d) => d.parent_uid === currentFolderUid)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((d) => this.toMyDocumentItem(d, project, false));
+      return nonFolders.filter((d) => d.parent_uid === currentFolderUid).map((d) => this.toMyDocumentItem(d, project, false));
     }
 
     // Root view — folders (with child counts) followed by orphan items.
@@ -345,8 +342,7 @@ export class DocumentsDashboardComponent {
     }
 
     const ordered: MyDocumentItem[] = [];
-    const sortedFolders = [...folders].sort((a, b) => a.name.localeCompare(b.name));
-    for (const folder of sortedFolders) {
+    for (const folder of folders) {
       ordered.push({
         ...this.toMyDocumentItem(folder, project, false),
         isFolder: true,
@@ -355,7 +351,7 @@ export class DocumentsDashboardComponent {
     }
 
     // Orphans appear after folders so newly uploaded files don't disappear into a missing parent.
-    const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid)).sort((a, b) => a.name.localeCompare(b.name));
+    const orphans = nonFolders.filter((d) => !d.parent_uid || !folderUids.has(d.parent_uid));
     for (const orphan of orphans) {
       ordered.push(this.toMyDocumentItem(orphan, project, false));
     }
@@ -483,7 +479,7 @@ export class DocumentsDashboardComponent {
       const mailingList = this.mailingListFilter();
       const sourceTab = this.sourceTab();
 
-      return docs.filter((doc) => {
+      const filtered = docs.filter((doc) => {
         if (
           query &&
           !doc.name.toLowerCase().includes(query) &&
@@ -513,6 +509,8 @@ export class DocumentsDashboardComponent {
         }
         return true;
       });
+      // Apply the same order to root, folder, search, and legacy results before pagination.
+      return filtered.sort(this.compareDocuments);
     });
   }
 
@@ -597,6 +595,23 @@ export class DocumentsDashboardComponent {
       }
       return options;
     });
+  }
+
+  /** Folders stay alphabetical and first; documents use their displayed date, newest first. */
+  private compareDocuments(a: MyDocumentItem, b: MyDocumentItem): number {
+    if (!!a.isFolder !== !!b.isFolder) return a.isFolder ? -1 : 1;
+
+    if (!a.isFolder) {
+      const aTime = Date.parse(a.date);
+      const bTime = Date.parse(b.date);
+      const aValid = Number.isFinite(aTime);
+      const bValid = Number.isFinite(bTime);
+      // Undated documents follow every dated document, including dates before the Unix epoch.
+      if (aValid !== bValid) return aValid ? -1 : 1;
+      if (aValid && bValid && aTime !== bTime) return bTime - aTime;
+    }
+
+    return a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
   }
 
   /**

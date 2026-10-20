@@ -25,16 +25,13 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
-  HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
+  HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
-  HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES,
-  HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
-  HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES,
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
@@ -42,12 +39,10 @@ import {
   HEALTH_METRICS_MEMBERS_NPS_SEGMENTS,
   HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER,
   HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER,
-  HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS,
   HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
   HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES,
-  HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
   lfxColors,
   lfxFontSizes,
   MENTION_PLATFORM_CONFIG,
@@ -67,6 +62,7 @@ import {
   MENTORSHIP_PROGRAM_AVATAR_PALETTE,
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
+  MONITOR_PLATFORM_BUTTON_COLORS,
   ORG_MEETINGS_KPI_ICON_CLASS,
 } from '@lfx-one/shared/src/constants/index.ts';
 import PrimeUI from 'tailwindcss-primeui';
@@ -102,6 +98,10 @@ export default {
     ...Object.values(MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Monitor tab platform buttons: the selected label's text colour (`textClass`) comes from
+    // MONITOR_PLATFORM_BUTTON_COLORS in @lfx-one/shared (outside `content`) and is applied at runtime.
+    // The background is an inline style, so it needs no class.
+    ...Object.values(MONITOR_PLATFORM_BUTTON_COLORS).map((colors) => colors.textClass),
     // Mentee tasks tab — status dropdown/badge tints selected at runtime from MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.
     ...Object.values(MENTORSHIP_MENTEE_TASK_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentee overview and My Tasks: application status and past-outcome badges come
@@ -184,46 +184,39 @@ export default {
     'bg-gray-100',
     // Health Metrics Overview classification accents (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS in
     // @lfx-one/shared, not scanned here) — applied via [ngClass] on tiles and finding rows.
-    ...Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).flatMap((c) => [c.dotClass, c.accentClass, c.textClass].flatMap((s) => s.split(' '))),
+    ...Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).flatMap((c) =>
+      [c.dotClass, c.accentClass, c.textClass, c.statusTextClass].flatMap((s) => s.split(' '))
+    ),
     // Health Metrics Overview revenue-stream legend dots (HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS in
     // @lfx-one/shared, not scanned here) plus the UNKNOWN_REVENUE_STREAM_META fallback's bg-gray-400.
     ...Object.values(HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS).flatMap((s) => s.dotClass.split(' ')),
     'bg-gray-400',
-    // Events speaker-proposal status badges and status/organization bar fills (HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS +
-    // HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS in @lfx-one/shared, not scanned here) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => [...g.badgeClass.split(' '), g.barClass]),
-    HEALTH_METRICS_EVENTS_SPEAKERS_ORGANIZATION_BAR_CLASS,
+    // Events speaker-proposal status badges (HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS in @lfx-one/shared, not scanned
+    // here) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS).flatMap((g) => g.badgeClass.split(' ')),
     ...HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS.split(' '),
-    // Events organizations membership pills and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).flatMap((m) => m.badgeClass.split(' ')),
+    // Events organizations membership text and registrations bar (HEALTH_METRICS_EVENTS_ORGANIZATIONS_* in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP).map((m) => m.textClass),
     HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
-    // Events revenue goal-attainment chips (HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES).flatMap((s) => s.badgeClass.split(' ')),
-    // Events sponsorship tier and progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
+    // Events forecast verdict banner accents, tag colours and tints (HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES in @lfx-one/shared) — applied via [class].
+    ...Object.values(HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES).flatMap((t) => [t.accentClass, t.textClass, t.tintClass].filter(Boolean)),
+    // Events sponsorship progress bar fill (HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
-    // Events top-countries bar fill (HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_EVENTS_GEOGRAPHY_BAR_CLASS,
     // Members directory tier pill, NPS chips and engagement dots (HEALTH_METRICS_MEMBERS_DIRECTORY_* in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_DIRECTORY_TIER_PILL_CLASS.split(' '),
     ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES).flatMap((c) => c.split(' ')),
     ...Object.values(HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES),
     // Members at-risk aging bar fill (HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
-    // Members at-risk churn-risk chips (HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES in @lfx-one/shared) — applied via [class].
-    ...Object.values(HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES).flatMap((c) => c.split(' ')),
     // Members renewals balance and renewed markers (HEALTH_METRICS_MEMBERS_RENEWALS_*_MARKER in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_MEMBERS_RENEWALS_BALANCE_MARKER.textClass,
     HEALTH_METRICS_MEMBERS_RENEWALS_RENEWED_MARKER.textClass,
     // Members NPS distribution segments (HEALTH_METRICS_MEMBERS_NPS_SEGMENTS in @lfx-one/shared) — applied via [class].
     ...HEALTH_METRICS_MEMBERS_NPS_SEGMENTS.map((segment) => segment.colorClass),
-    // Non-Members warmest-organization bar fill (HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_NON_MEMBERS_CONVERSION_BAR_CLASS,
     // Non-Members fit band dots (HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS),
     // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
-    // Training enrollments-by-type bar fill (HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS in @lfx-one/shared) — applied via [class].
-    HEALTH_METRICS_TRAINING_ENROLLMENT_BAR_CLASS,
     // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],
@@ -257,8 +250,14 @@ export default {
       colors: lfxColors,
       boxShadow: {
         md: '0px 1px 2px -1px rgba(0, 0, 0, 0.10), 0px 1px 3px 0px rgba(0, 0, 0, 0.10)',
+        // Health Metrics card surface: inset gray-100 ring plus a soft drop shadow.
+        card: `inset 0 0 0 1px ${lfxColors.gray[100]}, 0px 1px 2px -1px rgba(0, 0, 0, 0.05), 0px 1px 3px 0px rgba(0, 0, 0, 0.05)`,
       },
       keyframes: {
+        'step-in': {
+          '0%': { opacity: '0', transform: 'translateY(4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
         'fade-in-up': {
           '0%': {
             opacity: '0',
@@ -272,6 +271,8 @@ export default {
       },
       animation: {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
+        // A new row or card settling in (Marketing OS run feed and questions stepper); used behind `motion-safe:`.
+        'step-in': 'step-in 180ms ease-out both',
       },
       fontWeight: {
         normal: 400,

@@ -226,6 +226,17 @@ export const ORG_CLA_REVIEW_COPY_FAILURE = {
   detail: 'Could not download a review copy of the CCLA. Please try again.',
 } as const;
 
+export const ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE = 'EASYCLA_ROLE_MISSING';
+
+export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
+  title: "We couldn't load your CLAs",
+  reason: "You don't have an EasyCLA role at this organization.",
+  supportLead: 'Please',
+  supportLabel: 'contact support',
+  supportTail: 'if you need EasyCLA assistance.',
+  signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this organization",
+} as const;
+
 /**
  * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
  * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any
@@ -642,18 +653,11 @@ export const ORG_CLA_AUTHORITY_NAME_MIN_LENGTH = 2;
  */
 export const ORG_CLA_APPROVAL_HEADING = 'Approved List of Contributors from My Organization';
 
-/**
- * Toast copy for a completed approval-list write.
- *
- * A removal's summary names invalidation rather than removal, because that is the consequence a
- * CLA manager needs confirmed: the rule is gone *and* the acknowledgements it covered are no
- * longer valid. Upstream reports no count of the acknowledgements it invalidated, so none of
- * this copy claims one.
- */
+/** Toast copy for a completed approval-list write. */
 export const ORG_CLA_APPROVAL_RECEIPT = {
   added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
-  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
-  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
+  edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgments matching the previous value now show as Not Authorized.' },
+  removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgments it covered now show as Not Authorized.' },
 } as const;
 
 export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'lf-username-required', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
@@ -684,6 +688,7 @@ export const ORG_CLA_MANAGERS_COPY = {
   addedTitle: 'CLA Manager added',
   removeAction: 'Remove',
   removeBlockedLabel: 'Remove. A CLA must always have at least one CLA Manager.',
+  offRosterReason: 'Only a CLA Manager named on this CCLA can add or remove CLA Managers',
 } as const;
 
 export const ORG_CLA_MANAGER_REMOVE_COPY = {
@@ -858,20 +863,15 @@ export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corpo
  */
 export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
 
-/**
- * Confirmation-dialog copy for a row invalidate, as the M3 prototype words it.
- *
- * It names the contributor and says what invalidating does not stop: a contributor who still
- * matches the approval list can acknowledge again, or be re-added by Auto ECLA.
- */
+/** Confirmation-dialog copy for a row invalidate, as the M3 prototype words it. */
 export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
   title: (contributor: string): string => `Invalidate acknowledgment for ${contributor}?`,
   marksPrefix: 'This marks',
   marksSuffix:
     " as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against.",
-  reacknowledge: (contributor: string): string =>
-    `If ${contributor} still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again`,
-  removeCriteria: " — remove the matching criteria below if that shouldn't be possible.",
+  reacknowledge: (contributor: string): string => `If ${contributor} still matches the approval list, they can acknowledge again themselves`,
+  noAutoReadd: ". Auto Acknowledge won't re-add them.",
+  removeEntries: ' Remove the matching entries below to prevent this.',
   matchedBy: (count: number): string => ` was approved by ${count > 1 ? 'entries' : 'an entry'} added specifically for them.`,
   alsoRemove: (contributor: string, count: number): string =>
     `Also remove ${count > 1 ? 'these entries' : 'this entry'} from the Approval List so ${contributor} can't acknowledge this CCLA again later.`,

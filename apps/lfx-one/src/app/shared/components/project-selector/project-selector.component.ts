@@ -5,13 +5,29 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { BOARD_SCOPED_PERSONA_PRIORITY, FORMATION_ENABLED_FLAG, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
-import { DisplayLensItem, LensItem, NavLens, PersonaType, ProjectContext, SelectorTab } from '@lfx-one/shared/interfaces';
+import {
+  BOARD_SCOPED_PERSONA_PRIORITY,
+  FORMATION_ENABLED_FLAG,
+  NAVBAR_DEFAULT_ROLE_STYLE,
+  NAVBAR_ROLE_STYLES,
+  PROJECT_SCOPED_PERSONA_PRIORITY,
+} from '@lfx-one/shared/constants';
+import {
+  ContextSelectorVariant,
+  DisplayLensItem,
+  LensItem,
+  NavbarRoleStyle,
+  NavLens,
+  PersonaType,
+  ProjectContext,
+  SelectorTab,
+} from '@lfx-one/shared/interfaces';
 import { FavoriteProjectsService } from '@services/favorite-projects.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { NavTooltipDirective } from '@shared/directives/nav-tooltip.directive';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { TagComponent } from '@components/tag/tag.component';
 import { AutoFocus } from 'primeng/autofocus';
@@ -21,7 +37,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-project-selector',
-  imports: [NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, OnRenderDirective, TooltipModule, TagComponent],
+  imports: [NavTooltipDirective, NgClass, ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, OnRenderDirective, TooltipModule, TagComponent],
   templateUrl: './project-selector.component.html',
   styleUrl: './project-selector.component.scss',
 })
@@ -59,6 +75,8 @@ export class ProjectSelectorComponent {
    * UX, accepted for the writer-scoped create list.
    */
   public readonly items = input<LensItem[] | null>(null);
+  /** `navbar` renders the navbar's dark context card as the trigger and pins the panel beside the 288px navbar. */
+  public readonly variant = input<ContextSelectorVariant>('default');
 
   public readonly itemSelected = output<LensItem>();
   public readonly isPanelOpen = model<boolean>(false);
@@ -78,7 +96,10 @@ export class ProjectSelectorComponent {
 
   // Sidebar panel pins fixed to the right of the rail; the curated (dialog) variant drops that
   // sidebar-only positioning so PrimeNG anchors the popover to its own trigger inside the dialog.
-  protected readonly panelStyleClass: Signal<string> = computed(() => (this.isCurated() ? 'project-selector-panel-curated' : 'project-selector-panel'));
+  protected readonly panelStyleClass: Signal<string> = computed(() => {
+    if (this.isCurated()) return 'project-selector-panel-curated';
+    return this.variant() === 'navbar' ? 'project-selector-panel project-selector-panel-navbar' : 'project-selector-panel';
+  });
   protected readonly lensTypeLabel: Signal<string> = this.initLensTypeLabel();
   protected readonly displayName: Signal<string> = this.initDisplayName();
   protected readonly displayLogo: Signal<string> = computed(() => this.selectedProject()?.logoUrl || '');
@@ -90,6 +111,16 @@ export class ProjectSelectorComponent {
   protected readonly selectedRoleIcon: Signal<string> = computed(() => {
     const persona = this.selectedRolePersona();
     return persona ? this.personaTypeToIcon(persona) : '';
+  });
+  /** The navbar trigger's accessible name — its `aria-label` hides the visible role pill, so the role is named here too. */
+  protected readonly navbarTriggerLabel: Signal<string> = computed(() => {
+    const role = this.selectedRoleLabel();
+    return role ? `Switch from ${this.displayName()}, Role: ${role}` : `Switch from ${this.displayName()}`;
+  });
+  /** Glyph and ink of the navbar context card's role pill. */
+  protected readonly navbarRoleStyle: Signal<NavbarRoleStyle> = computed(() => {
+    const persona = this.selectedRolePersona();
+    return persona ? NAVBAR_ROLE_STYLES[persona] : NAVBAR_DEFAULT_ROLE_STYLE;
   });
 
   protected readonly foundationItems: Signal<LensItem[]> = this.initFoundationItems();
@@ -113,6 +144,11 @@ export class ProjectSelectorComponent {
         this.navigationService.setSearchTerm(this.lens(), term);
       }
     });
+  }
+
+  /** Closes the selector panel without moving focus — for a host that is going away (e.g. a closing drawer), since the panel is appended to `body`. */
+  public closePanel(): void {
+    this.popoverRef()?.hide();
   }
 
   protected selectItem(item: LensItem, popover: Popover): void {
@@ -332,7 +368,7 @@ export class ProjectSelectorComponent {
       isSelected: selectedUid === item.uid,
       isFavorited: this.favoriteProjectsService.state().data.has(item.uid),
       roleLabel: persona ? this.personaTypeToLabel(persona) : '',
-      roleIcon: persona ? this.personaTypeToIcon(persona) : '',
+      roleIcon: persona ? this.personaTypeToIcon(persona).replace('fa-solid', 'fa-light') : '',
     };
   }
 
@@ -374,6 +410,9 @@ export class ProjectSelectorComponent {
   }
 
   private personaTypeToIcon(persona: PersonaType): string {
+    // The navbar variant shares the sidebar's role icons; the context-card pill keeps their solid style,
+    // the panel rows use the light one.
+    if (this.variant() === 'navbar') return NAVBAR_ROLE_STYLES[persona].icon;
     const map: Record<PersonaType, string> = {
       'executive-director': 'fa-light fa-briefcase',
       'board-member': 'fa-light fa-building-columns',

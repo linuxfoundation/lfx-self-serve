@@ -5,7 +5,7 @@
 // partially-compiled @angular/common and needs the JIT compiler under vitest.
 import '@angular/compiler';
 
-import { MentorshipUpstreamApplication, MentorshipUpstreamProgram, MentorshipUpstreamProgramTerm, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
+import { MentorshipUpstreamApplication, MentorshipUpstreamProgramTermApplyTarget, MentorshipUpstreamTask } from '@lfx-one/shared/interfaces';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -178,56 +178,24 @@ describe('mapMentorshipMenteeApplicationHistory', () => {
 });
 
 describe('mapMentorshipMenteeApplyTarget', () => {
-  const program: MentorshipUpstreamProgram = { id: 'prog-1', name: 'Test Program', status: 'published', project_name: 'Test Project' };
-  const term: MentorshipUpstreamProgramTerm = {
-    id: 'term-1',
-    program_id: 'prog-1',
-    name: 'Fall 2026',
-    status: 'open',
-    active_users: 0,
-    application_start_date: '2026-06-01',
-    application_end_date: '2026-08-01',
-    created_on: '2026-05-01T10:00:00Z',
-    updated_on: '2026-05-01T10:00:00Z',
+  const target: MentorshipUpstreamProgramTermApplyTarget = {
+    program_name: 'Test Program',
+    project_name: 'Test Project',
+    term_name: 'Fall 2026',
+    accepting_applications: true,
   };
-  const insideWindow = new Date('2026-07-01T12:00:00Z');
 
-  it('maps the program and term names, and accepts applications inside the window of an open term', () => {
-    expect(mapMentorshipMenteeApplyTarget(program, term, insideWindow)).toEqual({
+  it('maps the names and whether upstream accepts applications', () => {
+    expect(mapMentorshipMenteeApplyTarget(target)).toEqual({
       programName: 'Test Program',
       projectName: 'Test Project',
       termName: 'Fall 2026',
       acceptingApplications: true,
     });
+    expect(mapMentorshipMenteeApplyTarget({ ...target, accepting_applications: false }).acceptingApplications).toBe(false);
   });
 
   it('leaves the project empty when the program has none', () => {
-    expect(mapMentorshipMenteeApplyTarget({ ...program, project_name: undefined }, term, insideWindow).projectName).toBe('');
-  });
-
-  it.each([
-    ['a closed term', { status: 'closed' as const }, insideWindow],
-    ['a deleted term', { status: 'deleted' as const }, insideWindow],
-    ['a window that has not opened', {}, new Date('2026-05-31T23:59:59Z')],
-    ['a window that has closed', {}, new Date('2026-08-02T00:00:00Z')],
-  ])('does not accept applications for %s', (_label, overrides, now) => {
-    expect(mapMentorshipMenteeApplyTarget(program, { ...term, ...overrides }, now).acceptingApplications).toBe(false);
-  });
-
-  it('reads a bare window start as the start of its UTC day and a bare window end as the end of its UTC day', () => {
-    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-06-01T00:00:00Z')).acceptingApplications).toBe(true);
-    expect(mapMentorshipMenteeApplyTarget(program, term, new Date('2026-08-01T23:59:59.999Z')).acceptingApplications).toBe(true);
-  });
-
-  it('compares the instants upstream returns as they are, as upstream does', () => {
-    const instants = { ...term, application_start_date: '2026-06-01T00:00:00Z', application_end_date: '2026-08-01T23:59:59Z' };
-    expect(mapMentorshipMenteeApplyTarget(program, instants, new Date('2026-08-01T23:59:59Z')).acceptingApplications).toBe(true);
-    expect(mapMentorshipMenteeApplyTarget(program, instants, new Date('2026-08-02T00:00:00Z')).acceptingApplications).toBe(false);
-  });
-
-  it('leaves a side of the window open when its date is missing', () => {
-    const openEnded = { ...term, application_start_date: undefined, application_end_date: undefined };
-    expect(mapMentorshipMenteeApplyTarget(program, openEnded, new Date('2020-01-01T00:00:00Z')).acceptingApplications).toBe(true);
-    expect(mapMentorshipMenteeApplyTarget(program, openEnded, new Date('2030-01-01T00:00:00Z')).acceptingApplications).toBe(true);
+    expect(mapMentorshipMenteeApplyTarget({ ...target, project_name: undefined }).projectName).toBe('');
   });
 });

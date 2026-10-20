@@ -38,7 +38,9 @@
 
       <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()" [attached]="true">
         @if (zoomAiEnabled()) {
-          <div class="mt-4 border-t border-gray-200 pt-4">
+          <!-- Indented by the feature-toggle's icon tile (w-10) plus its gap (gap-3), so the divider and the
+               checkbox line up with the feature's title and description rather than with the icon -->
+          <div class="ml-[calc(2.5rem+0.75rem)] mt-4 border-t border-gray-200 pt-4">
             <lfx-checkbox
               [form]="form()"
               control="require_ai_summary_approval"
@@ -55,7 +57,10 @@
            belongs to. Inset rather than a card of its own, now that the rows share one outline. -->
       <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()" [attached]="true" [toggleNote]="youtubeNote()">
         @if (youtubeUploadEnabled() && titleMaxlengthError()) {
-          <div class="mt-3 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="composer-youtube-title-warning">
+          <!-- Same text-column indent as the AI-approval checkbox above -->
+          <div
+            class="ml-[calc(2.5rem+0.75rem)] mt-3 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3"
+            data-testid="composer-youtube-title-warning">
             <i class="fa-light fa-triangle-exclamation mt-0.5 flex-shrink-0 text-amber-500" aria-hidden="true"></i>
             <div class="flex flex-col gap-1">
               <p class="text-sm font-semibold text-amber-800">Meeting title too long for YouTube</p>
@@ -78,24 +83,33 @@
       <!-- Email reminder -->
       <lfx-feature-toggle [feature]="emailReminderFeature" [form]="form()" [attached]="true">
         @if (emailReminderEnabled()) {
-          <div class="mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
+          <!-- Same text-column indent as the AI-approval checkbox above -->
+          <div class="ml-[calc(2.5rem+0.75rem)] mt-4 flex flex-col gap-2 border-t border-gray-200 pt-4">
+            <!-- Compact number fields: exact px (the 14px root shrinks the rem scale) so three digits still fit.
+                 min/max stop the spinner at the validators' bounds; a typed value past them still shows the error. -->
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1" role="group" aria-label="Send reminder before the meeting starts">
               <div class="flex items-center gap-2">
                 <lfx-input-number
-                  class="w-20 flex-none"
+                  class="w-[56px] flex-none"
                   [form]="form()"
                   control="reminderHours"
+                  [min]="minReminderHours"
+                  [max]="maxReminderHours"
                   size="small"
+                  styleClass="!h-[28px] !px-2 !py-0 text-center"
                   inputId="composer-reminder-hours"
                   data-testid="composer-reminder-hours" />
                 <label for="composer-reminder-hours" class="text-sm text-gray-900">hours</label>
               </div>
               <div class="flex items-center gap-2">
                 <lfx-input-number
-                  class="w-20 flex-none"
+                  class="w-[56px] flex-none"
                   [form]="form()"
                   control="reminderMinutes"
+                  [min]="minReminderMinutes"
+                  [max]="maxReminderMinutes"
                   size="small"
+                  styleClass="!h-[28px] !px-2 !py-0 text-center"
                   inputId="composer-reminder-minutes"
                   data-testid="composer-reminder-minutes" />
                 <label for="composer-reminder-minutes" class="text-sm text-gray-900">minutes</label>
@@ -130,7 +144,9 @@
               </p>
             }
             @if (reminderMinutesError()) {
-              <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">Minutes must be a whole number between 0 and 59</p>
+              <p class="text-sm text-red-600" data-testid="composer-reminder-minutes-error">
+                Minutes must be a whole number between {{ minReminderMinutes }} and {{ maxReminderMinutes }}
+              </p>
             }
           </div>
         }

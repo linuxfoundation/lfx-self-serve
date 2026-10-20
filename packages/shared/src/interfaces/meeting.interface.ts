@@ -3,7 +3,8 @@
 
 import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.constants';
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
-import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { MEETING_COMPOSER_SECTIONS, MEETING_REMOVAL_SOURCES, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
+import type { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../constants/public-past-meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
 import type { TagSeverity } from './components.interface';
 import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
@@ -296,15 +297,15 @@ export interface Meeting {
   /** YouTube upload integration */
   youtube_upload_enabled: boolean | null;
   /**
-   * Share the guest list in calendar invites: when on, each guest's ICS lists the other
-   * attendees and their last known RSVP instead of the recipient alone. Board meetings can never
+   * Share the guest list with guests in LFX. Calendar invites never list other guests, whatever
+   * this is set to — each guest's invite names only the recipient. Board meetings can never
    * opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF forces the field off on
    * write. A restricted meeting keeps any explicit `true` the BFF receives from a caller allowed to
    * edit it — in practice only the meeting v2 composer (`allowRestricted`) sends one, since the pre-v2
    * wizard locks the control off — and any other write is forced off. In LFX it also decides whether an invitee who is not an organizer can see
    * the guest list: `GET /api/meetings/:uid/my-meeting-registrants` returns `[]` to them when it is
    * off — and always for Board and restricted meetings, whose lists stay hidden in LFX even when a
-   * restricted meeting opted in (that opt-in reaches calendar invites only) — and the meeting card and
+   * restricted meeting opted in, so that opt-in currently has no effect a guest can see — and the meeting card and
    * meeting page hide their guest lists to match.
    * `GET /api/meetings/:uid/registrants` (tolerant listing) and `GET /api/meetings/:uid/rsvp`
    * apply the same rule. Past-meeting participants ignore it and go to organizers and the people on
@@ -358,8 +359,8 @@ export interface Meeting {
   invited: boolean;
   /**
    * The viewer is invited to the meeting through a committee (response only).
-   * @description True when any of the viewer's registrations for this meeting was added from a committee. Such a
-   * registration is managed by committee membership, so the viewer cannot remove themselves from the meeting.
+   * @description True when any of the viewer's registrations for this meeting was added from a committee. It only
+   * words the Remove Yourself confirmation, which tells the viewer the committee will not invite them again.
    * Unset when the viewer is not invited.
    */
   invited_via_committee?: boolean;
@@ -489,7 +490,7 @@ export interface CreateMeetingRequest {
   recording_enabled?: boolean; // Enable meeting recording
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
-  show_meeting_attendees?: boolean; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
+  show_meeting_attendees?: boolean; // Share the guest list with guests in LFX; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -520,7 +521,7 @@ export interface UpdateMeetingRequest {
   recording_enabled?: boolean | null; // Enable meeting recording
   transcript_enabled?: boolean | null; // Enable transcription
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
-  show_meeting_attendees?: boolean | null; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
+  show_meeting_attendees?: boolean | null; // Share the guest list with guests in LFX; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -668,6 +669,12 @@ export interface MeetingRegistrant {
   /** Registrant's RSVP (only included when include_rsvp=true) */
   rsvp?: MeetingRsvp | null;
 }
+
+/**
+ * UI surface a viewer removed themselves from a meeting on.
+ * Derived from the {@link MEETING_REMOVAL_SOURCES} constant so the union stays in sync with it.
+ */
+export type MeetingRemovalSource = (typeof MEETING_REMOVAL_SOURCES)[number];
 
 /** Server-resolved outcomes of removing the authenticated user's meeting registrations. */
 export interface MeetingRegistrationRemovalResult {
@@ -1861,13 +1868,19 @@ export type PublicMeetingProject = {
 };
 
 /**
+ * Anonymous full-access past-meeting detail, projected through `PUBLIC_ANONYMOUS_PAST_MEETING_KEYS`.
+ * Fields absent upstream are omitted rather than returned as `undefined`.
+ */
+export type PublicAnonymousPastMeeting = Partial<Pick<PastMeeting, (typeof PUBLIC_ANONYMOUS_PAST_MEETING_KEYS)[number]>>;
+
+/**
  * Response from public past meeting endpoint
  * @description Returns meeting details with tiered access — full_access indicates whether
  * the user has permission to view enrichment data (summary, recording, attachments)
  * via the existing authenticated endpoints
  */
 export interface PublicPastMeetingResponse {
-  meeting: PastMeeting;
+  meeting: PastMeeting | PublicAnonymousPastMeeting;
   project: PublicMeetingProject;
   full_access: boolean;
 }

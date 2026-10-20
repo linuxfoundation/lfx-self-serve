@@ -1343,7 +1343,11 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     applicant_name: index === 0 ? 'Applicant' : undefined,
     status: 'pending',
     created_at: tomorrow,
-    message: 'private message',
+    message: 'I maintain the upstream driver and want to help review patches.',
+    project_name: 'Project Alpha',
+    committee_category: 'Technical Steering Committee',
+    project_slug: 'project-alpha',
+    is_foundation: false,
     reviewer_notes: 'private notes',
     reason: 'private reason',
   }));
@@ -1405,16 +1409,24 @@ describe('UserService.getPendingActions managed applications (GH-3131)', () => {
     service = new UserService();
   });
 
-  it('includes every review address without an email and exposes no private application payload or navigation CTA', async () => {
+  it('includes every review address without an email, exposes the reviewer context but not reviewer-only notes, and has no navigation CTA', async () => {
     getEffectiveEmail.mockReturnValue(null);
     const actions = (await service.getPendingActions(req, undefined, null, undefined)).filter((action) => action.type === 'JoinApplication');
     expect(actions.map((action) => [action.committeeUid, action.applicationUid])).toEqual(applications.map((row) => [row.committee_uid, row.uid]));
     expect(actions[0]).toMatchObject({ applicationApplicantEmail: 'applicant@example.com', applicationApplicantName: 'Applicant', badge: 'Group 0' });
+    expect(actions[0]).toMatchObject({
+      applicationProjectName: 'Project Alpha',
+      applicationGroupCategory: 'Technical Steering Committee',
+      applicationProjectSlug: 'project-alpha',
+      applicationIsFoundation: false,
+      applicationMessage: 'I maintain the upstream driver and want to help review patches.',
+      applicationSubmittedAt: tomorrow,
+    });
     expect(actions[1].text).toContain('applicant@example.com');
     for (const action of actions) {
       expect(action.buttonText).toBe('');
       expect(Object.keys(action)).toEqual(expect.arrayContaining(['committeeUid', 'applicationUid', 'applicationApplicantEmail']));
-      for (const field of ['message', 'reviewer_notes', 'reason', 'buttonLink']) expect(action).not.toHaveProperty(field);
+      for (const field of ['message', 'reviewer_notes', 'reason', 'applicationReviewerNotes', 'buttonLink']) expect(action).not.toHaveProperty(field);
     }
   });
 

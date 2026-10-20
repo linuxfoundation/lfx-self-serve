@@ -9,9 +9,6 @@ export const HEALTH_METRICS_PROJECT_QUERY_PARAM = 'projectScope';
 /** Shape a project slug must have before it reaches a read; anything else falls back to all projects. */
 export const HEALTH_METRICS_PROJECT_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
-/** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
-export const HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX = 320;
-
 /**
  * How long a deep link's section key stays armed for its post-data re-scroll, re-armed per read.
  * Sized at roughly double the server's ~15s worst-case budget for one read, leaving room for

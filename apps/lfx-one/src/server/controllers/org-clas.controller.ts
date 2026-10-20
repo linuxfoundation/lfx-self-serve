@@ -50,6 +50,7 @@ import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
+import { sanitizeFoundationSfid } from '../services/org-cla-foundation-pair';
 import { OrgClaPermissionsService } from '../services/org-cla-permissions.service';
 import { OrgClaService } from '../services/org-cla.service';
 import { logger } from '../services/logger.service';
@@ -561,13 +562,13 @@ export class OrgClasController {
 
       if (result.outcome === 'not-signed') {
         logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
-        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto Acknowledge setting cannot be changed' });
         return;
       }
 
       if (result.outcome === 'forbidden') {
         logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
-        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its Auto ECLA setting' });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can change its Auto Acknowledge setting' });
         return;
       }
 
@@ -820,7 +821,7 @@ export class OrgClasController {
       const orgUid = req.params['orgUid'];
       assertOrgUid(orgUid, 'check_org_cla_permission');
 
-      const raw = req.body as { action?: unknown; projectSfid?: unknown } | undefined;
+      const raw = req.body as { action?: unknown; projectSfid?: unknown; foundationSfid?: unknown } | undefined;
       const action = raw?.action;
       if (!isOrgClaPermissionAction(action)) {
         logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, rejected: 'unknown_action' });
@@ -829,11 +830,23 @@ export class OrgClasController {
       }
 
       const projectSfid = typeof raw?.projectSfid === 'string' ? raw.projectSfid.trim() : undefined;
+      const foundationSfid = typeof raw?.foundationSfid === 'string' ? raw.foundationSfid.trim() : undefined;
       const request: OrgClaPermissionCheckRequest = {
         action,
         ...(projectSfid ? { projectSfid } : {}),
+        ...(foundationSfid ? { foundationSfid } : {}),
       };
-      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid);
+      // The browser attaches `foundationSfid` from the row it is rendering, but a preview endpoint
+      // that trusts that id turns into an authorization-exploration oracle (the viewer can be
+      // asked whether they hold `cla-manager` on any `(project, foundation)` pair of their
+      // choosing). Re-derive the authoritative pair from the organization's own CLA Group list
+      // and only pass the client's value through when it matches — otherwise drop it and let ACS
+      // answer the project pair alone, which preserves the preview's "200 with `{ allowed }`,
+      // never 5xx" contract. `OrgClaPermissionsService.check` ignores the foundation half for
+      // `sign`, so skip the extra upstream fetch on sign previews (fired per row on hot views).
+      const sanitizedFoundationSfid =
+        request.action === 'sign' ? undefined : await sanitizeFoundationSfid(req, this.orgClaService, orgUid, request.projectSfid, request.foundationSfid);
+      const allowed = await this.orgClaPermissions.check(req, orgUid, request.action, request.projectSfid, sanitizedFoundationSfid);
 
       logger.success(req, 'check_org_cla_permission', startTime, { org_uid: orgUid, action, allowed });
       res.setHeader('Cache-Control', 'no-store');

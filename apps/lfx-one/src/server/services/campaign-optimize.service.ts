@@ -3,29 +3,45 @@
 
 import {
   CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED,
+  CAMPAIGN_AUDIENCE_CONFLICT_CODE,
+  CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE,
+  CAMPAIGN_AUDIENCE_FAILED_MESSAGE,
+  CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH,
+  CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE,
+  CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE,
+  CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE,
+  CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE,
+  CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE,
+  CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE,
   CAMPAIGN_AUDIENCE_WINDOWS,
   CAMPAIGN_ETAG_REQUIRED_CODE,
   CAMPAIGN_ETAG_REQUIRED_MESSAGE,
   CAMPAIGN_ETAG_STALE_CODE,
   CAMPAIGN_ETAG_STALE_MESSAGE,
-  CAMPAIGN_REF_ID_PATTERNS,
+  isValidCampaignRefId,
   KEYWORD_TARGETING_REMOVAL_OUTCOME_UNCONFIRMED,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_CODE,
   KEYWORD_TARGETING_REMOVAL_UNCONFIRMED_OUTCOME,
+  META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED,
+  META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE,
+  META_AD_SET_PAUSE_RECORD_UNCONFIRMED_MARKER,
   META_AD_SET_STATUS_UNCONFIRMED_OUTCOME,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdoptableBrief,
   CampaignAdoptPlatform,
   CampaignAudiencePlatform,
   CampaignLeverUnconfirmedOutcome,
   CampaignMetricsWindow,
   CampaignRefPlatform,
+  CampaignServiceBriefIndexDoc,
   CampaignServiceCampaign,
   CampaignServiceCampaignResolution,
   CampaignServiceCampaignTarget,
   CampaignServiceKeywordTargeting,
   CampaignServiceKeywordTargetingRemovalResult,
   CampaignServiceKeywordTargetingRemovals,
+  CampaignServiceMetaAds,
   CampaignServiceMetaAdSets,
   CampaignServiceMetaAdSetStatusChange,
   CampaignServicePlatformAudienceMap,
@@ -33,12 +49,16 @@ import type {
   CampaignServiceSettingsReadback,
   KeywordTargetingRemovalItem,
   MetaAdSetStatus,
+  QueryServiceResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
+import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { getCodeForStatus } from '../helpers/http-status.helper';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { encodePathSegment } from '../helpers/url-validation';
 import { upstreamAnswered } from './campaign-keyword-actions';
 import { asUnconfirmedWriteFailure, readEtag } from './campaign-service.service';
@@ -48,7 +68,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 /**
  * Proxies the Optimize tab's campaign-service reads and levers that the BFF did not reach before:
  * per-platform audience reads, campaign-ref resolves, the Reddit keyword read, the campaign
- * settings readback, Meta ad sets (list and status), keyword targeting (read and remove, Reddit
+ * settings readback, Meta ad sets (list and status) and their ads (list), keyword targeting (read and remove, Reddit
  * and X) and campaign adoption.
  *
  * Kept apart from `CampaignServiceClient` so it can grow without colliding with the monitor
@@ -67,6 +87,9 @@ export class CampaignOptimizeService {
    * request; it is still checked against the table so a caller bug cannot address another route.
    * The window is a QUERY parameter, omitted when the caller names none so upstream applies its own
    * default. Upstream fails the whole read when any one breakdown fails, so there is no partial arm.
+   *
+   * A failure is answered with a fixed message per status (`asAudienceReadFailure`), never with
+   * campaign-service's own sentence.
    */
   public async getPlatformAudience<P extends CampaignAudiencePlatform>(
     req: Request,
@@ -87,13 +110,31 @@ export class CampaignOptimizeService {
       });
     }
     logger.debug(req, 'get_platform_audience', 'Reading audience demographics from campaign-service', { platform, window });
-    return this.microserviceProxy.proxyRequest<CampaignServicePlatformAudienceMap[P]>(
-      req,
-      'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodePathSegment(projectSlug)}/${platform}/audience`,
-      'GET',
-      window ? { window } : undefined
-    );
+    try {
+      return await this.microserviceProxy.proxyRequest<CampaignServicePlatformAudienceMap[P]>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        `/projects/${encodePathSegment(projectSlug)}/${platform}/audience`,
+        'GET',
+        window ? { window } : undefined
+      );
+    } catch (error) {
+      // An answered 400 or 409 each becomes ONE fixed message although campaign-service means
+      // several things by it (400: switched off, an inactive connection, no ad account; 409: another
+      // or no recorded account, a malformed stored id, too many campaigns) and its error carries no
+      // `reason` for any of them. Its own sentence is kept in the log (bounded, scrubbed like every
+      // log field, never sent to the browser) so the cause stays diagnosable.
+      if (error instanceof MicroserviceError && (error.statusCode === 400 || error.statusCode === 409) && upstreamAnswered(error)) {
+        const upstreamMessage = (error.errorBody as { message?: unknown } | undefined)?.message;
+        logger.debug(req, 'get_platform_audience', `campaign-service refused the audience read with ${error.statusCode}; answering a fixed message`, {
+          status: error.statusCode,
+          platform,
+          window,
+          upstream_message: typeof upstreamMessage === 'string' ? upstreamMessage.slice(0, CAMPAIGN_AUDIENCE_LOGGED_UPSTREAM_MESSAGE_MAX_LENGTH) : undefined,
+        });
+      }
+      throw asAudienceReadFailure(error, 'get_platform_audience');
+    }
   }
 
   /**
@@ -103,8 +144,7 @@ export class CampaignOptimizeService {
    * an empty `matches`, and MORE THAN ONE match is reachable (a re-pointed connection), so the
    * caller must check `match_count` and refuse rather than choose.
    *
-   * The id is a QUERY parameter (fifth argument) and is checked against the platform's id rule
-   * first. `linkedin-ads` has no upstream endpoint yet (see `CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM`).
+   * The id is a QUERY parameter (fifth argument) and is checked against the platform's id rule first.
    */
   public async resolvePlatformCampaign(
     req: Request,
@@ -112,8 +152,7 @@ export class CampaignOptimizeService {
     platform: CampaignRefPlatform,
     platformCampaignId: string
   ): Promise<CampaignServiceCampaignResolution> {
-    const pattern = Object.prototype.hasOwnProperty.call(CAMPAIGN_REF_ID_PATTERNS, platform) ? CAMPAIGN_REF_ID_PATTERNS[platform] : null;
-    if (projectSlug === '' || !pattern || !pattern.test(platformCampaignId)) {
+    if (projectSlug === '' || !isValidCampaignRefId(platform, platformCampaignId)) {
       throw ServiceValidationError.forField('platformCampaignId', 'A campaign reference lookup requires the project and a valid platform campaign id.', {
         operation: 'resolve_platform_campaign',
         service: 'campaign_optimize_service',
@@ -129,10 +168,10 @@ export class CampaignOptimizeService {
   }
 
   /**
-   * Reddit keyword performance for the project's OWN campaigns: the Microsoft keyword read's
-   * sibling (`getMicrosoftAdsKeywords`), same row shape and same query-parameter window. PENDING
-   * upstream: campaign-service has no `GET /projects/{p}/reddit-ads/keywords` yet, so the wire type
-   * is provisional and the route is behind `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS`.
+   * Reddit keyword performance for the project's OWN campaigns (`get-reddit-ads-keywords`,
+   * campaign-service #331): the top 50 (campaign, keyword) rows by impressions, read live and
+   * read-only. The window is a QUERY parameter, omitted when the caller names none so upstream
+   * applies `last_30_days`.
    */
   public async getRedditAdsKeywords(req: Request, projectSlug: string, window?: RedditKeywordsWindow): Promise<CampaignServiceRedditKeywords> {
     if (projectSlug === '') {
@@ -148,6 +187,18 @@ export class CampaignOptimizeService {
       'GET',
       window ? { window } : undefined
     );
+  }
+
+  /**
+   * One campaign row read from campaign-service itself, with its CURRENT ETag (header first, body
+   * second, as `adoptCampaign` takes it). Used where the asynchronous index could lag a write the
+   * caller needs to see at once: a campaign adopted a moment ago, or a validator for `If-Match`.
+   */
+  public async getCampaign(req: Request, ref: CampaignServiceCampaignTarget): Promise<CampaignServiceCampaign> {
+    logger.debug(req, 'get_campaign', 'Reading campaign row from campaign-service', { campaign_id: ref.campaignId });
+    const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceCampaign>(req, 'LFX_V2_CAMPAIGN_SERVICE', campaignPath(ref), 'GET');
+    // `adopted` is kept only as a literal `true`: the act dialog withholds Resume on it.
+    return withAdoptedMarker({ ...response.data, etag: readEtag(response) ?? response.data.etag });
   }
 
   /**
@@ -172,17 +223,45 @@ export class CampaignOptimizeService {
   }
 
   /**
+   * The ads under ONE ad set of a Meta campaign with their delivery over `window`, read live.
+   * Strictly read-only upstream: there is no per-ad pause or edit. `truncated` says the listing
+   * passed its page cap; delivery is never truncated.
+   */
+  public async listMetaAds(
+    req: Request,
+    params: CampaignServiceCampaignTarget & { adSetId: string },
+    window?: CampaignMetricsWindow
+  ): Promise<CampaignServiceMetaAds> {
+    logger.debug(req, 'list_meta_ads', 'Reading Meta ads of an ad set from campaign-service', {
+      campaign_id: params.campaignId,
+      ad_set_id: params.adSetId,
+      window,
+    });
+    return this.microserviceProxy.proxyRequest<CampaignServiceMetaAds>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `${campaignPath(params)}/meta-ad-sets/${encodePathSegment(params.adSetId)}/ads`,
+      'GET',
+      window ? { window } : undefined
+    );
+  }
+
+  /**
    * Pause or resume ONE ad set of a Meta campaign.
    *
    * A dispatching write on a live paid campaign, guarded like the campaign status toggle: `If-Match`
    * carries the campaign ROW's ETag (upstream answers 428 without it and 412 when it is stale). The
-   * ETag in the answer is the row's version UNCHANGED, because an ad set's status is not stored on
-   * the row; it is taken off the response header, which the contract guarantees, as for the toggle.
+   * ETag in the answer is taken off the response header, which the contract guarantees, as for the
+   * toggle. It is the row's version UNCHANGED for most changes, but a NEW one when the call wrote or
+   * cleared the recorded ad set's deliberate-pause record, so the caller must always adopt it.
    *
    * Failures are classified by `asLeverFailure`: 412/428 get their own codes and fixed messages; a
    * 503 that says the change is unconfirmed, and any failure nobody answered, become
    * `META_AD_SET_STATUS_UNCONFIRMED`; a 409 (including "the status WAS changed on Meta, but the
-   * campaign changed meanwhile") passes through with campaign-service's own fixed sentence.
+   * campaign changed meanwhile") passes through with campaign-service's own fixed sentence. Before
+   * that, an answered 503 saying the status changed but its deliberate-pause RECORD "could not be
+   * confirmed" becomes `META_AD_SET_PAUSE_RECORD_UNCONFIRMED`, so the UI asks for
+   * `deliberately_paused` to be re-read rather than showing it as a definite failure.
    */
   public async updateMetaAdSetStatus(
     req: Request,
@@ -207,7 +286,14 @@ export class CampaignOptimizeService {
       );
       return { ...response.data, etag: readEtag(response) ?? response.data.etag };
     } catch (error) {
-      throw asLeverFailure(error, 'update_meta_ad_set_status', META_AD_SET_STATUS_UNCONFIRMED_OUTCOME);
+      const failure = asLeverFailure(error, 'update_meta_ad_set_status', META_AD_SET_STATUS_UNCONFIRMED_OUTCOME);
+      if (failure === error && error instanceof MicroserviceError && error.statusCode === 503 && upstreamAnswered(error)) {
+        const upstreamMessage = (error.errorBody as { message?: unknown } | undefined)?.message;
+        if (typeof upstreamMessage === 'string' && META_AD_SET_PAUSE_RECORD_UNCONFIRMED_MARKER.test(upstreamMessage)) {
+          throw rewrap(error, 'update_meta_ad_set_status', META_AD_SET_PAUSE_RECORD_UNCONFIRMED_CODE, META_AD_SET_PAUSE_RECORD_OUTCOME_UNCONFIRMED);
+        }
+      }
+      throw failure;
     }
   }
 
@@ -239,6 +325,52 @@ export class CampaignOptimizeService {
     } catch (error) {
       throw asUnconfirmedWriteFailure(error, 'adopt_campaign', CAMPAIGN_ADOPT_OUTCOME_UNCONFIRMED);
     }
+  }
+
+  /**
+   * The project's briefs a campaign can be ADOPTED into: approved, paid-marketing, from the Query
+   * Service (campaign-service exposes no brief list; `campaign_brief` is indexed instead).
+   *
+   * Filtered HERE, not with a query filter: an index filter on `status` is unverified, and a filter
+   * that silently matched nothing would read as "no approved briefs".
+   *
+   * `delivery_type` follows campaign-service's index contract (`BriefDoc`,
+   * `internal/infrastructure/indexer/contract.go`): a document indexed before the field existed keeps
+   * its old shape, and an ABSENT field means "written before the widening", which for every such row
+   * is paid-marketing with an empty stage. Email briefs exist only after the widening and always
+   * publish `delivery_type` (the field has no `omitempty`). So an absent value or `'paid-marketing'` is
+   * offered, and `'email'` or any other explicit value is not. `adopt-campaign` itself refuses a brief
+   * of the wrong channel with 400.
+   */
+  public async listAdoptableBriefs(req: Request, projectSlug: string): Promise<CampaignAdoptableBrief[]> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A brief list requires the project it is scoped to.', {
+        operation: 'list_adoptable_briefs',
+        service: 'campaign_optimize_service',
+      });
+    }
+    const docs = await fetchAllQueryResources<CampaignServiceBriefIndexDoc>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CampaignServiceBriefIndexDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'campaign_brief',
+          parent: `project:${projectSlug}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+    const briefs = docs
+      .filter(
+        (d) => typeof d?.id === 'string' && d.id !== '' && d.status === 'approved' && (d.delivery_type === undefined || d.delivery_type === 'paid-marketing')
+      )
+      .map((d) => ({
+        id: d.id,
+        eventSlug: typeof d.event_slug === 'string' ? d.event_slug : '',
+        programType: typeof d.program_type === 'string' ? d.program_type : '',
+        platforms: Array.isArray(d.platforms) ? d.platforms.filter((p): p is string => typeof p === 'string') : [],
+      }));
+    logger.debug(req, 'list_adoptable_briefs', 'Filtered indexed briefs to approved paid briefs', { indexed: docs.length, adoptable: briefs.length });
+    return briefs;
   }
 
   /** The positive keywords of a Reddit ad group or X line item, read live. Any other platform is upstream's 400. */
@@ -381,6 +513,37 @@ export function asLeverFailure(error: unknown, operation: string, unconfirmed: C
     return error;
   }
   return rewrap(error, operation, unconfirmed.code, unconfirmed.message);
+}
+
+/**
+ * The error a failed audience read should surface: a fixed message per status, so campaign-service's
+ * own sentence never reaches the browser and the UI can branch on `code` alone.
+ *
+ * Only campaign-service's own answer (`upstreamAnswered`) earns a specific code: 404 is "no
+ * connection for the platform", 409 campaigns that cannot be read together (campaign-service's
+ * `conflict-error` carries no `reason` on these reads, so the message names every cause), 503 a
+ * read the platform did not confirm (rate-limited, unreachable, partial), and 400 a read switched
+ * off in this environment, or a connection that is inactive or has no ad account. Everything else, answered or
+ * not (an auth refusal, a server error, a gateway page, a transport failure), keeps its status and
+ * the code that status maps to, with a generic message.
+ */
+export function asAudienceReadFailure(error: unknown, operation: string): unknown {
+  if (!(error instanceof MicroserviceError)) {
+    return error;
+  }
+  if (upstreamAnswered(error)) {
+    switch (error.statusCode) {
+      case 404:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_NO_CONNECTION_CODE, CAMPAIGN_AUDIENCE_NO_CONNECTION_MESSAGE);
+      case 409:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_CONFLICT_CODE, CAMPAIGN_AUDIENCE_CONFLICT_MESSAGE);
+      case 503:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_UNAVAILABLE_CODE, CAMPAIGN_AUDIENCE_UNAVAILABLE_MESSAGE);
+      case 400:
+        return rewrap(error, operation, CAMPAIGN_AUDIENCE_NOT_ENABLED_CODE, CAMPAIGN_AUDIENCE_NOT_ENABLED_MESSAGE);
+    }
+  }
+  return rewrap(error, operation, getCodeForStatus(error.statusCode), CAMPAIGN_AUDIENCE_FAILED_MESSAGE);
 }
 
 function rewrap(error: MicroserviceError, operation: string, code: string, clientMessage: string): MicroserviceError {

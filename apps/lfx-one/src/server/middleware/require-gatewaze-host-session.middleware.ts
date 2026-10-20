@@ -4,16 +4,13 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { gwUniformNotFound } from '../helpers/gw-api.helper';
 import { isGatewazeHostSessionEnabled } from '../services/gatewaze-session.service';
 import { logger } from '../services/logger.service';
 
-/** The uniform 404 for `/api/gatewaze` while host-session mode is off, the same shape `/api/gw` gives with its flag off. */
+/** The uniform 404 for `/api/gatewaze` while host-session mode is off or the caller has no bearer token. */
 export function gatewazeHostSessionNotFound(req: Request): MicroserviceError {
-  return new MicroserviceError('Not found', 404, 'NOT_FOUND', {
-    operation: 'require_gatewaze_host_session',
-    service: 'gw',
-    path: req.path,
-  });
+  return gwUniformNotFound(req, 'require_gatewaze_host_session');
 }
 
 /**
@@ -29,5 +26,20 @@ export function requireGatewazeHostSession(req: Request, _res: Response, next: N
     return;
   }
   logger.debug(req, 'require_gatewaze_host_session', 'Answering the uniform 404: host-session mode is off or misconfigured', { path: req.path });
+  next(gatewazeHostSessionNotFound(req));
+}
+
+/**
+ * Answers the uniform 404 when the request carries no LFX bearer token, so the router's
+ * authorization does not rest on `authMiddleware` alone. Under `/api` that middleware already
+ * answers 401 to a caller with no token, so this never fires today; it keeps the router safe if the
+ * mount or the route classification changes.
+ */
+export function requireGatewazeBearer(req: Request, _res: Response, next: NextFunction): void {
+  if (req.bearerToken) {
+    next();
+    return;
+  }
+  logger.debug(req, 'require_gatewaze_bearer', 'Answering the uniform 404: no LFX bearer token on the request', { path: req.path });
   next(gatewazeHostSessionNotFound(req));
 }

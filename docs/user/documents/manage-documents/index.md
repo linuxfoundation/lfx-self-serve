@@ -4,7 +4,7 @@ description: How to browse and manage project documents in LFX Self Serve.
 audience: [maintainer, board-member, executive-director]
 product_area: Documents
 tags: [documents, manage, browse]
-last_updated: 2026-10-01
+last_updated: 2026-10-15
 intercom_collection: Documents
 ---
 
@@ -17,6 +17,8 @@ This article applies to users with **maintainer**, **board-member**, or **execut
 3. Select **Documents** from the left navigation sidebar.
 4. The documents dashboard lists documents from all sources associated with that project or foundation: direct project files and links, committee documents, meeting attachments and recordings, and mailing-list artifacts.
 5. Select a folder to open it, open a link, or download a file.
+
+Folders appear first in alphabetical order. Documents appear from most recent to oldest by the date shown, both at the root and inside folders. Search and source filters preserve this ordering. Documents without a valid date appear last.
 
 ## Filter and search documents
 

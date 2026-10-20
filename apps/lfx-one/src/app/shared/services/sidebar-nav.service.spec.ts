@@ -16,6 +16,8 @@ import {
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
+  PROJECT_LENS_PARTICIPATING_ORGS_FLAG,
+  MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -28,7 +30,7 @@ import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
-import { of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SidebarNavService } from './sidebar-nav.service';
@@ -38,6 +40,8 @@ describe('SidebarNavService', () => {
   const mktgOsEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
+  // On by default: the other project-lens ordering tests expect the entry in place.
+  const participatingOrgsEnabled = signal(true);
   const orgSegment = signal<string | null>(null);
   const mentorshipEnabled = signal(false);
   const formationEnabled = signal(false);
@@ -56,6 +60,15 @@ describe('SidebarNavService', () => {
   /** Settable so the Gatewaze embed's tenant gate can be exercised; the embed is AAIF-only. */
   const selectedProject = signal<{ slug: string } | null>(null);
   const selectedFoundation = signal<{ slug: string } | null>(null);
+  const personaLoaded = signal(true);
+  const personaLookupFailed = signal(false);
+  const marketingOpsEnabled = signal(false);
+  const authenticated = signal(false);
+  const writerGrantsResolved = signal(true);
+  const grantsByScope = signal<ReadonlyMap<string | null, { isCampaignManager: boolean; isMarketingAuditor: boolean }>>(new Map());
+  const writerLookupFailed = signal(false);
+  let retrySummary = vi.fn((): Observable<void> => of(undefined));
+  let refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
   const labels = (items: SidebarMenuItem[]): string[] => items.map((item) => item.label);
 
@@ -74,6 +87,7 @@ describe('SidebarNavService', () => {
     mktgOsEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
+    participatingOrgsEnabled.set(true);
     orgSegment.set(null);
     mentorshipEnabled.set(false);
     formationEnabled.set(false);
@@ -89,6 +103,15 @@ describe('SidebarNavService', () => {
     selectedOrgUid.set(null);
     orgWriterSet.set(new Set());
     claManagerOrgSet.set(new Set());
+    personaLoaded.set(true);
+    personaLookupFailed.set(false);
+    marketingOpsEnabled.set(false);
+    authenticated.set(false);
+    writerGrantsResolved.set(true);
+    grantsByScope.set(new Map());
+    writerLookupFailed.set(false);
+    retrySummary = vi.fn((): Observable<void> => of(undefined));
+    refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({}));
 
     TestBed.configureTestingModule({
       providers: [
@@ -100,10 +123,12 @@ describe('SidebarNavService', () => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
+              if (key === PROJECT_LENS_PARTICIPATING_ORGS_FLAG) return participatingOrgsEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
               if (key === FORMATION_ENABLED_FLAG) return formationEnabled;
               if (key === GATEWAZE_EMBED_ENABLED_FLAG) return gatewazeEmbedEnabled;
               if (key === CROWDFUNDING_ATTRIBUTION_STEP_FLAG) return crowdfundingAttributionEnabled;
+              if (key === MARKETING_OPS_FGA_ENABLED_FLAG) return marketingOpsEnabled;
               return signal(false);
             }),
           },
@@ -117,12 +142,15 @@ describe('SidebarNavService', () => {
             isLFStaff: signal(false),
             canViewExecutiveDashboards: hasFullFoundationAccess,
             currentPersona,
-            grantsByScope: signal(new Map()),
+            grantsByScope,
             marketingGrantSlug: signal(null),
             isMarketingAuditor: signal(false),
             isCampaignManager: signal(false),
             isAuditor,
-            refreshEnrichedPersonas: vi.fn(() => of({})),
+            personaLoaded,
+            personaLookupFailed,
+            // Late-bound so a case can swap in a probe that stays in flight.
+            refreshEnrichedPersonas: (force?: boolean, slug?: string) => refreshEnrichedPersonas(force, slug),
           },
         },
         {
@@ -136,8 +164,16 @@ describe('SidebarNavService', () => {
             formationOverviewAllowedSlug,
           },
         },
-        { provide: UserService, useValue: { authenticated: signal(false) } },
-        { provide: WriterGrantsService, useValue: { hasWriterFoundation: signal(false) } },
+        { provide: UserService, useValue: { authenticated } },
+        {
+          provide: WriterGrantsService,
+          useValue: {
+            hasWriterFoundation: signal(false),
+            summaryResolved: writerGrantsResolved,
+            lookupFailed: writerLookupFailed,
+            retrySummary: (...args: []) => retrySummary(...args),
+          },
+        },
         {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
@@ -199,7 +235,7 @@ describe('SidebarNavService', () => {
     expect(labels(items)).not.toContain('Governance');
   });
 
-  it('keeps the project-lens Marketing OS entry between Documents and Governance', () => {
+  it('keeps the project-lens Marketing OS entry after Participating organizations and before Governance', () => {
     activeLens.set('project');
     mktgOsEnabled.set(true);
 
@@ -214,11 +250,11 @@ describe('SidebarNavService', () => {
       })
     );
     expect(findByLink(items, '/foundation/mktg-os-agents')).toBeUndefined();
-    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Documents') + 1);
+    expect(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav)).toBe(itemLabels.indexOf('Participating organizations') + 1);
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
   });
 
-  it('shows Initiatives right after Documents on the project and foundation lenses only for writers with the flag on', () => {
+  it('shows Initiatives after the Documents-anchored entries on the project and foundation lenses only for writers with the flag on', () => {
     const service = TestBed.inject(SidebarNavService);
 
     for (const lens of ['project', 'foundation'] as const) {
@@ -235,9 +271,32 @@ describe('SidebarNavService', () => {
       canWrite.set(true);
       const items = service.sidebarItems();
       const itemLabels = labels(items);
-      expect(findByLink(items, `/${lens}/initiatives`)).toEqual(expect.objectContaining({ label: 'Initiatives', testId: `sidebar-${lens}-initiatives` }));
-      expect(itemLabels.indexOf('Initiatives')).toBe(itemLabels.indexOf('Documents') + 1);
+      expect(findByLink(items, `/${lens}/initiatives`)).toEqual(
+        expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: `sidebar-${lens}-initiatives` })
+      );
+      // On the project lens Participating organizations sits between Documents and Initiatives.
+      const anchor = lens === 'project' ? 'Participating organizations' : 'Documents';
+      expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf(anchor) + 1);
     }
+  });
+
+  it('shows Participating organizations right after Documents on the project lens only while its flag is on, for non-writers too, and not on the foundation lens', () => {
+    const service = TestBed.inject(SidebarNavService);
+    activeLens.set('project');
+    canWrite.set(false);
+    participatingOrgsEnabled.set(false);
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
+
+    participatingOrgsEnabled.set(true);
+    const items = service.sidebarItems();
+    const itemLabels = labels(items);
+    expect(findByLink(items, '/project/participating-orgs')).toEqual(
+      expect.objectContaining({ label: 'Participating organizations', testId: 'sidebar-project-participating-orgs' })
+    );
+    expect(itemLabels.indexOf('Participating organizations')).toBe(itemLabels.indexOf('Documents') + 1);
+
+    activeLens.set('foundation');
+    expect(findByLink(service.sidebarItems(), '/project/participating-orgs')).toBeUndefined();
   });
 
   it('keeps the full project-lens nav without Formation when the flag is off, even for a Formation-stage project', () => {
@@ -541,9 +600,11 @@ describe('SidebarNavService', () => {
     orgWriterSet.set(new Set([orgUid]));
     const items = service.sidebarItems();
     const itemLabels = labels(items);
-    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(expect.objectContaining({ label: 'Initiatives', testId: 'sidebar-org-initiatives' }));
+    expect(findByLink(items, '/org/acme-inc/initiatives')).toEqual(
+      expect.objectContaining({ label: 'Crowdfunding Initiatives', testId: 'sidebar-org-initiatives' })
+    );
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
-    expect(itemLabels.indexOf('Initiatives')).toBe(itemLabels.indexOf('ROI Metrics') + 1);
+    expect(itemLabels.indexOf('Crowdfunding Initiatives')).toBe(itemLabels.indexOf('ROI Metrics') + 1);
   });
 
   it('inserts Formations between Events and Mailing Lists on foundation lens for a full-access user when the flag is on', () => {
@@ -768,6 +829,378 @@ describe('SidebarNavService', () => {
       gatewazeEmbedEnabled.set(true);
 
       expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).not.toContain('Communications');
+    });
+  });
+
+  describe('sidebarItemsPending', () => {
+    it('is pending until persona detection has loaded', () => {
+      personaLoaded.set(false);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.sidebarItemsPending()).toBe(true);
+      personaLoaded.set(true);
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('waits for the writer grants on the foundation lens only', () => {
+      writerGrantsResolved.set(false);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.sidebarItemsPending()).toBe(true);
+      activeLens.set('me');
+      expect(service.sidebarItemsPending()).toBe(false);
+      activeLens.set('foundation');
+      writerGrantsResolved.set(true);
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('reports a failed writer lookup on the foundation lens, and retry reruns it before settling', () => {
+      writerLookupFailed.set(true);
+      const service = TestBed.inject(SidebarNavService);
+
+      expect(service.menuLookupFailed()).toBe(true);
+      activeLens.set('me');
+      expect(service.menuLookupFailed()).toBe(false);
+      activeLens.set('foundation');
+
+      const summary = new Subject<void>();
+      retrySummary = vi.fn(() => summary);
+      service.retryMenuLookups();
+      expect(retrySummary).toHaveBeenCalledTimes(1);
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      writerLookupFailed.set(false);
+      summary.next();
+      summary.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('waits for the foundation-lens auditor probe until it settles', () => {
+      const probe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => probe);
+      authenticated.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      probe.next({});
+      probe.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('waits for the scoped marketing-grant probe of the selected foundation', () => {
+      const probe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => probe);
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // The same stubbed probe also answers the foundation-lens auditor probe, which waits for completion.
+      probe.next({});
+      probe.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+    });
+
+    it('reports a failed lookup, and holds the menu pending while a retry refresh runs', () => {
+      personaLookupFailed.set(true);
+      const service = TestBed.inject(SidebarNavService);
+      expect(service.menuLookupFailed()).toBe(true);
+
+      const retry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => retry);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // A second click while it runs doesn't stack another refresh.
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+
+      personaLookupFailed.set(false);
+      retry.next({});
+      retry.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('flags a failed scoped marketing probe on its own, and a scoped retry re-runs only the scoped request', () => {
+      const firstScoped = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => (slug ? firstScoped : of({})));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+
+      // The scoped probe fails while the root lookup is fine.
+      firstScoped.next(null);
+      firstScoped.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // The scoped answer also refreshes personas and ROOT grants, so no parallel ROOT-only request runs:
+      // its ROOT-only marketing grants would otherwise land over the scoped ones.
+      const scoped = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => scoped);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalledTimes(1);
+      expect(refreshEnrichedPersonas).toHaveBeenCalledWith(false, 'cncf');
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      scoped.next({ error: null });
+      scoped.complete();
+      expect(service.sidebarItemsPending()).toBe(false);
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('keeps a late retry result for a previous scope from overwriting the selected scope', () => {
+      const failingCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? failingCncf : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      failingCncf.next(null);
+      failingCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf is still running when the user switches to aaif, whose probe succeeds.
+      const retryCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? retryCncf : of({ error: null })
+      );
+      service.retryMenuLookups();
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(false);
+
+      // cncf's late failure lands — aaif stays clean.
+      retryCncf.next(null);
+      retryCncf.complete();
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it('flags a scoped probe whose answer arrived but whose grant checks could not be verified', () => {
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug ? of({ error: null, marketingGrantCheckFailed: true }) : of({})
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry: the checks answer this time.
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => of({ error: null, marketingGrantCheckFailed: false }));
+      service.retryMenuLookups();
+      expect(service.menuLookupFailed()).toBe(false);
+    });
+
+    it("hides the previous scope's marketing grant while the new scope's probe is in flight", () => {
+      // A campaign_manager-only viewer: no ED persona, no executive dashboards.
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([['cncf', { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      expect(showsCampaigns()).toBe(true);
+
+      // Switch to aaif (no grant) while its probe is still in flight.
+      const aaifProbe = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => aaifProbe);
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(false);
+
+      aaifProbe.next({ error: null });
+      aaifProbe.complete();
+      expect(showsCampaigns()).toBe(false);
+    });
+
+    it("keeps showing a ROOT marketing grant while the new scope's probe is in flight", () => {
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([[null, { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      expect(showsCampaigns()).toBe(true);
+
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => new Subject<unknown>());
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(true);
+    });
+
+    it('reports a running retry only for the scope it started on', () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const retry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => retry);
+      service.retryMenuLookups();
+      expect(service.menuRetryPending()).toBe(true);
+
+      selectedFoundation.set({ slug: 'aaif' });
+      expect(service.menuRetryPending()).toBe(false);
+
+      selectedFoundation.set({ slug: 'cncf' });
+      expect(service.menuRetryPending()).toBe(true);
+      retry.next({});
+      retry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
+    it("doesn't hold another scope's menu pending or block its retry while an older scope's retry runs", () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const cncfRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => cncfRetry);
+      service.retryMenuLookups();
+      expect(service.sidebarItemsPending()).toBe(true);
+
+      // Switch to aaif: its menu isn't held by cncf's retry, and it can retry on its own.
+      selectedFoundation.set({ slug: 'aaif' });
+      expect(service.sidebarItemsPending()).toBe(false);
+      const aaifRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => aaifRetry);
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).toHaveBeenCalled();
+      expect(service.menuRetryPending()).toBe(true);
+
+      // cncf's retry settles late: it must not end aaif's.
+      cncfRetry.next({});
+      cncfRetry.complete();
+      expect(service.menuRetryPending()).toBe(true);
+      aaifRetry.next({});
+      aaifRetry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
+    it('keeps a grant already confirmed for the scope on screen while its probe re-runs (A → B → A)', () => {
+      currentPersona.set('contributor');
+      hasFullFoundationAccess.set(false);
+      grantsByScope.set(new Map([['cncf', { isCampaignManager: true, isMarketingAuditor: false }]]));
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      const showsCampaigns = (): boolean => JSON.stringify(service.sidebarItems()).includes('sidebar-marketing-campaigns');
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+
+      // Back to cncf with its probe in flight: the cached cncf grant still counts.
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>(() => new Subject<unknown>());
+      selectedFoundation.set({ slug: 'cncf' });
+      TestBed.tick();
+      expect(showsCampaigns()).toBe(true);
+    });
+
+    it('keeps a retry pending for its own scope after another scope starts and finishes one', () => {
+      personaLookupFailed.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      const cncfRetry = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn(() => cncfRetry);
+      service.retryMenuLookups();
+
+      selectedFoundation.set({ slug: 'aaif' });
+      refreshEnrichedPersonas = vi.fn(() => of({}));
+      service.retryMenuLookups();
+
+      // Back on cncf: its run is still in flight, so it reads pending and a second click doesn't stack.
+      selectedFoundation.set({ slug: 'cncf' });
+      expect(service.menuRetryPending()).toBe(true);
+      refreshEnrichedPersonas = vi.fn(() => of({}));
+      service.retryMenuLookups();
+      expect(refreshEnrichedPersonas).not.toHaveBeenCalled();
+      cncfRetry.next({});
+      cncfRetry.complete();
+      expect(service.menuRetryPending()).toBe(false);
+    });
+
+    it('keeps an older retry from overwriting a newer probe for the same scope after A → B → A', () => {
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? of(null) : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf: its scoped probe succeeds at once, the root refresh stays pending.
+      const root = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => {
+        if (!slug) return root;
+        return of({ error: null });
+      });
+      service.retryMenuLookups();
+
+      // cncf → aaif → cncf: the newer automatic cncf probe fails.
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? of(null) : of({ error: null })
+      );
+      selectedFoundation.set({ slug: 'cncf' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // The older retry settles last — its success must not clear the newer failure.
+      root.next({});
+      root.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+    });
+
+    it("keeps a late successful retry for a previous scope from clearing the selected scope's failure", () => {
+      const failingCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) =>
+        slug === 'cncf' ? failingCncf : of({ error: null })
+      );
+      marketingOpsEnabled.set(true);
+      authenticated.set(true);
+      selectedFoundation.set({ slug: 'cncf' });
+      const service = TestBed.inject(SidebarNavService);
+      TestBed.tick();
+      failingCncf.next(null);
+      failingCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // Retry for cncf is still running when the user switches to aaif, whose own probe fails.
+      const retryCncf = new Subject<unknown>();
+      refreshEnrichedPersonas = vi.fn<(force?: boolean, slug?: string) => Observable<unknown>>((...[, slug]) => {
+        if (slug === 'cncf') return retryCncf;
+        return slug === 'aaif' ? of(null) : of({ error: null });
+      });
+      service.retryMenuLookups();
+      selectedFoundation.set({ slug: 'aaif' });
+      TestBed.tick();
+      expect(service.menuLookupFailed()).toBe(true);
+
+      // cncf's late success lands — aaif keeps its retryable error.
+      retryCncf.next({ error: null });
+      retryCncf.complete();
+      expect(service.menuLookupFailed()).toBe(true);
     });
   });
 });

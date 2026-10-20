@@ -9,8 +9,8 @@ import { GW_HOST_SESSION_APP_SESSION_COOKIE, GW_HOST_SESSION_APP_SESSION_ID_PATT
  * value is the id itself. Returns null when the cookie is absent or is not that shape, e.g. the
  * encrypted JWE that cookie mode writes, which has no stable id.
  *
- * Takes the header rather than the request so the Realtime upgrade path, which runs outside Express,
- * can use it too. The first `appSession` wins, as in the `cookie` package express-openid-connect uses.
+ * Takes the header rather than the request so LFX's `/logout` hook, which runs before
+ * express-openid-connect has loaded the session, can use it too. The first `appSession` wins, as in the `cookie` package express-openid-connect uses.
  */
 export function readAppSessionId(cookieHeader: string | undefined): string | null {
   if (!cookieHeader) {

@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   EARLY_JOIN_CHIP_OPTIONS,
-  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
   MAX_EARLY_JOIN_TIME,
   MIN_CUSTOM_DURATION,
   MIN_EARLY_JOIN_TIME,
@@ -393,11 +393,21 @@ describe('ComposerDateScheduleComponent — custom duration description ids', ()
 
   it('names the max error for a duration over the ceiling', () => {
     const control = formService.form().get('customDuration');
-    control?.setValue(MAX_CUSTOM_DURATION + 1);
+    control?.setValue(MAX_MEETING_DURATION + 1);
     control?.markAsTouched();
 
     expect(describedBy()).toBe('composer-custom-duration-max-error');
     expect(ariaInvalid()).toBe('true');
+  });
+
+  it('accepts a 10-hour meeting, the meeting service and PCC maximum', () => {
+    const control = formService.form().get('customDuration');
+    control?.setValue(MAX_MEETING_DURATION);
+    control?.markAsTouched();
+
+    expect(MAX_MEETING_DURATION).toBe(600);
+    expect(control?.valid).toBe(true);
+    expect(ariaInvalid()).toBeNull();
   });
 
   it('drops both once the duration is in range', () => {

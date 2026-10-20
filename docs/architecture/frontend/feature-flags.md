@@ -699,7 +699,7 @@ export class MainLayoutComponent {
 
 ```html
 <!-- Sidebar with filtered items -->
-<lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+<lfx-navbar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-navbar>
 ```
 
 **Pattern Benefits:**
@@ -916,7 +916,7 @@ env:
 - Use **different client IDs** for each environment via environment variables
 - Client-side IDs are safe to use in runtime configuration (they're public)
 - Server-side SDK keys should **never** be in client code
-- The server has its own LaunchDarkly connection for per-user access checks (`LaunchDarklyServerService`). It reads the secret server-side SDK key from `LD_SDK_KEY`, never from `LD_CLIENT_ID`, and fails closed (returns the flag default) when the key is missing or LaunchDarkly has not been reached yet. Once connected, it serves the last known flag values if LaunchDarkly later becomes unreachable, so a targeting change made during an outage takes effect on reconnect. See [Insights API Tokens](../backend/insights-tokens.md#flag-bypass)
+- The server has its own LaunchDarkly connection for per-user access checks (`LaunchDarklyServerService`). It reads the secret server-side SDK key from `LD_SDK_KEY`, never from `LD_CLIENT_ID`, and fails closed (returns the flag default) when the key is missing or LaunchDarkly has not been reached yet. Once connected, it serves the last known flag values if LaunchDarkly later becomes unreachable, so a targeting change made during an outage takes effect on reconnect. See [Insights API Tokens](../backend/insights-tokens.md#access-flag)
 - See [Runtime Configuration](../../runtime-configuration.md) for complete architecture details
 
 ### LaunchDarkly Provider Options
@@ -1482,12 +1482,12 @@ export class MainLayoutComponent {
 ```html
 <!-- Desktop Sidebar -->
 <div class="hidden lg:block w-64 flex-shrink-0 fixed top-0 left-0">
-  <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+  <lfx-navbar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-navbar>
 </div>
 
 <!-- Mobile Sidebar -->
 <div class="overflow-y-auto h-[calc(100vh-4rem)]">
-  <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+  <lfx-navbar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-navbar>
 </div>
 ```
 

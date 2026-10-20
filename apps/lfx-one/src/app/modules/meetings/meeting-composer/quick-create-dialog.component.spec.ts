@@ -246,6 +246,8 @@ describe('QuickCreateDialogComponent — frozen while a save is in flight', () =
 
   // Queried off the document: `p-dialog` renders into an overlay outside the host element.
   const body = (): HTMLElement | null => document.querySelector('[data-testid="quick-create-body"]');
+  const typeChips = (): HTMLButtonElement[] =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[data-testid^="quick-create-type-"]')).filter((el) => el.tagName === 'BUTTON');
   const cancelButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="quick-create-cancel"] button');
   const submitButton = (): HTMLButtonElement | null => document.querySelector('[data-testid="quick-create-submit"] button');
   const switchToAdvanced = (): HTMLButtonElement | null => document.querySelector('[data-testid="quick-create-switch-advanced"]');
@@ -288,7 +290,8 @@ describe('QuickCreateDialogComponent — frozen while a save is in flight', () =
     expect(cancelButton()?.disabled).toBe(false);
     expect(dialog().closable).toBe(true);
     expect(dialog().closeOnEscape).toBe(true);
-    expect(dialog().dismissableMask).toBe(true);
+    // A click on the mask never closes the dialog — only the X, Cancel or Escape do.
+    expect(dialog().dismissableMask).toBe(false);
   });
 
   it('freezes the fields and closes every way out for the length of the save', async () => {
@@ -297,11 +300,13 @@ describe('QuickCreateDialogComponent — frozen while a save is in flight', () =
 
     expect(body()?.hasAttribute('inert')).toBe(true);
     expect(cancelButton()?.disabled).toBe(true);
-    // The mask is the one most easily hit by accident here: this dialog is narrow, and a click just
-    // outside it would otherwise dismiss a create that is already on its way upstream.
     expect(dialog().closable).toBe(false);
     expect(dialog().closeOnEscape).toBe(false);
     expect(dialog().dismissableMask).toBe(false);
+    // The type chips live in the header, outside the body's `inert` freeze, so they carry their own guard:
+    // switching type mid-save would reseed the form after the payload snapshot.
+    expect(typeChips().length).toBeGreaterThan(0);
+    expect(typeChips().every((chip) => chip.disabled)).toBe(true);
   });
 
   it('holds the way over to the drawer shut too', async () => {
@@ -332,6 +337,8 @@ describe('QuickCreateDialogComponent — frozen while a save is in flight', () =
     // with the request rather than latch.
     expect(body()?.hasAttribute('inert')).toBe(false);
     expect(cancelButton()?.disabled).toBe(false);
-    expect(dialog().dismissableMask).toBe(true);
+    // A click on the mask never closes the dialog — only the X, Cancel or Escape do.
+    expect(dialog().dismissableMask).toBe(false);
+    expect(typeChips().some((chip) => chip.disabled)).toBe(false);
   });
 });

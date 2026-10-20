@@ -14,7 +14,6 @@ import {
   buildHealthMetricsMembersAtRiskNote,
   buildHealthMetricsMembersAtRiskRows,
   buildHealthMetricsMembersAtRiskSummary,
-  buildHealthMetricsMembersBoardCountLabel,
   buildHealthMetricsMembersBoardMeetingRows,
   buildHealthMetricsMembersBoardNote,
   buildHealthMetricsMembersBoardSummary,
@@ -258,7 +257,8 @@ describe('buildHealthMetricsMembersTiersView', () => {
     expect(view.side.map((stat) => stat.baseline)).toEqual([null, null, null]);
     expect(view.side[0]).toMatchObject({ value: '$1.8M', delta: null });
     expect(view.side[1]).toMatchObject({ label: 'New in 2025', value: '7', positive: true });
-    expect(view.side[2]).toMatchObject({ value: '50%' });
+    // The design repeats the share's subject in its value, under the same label.
+    expect(view.side[2]).toMatchObject({ label: 'Share of foundation revenue', value: '50% of foundation revenue' });
   });
 
   it('leads with revenue in revenue mode', () => {
@@ -274,7 +274,7 @@ describe('buildHealthMetricsMembersTiersView', () => {
 
     expect(view.headline).toMatchObject({ value: '22', delta: 'not available', deltaDirection: 'neutral', baseline: null });
     expect(view.side[1].label).toBe('New this year');
-    expect(view.side[2].value).toBe('50%');
+    expect(view.side[2].value).toBe('50% of foundation revenue');
   });
 
   it('gives no delta when the prior year has no rows, and no share without a foundation total', () => {
@@ -370,7 +370,16 @@ describe('buildHealthMetricsMembersBridgeView', () => {
     expect(view.heading).toBe('How the base changed this year');
     expect(view.bars.map((bar) => bar.label)).toEqual(['Start of year', 'New', 'Upgrades', 'Downgrades', 'Churned', 'Today']);
     expect(view.bars.map((bar) => bar.countLabel)).toEqual(['41', '+7', '+1', '−3', '−2', '44']);
-    expect(view.bars.map((bar) => bar.duesLabel)).toEqual(['$800K', '+$120K', '+$89K', '−$89K', '−$40K', '$880K']);
+    // Dues are drawn on no bar; each bar's accessible name carries them instead.
+    expect(view.bars[0]).not.toHaveProperty('duesLabel');
+    expect(view.bars.map((bar) => bar.ariaLabel)).toEqual([
+      'Start of year: 41 members, $800K in dues',
+      'New: +7 members, +$120K in dues, opens the list',
+      'Upgrades: +1 members, +$89K in dues, opens the list',
+      'Downgrades: −3 members, −$89K in dues, opens the list',
+      'Churned: −2 members, −$40K in dues, goes to churn',
+      'Today: 44 members, $880K in dues',
+    ]);
     expect(view.bars.map((bar) => bar.tone)).toEqual(['neutral', 'gain', 'gain', 'loss', 'loss', 'neutral']);
   });
 
@@ -410,12 +419,13 @@ describe('buildHealthMetricsMembersBridgeView', () => {
     expect(bars[4].ariaLabel).toBe('Churned: −2 members, −$40K in dues, goes to churn');
   });
 
-  it('leaves an empty movement inert and drops an unmeasured dues label', () => {
+  it('leaves an empty movement inert and leaves unmeasured dues out of the accessible name', () => {
     const view = buildHealthMetricsMembersBridgeView({ steps: year(2026, [10, 0, 0, 0, 0, 10], [null, 0, null, null, null, null]) }, 'YTD');
 
     expect(view.bars.every((bar) => bar.listType === null && !bar.opensChurn)).toBe(true);
     expect(view.bars.map((bar) => bar.countLabel)).toEqual(['10', '0', '0', '0', '0', '10']);
-    expect(view.bars.map((bar) => bar.duesLabel)).toEqual(['', '$0', '', '', '', '']);
+    expect(view.bars.map((bar) => bar.ariaLabel.includes('in dues'))).toEqual([false, true, false, false, false, false]);
+    expect(view.bars[1].ariaLabel).toBe('New: 0 members, $0 in dues');
     expect(view.reconcileNote).toBeNull();
   });
 
@@ -558,15 +568,21 @@ describe('members at risk', () => {
       tierLabel: 'Gold Membership',
       overdueLabel: '$20K',
       ageLabel: '71 days',
-      agingLabel: '60–89 days',
-      churnRiskLabel: 'High risk',
-      churnRiskClass: 'bg-red-50 text-red-700',
     });
     expect(
       buildHealthMetricsMembersAtRiskRows([
         atRiskMember({ membershipTier: null, outstandingBalanceUsd: null, daysOverdue: null, lastEngagedDate: null, churnRisk: null, agingBucket: null }),
       ])[0]
-    ).toMatchObject({ tierLabel: '—', overdueLabel: '—', ageLabel: '—', lastEngagedLabel: '—', agingLabel: '—', churnRiskLabel: null, churnRiskClass: '' });
+    ).toMatchObject({ tierLabel: '—', overdueLabel: '—', ageLabel: '—', lastEngagedLabel: '—' });
+    // The design draws no risk chip or aging bucket on a row, so the view carries neither.
+    expect(Object.keys(buildHealthMetricsMembersAtRiskRows([atRiskMember()])[0])).toEqual([
+      'accountId',
+      'accountName',
+      'tierLabel',
+      'overdueLabel',
+      'ageLabel',
+      'lastEngagedLabel',
+    ]);
   });
 
   it('notes the overdue count and balance, and nothing while no member is at risk', () => {
@@ -634,7 +650,6 @@ describe('buildHealthMetricsMembersRenewalRows', () => {
         renewalDateLabel: 'Nov 18, 2026',
         duesLabel: '$20K',
         hasOutstandingBalance: true,
-        daysUntilLabel: 'In 40 days',
         hasRenewed: false,
       },
     ]);
@@ -653,42 +668,7 @@ describe('buildHealthMetricsMembersRenewalRows', () => {
         hasRenewed: true,
       },
     ]);
-    expect(row).toMatchObject({ tierLabel: '—', renewalDateLabel: '—', duesLabel: '—', hasOutstandingBalance: false, daysUntilLabel: '—', hasRenewed: true });
-  });
-
-  it('counts down to the renewal date, and dashes a date already past', () => {
-    const labels = [0, 1, 12, -3].map(
-      (daysUntilRenewal) =>
-        buildHealthMetricsMembersRenewalRows([
-          {
-            accountId: 'acct-3',
-            accountName: 'Acme Works',
-            membershipTier: 'Gold',
-            renewalDate: '2026-10-09',
-            duesUsd: 10_000,
-            hasOutstandingBalance: false,
-            daysUntilRenewal,
-            hasRenewed: false,
-          },
-        ])[0].daysUntilLabel
-    );
-    expect(labels).toEqual(['Today', 'In 1 day', 'In 12 days', '—']);
-  });
-
-  it('gives a renewed membership no countdown', () => {
-    const [row] = buildHealthMetricsMembersRenewalRows([
-      {
-        accountId: 'acct-4',
-        accountName: 'Acme Works',
-        membershipTier: 'Gold',
-        renewalDate: '2026-11-01',
-        duesUsd: 10_000,
-        hasOutstandingBalance: false,
-        daysUntilRenewal: 23,
-        hasRenewed: true,
-      },
-    ]);
-    expect(row).toMatchObject({ daysUntilLabel: '—', hasRenewed: true });
+    expect(row).toMatchObject({ tierLabel: '—', renewalDateLabel: '—', duesLabel: '—', hasOutstandingBalance: false, hasRenewed: true });
   });
 });
 
@@ -843,13 +823,6 @@ describe('buildHealthMetricsMembersBoardNote', () => {
     expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0 }))).toBe('82% attended');
     expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0, isBelowExpectedLevel: false }))).toBe('');
     expect(buildHealthMetricsMembersBoardNote(null)).toBe('');
-  });
-});
-
-describe('buildHealthMetricsMembersBoardCountLabel', () => {
-  it('pluralizes the meeting count', () => {
-    expect(buildHealthMetricsMembersBoardCountLabel(1)).toBe('1 meeting');
-    expect(buildHealthMetricsMembersBoardCountLabel(12)).toBe('12 meetings');
   });
 });
 

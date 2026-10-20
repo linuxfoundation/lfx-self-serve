@@ -253,6 +253,9 @@
                 <div class="flex min-w-0 flex-col gap-0.5">
                   <span class="whitespace-normal break-words text-sm font-medium text-gray-900">{{ row.campaign.campaign_name }}</span>
                   <span class="text-xs text-gray-500">{{ row.campaign.platform }} · {{ row.status }}</span>
+                  @if (row.biddingSummary) {
+                    <span class="text-xs text-gray-500" [attr.data-testid]="'optimization-campaign-bidding-' + row.campaign.id">{{ row.biddingSummary }}</span>
+                  }
                   <!--
                     NOT `role="alert"`. The failure is already announced by the toast, which is
                     itself a live region — a second live role here made one failure speak twice.
@@ -283,6 +286,19 @@
                     >
                   }
                   <!--
+                    Why an adopted campaign's Resume does nothing: campaign-service never resumes an
+                    adopted campaign. Like the reason above, a standing property of the row and the
+                    button's `aria-describedby` target, so it is not a live region.
+                  -->
+                  @if (row.resumeAdopted) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-resume-adopted-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-resume-adopted-' + row.campaign.id"
+                      >{{ row.resumeAdoptedReason }}</span
+                    >
+                  }
+                  <!--
                     The budget this session confirmed. The index carries no budget, so nothing is shown
                     until a change lands here. No currency symbol: the amount is in the ad account's own
                     currency, which this app does not know, and it is shown exactly as accepted.
@@ -302,9 +318,9 @@
                     >
                   }
                   <!-- The bid this session confirmed. No currency symbol: it is in the ad account's own currency. -->
-                  @if (confirmedBid()[row.campaign.id]; as bid) {
+                  @if (row.confirmedBidAmount !== null) {
                     <span class="text-xs text-gray-600" [attr.data-testid]="'optimization-campaign-bid-current-' + row.campaign.id"
-                      >Max CPC bid set here: {{ bid.bid }} (ad account currency)</span
+                      >Max CPC bid set here: {{ row.confirmedBidAmount }} (ad account currency)</span
                     >
                   }
                   @if (bidOutcome()[row.campaign.id]?.state === 'unconfirmed' && !bidEditorOpen()[row.campaign.id]) {
@@ -350,6 +366,14 @@
                       >{{ row.bidUnavailableReason }}</span
                     >
                   }
+                  @if (row.keywordTargetingOffered && !row.keywordTargetingAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-targeting-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-targeting-unavailable-' + row.campaign.id"
+                      >{{ row.keywordTargetingUnavailableReason }}</span
+                    >
+                  }
                   @if (row.negativeKeywordsOffered && !row.negativeKeywordsAvailable) {
                     <span
                       class="text-xs text-gray-500"
@@ -358,24 +382,49 @@
                       >{{ row.negativeKeywordsUnavailableReason }}</span
                     >
                   }
+                  <!-- Why a Meta row's ad-set panel cannot be opened (never created on Meta, or removed). -->
+                  @if (row.adSetsOffered && !row.adSetsAvailable) {
+                    <span
+                      class="text-xs text-gray-500"
+                      [id]="'campaign-ad-sets-unavailable-' + row.campaign.id"
+                      [attr.data-testid]="'optimization-campaign-ad-sets-unavailable-' + row.campaign.id"
+                      >{{ row.adSetsUnavailableReason }}</span
+                    >
+                  }
                 </div>
                 <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <!-- Opens the live-settings drift drawer: a read, so it is offered for every row. -->
+                  <button
+                    type="button"
+                    (click)="openSettingsDrawer(row)"
+                    aria-haspopup="dialog"
+                    [attr.aria-label]="'Live settings for ' + row.campaign.campaign_name"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                    [attr.data-testid]="'optimization-campaign-settings-' + row.campaign.id">
+                    Live settings
+                  </button>
                   <!--
                     Discloses the row's budget editor. A raw button like the toggle beside it, because it
                     needs `aria-controls` and `aria-describedby`, which the `lfx-button` wrapper does not
-                    forward to its inner button. Disabled, with its reason described, for a platform or
-                    campaign that cannot take a budget change; held open while a change is in flight.
+                    forward to its inner button. `aria-disabled` (not `disabled`), with its reason described,
+                    for a platform or campaign that cannot take a budget change, so it stays focusable:
+                    an editor that is open when the row turns unavailable (an X campaign read as
+                    lifetime-budgeted) is closed by Cancel, which hands focus back here, and a `disabled`
+                    button would drop it. `toggleBudgetEditor()` refuses to open an unavailable row, and
+                    an open one can still be closed from here. Truly disabled only while a change is in
+                    flight, which holds the editor open.
                   -->
                   <button
                     type="button"
                     (click)="toggleBudgetEditor(row)"
                     [id]="'campaign-budget-edit-' + row.campaign.id"
-                    [disabled]="!row.budgetAvailable || budgetPending()[row.campaign.id]"
-                    [attr.aria-expanded]="row.budgetAvailable ? !!budgetEditorOpen()[row.campaign.id] : null"
+                    [disabled]="budgetPending()[row.campaign.id]"
+                    [attr.aria-disabled]="!row.budgetAvailable && !budgetEditorOpen()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-expanded]="row.budgetAvailable || budgetEditorOpen()[row.campaign.id] ? !!budgetEditorOpen()[row.campaign.id] : null"
                     [attr.aria-controls]="budgetEditorOpen()[row.campaign.id] ? 'campaign-budget-panel-' + row.campaign.id : null"
                     [attr.aria-describedby]="row.budgetAvailable ? null : 'campaign-budget-unavailable-' + row.campaign.id"
                     [attr.aria-label]="'Change budget for ' + row.campaign.campaign_name"
-                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
                     [attr.data-testid]="'optimization-campaign-budget-edit-' + row.campaign.id">
                     Change budget
                   </button>
@@ -393,7 +442,22 @@
                     [attr.data-testid]="'optimization-campaign-bid-edit-' + row.campaign.id">
                     Change bid
                   </button>
-                  <!-- Microsoft Advertising rows only: campaign-level negative keywords. -->
+                  <!-- Reddit and X rows only: the keyword targeting, which can be read and removed from (not paused). -->
+                  @if (row.keywordTargetingOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleTargetingPanel(row)"
+                      [disabled]="!row.keywordTargetingAvailable || (!!targetingPending()[row.campaign.id] && !!targetingPanelOpen()[row.campaign.id])"
+                      [attr.aria-expanded]="row.keywordTargetingAvailable ? !!targetingPanelOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="targetingPanelOpen()[row.campaign.id] ? 'campaign-targeting-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.keywordTargetingAvailable ? null : 'campaign-targeting-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Keyword targeting of ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-targeting-edit-' + row.campaign.id">
+                      Keyword targeting
+                    </button>
+                  }
+                  <!-- Google Ads, Microsoft Advertising, Reddit and X rows: negative keywords. -->
                   @if (row.negativeKeywordsOffered) {
                     <button
                       type="button"
@@ -408,6 +472,22 @@
                       Negative keywords
                     </button>
                   }
+                  <!-- Meta rows only: the campaign's ad sets, each with its own pause/resume. -->
+                  @if (row.adSetsOffered) {
+                    <button
+                      type="button"
+                      (click)="toggleAdSetsPanel(row)"
+                      [id]="'campaign-ad-sets-edit-' + row.campaign.id"
+                      [disabled]="!row.adSetsAvailable || (!!adSetPending()[row.campaign.id] && !!adSetsPanelOpen()[row.campaign.id])"
+                      [attr.aria-expanded]="row.adSetsAvailable ? !!adSetsPanelOpen()[row.campaign.id] : null"
+                      [attr.aria-controls]="adSetsPanelOpen()[row.campaign.id] ? 'campaign-ad-sets-panel-' + row.campaign.id : null"
+                      [attr.aria-describedby]="row.adSetsAvailable ? null : 'campaign-ad-sets-unavailable-' + row.campaign.id"
+                      [attr.aria-label]="'Ad sets of ' + row.campaign.campaign_name"
+                      class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      [attr.data-testid]="'optimization-campaign-ad-sets-' + row.campaign.id">
+                      Ad sets
+                    </button>
+                  }
                   <!--
                     The accessible name NAMES THE CAMPAIGN. The visible text is just "Pause", which is
                     unambiguous beside its row and useless out of context — a screen-reader user moving
@@ -417,6 +497,10 @@
 
                     `aria-describedby` points at the row's error only when one exists; a dangling
                     reference to an element that renders conditionally is worse than none.
+
+                    An adopted campaign's Resume is `aria-disabled`, not `disabled`: it stays in the
+                    focus order so its reason (described) is reachable, and `toggleCampaign()` ignores
+                    the click.
                   -->
                   <button
                     type="button"
@@ -425,13 +509,15 @@
                       togglePending()[row.campaign.id] ||
                       budgetPending()[row.campaign.id] ||
                       bidPending()[row.campaign.id] ||
+                      !!adSetPending()[row.campaign.id] ||
                       row.action === 'unavailable' ||
                       row.conflicted
                     "
                     [attr.aria-label]="row.toggleLabel + ' ' + row.campaign.campaign_name"
                     [attr.aria-busy]="togglePending()[row.campaign.id] ? 'true' : null"
+                    [attr.aria-disabled]="row.resumeAdopted ? 'true' : null"
                     [attr.aria-describedby]="row.describedBy"
-                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    class="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
                     [attr.data-testid]="'optimization-campaign-toggle-' + row.campaign.id">
                     <!--
                       The visible label stays the ACTION word while pending, rather than becoming
@@ -448,6 +534,18 @@
                   </button>
                 </div>
               </div>
+              <!--
+                The row's live counters. Shown from the brief-wide metrics read the tab already makes
+                when this campaign's row there is `ok`; the row reads campaign-service for itself only
+                on Refresh, or when clicked after the brief-wide read could not measure it.
+              -->
+              <lfx-campaign-live-metrics
+                [projectSlug]="projectSlug()"
+                [briefId]="briefId()"
+                [campaignId]="row.campaign.id"
+                [campaignName]="row.campaign.campaign_name"
+                [platform]="row.campaign.platform"
+                [briefRow]="briefMetricsRowsById()[row.campaign.id] ?? null" />
               @if (budgetEditorOpen()[row.campaign.id]) {
                 <lfx-campaign-budget-form
                   [id]="'campaign-budget-panel-' + row.campaign.id"
@@ -455,8 +553,9 @@
                   [campaignName]="row.campaign.campaign_name"
                   [knownBudgetType]="confirmedBudget()[row.campaign.id]?.budgetType ?? null"
                   [initialBudget]="confirmedBudget()[row.campaign.id]?.budget ?? null"
+                  [dailyOnly]="row.budgetDailyOnly"
                   [pending]="!!budgetPending()[row.campaign.id]"
-                  [blockedReason]="row.budgetBlockedReason"
+                  [blockedReason]="row.budgetAvailable ? row.budgetBlockedReason : row.budgetUnavailableReason"
                   [outcome]="budgetOutcome()[row.campaign.id] ?? null"
                   (submitBudget)="changeCampaignBudget(row, $event)"
                   (cancelEdit)="cancelBudgetEditor(row.campaign.id)" />
@@ -466,21 +565,48 @@
                   [id]="'campaign-bid-panel-' + row.campaign.id"
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
-                  [initialBid]="confirmedBid()[row.campaign.id]?.bid ?? null"
+                  [initialBid]="row.confirmedBidAmount"
                   [pending]="!!bidPending()[row.campaign.id]"
                   [blockedReason]="row.bidBlockedReason"
                   [outcome]="bidOutcome()[row.campaign.id] ?? null"
                   (submitBid)="changeCampaignBid(row, $event)"
                   (cancelEdit)="cancelBidEditor(row.campaign.id)" />
               }
-              @if (negativesEditorOpen()[row.campaign.id]) {
+              @if (negativesEditorOpen()[row.campaign.id] && row.negativeKeywordsPlatform; as negativesPlatform) {
                 <lfx-campaign-negative-keywords-form
                   [id]="'campaign-negatives-panel-' + row.campaign.id"
                   [projectSlug]="projectSlug()"
                   [briefId]="briefId()"
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
+                  [platform]="negativesPlatform"
+                  [suggestedKeywords]="suggestedNegativeKeywords()"
                   (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
+              }
+              @if (targetingPanelOpen()[row.campaign.id] && row.keywordTargetingPlatform; as targetingPlatform) {
+                <lfx-campaign-keyword-targeting-panel
+                  [id]="'campaign-targeting-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [platform]="targetingPlatform"
+                  (closePanel)="closeTargetingPanel(row.campaign.id)" />
+              }
+              @if (adSetsPanelOpen()[row.campaign.id]) {
+                <lfx-meta-ad-sets-panel
+                  [id]="'campaign-ad-sets-panel-' + row.campaign.id"
+                  [projectSlug]="projectSlug()"
+                  [briefId]="briefId()"
+                  [campaignId]="row.campaign.id"
+                  [campaignName]="row.campaign.campaign_name"
+                  [pending]="adSetPending()[row.campaign.id] ?? null"
+                  [blockedReason]="row.adSetsBlockedReason"
+                  [outcome]="adSetOutcome()[row.campaign.id] ?? null"
+                  [reloadToken]="adSetsReload()[row.campaign.id] ?? 0"
+                  [eligibility]="row.adSetEligibility"
+                  (toggleAdSet)="changeMetaAdSetStatus(row, $event)"
+                  (closePanel)="cancelAdSetsPanel(row.campaign.id)" />
               }
             </li>
           }
@@ -488,6 +614,13 @@
       }
     </section>
   }
+
+  <lfx-campaign-settings-drawer
+    [(visible)]="settingsDrawerVisible"
+    [campaign]="settingsCampaign()"
+    [projectSlug]="projectSlug()"
+    [briefId]="briefId()"
+    data-testid="optimization-settings-drawer" />
 
   @if (loading() && !monitorData()) {
     <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-12" data-testid="optimization-loading">
@@ -918,6 +1051,8 @@
       [actionResults]="actionResults()"
       [removedKeywords]="removedKeywords()"
       (keywordAction)="onMicrosoftKeywordAction($event)" />
+    <!-- Reddit keyword performance (campaign-service #331): read-only, its own read and window. -->
+    <lfx-reddit-keywords-table [projectSlug]="activeFoundationSlug()" [reloadToken]="redditKeywordsReload()" [campaignNames]="redditCampaignNames()" />
   }
 
   <!-- LinkedIn Optimization -->

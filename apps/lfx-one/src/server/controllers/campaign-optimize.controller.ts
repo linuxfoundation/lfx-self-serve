@@ -8,8 +8,8 @@ import {
   CAMPAIGN_AUDIENCE_WINDOWS,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
-  CAMPAIGN_REF_ID_PATTERNS,
   CAMPAIGN_REF_PLATFORMS_PENDING_UPSTREAM,
+  isValidCampaignRefId,
   MAX_KEYWORD_TARGETING_KEYWORD_LENGTH,
   MAX_KEYWORD_TARGETING_REMOVALS,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
@@ -19,10 +19,12 @@ import {
   X_TARGETING_CRITERION_ID_PATTERN,
 } from '@lfx-one/shared/constants';
 import type {
+  CampaignAdoptableBriefsResponse,
   CampaignAdoptPlatform,
   CampaignAdoptRequest,
   CampaignAudiencePlatform,
   CampaignMetricsWindow,
+  CampaignRecordResult,
   CampaignRefPlatform,
   CampaignServiceCampaignTarget,
   KeywordTargetingRemovalItem,
@@ -35,7 +37,7 @@ import type { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { toMicrosoftKeywordMetricsResponse } from '../services/campaign-insights-mapper';
+import { toRedditKeywordMetricsResponse } from '../services/campaign-insights-mapper';
 import { CampaignOptimizeService } from '../services/campaign-optimize.service';
 import { isCampaignServiceJobId } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
@@ -46,10 +48,9 @@ import { logger } from '../services/logger.service';
  * route, and every call runs on the caller's own bearer token.
  *
  * These have no legacy arm, so — following the Microsoft keyword read and the budget and bid
- * levers — they are not behind a cutover flag. The exceptions are the reads whose upstream
- * endpoint is not on campaign-service `main` yet (the Reddit and LinkedIn audience reads, the
- * LinkedIn campaign-ref resolve and the Reddit keyword read), which answer 404 unless
- * `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on.
+ * levers — they are not behind a cutover flag. A read whose upstream endpoint is not served yet
+ * would answer 404 unless `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` is on; none is pending today. The
+ * adoptable-brief list needs campaign-service briefs (`LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`).
  *
  * Inputs are checked against the upstream contract before any round trip: project slug present,
  * brief and campaign ids UUIDs (`Format(FormatUUID)` upstream), enumerations and lengths as the Goa
@@ -94,7 +95,7 @@ export class CampaignOptimizeController {
   }
 
   /**
-   * `GET /api/campaigns/{meta|reddit|twitter|linkedin}/campaign-ref?project=&platformCampaignId=`.
+   * `GET /api/campaigns/{meta|reddit|twitter|linkedin|microsoft}/campaign-ref?project=&platformCampaignId=`.
    * Answers campaign-service's resolution as is; an unowned id is a 200 with no matches.
    */
   public async resolvePlatformCampaign(req: Request, res: Response, next: NextFunction, platform: CampaignRefPlatform): Promise<void> {
@@ -109,7 +110,7 @@ export class CampaignOptimizeController {
       return;
     }
     const platformCampaignId = req.query['platformCampaignId'];
-    if (typeof platformCampaignId !== 'string' || !CAMPAIGN_REF_ID_PATTERNS[platform].test(platformCampaignId)) {
+    if (typeof platformCampaignId !== 'string' || !isValidCampaignRefId(platform, platformCampaignId)) {
       next(fieldError('platformCampaignId', `platformCampaignId is not a valid ${platform} campaign id`, operation, req));
       return;
     }
@@ -125,15 +126,12 @@ export class CampaignOptimizeController {
   }
 
   /**
-   * `GET /api/campaigns/reddit/keywords?project=&window=`: the Microsoft keyword table's sibling,
-   * mapped the same way. Behind `LFX_CAMPAIGN_SERVICE_OPTIMIZE_READS` until campaign-service serves it.
+   * `GET /api/campaigns/reddit/keywords?project=&window=`: Reddit keyword performance from
+   * campaign-service's `get-reddit-ads-keywords` (#331), read-only. Not flag-gated: upstream serves
+   * it, and answers 400 itself while its `REDDIT_METRICS_ENABLED` is off.
    */
   public async getRedditKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'campaign_reddit_keywords';
-    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceOptimizeReads)) {
-      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_optimize_controller', path: req.path }));
-      return;
-    }
     const projectSlug = readProject(req);
     if (!projectSlug) {
       next(fieldError('project', 'A project is required to read keywords', operation, req));
@@ -152,8 +150,8 @@ export class CampaignOptimizeController {
     const startTime = logger.startOperation(req, operation, { window });
     try {
       const payload = await this.optimizeService.getRedditAdsKeywords(req, projectSlug, window);
-      const data = toMicrosoftKeywordMetricsResponse(payload, new Date().toISOString());
-      logger.success(req, operation, startTime, { keywords: data.totalKeywords, metricsPending: data.metricsPending });
+      const data = toRedditKeywordMetricsResponse(payload, new Date().toISOString());
+      logger.success(req, operation, startTime, { keywords: data.totalKeywords, truncated: data.truncated });
       res.json(data);
     } catch (error) {
       next(error);
@@ -183,6 +181,59 @@ export class CampaignOptimizeController {
     }
   }
 
+  /**
+   * `GET /api/campaigns/:campaignId/record?project=&briefId=`: the campaign row from campaign-service
+   * with its current ETag, and whether this deployment can toggle it. Read from campaign-service, not
+   * the index, which can lag a write made a moment ago. Two callers: the Optimize tab, to recover a
+   * row's current ETag after an ad-set write whose outcome left the validator unknown, and the
+   * act-from-Monitor dialog, whose levers send that ETag as `If-Match` (including for a campaign
+   * adopted a moment ago).
+   */
+  public async getCampaignRecord(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_record_read';
+    const target = readTargetFromQuery(req, operation, next);
+    if (!target) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, briefId: target.briefId });
+    try {
+      const campaign = await this.optimizeService.getCampaign(req, target);
+      const statusToggleEnabled = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceStatusToggle);
+      logger.success(req, operation, startTime, { campaignId: target.campaignId, platform: campaign.platform, statusToggleEnabled });
+      res.json({ campaign, statusToggleEnabled } satisfies CampaignRecordResult);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/briefs?project=`: the approved paid-marketing briefs a campaign can be adopted
+   * into. Behind `LFX_CUTOVER_CAMPAIGN_SERVICE_BRIEFS`, like the brief load: with it off no brief lives
+   * in campaign-service, so there is nothing to adopt into and the route answers 404.
+   */
+  public async listAdoptableBriefs(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_adoptable_briefs';
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      next(new ResourceNotFoundError('Route', undefined, { operation, service: 'campaign_optimize_controller', path: req.path }));
+      return;
+    }
+    const projectSlug = readProject(req);
+    if (!projectSlug) {
+      next(fieldError('project', 'project is required', operation, req));
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, {});
+    try {
+      const briefs = await this.optimizeService.listAdoptableBriefs(req, projectSlug);
+      logger.success(req, operation, startTime, { count: briefs.length });
+      res.json({ briefs } satisfies CampaignAdoptableBriefsResponse);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** `GET /api/campaigns/:campaignId/meta-ad-sets?project=&briefId=&window=`. */
   public async listMetaAdSets(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'campaign_meta_ad_sets_list';
@@ -191,20 +242,44 @@ export class CampaignOptimizeController {
       return;
     }
 
-    const rawWindow = req.query['window'];
-    let window: CampaignMetricsWindow | undefined;
-    if (rawWindow !== undefined) {
-      if (typeof rawWindow !== 'string' || !(CAMPAIGN_METRICS_WINDOWS as readonly string[]).includes(rawWindow)) {
-        next(fieldError('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, operation, req));
-        return;
-      }
-      window = rawWindow as CampaignMetricsWindow;
+    const window = readMetricsWindow(req, operation, next);
+    if (window === null) {
+      return;
     }
 
     const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, window });
     try {
       const data = await this.optimizeService.listMetaAdSets(req, target, window);
       logger.success(req, operation, startTime, { campaignId: target.campaignId, adSetCount: data.ad_set_count });
+      res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/campaigns/:campaignId/meta-ad-sets/:adSetId/ads?project=&briefId=&window=`: the ads
+   * under one ad set. Read-only; there is no per-ad lever.
+   */
+  public async listMetaAds(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'campaign_meta_ads_list';
+    const target = readTargetFromQuery(req, operation, next);
+    if (!target) {
+      return;
+    }
+    const adSetId = readAdSetId(req, operation, next);
+    if (!adSetId) {
+      return;
+    }
+    const window = readMetricsWindow(req, operation, next);
+    if (window === null) {
+      return;
+    }
+
+    const startTime = logger.startOperation(req, operation, { campaignId: target.campaignId, adSetId, window });
+    try {
+      const data = await this.optimizeService.listMetaAds(req, { ...target, adSetId }, window);
+      logger.success(req, operation, startTime, { campaignId: target.campaignId, adSetId, adCount: data.ad_count, truncated: data.truncated });
       res.json(data);
     } catch (error) {
       next(error);
@@ -222,9 +297,8 @@ export class CampaignOptimizeController {
     if (!campaignId) {
       return;
     }
-    const adSetId = req.params['adSetId'];
-    if (typeof adSetId !== 'string' || !META_AD_SET_ID_PATTERN.test(adSetId)) {
-      next(fieldError('adSetId', 'adSetId must be a Meta ad set id: 1-32 digits without a leading zero', operation, req));
+    const adSetId = readAdSetId(req, operation, next);
+    if (!adSetId) {
       return;
     }
     const body = readBody<MetaAdSetStatusRequest>(req, operation, next);
@@ -418,6 +492,32 @@ function readCampaignId(req: Request, operation: string, next: NextFunction): st
     return null;
   }
   return campaignId;
+}
+
+/** The `:adSetId` route parameter when it is a Meta ad set id (upstream's pattern); otherwise reports a 400 and returns null. */
+function readAdSetId(req: Request, operation: string, next: NextFunction): string | null {
+  const adSetId = req.params['adSetId'];
+  if (typeof adSetId !== 'string' || !META_AD_SET_ID_PATTERN.test(adSetId)) {
+    next(fieldError('adSetId', 'adSetId must be a Meta ad set id: 1-32 digits without a leading zero', operation, req));
+    return null;
+  }
+  return adSetId;
+}
+
+/**
+ * The optional `window` query parameter: `undefined` when omitted (upstream defaults it), the
+ * window when it is one upstream declares, or `null` after reporting a 400.
+ */
+function readMetricsWindow(req: Request, operation: string, next: NextFunction): CampaignMetricsWindow | undefined | null {
+  const rawWindow = req.query['window'];
+  if (rawWindow === undefined) {
+    return undefined;
+  }
+  if (typeof rawWindow !== 'string' || !(CAMPAIGN_METRICS_WINDOWS as readonly string[]).includes(rawWindow)) {
+    next(fieldError('window', `window must be one of: ${CAMPAIGN_METRICS_WINDOWS.join(', ')}`, operation, req));
+    return null;
+  }
+  return rawWindow as CampaignMetricsWindow;
 }
 
 /** A brief id from the query or body when it is a UUID (upstream `Format(FormatUUID)`); otherwise reports a 400 and returns null. */

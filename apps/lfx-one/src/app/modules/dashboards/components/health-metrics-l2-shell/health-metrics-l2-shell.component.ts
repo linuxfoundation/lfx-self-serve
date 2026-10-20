@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { isPlatformBrowser, NgTemplateOutlet, ViewportScroller } from '@angular/common';
 import {
   afterNextRender,
   Component,
@@ -20,31 +20,47 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
-import { HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX, HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS } from '@lfx-one/shared/constants';
+import {
+  ActivatedRoute,
+  NavigationCancel,
+  NavigationError,
+  NavigationSkipped,
+  NavigationSkippedCode,
+  NavigationStart,
+  Router,
+  Scroll,
+  UrlTree,
+} from '@angular/router';
+import { HEALTH_METRICS_L2_PENDING_SECTION_TTL_MS, HEALTH_METRICS_L2_SCROLL_KEYS } from '@lfx-one/shared/constants';
 import { buildHealthMetricsL2SectionId, buildHealthMetricsL2SectionViews, isHealthMetricsL2SectionKey } from '@lfx-one/shared/utils';
 import { debounceTime, filter, Subject } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../health-metrics-gate/health-metrics-chrome.service';
+import { HealthMetricsFootnoteComponent } from '../health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsL2SubNavComponent } from '../health-metrics-l2-sub-nav/health-metrics-l2-sub-nav.component';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 
 import type { HealthMetricsL2CrossReference, HealthMetricsL2Section, HealthMetricsL2SectionView, HealthMetricsL2SubNavItem } from '@lfx-one/shared/interfaces';
 
 /**
- * Level 2 tab shell — anchored sections inside their own scrolling pane, beside a sub-nav that stays
- * put and tracks scroll position, per the design's `l2Shell`. The tab projects each section's body
+ * Level 2 tab shell — anchored sections the page scrolls, beside a sticky sub-nav that tracks scroll
+ * position, per the design's `l2Shell`. The tab projects each section's body
  * through a keyed `lfxHealthMetricsL2Section` template and reports its reads back through
- * `sectionReading` / `sectionSettled`, so a fragment deep link lands once the pane stops reflowing.
+ * `sectionReading` / `sectionSettled`, so a fragment deep link lands once the page stops reflowing.
+ *
+ * Every in-section pill, search and pager writes the query string, and the app-wide router scrolls
+ * each such navigation to the top; the shell keeps the reader's place instead.
  */
 @Component({
   selector: 'lfx-health-metrics-l2-shell',
-  imports: [HealthMetricsL2SubNavComponent, NgTemplateOutlet],
+  imports: [HealthMetricsFootnoteComponent, HealthMetricsL2SubNavComponent, NgTemplateOutlet],
   templateUrl: './health-metrics-l2-shell.component.html',
 })
 export class HealthMetricsL2ShellComponent implements OnInit {
   protected readonly chrome = inject(HealthMetricsChromeService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly viewportScroller = inject(ViewportScroller);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly injector = inject(Injector);
@@ -54,7 +70,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   /** Prefixes each section's DOM id; the URL fragment stays the bare key. */
   public readonly idPrefix = input.required<string>();
   /**
-   * Sections whose read can still change the pane's height, so a deep link is released only once
+   * Sections whose read can still change the page's height, so a deep link is released only once
    * every one has settled. Each must emit `reading`/`settled` through the shell's methods. Read once
    * at init, so it must not change afterwards.
    */
@@ -65,7 +81,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   public readonly testIdPrefix = input.required<string>();
   public readonly crossReference = input<HealthMetricsL2CrossReference | null>(null);
 
-  protected readonly panes = viewChild<ElementRef<HTMLElement>>('panes');
+  private readonly startSentinel = viewChild<ElementRef<HTMLElement>>('startSentinel');
   private readonly endSentinel = viewChild<ElementRef<HTMLElement>>('endSentinel');
   private readonly bodies = contentChildren(HealthMetricsL2SectionDirective);
 
@@ -83,6 +99,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    * pending key: another one reflowing afterwards would move the anchor out from under it.
    */
   private readonly unsettledSections = new Set<string>();
+  /** Read key → the section it renders in, for a section that holds more than one read. */
+  private readonly readSections = new Map<string, string>();
   private readonly resize$ = new Subject<void>();
   private pendingSectionTimer?: ReturnType<typeof setTimeout>;
   /** Set while the reader-intent listeners are registered; nulled by the removal it performs. */
@@ -91,10 +109,15 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private rendered = false;
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
-  // Two of the observers' inputs, so a content change that moves neither costs nothing. The sticky
+  private scrollStartObserver?: IntersectionObserver;
+  // Two of the observers' inputs, so a content change that leaves both alone costs nothing. The sticky
   // offset is a third, rebuilt from its own subscription rather than compared here.
-  private spyRootIsPane?: boolean;
-  private spyAreaScrolls?: boolean;
+  private spyEndBelowFold?: boolean;
+  private spyViewportHeight?: number;
+  /** Navigation id → where the page stood when a query-only navigation began, put back after the router's scroll. */
+  private readonly heldScrolls = new Map<number, [number, number]>();
+  /** A section jumped to while a router scroll was still due, replayed after it since that scroll cuts it short. */
+  private jumpAfterRouterScroll: string | null = null;
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
@@ -105,7 +128,6 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       this.removeIntentListeners?.();
     });
     afterNextRender(() => {
-      this.measurePanesHeight();
       this.setupScrollSpy();
       this.observeWindowResize();
       this.observeDocumentResize();
@@ -122,17 +144,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       .pipe(takeUntilDestroyed())
       .subscribe((offset) => {
         if (!this.scrollSpyObserver) return;
-        // A taller header pushes the pane down, so the measured height moves with it.
-        this.measurePanesHeight();
         this.setupScrollSpy(offset);
       });
 
-    // Resize fires per animation frame while dragging; rebuilding two observers each time is wasteful.
-    this.resize$.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
-      this.measurePanesHeight();
-      // The pane may have just gained or lost its scrollbar, which changes the spy's root.
-      this.rebuildScrollSpyIfRootMoved();
-    });
+    // Resize fires per animation frame while dragging; rebuilding the observers each time is wasteful.
+    // The band is sized off the viewport, and a reflow can move the end sentinel past the first screen.
+    this.resize$.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => this.rebuildScrollSpyIfGeometryChanged());
+    this.initQueryScrollKeeping();
   }
 
   /** Reads the inputs, so it waits for them here rather than running in the constructor. */
@@ -148,7 +166,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
       )
       .subscribe((key) => {
         // Held before first render, when no anchor exists yet, or while data can still move it; after
-        // both, the anchors are stable and a held key would yank the pane back.
+        // both, the anchors are stable and a held key would yank the page back.
         if (!this.rendered || this.unsettledSections.size > 0) this.armPendingSection(key);
         this.scrollTo(key);
       });
@@ -157,26 +175,31 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   /**
    * A starting read puts the section back among those a deep link waits on, and restarts the
    * deadline against that read rather than leaving it to expire on the fragment that armed it.
+   * `sectionKey` names the section the read renders in, when a section holds more than one read.
    */
-  public sectionReading(key: string): void {
+  public sectionReading(key: string, sectionKey = key): void {
     this.unsettledSections.add(key);
+    this.readSections.set(key, sectionKey);
+    this.holdSectionHeight(sectionKey);
 
     const pending = this.pendingSection();
     if (pending) this.armPendingSection(pending);
   }
 
   /**
-   * A read landing changes the pane's height, so a waiting deep link re-scrolls here, a paint later
+   * A read landing changes the page's height, so a waiting deep link re-scrolls here, a paint later
    * than the emission. The key is released only once every data section has settled.
    */
-  public sectionSettled(key: string): void {
+  public sectionSettled(key: string, sectionKey = key): void {
     this.unsettledSections.delete(key);
     afterNextRender(
       () => {
-        this.measurePanesHeight();
-        this.rebuildScrollSpyIfRootMoved();
+        // Released once every read in the section has painted, so neither a sibling still loading nor a
+        // newer read that re-held it for its own skeleton loses the height.
+        if (!this.hasUnsettledRead(sectionKey)) this.sectionElement(sectionKey)?.style.removeProperty('min-height');
+        this.rebuildScrollSpyIfGeometryChanged();
         this.settlePendingSection();
-        // A still-pending key would scroll the pane back to the anchor on every later re-emission.
+        // A still-pending key would scroll the page back to the anchor on every later re-emission.
         if (this.unsettledSections.size === 0) this.clearPendingSection();
       },
       { injector: this.injector }
@@ -193,17 +216,66 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.activeSection.set(key);
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const section = document.getElementById(buildHealthMetricsL2SectionId(this.idPrefix(), key));
+    const section = this.sectionElement(key);
     if (!section) return;
 
-    // Inside the pane, scroll the pane itself — `scrollIntoView` would also drag the page under it.
-    const container = this.scrollingPane();
-    if (!container) {
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    const top = container.scrollTop + section.getBoundingClientRect().top - container.getBoundingClientRect().top;
-    container.scrollTo({ top, behavior: 'smooth' });
+    if (this.heldScrolls.size > 0) this.jumpAfterRouterScroll = key;
+    // The section's `scroll-margin-top` keeps it clear of the sticky page header.
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  private initQueryScrollKeeping(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
+      if (event instanceof NavigationStart) {
+        if (this.changesOnlyQuery(event.url)) this.heldScrolls.set(event.id, this.viewportScroller.getScrollPosition());
+      } else if (event instanceof NavigationSkipped) {
+        // A write that restates the current URL is skipped without a start, yet still scrolled to the top.
+        if (event.code === NavigationSkippedCode.IgnoredSameUrlNavigation) this.heldScrolls.set(event.id, this.viewportScroller.getScrollPosition());
+        else this.heldScrolls.delete(event.id);
+      } else if (event instanceof NavigationCancel || event instanceof NavigationError) {
+        this.heldScrolls.delete(event.id);
+      } else if (event instanceof Scroll) {
+        this.restoreHeldScroll(event.routerEvent.id);
+      }
+    });
+  }
+
+  private restoreHeldScroll(id: number): void {
+    const position = this.heldScrolls.get(id);
+    if (!position) return;
+
+    this.heldScrolls.delete(id);
+    const jump = this.jumpAfterRouterScroll;
+    if (this.heldScrolls.size === 0) this.jumpAfterRouterScroll = null;
+    // A microtask lands after the router's own scroll, whichever subscribed first, and before paint.
+    queueMicrotask(() => {
+      this.viewportScroller.scrollToPosition(position, { behavior: 'instant' });
+      if (jump) this.scrollTo(jump);
+    });
+  }
+
+  /** Same path and fragment as the current URL: only the query string moves. */
+  private changesOnlyQuery(url: string): boolean {
+    const withoutQuery = (tree: UrlTree) => this.router.serializeUrl(new UrlTree(tree.root, {}, tree.fragment));
+    return withoutQuery(this.router.parseUrl(url)) === withoutQuery(this.router.parseUrl(this.router.url));
+  }
+
+  /** A reloading section shrinks to its skeleton, which would shorten the page under the reader. */
+  private holdSectionHeight(key: string): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const section = this.sectionElement(key);
+    if (section) section.style.minHeight = `${section.offsetHeight}px`;
+  }
+
+  private hasUnsettledRead(sectionKey: string): boolean {
+    return [...this.unsettledSections].some((key) => (this.readSections.get(key) ?? key) === sectionKey);
+  }
+
+  private sectionElement(key: string): HTMLElement | null {
+    return document.getElementById(buildHealthMetricsL2SectionId(this.idPrefix(), key));
   }
 
   /**
@@ -219,7 +291,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   /**
-   * The footer renders asynchronously and can change height after the pane's first measurement — a
+   * Sections and the footer render asynchronously and change the page's height after first paint — a
    * viewport resize alone would miss that, so the document's own height is watched too.
    */
   private observeDocumentResize(): void {
@@ -242,13 +314,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     // unfiltered handler would drop the deep link on a Tab press.
     const onIntent = (event: Event) => {
       // A row's own `keydown.space` handler has already called `preventDefault()` by the time this
-      // runs — that key opened a drawer, it did not move the pane.
+      // runs — that key opened a drawer, it did not move the page.
       if (event.defaultPrevented) return;
       if (event.type === 'keydown' && !this.isScrollIntent(event as KeyboardEvent)) return;
       this.clearPendingSection();
     };
-    // Bound to the window rather than the pane: keyboard scrolling with the body focused never
-    // dispatches to the pane at all. A scrollbar drag reaches neither, which is what the TTL is for.
+    // Bound to the window, where page scrolling is dispatched. A scrollbar drag fires none of these,
+    // which is what the TTL is for.
     const events = ['wheel', 'touchmove', 'keydown'];
     for (const event of events) window.addEventListener(event, onIntent, { passive: true });
     // Dead weight on the browser's hottest event streams once no key is armed; the next arm
@@ -260,12 +332,12 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   /**
-   * Whether the area overflows decides if the end sentinel is observed at all, and a read can flip
-   * it. Sections re-emit constantly, so nothing is rebuilt unless that decision moved.
+   * The band is sized off the viewport height, and whether the end sentinel starts below the first
+   * screen decides if the sentinels are observed. Sections re-emit constantly, so nothing is rebuilt
+   * unless one of those moved.
    */
-  private rebuildScrollSpyIfRootMoved(): void {
-    const container = this.scrollingPane();
-    if (!!container !== this.spyRootIsPane || this.areaScrolls(container) !== this.spyAreaScrolls) this.setupScrollSpy();
+  private rebuildScrollSpyIfGeometryChanged(): void {
+    if (this.endSentinelBelowFold() !== this.spyEndBelowFold || window.innerHeight !== this.spyViewportHeight) this.setupScrollSpy();
   }
 
   /** Bounds the pending key's life, so a read that never settles cannot leave the deep link armed. */
@@ -312,59 +384,12 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   }
 
   /**
-   * Bounds the pane to what is left of the viewport below it, so the page itself has nothing to
-   * scroll. The chrome below the pane (gate padding, layout padding, the footer) isn't a fixed pixel
-   * count, so it's measured rather than guessed — but the naive way to measure it (the gap between the
-   * row's own bottom edge and the document's bottom edge) is wrong on this layout: the main layout's
-   * own `min-h-screen` floors the document at the viewport height whenever the page's content is
-   * shorter than that, so that gap can include empty flex-grow slack instead of real chrome. Once the
-   * pane is sized to fit, its own output is exactly what keeps the page that short, so a later
-   * re-measure reads back the same slack and the pane gets stuck too small.
-   *
-   * To avoid that, the pane is first grown to fill the viewport on its own — `fillHeight` below — which
-   * forces the document to be at least viewport-tall and removes any flex-grow slack. Only then is the
-   * gap between the document and the viewport read as the real chrome below the row: with the pane
-   * already reaching the viewport bottom, nothing but that chrome can push the document past it. That
-   * gap is read via `offsetHeight`, not `scrollHeight` — `scrollHeight` also counts overflow from any
-   * out-of-flow descendant anywhere in the document (an open `appendTo: 'body'` dropdown or tooltip),
-   * so a re-measure while one is open could shrink the pane. Both writes go straight onto the element
-   * rather than through a bound signal — a single declarative binding can't express two sequential
-   * writes with a layout read in between.
+   * Whether the end of the sections sits below the first screen, measured against the page rather than
+   * the current scroll. A page whose footer alone scrolls still shows both sentinels at rest.
    */
-  private measurePanesHeight(): void {
-    const pane = this.panes()?.nativeElement;
-    if (!isPlatformBrowser(this.platformId) || !pane) return;
-
-    // Document-relative, so a page that is already scrolled measures the same as one at the top.
-    const paneDocumentTop = pane.getBoundingClientRect().top + window.scrollY;
-    const fillHeight = Math.max(Math.round(window.innerHeight - paneDocumentTop), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
-    pane.style.setProperty('--l2-panes-height', `${fillHeight}px`);
-
-    const below = Math.max(document.documentElement.offsetHeight - window.innerHeight, 0);
-    const available = Math.max(Math.round(window.innerHeight - paneDocumentTop - below), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
-    pane.style.setProperty('--l2-panes-height', `${available}px`);
-  }
-
-  /**
-   * The pane, but only while it is genuinely a scroll container (the design's `scrollParent`) — below
-   * `lg` its height is unbounded and the page scrolls instead, so the spy falls back to the viewport.
-   */
-  private scrollingPane(): HTMLElement | null {
-    const pane = this.panes()?.nativeElement;
-    if (!pane) return null;
-
-    const overflowY = getComputedStyle(pane).overflowY;
-    const scrolls = (overflowY === 'auto' || overflowY === 'scroll') && pane.scrollHeight > pane.clientHeight + 1;
-
-    return scrolls ? pane : null;
-  }
-
-  /**
-   * True when the sentinel can only be reached by scrolling. `scrollingPane()` already proves it for
-   * the pane; below `lg` the page scrolls instead, and a page that fits needs no sentinel.
-   */
-  private areaScrolls(container: HTMLElement | null): boolean {
-    return !!container || document.documentElement.scrollHeight > window.innerHeight + 1;
+  private endSentinelBelowFold(): boolean {
+    const sentinel = this.endSentinel()?.nativeElement;
+    return !!sentinel && sentinel.getBoundingClientRect().top + window.scrollY > window.innerHeight;
   }
 
   /**
@@ -385,7 +410,8 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     }
     if (keyByHeading.size === 0) return;
 
-    const container = this.scrollingPane();
+    const below = Math.max(window.innerHeight - Math.round(offsetPx), 0);
+    const bandBottomPx = Math.round(below * 0.7);
     const intersecting = new Set<string>();
     const observer = new IntersectionObserver(
       (entries) => {
@@ -398,29 +424,46 @@ export class HealthMetricsL2ShellComponent implements OnInit {
         const activeKey = keys.find((key) => intersecting.has(key));
         if (activeKey) this.activeSection.set(activeKey);
       },
-      // Against the pane the band starts at its own top edge; against the viewport it has to clear
-      // the sticky page header first.
-      container ? { root: container, rootMargin: '0px 0px -70% 0px', threshold: 0 } : { rootMargin: `-${Math.round(offsetPx)}px 0px -70% 0px`, threshold: 0 }
+      // The band is the top 30% of the viewport left below the sticky header, in pixels: a percentage
+      // bottom margin is of the whole viewport and closes the band on a short window.
+      { rootMargin: `-${Math.round(offsetPx)}px 0px -${bandBottomPx}px 0px`, threshold: 0 }
     );
     keyByHeading.forEach((_, heading) => observer.observe(heading));
     this.scrollSpyObserver = observer;
-    this.spyRootIsPane = !!container;
-    this.spyAreaScrolls = this.areaScrolls(container);
+    this.spyEndBelowFold = this.endSentinelBelowFold();
+    this.spyViewportHeight = window.innerHeight;
 
     // The last section is short enough that its heading never reaches the activation band, so an
     // invisible end sentinel snaps to it. Guarding on the heading's position instead would be dead
     // code: a heading that clears the band's top edge has already activated itself above.
+    if (!this.spyEndBelowFold) return;
+
+    // A jump back to the top (Home, or an instant scroll) never sweeps the first heading through the
+    // band, so a sentinel at the column's top edge re-entering below the header lights it instead.
+    const start = this.startSentinel()?.nativeElement;
+    if (start) {
+      const firstKey = keys[0];
+      const startObserver = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) this.activeSection.set(firstKey);
+        },
+        { rootMargin: `-${Math.round(offsetPx)}px 0px 0px 0px`, threshold: 0 }
+      );
+      startObserver.observe(start);
+      this.scrollStartObserver = startObserver;
+    }
+
     const sentinel = this.endSentinel()?.nativeElement;
-    if (!sentinel || !this.areaScrolls(container)) return;
+    if (!sentinel) return;
 
     const lastKey = keys[keys.length - 1];
     const endObserver = new IntersectionObserver(
       // Reaching a sentinel that sits below a full screen of content means the user scrolled there —
-      // the area is only observed at all once it genuinely overflows.
+      // it is only observed at all once it starts below the first screen.
       ([entry]) => {
         if (entry.isIntersecting) this.activeSection.set(lastKey);
       },
-      container ? { root: container, threshold: 0 } : { threshold: 0 }
+      { threshold: 0 }
     );
     endObserver.observe(sentinel);
     this.scrollEndObserver = endObserver;
@@ -429,9 +472,11 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private teardownScrollSpy(): void {
     this.scrollSpyObserver?.disconnect();
     this.scrollEndObserver?.disconnect();
+    this.scrollStartObserver?.disconnect();
     this.scrollSpyObserver = undefined;
     this.scrollEndObserver = undefined;
-    this.spyRootIsPane = undefined;
-    this.spyAreaScrolls = undefined;
+    this.scrollStartObserver = undefined;
+    this.spyEndBelowFold = undefined;
+    this.spyViewportHeight = undefined;
   }
 }

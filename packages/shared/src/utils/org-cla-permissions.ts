@@ -28,9 +28,10 @@ export function isOrgClaPermissionAction(value: unknown): value is OrgClaPermiss
  * project SFID, else foundation. `pairProjectSfid` is that scan taken before the mapper drops
  * nameless projects from `projects` for display — prefer it so a covered project with an id and
  * no name still beats a parent foundation. Deliberately not Sign's `signingChoiceFrom`, which
- * stays foundation-first. A parent foundation id is ancestry, not grain — signing grants
- * `cla-manager` on mapped projects, not the parent. Yields nothing only when there is no project
- * id and no foundation id, so the caller can hide Add.
+ * stays foundation-first. Signing grants `cla-manager` on mapped projects, so the covered project
+ * comes first; a manager EasyCLA granted on the foundation instead is matched by
+ * `orgClaPairFoundationSfid`. Yields nothing only when there is no project id and no foundation
+ * id, so the caller can hide Add.
  */
 export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' | 'projects' | 'pairProjectSfid'>): string | undefined {
   const pinned = group.pairProjectSfid?.trim();
@@ -41,6 +42,19 @@ export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' 
 
   const foundation = group.foundationSfid?.trim();
   return foundation || undefined;
+}
+
+/**
+ * The second pair a manager-only check also asks about: the CLA Group's foundation SFID, when it
+ * differs from `orgClaPairProjectSfid`. EasyCLA grants `cla-manager` on the foundation alone when
+ * the foundation is signed at foundation level, and an ACS check on a covered project does not
+ * match that grant, although EasyCLA's own write authorization accepts it for the covered project.
+ * Yields nothing when there is no foundation id or the pair is already the foundation.
+ */
+export function orgClaPairFoundationSfid(group: Pick<OrgClaGroup, 'foundationSfid' | 'projects' | 'pairProjectSfid'>): string | undefined {
+  const foundation = group.foundationSfid?.trim();
+  if (!foundation) return undefined;
+  return foundation === orgClaPairProjectSfid(group) ? undefined : foundation;
 }
 
 function acsParts(action: OrgClaPermissionAction): { resource: string; verb: string } {

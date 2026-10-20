@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenExtractionResult } from '@lfx-one/shared/interfaces';
-import { redactLoggedUrl } from '@lfx-one/shared/utils/auth-fragment.utils';
+import { redactLoggedUrl } from '@lfx-one/shared/utils/credential-redaction.utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';

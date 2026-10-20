@@ -65,11 +65,6 @@ export interface RuntimeConfig {
   gwSupabaseAnonKey: string;
 
   /**
-   * LFID (LF SSO) sign-in start URL the embed redirects to when it needs the user to
-   * (re-)authenticate. ASSUMPTION: no confirmed value for the pilot yet; empty until provided.
-   */
-  gwLfidStartUrl: string;
-  /**
    * Where the Gatewaze deployment serves the embeddable admin (`GW_EMBED_URL`), e.g.
    * `https://admin.example.org/embed`. `@gatewaze/admin-embed` is a loader: it reads
    * `<url>/manifest.json` and imports the current bundle from there, so admin changes reach the
@@ -81,8 +76,17 @@ export interface RuntimeConfig {
   /**
    * True when Gatewaze host-session mode is on and fully configured on the server
    * (`resolveGatewazeHostSessionConfig`): LFX One holds the Gatewaze session and serves it under
-   * `/api/gatewaze`, so the outlet mounts the embed in host mode instead of the LFID bridge. Computed
-   * from the same check the `/api/gatewaze` routes use, so the two cannot disagree.
+   * `/api/gatewaze`. Host-session mode is the only way the outlet mounts the embed, so while this is
+   * false it shows its not-configured panel. Computed from the same check the `/api/gatewaze` routes
+   * use, so the two cannot disagree.
    */
   gwHostSession: boolean;
+
+  /**
+   * The server's key for its own share of the scoped embed stylesheet (the LFX theme layer and the
+   * containment transform). The outlet puts it in the stylesheet URL beside the upstream-hashed file
+   * name, which makes the URL content-addressed, so the server can serve it as immutable. Empty when
+   * the theme cannot be read; the outlet then uses the short-lived form of the URL.
+   */
+  gwEmbedStylesheetKey: string;
 }

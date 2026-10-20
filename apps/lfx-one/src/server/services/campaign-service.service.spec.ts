@@ -39,8 +39,14 @@ import {
   CAMPAIGN_BID_OUTCOME_UNCONFIRMED,
   CAMPAIGN_BUDGET_OUTCOME_UNCONFIRMED,
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
+  GOOGLE_ADS_MAX_CALLOUTS,
+  GOOGLE_ADS_MAX_FINAL_URL_BYTES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
 } from '@lfx-one/shared/constants';
 import { readFileSync } from 'node:fs';
 
@@ -51,7 +57,15 @@ import type { CampaignBriefOutput, CampaignType } from '@lfx-one/shared/interfac
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
 import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
-import { adaptJobPollResponse, CampaignServiceClient, deriveEventSlug, fromBriefResponse, isCampaignServiceJobId } from './campaign-service.service';
+import {
+  adaptJobPollResponse,
+  asResumeRefusal,
+  CampaignServiceClient,
+  deriveEventSlug,
+  fromBriefResponse,
+  isCampaignServiceJobId,
+  readBriefValidator,
+} from './campaign-service.service';
 
 const req = {} as unknown as Request;
 
@@ -146,6 +160,44 @@ describe('adaptJobPollResponse', () => {
     });
 
     expect(adapted.platformResults?.[0].hubspotUrl).toBe('https://app.hubspot.com/email/1/edit/c1/settings');
+  });
+
+  it('passes the platform warnings through, dropping blank and non-string entries', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [
+        { platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: ['The hero image could not be added.', '  ', 42 as never] },
+        { platform: 'google-ads', ok: true, campaign_id: 'g1' },
+      ],
+    });
+
+    expect(adapted.platformResults?.[0].warnings).toEqual(['The hero image could not be added.']);
+    expect(adapted.platformResults?.[1].warnings).toBeUndefined();
+  });
+
+  it('collapses duplicate warnings, which the UI keys by their text', () => {
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: ['Same.', ' Same. ', 'Other.'] }],
+    } as never);
+
+    expect(adapted.platformResults?.[0].warnings).toEqual(['Same.', 'Other.']);
+  });
+
+  it('bounds the warnings an upstream response can carry', () => {
+    const many = Array.from({ length: 25 }, (_, i) => `warning ${i}`);
+    const long = 'x'.repeat(2000);
+    const adapted = adaptJobPollResponse({
+      job_id: 'j1',
+      status: 'succeeded',
+      result: [{ platform: 'hubspot', ok: true, campaign_id: 'c1', warnings: [long, ...many] }],
+    });
+
+    const warnings = adapted.platformResults?.[0].warnings ?? [];
+    expect(warnings).toHaveLength(10);
+    expect(warnings[0]).toHaveLength(500);
   });
 
   // A partial job created real campaigns. Reporting the JOB as failed would hide them; each
@@ -1080,12 +1132,24 @@ describe('CampaignServiceClient.saveBrief', () => {
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
   });
 
-  // A response that reaches us without the header — a proxy that strips it, say. The version
-  // number is not a substitute: the design says the ETag "mirrors" the version, which fixes the
-  // correspondence but not the serialisation, so a synthesised value either 428s or matches the
-  // wrong revision.
-  it('refuses to replace a brief whose response carried no ETag header instead of synthesising one', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 }));
+  // A response that reaches us without the header — a proxy that strips it, say. The version IS
+  // a substitute, and not a synthesised one: upstream renders the header from that same value
+  // as `"` + the decimal + `"` in one literal, so quoting it reproduces the header's own string
+  // rather than guessing at a second serialisation. See `readBriefValidator`.
+  it('replaces a brief whose response carried no ETag header, using the version the header is rendered from', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 7 })).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"8"' }));
+
+    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).resolves.toMatchObject({ briefId: 'b-1' });
+    // The PUT carries the recovered validator, so the precondition is a real check rather than
+    // the `etag_fallback` read that always matches itself.
+    expect(proxyRequestWithResponse.mock.calls[1]?.[6]).toEqual({ 'If-Match': '"7"' });
+  });
+
+  // The throw is still reachable, and must stay so: a body with no usable version leaves nothing
+  // to recover, and a PUT with no `If-Match` is the unconditional overwrite this guard exists to
+  // prevent.
+  it('refuses to replace a brief whose response carried neither an ETag header nor a usable version', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ id: 'b-1' }));
 
     await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', null, true)).rejects.toThrow(/no ETag/);
     expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
@@ -1134,7 +1198,17 @@ describe('fromBriefResponse', () => {
   it('round-trips a brief written by the save path', async () => {
     proxyRequestWithResponse.mockReset();
     proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND).mockResolvedValueOnce(apiResponse({ id: 'b-1' }, { etag: '"1"' }));
-    const original = briefWithSlug('kubecon-eu-2026');
+    // The two Google extension lists are set HERE rather than on `briefWithSlug`, which a few
+    // dozen other cases compare request payloads against exactly. Without them this round-trip
+    // asserts nothing about either field: both would be absent from the fixture, absent from what
+    // `toBriefInput` writes, and absent from what `fromBriefResponse` reads back, so a write or
+    // read path that dropped them entirely would still match. They are the newest fields on this
+    // contract and the ones a drop would cost the operator most — the lists they edited by hand.
+    const original: CampaignBriefOutput = {
+      ...briefWithSlug('kubecon-eu-2026'),
+      googleCallouts: ['Early bird pricing', 'Co-located events'],
+      googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/register/' }],
+    };
 
     await new CampaignServiceClient().saveBrief(req, original, 'kubecon-eu-2026', 'tlf', 'b-1');
     const written = proxyRequestWithResponse.mock.calls[1]?.[5].brief;
@@ -1210,6 +1284,227 @@ describe('fromBriefResponse', () => {
     const keywords = [{ term: '  ' }, 'kubecon', { term: 'cloud native', matchType: 'Fuzzy', intentLevel: 'Urgent' }];
 
     expect(fromBriefResponse(storedBrief({ keywords }))?.keywords).toEqual([{ term: 'cloud native', matchType: 'Broad', intentLevel: 'Medium', notes: '' }]);
+  });
+
+  // The Implementation tab seeds both extension editors on `!== undefined`, so this is the one
+  // field pair where absent and empty must NOT collapse: returning `[]` for a brief written before
+  // extension generation shipped would clear an editor the operator had typed into rather than
+  // leave it alone. `toBriefInput` writes `null` for a brief that carries no list, which is what
+  // lands here.
+  it.each([
+    ['an absent googleCallouts', undefined],
+    ['a null googleCallouts', null],
+    ['a non-array googleCallouts', 'Free Admission'],
+  ])('restores %s as absent, not as an empty list', (_label, googleCallouts) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toBeUndefined();
+  });
+
+  // The other side of the same distinction: a list the generator shaped away to nothing WAS
+  // recorded, and comes back as the empty list rather than as absent.
+  it('restores a stored empty callout list as an empty list', () => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts: [] } }))?.googleCallouts).toEqual([]);
+  });
+
+  // Bounded by the same rules the editor applies on an add, so a row written by an older build or
+  // another client cannot open the editor holding entries it would refuse the operator for typing.
+  it('bounds, trims and de-duplicates a stored callout list the way the editor would', () => {
+    const googleCallouts = ['  Free To Attend  ', 'free to attend', 42, '', 'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES + 5)];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toEqual([
+      'Free To Attend',
+      'A'.repeat(GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES),
+    ]);
+  });
+
+  // The cap is the editor's own: it refuses an add past the maximum rather than growing, so a
+  // longer stored list is filled to the cap and the overflow left out.
+  it('fills a stored callout list to the cap and drops the overflow', () => {
+    const googleCallouts = Array.from({ length: GOOGLE_ADS_MAX_CALLOUTS + 5 }, (_unused, i) => `Callout ${i}`);
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleCallouts } }))?.googleCallouts).toHaveLength(GOOGLE_ADS_MAX_CALLOUTS);
+  });
+
+  it.each([
+    ['an absent googleSitelinks', undefined],
+    ['a null googleSitelinks', null],
+    ['a non-array googleSitelinks', 'View the Agenda'],
+  ])('restores %s as absent, not as an empty list', (_label, googleSitelinks) => {
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toBeUndefined();
+  });
+
+  // `finalUrl` lands in an href the operator clicks and in an ad's destination, and `copy` is an
+  // opaque blob upstream never validated — so the scheme is re-checked here rather than trusted
+  // because this app only ever writes URLs `verifyPageLink` confirmed.
+  it.each([
+    ['a javascript: destination', 'javascript:alert(1)'],
+    ['a data: destination', 'data:text/html,<p>x</p>'],
+    ['a relative destination', '/agenda'],
+    ['an unparseable destination', 'not a url'],
+    ['a missing destination', undefined],
+    // The four this path accepted while it was a scheme check of its own rather than the shared
+    // predicate. Every one parses fine under `new URL()` and is refused by the controller's
+    // `googleSitelinkUrlRefusal` at create, so seeding one opened the editor holding a chip the
+    // operator could not have typed and could not submit — and the only refusal they would ever
+    // see named a row they never added.
+    ['embedded credentials', 'https://user:pw@example.test/agenda'],
+    ['no // after the scheme', 'https:example.test/agenda'],
+    ['a `;` separating query parameters, which Go refuses', 'https://example.test/agenda?track=platform;day=2'],
+    ['a stray `%` that is not an escape', 'https://example.test/agenda?q=100%'],
+  ])('drops a sitelink with %s', (_label, finalUrl) => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The byte cap is the editor's add-guard and the controller's dispatch check; without it here a
+  // stored row would open the editor holding a chip the operator could not have typed and could not
+  // submit. Bytes of the encoded URL, so the boundary is asserted on both sides of the cap.
+  it('drops a stored sitelink whose finalUrl is over the byte cap and keeps one exactly at it', () => {
+    const prefix = 'https://example.test/';
+    const atCap = prefix + 'a'.repeat(GOOGLE_ADS_MAX_FINAL_URL_BYTES - prefix.length);
+    const overCap = `${atCap}a`;
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: overCap },
+      { text: 'Venue & Travel', finalUrl: atCap },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([{ text: 'Venue & Travel', finalUrl: atCap }]);
+  });
+
+  /**
+   * Trimmed with Go's space set, not JS's. `googleAdsTrimSpace` follows Go's `unicode.IsSpace`,
+   * which includes U+0085 (NEL) — a character JS `trim` leaves exactly where it is. The editor's
+   * `addGoogleSitelink` trims the destination that way, so a stored row carrying one is a row the
+   * editor itself would accept; trimmed the JS way the leftover U+0085 makes `new URL()` throw and
+   * the row is dropped on restore, which the operator reads as the app losing their sitelink.
+   */
+  it('trims a stored finalUrl with Go\u2019s space set, not JS\u2019s', () => {
+    // A stored destination that arrived with a NEL around it. Pinned with an assertion first, so
+    // this case cannot quietly stop testing anything: JS `trim` really does leave U+0085 in place,
+    // which is the whole reason the restore path cannot use it here.
+    const stored = '\u0085 https://example.test/agenda \u0085';
+    expect(stored.trim()).not.toBe('https://example.test/agenda');
+    const googleSitelinks = [{ text: 'View the Agenda', finalUrl: stored }];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
+  // De-duplicated on the LABEL, which is the editor's guard and upstream's rule: Google Ads
+  // refuses duplicate sitelink text and is indifferent to two labels sharing one URL.
+  it('de-duplicates stored sitelinks on their label, not their destination', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'view the agenda', finalUrl: 'https://example.test/schedule' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/agenda' },
+    ]);
+  });
+
+  /**
+   * The entry SHAPE, which the callout cases cover for their own list and this one did not.
+   *
+   * `copy` is an opaque blob campaign-service stores without inspecting, so an entry here can be
+   * any JSON value. A string or a `null` in the array reaches `asRecord` first: without that guard
+   * the next line indexes `null` and the whole restore throws, losing the brief rather than one
+   * sitelink. An entry shaped right but with no usable label is the quieter half — upstream refuses
+   * a sitelink with empty text, so carrying one opens the editor on a chip that cannot dispatch.
+   */
+  it('drops stored sitelinks that are not objects, and objects with no usable label', () => {
+    const googleSitelinks = [
+      'View the Agenda',
+      null,
+      42,
+      { finalUrl: 'https://example.test/agenda' },
+      { text: '   ', finalUrl: 'https://example.test/schedule' },
+      { text: 42, finalUrl: 'https://example.test/speakers' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The sitelink cap, which is the callout cap's sibling and upstream's own `maxSitelinks`: the
+  // editor refuses an add past it, so a longer stored list is filled to the cap rather than
+  // opening the editor holding entries the operator can neither have typed nor submit.
+  it('fills a stored sitelink list to the cap and drops the overflow', () => {
+    const googleSitelinks = Array.from({ length: GOOGLE_ADS_MAX_SITELINKS + 3 }, (_unused, i) => ({
+      text: `Sitelink ${i}`,
+      finalUrl: `https://example.test/s${i}`,
+    }));
+
+    const restored = fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks;
+
+    // Length AND the first entry: a cap that kept the TAIL is a different behaviour, and one the
+    // operator would read as the app reordering their sitelinks.
+    expect(restored).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+    expect(restored?.[0]).toEqual({ text: 'Sitelink 0', finalUrl: 'https://example.test/s0' });
+  });
+
+  // The description pair is all-or-nothing upstream (`googleads/assets.go`), so a lone line is
+  // dropped rather than carried — otherwise the editor opens on a sitelink that cannot dispatch.
+  it('keeps a complete description pair and drops a lone description line', () => {
+    const googleSitelinks = [
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue', description1: 'Hotel block open' },
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { googleSitelinks } }))?.googleSitelinks).toEqual([
+      { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
+      { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
+    ]);
+  });
+
+  // The negative-keyword suggestion list. Absent and empty both leave the Optimize tab's editor
+  // blank, unlike the two extension lists above where `[]` clears an editor — but the reader still
+  // has to tell a stored list from a missing one, since `undefined` is what the field means for
+  // every brief written before this shipped.
+  it.each([
+    ['an absent negativeKeywords', undefined],
+    ['a null negativeKeywords', null],
+    ['a non-array negativeKeywords', 'free kubecon'],
+  ])('restores %s as absent', (_label, negativeKeywords) => {
+    expect(fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords).toBeUndefined();
+  });
+
+  // Re-validated through the editor's own parser, so a row written by an older build or another
+  // client can never open the editor holding a line it would refuse the operator for typing:
+  // whitespace collapsed, a case-insensitive repeat dropped, a line over Google Ads' cap dropped,
+  // a line with characters the pattern refuses dropped, and a non-string entry ignored.
+  it('bounds and de-duplicates a stored negative-keyword list the way the editor would', () => {
+    const negativeKeywords = [
+      '  free   kubecon  ',
+      'FREE KUBECON',
+      42,
+      'kubecon [exact]',
+      'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1),
+      'kubecon jobs',
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords).toEqual(['free kubecon', 'kubecon jobs']);
+  });
+
+  // The count cap is what one `add-negative-keywords` request may carry, so a longer stored list is
+  // filled to it and the overflow left out — head kept, as the callout and sitelink readers do.
+  it('fills a stored negative-keyword list to the per-request cap and drops the overflow', () => {
+    const negativeKeywords = Array.from({ length: MAX_NEGATIVE_KEYWORDS_PER_REQUEST + 5 }, (_unused, i) => `negative ${i}`);
+
+    const restored = fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords;
+
+    expect(restored).toHaveLength(MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+    expect(restored?.[0]).toBe('negative 0');
   });
 
   // An unknown platform id reaches a template that indexes icon and label maps by it and
@@ -1562,11 +1857,19 @@ describe('CampaignServiceClient.loadBrief', () => {
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: 'W/"7"' });
   });
 
-  // A read that produced no validator still yields a restorable brief. `null` here is an ABSENT
-  // validator, not permission to overwrite — what an absent one licenses is decided by the
+  // A stripped header is not a lost validator: the body's `version` is the value that header is
+  // rendered from, so the read still hands back something a save can send as `If-Match`.
+  it('recovers the validator from the body version when the response carried no ETag header', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: 7 }), {}));
+
+    await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: '"7"' });
+  });
+
+  // A read that produced no validator at all still yields a restorable brief. `null` here is an
+  // ABSENT validator, not permission to overwrite — what an absent one licenses is decided by the
   // `absence` the caller records alongside it, never by the null itself.
-  it('reports a null ETag rather than inventing one when the response carried none', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief(), {}));
+  it('reports a null ETag rather than inventing one when neither the header nor a usable version arrived', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: undefined }), {}));
 
     await expect(new CampaignServiceClient().loadBrief(req, 'e', 'tlf')).resolves.toMatchObject({ status: 'loaded', etag: null });
   });
@@ -1724,6 +2027,194 @@ describe('CampaignServiceClient.loadBriefById', () => {
 
     await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).rejects.toMatchObject({ statusCode: 404 });
   });
+
+  // The read this method feeds — the restore — is the one whose null validator used to send
+  // `approveStoredBrief` down a blind re-read, and now refuses outright. Recovering the
+  // validator from the body is what keeps that refusal rare rather than routine.
+  it('recovers the validator from the body version when the ETag header does not survive the hop', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ version: 7 })));
+
+    await expect(new CampaignServiceClient().loadBriefById(req, 'tlf', 'b-1')).resolves.toMatchObject({ status: 'loaded', etag: '"7"' });
+  });
+});
+
+/**
+ * The validator every brief READ returns.
+ *
+ * Briefs are the one resource whose `etag` attribute is header-mapped upstream, so Goa keeps it
+ * out of the response body — `readEtag(response) ?? response.data.etag`, the idiom the audience
+ * and campaign reads use, recovers nothing here. What the body does carry is the `version` the
+ * header is rendered from, so quoting it reconstructs the header's own string.
+ */
+describe('readBriefValidator', () => {
+  it('prefers the header when it is present, rather than re-deriving it', () => {
+    // Deliberately disagreeing values: the header is the authority, and a derived validator must
+    // never silently replace one the server actually sent.
+    expect(readBriefValidator({ data: storedBrief({ version: 7 }), status: 200, statusText: 'OK', headers: { etag: '"9"' } } as never)).toBe('"9"');
+  });
+
+  it('quotes the body version when no header arrives, matching what the server would have sent', () => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version: 7 })) as never)).toBe('"7"');
+  });
+
+  // Version 0 is a real version, and `0` is falsy — the one value a truthiness test would drop.
+  it('keeps version zero rather than reading it as absent', () => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version: 0 })) as never)).toBe('"0"');
+  });
+
+  // An int64 past 2^53 is already mangled by `JSON.parse` before this ever sees it, so quoting it
+  // would mint an `If-Match` that cannot match anything. No validator is the safer answer: it is
+  // refused, with a message, instead of silently failing a precondition the user cannot act on.
+  it.each([
+    ['a version past the safe-integer range', Number.MAX_SAFE_INTEGER + 2],
+    ['a non-numeric version', 'seven'],
+    ['an absent version', undefined],
+  ])('returns null for %s rather than minting an If-Match that cannot match', (_label, version) => {
+    expect(readBriefValidator(apiResponse(storedBrief({ version })) as never)).toBeNull();
+  });
+});
+
+/**
+ * Approving a brief that is ALREADY STORED, which is the only route out of `draft` that writes
+ * no content.
+ *
+ * The restore path suppresses its save on purpose — a PUT would overwrite the stored
+ * `event_details`, `copy`, `keywords` and `targeting` with `fromBriefResponse`'s lossy
+ * reconstruction — so these tests exist to pin that this method sends exactly one POST and never
+ * a write of the brief itself, and that each upstream refusal lands on the conflict the UI can
+ * say something true about.
+ */
+describe('CampaignServiceClient.approveStoredBrief', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    logger.warning.mockClear();
+  });
+
+  it('approves with the validator the caller already holds, without re-reading the row', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved', version: 2 }), { etag: '"2"' }));
+
+    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"');
+
+    expect(result).toEqual({ enabled: true, briefId: 'b-1', etag: '"2"', approved: true });
+    // One call, and it is the approve. A second call here would mean a read the caller's own
+    // validator made unnecessary; a PUT would mean the restore's content loss.
+    expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+    expect(proxyRequestWithResponse).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1/approve', 'POST', undefined, undefined, {
+      'If-Match': '"1"',
+    });
+  });
+
+  // `approve-brief` does `version = version + 1` and the ETag mirrors the version, so returning
+  // the validator we approved WITH would have the caller's next save refused by its own approval.
+  it('returns the new validator the approval minted, not the one it approved with', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"7"' }));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"6"')).resolves.toMatchObject({ etag: '"7"' });
+  });
+
+  it('reports no validator rather than inventing one when the approval response carries no ETag', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' })));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: true,
+    });
+  });
+
+  // The regression this method used to have: it re-read the row and approved with whatever
+  // validator came back. The restore approves automatically one round trip after its own read,
+  // and campaign creation builds from the approved row — so a writer who replaced the brief in
+  // between had THEIR content approved and built on while the user looked at the restore's.
+  // Refusing is the fix, and the refusal has to be classified so the UI can name the remedy.
+  it('refuses to approve when the caller holds no validator, rather than reading one itself', async () => {
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', null)).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+      conflict: 'unverified-validator',
+    });
+    // Zero calls. A GET here is the re-read coming back; a POST is the blind approval itself.
+    expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+  });
+
+  // The whole point of the refusal above: a brief replaced between the restore's read and this
+  // approve must not be approved silently. With a validator in hand the 412 does that job; the
+  // user is told the row moved instead of being told the approval succeeded.
+  it('surfaces a brief replaced since the restore as stale-brief, never as a silent approval', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED'));
+
+    const result = await new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"3"');
+
+    expect(result).toMatchObject({ approved: false, conflict: 'stale-brief' });
+    expect(proxyRequestWithResponse.mock.calls[0]?.[6]).toEqual({ 'If-Match': '"3"' });
+  });
+
+  it('reports a stale validator as stale-brief, so the UI can say the row moved', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('precondition failed', 412, 'PRECONDITION_FAILED'));
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+      conflict: 'stale-brief',
+    });
+  });
+
+  it("reports campaign-service's own typed 404 on the approve as brief-not-found", async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(NOT_FOUND);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toMatchObject({
+      approved: false,
+      conflict: 'brief-not-found',
+    });
+  });
+
+  // The second case is the sibling's classification, not an oversight: `approveBrief` also keeps
+  // an untyped 404 in its "definitely rejected" arm, where only 412 and 408 are carved out. Only
+  // campaign-service's OWN typed 404 means the row is gone; anything else that a 4xx-speaking hop
+  // declined is a refusal, and the two methods must not disagree about which is which.
+  it.each([
+    ['a refusal the service actually made', new MicroserviceError('bad request', 400, 'BAD_REQUEST')],
+    ['an untyped 404, exactly as the save-path approval classifies it', new MicroserviceError('not found', 404, 'NOT_FOUND', { errorBody: null })],
+  ])('reports %s as rejected', async (_label, error) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toMatchObject({
+      approved: false,
+      conflict: 'rejected',
+    });
+  });
+
+  // Neither of these is evidence the approval was refused: a 5xx may have committed and lost its
+  // reply, and `ApiClientService` turns our OWN local abort into `MicroserviceError(408)`. Both
+  // must come back without a conflict, so the UI reports "could not be confirmed" rather than
+  // naming a conflict that never happened.
+  it.each([
+    ['an upstream 5xx', new MicroserviceError('boom', 503, 'SERVICE_UNAVAILABLE')],
+    ['our own client-side timeout', new MicroserviceError('timeout', 408, 'TIMEOUT')],
+    ['a non-HTTP failure', new Error('socket hang up')],
+  ])('reports %s as indeterminate, with no conflict named', async (_label, error) => {
+    proxyRequestWithResponse.mockRejectedValueOnce(error);
+
+    await expect(new CampaignServiceClient().approveStoredBrief(req, 'tlf', 'b-1', '"1"')).resolves.toEqual({
+      enabled: true,
+      briefId: 'b-1',
+      etag: null,
+      approved: false,
+    });
+  });
+
+  it("addresses the caller's own foundation and escapes the brief id", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(storedBrief({ status: 'approved' }), { etag: '"2"' }));
+
+    await new CampaignServiceClient().approveStoredBrief(req, 'cncf', 'b 1/2', '"1"');
+
+    expect(proxyRequestWithResponse.mock.calls[0]?.[2]).toBe('/projects/cncf/briefs/b%201%2F2/approve');
+  });
 });
 
 /**
@@ -1866,6 +2357,39 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toContain('nothing was created');
     expect(res.indeterminate, 'a definite refusal was marked indeterminate').toBeUndefined();
     expect(res.error).toContain('try again');
+  });
+
+  /**
+   * campaign-service's own bidding refusal (#3299) names the field and the reason, and carries no
+   * caller value but the amount — so it is the one upstream 400 worth showing. Matched on its exact
+   * wording, so any other 400 keeps the generic text.
+   */
+  it('names an invalid bid that campaign-service refused', async () => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(
+      new MicroserviceError('invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero', 400, 'campaign_service')
+    );
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.jobId).toBeNull();
+    expect(res.indeterminate).toBeUndefined();
+    expect(res.error).toBe(
+      'Campaign creation was rejected and nothing was created: invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'
+    );
+  });
+
+  it.each([
+    ['another config field', 400, 'invalid campaign config: metaConfig.budget: must be positive'],
+    ['a googleAdsConfig bidding refusal', 400, 'invalid campaign config: googleAdsConfig.bidding: use googleAdsConfig.biddingStrategy'],
+    ['a bidding message on a 409', 409, 'invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'],
+  ])('keeps the generic refusal text for %s', async (_label, status, message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, status, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['meta-ads'], { metaConfig: { budget: 100 } });
+
+    expect(res.error).toBe('Campaign creation was rejected and nothing was created. Please try again.');
   });
 
   it('does NOT tell the user to retry after an indeterminate failure', async () => {
@@ -3765,6 +4289,61 @@ describe('CampaignServiceClient.addNegativeKeywords', () => {
     });
     // No headers argument at all: this lever persists nothing and takes no If-Match.
     expect(call).toHaveLength(6);
+    // Microsoft Advertising and X refuse a PRESENT revision, even an empty one.
+    expect(call[5]).not.toHaveProperty('revision');
+  });
+
+  it("sends Reddit's revision in the body, exactly as given, when the caller passes one", async () => {
+    const revision = 'sha256:5e1b7f0c2a9d4e3b8c6a1f0e9d8c7b6a';
+    const broad = [{ text: 'free download', matchType: 'Broad' as const }];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free download', match_type: 'Broad', outcome: 'APPLIED' }],
+      applied_count: 1,
+    });
+
+    await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: broad, revision });
+
+    expect(proxyRequest.mock.calls[0][5]).toEqual({ negative_keywords: [{ text: 'free download', match_type: 'Broad' }], revision });
+  });
+
+  // Reddit: the new keywords share one PATCH's outcome, and ALREADY_PRESENT ones keep theirs. A
+  // mixed batch is answered per item, so the ALREADY_PRESENT entries must survive the mapping.
+  it('keeps the ALREADY_PRESENT entries of a mixed Reddit batch at their own positions', async () => {
+    const reddit = [
+      { text: 'free', matchType: 'Broad' as const },
+      { text: 'torrent', matchType: 'Broad' as const },
+      { text: 'crack', matchType: 'Broad' as const },
+    ];
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [
+        { text: 'free', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+        { text: 'torrent', match_type: 'Broad', outcome: 'ALREADY_PRESENT' },
+        { text: 'crack', match_type: 'Broad', outcome: 'UNCONFIRMED' },
+      ],
+      applied_count: 1,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: reddit, revision: 'sha256:abc' });
+
+    expect(result.results.map((r) => r.outcome)).toEqual(['UNCONFIRMED', 'ALREADY_PRESENT', 'UNCONFIRMED']);
+    expect(result.appliedCount).toBe(1);
+  });
+
+  it.each([
+    ['NOT_SENT', 'NOT_SENT'],
+    ['REJECTED', 'REJECTED'],
+  ])('relays the %s error code of a FAILED X or Reddit keyword', async (_label, code) => {
+    proxyRequest.mockResolvedValueOnce({
+      campaign_id: 'c-1',
+      results: [{ text: 'free', match_type: 'Exact', outcome: 'FAILED', error_code: code }],
+      applied_count: 0,
+    });
+
+    const result = await new CampaignServiceClient().addNegativeKeywords(req, { ...args, negativeKeywords: [{ text: 'free', matchType: 'Exact' }] });
+
+    expect(result.results[0]).toEqual({ text: 'free', matchType: 'Exact', outcome: 'FAILED', errorCode: code });
   });
 
   /**
@@ -4020,6 +4599,26 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     );
   });
 
+  // lfx-v2-campaign-service#366: the index carries `adopted: true` on an adopted campaign, absent
+  // otherwise. Carried through as a literal `true` only; anything else is dropped, never `false`.
+  it('carries adopted: true through and drops any other adopted value', async () => {
+    proxyRequest.mockResolvedValueOnce({
+      resources: [
+        { data: doc({ adopted: true }) },
+        { data: doc({ id: 'c-2' }) },
+        { data: doc({ id: 'c-3', adopted: 'true' }) },
+        { data: doc({ id: 'c-4', adopted: false }) },
+      ],
+    });
+
+    const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+    expect(result.campaigns[0].adopted).toBe(true);
+    for (const campaign of result.campaigns.slice(1)) {
+      expect('adopted' in campaign).toBe(false);
+    }
+  });
+
   /**
    * The all-foreign case, which the mixed test above does not reach: `possiblyStale` is derived
    * from `campaigns.length`, NOT `docs.length`, and only a read where every row is dropped tells
@@ -4063,6 +4662,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
+      redditAssetUploadEnabled: false,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
     });
   });
 
@@ -4190,6 +4792,66 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /**
+   * The Bidding capability (#3299) needs the create cutover AND its own flag: the legacy creator
+   * never reads `bidding`, and a campaign-service without #332 drops it — either would create the
+   * campaign automatic while the operator asked for a manual bid.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, bidding: true }, true],
+    [{ create: true, briefs: true, jobs: true, bidding: false }, false],
+    [{ create: false, briefs: true, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: false, jobs: true, bidding: true }, false],
+    [{ create: true, briefs: true, jobs: false, bidding: true }, false],
+  ])('reports the bidding capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceBidding) return flags.bidding;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.biddingEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /**
+   * The Reddit image-upload capability (decision D3) needs the create cutover AND its own flag:
+   * the legacy creator never reads `imageAssetId`, and a campaign-service without URL signing
+   * refuses it.
+   */
+  it.each([
+    [{ create: true, briefs: true, jobs: true, assets: true }, true],
+    [{ create: true, briefs: true, jobs: true, assets: false }, false],
+    [{ create: false, briefs: true, jobs: true, assets: true }, false],
+    [{ create: true, briefs: false, jobs: true, assets: true }, false],
+    [{ create: true, briefs: true, jobs: false, assets: true }, false],
+  ])('reports the Reddit image-upload capability only when the cutover owns the create and the flag is on (%o)', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) => {
+      if (flag === ServerFeatureFlag.CampaignServiceCreate) return flags.create;
+      if (flag === ServerFeatureFlag.CampaignServiceBriefs) return flags.briefs;
+      if (flag === ServerFeatureFlag.CampaignServiceJobs) return flags.jobs;
+      if (flag === ServerFeatureFlag.CampaignServiceRedditAssets) return flags.assets;
+      return false;
+    });
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+
+    try {
+      const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
+
+      expect(result.redditAssetUploadEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   // A TRUNCATED list is worse than an error, which is what failOnPartial buys. The caller cannot
   // tell a short list from a complete one, and the campaigns missing from it are live and
   // spending — so a page-two failure must propagate rather than quietly return page one.
@@ -4222,6 +4884,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       // TRUE with every flag off, unlike its Google sibling: both creators author the promoted
       // post since #3432, so the capability no longer tracks the cutover (`canCreateRedditCreative`).
       redditCreativeEnabled: true,
+      redditAssetUploadEnabled: false,
+      // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
+      biddingEnabled: false,
     });
   });
 });
@@ -4415,6 +5080,85 @@ describe('CampaignServiceClient.getBriefMetrics', () => {
     // covers only 1 of the 2 campaigns.
     expect(result.ok_count).toBe(1);
     expect(result.rows).toHaveLength(2);
+  });
+});
+
+describe('CampaignServiceClient.getCampaignMetrics', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const METRICS = {
+    campaign_id: 'c-1',
+    platform_campaign_id: 'p-1',
+    window: 'last_30_days',
+    impressions: 1840,
+    clicks: 212,
+    cost_micros: 1284000,
+    ctr: 0.1152,
+  };
+
+  /** Fifth argument, which is `query`, with the body position left empty — as `getBriefMetrics` pins. */
+  it('sends the window as a query parameter, not a body', async () => {
+    proxyRequest.mockResolvedValue({ ...METRICS, window: 'last_7_days' });
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1', 'last_7_days');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', {
+      window: 'last_7_days',
+    });
+    expect(proxyRequest.mock.calls[0]).toHaveLength(5);
+  });
+
+  /**
+   * Omitted, not defaulted: upstream gives X Ads `last_7_days` when no window is named, and an
+   * explicit `last_30_days` would turn that read into a 400 on the single-campaign endpoint.
+   */
+  it('sends no window at all when the caller specifies none', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/cncf/briefs/b-1/campaigns/c-1/metrics', 'GET', undefined);
+  });
+
+  it('encodes every path segment', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    await new CampaignServiceClient().getCampaignMetrics(req, 'a b', 'b/1', 'c?1');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/a%20b/briefs/b%2F1/campaigns/c%3F1/metrics');
+  });
+
+  it.each([
+    ['no project', '', 'b-1', 'c-1'],
+    ['no brief id', 'cncf', '', 'c-1'],
+    ['no campaign id', 'cncf', 'b-1', ''],
+  ])('refuses a request with %s without calling the proxy', async (_label, slug, brief, campaign) => {
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, slug, brief, campaign)).rejects.toBeInstanceOf(ServiceValidationError);
+
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  /** Returned verbatim: an absent `conversions` stays absent rather than becoming a measured 0. */
+  it('returns the measurement unchanged, leaving an unreported conversions count absent', async () => {
+    proxyRequest.mockResolvedValue(METRICS);
+
+    const result = await new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1');
+
+    expect(result).toEqual(METRICS);
+    expect(result.conversions).toBeUndefined();
+  });
+
+  /** An upstream refusal (400 unsupported platform, 409 not measurable) is thrown for the error middleware, not mapped to data. */
+  it('lets an upstream refusal propagate', async () => {
+    const refusal = new MicroserviceError("metrics reads are not supported for this campaign's platform", 400, 'BAD_REQUEST', {
+      operation: 'campaign_metrics_read',
+      service: 'campaign_service',
+    });
+    proxyRequest.mockRejectedValue(refusal);
+
+    await expect(new CampaignServiceClient().getCampaignMetrics(req, 'cncf', 'b-1', 'c-1')).rejects.toBe(refusal);
   });
 });
 
@@ -4860,5 +5604,169 @@ describe('CampaignServiceClient account monitors', () => {
   it('refuses an empty project for the HubSpot monitor without calling the proxy', async () => {
     await expect(new CampaignServiceClient().getHubSpotAccountMonitor(req, '', 30)).rejects.toBeInstanceOf(ServiceValidationError);
     expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('CampaignServiceClient.getConnection', () => {
+  const connection = { id: 'c1', project_id: 'cncf', account_id: '187654321', has_credentials: true, status: 'active' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(['linkedin-ads', 'meta-ads', 'reddit-ads', 'microsoft-ads', 'twitter-ads'] as const)(
+    "GETs the project's own connection-%s with no query or body",
+    async (provider) => {
+      proxyRequest.mockResolvedValueOnce(connection);
+
+      const result = await new CampaignServiceClient().getConnection(req, 'cncf', provider);
+
+      expect(result).toBe(connection);
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}`, 'GET');
+    }
+  );
+
+  it('encodes the project as a path segment', async () => {
+    proxyRequest.mockResolvedValueOnce(connection);
+
+    await new CampaignServiceClient().getConnection(req, 'lf/ai', 'meta-ads');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/projects/lf%2Fai/connection-meta-ads');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().getConnection(req, '', 'reddit-ads').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect((caught as ServiceValidationError).validationErrors[0].field).toBe('project');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure for the caller to classify', async () => {
+    const upstream = new Error('404');
+    proxyRequest.mockRejectedValueOnce(upstream);
+
+    await expect(new CampaignServiceClient().getConnection(req, 'cncf', 'linkedin-ads')).rejects.toBe(upstream);
+  });
+});
+
+describe('CampaignServiceClient.uploadCreativeAsset', () => {
+  const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+  const stored = {
+    id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301',
+    project_id: 'tlf',
+    brief_id: BRIEF,
+    mime_type: 'image/png',
+    byte_size: PNG.byteLength,
+    checksum: 'ab'.repeat(32),
+  };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  // The wire is JSON with base64 `bytes`, sent as a Buffer so the API client declares its
+  // Content-Length — campaign-service's upload admission charges an undeclared body the whole
+  // upload budget and sheds concurrent ones with a 503.
+  it('posts the image base64-encoded in a JSON Buffer body to the brief and maps a 201 to created', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ ...apiResponse({ ...stored, created: 'true' }), status: 201 });
+
+    const result = await new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG);
+
+    expect(result).toEqual({ id: stored.id, mimeType: 'image/png', byteSize: PNG.byteLength, checksum: stored.checksum, created: true });
+    const [, service, path, method, query, body, headers] = proxyRequestWithResponse.mock.calls[0];
+    expect(service).toBe('LFX_V2_CAMPAIGN_SERVICE');
+    expect(path).toBe(`/projects/tlf/briefs/${BRIEF}/creative-assets`);
+    expect(method).toBe('POST');
+    expect(query).toBeUndefined();
+    expect(Buffer.isBuffer(body)).toBe(true);
+    expect(JSON.parse((body as Buffer).toString('utf8'))).toEqual({ content_type: 'image/png', bytes: PNG.toString('base64') });
+    expect(headers).toEqual({ 'Content-Type': 'application/json' });
+  });
+
+  it('reports an identical image already stored (200) as not created, with the same usable id', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ ...stored, created: 'false' }));
+
+    const result = await new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG);
+
+    expect(result.id).toBe(stored.id);
+    expect(result.created).toBe(false);
+  });
+
+  it.each([
+    ['another brief', { ...stored, brief_id: '00000000-0000-0000-0000-000000000000' }],
+    ['no id', { ...stored, id: '' }],
+    ['a type outside the allowlist', { ...stored, mime_type: 'image/gif' }],
+  ])('refuses an answer naming %s with a 502 rather than handing back an id the create cannot use', async (_label, data) => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ ...apiResponse(data), status: 201 });
+
+    await expect(new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG)).rejects.toMatchObject({ statusCode: 502 });
+  });
+
+  it('lets an upstream refusal through with its own status', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('the image is not a decodable image', 400, 'BAD_REQUEST'));
+
+    await expect(new CampaignServiceClient().uploadCreativeAsset(req, 'tlf', BRIEF, 'image/png', PNG)).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'the image is not a decodable image',
+    });
+  });
+});
+
+describe('asResumeRefusal', () => {
+  const answered = (body: Record<string, unknown>) => new MicroserviceError('upstream text', 409, 'CONFLICT', { errorBody: { code: '409', ...body } });
+  const clientText = (error: unknown) => (error as MicroserviceError).toResponse()['error'] as string;
+
+  it("names the platform and keeps campaign-service's sentence", () => {
+    const error = asResumeRefusal(answered({ message: 'not fully provisioned' }), 'reddit-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
+    expect(clientText(error)).toContain('resume it in Reddit Ads itself.');
+    expect(clientText(error)).toContain('Otherwise, the reason given was: not fully provisioned');
+  });
+
+  // lfx-v2-campaign-service#366: `reason: "campaign_adopted"` gets its own code and the unhedged message.
+  it('re-codes a 409 with reason campaign_adopted as CAMPAIGN_RESUME_REFUSED_ADOPTED with the precise message', () => {
+    const error = asResumeRefusal(answered({ message: 'campaign was adopted', reason: 'campaign_adopted' }), 'microsoft-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED_ADOPTED');
+    expect(clientText(error)).toBe(
+      'Could not resume this campaign; it is still paused. This campaign was adopted from Microsoft Ads, so LFX One can pause it but not resume it — resume it in Microsoft Ads itself.'
+    );
+    expect(clientText(error)).not.toContain('If it was adopted');
+    expect(error.statusCode).toBe(409);
+  });
+
+  it.each([
+    ['no reason', { message: 'not fully provisioned' }],
+    ['another reason', { message: 'not fully provisioned', reason: 'stale_approval' }],
+    // Branched on the field, never the text: a message that mentions adoption changes nothing.
+    ['adoption named only in the message', { message: 'campaign_adopted' }],
+  ])("keeps #3741's hedged message for a 409 with %s", (_label, body) => {
+    const error = asResumeRefusal(answered(body), 'reddit-ads', 'op') as MicroserviceError;
+
+    expect(error.code).toBe('CAMPAIGN_RESUME_REFUSED');
+    expect(clientText(error)).toContain('If it was adopted from Reddit Ads');
+  });
+
+  it('falls back to a generic platform name for an unknown platform id', () => {
+    expect(clientText(asResumeRefusal(answered({ message: 'x' }), 'unknown-ads', 'op'))).toContain('resume it in the ad platform itself.');
+  });
+
+  it.each([
+    ['no message', {}],
+    ['a whitespace-only message', { message: '   ' }],
+    ['a non-string message', { message: 42 }],
+  ])('omits the reason sentence for %s', (_label, body) => {
+    const text = clientText(asResumeRefusal(answered(body), 'google-ads', 'op'));
+
+    expect(text).toContain('resume it in Google Ads itself.');
+    expect(text).not.toContain('Otherwise');
+  });
+
+  it('passes a non-MicroserviceError through unchanged', () => {
+    const error = new Error('boom');
+    expect(asResumeRefusal(error, 'google-ads', 'op')).toBe(error);
   });
 });

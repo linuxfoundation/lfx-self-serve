@@ -212,7 +212,7 @@
                     <div>
                       <p class="text-sm font-medium text-slate-700">Enter verification code</p>
                       <p class="text-xs text-slate-500 mt-0.5">
-                        A 6-digit code was sent to <strong>{{ pendingEmail() }}</strong
+                        If this address can be added, a 6-digit code was sent to <strong>{{ pendingEmail() }}</strong
                         >. Enter it below to verify and add the address.
                       </p>
                     </div>
@@ -262,6 +262,10 @@
                         {{ sendingCode() ? 'Sending...' : "Didn't receive the code? Resend" }}
                       </button>
                     }
+                    <p class="text-xs text-slate-500" data-testid="otp-support-hint">
+                      Didn't get a code? The address may already be linked to another LFX account —
+                      <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="otp-support-button">contact support</button>.
+                    </p>
                   </div>
                 }
               </div>

@@ -8,7 +8,7 @@
   [class.opacity-80]="!isClickable()"
   [attr.role]="isClickable() ? 'button' : null"
   [attr.tabindex]="isClickable() ? 0 : null"
-  [attr.aria-label]="initiative().name"
+  [attr.aria-label]="cardLabel()"
   [attr.data-testid]="'initiative-card-' + initiative().id"
   (click)="onCardClick()"
   (keydown.enter)="onCardClick()"
@@ -30,6 +30,16 @@
     </span>
     <div class="flex items-center gap-2 flex-wrap">
       <span class="text-base font-bold text-gray-900">{{ initiative().name }}</span>
+      <!-- Org or project the initiative is run on behalf of; personal shows nothing. The card is the button, so its aria-label carries this. -->
+      @if (attributionTooltip(); as tooltip) {
+        <i
+          class="text-sm text-gray-400"
+          [class]="attributionIcon()"
+          aria-hidden="true"
+          [pTooltip]="tooltip"
+          tooltipPosition="top"
+          data-testid="initiative-card-attribution"></i>
+      }
       @switch (initiative().status) {
         @case ('published') {
           <span class="inline-flex items-center text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">Published</span>

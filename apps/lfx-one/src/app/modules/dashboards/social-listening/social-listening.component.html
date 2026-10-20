@@ -118,7 +118,7 @@
       data-testid="social-listening-no-foundation" />
   } @else {
     <div class="flex flex-col gap-4">
-      <!-- Active-filter summary on BOTH tabs: analytics applies the feed predicate too (M1), so the pills are the only on-tab indication. Click a pill to remove that filter -->
+      <!-- Active-filter summary on BOTH tabs: on Analytics content-filter pills scope Mentions by Tag; bookmark/read-state pills affect the feed only. -->
       @if (activeFilterPills().length) {
         <div class="flex flex-wrap items-center gap-2" aria-label="Active filters" data-testid="social-listening-filter-pills">
           <lfx-filter-pills [options]="activeFilterPills()" selectedFilter="" (filterChange)="removeFilterPill($event)" />

@@ -198,11 +198,13 @@ changing a value here rather than by shipping a revert.
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_CREATE`          | Creates campaigns through campaign-service instead of the per-platform Express services — deploy only after STATUS_TOGGLE converges                                                                                                                                                                                                                                                                  | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_DEMAND_GEN`      | Allows Demand Gen Google campaigns. Requires a campaign-service that understands `googleAdsConfig.channel` (LFXV2-3257)                                                                                                                                                                                                                                                                              | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_GOOGLE_CHANNELS` | Offers Performance Max, Video and Display. Allows a Performance Max or Display CREATE; Video is only ever offered, never unlocked, because the Google Ads API cannot create one. Requires a campaign-service that knows those `googleAdsConfig.channel` values                                                                                                                                       | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`         | Offers the per-platform Bidding control (Automatic or Manual max CPC) for LinkedIn, Meta, Microsoft Ads and Reddit (#3299). Requires [campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332) deployed and the create pipeline on; see `values.yaml`                                                                                                             | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS`   | Offers a PNG/JPEG image upload in the Reddit create section, sent as `imageAssetId` (decision D3). Requires campaign-service's creative-asset URL signing configured (`CREATIVE_ASSET_URL_SIGNING_KEY` + `CREATIVE_ASSET_PUBLIC_BASE_URL`) and the create pipeline on; see `values.yaml`                                                                                                             | No       | off      |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_STATUS_TOGGLE`   | Serves campaign pause/resume from campaign-service, which is what makes Google Ads and LinkedIn pausable — see below                                                                                                                                                                                                                                                                                 | No       | `"true"` |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_INSIGHTS`        | Serves the Google Ads keyword and audience reads from campaign-service, scoped to the project's own campaigns — REQUIRES [campaign-service #190](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/190) deployed first; CHANGES THE NUMBERS — see the flag's own note in `values.yaml`                                                                                                 | No       | on       |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_KEYWORD_ACTIONS` | Serves keyword pause/remove from campaign-service — REQUIRES [campaign-service #191](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/191) deployed first; the legacy path is already broken without the GADS\_\* vars. NOTE: two request-boundary changes apply even with this OFF, deliberately — a 50-row cap and a malformed-id refusal on `/keywords/actions`; see `values.yaml` | No       | on       |
 | `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_HUBSPOT_UTM`     | Serves the HubSpot campaign UTM lookup and create from campaign-service — REQUIRES [campaign-service #193](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/193) deployed first, see below                                                                                                                                                                                            | No       | off      |
-| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`         | Serves the LinkedIn, Meta and Reddit account monitors from campaign-service and enables the campaign-service-only Microsoft, X and HubSpot monitor routes (#2519) — reads with the project's OWN connection only; see `values.yaml`                                                                                                                                                                  | No       | off      |
+| `environment.LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR`         | Serves the LinkedIn, Meta and Reddit account monitors from campaign-service and enables the campaign-service-only Microsoft, X and HubSpot monitor routes (#2519) — reads with the project's OWN connection only; a mixed rollout is safe (an off pod refuses a connection-picked read with a retryable 409); see `values.yaml`                                                                      | No       | off      |
 
 `..._JOBS` now defaults to `"true"` (LFXV2-3325), the first step of the enable order below.
 **`..._JOBS` must stay on, and comes off LAST.** With `..._CREATE` enabled campaign-service mints
@@ -218,7 +220,7 @@ TIME, each converging before the next:
 JOBS  →  BRIEFS  →  STATUS_TOGGLE  →  CREATE
 ```
 
-The other five flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._INSIGHTS`,
+The other six flags in the table -- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING`, `..._INSIGHTS`,
 `..._KEYWORD_ACTIONS` and `..._HUBSPOT_UTM` -- are NOT part of this enable order. They gate later, independent moves, each
 with its own prerequisite noted in the table. Their defaults now differ, and the difference
 matters to an operator deciding whether an override is needed:
@@ -227,10 +229,10 @@ matters to an operator deciding whether an override is needed:
   campaign-service, so no override is required to use them — and an override back to `"false"` is
   NOT a safe rollback wherever the `GADS_*` credentials have been removed, because the legacy arm
   then calls `getGadsClient()`, which throws before any read.
-- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
+- `..._DEMAND_GEN`, `..._GOOGLE_CHANNELS`, `..._BIDDING` and `..._HUBSPOT_UTM` default **OFF**. `..._HUBSPOT_UTM` additionally requires a
   HubSpot connection to exist for the project (or the LF system row) before it does anything but
   turn one error into another. The ordering rules below
-  are about the create pipeline only; each of these five carries its own note in `values.yaml`.
+  are about the create pipeline only; each of these six carries its own note in `values.yaml`.
 
 **This is a deploy constraint, not a merge one.** All four of the create-pipeline flags now
 default to `"true"` in this chart, and nothing in CI staggers them — a single rollout of this chart turns them all on at once, which
@@ -328,6 +330,25 @@ to ask an administrator.
 It is deliberately NOT folded into `..._DEMAND_GEN`. A deployment running LFXV2-3257 has had
 Demand Gen for months with that flag on; widening it would turn these three on everywhere Demand
 Gen already is, which is the guess the mechanism exists to avoid.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING` is a third capability flag of the same kind (#3299): does the
+deployed campaign-service understand the per-platform `bidding` object of
+[campaign-service #332](https://github.com/linuxfoundation/lfx-v2-campaign-service/pull/332)? An
+older service drops the key and creates every campaign on automatic bidding, so a Manual max CPC bid
+would be lost while the job reports success. It also needs the create pipeline on, because the
+legacy creator never reads `bidding`. Off (the default), the Bidding control is hidden and a create
+request carrying `bidding` is refused with a 400. On, the form sends `bidding` on every LinkedIn,
+Meta, Microsoft Ads and Reddit config — `{"strategy":"automatic"}` unless the operator picks Manual.
+
+`LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` is a fourth (decision D3): does the deployed
+campaign-service have creative-asset URL signing configured — `CREATIVE_ASSET_URL_SIGNING_KEY` and
+an https `CREATIVE_ASSET_PUBLIC_BASE_URL` (LFXV2-2665)? Reddit only fetches a promoted-post image from
+a public URL, and a short-lived signed URL is how an uploaded asset becomes one; without signing,
+campaign-service refuses every `redditConfig.imageAssetId` with a 400. It also needs the create
+pipeline on, because the legacy creator never reads `imageAssetId`. Off (the default), the Reddit
+section offers only the pasted image URL, the upload route refuses, and a create request carrying
+`imageAssetId` is refused with a 400. On, the section also offers a PNG/JPEG upload (up to 10 MB),
+stored against the brief and sent as `imageAssetId` in place of `imageUrl`.
 
 **Video is not unlocked by this flag, or by any flag.** The Google Ads API has no call that
 creates a Video campaign, so campaign-service refuses one in the first statement of
@@ -613,35 +634,37 @@ broken UX, not a security hazard, but avoidable by sequencing the rollback.
 
 #### Gatewaze Newsletter Embed
 
-| Parameter                                | Description                                                                                                                                                                                                                   | Required | Default   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- |
-| `environment.LFX_GATEWAZE_EMBED_ENABLED` | Server-side kill switch for the `/api/gw` proxy; off answers a uniform 404. Does **not** gate the Angular routes — the client-side `gatewaze-embed-enabled` flag controls those                                               | No       | off       |
-| `environment.GW_PROXY_TIMEOUT_MS`        | Upstream request timeout for `/api/gw`, in ms. Falls back to 60000 when unset or invalid                                                                                                                                      | No       | 60000     |
-| `environment.GW_PROXY_MAX_BODY_BYTES`    | Ceiling on a proxied request body, in bytes. Falls back to 104857600 (100MB) when unset or invalid                                                                                                                            | No       | 104857600 |
-| `environment.GW_API_URL`                 | Base URL of the Gatewaze admin API that `/api/gw` proxies to; https-only outside dev, no trailing slash                                                                                                                       | No       | unset     |
-| `environment.GW_SUPABASE_URL`            | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                                                                                                                | No       | unset     |
-| `environment.GW_SUPABASE_ANON_KEY`       | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                                                                                                                        | No       | unset     |
-| `environment.GW_LFID_START_URL`          | LFID sign-in entry point the embed's sign-in button redirects to                                                                                                                                                              | No       | unset     |
-| `environment.GW_EMBED_URL`               | Where the Gatewaze deployment serves the embeddable admin, e.g. `https://admin.example.org/embed`; https-only outside localhost, no trailing slash; unset means the embed refuses to mount                                    | No       | unset     |
-| `environment.LFX_GATEWAZE_HOST_SESSION`  | Host-session mode: LFX One mints and holds each user's Gatewaze session server-side so the browser never gets a Gatewaze token. Needs `LFX_GATEWAZE_EMBED_ENABLED`, the Valkey session store and the Gatewaze Supabase config | No       | off       |
+| Parameter                                | Description                                                                                                                                                                                                                                                                                            | Required | Default   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | --------- |
+| `environment.LFX_GATEWAZE_EMBED_ENABLED` | Server-side kill switch for the `/api/gatewaze` routes; off answers a uniform 404. Does **not** gate the Angular routes — the client-side `gatewaze-embed-enabled` flag controls those                                                                                                                 | No       | off       |
+| `environment.GW_PROXY_TIMEOUT_MS`        | Idle timeout on the `/api/gatewaze` upstream socket, in ms. Falls back to 60000 when unset or invalid                                                                                                                                                                                                  | No       | 60000     |
+| `environment.GW_PROXY_MAX_BODY_BYTES`    | Ceiling on a proxied request body, in bytes. Falls back to 104857600 (100MB) when unset or invalid                                                                                                                                                                                                     | No       | 104857600 |
+| `environment.GW_API_URL`                 | Origin of the Gatewaze admin API that `/api/gatewaze/api` proxies to; https-only outside dev, no path, no trailing slash                                                                                                                                                                               | No       | unset     |
+| `environment.GW_SUPABASE_URL`            | Supabase project URL the embedded Gatewaze admin authenticates against; unset means the embed refuses to mount                                                                                                                                                                                         | No       | unset     |
+| `environment.GW_SUPABASE_ANON_KEY`       | Supabase **anon** (publishable) key for the embed — never the service-role key; it reaches the browser                                                                                                                                                                                                 | No       | unset     |
+| `environment.GW_EMBED_URL`               | Where the Gatewaze deployment serves the embeddable admin, e.g. `https://admin.example.org/embed`; https-only outside localhost, no trailing slash; unset means the embed refuses to mount                                                                                                             | No       | unset     |
+| `environment.LFX_GATEWAZE_HOST_SESSION`  | Host-session mode, the embed's only mode: LFX One mints and holds each user's Gatewaze session server-side so the browser never gets a Gatewaze token. Needs `LFX_GATEWAZE_EMBED_ENABLED`, the Valkey session store and the Gatewaze Supabase config; off means the embed shows a not-configured panel | No       | off       |
 
 `LFX_GATEWAZE_EMBED_ENABLED` is the server half of a dark launch. The client-side
 `gatewaze-embed-enabled` OpenFeature flag hides the routes and nav, but it never runs server-side —
-on its own it would leave `/api/gw` reachable by direct call. Both must be on for the pilot to work,
-and this one is what makes the switch a real kill switch.
+on its own it would leave `/api/gatewaze` reachable by direct call. The pilot needs both, plus
+`LFX_GATEWAZE_HOST_SESSION`, and this one is what makes the switch a real kill switch.
+`LFX_GATEWAZE_HOST_SESSION` stays a separate flag so the server-held sessions can be turned off on
+their own, and so an environment that has the embed flag and Supabase config does not start
+minting sessions until someone turns it on.
 
 The UI is additionally restricted to a hard-coded tenant allowlist (currently the Agentic AI
 Foundation only), because Gatewaze has no multi-foundation scoping yet. That is a constant in the
 code, not a value here, because it is a data-presentation control rather than a rollout control.
 
 Note what it does **not** do: the allowlist runs in the browser, so it keeps the embed out of the
-wrong foundation's chrome but places no restriction on `/api/gw` itself. The proxy is bounded by
-`requireGwEmbedAccess` (the caller must hold ED, root writer, or a writer grant somewhere) and by
-the upstream's own Supabase auth — the embed authenticates the caller's own bearer, so enabling
-this flag confers no data access a caller did not already have.
+wrong foundation's chrome but places no restriction on `/api/gatewaze` itself. The routes are
+bounded by `requireGwEmbedAccess` (the caller must hold ED, root writer, or a writer grant
+somewhere) and by the upstream's own Supabase auth — the Gatewaze session is the caller's own, so
+enabling this flag confers no data access a caller did not already have.
 
-**Four of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY`,
-`GW_LFID_START_URL` and `GW_EMBED_URL` are serialised into `RuntimeConfig` and served in every
+**Three of these reach the browser.** `GW_SUPABASE_URL`, `GW_SUPABASE_ANON_KEY` and
+`GW_EMBED_URL` are serialised into `RuntimeConfig` and served in every
 page response. `GW_EMBED_URL` is also what the server fetches the embed's stylesheet from
 (`/public/api/gw-embed-stylesheet/:name`) to scope it to the LFX chrome. The anon
 key is publishable and protected by RLS, so that is correct — but a **service-role key in that slot
@@ -689,6 +712,7 @@ Server-side credentials for the Marketing OS agents proxy. Consumed only by the 
 | `environment.GUILD_WORKSPACE_OWNER`        | Guild workspace owner identifier. Defaults in code; override to target a different workspace                                                           | No       | `linux-foundation`     |
 | `environment.GUILD_WORKSPACE_NAME`         | Guild workspace name. Defaults in code; override to target a different workspace                                                                       | No       | `marketing-os`         |
 | `environment.GUILD_STRUCTURED_AGENT_INPUT` | Send the Message Foundation intake as a structured Guild `agent_input` instead of BFF-rendered text                                                    | No       | `"false"`              |
+| `environment.MKTG_SLIDES_EXPORT_FOLDER_ID` | Google Drive folder new Slides export decks are created in. Defaults in code to the Marketing OS folder; set it outside production                     | No       | Marketing OS folder    |
 | `environment.GITHUB_API_TOKEN`             | Token for the server-side README fetch. Unset uses unauthenticated GitHub (60 req/hour **per egress IP**); a public-repo token raises it to 5,000/hour | No       | -                      |
 
 #### Runtime Client Configuration

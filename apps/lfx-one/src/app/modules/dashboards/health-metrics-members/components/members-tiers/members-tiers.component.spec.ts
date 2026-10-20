@@ -133,13 +133,16 @@ describe('MembersTiersComponent', () => {
 
     expect(text('members-tiers-meta')).toBe('3 tiers · 3 years');
     expect(text('members-tiers-headline-value')).toBe('22');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-tiers-hero')?.classList).not.toContain('border');
     expect(text('members-tiers-headline-delta')).toBe('not available');
     expect(query('members-tiers-headline-baseline')).toBeNull();
     expect(text('members-tiers-headline-label')).toBe('Members');
     expect(text('members-tiers-side-revenue-value')).toBe('$2M');
     expect(text('members-tiers-side-new')).toContain('New this year');
     expect(query('members-tiers-side-new-value')?.className).toContain('text-emerald-600');
-    expect(text('members-tiers-side-share-value')).toBe('50%');
+    expect(text('members-tiers-side-share')).toContain('Share of foundation revenue');
+    expect(text('members-tiers-side-share-value')).toBe('50% of foundation revenue');
   });
 
   it('swaps the hero to revenue without re-reading', async () => {
@@ -181,7 +184,14 @@ describe('MembersTiersComponent', () => {
     const totals = [...(query('members-tiers-total-members')?.querySelectorAll('td') ?? [])].map((cell) => cell.textContent?.trim());
     expect(totals).toEqual(['15', '20', '22']);
     expect(text('members-tiers-total-revenue')).toContain('$1.8M');
-    expect(text('members-tiers-matrix-unit')).toBe('exact counts');
+    expect(text('members-tiers-matrix-unit')).toBe('the most-used table in PCC — exact counts');
+  });
+
+  it('keeps tier colours to the chart legend, not the matrix row headers', async () => {
+    await render();
+
+    expect(query('members-tiers-row-0')?.querySelector('th')?.children.length).toBe(0);
+    expect(query('members-tiers-legend')?.querySelectorAll('[style*="background-color"]').length).toBe(3);
   });
 
   it('charts each tier as its modelled share of the year, with the total under each year', async () => {
@@ -196,6 +206,7 @@ describe('MembersTiersComponent', () => {
     expect(data?.datasets.map((dataset) => dataset.label)).toEqual(['Platinum', 'Gold', 'Silver']);
     expect(data?.datasets[1].data).toEqual([66.7, 75, 72.7]);
     expect(text('members-tiers-legend')).toBe('Platinum Gold Silver');
+    expect(text('members-tiers-composition-caption')).toBe('the same table as shares, so a shifting mix is visible');
   });
 
   it('charts and tabulates revenue in revenue mode', async () => {
@@ -211,7 +222,8 @@ describe('MembersTiersComponent', () => {
       ['2026', '$2M'],
     ]);
     expect(data?.datasets[1].data).toEqual([33.3, 42.9, 40]);
-    expect(text('members-tiers-matrix-unit')).toBe('in USD');
+    expect(text('members-tiers-matrix-unit')).toBe('the most-used table in PCC — in USD');
+    expect(text('members-tiers-composition-caption')).toBe('the same table as shares, so a shifting mix is visible');
     expect(text('members-tiers-cell-1-2025')).toBe('$750K');
   });
 

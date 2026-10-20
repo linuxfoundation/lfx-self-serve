@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, DestroyRef, inject, input, signal, type Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormGroup } from '@angular/forms';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { ToggleComponent } from '@components/toggle/toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { COMPOSER_ATTENDEE_LOCK, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
@@ -19,6 +20,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
+import { updateTruncatedKeys } from '@shared/utils/truncation.util';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -37,7 +39,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
  */
 @Component({
   selector: 'lfx-composer-guests',
-  imports: [ButtonComponent, ConfirmDialogModule, FeatureToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
+  imports: [ButtonComponent, ConfirmDialogModule, InputTextComponent, ToggleComponent, UserSearchComponent, MeetingCommitteeManagerComponent, TooltipModule],
   providers: [ConfirmationService],
   templateUrl: './composer-guests.component.html',
 })
@@ -55,6 +57,12 @@ export class ComposerGuestsComponent {
 
   /** User selected from search but not yet added; cleared on confirm or dismiss. */
   protected readonly stagedGuest = signal<Record<string, unknown> | null>(null);
+
+  /** Free-text filter over the invited list; local to the view, never part of the meeting form. */
+  protected readonly guestFilterForm = new FormGroup({ query: new FormControl('', { nonNullable: true }) });
+  protected readonly guestFilter: Signal<string> = toSignal(this.guestFilterForm.controls.query.valueChanges, { initialValue: '' });
+  /** Group chips whose label is currently cut off, by row `trackId`; only those get a tooltip. */
+  protected readonly truncatedGroupChips = signal<ReadonlySet<string>>(new Set());
 
   protected readonly stagedGuestDisplayName: Signal<string> = computed(() => {
     const g = this.stagedGuest();
@@ -117,8 +125,6 @@ export class ComposerGuestsComponent {
     this.formService.guests().filter((guest) => guest.state !== 'deleted' && this.appliesToEditedOccurrence(guest))
   );
   protected readonly guestCount = computed(() => this.visibleGuests().length);
-  protected readonly groupGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'committee').length);
-  protected readonly directGuestCount = computed(() => this.visibleGuests().filter((guest) => guest.type === 'direct').length);
 
   /**
    * The guests an invitation has actually gone out to.
@@ -188,6 +194,26 @@ export class ComposerGuestsComponent {
    * guest, and only when the list itself changes.
    */
   protected readonly guestRows: Signal<ComposerGuestRow[]> = this.initGuestRows();
+  /** The invited rows narrowed by {@link guestFilter}, from the first character typed. */
+  protected readonly filteredGuestRows: Signal<ComposerGuestRow[]> = this.initFilteredGuestRows();
+
+  /**
+   * Grid for the step; see the template comment for the row/column placement.
+   * @description From `lg` up: a main column plus a 340px groups rail, rows of search / list (fills the rest,
+   * never under 320px) / switch. Below `lg`: one column in DOM order — search, groups, list, switch. Editing
+   * one occurrence drops the groups and the switch, leaving search and list.
+   */
+  protected readonly layoutClass: Signal<string> = computed(() =>
+    this.isOccurrenceEdit()
+      ? 'grid flex-1 grid-cols-1 grid-rows-[auto_minmax(320px,1fr)] gap-y-4'
+      : 'grid flex-1 grid-cols-1 grid-rows-[auto_auto_minmax(320px,1fr)_auto] gap-x-6 gap-y-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-[auto_minmax(320px,1fr)_auto]'
+  );
+
+  /** Accessible name for the compact attendees switch, carrying the lock note when there is one. */
+  protected readonly showAttendeesAriaLabel: Signal<string> = computed(() => {
+    const note = this.showAttendeesToggleNote();
+    return note ? `${this.showMeetingAttendeesFeature.title}. ${note}` : this.showMeetingAttendeesFeature.title;
+  });
 
   /**
    * Emails already on the meeting, for the duplicate guard.
@@ -290,6 +316,33 @@ export class ComposerGuestsComponent {
 
   protected onCommitteeMembersChange(members: CommitteeMember[]): void {
     this.formService.syncCommitteeMembers(members);
+  }
+
+  /** Records whether a group chip's label is cut off, so its tooltip only shows when it adds something. */
+  protected onGroupChipEnter(trackId: string, event: Event): void {
+    this.truncatedGroupChips.set(updateTruncatedKeys(this.truncatedGroupChips(), trackId, event.currentTarget as HTMLElement));
+  }
+
+  /**
+   * Matches the start of any word in the name, the secondary line (email · title · org) or the email — so "a"
+   * narrows to Anna and Andre rather than every name containing an "a" — and also the start of each whole
+   * value, so a typed or pasted email ("ada.byron@…") or hyphenated name still matches.
+   */
+  private initFilteredGuestRows(): Signal<ComposerGuestRow[]> {
+    return computed(() => {
+      const term = this.guestFilter().trim().toLowerCase();
+
+      if (!term) {
+        return this.guestRows();
+      }
+
+      const matches = (value: string | null | undefined): boolean => {
+        const text = (value ?? '').toLowerCase();
+        return text.startsWith(term) || text.split(/[\s@._\-·,()]+/).some((word) => word.startsWith(term));
+      };
+
+      return this.guestRows().filter((row) => matches(row.displayName) || matches(row.secondaryLine) || matches(row.guest.email));
+    });
   }
 
   private initGuestRows(): Signal<ComposerGuestRow[]> {

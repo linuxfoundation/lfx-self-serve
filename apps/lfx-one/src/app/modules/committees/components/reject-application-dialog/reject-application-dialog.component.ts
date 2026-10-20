@@ -17,6 +17,9 @@ export class RejectApplicationDialogComponent {
   private readonly config = inject(DynamicDialogConfig);
 
   public readonly applicantEmail: string = this.config.data?.applicantEmail ?? 'this applicant';
+  /** Optional: the group (and its project) being applied to, so the reviewer sees what they are declining. */
+  public readonly groupName: string | undefined = this.config.data?.groupName;
+  public readonly projectName: string | undefined = this.config.data?.projectName;
 
   public readonly form = new FormGroup({
     reviewer_notes: new FormControl<string>('', { nonNullable: true }),

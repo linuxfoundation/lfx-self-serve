@@ -727,6 +727,32 @@ export function withSocialListeningCache<T>(
   return valkeyService.withCache(buildSocialListeningCacheKey(foundationSlug, resource, discriminator), ttlSeconds, fetcher, accept);
 }
 
+/**
+ * Per-project Participating Organizations cache key (#2091): the query's discriminator is sha256-hashed
+ * so a search value can't corrupt the key; null (fail-closed → direct fetch) for an unsafe slug.
+ */
+function buildProjectParticipatingOrgsCacheKey(projectSlug: string, resource: string, discriminator: readonly (string | number)[]): string | null {
+  if (!isFilterSafeIdentifier(projectSlug)) return null;
+  const digest = createHash('sha256').update(JSON.stringify(discriminator)).digest('hex').slice(0, 16);
+  return `${keyPrefix()}:${VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_NAMESPACE}:${projectSlug}:${resource}:${digest}`;
+}
+
+/** Read-through helper for the per-project Participating Organizations namespace; a null key (unsafe slug) fetches directly. */
+export function withProjectParticipatingOrgsCache<T>(
+  projectSlug: string,
+  resource: string,
+  discriminator: readonly (string | number)[],
+  fetcher: () => Promise<T>,
+  accept: (value: unknown) => boolean
+): Promise<T> {
+  return valkeyService.withCache(
+    buildProjectParticipatingOrgsCacheKey(projectSlug, resource, discriminator),
+    VALKEY_CACHE.PROJECT_PARTICIPATING_ORGS_TTL_SECONDS,
+    fetcher,
+    accept
+  );
+}
+
 /** Read-through helper for the per-org Snowflake-backed namespace; a null key (unsafe account id) fetches directly. */
 export function withOrgCache<T>(
   accountId: string,

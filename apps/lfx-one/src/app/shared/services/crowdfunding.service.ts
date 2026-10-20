@@ -17,6 +17,7 @@ import {
 import {
   Announcement,
   AnnouncementList,
+  AttributionOptions,
   CreateAnnouncementInput,
   CrowdfundingInitiativesStats,
   CrowdfundingTransactionList,
@@ -30,6 +31,7 @@ import {
   RecurringDonation,
   RecurringDonationsResponse,
   UpdateAnnouncementInput,
+  UpdateInitiativeAttributionInput,
   UpdateInitiativeInput,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, throwError } from 'rxjs';
@@ -112,6 +114,16 @@ export class CrowdfundingService {
 
   public updateInitiative(id: string, input: UpdateInitiativeInput): Observable<InitiativeDetail> {
     return this.http.patch<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}`, input);
+  }
+
+  /** Organizations and projects the caller may attribute an initiative to. Errors surface: an empty list would read as "no affiliations". */
+  public getAttributionOptions(): Observable<AttributionOptions> {
+    return this.http.get<AttributionOptions>('/api/crowdfunding/attribution-options').pipe(catchError(this.logAndRethrow('getAttributionOptions')));
+  }
+
+  /** Re-attributes an initiative: creator only, while submitted (lfx-crowdfunding#342). */
+  public updateInitiativeAttribution(id: string, input: UpdateInitiativeAttributionInput): Observable<InitiativeDetail> {
+    return this.http.put<InitiativeDetail>(`/api/crowdfunding/initiatives/${encodeURIComponent(id)}/attribution`, input);
   }
 
   public getAnnouncements(initiativeId: string): Observable<AnnouncementList> {

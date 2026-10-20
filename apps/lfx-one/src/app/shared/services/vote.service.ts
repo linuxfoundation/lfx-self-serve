@@ -19,12 +19,20 @@ import {
   EnableVoteRequest,
   EnableVoteResponse,
   MyVoteResponse,
+  MyVotesApiResponse,
+  MyVotesResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
+  SendVoteReminderRequest,
+  SendVoteReminderResponse,
   UpdateVoteRequest,
   Vote,
   VoteAnswerInput,
+  VoteReminderRecipient,
   VoteResultsResponse,
+  VoteListResponse,
+  VoteStatusCounts,
+  VoteSummary,
 } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
 
@@ -50,8 +58,11 @@ export class VoteService {
     error: unknown;
   } | null = null;
 
-  public getMyVotes(): Observable<Vote[]> {
-    return this.http.get<Vote[]>('/api/votes/my-votes').pipe(
+  public getMyVotes(): Observable<MyVotesResponse> {
+    const params = new HttpParams().set('include_status', 'true');
+    return this.http.get<MyVotesApiResponse>('/api/votes/my-votes', { params }).pipe(
+      // A legacy server's array carries no completeness proof; keep its rows but withhold totals.
+      map((response) => (Array.isArray(response) ? { votes: response, complete: false } : response)),
       catchError((error: unknown) => {
         console.error('Failed to load personal votes', {
           status: error instanceof HttpErrorResponse ? error.status : undefined,
@@ -66,8 +77,9 @@ export class VoteService {
     pageSize?: number,
     pageToken?: string,
     searchName?: string,
-    filters?: string[]
-  ): Observable<PaginatedResponse<Vote>> {
+    filters?: string[],
+    closingOnly?: boolean
+  ): Observable<VoteListResponse> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
 
     if (pageSize) {
@@ -88,9 +100,42 @@ export class VoteService {
       }
     }
 
+    if (closingOnly !== undefined) params = params.set('closing_soon', String(closingOnly));
+
     // Deliberately carries no catchError fallback: the votes dashboard's cursor walk must distinguish a
     // failed request from cursor exhaustion (empty result with no token), so HTTP errors propagate to the caller.
-    return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params });
+    return this.http.get<VoteListResponse>('/api/votes', { params });
+  }
+
+  /** Summary failures propagate: unavailable totals must never appear as confirmed zeros. */
+  public getVotesSummaryByProject(projectUid: string, group?: string): Observable<VoteSummary> {
+    let params = new HttpParams().set('parent', `project:${projectUid}`);
+    if (group) params = params.set('group', group);
+    return this.http.get<VoteSummary>('/api/votes/summary', { params }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load vote summary', {
+          status: error instanceof HttpErrorResponse ? error.status : undefined,
+        });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /** Status-tab count failures propagate: unavailable counts must never appear as confirmed zeros. */
+  public getVoteStatusCountsByProject(projectUid: string, searchName?: string, group?: string): Observable<VoteStatusCounts> {
+    let params = new HttpParams().set('parent', `project:${projectUid}`);
+    const name = searchName?.trim();
+    if (name) params = params.set('name', name);
+    const groupName = group?.trim();
+    if (groupName) params = params.set('group', groupName);
+    return this.http.get<VoteStatusCounts>('/api/votes/status-counts', { params }).pipe(
+      catchError((error: unknown) => {
+        console.error('Failed to load vote status counts', {
+          status: error instanceof HttpErrorResponse ? error.status : undefined,
+        });
+        return throwError(() => error);
+      })
+    );
   }
 
   public getVotesCountByProject(projectUid: string, searchName?: string, filters?: string[]): Observable<number> {
@@ -257,6 +302,17 @@ export class VoteService {
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
+  }
+
+  /** Eligible voters who have not voted yet — vote managers only (#3769). */
+  public getReminderRecipients(voteUid: string): Observable<VoteReminderRecipient[]> {
+    return this.http.get<VoteReminderRecipient[]>(`/api/votes/${encodeURIComponent(voteUid)}/reminder-recipients`).pipe(take(1));
+  }
+
+  /** Resends the vote email to the given recipients (#3769). */
+  public sendReminders(voteUid: string, recipientIds: string[]): Observable<SendVoteReminderResponse> {
+    const body: SendVoteReminderRequest = { recipient_ids: recipientIds };
+    return this.http.post<SendVoteReminderResponse>(`/api/votes/${encodeURIComponent(voteUid)}/reminders`, body).pipe(take(1));
   }
 
   /**

@@ -39,6 +39,16 @@
         </p>
       }
     </section>
+  } @else if (easyclaRoleMissing()) {
+    <lfx-empty-state data-testid="org-easycla-detail-role-missing-state" icon="fa-light fa-lock" [title]="easyclaRoleMissingCopy.title">
+      <p class="text-sm text-gray-500" data-testid="org-easycla-detail-role-missing-description">
+        {{ easyclaRoleMissingCopy.reason }} {{ easyclaRoleMissingCopy.supportLead }}
+        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-detail-role-missing-contact-support">
+          {{ easyclaRoleMissingCopy.supportLabel }}
+        </button>
+        {{ easyclaRoleMissingCopy.supportTail }}
+      </p>
+    </lfx-empty-state>
   } @else if (fetchError()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-error-state"
@@ -338,7 +348,7 @@
                 [ariaLabel]="autoEclaAriaLabel()"
                 dataTest="org-easycla-detail-auto-ecla-toggle" />
               <div class="flex flex-col gap-1">
-                <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">Auto ECLA</label>
+                <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">Auto Acknowledge</label>
                 <p class="text-xs text-gray-600" data-testid="org-easycla-detail-auto-ecla-hint">
                   @if (autoEclaValue()) {
                     On — employees matching the approval list are covered automatically.
@@ -350,12 +360,12 @@
                   <p class="text-xs text-gray-500" data-testid="org-easycla-detail-auto-ecla-locked-hint">{{ autoEclaLockedHint }}</p>
                 }
                 <a
-                  href="/docs"
+                  href="/docs/organization/easycla#what-does-auto-acknowledge-do"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="text-xs text-blue-600 hover:underline"
                   data-testid="org-easycla-detail-auto-ecla-learn-more"
-                  >Learn more about Auto ECLA →</a
+                  >Learn more about Auto Acknowledge →</a
                 >
               </div>
             </div>

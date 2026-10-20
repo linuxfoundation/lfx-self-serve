@@ -23,7 +23,7 @@
     @if (view().yearMeasured) {
       <ul class="grid grid-cols-6 gap-2" aria-label="Membership bridge" data-testid="members-bridge-chart">
         @for (bar of view().bars; track bar.movementType) {
-          <li class="flex min-w-0 flex-col gap-2" [attr.data-testid]="'members-bridge-bar-' + bar.movementType">
+          <li class="relative flex min-w-0 flex-col gap-2" [attr.data-testid]="'members-bridge-bar-' + bar.movementType">
             <!-- The labels under each column carry the same figures for screen readers. -->
             <div class="relative h-[200px]" aria-hidden="true">
               <div class="absolute inset-x-0 flex flex-col items-center gap-0.5 pb-1" [style.bottom.%]="bar.bottomPct + bar.heightPct">
@@ -35,9 +35,6 @@
                   [attr.data-testid]="'members-bridge-count-' + bar.movementType"
                   >{{ bar.countLabel }}</span
                 >
-                @if (bar.duesLabel) {
-                  <span class="text-[11px] tabular-nums text-gray-500" [attr.data-testid]="'members-bridge-dues-' + bar.movementType">{{ bar.duesLabel }}</span>
-                }
               </div>
               <div
                 class="absolute inset-x-[15%] min-h-[2px] rounded-sm"
@@ -49,9 +46,10 @@
                 [attr.data-testid]="'members-bridge-fill-' + bar.movementType"></div>
             </div>
             @if (bar.listType || bar.opensChurn) {
+              <!-- Stretched over the whole column, so the bar opens the list as well as its label. -->
               <button
                 type="button"
-                class="rounded text-center text-[12px] font-medium text-blue-600 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                class="rounded text-center text-[12px] font-medium text-blue-600 after:absolute after:inset-0 after:cursor-pointer hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
                 [attr.aria-label]="bar.ariaLabel"
                 (click)="onBarPicked(bar)"
                 [attr.data-testid]="'members-bridge-action-' + bar.movementType">
@@ -76,7 +74,7 @@
       </p>
     }
 
-    <p class="text-[12px] text-gray-400" data-testid="members-bridge-footer">{{ footer }}</p>
+    <lfx-health-metrics-footnote [parts]="footer" data-testid="members-bridge-footer" />
   }
 </div>
 

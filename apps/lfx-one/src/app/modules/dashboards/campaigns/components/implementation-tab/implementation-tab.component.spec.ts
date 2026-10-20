@@ -6,12 +6,18 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
   GOOGLE_ADS_BIDDING_BOUNDS,
   GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES,
   GOOGLE_ADS_MAX_CALLOUTS,
   GOOGLE_ADS_MAX_CONVERSION_ACTIONS,
   GOOGLE_ADS_MAX_GEO_TARGETS,
   GOOGLE_ADS_MAX_LANGUAGES,
+  GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
+  GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
+  GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_BIDDING_DEFAULT_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGIES_BY_CHANNEL,
   GOOGLE_BIDDING_STRATEGY_LABELS,
@@ -21,13 +27,14 @@ import {
   GOOGLE_CREATIVE_SECTION_TITLES,
   META_OBJECTIVE_LABELS,
   REDDIT_CALL_TO_ACTIONS,
-  REDDIT_OBJECTIVE_LABELS,
 } from '@lfx-one/shared/constants';
 import type {
   CampaignBriefOutput,
   CampaignBriefPersistenceState,
   CampaignCreateResult,
   CampaignImplementationDraft,
+  CampaignPlatformResult,
+  CampaignSitelink,
   GoogleCreativeChannel,
   GoogleCreativeFieldSpec,
 } from '@lfx-one/shared/interfaces';
@@ -177,7 +184,7 @@ describe('ImplementationTabComponent submit gate', () => {
 
   /**
    * A durable but unapproved brief. `saved` is honest — the write landed — but campaign-service
-   * refuses a create from it (`brief.go:439`, 400 "brief must be approved before creating
+   * refuses a create from it (`BriefService.CreateCampaigns`, 400 "brief must be approved before creating
    * campaigns"), so leaving Create enabled invited the user to discover that the hard way.
    */
   it('blocks submit when the brief saved but was not approved', async () => {
@@ -2217,63 +2224,41 @@ describe('ImplementationTabComponent reddit objective', () => {
   it('renders exactly the selectable objectives, in order', async () => {
     const f = await restoredWithObjective('conversions');
 
-    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions', 'video_views']);
   });
 
   /**
-   * `video_views` cannot succeed on either arm today. Reddit has no bare `VIDEO_VIEWS`
-   * optimization goal, so both creators require a companion `videoGoal` and refuse the request
-   * without one — and no control in this tier can set one, so offering the objective would
-   * guarantee a refused create.
+   * `video_views` is offered now that a goal picker collects the `videoGoal` both creators require
+   * for it — and offered as an ordinary, choosable option, not the disabled restore affordance.
    */
-  it('does not offer video_views', async () => {
-    const f = await restoredWithObjective('conversions');
+  it('offers video_views as a choosable objective', async () => {
+    const select = objectiveSelect(await restoredWithObjective('conversions'));
+    const option = Array.from(select.options).find((o) => o.value === 'video_views');
 
-    expect(Array.from(objectiveSelect(f).options).map((o) => o.value)).not.toContain('video_views');
-  });
-
-  /** The label survives the option's removal — a restored draft must still render a name. */
-  it('keeps a label for the withheld video_views objective', () => {
-    expect(REDDIT_OBJECTIVE_LABELS['video_views']).toBe('Video Views');
+    expect(option?.text).toBe('Video Views');
+    expect(option?.disabled).toBe(false);
   });
 
   /**
    * Driven through the REAL draft input rather than by setting the signal: a signal-only test
-   * leaves `applyDraft` unexercised, and a coercion added there — mapping the unrenderable value
-   * onto the first option — would silently discard the stored objective while passing.
+   * leaves `applyDraft` unexercised, and a coercion added there would silently discard the stored
+   * objective while passing.
    */
-  it('restores video_views from a persisted draft', async () => {
+  it('restores video_views from a persisted draft, selected and enabled', async () => {
     const f = await restoredWithObjective('video_views');
+    const select = objectiveSelect(f);
 
     expect((f.componentInstance as unknown as Record<string, any>)['redditObjective']()).toBe('video_views');
-  });
-
-  /**
-   * The DOM half the signal assertion cannot cover, and the worse symptom: the template selects
-   * per-`<option>` via `[selected]`, so without the disabled legacy option Angular applies the
-   * binding while no matching option exists and the browser falls back to index 0 — the field
-   * would read `Awareness` while the signal held `video_views`, a wrong value the operator could
-   * submit without noticing.
-   */
-  it('shows the restored video_views objective rather than the first selectable one', async () => {
-    const select = objectiveSelect(await restoredWithObjective('video_views'));
-
     expect(select.value).toBe('video_views');
-    expect(select.options[select.selectedIndex].text).toContain('Video Views');
+    expect(select.options[select.selectedIndex].disabled).toBe(false);
   });
 
-  /** Visible, but NOT newly choosable — the whole point of withholding it. */
-  it('renders the restored video_views objective as disabled', async () => {
-    const select = objectiveSelect(await restoredWithObjective('video_views'));
-
-    expect(Array.from(select.options).find((o) => o.value === 'video_views')?.disabled).toBe(true);
-  });
-
-  /** A restore affordance, not a permanent fourth option — absent for a normal draft. */
+  /** A restore affordance, not a permanent extra option — absent for a normal draft. */
   it('does not render the legacy option when the objective is selectable', async () => {
     const select = objectiveSelect(await restoredWithObjective('traffic'));
 
-    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions']);
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(['awareness', 'traffic', 'conversions', 'video_views']);
+    expect(Array.from(select.options).some((o) => o.text.includes('(no longer available)'))).toBe(false);
   });
 
   /** And the selectable value still round-trips, so the assertion above cannot pass by ignoring the draft. */
@@ -2290,10 +2275,9 @@ describe('ImplementationTabComponent reddit objective', () => {
  *
  * The exposure is identical — a restored value that matches no `<option>` makes the browser fall
  * back to index 0, so the control reads "Default (Learn More)" while the signal still holds and
- * still sends the stored label. It differs only in how it is reached: `REDDIT_SELECTABLE_OBJECTIVES`
- * deliberately withholds `video_views`, so an unavailable objective is reachable by design, while
- * `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA only becomes possible once
- * Reddit retires a label. Latent, then — and pinned anyway, so the two siblings cannot drift.
+ * still sends the stored label. Latent, like the objective's guard now that every objective is
+ * selectable: `REDDIT_CALL_TO_ACTIONS` is the whole upstream set and a stale CTA only becomes
+ * possible once Reddit retires a label. Pinned anyway, so the two siblings cannot drift.
  */
 describe('ImplementationTabComponent reddit call to action', () => {
   /**
@@ -3213,6 +3197,18 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     f.detectChanges();
   }
 
+  /** Returns null when the objective is not Video Views, which the show/hide tests assert on. */
+  function redditVideoGoalSelect(f: ComponentFixture<ImplementationTabComponent>): HTMLSelectElement | null {
+    return f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal"]') as HTMLSelectElement | null;
+  }
+
+  function pickRedditVideoGoal(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const select = redditVideoGoalSelect(f) as HTMLSelectElement;
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
   function typeRedditPostUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
     const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
     input.value = value;
@@ -3391,6 +3387,111 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     at(f).submit();
 
     expect('postUrl' in sentConfig('redditConfig')).toBe(false);
+  });
+
+  // === Reddit: the video goal ===
+
+  /** Shown only for Video Views — the one objective that takes a goal. */
+  it('shows the reddit video goal only while the objective is video_views', async () => {
+    const f = (await mount(null)).fixture;
+
+    expect(redditVideoGoalSelect(f)).toBeNull();
+
+    pickRedditObjective(f, 'video_views');
+    const select = redditVideoGoalSelect(f);
+    expect(select).not.toBeNull();
+    expect(Array.from(select!.options).map((o) => [o.value, o.text.trim()])).toEqual([
+      ['', 'Select a video goal'],
+      ['VIDEO_VIEW_6S', '6-second video views'],
+      ['VIDEO_VIEW_15S', '15-second video views'],
+    ]);
+
+    pickRedditObjective(f, 'traffic');
+    expect(redditVideoGoalSelect(f)).toBeNull();
+  });
+
+  /**
+   * Both creators refuse `video_views` without a goal, and creation is async, so an unguarded
+   * submit would end as a dead job. The create must be blocked, with the reason on screen.
+   */
+  it('cannot submit video_views without a video goal', async () => {
+    const f = (await mount(null)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    pickRedditObjective(f, 'video_views');
+    // The Post URL is valid first, so the goal is the ONLY thing blocking the submit below: without
+    // it the Post URL guard alone would keep canSubmit() false and hide a missing goal guard.
+    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
+
+    expect(at(f).canSubmit()).toBe(false);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')?.textContent).toContain('Choose a video goal');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')).toBeNull();
+
+    at(f).submit();
+    expect(createCampaign).not.toHaveBeenCalled();
+
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
+    expect(at(f).canSubmit()).toBe(true);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-goal-error"]')).toBeNull();
+  });
+
+  /**
+   * Video Views must promote an existing video post: an image URL authors an IMAGE post, which can
+   * never earn a video view, and neither creator checks the creative against the objective.
+   */
+  it('cannot submit video_views without a post url, even with an image url', async () => {
+    const f = (await mount(null, true)).fixture;
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    pickRedditObjective(f, 'video_views');
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
+    typeRedditImageUrl(f, 'https://example.com/banner.png');
+
+    expect(at(f).canSubmit()).toBe(false);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')?.textContent).toContain('enter its Post URL');
+
+    typeRedditPostUrl(f, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
+    expect(at(f).canSubmit()).toBe(true);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-video-post-error"]')).toBeNull();
+  });
+
+  /** The chosen goal reaches `redditConfig`, picked through the template and carried across a tab round-trip. */
+  it('carries the reddit video goal through a tab round-trip and into the request', async () => {
+    const first = await mount(null);
+    pickRedditObjective(first.fixture, 'video_views');
+    pickRedditVideoGoal(first.fixture, 'VIDEO_VIEW_15S');
+    typeRedditPostUrl(first.fixture, 'https://www.reddit.com/r/kubernetes/comments/abc123/video/');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditVideoGoal).toBe('VIDEO_VIEW_15S');
+
+    const second = await mount(draft);
+    at(second.fixture).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(second.fixture);
+    second.fixture.detectChanges();
+
+    expect(redditVideoGoalSelect(second.fixture)?.value).toBe('VIDEO_VIEW_15S');
+
+    at(second.fixture).submit();
+
+    expect(sentConfig('redditConfig')).toMatchObject({ objective: 'video_views', videoGoal: 'VIDEO_VIEW_15S' });
+  });
+
+  /** A goal left over from an earlier Video Views choice is not sent with another objective. */
+  it('omits the reddit video goal for any other objective', async () => {
+    const f = (await mount(null)).fixture;
+    pickRedditObjective(f, 'video_views');
+    pickRedditVideoGoal(f, 'VIDEO_VIEW_6S');
+    pickRedditObjective(f, 'awareness');
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    makeSubmittable(f);
+    f.detectChanges();
+    at(f).submit();
+
+    const config = sentConfig('redditConfig');
+    expect(config['objective']).toBe('awareness');
+    expect('videoGoal' in config).toBe(false);
   });
 
   /**
@@ -5531,6 +5632,112 @@ describe('ImplementationTabComponent reddit results notice', () => {
 });
 
 /**
+ * campaign-service platform rows whose `error` is one of issue #208's fixed dispatch-failure
+ * sentences (`DispatchFailureMessage`). The row must turn a known connection reason into a next
+ * step, mark a proven pre-create failure as nothing sent, and keep "could not be confirmed" for
+ * everything else.
+ */
+describe('ImplementationTabComponent dispatch failure reasons', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  const atResults = (rows: CampaignPlatformResult[]): HTMLElement => {
+    const c = fixture.componentInstance as unknown as {
+      platformResults: { set(v: CampaignPlatformResult[]): void };
+      step: { set(v: 'results'): void };
+    };
+    c.platformResults.set(rows);
+    c.step.set('results');
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  };
+  const row = (el: HTMLElement, platform: string): HTMLElement => el.querySelector(`[data-testid="implementation-platform-result-${platform}"]`) as HTMLElement;
+  const heading = (el: HTMLElement): string => el.querySelector('[data-testid="implementation-platform-results"] h3')?.textContent?.trim() ?? '';
+  const notUsable = (provider: string, token: string) =>
+    `this project's ${provider} connection cannot be used as configured (reason: ${token}); nothing was sent`;
+
+  it.each([
+    ['account_not_selected', "Ask an LFX administrator to choose an ad account on this project's Meta Ads connection, then create again."],
+    ['connection_inactive', "Ask an LFX administrator to reactivate this project's Meta Ads connection, then create again."],
+    ['credentials_undecodable', "Ask an LFX administrator to reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
+    ['credentials_incomplete', "Ask an LFX administrator to reconnect this project's Meta Ads connection to save fresh credentials, then create again."],
+    ['credentials_expired', "Ask an LFX administrator to re-authorize this project's Meta Ads connection, then create again."],
+  ])('renders the next step for %s in place of the raw reason', (token, step) => {
+    const el = row(atResults([{ platform: 'meta-ads', ok: false, error: notUsable('meta-ads', token) }]), 'meta-ads');
+    expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')?.textContent?.trim()).toBe(step);
+    expect(el.textContent).not.toContain('(reason:');
+    expect(el.textContent).toContain('cannot be used as configured; nothing was sent');
+    expect(el.textContent).toContain('not created');
+    expect(el.querySelector('[data-testid="implementation-platform-result-nothing-created"]')?.textContent?.trim()).toBe(
+      'Nothing was created on the platform.'
+    );
+    expect(el.textContent).not.toContain('could not be confirmed');
+  });
+
+  it('shows an unknown reason token verbatim with no next step', () => {
+    const error = notUsable('meta-ads', 'token_request_rejected');
+    const el = row(atResults([{ platform: 'meta-ads', ok: false, error }]), 'meta-ads');
+    expect(el.textContent).toContain(error);
+    expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')).toBeNull();
+  });
+
+  it('keeps "could not be confirmed" for an unconfirmed failure', () => {
+    const error = 'meta-ads campaign creation could not be confirmed; something may have been created — verify on the platform before retrying';
+    const el = atResults([{ platform: 'meta-ads', ok: false, error }]);
+    expect(row(el, 'meta-ads').textContent).toContain('could not be confirmed — check the ad account before creating it again');
+    expect(el.querySelector('[data-testid="implementation-platform-result-nothing-created"]')).toBeNull();
+    expect(heading(el)).toBe('Campaign Status Unconfirmed');
+  });
+
+  it('labels the service-defect sentence as nothing created, with no next step', () => {
+    const error = 'meta-ads campaign creation was stopped before anything was sent by a defect in this service; the connection is not at fault';
+    const el = row(atResults([{ platform: 'meta-ads', ok: false, error }]), 'meta-ads');
+    expect(el.querySelector('[data-testid="implementation-platform-result-nothing-created"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="implementation-platform-result-next-step"]')).toBeNull();
+    expect(el.textContent).not.toContain('could not be confirmed');
+    // No operator fix exists for a service defect, so the row states the fact and offers no retry advice.
+    expect(el.textContent).not.toMatch(/retry|create again/i);
+  });
+
+  it('keeps "could not be confirmed" for an unclassified failure and a skip', () => {
+    const el = atResults([
+      { platform: 'meta-ads', ok: false, error: 'platform campaign creation failed' },
+      { platform: 'reddit-ads', ok: false, error: 'skipped: another concurrent dispatch owns this platform' },
+    ]);
+    expect(row(el, 'meta-ads').textContent).toContain('could not be confirmed');
+    expect(row(el, 'reddit-ads').textContent).toContain('could not be confirmed');
+  });
+
+  it('keeps an id-bearing row orphaned, with no "create again" step, whatever its message says', () => {
+    const el = atResults([{ platform: 'meta-ads', ok: false, campaignId: '123', error: notUsable('meta-ads', 'account_not_selected') }]);
+    expect(row(el, 'meta-ads').textContent).toContain('created upstream but not recorded');
+    expect(row(el, 'meta-ads').querySelector('[data-testid="implementation-platform-result-next-step"]')).toBeNull();
+    expect(row(el, 'meta-ads').querySelector('[data-testid="implementation-platform-result-nothing-created"]')).toBeNull();
+    expect(heading(el)).toBe('Campaigns Created');
+  });
+
+  it('heads the panel "No Campaigns Created" only when every row is a proven pre-create failure', () => {
+    let el = atResults([
+      { platform: 'meta-ads', ok: false, error: notUsable('meta-ads', 'account_not_selected') },
+      { platform: 'reddit-ads', ok: false, error: 'reddit-ads refused the request (HTTP 400) before anything was created; nothing was created' },
+    ]);
+    expect(heading(el)).toBe('No Campaigns Created');
+
+    el = atResults([
+      { platform: 'meta-ads', ok: false, error: notUsable('meta-ads', 'account_not_selected') },
+      { platform: 'reddit-ads', ok: false, error: 'platform campaign creation failed' },
+    ]);
+    expect(heading(el)).toBe('Campaign Status Unconfirmed');
+  });
+});
+
+/**
  * The Google geo chips.
  *
  * The control is a `<select>` over the supported map's own keys, so the only guards left are the
@@ -5880,6 +6087,75 @@ describe('ImplementationTabComponent google languages', () => {
 });
 
 /**
+ * Seeding the two extension editors from the brief the Planning tab generated.
+ *
+ * The gate is PRESENCE, not truthiness: a brief written before extension generation shipped — or
+ * one for an event whose page carried no linkable sections — has no list at all, and seeding `[]`
+ * for it would clear chips the operator typed on a re-mount. `fromBriefResponse` holds up the
+ * other end by restoring an absent stored list as `undefined` rather than as `[]`.
+ */
+describe('ImplementationTabComponent google extension seeding', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /** Re-mount the brief with `patch` merged in, driving the real `populateFromBrief` path. */
+  function remountBrief(patch: Record<string, unknown>): void {
+    fixture.componentRef.setInput('briefData', {
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://example.com', countryCode: 'US' },
+      selectedPlatforms: ['google-ads'],
+      ...patch,
+    } as unknown as CampaignBriefOutput);
+    fixture.detectChanges();
+  }
+
+  it('seeds both editors from a brief that carries the generated lists', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    remountBrief({
+      googleCallouts: ['Free To Attend'],
+      googleSitelinks: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
+    });
+
+    expect(c['googleCallouts']()).toEqual(['Free To Attend']);
+    expect(c['googleSitelinks']()).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
+  });
+
+  // The defect the presence gate exists to prevent: the operator types an entry, something
+  // re-mounts the brief, and what they just added is gone with no message.
+  //
+  // BOTH editors are exercised, not just callouts. Each `if` in `populateFromBrief` is its own
+  // guard, and a test that only adds a callout passes with the sitelink gate deleted — which is
+  // how this test was first written, and what the mutation run caught.
+  it('leaves hand-typed entries alone for a brief that carries no lists', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleCallout']('Hands-On Labs');
+    c['addGoogleSitelink']({ text: 'Venue & Travel', finalUrl: 'https://events.example.com/venue' });
+
+    remountBrief({});
+
+    expect(c['googleCallouts']()).toEqual(['Hands-On Labs']);
+    expect(c['googleSitelinks']()).toEqual([{ text: 'Venue & Travel', finalUrl: 'https://events.example.com/venue' }]);
+  });
+
+  // A brief that DID carry a list is copied, not shared: editing the chips must not reach back
+  // into the parent's array, which the Planning tab still holds and re-emits.
+  it('does not share the seeded arrays with the brief', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const sitelinks = [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }];
+    remountBrief({ googleCallouts: ['Free To Attend'], googleSitelinks: sitelinks });
+
+    expect(c['googleSitelinks']()[0]).not.toBe(sitelinks[0]);
+    expect(c['googleSitelinks']()[0]).toEqual(sitelinks[0]);
+  });
+});
+
+/**
  * The Google callout chips.
  *
  * Free text rather than a select, so every one of upstream's `validateCallouts` branches has to be
@@ -6116,6 +6392,338 @@ describe('ImplementationTabComponent google callouts', () => {
     restoreGoogleDraft(fixture, c, {});
 
     expect(c['googleCallouts']()).toEqual(['Free shipping']);
+  });
+});
+
+/**
+ * The sitelink extensions.
+ *
+ * Every bound and refusal here mirrors `validateSitelinks`
+ * (`internal/platform/googleads/assets.go`), one test per branch. The guard runs inside
+ * `validateAssetPlan`, inside `preflightCampaignKind`, BEFORE the budget mutate — so each of these
+ * costs the whole campaign upstream rather than just the sitelink.
+ */
+describe('ImplementationTabComponent google sitelinks', () => {
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const sitelink = (text: string, overrides: Partial<CampaignSitelink> = {}): CampaignSitelink => ({
+    text,
+    description1: '',
+    description2: '',
+    finalUrl: 'https://events.example.org/register',
+    ...overrides,
+  });
+
+  beforeEach(async () => {
+    await configureGoogleTab();
+    fixture = TestBed.createComponent(ImplementationTabComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+  });
+
+  /**
+   * Every box in the sub-form is reachable by a screen reader on its own terms: the section's
+   * `<label for>` names only the link-text box, so the other three carry an `aria-label` — a
+   * placeholder is not an accessible name and vanishes as soon as the operator types. The ids are
+   * asserted against the message elements actually rendered, so a rename on either side fails the
+   * test rather than leaving `aria-describedby` pointing at nothing.
+   */
+  it('names every box and points each at whichever of its messages is rendered', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register now'));
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-label')).toBe('Sitelink destination URL');
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-label')).toBe('Sitelink description line 1');
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-label')).toBe('Sitelink description line 2');
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBeNull();
+
+    c['googleSitelinkDraft'].set(sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-too-long')?.id);
+
+    c['googleSitelinkDraft'].set(sitelink('register now'));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-text')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-duplicate')?.id);
+
+    // Both description boxes point at the ONE line describing the pair — the rule they break is
+    // about the pair, so naming it on only the box last typed in would be the wrong half.
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { description1: 'Talks and workshops' }));
+    fixture.detectChanges();
+    const halfDescribed = find('implementation-google-sitelink-half-described')?.id;
+    expect(find('implementation-google-sitelink-description1')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+    expect(find('implementation-google-sitelink-description2')?.getAttribute('aria-describedby')).toBe(halfDescribed);
+
+    c['googleSitelinkDraft'].set(sitelink('Agenda', { finalUrl: 'events.example.org/agenda' }));
+    fixture.detectChanges();
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-invalid')?.id);
+  });
+
+  it('trims an added sitelink and drops the two blank description lines', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('  Register now  ', { finalUrl: '  https://events.example.org/register  ' }))).toBe(true);
+
+    // Descriptions OMITTED, not sent as empty strings: absent on both lines is one of the two
+    // legal states upstream recognises, where one line present and one empty is not.
+    expect(c['googleSitelinks']()).toEqual([{ text: 'Register now', finalUrl: 'https://events.example.org/register' }]);
+  });
+
+  it.each([
+    ['no link text', sitelink('   ')],
+    ['no destination', sitelink('Register', { finalUrl: '  ' })],
+    ['a destination with no scheme', sitelink('Register', { finalUrl: 'events.example.org/register' })],
+    ['a destination carrying embedded credentials', sitelink('Register', { finalUrl: 'https://user:pw@events.example.org/register' })],
+  ])('refuses a sitelink with %s', (_label, entry) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](entry)).toBe(false);
+    expect(c['googleSitelinks']()).toEqual([]);
+  });
+
+  it('refuses a sitelink that repeats an existing link text in a different case', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    expect(c['addGoogleSitelink'](sitelink('register now'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it('refuses an add at the cap', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    for (let i = 0; i < GOOGLE_ADS_MAX_SITELINKS; i++) c['addGoogleSitelink'](sitelink(`Sitelink ${i + 1}`));
+
+    expect(c['addGoogleSitelink'](sitelink('One more'))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(GOOGLE_ADS_MAX_SITELINKS);
+  });
+
+  /**
+   * Runes, not UTF-16 units — the same hazard the callouts carry. 25 astral-plane characters are
+   * link text upstream accepts; counted with `.length` they would be 50 and refused for no reason.
+   */
+  it('accepts 25-emoji link text and refuses 26 characters', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES)))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('A'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1)))).toBe(false);
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Google renders the two lines together and rejects an asset carrying only one. */
+  it.each([
+    ['only the first line', { description1: 'Seats are limited' }],
+    ['only the second line', { description2: 'Seats are limited' }],
+  ])('refuses a sitelink described on %s', (_label, overrides) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['addGoogleSitelink'](sitelink('Register', overrides))).toBe(false);
+  });
+
+  /**
+   * The 35-rune bound is PER LINE, not on the two together: upstream measures each line with its
+   * own `utf8.RuneCountInString`. Summing them would refuse this 70-rune pair, which it accepts.
+   */
+  it('accepts both description lines at exactly 35 runes and refuses a 36th on either', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const line = 'A'.repeat(GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES);
+
+    expect(c['addGoogleSitelink'](sitelink('Register', { description1: line, description2: line }))).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Tickets', { description1: line, description2: `${line}B` }))).toBe(false);
+  });
+
+  it('warns on the sub-form in progress and withholds the add button until both required fields are filled', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register Now'));
+
+    // An empty sub-form is not yet a mistake — withheld, not warned about.
+    expect(c['googleSitelinkUrlInvalid']()).toBe(false);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({ text: '  register now ', description1: 'One line only', description2: '', finalUrl: 'not a url' });
+
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['googleSitelinkDescriptionHalfFilled']()).toBe(true);
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+
+    c['googleSitelinkDraft'].set({
+      text: '🎉'.repeat(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1),
+      description1: '',
+      description2: '',
+      finalUrl: 'https://events.example.org/x',
+    });
+
+    expect(c['googleSitelinkTextLength']()).toBe(GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES + 1);
+    expect(c['googleSitelinkTextTooLong']()).toBe(true);
+  });
+
+  /** Cleared ONLY on success, so a refused entry stays editable beside the warning that named it. */
+  it('clears the sub-form on a successful add and leaves it standing on a refusal', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']()).toEqual({ text: '', description1: '', description2: '', finalUrl: '' });
+
+    c['googleSitelinkDraft'].set(sitelink('register'));
+    c['onGoogleSitelinkAdd']();
+    expect(c['googleSitelinkDraft']().text).toBe('register');
+  });
+
+  it('removes a sitelink by index', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('First'));
+    c['addGoogleSitelink'](sitelink('Second'));
+
+    c['removeGoogleSitelink'](0);
+
+    expect(c['googleSitelinks']().map((s: CampaignSitelink) => s.text)).toEqual(['Second']);
+  });
+
+  /** Search only, and WITHHELD elsewhere rather than refused — exactly as the callouts are. */
+  it('offers sitelinks on Search and withholds them on a non-Search channel', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(c['googleSitelinksPayload']()).toEqual({ sitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+    // Held, not discarded — the list is still there if Search is re-ticked.
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /** Omitted rather than sent empty, so the upstream default is reached by the absent-key route. */
+  it('omits the sitelinks key when nothing was added', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    expect(c['googleSitelinksPayload']()).toEqual({});
+  });
+
+  it('round-trips the sitelinks through a draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    let emitted: CampaignImplementationDraft | undefined;
+    fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (emitted = d));
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    expect(emitted?.googleSitelinks).toEqual([{ text: 'Register', finalUrl: 'https://events.example.org/register' }]);
+
+    c['googleSitelinks'].set([]);
+    restoreGoogleDraft(fixture, c, { googleSitelinks: [{ text: 'Register', finalUrl: 'https://events.example.org/register' }] });
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  /**
+   * COPIED out of the draft ENTRY BY ENTRY, not just array-spread: a sitelink is an object, so a
+   * shallow spread would still hand the draft's own entries over and let an edit here reach back
+   * into the stored draft.
+   */
+  it('does not share the restored entries with the draft', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const saved = [sitelink('Register')];
+
+    restoreGoogleDraft(fixture, c, { googleSitelinks: saved });
+    c['googleSitelinks']()[0].text = 'Edited';
+
+    expect(saved[0].text).toBe('Register');
+  });
+
+  /** A draft saved before this section shipped carries no key, and must not clear the list. */
+  it.each([
+    ['a trailing U+0085', 'Register', 'register\u0085'],
+    ['final sigma', 'ΟΔΟΣ', 'οδοσ'],
+  ])('refuses a repeated link text hidden by %s, on the add and in the live warning', (_label, first, repeat) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink(first));
+
+    c['googleSitelinkDraft'].set(sitelink(repeat));
+    expect(c['googleSitelinkDuplicate']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink(repeat))).toBe(false);
+    expect(c['googleSitelinks']()).toHaveLength(1);
+  });
+
+  it.each([
+    ['a semicolon in the query', 'https://events.example.org/register?a=1;b=2'],
+    ['a stray percent sign', 'https://events.example.org/50%off'],
+    ['no `//` after the scheme', 'https:events.example.org/register'],
+    ['a tab inside the path', 'https://events.example.org/reg\tister'],
+  ])("refuses a destination with %s, which Go's URL parser refuses and `new URL()` accepts", (_label, finalUrl) => {
+    const c = seedChannel(fixture, { includeSearch: true });
+
+    c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
+    expect(c['googleSitelinkUrlInvalid']()).toBe(true);
+    expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
+  });
+
+  /** BYTES, as Go's `len()` counts them: 1,100 two-byte characters cross 2,084 at half the length. */
+  it('warns on and refuses a destination over the 2084-byte limit, pointing the box at the message', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const finalUrl = `https://events.example.org/${'é'.repeat(1100)}`;
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+    c['googleSitelinkDraft'].set(sitelink('Register', { finalUrl }));
+    fixture.detectChanges();
+
+    expect(c['googleSitelinkUrlBytesOver']()).toBe(new TextEncoder().encode(finalUrl).length);
+    expect(c['googleSitelinkAddDisabled']()).toBe(true);
+    expect(find('implementation-google-sitelink-url')?.getAttribute('aria-describedby')).toBe(find('implementation-google-sitelink-url-too-long')?.id);
+    expect(c['addGoogleSitelink'](sitelink('Register', { finalUrl }))).toBe(false);
+  });
+
+  it('says out loud that sitelinks are withheld after a switch away from Search, in the notice and its live region', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    const find = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+    // Mounted, empty, before there is anything to say.
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe('');
+
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, includeDemandGen: true });
+    fixture.detectChanges();
+
+    const notice = find('implementation-google-sitelinks-withheld')?.textContent ?? '';
+    expect(notice).toContain('Demand Gen campaigns do not take sitelinks');
+    expect(notice).toContain('the 1 you added');
+    expect(find('implementation-google-sitelinks-withheld-live')?.textContent?.trim()).toBe(c['googleSitelinksWithheldWarning']());
+    expect(find('implementation-google-sitelinks-withheld')?.getAttribute('role')).toBeNull();
+  });
+
+  it('shows no sitelinks notice when none were added', () => {
+    const c = seedChannel(fixture, { includeDemandGen: true });
+
+    expect(c['googleSitelinksWithheldWarning']()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="implementation-google-sitelinks-withheld"]')).toBeNull();
+  });
+
+  /** Through `submit()`, so deleting the payload spread fails here and not only in a helper test. */
+  it.each([
+    ['Search', { includeSearch: true }, [{ text: 'Register', finalUrl: 'https://events.example.org/register' }]],
+    ['Demand Gen, after a switch from Search', { includeDemandGen: true }, undefined],
+  ])('sends the sitelinks on a submitted %s create only when the channel takes them', async (_label, channel, expected) => {
+    const createCampaign = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'job-1' }) as never);
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+    c['campaignForm'].patchValue({ includeSearch: false, ...channel });
+    fixture.detectChanges();
+    expect(c['canSubmit']()).toBe(true);
+
+    c['submit']();
+    await fixture.whenStable();
+
+    expect(createCampaign).toHaveBeenCalled();
+    expect((createCampaign.mock.calls[0][0] as unknown as Record<string, unknown>)['sitelinks']).toEqual(expected);
+  });
+
+  it('leaves the list alone when the draft carries no sitelinks key', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleSitelink'](sitelink('Register'));
+
+    restoreGoogleDraft(fixture, c, {});
+
+    expect(c['googleSitelinks']()).toHaveLength(1);
   });
 });
 
@@ -6457,5 +7065,1271 @@ describe('ImplementationTabComponent google bidding', () => {
     expect(c['campaignForm'].controls.googleBiddingStrategy.value).toBe('retired-strategy');
     expect(c['googleBiddingStrategy']()).toBe(GOOGLE_BIDDING_DEFAULT_BY_CHANNEL.search);
     expect(c['googleBiddingPayload']().biddingStrategy).toBeUndefined();
+  });
+});
+
+/**
+ * The per-platform Bidding control (#3299): Automatic or Manual max CPC bid on LinkedIn, Meta,
+ * Microsoft Ads and Reddit, behind `biddingEnabled` (`LFX_CUTOVER_CAMPAIGN_SERVICE_BIDDING`).
+ *
+ * Asserted on what `createCampaign` is CALLED with, because the guarantee that matters is the wire
+ * shape campaign-service #332 accepts: `bidding` absent while the flag is off, otherwise an explicit
+ * object with exactly `strategy` (and `bidAmount` for manual) — never `null`, never `''`.
+ */
+describe('ImplementationTabComponent bidding control', () => {
+  const LANE_CONFIGS = ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig'] as const;
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let fixture: ComponentFixture<ImplementationTabComponent>;
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['linkedin-ads', 'reddit-ads', 'meta-ads', 'microsoft-ads'],
+      structuredCopy: { google_search: { headlines: ['Attend KubeCon'], descriptions: ['Join us in September'] } },
+      linkedInCopy: {
+        variants: [{ headline: 'Brief headline', introText: 'Brief intro', destinationUrl: 'https://example.com/brief' }],
+        recommendedGeoTargets: [{ urn: 'urn:li:geo:103644278', label: 'United States' }],
+        recommendedTargetingProfile: 'cloud-native',
+      },
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: ['brief-interest'],
+        recommendedKeywords: ['brief-keyword'],
+        recommendedGeos: ['US'],
+      },
+      metaCopy: {
+        variants: [{ primaryText: 'Brief primary', headline: 'Brief meta headline', description: 'Brief description' }],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  function component(f: ComponentFixture<ImplementationTabComponent> = fixture): Record<string, any> {
+    return f.componentInstance as unknown as Record<string, any>;
+  }
+
+  function query(testId: string, f: ComponentFixture<ImplementationTabComponent> = fixture): HTMLElement | null {
+    return f.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  }
+
+  async function mount(
+    bidding: boolean | null | undefined,
+    draft: CampaignImplementationDraft | null = null
+  ): Promise<ComponentFixture<ImplementationTabComponent>> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    if (draft) f.componentRef.setInput('draft', draft);
+    if (bidding !== undefined) f.componentRef.setInput('biddingEnabled', bidding);
+    f.componentRef.setInput('briefData', brief());
+    f.detectChanges();
+    await f.whenStable();
+    const c = component(f);
+    c['selectedPlatforms'].set(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']);
+    c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+    c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+    c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+    c['addMicrosoftKeyword']('service mesh');
+    f.detectChanges();
+    await f.whenStable();
+    return f;
+  }
+
+  /** Pick a strategy through the control's own form, so the change travels the real `(biddingChange)` binding. */
+  async function pickStrategy(platform: string, strategy: 'automatic' | 'manual', f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<void> {
+    const host = query(`implementation-bidding-${platform}`, f)?.closest('lfx-campaign-bidding-control');
+    expect(host).not.toBeNull();
+    const control = f.debugElement.queryAll((el) => el.nativeElement === host)[0].componentInstance;
+    control.form.controls.strategy.setValue(strategy);
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  /** Type a bid into the rendered amount input, as an operator would. */
+  async function typeBid(platform: string, value: string, f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<void> {
+    const input = query(`implementation-bidding-${platform}-amount`, f)?.querySelector('input') as HTMLInputElement | null;
+    expect(input).not.toBeNull();
+    (input as HTMLInputElement).value = value;
+    (input as HTMLInputElement).dispatchEvent(new Event('input'));
+    f.detectChanges();
+    await f.whenStable();
+  }
+
+  async function submitted(f: ComponentFixture<ImplementationTabComponent> = fixture): Promise<Record<string, Record<string, unknown>>> {
+    expect(component(f)['canSubmit']()).toBe(true);
+    component(f)['submit']();
+    await f.whenStable();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[createCampaign.mock.calls.length - 1][0];
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        ProjectContextService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            getLinkedInAccounts: () => of([{ accountId: 'urn:li:sponsoredAccount:1', name: 'LF Account', status: 'ACTIVE' }]),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  describe('with the flag off', () => {
+    it.each([
+      ['unanswered', undefined],
+      ['null', null],
+      ['false', false],
+    ])('hides the control when the capability is %s', async (_label, bidding) => {
+      fixture = await mount(bidding);
+
+      for (const platform of ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']) {
+        expect(query(`implementation-bidding-${platform}`)).toBeNull();
+      }
+      // The legacy Microsoft max CPC field stays exactly as it was.
+      expect(query('implementation-microsoft-cpc-bid')).not.toBeNull();
+    });
+
+    it('sends no bidding key on any config, so the create is unchanged', async () => {
+      fixture = await mount(false);
+      component()['microsoftCpcBid'].set('2.5');
+
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        expect(request[key]).toBeDefined();
+        expect(Object.keys(request[key])).not.toContain('bidding');
+      }
+      // The legacy field still travels while the control is not offered.
+      expect(request['microsoftConfig']['cpcBid']).toBe(2.5);
+    });
+  });
+
+  /**
+   * A Manual choice retained across a tab round-trip while the capability is not an explicit yes
+   * (#3299). The control is hidden then and `bidding` is not sent, which campaign-service reads as
+   * automatic — so the create must be BLOCKED, never sent without the choice.
+   */
+  describe('a retained Manual choice while the capability is unknown or off', () => {
+    async function manualDraft(platform: 'meta-ads' | 'microsoft-ads' = 'meta-ads'): Promise<CampaignImplementationDraft> {
+      let draft: CampaignImplementationDraft | null = null;
+      const first = await mount(true);
+      first.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (draft = d));
+      await pickStrategy(platform, 'manual', first);
+      await typeBid(platform, '1', first);
+      first.destroy();
+      expect(draft).not.toBeNull();
+      return draft as unknown as CampaignImplementationDraft;
+    }
+
+    async function remount(
+      bidding: boolean | null,
+      read: 'unknown' | 'pending' | 'ready' | 'failed',
+      platform: 'meta-ads' | 'microsoft-ads' = 'meta-ads',
+      edit: (d: CampaignImplementationDraft) => CampaignImplementationDraft = (d) => d,
+      briefId: string | null = 'brief-1'
+    ): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const draft = edit(await manualDraft(platform));
+      const f = TestBed.createComponent(ImplementationTabComponent);
+      f.componentRef.setInput('draft', draft);
+      f.componentRef.setInput('briefPersistence', { status: briefId ? 'saved' : 'off', briefId, message: null, approved: !!briefId });
+      f.componentRef.setInput('biddingEnabled', bidding);
+      f.componentRef.setInput('biddingCapabilityRead', read);
+      f.componentRef.setInput('briefData', brief());
+      f.detectChanges();
+      await f.whenStable();
+      const c = component(f);
+      c['selectedPlatforms'].set(['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']);
+      c['campaignForm'].controls['eventName'].setValue('KubeCon EU 2026');
+      c['campaignForm'].controls['registrationUrl'].setValue('https://example.com/kubecon');
+      c['campaignForm'].controls['startDate'].setValue('2026-09-01');
+      c['campaignForm'].controls['endDate'].setValue('2026-09-30');
+      c['addMicrosoftKeyword']('service mesh');
+      f.detectChanges();
+      await f.whenStable();
+      return f;
+    }
+
+    it('blocks Create and says it is checking while the capability read is pending', async () => {
+      fixture = await remount(null, 'pending');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-pending')?.textContent).toContain('Checking bidding support…');
+      expect(query('implementation-bidding-capability-live')?.textContent?.trim()).toBe('Checking bidding support…');
+      component()['submit']();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      // The answer arrives: the control returns with the retained choice, and it is sent.
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-live')?.textContent?.trim()).toBe('');
+      const request = await submitted();
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 1 });
+    });
+
+    it('blocks Create with a Retry that asks the parent to re-read when the read failed', async () => {
+      fixture = await remount(null, 'failed');
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-failed')?.textContent).toContain('Could not confirm that manual bidding is supported');
+      (query('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+      expect(retried).toHaveBeenCalledTimes(1);
+      expect(createCampaign).not.toHaveBeenCalled();
+    });
+
+    it('blocks Create when the capability is off, until the operator switches to Automatic', async () => {
+      fixture = await remount(false, 'ready');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-unsupported')?.textContent).toContain('Meta');
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-unsupported')).toBeNull();
+      expect(component()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'automatic', bidAmount: 1 });
+      const request = await submitted();
+      // Off: no bidding key at all — the operator chose automatic, which is what that means.
+      expect(Object.keys(request['metaConfig'])).not.toContain('bidding');
+    });
+
+    it('lets the operator switch to Automatic while the read is still pending', async () => {
+      fixture = await remount(null, 'pending');
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    /**
+     * A foundation switch (or a list load with no brief id) clears the capability WITHOUT starting a
+     * read, leaving `unknown`. "Checking…" would wait forever there, so it is treated like a failed
+     * read: Retry starts one, and Switch to Automatic is offered too.
+     */
+    it('offers Retry and Switch to Automatic when no read is in flight (after a foundation switch)', async () => {
+      fixture = await remount(null, 'unknown');
+      const retried = vi.fn();
+      fixture.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(query('implementation-bidding-capability-failed')).not.toBeNull();
+      (query('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement).click();
+      expect(retried).toHaveBeenCalledTimes(1);
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    /**
+     * The thread's sequence: a legacy Microsoft max CPC is in the draft beside a retained Manual
+     * choice; the capability comes back off; the operator switches to Automatic. Without `bidding`,
+     * campaign-service reads a `cpcBid` as MANUAL — so it must not be sent.
+     */
+    it('sends no Microsoft cpcBid after Switch to Automatic, even with a legacy value in the draft', async () => {
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({ ...d, microsoftCpcBid: '2.5' }));
+      expect(query('implementation-bidding-capability-unsupported')).not.toBeNull();
+
+      (query('implementation-bidding-capability-automatic')?.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component()['microsoftCpcBid']()).toBe('');
+      const request = await submitted();
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('bidding');
+    });
+
+    it('never sends a legacy cpcBid beside an explicit Automatic choice, however it got there', async () => {
+      // A restored draft that already says Automatic for Microsoft, carrying a stale legacy value.
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({
+        ...d,
+        microsoftCpcBid: '2.5',
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: 1 } },
+      }));
+
+      const request = await submitted();
+
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('lets a bid typed into the legacy field win over an earlier Automatic', async () => {
+      fixture = await remount(false, 'ready', 'microsoft-ads', (d) => ({
+        ...d,
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: 1 } },
+      }));
+      const input = query('implementation-microsoft-cpc-bid') as HTMLInputElement;
+      input.value = '3';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      const request = await submitted();
+
+      expect(request['microsoftConfig']['cpcBid']).toBe(3);
+    });
+
+    /**
+     * With no brief id there is nothing to read against: the parent's read returns at once, so a
+     * Retry would do nothing. Saving the brief starts the read, so the banner asks for that instead.
+     */
+    it.each(['unknown', 'failed'] as const)('asks to save the brief, and offers no Retry, when %s with no brief id', async (read) => {
+      fixture = await remount(null, read, 'meta-ads', (d) => d, null);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-capability-unsaved')?.textContent).toContain(
+        "Bidding support can't be checked until this brief is saved. Save the brief, or switch to Automatic."
+      );
+      expect(query('implementation-bidding-capability-retry')).toBeNull();
+      expect(query('implementation-bidding-capability-automatic')).not.toBeNull();
+    });
+
+    /**
+     * The thread's sequence: the capability is unanswered, so the legacy Microsoft field shows and
+     * the operator types a bid into it; then the capability resolves to true and the legacy field
+     * hides. The bid must carry into the control as Manual — not vanish and be sent as Automatic.
+     */
+    it('carries a legacy Microsoft bid into the control as Manual when the capability turns true', async () => {
+      fixture = await mount(null);
+      const input = query('implementation-microsoft-cpc-bid') as HTMLInputElement;
+      input.value = '2.5';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.componentRef.setInput('biddingCapabilityRead', 'ready');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(query('implementation-microsoft-cpc-bid')).toBeNull();
+      expect(component()['biddingDrafts']()['microsoft-ads']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(component()['microsoftCpcBid']()).toBe('');
+      expect((query('implementation-bidding-microsoft-ads-amount')?.querySelector('input') as HTMLInputElement).value).toBe('2.5');
+      const request = await submitted();
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('leaves an explicit Microsoft choice alone when the capability turns true', async () => {
+      fixture = await remount(null, 'unknown', 'microsoft-ads', (d) => ({
+        ...d,
+        microsoftCpcBid: '2.5',
+        bidding: { ...d.bidding, 'microsoft-ads': { strategy: 'automatic', bidAmount: null } },
+      }));
+
+      fixture.componentRef.setInput('biddingEnabled', true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(component()['biddingDrafts']()['microsoft-ads']).toEqual({ strategy: 'automatic', bidAmount: null });
+      const request = await submitted();
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'automatic' });
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('never renders Retry while a read is in flight either', async () => {
+      fixture = await remount(null, 'pending');
+
+      expect(query('implementation-bidding-capability-retry')).toBeNull();
+    });
+
+    it('does not block a retained Manual choice on a platform that is not selected', async () => {
+      fixture = await remount(null, 'pending');
+      component()['selectedPlatforms'].set(['linkedin-ads']);
+      fixture.detectChanges();
+
+      expect(query('implementation-bidding-capability-pending')).toBeNull();
+      expect(component()['canSubmit']()).toBe(true);
+    });
+  });
+
+  describe('with the flag on', () => {
+    beforeEach(async () => {
+      fixture = await mount(true);
+    });
+
+    it('renders a control per supported platform, defaulting to Automatic', () => {
+      for (const platform of ['linkedin-ads', 'meta-ads', 'microsoft-ads', 'reddit-ads']) {
+        expect(query(`implementation-bidding-${platform}`)).not.toBeNull();
+        // Automatic is the default, so the bid input is not shown.
+        expect(query(`implementation-bidding-${platform}-amount`)).toBeNull();
+        expect(component()['biddingViews']()[platform].value).toEqual({ strategy: 'automatic', bidAmount: null });
+      }
+      expect(query('implementation-bidding-google-ads')).toBeNull();
+    });
+
+    it('labels the strategy group and names the currency per platform', async () => {
+      expect(query('implementation-bidding-linkedin-ads')?.querySelector('legend')?.textContent?.trim()).toBe('Bidding');
+
+      await pickStrategy('linkedin-ads', 'manual');
+      await pickStrategy('meta-ads', 'manual');
+
+      expect(query('implementation-bidding-linkedin-ads-currency')?.textContent).toContain('USD');
+      expect(query('implementation-bidding-meta-ads-currency')?.textContent).toContain("ad account's currency");
+      expect(query('implementation-bidding-meta-ads-limit')?.textContent).toContain('5×');
+      const label = fixture.nativeElement.querySelector('label[for="campaign-bidding-linkedin-ads-amount"]') as HTMLLabelElement | null;
+      expect(label?.textContent).toContain('USD');
+    });
+
+    it('hides the legacy Microsoft max CPC field and never sends cpcBid beside bidding', async () => {
+      expect(query('implementation-microsoft-cpc-bid')).toBeNull();
+      // A stale legacy value (a restored draft) neither blocks the create nor reaches the wire.
+      component()['microsoftCpcBid'].set('5000');
+      fixture.detectChanges();
+
+      const request = await submitted();
+
+      expect(Object.keys(request['microsoftConfig'])).not.toContain('cpcBid');
+    });
+
+    it('sends an explicit automatic strategy, and nothing else, on every config by default', async () => {
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        expect(request[key]['bidding']).toEqual({ strategy: 'automatic' });
+        expect(Object.keys(request[key]['bidding'] as object)).toEqual(['strategy']);
+      }
+      expect(request['googleAdsConfig']).toBeUndefined();
+    });
+
+    it('sends a manual bid exactly as typed', async () => {
+      await pickStrategy('linkedin-ads', 'manual');
+      await typeBid('linkedin-ads', '2.5');
+
+      const request = await submitted();
+
+      expect(request['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 2.5 });
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'automatic' });
+    });
+
+    it('never puts null or an empty string on the wire', async () => {
+      await pickStrategy('microsoft-ads', 'manual');
+      await typeBid('microsoft-ads', '1.25');
+      await pickStrategy('reddit-ads', 'manual');
+      component()['redditObjective'].set('traffic');
+      await typeBid('reddit-ads', '0.75');
+      // Picked and then put back: the typed amount must not travel with automatic.
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '1');
+      await pickStrategy('meta-ads', 'automatic');
+
+      const request = await submitted();
+
+      for (const key of LANE_CONFIGS) {
+        const bidding = request[key]['bidding'] as Record<string, unknown>;
+        expect(bidding).not.toBeNull();
+        for (const [field, value] of Object.entries(bidding)) {
+          expect(['strategy', 'bidAmount']).toContain(field);
+          expect(value).not.toBeNull();
+          expect(value).not.toBe('');
+        }
+      }
+      expect(request['metaConfig']['bidding']).toEqual({ strategy: 'automatic' });
+      expect(request['microsoftConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 1.25 });
+      expect(request['redditConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 0.75 });
+    });
+
+    it('blocks the create while a manual choice has no bid, and says why', async () => {
+      await pickStrategy('linkedin-ads', 'manual');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-linkedin-ads-error')?.textContent).toContain('Enter a max CPC bid');
+      const input = query('implementation-bidding-linkedin-ads-amount')?.querySelector('input');
+      expect(input?.getAttribute('aria-invalid')).toBe('true');
+      expect(input?.getAttribute('aria-describedby')).toContain('campaign-bidding-linkedin-ads-error');
+
+      await typeBid('linkedin-ads', '3');
+
+      expect(component()['canSubmit']()).toBe(true);
+      expect(query('implementation-bidding-linkedin-ads-error')).toBeNull();
+    });
+
+    it.each([
+      ['linkedin-ads', '2.345', 'two decimal places'],
+      ['linkedin-ads', '0', 'greater than zero'],
+      ['microsoft-ads', '1000.01', 'at most 1,000'],
+      ['microsoft-ads', '0.001', 'at least 0.01'],
+      ['meta-ads', '0.125', 'two decimal places'],
+    ])('refuses a %s bid of %s', async (platform, bid, message) => {
+      await pickStrategy(platform, 'manual');
+      await typeBid(platform, bid);
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query(`implementation-bidding-${platform}-error`)?.textContent).toContain(message);
+    });
+
+    it('refuses manual Meta under an objective without link clicks, and accepts it under traffic', async () => {
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '1');
+      component()['metaObjective'].set('awareness');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-meta-ads-error')?.textContent).toContain('Traffic or Leads');
+
+      component()['metaObjective'].set('traffic');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('refuses a Meta bid above a fifth of the daily budget, but not under a lifetime budget', async () => {
+      component()['metaBudgetUsd'].set(10);
+      await pickStrategy('meta-ads', 'manual');
+      await typeBid('meta-ads', '2.01');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-meta-ads-error')?.textContent).toContain('at least 5× the bid');
+
+      component()['metaLifetimeBudget'].set(true);
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('refuses manual Reddit under the default conversions objective, and accepts it under traffic', async () => {
+      await pickStrategy('reddit-ads', 'manual');
+      await typeBid('reddit-ads', '0.5');
+
+      expect(component()['canSubmit']()).toBe(false);
+      expect(query('implementation-bidding-reddit-ads-error')?.textContent).toContain('needs the Traffic objective');
+
+      component()['redditObjective'].set('traffic');
+      fixture.detectChanges();
+
+      expect(component()['canSubmit']()).toBe(true);
+    });
+
+    it('keeps the choice through a tab round-trip and sends it from the remount', async () => {
+      let draft: CampaignImplementationDraft | null = null;
+      fixture.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (draft = d));
+      await pickStrategy('linkedin-ads', 'manual');
+      await typeBid('linkedin-ads', '3.5');
+      fixture.destroy();
+
+      expect(draft).not.toBeNull();
+      expect((draft as unknown as CampaignImplementationDraft).bidding?.['linkedin-ads']).toEqual({ strategy: 'manual', bidAmount: 3.5 });
+
+      const restored = await mount(true, draft);
+
+      // The remounted control shows the restored choice, not the default.
+      expect(query('implementation-bidding-linkedin-ads-amount', restored)?.querySelector('input')?.value).toBe('3.5');
+      const request = await submitted(restored);
+      expect(request['linkedInConfig']['bidding']).toEqual({ strategy: 'manual', bidAmount: 3.5 });
+    });
+  });
+});
+
+/**
+ * The Reddit image UPLOAD (decision D3): offered only on an explicit yes from BOTH the authored-post
+ * capability and `redditAssetUploadEnabled`, it uploads the chosen file for the saved brief and
+ * sends the returned id as `imageAssetId` in place of `imageUrl`. With the upload capability off the
+ * section is exactly what it was: the pasted image URL, and nothing else.
+ */
+describe('ImplementationTabComponent reddit image upload', () => {
+  const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
+  const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+
+  let createCampaign: ReturnType<typeof vi.fn>;
+  let uploadCreativeAsset: ReturnType<typeof vi.fn>;
+  let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+
+  interface Internals {
+    campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
+    selectedPlatforms: { set(v: string[]): void };
+    redditImageAssetId: () => string;
+    redditImageUploadStatus: () => string;
+    redditImageUploadError: () => string;
+    canSubmit: () => boolean;
+    submit(): void;
+  }
+  const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
+
+  const brief = (): CampaignBriefOutput =>
+    ({
+      eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
+      totalBudget: 500,
+      selectedPlatforms: ['reddit-ads'],
+      redditCopy: {
+        variants: [{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }],
+        recommendedSubreddits: ['briefsub'],
+        recommendedInterests: [],
+        recommendedKeywords: [],
+        recommendedGeos: ['US'],
+      },
+      keywords: [],
+      hsUtm: null,
+      driveFolderUrl: '',
+    }) as unknown as CampaignBriefOutput;
+
+  async function mount(
+    upload: boolean | null,
+    creative = true,
+    draft: CampaignImplementationDraft | null = null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const f = TestBed.createComponent(ImplementationTabComponent);
+    let captured: CampaignImplementationDraft | null = null;
+    f.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (captured = d));
+    if (draft) f.componentRef.setInput('draft', draft);
+    f.componentRef.setInput('redditCreativeEnabled', creative);
+    f.componentRef.setInput('redditAssetUploadEnabled', upload);
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: BRIEF_ID, message: null, approved: true });
+    f.componentRef.setInput('briefData', brief());
+    at(f).selectedPlatforms.set(['reddit-ads']);
+    f.detectChanges();
+    await f.whenStable();
+    return { fixture: f, latest: () => captured };
+  }
+
+  const fileInput = (f: ComponentFixture<ImplementationTabComponent>): HTMLInputElement | null =>
+    f.nativeElement.querySelector('[data-testid="implementation-reddit-image-file"]') as HTMLInputElement | null;
+
+  /** Drive the real `(change)` binding with a chosen file, as the browser's picker would. */
+  function choose(f: ComponentFixture<ImplementationTabComponent>, file: File): void {
+    const input = fileInput(f) as HTMLInputElement;
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    input.dispatchEvent(new Event('change'));
+    f.detectChanges();
+  }
+
+  const png = (size = 16): File => new File([new Uint8Array(size)], 'promo.png', { type: 'image/png' });
+
+  function submit(f: ComponentFixture<ImplementationTabComponent>): Record<string, unknown> {
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+    c.submit();
+    expect(createCampaign).toHaveBeenCalled();
+    return createCampaign.mock.calls[0][0]['redditConfig'] as Record<string, unknown>;
+  }
+
+  function typeImageUrl(f: ComponentFixture<ImplementationTabComponent>, value: string): void {
+    const input = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-url"]') as HTMLInputElement;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    f.detectChanges();
+  }
+
+  beforeEach(async () => {
+    createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    uploadCreativeAsset = vi.fn().mockReturnValue(of({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true }));
+    resumeCreativeAssetUpload = vi.fn().mockReturnValue(null);
+    cancelCreativeAssetUpload = vi.fn();
+
+    await TestBed.configureTestingModule({
+      imports: [ImplementationTabComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'tlf' }) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        {
+          provide: CampaignService,
+          useValue: {
+            createCampaign,
+            uploadCreativeAsset,
+            resumeCreativeAssetUpload,
+            forgetCreativeAssetUpload: vi.fn(),
+            cancelCreativeAssetUpload,
+            getLinkedInAccounts: () => of([]),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  it.each([
+    ['unanswered', null, true],
+    ['off', false, true],
+    ['on but the authored-post capability is off', true, false],
+  ])('renders no upload control while the upload capability is %s, and keeps the image URL behaviour unchanged', async (_label, upload, creative) => {
+    const f = (await mount(upload, creative)).fixture;
+
+    expect(fileInput(f)).toBeNull();
+    // The pasted URL is still the authored-post image whenever the creative capability allows it.
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-url"]') !== null).toBe(creative);
+  });
+
+  it('labels the upload control and uploads the chosen image for the saved brief, keeping its asset id', async () => {
+    const f = (await mount(true)).fixture;
+    const input = fileInput(f) as HTMLInputElement;
+    expect(f.nativeElement.querySelector(`label[for="${input.id}"]`)?.textContent).toContain('upload an image');
+    expect(input.getAttribute('accept')).toBe('image/png,image/jpeg');
+
+    const file = png();
+    choose(f, file);
+
+    expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID);
+    expect(at(f).redditImageAssetId()).toBe(ASSET_ID);
+    const status = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status"]') as HTMLElement;
+    expect(status.textContent).toContain('Uploaded: promo.png');
+    const live = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status-live"]') as HTMLElement;
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent).toContain('Uploaded: promo.png');
+  });
+
+  it('announces the upload while it is in flight', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const f = (await mount(true)).fixture;
+
+    choose(f, png());
+
+    const status = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status"]') as HTMLElement;
+    expect(status.textContent).toContain('Uploading image');
+    // Not disabled (that would drop keyboard focus), but the create waits for the upload.
+    expect(fileInput(f)?.disabled).toBe(false);
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    expect(c.canSubmit()).toBe(false);
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  // A tab switch destroys this component mid-upload. The request runs on in the service, and the
+  // remount picks it back up from the draft rather than losing the image the operator chose.
+  it('resumes an upload that was still in flight when the tab was left', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    expect(draft.redditImageUploadPendingName).toBe('promo.png');
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const second = await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith(BRIEF_ID);
+    expect(at(second.fixture).redditImageUploadStatus()).toBe('uploading');
+
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    second.fixture.detectChanges();
+
+    expect(at(second.fixture).redditImageAssetId()).toBe(ASSET_ID);
+    expect(second.latest()?.redditImageAssetId).toBe(ASSET_ID);
+    expect(second.latest()?.redditImageUploadPendingName).toBe('');
+    expect(submit(second.fixture)['imageAssetId']).toBe(ASSET_ID);
+  });
+
+  // Once the upload control is hidden mid-upload, the upload must still hold Create, visibly and
+  // with a way out: unanswered, unconfirmed and switched-off support all hide the control, and a
+  // resumed upload has no asset id yet, so without this the campaign went out without the image.
+  it.each([
+    ['still being checked', null, 'pending', 'pending'],
+    ['unconfirmed', null, 'unknown', 'failed'],
+    ['switched off', false, 'ready', 'unsupported'],
+  ] as const)('holds Create with a visible Remove for an upload in flight while support is %s', async (_label, upload, read, kind) => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+
+    f.componentRef.setInput('biddingCapabilityRead', read);
+    f.componentRef.setInput('redditAssetUploadEnabled', upload);
+    f.detectChanges();
+
+    expect(fileInput(f)).toBeNull();
+    const block = f.nativeElement.querySelector(`[data-testid="implementation-reddit-image-asset-block-${kind}"]`) as HTMLElement | null;
+    expect(block).not.toBeNull();
+    expect(c.canSubmit()).toBe(false);
+
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-remove"] button') as HTMLButtonElement).click();
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('idle');
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  it('holds Create for an upload resumed after a tab switch while support is still being checked', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+    f.componentRef.setInput('biddingCapabilityRead', 'pending');
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('uploading');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-pending"]')).not.toBeNull();
+    expect(c.canSubmit()).toBe(false);
+  });
+
+  // A stalled upload has no timeout, so the shown control must offer a way out of it, and that way
+  // out must abort the request rather than leave it running.
+  it('offers Cancel while an upload is in flight, which aborts it and releases Create', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    expect(c.canSubmit()).toBe(false);
+
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-cancel"]') as HTMLButtonElement).click();
+    f.detectChanges();
+
+    expect(cancelCreativeAssetUpload).toHaveBeenCalled();
+    expect(c.redditImageUploadStatus()).toBe('idle');
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  it('does not hold Create for an upload when a post URL is what the campaign sends', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f) as Internals & { redditPostUrl: { set(v: string): void } };
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+
+    c.redditPostUrl.set('https://www.reddit.com/r/kubernetes/comments/abc123/promo/');
+    f.detectChanges();
+
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  // A foundation switch clears the current brief but keeps the draft. The upload belongs to the brief
+  // it was started for, so this mount must neither follow it (holding Create, then discarding the
+  // answer as a brief change) nor drop it: it stays parked in the draft for when that brief reopens.
+  it('parks an upload for another brief, then resumes it when that brief is open again', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+    expect(draft.redditImageUploadPendingBriefId).toBe(BRIEF_ID);
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const switched = TestBed.createComponent(ImplementationTabComponent);
+    let parked: CampaignImplementationDraft | null = null;
+    switched.componentRef.instance.draftChange.subscribe((d: CampaignImplementationDraft) => (parked = d));
+    switched.componentRef.setInput('draft', draft);
+    switched.componentRef.setInput('redditCreativeEnabled', true);
+    switched.componentRef.setInput('redditAssetUploadEnabled', true);
+    switched.componentRef.setInput('briefPersistence', { status: 'idle', briefId: null, message: null, approved: false });
+    switched.componentRef.setInput('briefData', brief());
+    switched.detectChanges();
+    await switched.whenStable();
+
+    expect(resumeCreativeAssetUpload).not.toHaveBeenCalled();
+    expect(at(switched).redditImageUploadStatus()).toBe('idle');
+    expect(parked).not.toBeNull();
+    expect((parked as unknown as CampaignImplementationDraft).redditImageUploadPendingName).toBe('promo.png');
+    expect((parked as unknown as CampaignImplementationDraft).redditImageUploadPendingBriefId).toBe(BRIEF_ID);
+    switched.destroy();
+
+    const back = await mount(true, true, parked as unknown as CampaignImplementationDraft);
+    expect(resumeCreativeAssetUpload).toHaveBeenCalledWith(BRIEF_ID);
+    pending.next({ id: ASSET_ID, mimeType: 'image/png', byteSize: 16, checksum: 'ab'.repeat(32), created: true });
+    back.fixture.detectChanges();
+    expect(at(back.fixture).redditImageAssetId()).toBe(ASSET_ID);
+  });
+
+  // A new pick replaces the previous upload outright, a parked one included, so it is cancelled
+  // rather than left running with nothing in the draft pointing at it.
+  it('cancels a parked upload when another file is picked, even one that is refused', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026', redditImageUploadPendingBriefId: 'another-brief' };
+    first.fixture.destroy();
+    cancelCreativeAssetUpload.mockClear();
+
+    const second = await mount(true, true, draft);
+    expect(at(second.fixture).redditImageUploadStatus()).toBe('idle');
+    choose(second.fixture, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+
+    expect(cancelCreativeAssetUpload).toHaveBeenCalled();
+    expect(second.latest()?.redditImageUploadPendingName).toBe('');
+  });
+
+  it('shows a resumed upload that fails while the control is hidden, and holds Create until removed', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    f.detectChanges();
+
+    const block = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]') as HTMLElement | null;
+    expect(block?.textContent).toContain('The Reddit image upload did not complete');
+    expect(c.canSubmit()).toBe(false);
+
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-remove"] button') as HTMLButtonElement).click();
+    f.detectChanges();
+    expect(c.canSubmit()).toBe(true);
+  });
+
+  it('does not hold Create on another brief for an upload that failed for the one left behind', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const c = at(f);
+
+    // A foundation switch with the tab open: the brief is cleared and the capabilities reset.
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: '0f8fad5b-d9cb-469f-a165-70867728950e', message: null, approved: true });
+    f.componentRef.setInput('redditAssetUploadEnabled', null);
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('error');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]')).toBeNull();
+  });
+
+  // The live region must exist before the control does: created with it as upload support settles,
+  // it would drop the first announcement.
+  it('keeps the upload status live region mounted while the upload control is hidden', async () => {
+    const f = (await mount(null)).fixture;
+    expect(fileInput(f)).toBeNull();
+    const live = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-status-live"]') as HTMLElement | null;
+    expect(live?.getAttribute('role')).toBe('status');
+    expect(live?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  // The failure must outlive a second tab switch too, or the block lifts and Create sends the
+  // campaign without the image the operator chose and never removed.
+  it('keeps a failed upload, and its hold on Create, across another tab switch', async () => {
+    const pending = new Subject<unknown>();
+    uploadCreativeAsset.mockReturnValue(pending);
+    const first = await mount(true);
+    choose(first.fixture, png());
+    let draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(pending);
+
+    const second = await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+    pending.error(new HttpErrorResponse({ status: 503 }));
+    second.fixture.detectChanges();
+    draft = second.latest() as CampaignImplementationDraft;
+    expect(draft.redditImageUploadFailedBriefId).toBe(BRIEF_ID);
+    second.fixture.destroy();
+    resumeCreativeAssetUpload.mockReturnValue(null);
+
+    const f = (await mount(null, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    f.detectChanges();
+
+    expect(c.redditImageUploadStatus()).toBe('error');
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-image-asset-block-uploadFailed"]')).not.toBeNull();
+    expect(c.canSubmit()).toBe(false);
+  });
+
+  it('says the upload was interrupted when there is nothing left to resume', async () => {
+    uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+
+    const f = (await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' })).fixture;
+
+    expect(at(f).redditImageUploadStatus()).toBe('error');
+    expect(at(f).redditImageUploadError()).toBe('The upload of promo.png was interrupted. Choose the image again.');
+    expect(at(f).redditImageAssetId()).toBe('');
+  });
+
+  it('does not send an asset uploaded to a different brief', async () => {
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026', redditImageAssetBriefId: 'another-brief' };
+    first.fixture.destroy();
+
+    const second = await mount(true, true, draft);
+    const f = second.fixture;
+    const q = (id: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+    // Never sent, so never shown as usable: no "Uploaded", and Create blocked with a way out.
+    expect(q('implementation-reddit-image-status')?.textContent).not.toContain('Uploaded');
+    expect(q('implementation-reddit-image-asset-block-otherBrief')?.textContent).toContain('uploaded for a different brief');
+    const c = at(f);
+    c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+    c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+    c.campaignForm.controls['startDate'].setValue('2026-09-01');
+    c.campaignForm.controls['endDate'].setValue('2026-09-30');
+    expect(c.canSubmit()).toBe(false);
+    c.submit();
+    expect(createCampaign).not.toHaveBeenCalled();
+
+    (q('implementation-reddit-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+    f.detectChanges();
+
+    expect(q('implementation-reddit-image-asset-block-otherBrief')).toBeNull();
+    expect('imageAssetId' in submit(f)).toBe(false);
+  });
+
+  it('replaces the previous upload when a new pick is refused, and links the refusal to the input', async () => {
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
+
+    expect(at(f).redditImageAssetId()).toBe('');
+    expect(fileInput(f)?.getAttribute('aria-describedby')).toContain('reddit-image-file-error');
+    expect(fileInput(f)?.getAttribute('aria-invalid')).toBe('true');
+    // The id the input names is the upload's own alert, not another platform's error.
+    const described = f.nativeElement.querySelector('#reddit-image-file-error') as HTMLElement;
+    expect(described.getAttribute('data-testid')).toBe('implementation-reddit-image-error');
+    expect(described.textContent?.trim()).toBe(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
+  });
+
+  // The pick clears the old asset in the PARENT's draft too: otherwise a tab switch right after a
+  // refused (or still-uploading) replacement restores the image the operator replaced.
+  it.each([
+    ['refused', (): File => new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' })],
+    ['still uploading', (): File => png()],
+  ])('drops the replaced upload from the draft when the replacement is %s', async (label, replacement) => {
+    const first = await mount(true);
+    choose(first.fixture, png());
+    expect(first.latest()?.redditImageAssetId).toBe(ASSET_ID);
+    if (label === 'still uploading') {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+    }
+
+    choose(first.fixture, replacement());
+
+    expect(first.latest()?.redditImageAssetId).toBe('');
+    const draft = first.latest() as CampaignImplementationDraft;
+    first.fixture.destroy();
+    const second = await mount(true, true, { ...draft, eventSlug: 'kubecon-eu-2026' });
+    expect('imageAssetId' in submit(second.fixture)).toBe(false);
+  });
+
+  it('sends imageAssetId instead of imageUrl once an image is uploaded', async () => {
+    const f = (await mount(true)).fixture;
+    typeImageUrl(f, 'https://cdn.example.org/promo.png');
+    choose(f, png());
+
+    const config = submit(f);
+
+    expect(config['imageAssetId']).toBe(ASSET_ID);
+    expect('imageUrl' in config).toBe(false);
+  });
+
+  it('falls back to the pasted image URL after the upload is removed', async () => {
+    const f = (await mount(true)).fixture;
+    typeImageUrl(f, 'https://cdn.example.org/promo.png');
+    choose(f, png());
+    (f.nativeElement.querySelector('[data-testid="implementation-reddit-image-remove"]') as HTMLButtonElement).click();
+    f.detectChanges();
+
+    const config = submit(f);
+
+    expect('imageAssetId' in config).toBe(false);
+    expect(config['imageUrl']).toBe('https://cdn.example.org/promo.png');
+  });
+
+  // Upstream refuses imageAssetId together with postUrl, where an imageUrl is merely ignored.
+  it('withholds the uploaded image while a post URL is set', async () => {
+    const f = (await mount(true)).fixture;
+    choose(f, png());
+    const post = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
+    post.value = 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/';
+    post.dispatchEvent(new Event('input'));
+    f.detectChanges();
+
+    const config = submit(f);
+
+    expect('imageAssetId' in config).toBe(false);
+    expect(config['postUrl']).toBe('https://www.reddit.com/r/kubernetes/comments/abc123/attend/');
+  });
+
+  it('carries the uploaded image through a tab round-trip', async () => {
+    const first = await mount(true);
+    choose(first.fixture, png());
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    expect(draft?.redditImageAssetId).toBe(ASSET_ID);
+    expect(draft?.redditImageAssetName).toBe('promo.png');
+    expect(draft?.redditImageAssetBriefId).toBe(BRIEF_ID);
+
+    const second = await mount(true, true, { ...(draft as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' });
+    expect(submit(second.fixture)['imageAssetId']).toBe(ASSET_ID);
+  });
+
+  it.each([
+    ['a type outside the allowlist', new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }), CREATIVE_ASSET_WRONG_TYPE_MESSAGE],
+    ['an image over the size limit', png(CREATIVE_ASSET_MAX_BYTES + 1), CREATIVE_ASSET_TOO_LARGE_MESSAGE],
+  ])('refuses %s before uploading, with a readable alert', async (_label, file, message) => {
+    const f = (await mount(true)).fixture;
+
+    choose(f, file);
+
+    expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    const alert = f.nativeElement.querySelector('[data-testid="implementation-reddit-image-error"]') as HTMLElement;
+    expect(alert.getAttribute('role')).toBe('alert');
+    expect(alert.textContent?.trim()).toBe(message);
+    expect(at(f).redditImageAssetId()).toBe('');
+  });
+
+  it.each([
+    [413, {}, CREATIVE_ASSET_TOO_LARGE_MESSAGE],
+    [415, {}, CREATIVE_ASSET_WRONG_TYPE_MESSAGE],
+    [503, { error: 'busy', code: 'SERVICE_UNAVAILABLE' }, 'The image service is unavailable right now. Try again in a moment, or paste an image URL instead.'],
+    [0, {}, 'The image service is unavailable right now. Try again in a moment, or paste an image URL instead.'],
+    [400, { error: 'the image is truncated or corrupt', code: 'BAD_REQUEST' }, 'the image is truncated or corrupt'],
+  ])('explains an upstream %i readably and keeps no asset', async (status, body, message) => {
+    uploadCreativeAsset.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: body })));
+    const f = (await mount(true)).fixture;
+
+    choose(f, png());
+
+    expect(at(f).redditImageUploadStatus()).toBe('error');
+    expect(at(f).redditImageUploadError()).toBe(message);
+    expect(at(f).redditImageAssetId()).toBe('');
+  });
+
+  /**
+   * An upload retained across a tab round-trip while the capabilities are cleared (Optimize, then
+   * back). The upload control is hidden then and the asset is withheld from the request, so the
+   * create must be BLOCKED — never sent with no image — with a way out outside that hidden control.
+   */
+  describe('a retained upload while the capability is unknown or off', () => {
+    async function remount(
+      upload: boolean | null,
+      creative: boolean | null,
+      read: 'unknown' | 'pending' | 'ready' | 'failed'
+    ): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const first = await mount(true);
+      choose(first.fixture, png());
+      const draft = { ...(first.latest() as CampaignImplementationDraft), eventSlug: 'kubecon-eu-2026' };
+      first.fixture.destroy();
+      const f = (await mount(upload, creative as boolean, draft)).fixture;
+      f.componentRef.setInput('redditCreativeEnabled', creative);
+      f.componentRef.setInput('biddingCapabilityRead', read);
+      const c = at(f);
+      c.campaignForm.controls['eventName'].setValue('KubeCon EU 2026');
+      c.campaignForm.controls['registrationUrl'].setValue('https://example.com/kubecon');
+      c.campaignForm.controls['startDate'].setValue('2026-09-01');
+      c.campaignForm.controls['endDate'].setValue('2026-09-30');
+      f.detectChanges();
+      await f.whenStable();
+      return f;
+    }
+    const q = (f: ComponentFixture<ImplementationTabComponent>, id: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${id}"]`);
+
+    it('blocks Create while the capability read is pending, then sends the asset once it answers yes', async () => {
+      const f = await remount(null, null, 'pending');
+
+      expect(fileInput(f)).toBeNull();
+      expect(at(f).canSubmit()).toBe(false);
+      expect(q(f, 'implementation-reddit-image-asset-block-pending')?.textContent).toContain('Checking Reddit image upload support');
+      expect(q(f, 'implementation-reddit-image-asset-block-live')?.textContent?.trim()).toBe('Checking Reddit image upload support…');
+      at(f).submit();
+      expect(createCampaign).not.toHaveBeenCalled();
+
+      f.componentRef.setInput('redditCreativeEnabled', true);
+      f.componentRef.setInput('redditAssetUploadEnabled', true);
+      f.componentRef.setInput('biddingCapabilityRead', 'ready');
+      f.detectChanges();
+      await f.whenStable();
+
+      expect(q(f, 'implementation-reddit-image-asset-block-live')?.textContent?.trim()).toBe('');
+      expect(submit(f)['imageAssetId']).toBe(ASSET_ID);
+    });
+
+    it.each(['failed', 'unknown'] as const)('blocks Create with a Retry when the read is %s', async (read) => {
+      const f = await remount(null, null, read);
+      const retried = vi.fn();
+      f.componentRef.instance.retryBiddingCapability.subscribe(retried);
+
+      expect(at(f).canSubmit()).toBe(false);
+      expect(q(f, 'implementation-reddit-image-asset-block-failed')?.textContent).toContain('Could not confirm that Reddit image upload is supported');
+      (q(f, 'implementation-reddit-image-asset-block-retry')?.querySelector('button') as HTMLButtonElement).click();
+
+      expect(retried).toHaveBeenCalledTimes(1);
+      expect(createCampaign).not.toHaveBeenCalled();
+    });
+
+    it('blocks Create when the upload capability is off, until the operator removes the image', async () => {
+      const f = await remount(false, true, 'ready');
+
+      expect(at(f).canSubmit()).toBe(false);
+      expect(q(f, 'implementation-reddit-image-asset-block-unsupported')).not.toBeNull();
+
+      (q(f, 'implementation-reddit-image-asset-block-remove')?.querySelector('button') as HTMLButtonElement).click();
+      f.detectChanges();
+      await f.whenStable();
+
+      expect(q(f, 'implementation-reddit-image-asset-block-unsupported')).toBeNull();
+      expect(at(f).redditImageAssetId()).toBe('');
+      expect('imageAssetId' in submit(f)).toBe(false);
+    });
+
+    it('does not block while a post URL is set, since the asset is withheld by design then', async () => {
+      const f = await remount(null, null, 'pending');
+      const post = f.nativeElement.querySelector('[data-testid="implementation-reddit-post-url"]') as HTMLInputElement;
+      post.value = 'https://www.reddit.com/r/kubernetes/comments/abc123/attend/';
+      post.dispatchEvent(new Event('input'));
+      f.detectChanges();
+
+      expect(q(f, 'implementation-reddit-image-asset-block-pending')).toBeNull();
+      expect(at(f).canSubmit()).toBe(true);
+    });
   });
 });

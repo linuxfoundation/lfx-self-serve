@@ -289,6 +289,18 @@ export const VOTE_INLINE_BALLOT_MAX_COMMENT_PROMPTS = 2;
 /** Default close window applied to draft votes when the user has not picked an end date. */
 export const DRAFT_VOTE_DEFAULT_DURATION_DAYS = 30;
 
+/** Default close window applied when cloning a vote whose source deadline has already passed. */
+export const CLONE_VOTE_DEFAULT_DURATION_DAYS = 7;
+
+/** Default close time (12-hour format) for a vote's deadline when none is set yet. */
+export const VOTE_DEFAULT_CLOSE_TIME = '11:59 PM';
+
+/** Prefix applied to a cloned vote's title so it's distinguishable from the source vote before the organizer edits it. */
+export const CLONE_VOTE_TITLE_PREFIX = 'Copy of ';
+
+/** Max length for a vote's title — matches the create/edit form's `title` control validator. */
+export const VOTE_TITLE_MAX_LENGTH = 200;
+
 /** Placeholder question shipped with a draft when the user has not filled in any question yet (upstream requires `poll_questions` to be non-empty). */
 export const DRAFT_VOTE_PLACEHOLDER_QUESTION: CreatePollQuestion = {
   prompt: 'Untitled question',

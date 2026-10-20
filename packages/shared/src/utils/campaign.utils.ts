@@ -3,7 +3,11 @@
 
 import {
   CAMPAIGN_ACTION_RULE_LEVERS,
+  CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN,
+  CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS,
+  CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES,
   CAMPAIGN_OPTIMIZE_LEVER_PLATFORMS,
+  CAMPAIGN_PLATFORMS,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_SPONSORS,
   MAX_SPONSOR_NAME_LENGTH,
@@ -11,6 +15,7 @@ import {
 } from '../constants/campaign.constants';
 import type {
   BriefMetricsActionRule,
+  CampaignDispatchFailureDescription,
   CampaignEventSponsor,
   CampaignOptimizeLever,
   KeywordActionPlatform,
@@ -64,9 +69,9 @@ export function campaignActionRuleLever(rule: unknown): CampaignOptimizeLever {
 /**
  * The lever that resolves a monitor finding on a campaign of `platform`, or `none`.
  *
- * `none` when the rule has no lever, and also when the platform cannot take it — X has no budget
- * write, and keyword actions are Google Ads and Microsoft Advertising only — so a finding never offers a control that would
- * refuse its campaign.
+ * `none` when the rule has no lever, and also when the platform cannot take it — X has no
+ * pause/resume here, and keyword actions are Google Ads and Microsoft Advertising only — so a
+ * finding never offers a control that would refuse its campaign.
  */
 export function campaignActionItemLever(rule: unknown, platform: unknown): CampaignOptimizeLever {
   const lever = campaignActionRuleLever(rule);
@@ -83,11 +88,15 @@ export function campaignActionItemLever(rule: unknown, platform: unknown): Campa
  * platform (whitespace collapsed to one space, trimmed; case kept), so what the editor shows as
  * sent is what upstream echoes back. The checks mirror the BFF's and upstream's own, so a batch
  * this accepts is not refused for its shape: the character set (`NEGATIVE_KEYWORD_TEXT_PATTERN`),
- * `MAX_NEGATIVE_KEYWORD_TEXT_LENGTH` counted in characters rather than UTF-16 units, no two
- * punctuation characters together, and no keyword twice (compared case-insensitively). The count
- * limit is the caller's to check, against `keywords.length`.
+ * `maxTextLength` counted in characters rather than UTF-16 units, no two punctuation characters
+ * together, and no keyword twice (compared case-insensitively). The count limit is the caller's to
+ * check, against `keywords.length`.
+ *
+ * `maxTextLength` defaults to the shared `MAX_NEGATIVE_KEYWORD_TEXT_LENGTH` the BFF enforces, and a
+ * caller that knows the campaign's platform passes that platform's own, shorter limit instead
+ * (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES.maxTextLength` — Google Ads caps text at 80).
  */
-export function parseNegativeKeywordInput(text: unknown): ParsedNegativeKeywordInput {
+export function parseNegativeKeywordInput(text: unknown, maxTextLength: number = MAX_NEGATIVE_KEYWORD_TEXT_LENGTH): ParsedNegativeKeywordInput {
   const keywords: string[] = [];
   const problems: NegativeKeywordInputProblem[] = [];
   if (typeof text !== 'string') {
@@ -100,7 +109,7 @@ export function parseNegativeKeywordInput(text: unknown): ParsedNegativeKeywordI
       return;
     }
     const line = i + 1;
-    const reason = negativeKeywordProblem(keyword, seen);
+    const reason = negativeKeywordProblem(keyword, seen, maxTextLength);
     if (reason !== null) {
       problems.push({ line, text: keyword, reason });
       return;
@@ -111,9 +120,9 @@ export function parseNegativeKeywordInput(text: unknown): ParsedNegativeKeywordI
   return { keywords, problems };
 }
 
-function negativeKeywordProblem(keyword: string, seen: ReadonlySet<string>): string | null {
-  if ([...keyword].length > MAX_NEGATIVE_KEYWORD_TEXT_LENGTH) {
-    return `Longer than ${MAX_NEGATIVE_KEYWORD_TEXT_LENGTH} characters.`;
+function negativeKeywordProblem(keyword: string, seen: ReadonlySet<string>, maxTextLength: number): string | null {
+  if ([...keyword].length > maxTextLength) {
+    return `Longer than ${maxTextLength} characters.`;
   }
   if (!NEGATIVE_KEYWORD_TEXT_PATTERN.test(keyword)) {
     return "Use only letters, digits, spaces and & ' - .";
@@ -145,4 +154,55 @@ export function keywordActionKey(platform: KeywordActionPlatform, adGroupId: str
  */
 export function keywordIdentityKey(platform: KeywordActionPlatform, campaignId: string, adGroupId: string, criterionId: string): string {
   return `${platform}:${campaignId}:${adGroupId}:${criterionId}`;
+}
+
+/**
+ * The row version a campaign-service ETag names, or `null` when it is not one.
+ *
+ * campaign-service's ETag is exactly `"<version>"`, quotes included (`briefETag`; see
+ * `CampaignIndexDoc.etag`), and the version only ever grows. That makes two ETags of one row
+ * ORDERABLE, which an opaque compare is not: an asynchronously indexed list can deliver an ETag that
+ * differs from a validator this session confirmed yet is OLDER than it, and only the versions say so.
+ * Anything else (a weak validator, an unquoted or non-numeric value) is not comparable: `null`.
+ */
+export function campaignEtagVersion(etag: string | null | undefined): number | null {
+  if (typeof etag !== 'string') {
+    return null;
+  }
+  const match = /^"(\d{1,15})"$/.exec(etag);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Reads a campaign-service platform `error` (issue #208's `DispatchFailureMessage`) for display.
+ *
+ * Two things, both keyed on backend-fixed text only (see the constants' docs for why that text is
+ * safe to match and what happens when it drifts):
+ *
+ * - a project-connection sentence with a known reason token gets an operator next step, and its
+ *   `(reason: <token>)` fragment is dropped from `message` because the step replaces it; an
+ *   unknown token, or any other sentence, is returned verbatim with no step;
+ * - a sentence ending in one of the pre-create suffixes is flagged `nothingCreated`.
+ *
+ * `error` is only ever rendered as text by the caller, never as HTML.
+ */
+export function describeCampaignDispatchFailure(error: string): CampaignDispatchFailureDescription {
+  const nothingCreated = CAMPAIGN_DISPATCH_NOTHING_CREATED_SUFFIXES.some((suffix) => error.endsWith(suffix));
+  const match = CAMPAIGN_DISPATCH_CONNECTION_NOT_USABLE_PATTERN.exec(error);
+  if (!match) {
+    return { message: error, nextStep: null, nothingCreated };
+  }
+  const [, provider, token] = match;
+  const template = Object.prototype.hasOwnProperty.call(CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS, token)
+    ? CAMPAIGN_DISPATCH_CONNECTION_REASON_NEXT_STEPS[token]
+    : undefined;
+  if (!template) {
+    return { message: error, nextStep: null, nothingCreated };
+  }
+  const label = CAMPAIGN_PLATFORMS.find((p) => p.id === provider)?.label ?? provider;
+  return {
+    message: error.replace(` (reason: ${token})`, ''),
+    nextStep: template.replace('{platform}', label),
+    nothingCreated,
+  };
 }

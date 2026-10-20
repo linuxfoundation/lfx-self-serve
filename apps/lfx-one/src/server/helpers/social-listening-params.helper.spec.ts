@@ -13,9 +13,11 @@ import {
   encodeMentionFeedPageToken,
   parseFoundationSlug,
   parseSocialListeningAnalyticsFilters,
+  parseSocialListeningAnalyticsScope,
   parseSocialListeningAuthorFilters,
   parseSocialListeningFeedBody,
   parseSocialListeningCountBody,
+  parseSocialListeningLimit,
   parseSocialListeningScope,
 } from './social-listening-params.helper';
 
@@ -122,6 +124,109 @@ describe('parseSocialListeningScope', () => {
     const scope = parseSocialListeningScope(reqWith({ foundationSlug: 'lfx', platform: 'bluesky' }), 'op');
 
     expect(scope.platform).toBe('bluesky');
+  });
+});
+
+describe('parseSocialListeningAnalyticsScope', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-14T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    { query: {}, expected: 'ytd' },
+    { query: { period: 'ytd' }, expected: 'ytd' },
+    { query: { period: 'last-3' }, expected: 'last-3' },
+    { query: { period: 'last-6' }, expected: 'last-6' },
+    { query: { period: '2026-08' }, expected: '2026-08' },
+    { query: { month: '2026-08' }, expected: '2026-08' },
+    { query: { period: 'last-3', month: 'bogus' }, expected: 'last-3' },
+  ])('resolves $query to governed period key $expected', ({ query, expected }) => {
+    const scope = parseSocialListeningAnalyticsScope(reqWith({ foundationSlug: 'cncf', ...query }), 'op');
+
+    expect(scope.periodKey).toBe(expected);
+    expect(scope).not.toHaveProperty('startDate');
+    expect(scope).not.toHaveProperty('endDate');
+  });
+
+  it.each(['bogus', 'last-12', '2026-00', '2026-13', '2026-11'])('400s invalid or future period=%s', (period) => {
+    expectFieldError(() => parseSocialListeningAnalyticsScope(reqWith({ foundationSlug: 'cncf', period }), 'op'), 'period');
+  });
+
+  it.each(['bogus', '2026-13', '2026-11'])('400s invalid or future legacy month=%s', (month) => {
+    expectFieldError(() => parseSocialListeningAnalyticsScope(reqWith({ foundationSlug: 'cncf', month }), 'op'), 'month');
+  });
+
+  it('normalizes foundation and platform casing while preserving the trimmed project identifier', () => {
+    const scope = parseSocialListeningAnalyticsScope(reqWith({ foundationSlug: 'LF-Project', platform: ' Twitter ', sourceProjectId: ' Project-ABC ' }), 'op');
+
+    expect(scope).toEqual({ foundationSlug: 'lf-project', periodKey: 'ytd', platform: 'twitter', sourceProjectId: 'Project-ABC' });
+  });
+
+  it.each(['all', 'ALL', ' All ', '   ', ''])('treats scope sentinel or blank %s as unscoped', (value) => {
+    const scope = parseSocialListeningAnalyticsScope(reqWith({ foundationSlug: 'cncf', sourceProjectId: value, platform: value }), 'op');
+
+    expect(scope.sourceProjectId).toBeUndefined();
+    expect(scope.platform).toBeUndefined();
+  });
+
+  it.each(['sourceProjectId', 'platform'])('accepts the 200-character %s boundary and rejects 201 characters', (name) => {
+    const scope = parseSocialListeningAnalyticsScope(reqWith({ foundationSlug: 'cncf', [name]: 'x'.repeat(200) }), 'op');
+
+    expect(scope[name as 'sourceProjectId' | 'platform']).toHaveLength(200);
+    expectFieldError(() => parseSocialListeningAnalyticsScope(reqWith({ foundationSlug: 'cncf', [name]: 'x'.repeat(201) }), 'op'), name);
+  });
+
+  it.each([undefined, 'bad_slug', 'a'.repeat(65)])('retains the foundation validation boundary for %s', (foundationSlug) => {
+    expectFieldError(() => parseSocialListeningAnalyticsScope(reqWith({ foundationSlug }), 'op'), 'foundationSlug');
+  });
+
+  it('does not inspect stale or malformed content filters or feed view state', () => {
+    const scope = parseSocialListeningAnalyticsScope(
+      reqWith({
+        foundationSlug: 'cncf',
+        sentiment: 'bogus',
+        relevance: 'bogus',
+        hasTitle: 'bogus',
+        search: 'x'.repeat(501),
+        language: 'x'.repeat(201),
+        authors: Array.from({ length: 201 }, () => 'alice'),
+        keywords: ['x'.repeat(201)],
+        tags: { malformed: true },
+        mentionIds: Array.from({ length: 501 }, () => 'm1'),
+        unreadOnly: 'true',
+        readIds: { malformed: true },
+        unreadIds: ['x'.repeat(201)],
+        readBeforeTs: 'not-a-timestamp',
+        allTime: 'true',
+      }),
+      'op'
+    );
+
+    expect(scope).toEqual({ foundationSlug: 'cncf', periodKey: 'ytd', sourceProjectId: undefined, platform: undefined });
+  });
+});
+
+describe('parseSocialListeningLimit', () => {
+  it('leaves an absent cap to the service default', () => {
+    expect(parseSocialListeningLimit(reqWith({}), 'op')).toBeUndefined();
+  });
+
+  it.each([
+    ['0', 1],
+    ['5', 5],
+    ['100', 100],
+    ['101', 100],
+  ])('bounds top-project limit=%s to %s', (limit, expected) => {
+    expect(parseSocialListeningLimit(reqWith({ limit }), 'op')).toBe(expected);
+  });
+
+  it.each(['bogus', '1.5', 'Infinity'])('400s non-integer limit=%s', (limit) => {
+    expectFieldError(() => parseSocialListeningLimit(reqWith({ limit }), 'op'), 'limit');
   });
 });
 

@@ -19,6 +19,15 @@ import type {
 } from '../interfaces/social-listening.interface';
 import { lfxColors } from './colors.constants';
 
+/** Governed panel relations for linuxfoundation/lfx-self-serve#1873; schema qualification stays server-side. */
+export const SOCIAL_LISTENING_ANALYTICS_RELATIONS = {
+  overview: 'SOCIAL_LISTENING_ANALYTICS_OVERVIEW',
+  overTime: 'SOCIAL_LISTENING_ANALYTICS_OVER_TIME',
+  platformDistribution: 'SOCIAL_LISTENING_ANALYTICS_PLATFORM_DISTRIBUTION',
+  sentimentDistribution: 'SOCIAL_LISTENING_ANALYTICS_SENTIMENT_DISTRIBUTION',
+  topProjects: 'SOCIAL_LISTENING_ANALYTICS_TOP_PROJECTS',
+} as const;
+
 // ---------------------------------------------------------------------------
 // Display config
 // ---------------------------------------------------------------------------

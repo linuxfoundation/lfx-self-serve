@@ -7,8 +7,7 @@ import {
   MentorshipMenteeApplicationTask,
   MentorshipMenteeApplyTarget,
   MentorshipUpstreamApplication,
-  MentorshipUpstreamProgram,
-  MentorshipUpstreamProgramTerm,
+  MentorshipUpstreamProgramTermApplyTarget,
   MentorshipUpstreamTask,
 } from '@lfx-one/shared/interfaces';
 import { formatIsoDateLabel, toMentorshipUtcEndOfDayInstant, toMentorshipUtcInstant } from '@lfx-one/shared/utils';
@@ -76,31 +75,12 @@ export const mapMentorshipMenteeApplication = (
   ...(tasks && { tasks: tasks.map((task) => mapMentorshipMenteeApplicationTask(task, application.term?.application_end_date ?? undefined)) }),
 });
 
-/**
- * Whether a term takes applications at `now`, by the check upstream runs on submit: the term is
- * `open`, `now` is not before its application start and not after its application end. Upstream
- * returns both as UTC instants, compared as they are, as upstream does; a bare date is read as the
- * start of its UTC day for the start and the end of its UTC day for the end. A missing date leaves
- * that side of the window open.
- */
-const isAcceptingApplications = (term: MentorshipUpstreamProgramTerm, now: Date): boolean => {
-  if (term.status !== 'open') return false;
-  const time = now.getTime();
-  if (term.application_start_date && time < Date.parse(toMentorshipUtcInstant(term.application_start_date))) return false;
-  if (term.application_end_date && time > Date.parse(toMentorshipUtcEndOfDayInstant(term.application_end_date))) return false;
-  return true;
-};
-
-/** Maps a program and one of its terms to the mentee apply page header, with whether the term takes applications at `now`. */
-export const mapMentorshipMenteeApplyTarget = (
-  program: MentorshipUpstreamProgram,
-  term: MentorshipUpstreamProgramTerm,
-  now: Date
-): MentorshipMenteeApplyTarget => ({
-  programName: program.name,
-  projectName: program.project_name ?? '',
-  termName: term.name,
-  acceptingApplications: isAcceptingApplications(term, now),
+/** Maps upstream's apply target to the mentee apply page header. Upstream decides whether the term takes applications. */
+export const mapMentorshipMenteeApplyTarget = (target: MentorshipUpstreamProgramTermApplyTarget): MentorshipMenteeApplyTarget => ({
+  programName: target.program_name,
+  projectName: target.project_name ?? '',
+  termName: target.term_name,
+  acceptingApplications: target.accepting_applications,
 });
 
 /** Sort rank of an application on Application History; a status outside the order ranks last. */

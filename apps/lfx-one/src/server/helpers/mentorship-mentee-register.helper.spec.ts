@@ -6,7 +6,7 @@ import '@angular/compiler';
 import {
   MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX,
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
-  MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS,
+  MENTORSHIP_SKILLS_MAX_ITEMS,
   MENTORSHIP_SKILL_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
@@ -144,7 +144,7 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
       rejectedFields({
         ...VALID_BODY,
         introduction: '',
-        skillsHave: ['Not A Skill'],
+        skillsHave: [],
         skillsWant: [],
         country: '',
         termsAccepted: false,
@@ -163,15 +163,23 @@ describe('parseMentorshipMenteeRegisterRequest', () => {
     expect(request.skillsWant).toEqual(['Python']);
   });
 
+  it('trims skills, drops blanks, and rejects a list with nothing left', () => {
+    const request = parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, skillsHave: ['  Java  ', 'java', '   ', 'Rust'], skillsWant: ['Python'] });
+
+    expect(request.skillsHave).toEqual(['Java', 'Rust']);
+    expect(rejectedFields({ ...VALID_BODY, skillsHave: ['   '] })).toEqual(['skillsHave']);
+    expect(rejectedFields({ ...VALID_BODY, skillsWant: ['   '] })).toEqual(['skillsWant']);
+  });
+
   it('rejects either skills list over the profile edit cap', () => {
-    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS + 1);
+    const overCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS + 1);
 
     expect(rejectedFields({ ...VALID_BODY, skillsHave: overCap })).toEqual(['skillsHave']);
     expect(rejectedFields({ ...VALID_BODY, skillsWant: overCap })).toEqual(['skillsWant']);
   });
 
   it('counts the cap after repeats are dropped', () => {
-    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_MENTEE_PROFILE_SKILLS_MAX_ITEMS);
+    const atCap = MENTORSHIP_SKILL_OPTIONS.slice(0, MENTORSHIP_SKILLS_MAX_ITEMS);
 
     expect(parseMentorshipMenteeRegisterRequest({ ...VALID_BODY, skillsHave: [...atCap, atCap[0]] }).skillsHave).toEqual(atCap);
   });

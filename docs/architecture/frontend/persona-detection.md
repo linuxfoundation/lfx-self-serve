@@ -144,12 +144,12 @@ Two overrides are applied **per request, after the cached detection result**, so
 
 ### 6. Caching
 
-| Cache                                      | TTL                                           | Key                         |
-| ------------------------------------------ | --------------------------------------------- | --------------------------- |
-| Persona detection result                   | 15 s (`PERSONAS_CACHE_TTL_MS`)                | `username \|\| email`       |
-| Affiliated project slugs                   | 15 s (`AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS`) | `username \|\| email`       |
-| ROOT project UID                           | 1 h (`ROOT_PROJECT_UID_CACHE_TTL_MS`)         | global                      |
-| Writer summary (`/api/gw/*` authorization) | 15 s (`GW_WRITER_SUMMARY_CACHE_TTL_MS`)       | `u:username` \|\| `e:email` |
+| Cache                                    | TTL                                           | Key                         |
+| ---------------------------------------- | --------------------------------------------- | --------------------------- |
+| Persona detection result                 | 15 s (`PERSONAS_CACHE_TTL_MS`)                | `username \|\| email`       |
+| Affiliated project slugs                 | 15 s (`AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS`) | `username \|\| email`       |
+| ROOT project UID                         | 1 h (`ROOT_PROJECT_UID_CACHE_TTL_MS`)         | global                      |
+| Writer summary (`/api/gatewaze/*` authz) | 15 s (`GW_WRITER_SUMMARY_CACHE_TTL_MS`)       | `u:username` \|\| `e:email` |
 
 Caches store the **in-flight Promise** so concurrent callers share one NATS round-trip. The **persona detection** cache evicts rejected Promises and resolved results carrying an `error` immediately so the next caller retries. The **affiliated project slugs** cache only evicts rejected Promises — on detection error it resolves to an empty list and the entry stays cached for the TTL. When there is no stable identifier (no username and no email), both caches are bypassed entirely to prevent cross-user leaks. A background sweep evicts expired entries every 60 s.
 
@@ -209,7 +209,7 @@ class PersonaService {
 
 **User pin behavior:** `setPersona()` records a `userSelected` flag persisted to the cookie. On refresh, an explicit choice is preserved as long as the persona is still in the detected set; if the role was revoked upstream the pin is dropped and detection's primary persona takes over.
 
-Typical consumers: `LensService` (lens gating), `sidebar.component.ts` (nav items), `persona-selector.component.ts` (the `role-selector`-flagged switcher), `multi-persona-dashboard.component.ts`, and the persona/ED route guards.
+Typical consumers: `LensService` (lens gating), `SidebarNavService` (nav items rendered by `NavbarComponent`), `persona-selector.component.ts` (the `role-selector`-flagged switcher), `multi-persona-dashboard.component.ts`, and the persona/ED route guards.
 
 ## End-to-end data flow
 

@@ -57,7 +57,7 @@ describe('parseMentorshipMentorProfileUpdate', () => {
     expect(rejectedFields({ introduction: '<p></p>' })).toEqual(['introduction']);
     expect(rejectedFields({ introduction: `<p>${'a'.repeat(MENTORSHIP_MENTOR_INTRODUCTION_MAX + 1)}</p>` })).toEqual(['introduction']);
     expect(rejectedFields({ skills: [] })).toEqual(['skills']);
-    expect(rejectedFields({ skills: ['Not A Real Skill'] })).toEqual(['skills']);
+    expect(parseMentorshipMentorProfileUpdate({ skills: ['Custom Skill'] }, OPERATION)).toEqual({ skills: ['Custom Skill'] });
     expect(rejectedFields({ introduction: '<p></p>', skills: [] }).sort()).toEqual(['introduction', 'skills']);
   });
 
@@ -71,6 +71,11 @@ describe('parseMentorshipMentorProfileUpdate', () => {
 
   it('drops case-insensitive repeats of a skill, keeping the first', () => {
     expect(parseMentorshipMentorProfileUpdate({ skills: ['Kubernetes', 'kubernetes', 'Angular'] }, OPERATION)).toEqual({ skills: ['Kubernetes', 'Angular'] });
+  });
+
+  it('trims skills, drops blanks, and rejects a list with nothing left', () => {
+    expect(parseMentorshipMentorProfileUpdate({ skills: ['  Go  ', 'go', '   ', 'Angular'] }, OPERATION)).toEqual({ skills: ['Go', 'Angular'] });
+    expect(rejectedFields({ skills: ['   '] })).toEqual(['skills']);
   });
 });
 

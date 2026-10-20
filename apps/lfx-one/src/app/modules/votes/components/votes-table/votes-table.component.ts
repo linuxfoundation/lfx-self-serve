@@ -5,28 +5,44 @@ import { formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, input, model, output, PLATFORM_ID, signal, Signal, untracked } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL, VoteResponseStatus } from '@lfx-one/shared';
-import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteTableRow } from '@lfx-one/shared/interfaces';
-import { getEntityCommands, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, matchesMyVotesQuickFilter } from '@lfx-one/shared/utils';
+import { VoteRowParticipationState } from '@lfx-one/shared/enums';
+import { FilterPillOption, MyVotesQuickFilter, Vote, VoteFilterState, VoteStatusCounts, VoteTableRow } from '@lfx-one/shared/interfaces';
+import {
+  computeVoteRowParticipation,
+  getEntityCommands,
+  getUserTimezone,
+  getVoteEndedEarlyDetailTooltip,
+  isVoteEndedEarly,
+  matchesMyVotesQuickFilter,
+  toAbsoluteUrl,
+  votePermalinkPath,
+} from '@lfx-one/shared/utils';
 import { DueDateLabelColorPipe } from '@pipes/due-date-label-color.pipe';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
+import { ClipboardShareService } from '@services/clipboard-share.service';
 import { VoteService } from '@services/vote.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take } from 'rxjs';
+
+import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
 
 @Component({
   selector: 'lfx-votes-table',
@@ -38,6 +54,7 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     ButtonComponent,
     ReactiveFormsModule,
     InputTextComponent,
+    MenuComponent,
     SelectComponent,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
@@ -54,9 +71,12 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
 })
 export class VotesTableComponent {
   // === Injections ===
+  private readonly router = inject(Router);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly voteService = inject(VoteService);
+  private readonly clipboardShare = inject(ClipboardShareService);
+  private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -64,15 +84,20 @@ export class VotesTableComponent {
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
   protected readonly VoteResponseStatus = VoteResponseStatus;
+  protected readonly VoteRowParticipationState = VoteRowParticipationState;
 
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
   public readonly hasPMOAccess = input<boolean>(false);
   public readonly loading = input<boolean>(false);
+  // Partial personal feeds must not present missing rows as confirmed empty results.
+  public readonly resultsComplete = input<boolean>(true);
   public readonly totalRecords = input<number>(0);
+  public readonly paginationLoading = input<boolean>(false);
   public readonly rowsPerPage = input<number>(10);
   public readonly first = input<number>(0);
   public readonly lazy = input<boolean>(false);
+  public readonly serverFiltersActive = input<boolean>(false);
   public readonly groupOptions = input<{ label: string; value: string | null }[]>([{ label: 'All Groups', value: null }]);
   public readonly foundationOptions = input<{ label: string; value: string | null }[]>([]);
   public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
@@ -80,12 +105,18 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
+  // Management contexts (project/foundation lens, committee tab) show "N of M responded" progress; the Me lens keeps the raw count.
+  public readonly showParticipationProgress = input<boolean>(false);
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
   public readonly editQueryParamsFallback = input<Record<string, string>>({});
   public readonly quickFilter = input<MyVotesQuickFilter | null>(null);
   public readonly quickFilterNowMs = input<number>(0);
   public readonly scopeActive = input<boolean>(false);
+  // Opt-in status-tab counts (#3687): when on, each tab label carries its count, and a null
+  // `statusCounts` (loading or failed) renders as unavailable rather than as a confirmed zero.
+  public readonly showStatusCounts = input<boolean>(false);
+  public readonly statusCounts = input<VoteStatusCounts | null>(null);
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -110,16 +141,26 @@ export class VotesTableComponent {
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
+  /** Items for the shared row "More" (⋮) menu, rebuilt for the clicked row before it opens. */
+  protected readonly rowActionMenuItems = signal<MenuItem[]>([]);
+  protected readonly rowActionMenuVoteUid = signal<string | null>(null);
+  protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
 
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly displayedVotes: Signal<VoteTableRow[]> = this.initDisplayedVotes();
   protected readonly isFiltered = computed(() => {
-    if (this.lazy()) return false;
+    if (this.lazy()) return this.serverFiltersActive();
     const f = this.filterState();
     return this.statusTab() !== 'all' || !!f.search.trim() || !!f.group || !!this.quickFilter() || this.scopeActive();
   });
+  // Filters beyond the status tab. When any applies, an empty result can't claim the status itself has no votes.
+  protected readonly hasAdditionalFilters = computed(() => {
+    const f = this.filterState();
+    return !!f.search || !!f.group || !!this.quickFilter() || this.scopeActive();
+  });
+  protected readonly emptyStateCopy: Signal<{ title: string; subtitle: string }> = this.initEmptyStateCopy();
 
   protected readonly rppOptions = computed<number[] | undefined>(() => {
     const count = this.lazy() ? this.totalRecords() : this.displayedVotes().length;
@@ -184,6 +225,34 @@ export class VotesTableComponent {
     }
   }
 
+  /** Opens the row "More" menu without selecting the row, which would open a drawer. */
+  protected toggleRowActionMenu(event: Event, vote: VoteTableRow, menu: MenuComponent): void {
+    event.stopPropagation();
+    this.rowActionMenuVoteUid.set(vote.uid);
+    const items: MenuItem[] = [{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }];
+    // Managers only, and only while the vote is open — upstream rejects reminders for any other status.
+    if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
+      items.push({ label: 'Send reminder', icon: 'fa-light fa-envelope', command: () => this.openReminderDialog(vote) });
+    }
+    if (this.hasPMOAccess()) {
+      items.push({ label: 'Clone', icon: 'fa-light fa-copy', command: () => this.cloneVote(vote) });
+    }
+    this.rowActionMenuItems.set(items);
+    menu.toggle(event);
+  }
+
+  /** Opens the reminder dialog for an active vote's eligible non-voters (#3769). */
+  protected openReminderDialog(vote: VoteTableRow): void {
+    this.dialogService.open(VoteReminderDialogComponent, {
+      header: 'Send vote reminder',
+      width: 'min(960px, 96vw)',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { vote },
+    });
+  }
+
   protected resetFilters(): void {
     this.searchForm.reset({ search: '', group: null, foundationFilter: null, projectFilter: null });
     this.statusTab.set('all');
@@ -239,7 +308,13 @@ export class VotesTableComponent {
         base.push({ id: PollStatus.DISABLED, label: 'Draft' });
       }
       base.push({ id: PollStatus.ENDED, label: 'Ended' });
-      return base;
+      if (!this.showStatusCounts()) return base;
+
+      const counts = this.statusCounts();
+      return base.map((option) => {
+        if (!counts) return { ...option, label: `${option.label} (–)`, ariaLabel: `${option.label}, count unavailable` };
+        return { ...option, label: `${option.label} (${counts[option.id as keyof VoteStatusCounts]})` };
+      });
     });
   }
 
@@ -253,17 +328,39 @@ export class VotesTableComponent {
       toObservable(this.statusTab),
     ])
       .pipe(
+        // Trim the effective search (the control keeps the typed text) so whitespace-only input neither hides rows nor counts as a filter.
         map(([formValue, statusTab]) => ({
-          search: formValue.search ?? '',
+          search: (formValue.search ?? '').trim(),
           status: statusTab !== 'all' ? (statusTab as PollStatus) : null,
           group: formValue.group ?? null,
         })),
+        // Padding-only search edits now map to the same filters; don't re-emit them and reset the parent's pagination.
+        distinctUntilChanged((a, b) => a.search === b.search && a.status === b.status && a.group === b.group),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((filters) => {
         this.filterState.set(filters);
         this.filtersChange.emit(filters);
       });
+  }
+
+  private initEmptyStateCopy(): Signal<{ title: string; subtitle: string }> {
+    return computed(() => {
+      if (!this.resultsComplete()) {
+        return { title: 'Some votes could not be loaded', subtitle: 'Your vote list is incomplete. Retry to check for votes in this view.' };
+      }
+      if (!this.hasAdditionalFilters()) {
+        switch (this.statusTab()) {
+          case PollStatus.ACTIVE:
+            return { title: 'No active votes', subtitle: 'There are no votes open for voting in this view. Select All to see votes with other statuses.' };
+          case PollStatus.DISABLED:
+            return { title: 'No draft votes', subtitle: 'Votes saved as drafts will appear here before they are opened for voting.' };
+          case PollStatus.ENDED:
+            return { title: 'No ended votes yet', subtitle: 'Votes will appear here after voting ends.' };
+        }
+      }
+      return { title: 'No votes match your filters', subtitle: 'Try changing your search or filters, or reset filters to see all votes.' };
+    });
   }
 
   private initDisplayedVotes(): Signal<VoteTableRow[]> {
@@ -303,6 +400,22 @@ export class VotesTableComponent {
     });
   }
 
+  /** Copies the vote's lens-independent permalink; access is checked when the link is opened, so anyone who sees the row may share it. */
+  private copyVoteLink(uid: string): void {
+    this.clipboardShare.copyLink(toAbsoluteUrl(votePermalinkPath(uid), isPlatformBrowser(this.platformId)), 'Vote link copied to clipboard.');
+  }
+
+  /** Opens the create form prefilled from this vote, carrying the row's own project/committee context (dashboard rows can span projects).
+   *  Tier-prefixes the route from the source vote's own is_foundation (not getEntityCommands — that builder takes an id/leaf shaped for
+   *  edit/details routes, and create has neither) so vote-manage's entity-context sync lands the clone in the source's own project. */
+  private cloneVote(vote: VoteTableRow): void {
+    let tierSegment: 'foundation' | 'project' | null = null;
+    if (vote.is_foundation === true) tierSegment = 'foundation';
+    else if (vote.is_foundation === false) tierSegment = 'project';
+    const commands = tierSegment ? ['/', tierSegment, 'votes', 'create'] : ['/votes', 'create'];
+    this.router.navigate(commands, { queryParams: { ...vote.editQueryParams, clone: vote.uid } });
+  }
+
   private toVoteTableRow(vote: Vote): VoteTableRow {
     let endedEarlyTooltip: string | null = null;
 
@@ -324,6 +437,7 @@ export class VotesTableComponent {
     return {
       ...vote,
       endedEarlyTooltip,
+      participation: computeVoteRowParticipation(vote),
       editCommands,
       editQueryParams,
     };

@@ -8,7 +8,7 @@
 // global. `tsconfig.app.json` registers `src/types/` as a typeRoot, so this
 // file is picked up automatically.
 
-import type { IntercomFunction, IntercomSettings, LfxSegmentAnalyticsClass, OsanoFunction, PlausibleFunction } from '@lfx-one/shared/interfaces';
+import type { IntercomFunction, IntercomSettings, LfxSegmentAnalyticsClass, PlausibleFunction, TranscendApi } from '@lfx-one/shared/interfaces';
 
 declare global {
   interface Window {
@@ -16,7 +16,7 @@ declare global {
     plausible?: PlausibleFunction;
     Intercom?: IntercomFunction;
     intercomSettings?: IntercomSettings;
-    Osano?: OsanoFunction;
+    transcend?: TranscendApi;
   }
 }
 

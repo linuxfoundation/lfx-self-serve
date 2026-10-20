@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, inject, PLATFORM_ID } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { MeetingComposerService } from './meeting-composer.service';
@@ -12,11 +13,8 @@ import { MeetingComposerService } from './meeting-composer.service';
  * list so the composer sits over a real page. Composer state lives in a root service, so it
  * survives this component being destroyed by the redirect.
  *
- * **Currently unreferenced, on purpose — this is the flag-flip target.** While
- * `MEETING_V2_ENABLED_FLAG` gates v2, `meetings.routes.ts` points both URLs at the pre-v2 wizard
- * instead (see the comment there for why a lazy route cannot read the flag without a guard). Kept
- * rather than deleted because pointing those two `loadComponent` lines back here is exactly what
- * retiring the flag means; deleting it would make that a rewrite instead of a two-line change.
+ * Reached only while `MEETING_V2_ENABLED_FLAG` is on: `meetings.routes.ts` pairs each URL with the
+ * pre-v2 wizard and `meetingsV2Guard` picks between them.
  */
 @Component({
   selector: 'lfx-meeting-composer-route',
@@ -28,6 +26,16 @@ export class MeetingComposerRouteComponent {
   private readonly composer = inject(MeetingComposerService);
 
   public constructor() {
+    // Browser only. `meetingsV2Guard` always matches this route during SSR (LaunchDarkly is
+    // browser-only), and the server must neither open the composer (it would mount the whole drawer
+    // there) nor redirect: `@angular/ssr` answers a navigation that ends on another URL with an HTTP
+    // redirect, which would drop this deep link before the browser ever saw it. So the server paints
+    // an empty outlet, and the browser's initial navigation re-runs the guard with the real flag value
+    // and lands either here (composer) or on the wizard.
+    if (!isPlatformBrowser(inject(PLATFORM_ID))) {
+      return;
+    }
+
     const snapshot = this.route.snapshot;
     const meetingUid = snapshot.paramMap.get('id');
 
@@ -47,7 +55,6 @@ export class MeetingComposerRouteComponent {
     // authorised. `create` contributes one URL segment, `:id/edit` two.
     const segments = this.route.pathFromRoot.flatMap((route) => route.snapshot.url.map((segment) => segment.path));
     const listSegments = segments.slice(0, meetingUid ? -2 : -1);
-
     void this.router.navigate(['/', ...listSegments], { queryParams: snapshot.queryParams, replaceUrl: true });
   }
 }

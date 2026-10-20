@@ -7,7 +7,13 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ChartComponent } from '@components/chart/chart.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS, HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED, lfxColors } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_MEMBERS_TIERS_COMPOSITION_CAPTION,
+  HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS,
+  HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS,
+  HEALTH_METRICS_MEMBERS_TIERS_UNMEASURED,
+  lfxColors,
+} from '@lfx-one/shared/constants';
 import { buildHealthMetricsMembersTiersView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -49,6 +55,8 @@ export class MembersTiersComponent {
   protected readonly loadFailed = signal<boolean>(false);
   protected readonly mode = signal<HealthMetricsMembersTiersMode>(HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS[0].id);
   protected readonly modeOptions: FilterPillOption[] = [...HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS];
+  protected readonly matrixCaption: Signal<string> = computed(() => HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS[this.mode()]);
+  protected readonly compositionCaption = HEALTH_METRICS_MEMBERS_TIERS_COMPOSITION_CAPTION;
 
   protected readonly query: Signal<HealthMetricsMembersTiersQuery> = computed(() => ({
     foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',

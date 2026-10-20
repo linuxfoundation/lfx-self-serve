@@ -9,6 +9,7 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
+  CROWDFUNDING_ATTRIBUTION_TYPE_ICONS,
   CROWDFUNDING_FUND_TYPE_AVATAR_CLASSES,
   CROWDFUNDING_FUND_TYPE_COLOR_CLASSES,
   CROWDFUNDING_FUND_TYPE_ICONS,
@@ -18,10 +19,11 @@ import { CrowdfundingInitiativeStatus, InitiativeDetail, InitiativeMenuItem, Tab
 import { environment } from '@environments/environment';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-initiative-detail-header',
-  imports: [AvatarComponent, CardComponent, TagComponent, ButtonComponent, MenuComponent, MarkdownRendererComponent, ConfirmDialogModule],
+  imports: [AvatarComponent, CardComponent, TagComponent, ButtonComponent, MenuComponent, MarkdownRendererComponent, ConfirmDialogModule, TooltipModule],
   templateUrl: './initiative-detail-header.component.html',
   styleUrl: './initiative-detail-header.component.scss',
 })
@@ -30,8 +32,11 @@ export class InitiativeDetailHeaderComponent {
 
   public readonly initiative = input.required<InitiativeDetail>();
   public readonly activeTab = input.required<string>();
+  /** Show the creator-only Edit attribution action (lfx-crowdfunding#342); the page decides lens, owner, status and flag. */
+  public readonly canEditAttribution = input(false);
   public readonly tabChange = output<string>();
   public readonly settingsClick = output<void>();
+  public readonly editAttributionClick = output<void>();
   public readonly statusChange = output<CrowdfundingInitiativeStatus>();
 
   private readonly moreMenu = viewChild<MenuComponent>('moreMenu');
@@ -68,6 +73,14 @@ export class InitiativeDetailHeaderComponent {
   protected readonly fundTypeIcon = computed(() => CROWDFUNDING_FUND_TYPE_ICONS[this.initiative().initiativeType]);
   protected readonly fundTypeColorClass = computed(() => CROWDFUNDING_FUND_TYPE_COLOR_CLASSES[this.initiative().initiativeType]);
   protected readonly avatarStyleClass = computed(() => CROWDFUNDING_FUND_TYPE_AVATAR_CLASSES[this.initiative().initiativeType]);
+  protected readonly attributionIcon = computed(() => {
+    const type = this.initiative().attribution?.type;
+    return type ? CROWDFUNDING_ATTRIBUTION_TYPE_ICONS[type] : '';
+  });
+  protected readonly attributionTooltip = computed(() => {
+    const entity = this.initiative().attribution?.type === 'project' ? 'project' : 'organization';
+    return `This initiative is run on behalf of this ${entity}. Donors see it on the public initiative page.`;
+  });
   protected readonly publicPageUrl = computed(() => `${environment.urls.crowdfunding.replace(/\/+$/, '')}/initiatives/${this.initiative().slug}`);
   protected readonly industryTags = computed(() =>
     (this.initiative().industry ?? '')

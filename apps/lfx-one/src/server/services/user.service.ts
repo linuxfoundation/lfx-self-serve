@@ -635,8 +635,8 @@ export class UserService {
     // `invited: true` — every row has a direct host/participant FGA tuple by virtue of
     // `filter_grants=direct`, so the user is invited by definition. Data-shape marker, not an
     // access decision (the subsequent `addAccessToResources` is the actual access layer).
-    // `invited_via_committee` comes from the same registrant lookup as `my_rsvp`; it stays false when that lookup
-    // failed, which only means the Remove action may be offered and then refused by the server.
+    // `invited_via_committee` comes from the same registrant lookup as `my_rsvp`; it only selects the wording of the
+    // Remove confirmation, so a failed lookup just shows the generic text.
     const invited = enriched.map((m) => ({ ...m, invited: true, invited_via_committee: committeeMeetingIds.has(m.id) }));
 
     return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
@@ -1465,7 +1465,7 @@ export class UserService {
             })
         : Promise.resolve([] as MyFormationItemRow[]),
 
-      // Review authority comes from committee writer access, not the caller's email identity.
+      // Review authority comes from being on the group's own writer roster (not inherited writer access), not the caller's email identity.
       isMeLens
         ? this.committeeService.getManagedPendingApplications(req).catch((error) => {
             logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending join applications', { err: error });
@@ -1718,7 +1718,7 @@ export class UserService {
    *    ("Only invited users are allowed to RSVP"). Filtering here keeps the dashboard from
    *    surfacing rows the user can't action.
    *  - `committeeMeetingIds`: the subset of `meetingIds` where any of the user's registrations came from a
-   *    committee. Those follow committee membership, so the user cannot remove themselves from them.
+   *    committee. It only words the Remove confirmation, which tells the user the committee will not invite them again.
    *  - `uidsByMeeting`: the same registration UIDs grouped by meeting for personal-feed enrichment.
    */
   private async fetchUserActiveRegistrantIdentities(
@@ -1841,7 +1841,7 @@ export class UserService {
     return buildInvitationActions(invitations);
   }
 
-  /** Emit only the applicant/group identity and review address; omit private application details. */
+  /** Emit the applicant, the group and its project, and the applicant's own message — what a group writer needs to decide. */
   private transformApplicationsToActions(applications: ManagedPendingApplication[]): PendingActionItem[] {
     return applications.map((application) => ({
       type: 'JoinApplication',
@@ -1854,6 +1854,12 @@ export class UserService {
       applicationUid: application.uid,
       applicationApplicantEmail: application.applicant_email,
       applicationApplicantName: application.applicant_name,
+      applicationProjectName: application.project_name,
+      applicationGroupCategory: application.committee_category,
+      applicationProjectSlug: application.project_slug,
+      applicationIsFoundation: application.is_foundation,
+      applicationMessage: application.message,
+      applicationSubmittedAt: application.created_at,
     }));
   }
 
