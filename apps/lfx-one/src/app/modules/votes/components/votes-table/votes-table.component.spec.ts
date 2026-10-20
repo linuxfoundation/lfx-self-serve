@@ -796,6 +796,72 @@ describe('VotesTableComponent — row More menu', () => {
       expect(location.href.startsWith('mailto:main@lists.example.org?subject=')).toBe(true);
     });
 
+    it('ignores picker selections after the table is destroyed', async () => {
+      const closed = new Subject<GroupsIOMailingList | undefined>();
+      openDialog.mockReturnValue({ onClose: closed });
+      getMailingListsByCommittee.mockReturnValue(of([TSC, MAIN]));
+      const item = await reminderItem();
+
+      item.command!({});
+      expect(closed.observed).toBe(true);
+      fixture.destroy();
+      expect(closed.observed).toBe(false);
+      closed.next(MAIN);
+
+      expect(location.href).toBe('');
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('ignores duplicate clicks during a lookup and allows another reminder after success', async () => {
+      const pending = new Subject<GroupsIOMailingList[]>();
+      getMailingListsByCommittee.mockReturnValue(of([TSC])).mockReturnValueOnce(pending);
+      const item = await reminderItem();
+
+      item.command!({});
+      item.command!({});
+      expect(getMailingListsByCommittee).toHaveBeenCalledTimes(1);
+
+      pending.next([TSC, MAIN]);
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      item.command!({});
+
+      expect(getMailingListsByCommittee).toHaveBeenCalledTimes(2);
+      expect(location.href.startsWith('mailto:tsc@lists.example.org?subject=')).toBe(true);
+    });
+
+    it.each(['error', 'empty completion'])('allows a retry after lookup %s', async (outcome) => {
+      const pending = new Subject<GroupsIOMailingList[]>();
+      getMailingListsByCommittee.mockReturnValue(of([TSC])).mockReturnValueOnce(pending);
+      const item = await reminderItem();
+
+      item.command!({});
+      if (outcome === 'error') {
+        pending.error(new Error('boom'));
+      } else {
+        pending.complete();
+      }
+      item.command!({});
+
+      expect(getMailingListsByCommittee).toHaveBeenCalledTimes(2);
+      expect(location.href.startsWith('mailto:tsc@lists.example.org?subject=')).toBe(true);
+    });
+
+    it('cancels a pending lookup and clears its guard when the table is destroyed', async () => {
+      const pending = new Subject<GroupsIOMailingList[]>();
+      getMailingListsByCommittee.mockReturnValue(pending);
+      const item = await reminderItem();
+
+      item.command!({});
+      expect(pending.observed).toBe(true);
+      fixture.destroy();
+      expect(pending.observed).toBe(false);
+      pending.next([TSC, MAIN]);
+
+      expect(openDialog).not.toHaveBeenCalled();
+      expect(location.href).toBe('');
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
     it('does nothing when the picker is cancelled', async () => {
       const closed = new Subject<GroupsIOMailingList | undefined>();
       openDialog.mockReturnValue({ onClose: closed });

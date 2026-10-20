@@ -43,6 +43,32 @@ describe('buildVoteMailingListReminder', () => {
     );
   });
 
+  it.each(['\uD800', '\uDC00'])('replaces an unpaired surrogate %j without changing valid emoji', (surrogate) => {
+    const title = `Budget ${surrogate} 🗳️`;
+    const draft = buildVoteMailingListReminder(vote(title), PERMALINK);
+
+    expect(subjectTitle(draft.subject)).toBe('Budget \uFFFD 🗳️');
+    expect(draft.body).toContain('Voting is open for "Budget \uFFFD 🗳️"');
+    expect(buildMailtoHref(ADDRESS, draft)).not.toBeNull();
+  });
+
+  it('normalizes malformed Unicode before enforcing the encoded title limit', () => {
+    const draft = buildVoteMailingListReminder(vote('\uD800'.repeat(300)), PERMALINK);
+    const shortened = subjectTitle(draft.subject);
+
+    expect(shortened.endsWith('…')).toBe(true);
+    expect(encodeURIComponent(shortened).length).toBeLessThanOrEqual(VOTE_MAILING_LIST_REMINDER_TITLE_MAX_ENCODED_CHARS);
+    expect(buildMailtoHref(ADDRESS, draft)).not.toBeNull();
+  });
+
+  it('collapses title control characters and whitespace while preserving body paragraphs', () => {
+    const draft = buildVoteMailingListReminder(vote(' \tBudget\r\n\tapproval\u0000\u007F\u0085\u2028\u2029 vote  '), PERMALINK);
+
+    expect(subjectTitle(draft.subject)).toBe('Budget approval vote');
+    expect(draft.body).toContain('Voting is open for "Budget approval vote"');
+    expect(draft.body).toContain('Hi all,\n\nVoting is open');
+  });
+
   it('falls back to the legacy vote timezone when the vote has none', () => {
     const draft = buildVoteMailingListReminder(vote('Budget'), PERMALINK);
 
@@ -112,6 +138,13 @@ describe('buildMailtoHref', () => {
       expect(buildMailtoHref(address, { subject: 'Reminder', body: 'Body' })).toBeNull();
     }
   );
+
+  it.each([
+    { subject: 'Reminder\uD800', body: 'Body' },
+    { subject: 'Reminder', body: 'Body\uDC00' },
+  ])('returns null rather than throwing for malformed draft text %j', (draft) => {
+    expect(buildMailtoHref(ADDRESS, draft)).toBeNull();
+  });
 
   it('returns null when the href would exceed the mail-app limit', () => {
     expect(buildMailtoHref(ADDRESS, { subject: 'Reminder', body: 'x'.repeat(VOTE_MAILING_LIST_REMINDER_MAILTO_MAX_CHARS) })).toBeNull();

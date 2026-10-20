@@ -54,7 +54,7 @@ import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, startWith, take } from 'rxjs';
 
 import { VoteMailingListReminderDialogComponent } from '../vote-mailing-list-reminder-dialog/vote-mailing-list-reminder-dialog.component';
 import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
@@ -163,6 +163,7 @@ export class VotesTableComponent {
   protected readonly rowActionMenuVoteUid = signal<string | null>(null);
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
+  private readonly isResolvingMailingList = signal(false);
 
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
@@ -281,6 +282,8 @@ export class VotesTableComponent {
    * asking which list only when the committee has several. Nothing is sent from LFX.
    */
   protected sendMailingListReminder(vote: VoteTableRow): void {
+    if (this.isResolvingMailingList()) return;
+
     // Committee-tab rows may omit the indexed uid; use the context already resolved for that row.
     const committeeUid = vote.committee_uid || vote.editQueryParams['committee_uid'];
     if (!committeeUid) {
@@ -288,13 +291,15 @@ export class VotesTableComponent {
       return;
     }
 
+    this.isResolvingMailingList.set(true);
     this.mailingListService
       .getMailingListsByCommittee(committeeUid)
       .pipe(
         take(1),
         // Unsafe addresses never reach a mailto: link — a crafted group_name/domain could add recipients or headers.
         map((lists) => (lists ?? []).filter((list) => isMailtoSafeEmail(getMailingListEmail(list)))),
-        takeUntilDestroyed(this.destroyRef)
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.isResolvingMailingList.set(false))
       )
       .subscribe({
         next: (lists) => {
@@ -489,7 +494,7 @@ export class VotesTableComponent {
         draggable: false,
         data: { vote, lists } satisfies VoteMailingListReminderDialogData,
       })
-      ?.onClose.pipe(take(1))
+      ?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef))
       .subscribe((list?: GroupsIOMailingList) => {
         if (list) {
           this.openMailingListReminderDraft(vote, list);
