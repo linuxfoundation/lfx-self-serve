@@ -5,7 +5,9 @@ import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
+  HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
@@ -95,6 +97,7 @@ interface GroupAttendanceRow {
   SCOPE_GROUPS: number | null;
   TOTAL_RECORDS: number | null;
   DORMANT_GROUPS: number | null;
+  LOW_ATTENDANCE_GROUPS: number | null;
   IS_PAGE_ROW: boolean | null;
   [periodColumn: string]: unknown;
 }
@@ -125,8 +128,6 @@ interface NonMemberParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_STATUS: string | null;
-  FIRST_SEEN_DATE: Date | string | null;
-  LAST_ATTENDED_DATE: Date | string | null;
   SCOPE_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
 }
@@ -181,6 +182,11 @@ export class HealthMetricsEngagementService {
       binds.push(query.projectSlug);
     }
 
+    // The sub-nav's "below 50%": not dormant and rated, so a "No data" row never counts. A null
+    // dormancy flag reads as not dormant, as `mapGroupPeriod` does; bound here, in SQL order.
+    const lowAttendanceColumn = `COUNT_IF(NOT COALESCE(is_dormant_${suffix}, FALSE) AND attendance_pct_${suffix} < ? AND meetings_count_${suffix} >= ?) AS low_attendance_groups`;
+    binds.push(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE);
+
     // The per-type counts and the header stay on the whole scope, so the type cut applies to the page
     // and its paginator total only; each type's labels are bound where they are counted.
     const typeChips = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.flatMap(({ key }) => {
@@ -202,6 +208,7 @@ export class HealthMetricsEngagementService {
       'COUNT(*) AS scope_groups',
       // The view's own dormancy flag. Any further metric definition belongs in dbt, not here.
       `COUNT_IF(is_dormant_${suffix}) AS dormant_groups`,
+      lowAttendanceColumn,
       ...typeCountColumns,
       `${typeCondition ? `COUNT_IF(${typeCondition})` : 'COUNT(*)'} AS total_records`,
     ];
@@ -286,7 +293,7 @@ export class HealthMetricsEngagementService {
     return {
       rows: pageRows.map(mapGroupRow),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
-      counts: { groups: scopeGroups, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0) },
+      counts: { groups: scopeGroups, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0), lowAttendanceGroups: Number(first?.LOW_ATTENDANCE_GROUPS ?? 0) },
       typeCounts: [
         { groupType: 'all', groups: scopeGroups, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0) },
         ...typeChips.map(({ key }, index) => ({
@@ -435,8 +442,6 @@ export class HealthMetricsEngagementService {
         account_id,
         account_name,
         membership_status,
-        first_seen_date,
-        last_attended_date,
         scope_orgs_count,
         ${periodColumns}
       FROM ${NON_MEMBER_PARTICIPATION_VIEW}
@@ -651,8 +656,6 @@ function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagemen
     // Rendered as the view reports it; the organization-matching gap the footnote warns about is a
     // data problem upstream, not something to paper over by rewriting the status here.
     membershipStatus: row.MEMBERSHIP_STATUS ?? '',
-    firstSeenDate: toIsoDate(row.FIRST_SEEN_DATE),
-    lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapNonMemberPeriod(row, range)),
   };
 }

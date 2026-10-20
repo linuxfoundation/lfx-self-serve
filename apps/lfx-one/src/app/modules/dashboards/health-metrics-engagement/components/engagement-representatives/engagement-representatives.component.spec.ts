@@ -117,13 +117,61 @@ describe('EngagementRepresentativesComponent', () => {
     expect(getEngagementRepresentatives).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null });
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
     expect(row.textContent).toContain('Dana Fields');
-    expect(row.textContent).toContain('Acme Motors');
     expect(row.textContent).toContain('Technical Steering Committee');
     expect(row.textContent).toContain('2 / 6');
     expect(row.textContent).toContain('Aug 14, 2026');
-    expect(row.textContent).toContain('Voting Rep · Engineer');
-    expect(row.textContent).toContain('Acme Motors · Gold');
-    expect(row.textContent).toContain('12 days ago');
+  });
+
+  // The design has no Organization column: the org and tier ride under the name, and the role, title
+  // and day count are gone.
+  it('shows the organization under the name in place of an Organization column', async () => {
+    await render();
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="engagement-representatives-table"] th')) as HTMLElement[];
+    expect(headers.map((th) => th.textContent?.trim())).toEqual(['Representative', 'Group', 'Attended', 'Last attended']);
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
+    expect(row.querySelectorAll('td')).toHaveLength(4);
+    const org = row.querySelector('[data-testid="engagement-representatives-row-r-1-org"]');
+    expect(org.textContent.trim()).toBe('Acme Motors · Gold');
+    expect(org.className).toContain('text-gray-400');
+    expect(row.textContent).not.toContain('Voting Rep');
+    expect(row.textContent).not.toContain('Engineer');
+    expect(row.textContent).not.toContain('days ago');
+  });
+
+  it('hides the organization sub-line when neither the organization nor the tier is known', async () => {
+    await render(response({ rows: [repRow({ accountName: '', membershipTier: null })] }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1-org"]')).toBeNull();
+  });
+
+  // Red marks a seat never filled, amber a seat that has lapsed; everything else reads as plain text.
+  it('colours never-attended rows red and lapsed rows amber', async () => {
+    const periodsWith = (flags: { neverAttended: boolean; lapsed: boolean }) =>
+      repRow().periods.map((period) => (period.range === 'YTD' ? { ...period, ...flags, meetingsAttended: flags.neverAttended ? 0 : 1 } : period));
+    await render(
+      response({
+        rows: [
+          repRow({ key: 'r-never', periods: periodsWith({ neverAttended: true, lapsed: false }) }),
+          repRow({ key: 'r-lapsed', periods: periodsWith({ neverAttended: false, lapsed: true }) }),
+          repRow({ key: 'r-ok', periods: periodsWith({ neverAttended: false, lapsed: false }) }),
+        ],
+        counts: counts(3, 1),
+      })
+    );
+
+    const cell = (key: string, part: string) =>
+      fixture.nativeElement.querySelector(`[data-testid="engagement-representatives-row-${key}-${part}"]`) as HTMLElement;
+    for (const part of ['attended', 'last-attended']) {
+      expect(cell('r-never', part).className).toContain('text-red-600');
+      expect(cell('r-never', part).className).toContain('font-medium');
+    }
+    expect(cell('r-lapsed', 'attended').className).toContain('text-gray-800');
+    expect(cell('r-lapsed', 'last-attended').className).toContain('text-amber-600');
+    expect(cell('r-lapsed', 'last-attended').className).not.toContain('text-red-600');
+    expect(cell('r-ok', 'attended').className).toContain('text-gray-800');
+    expect(cell('r-ok', 'last-attended').className).toContain('text-gray-800');
+    expect(cell('r-ok', 'last-attended').className).not.toContain('text-amber-600');
   });
 
   it('re-reads the selected project, since the loaded rows cover the previous scope', async () => {
@@ -138,13 +186,12 @@ describe('EngagementRepresentativesComponent', () => {
   });
 
   // Two unresolved rows must not read as one person listed twice.
-  it('renders an unresolved identity as unresolved, and flags a 180-day lapse', async () => {
-    await render(response({ rows: [repRow({ identityUnresolved: true, personName: 'Dana Fields', daysSinceLastAttended: 240, lapsed180d: true })] }));
+  it('renders an unresolved identity as unresolved', async () => {
+    await render(response({ rows: [repRow({ identityUnresolved: true, personName: 'Dana Fields' })] }));
 
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]');
     expect(row.textContent).toContain('Unresolved identity');
     expect(row.textContent).not.toContain('Dana Fields');
-    expect(row.querySelector('[data-testid="engagement-representatives-days-ago"]').textContent).toContain('lapsed over 180 days');
   });
 
   // The placeholder and the icon give the box no accessible name, so the label has to.
@@ -260,10 +307,8 @@ describe('EngagementRepresentativesComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-1"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).not.toBeNull();
-    // The caption still counts the period's whole population, not the cut.
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe(
-      '2 representatives · 0 never attended'
-    );
+    // The caption still counts the period's whole population, not the cut; the never part drops at zero.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-count"]').textContent.trim()).toBe('2 representatives');
   });
 
   it('restores the cut from the URL, so a deep link lands on the segment it named', async () => {

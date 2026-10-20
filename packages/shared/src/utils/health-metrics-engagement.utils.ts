@@ -5,7 +5,12 @@ import {
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+  HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS,
+  HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS,
+  HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
+  HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX,
+  HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX,
   HEALTH_METRICS_ENGAGEMENT_UNRESOLVED_IDENTITY_LABEL,
 } from '../constants/health-metrics-engagement.constants';
 import { formatIsoDateLabel } from './date-time.utils';
@@ -28,6 +33,7 @@ import type {
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSectionKey,
+  HealthMetricsEngagementSparkBar,
   HealthMetricsEngagementSubNavCounts,
   HealthMetricsEngagementSubNavItem,
 } from '../interfaces/health-metrics-engagement.interface';
@@ -89,8 +95,8 @@ export function selectHealthMetricsEngagementGroupPeriod(
 
 /**
  * Sparkline series, oldest → current. A period stays `null` when it had no invited population or
- * too few meetings to rate, matching `formatHealthMetricsEngagementAttendance` — the chart breaks
- * the line rather than plotting a point the table itself refuses to state.
+ * too few meetings to rate, matching `formatHealthMetricsEngagementAttendance` — the chart leaves
+ * that slot empty rather than drawing a bar the table itself refuses to state.
  */
 export function buildHealthMetricsEngagementGroupTrend(row: HealthMetricsEngagementGroupRow): (number | null)[] {
   return row.periods.map((period) =>
@@ -99,12 +105,35 @@ export function buildHealthMetricsEngagementGroupTrend(row: HealthMetricsEngagem
 }
 
 /**
+ * The design's `spark2` bars, oldest → current, scaled to the rated values' own min-max so a tight run
+ * still shows its movement. A `null` period keeps its slot with no bar; empty below two rated values.
+ */
+export function buildHealthMetricsEngagementSparkBars(series: readonly (number | null)[]): HealthMetricsEngagementSparkBar[] {
+  const values = series.filter((value): value is number => value !== null);
+  if (values.length < HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS) return [];
+
+  const min = Math.min(...values);
+  const span = Math.max(...values) - min || 1;
+  const heightOf = (value: number): number =>
+    Number((HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_MIN_PX + ((value - min) / span) * HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX).toFixed(1));
+  return series.map((value, index) => ({
+    heightPx: value === null ? null : heightOf(value),
+    last: value !== null && index === series.length - 1,
+  }));
+}
+
+/**
  * Sub-nav badges per the design's `counts()`. A note is dropped at zero, and a section whose total
  * has not resolved renders no badge at all.
  */
 export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEngagementSubNavCounts): HealthMetricsEngagementSubNavItem[] {
+  const lowPct = Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100);
+  const groupNotes = [
+    counts.dormantGroups > 0 ? `${counts.dormantGroups} dormant` : '',
+    counts.lowAttendanceGroups > 0 ? `${counts.lowAttendanceGroups} below ${lowPct}%` : '',
+  ];
   const notes: Partial<Record<HealthMetricsEngagementSectionKey, string>> = {
-    committees: counts.dormantGroups > 0 ? `${counts.dormantGroups} dormant` : '',
+    committees: groupNotes.filter(Boolean).join(' · '),
     orgs: counts.lapsedOrgs > 0 ? `${counts.lapsedOrgs} inactive ${HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS} days` : '',
     reps: counts.neverAttendedReps > 0 ? `${counts.neverAttendedReps} never attended` : '',
   };
@@ -166,6 +195,13 @@ export function formatHealthMetricsEngagementPpDelta(pointChange: number | null)
  */
 export function selectHealthMetricsEngagementOrgPeriod(row: HealthMetricsEngagementOrgRow, range: HealthMetricsRange): HealthMetricsEngagementOrgPeriod | null {
   return selectPeriod(row.periods, range);
+}
+
+/** The org table's tier pill: blue for the top tiers (any case), grey for everything else. */
+export function resolveHealthMetricsEngagementOrgTierPillClass(tier: string): string {
+  return HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS.includes(tier.trim().toLowerCase())
+    ? HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.top
+    : HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS.other;
 }
 
 /** Mean reps at one decimal. `null` is "attended nothing this period", which is an em dash, not `0`. */
@@ -251,15 +287,11 @@ export function filterHealthMetricsEngagementRepRows(
 
 /** The labels a representatives row renders; every unknown piece drops out rather than printing "null". */
 export function buildHealthMetricsEngagementRepLabels(row: HealthMetricsEngagementRepRow): HealthMetricsEngagementRepRowLabels {
-  const role = [row.personRole, row.jobTitle].filter((part): part is string => !!part?.trim()).join(' · ');
   const org = [row.accountName, row.membershipTier].filter((part): part is string => !!part?.trim()).join(' · ');
-  const days = row.daysSinceLastAttended;
 
   return {
     displayName: repDisplayName(row),
-    roleLabel: role || null,
     orgLabel: org || '—',
-    daysAgoLabel: days === null ? null : `${days.toLocaleString('en-US')} ${days === 1 ? 'day' : 'days'} ago`,
     // Pre-rendered off a UTC-anchored parse: a `DatePipe` render reads a date-only value a day early west of UTC.
     lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
   };

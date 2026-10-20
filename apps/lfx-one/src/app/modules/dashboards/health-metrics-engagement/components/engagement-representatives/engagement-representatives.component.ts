@@ -206,7 +206,8 @@ export class EngagementRepresentativesComponent {
 
       // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
       const reps = `${counts.reps.toLocaleString('en-US')} ${counts.reps === 1 ? 'representative' : 'representatives'}`;
-      return `${reps} · ${counts.neverAttendedReps.toLocaleString('en-US')} never attended`;
+      // The never-attended part drops at zero, as in the design.
+      return counts.neverAttendedReps > 0 ? `${reps} · ${counts.neverAttendedReps.toLocaleString('en-US')} never attended` : reps;
     });
   }
 
