@@ -130,23 +130,7 @@
         }
       }
       @case ('none') {
-        <!-- Deliberately nothing to offer (the resolver's decision); the hint below may still apply. A
-             cancelled occurrence (E6-05) offers the series' next active one instead. -->
-        @if (state.cancelledOccurrence()) {
-          @if (state.nextActiveOccurrence(); as next) {
-            <lfx-button
-              label="Go to next occurrence"
-              icon="fa-light fa-arrow-right"
-              iconPos="right"
-              [styleClass]="primaryButtonClass"
-              (onClick)="state.openOccurrence(next)"
-              data-testid="meeting-cancelled-next" />
-          } @else {
-            <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-cancelled-no-next">
-              There are no upcoming occurrences in this series.
-            </p>
-          }
-        }
+        <!-- Deliberately nothing to offer (the resolver's decision); the hint below may still apply. -->
       }
     }
     @if (joinHint(); as hint) {

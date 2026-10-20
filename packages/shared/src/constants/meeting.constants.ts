@@ -1305,20 +1305,3 @@ export const PAST_MEETING_SUMMARY_APPROVAL_LABELS: Record<PastMeetingSummaryAppr
  * the bar's and the banner's heights.
  */
 export const MEETING_DETAILS_SCROLL_PADDING_PX = { default: 100, impersonating: 142 } as const;
-
-/**
- * Paged requests to `GET /public/api/meetings/:id/occurrences` (E6-02, #3585): the default page size,
- * which is the occurrence strip's window on each side of today, and the most one page may hold. A
- * request with no paging parameter still gets the whole timeline, which V1 reads.
- */
-export const MEETING_OCCURRENCES_PAGE_DEFAULT_LIMIT = 12;
-export const MEETING_OCCURRENCES_PAGE_MAX_LIMIT = 50;
-
-/**
- * The V2 occurrence strip (E6-03, #3586): occurrences per side in each page it reads; how many pages
- * of the largest size it reads toward a selected occurrence outside the first window before giving up
- * on showing it selected (the endpoint pages a past side only backwards, so it walks rather than
- * jumps).
- */
-export const MEETING_OCCURRENCE_STRIP_PAGE_SIZE = 12;
-export const MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES = 5;

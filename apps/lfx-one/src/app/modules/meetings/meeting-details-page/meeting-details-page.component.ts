@@ -18,7 +18,7 @@ import { MeetingJoinDetailsComponent } from './components/join-details/join-deta
 import { MeetingOrganizerComponent } from './components/organizer/organizer.component';
 import { MeetingTimeBannerComponent } from './components/time-banner/time-banner.component';
 import { MeetingMaterialsComponent } from './components/materials/materials.component';
-import { MeetingOccurrenceStripComponent } from './components/occurrence-strip/occurrence-strip.component';
+import { MeetingOccurrenceNavComponent } from './components/occurrence-nav/occurrence-nav.component';
 import { MeetingPastPeopleComponent } from './components/past-people/past-people.component';
 import { MeetingPeopleComponent } from './components/people/people.component';
 import { MeetingRecordingComponent } from './components/recording/recording.component';
@@ -46,7 +46,7 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
     MeetingAgendaComponent,
     MeetingJoinDetailsComponent,
     MeetingMaterialsComponent,
-    MeetingOccurrenceStripComponent,
+    MeetingOccurrenceNavComponent,
     MeetingPeopleComponent,
     MeetingPastPeopleComponent,
     MeetingRecordingComponent,

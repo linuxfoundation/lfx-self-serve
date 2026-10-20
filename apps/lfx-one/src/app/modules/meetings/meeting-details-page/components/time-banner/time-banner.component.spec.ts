@@ -21,7 +21,6 @@ describe('MeetingTimeBannerComponent', () => {
   let now: WritableSignal<Date>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
   let timeState: WritableSignal<MeetingTimeState | null>;
-  let cancelledOccurrence: WritableSignal<MeetingOccurrence | null>;
   let meetingStatus: WritableSignal<MeetingStatusKind | null>;
   // Three days and an hour out: "in 3 days" even after the relative-time helper rounds down.
   const start = Date.now() + 3 * DAY + 60 * 60 * 1000;
@@ -45,11 +44,10 @@ describe('MeetingTimeBannerComponent', () => {
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
     timeState = signal<MeetingTimeState | null>('before');
     meetingStatus = signal<MeetingStatusKind | null>('upcoming');
-    cancelledOccurrence = signal<MeetingOccurrence | null>(null);
 
     await TestBed.configureTestingModule({
       imports: [MeetingTimeBannerComponent],
-      providers: [{ provide: MeetingDetailsStateService, useValue: { meeting, now, selectedOccurrence, timeState, meetingStatus, cancelledOccurrence } }],
+      providers: [{ provide: MeetingDetailsStateService, useValue: { meeting, now, selectedOccurrence, timeState, meetingStatus } }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(MeetingTimeBannerComponent);
@@ -105,19 +103,6 @@ describe('MeetingTimeBannerComponent', () => {
     expect(query('meeting-time-banner-date')?.textContent?.trim()).not.toBe(first);
   });
 
-  it('says a cancelled occurrence was cancelled, with its date struck through and no relative start', async () => {
-    const cancelled = { occurrence_id: '2', start_time: new Date(start + 7 * DAY).toISOString(), duration: 60, status: 'cancel' } as MeetingOccurrence;
-    selectedOccurrence.set(cancelled);
-    cancelledOccurrence.set(cancelled);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(query('meeting-time-banner')?.getAttribute('data-cancelled')).toBe('true');
-    expect(query('meeting-time-banner-date')?.classList).toContain('line-through');
-    expect(text('meeting-time-banner-phase')).toBe('This occurrence was cancelled.');
-    expect(query('meeting-time-banner-relative')).toBeNull();
-  });
-
   // The early-join rule is the action slot's now (E2-01); the banner keeps the relative start.
   it('shows only the relative start before the meeting', () => {
     expect(query('meeting-time-banner')?.getAttribute('data-state')).toBe('before');
@@ -151,21 +136,6 @@ describe('MeetingTimeBannerComponent', () => {
     expect(query('meeting-time-banner-phase')).toBe(region);
     expect(region?.textContent?.trim()).toBe('The meeting is in progress.');
     expect(query('meeting-time-banner-relative')).toBeNull();
-  });
-
-  it('keeps the same live region when the page moves to and from a cancelled occurrence', async () => {
-    const region = query('meeting-time-banner-phase');
-    const cancelled = { occurrence_id: '2', start_time: new Date(start + 7 * DAY).toISOString(), duration: 60, status: 'cancel' } as MeetingOccurrence;
-
-    cancelledOccurrence.set(cancelled);
-    fixture.detectChanges();
-    expect(query('meeting-time-banner-phase')).toBe(region);
-    expect(region?.textContent?.trim()).toBe('This occurrence was cancelled.');
-
-    cancelledOccurrence.set(null);
-    phase('live', 'live');
-    expect(query('meeting-time-banner-phase')).toBe(region);
-    expect(region?.textContent?.trim()).toBe('The meeting is in progress.');
   });
 
   it('renders nothing before the meeting has loaded', () => {
