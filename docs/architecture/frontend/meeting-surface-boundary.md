@@ -84,8 +84,8 @@ admin table:
 | Committee voting status | **no**                | yes         |
 
 V1's past participant list shows email today (`meeting-registrants-display`). V2 does not carry that
-over; V1 is unchanged until it retires. E4-05 and N-02 implement this table, not the admin row as
-it stands.
+over; V1 is unchanged until it retires. E4-05 and N-02, which were to implement this table, were
+withdrawn.
 
 ### Duplication policy
 
@@ -95,8 +95,9 @@ else exists on exactly one. In particular:
 - **No write to the attendance record appears on the public page**, for any viewer. Materials
   management is not such a write.
 - **No participation action appears on the admin page.**
-- Read sections that appear on both read the same upstream records, so the two pages cannot
-  disagree about one meeting's numbers.
+- Read sections that appear on both read the same upstream participant records. Each page keeps its
+  own failure handling, as V1 and the admin page do today, so a failed read can still show
+  different figures.
 
 A new capability is placed by the same test: does it change the record of a past meeting? Admin.
 Does it help someone take part in, or consume, a meeting? Public. Anything else needs this record
@@ -176,15 +177,15 @@ that only the client enforces.
 
 ## Mapping to issues
 
-| Item                                                                                                                                                                                                 | Issue                                                                        |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Withdrawn (scope reset): fold the roster (§ Public roster fields), attendance bar and filters into public; public → admin link; one source of truth for figures                                      | E4-05 [#3259](https://github.com/linuxfoundation/lfx-self-serve/issues/3259) |
-| Recording and transcript on public                                                                                                                                                                   | E4-01 [#3255](https://github.com/linuxfoundation/lfx-self-serve/issues/3255) |
-| AI summary inline on public                                                                                                                                                                          | E4-03 [#3257](https://github.com/linuxfoundation/lfx-self-serve/issues/3257) |
-| Public artifact routes (BFF). Its `GET /public/api/meetings/past/:id/participants` MUST require a session and return only the § Public roster fields, enforced in the response, not hidden in the UI | E4-04 [#3258](https://github.com/linuxfoundation/lfx-self-serve/issues/3258) |
-| Withdrawn (scope reset): identity tiers, public vs admin depth                                                                                                                                       | N-02 [#3264](https://github.com/linuxfoundation/lfx-self-serve/issues/3264)  |
-| Guard on `/details` and the outcomes above                                                                                                                                                           | N-03 [#3265](https://github.com/linuxfoundation/lfx-self-serve/issues/3265)  |
-| Attendance reconciliation, participant writes, future roster administration                                                                                                                          | Left on the admin surface. No issue moves them.                              |
+| Item                                                                                                                                                                                                                                        | Issue                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Withdrawn (scope reset): fold the roster (§ Public roster fields), attendance bar and filters into public; public → admin link; one source of truth for figures                                                                             | E4-05 [#3259](https://github.com/linuxfoundation/lfx-self-serve/issues/3259) |
+| Recording and transcript on public                                                                                                                                                                                                          | E4-01 [#3255](https://github.com/linuxfoundation/lfx-self-serve/issues/3255) |
+| AI summary inline on public                                                                                                                                                                                                                 | E4-03 [#3257](https://github.com/linuxfoundation/lfx-self-serve/issues/3257) |
+| Public artifact routes (BFF). Its `GET /public/api/meetings/past/:id/participants` MUST require a session and return only the § Public roster fields, enforced in the response, not hidden in the UI (no V2 consumer since the scope reset) | E4-04 [#3258](https://github.com/linuxfoundation/lfx-self-serve/issues/3258) |
+| Withdrawn (scope reset): identity tiers, public vs admin depth                                                                                                                                                                              | N-02 [#3264](https://github.com/linuxfoundation/lfx-self-serve/issues/3264)  |
+| Guard on `/details` and the outcomes above                                                                                                                                                                                                  | N-03 [#3265](https://github.com/linuxfoundation/lfx-self-serve/issues/3265)  |
+| Attendance reconciliation, participant writes, future roster administration                                                                                                                                                                 | Left on the admin surface. No issue moves them.                              |
 
 ## Related
 

@@ -81,8 +81,12 @@ describe('MeetingAttendanceComponent', () => {
   });
 
   it("falls back to the past endpoint's counts when the participants read fails", async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     meeting.update((m) => ({ ...m!, participant_count: 4, attended_count: 1 }));
     await setup(() => throwError(() => new Error('boom')));
+
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
 
     expect(text('attendance-section-attended')).toBe('1 attended');
     expect(text('attendance-section-absent')).toBe('3 absent');

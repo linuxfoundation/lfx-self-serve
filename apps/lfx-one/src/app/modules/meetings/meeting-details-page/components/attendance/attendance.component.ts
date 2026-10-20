@@ -66,7 +66,11 @@ export class MeetingAttendanceComponent {
             return of({ id, participants: [] as PastMeetingParticipant[] });
           }
           return this.meetingService.getPastMeetingParticipants(id).pipe(
-            catchError(() => of([] as PastMeetingParticipant[])),
+            catchError((error: unknown) => {
+              // As V1, the past endpoint's counts stand in; logged so the failure is not silent.
+              console.error('Failed to load past meeting participants', id, error);
+              return of([] as PastMeetingParticipant[]);
+            }),
             map((participants) => ({ id, participants }))
           );
         })
