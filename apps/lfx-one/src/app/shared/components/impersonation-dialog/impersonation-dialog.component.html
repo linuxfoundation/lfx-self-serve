@@ -14,9 +14,8 @@
   <div class="flex flex-col gap-1">
     <label for="nameSearch" class="text-sm font-medium text-gray-700">Search by name</label>
     <lfx-user-search
-      [form]="targetUserForm"
+      [form]="nameSearchForm"
       searchType="committee_member"
-      usernameControl="targetUser"
       [requireLfAccount]="true"
       [showManualEntry]="false"
       [waitForSearchableQuery]="true"
@@ -24,7 +23,7 @@
       styleClass="w-full"
       inputId="nameSearch"
       dataTestId="impersonation-name-search"
-      (onUserSelect)="onNameSearchSelected()"
+      (onUserSelect)="onNameSearchSelected($event)"
       (onRejectedSelection)="onNameSearchRejected()" />
   </div>
   <div class="flex flex-col gap-1" (keydown.enter)="submit()">

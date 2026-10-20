@@ -4,17 +4,21 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE,
   IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
   IMPERSONATION_USER_NOT_FOUND_MESSAGE,
 } from '@lfx-one/shared/constants';
-
+import { UserSearchOption } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
+import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 
 import { ImpersonationDialogComponent } from './impersonation-dialog.component';
 
@@ -90,21 +94,76 @@ describe('ImpersonationDialogComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-test="impersonation-target-input"]')).not.toBeNull();
   });
 
-  it('tells the admin when a picked person has no LF account', async () => {
-    const component = fixture.componentInstance as unknown as { onNameSearchRejected: () => void };
-    component.onNameSearchRejected();
+  // The pick and clear tests below drive the real lfx-user-search child, so they fail if the
+  // template's bindings to it (form, outputs) are renamed or disconnected.
+  function dialog() {
+    return fixture.componentInstance as unknown as {
+      targetUserForm: { controls: { targetUser: { value: string; setValue: (value: string) => void } } };
+      submit: () => void;
+    };
+  }
+
+  function nameSearch(): UserSearchComponent {
+    return fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
+  }
+
+  function pick(overrides: Partial<UserSearchOption>): void {
+    const user: UserSearchOption = {
+      uid: 'uid-1',
+      email: 'jane.doe@example.com',
+      first_name: 'Jane',
+      last_name: 'Doe',
+      job_title: null,
+      organization: null,
+      type: 'committee_member',
+      username: null,
+      ...overrides,
+    };
+    nameSearch().onUserSelected({ value: user } as unknown as AutoCompleteSelectEvent);
+  }
+
+  it('puts the picked person’s username in the target and submits it', async () => {
+    pick({ username: 'jdoe' });
+    await fixture.whenStable();
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+
+    startImpersonation.mockReturnValueOnce(throwError(() => ({ error: { code: 'CTE_NATS_ERROR' } })));
+    dialog().submit();
+    expect(startImpersonation).toHaveBeenCalledWith('jdoe', null);
+  });
+
+  it('rejects a pick with no LF account and leaves the target untouched', async () => {
+    pick({ username: null });
     await fixture.whenStable();
 
     const alert = fixture.nativeElement.querySelector('[data-testid="impersonation-error"]');
     expect(alert?.textContent).toContain(IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE);
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
   });
 
-  it('clears a previous error when a person is picked from the name search', async () => {
-    const component = fixture.componentInstance as unknown as { onNameSearchRejected: () => void; onNameSearchSelected: () => void };
-    component.onNameSearchRejected();
-    component.onNameSearchSelected();
+  it('clears a previous rejection when a valid person is picked', async () => {
+    pick({ username: null });
+    await fixture.whenStable();
+    pick({ username: 'jdoe' });
     await fixture.whenStable();
 
     expect(fixture.nativeElement.querySelector('[data-testid="impersonation-error"]')).toBeNull();
+  });
+
+  it('keeps the target when the name search is cleared', async () => {
+    pick({ username: 'jdoe' });
+    nameSearch().onSearchClear();
+    await fixture.whenStable();
+
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('jdoe');
+  });
+
+  it('does not throw or request impersonation when the search is cleared with no target', async () => {
+    nameSearch().onSearchClear();
+    await fixture.whenStable();
+
+    expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
+    expect(() => dialog().submit()).not.toThrow();
+    expect(startImpersonation).not.toHaveBeenCalled();
   });
 });

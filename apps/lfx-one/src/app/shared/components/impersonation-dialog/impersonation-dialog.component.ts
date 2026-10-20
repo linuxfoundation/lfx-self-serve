@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE } from '@lfx-one/shared/constants';
-import { PersonaType, RecentImpersonation } from '@lfx-one/shared/interfaces';
+import { PersonaType, RecentImpersonation, UserSearchOption } from '@lfx-one/shared/interfaces';
 import { resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
@@ -30,6 +30,10 @@ export class ImpersonationDialogComponent {
     targetUser: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
     personaContext: new FormControl<PersonaType | null>(null),
   });
+
+  // Deliberately empty: lfx-user-search nulls every control bound to its parent form whenever its
+  // text empties (PrimeNG emits onClear on a backspace to blank), so targetUser must not live here.
+  protected readonly nameSearchForm = new FormGroup({});
 
   protected readonly personaOptions = [
     { label: 'Use their context', value: null },
@@ -118,8 +122,9 @@ export class ImpersonationDialogComponent {
     );
   }
 
-  protected onNameSearchSelected(): void {
-    // lfx-user-search has already written the picked person's username into targetUser.
+  protected onNameSearchSelected(user: UserSearchOption): void {
+    // requireLfAccount guarantees a username on every pick that reaches this handler.
+    this.targetUserForm.controls.targetUser.setValue(user.username?.trim() ?? '');
     this.error.set('');
   }
 
