@@ -17,6 +17,7 @@ import {
   MAX_CUSTOM_DURATION,
   MAX_EARLY_JOIN_TIME,
   MAX_EMAIL_REMINDER_HOURS,
+  MAX_EMAIL_REMINDER_MINUTES,
   MAX_EMAIL_REMINDER_TIME,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_ATTACHMENT_WRITE_CONCURRENCY,
@@ -26,6 +27,7 @@ import {
   MIN_CUSTOM_DURATION,
   MIN_EARLY_JOIN_TIME,
   MIN_EMAIL_REMINDER_HOURS,
+  MIN_EMAIL_REMINDER_MINUTES,
   YOUTUBE_MAX_MEETING_TITLE_LENGTH,
 } from '@lfx-one/shared/constants';
 import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
@@ -1234,8 +1236,8 @@ export class MeetingComposerFormService {
         reminderMinutes: new FormControl({ value: DEFAULT_EMAIL_REMINDER_MINUTES, disabled: true }, [
           Validators.required,
           Validators.pattern(/^\d+$/),
-          Validators.min(0),
-          Validators.max(59),
+          Validators.min(MIN_EMAIL_REMINDER_MINUTES),
+          Validators.max(MAX_EMAIL_REMINDER_MINUTES),
         ]),
 
         attachments: new FormControl<PendingAttachment[]>([]),
