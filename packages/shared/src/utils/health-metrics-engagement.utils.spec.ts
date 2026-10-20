@@ -749,10 +749,15 @@ describe('attendance trend rules', () => {
   });
 
   it('reports no rated month as empty, and one as too little to chart', () => {
-    const quiet = Array.from({ length: 12 }, (_, index) => month(`2026-${String(index + 1).padStart(2, '0')}-01`, null, { meetingsHeld: 0 }));
-    expect(buildHealthMetricsEngagementAttendanceTrendSummary(quiet, today)).toMatchObject({ state: 'empty', ratedMonths: 0, latestLabel: '—' });
+    const quiet = fullYear().map((entry) => ({ ...entry, attendancePct: null, meetingsHeld: 0 }));
+    expect(buildHealthMetricsEngagementAttendanceTrendSummary(quiet, today)).toMatchObject({
+      state: 'empty',
+      ratedMonths: 0,
+      latestLabel: '—',
+      rangeHighLabel: '—',
+    });
 
-    const single = [...quiet.slice(0, 11), month('2026-12-01', 0.5)];
+    const single = quiet.map((entry, index) => (index === 6 ? month(entry.monthStartDate, 0.5) : entry));
     expect(buildHealthMetricsEngagementAttendanceTrendSummary(single, today)).toMatchObject({ state: 'insufficient', ratedMonths: 1 });
   });
 

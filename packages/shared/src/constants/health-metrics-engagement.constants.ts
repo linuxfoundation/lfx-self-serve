@@ -281,7 +281,10 @@ export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED: HealthM
   rows: [],
 };
 
-/** The client's no-read shape for the Attendance trend: pre-hydration, no foundation, or a failed read. */
+/**
+ * The Attendance trend's empty shape: the server's answer for a scope the view has no months for,
+ * and the client's no-read state (pre-hydration, no foundation selected, or a failed read).
+ */
 export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED: HealthMetricsEngagementAttendanceTrend = {
   months: [],
 };

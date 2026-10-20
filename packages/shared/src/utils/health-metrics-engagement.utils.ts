@@ -235,7 +235,10 @@ export function buildHealthMetricsEngagementAttendanceTrendSummary(
   const latest = latestIndex >= 0 ? full[latestIndex].month : null;
   // The view compares against the previous month even when that month's rate is one the hero hides.
   const delta = latest && full[latestIndex - 1]?.rated ? latest.attendanceChangePp : null;
-  const rates = full.filter((entry) => entry.rated).map((entry) => entry.month.attendancePct as number);
+  const rated = full.filter((entry) => entry.rated).map((entry) => entry.month);
+  const byRate = [...rated].sort((a, b) => (a.attendancePct as number) - (b.attendancePct as number));
+  const first = rated[0];
+  const last = rated[rated.length - 1];
 
   let state: HealthMetricsEngagementAttendanceTrendSummaryView['state'] = 'trend';
   if (ratedMonths === 0) state = 'empty';
@@ -244,13 +247,13 @@ export function buildHealthMetricsEngagementAttendanceTrendSummary(
   return {
     state,
     ratedMonths,
-    latestLabel: latest ? formatAttendanceShare(latest.attendancePct as number) : '—',
+    latestLabel: latest ? formatHealthMetricsEngagementAttendance(latest.attendancePct, latest.meetingsHeld) : '—',
     latestCaption: latest ? `${attendanceMonthName(latest)} ${latest.monthStartDate.slice(0, 4)}` : 'No full month with attendance yet',
     deltaLabel: formatHealthMetricsEngagementPpDelta(delta),
     deltaDirection: resolveHealthMetricsEngagementDeltaDirection(delta),
-    rangeChangeLabel: rates.length >= 2 ? formatHealthMetricsEngagementPpDelta(rates[rates.length - 1] - rates[0]) : '—',
-    rangeHighLabel: rates.length > 0 ? formatAttendanceShare(Math.max(...rates)) : '—',
-    rangeLowLabel: rates.length > 0 ? formatAttendanceShare(Math.min(...rates)) : '—',
+    rangeChangeLabel: rated.length >= 2 ? formatHealthMetricsEngagementPpDelta((last.attendancePct as number) - (first.attendancePct as number)) : '—',
+    rangeHighLabel: formatRatedMonth(byRate[byRate.length - 1]),
+    rangeLowLabel: formatRatedMonth(byRate[0]),
     isLowConfidence: state === 'trend' && ratedMonths < HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
     lowConfidenceNote: `Only ${ratedMonths} of the last ${months.length} months have attendance from ${HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE} or more meetings, so the trend is indicative, not reliable.`,
   };
@@ -423,6 +426,7 @@ function attendanceMonthName(month: HealthMetricsEngagementAttendanceMonth): str
   return MONTH_NAMES[Number(month.monthStartDate.slice(5, 7)) - 1] ?? month.monthStartDate.slice(0, 7);
 }
 
-function formatAttendanceShare(fraction: number): string {
-  return `${Math.round(fraction * 100)}%`;
+/** A rated month's rate on the section's one display rule; "—" when the range holds none. */
+function formatRatedMonth(month: HealthMetricsEngagementAttendanceMonth | undefined): string {
+  return month ? formatHealthMetricsEngagementAttendance(month.attendancePct, month.meetingsHeld) : '—';
 }
