@@ -1,0 +1,39 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (showButton() && group(); as target) {
+  @switch (target.join_mode) {
+    @case ('open') {
+      <lfx-button
+        label="Join Group"
+        icon="fa-light fa-user-plus"
+        severity="info"
+        [size]="size()"
+        [loading]="busy()"
+        (onClick)="requestJoin()"
+        [attr.data-testid]="testIdPrefix() + '-join-btn'" />
+    }
+    @case ('application') {
+      @if (!hasPendingApplication()) {
+        <lfx-button
+          label="Apply to Join"
+          icon="fa-light fa-file-signature"
+          severity="info"
+          [size]="size()"
+          [loading]="busy()"
+          (onClick)="requestJoin()"
+          [attr.data-testid]="testIdPrefix() + '-apply-btn'" />
+      }
+    }
+    @case ('closed') {
+      <lfx-button
+        label="Contact Admin"
+        icon="fa-light fa-envelope"
+        severity="secondary"
+        [outlined]="true"
+        [size]="size()"
+        (onClick)="requestJoin()"
+        [attr.data-testid]="testIdPrefix() + '-contact-admin-btn'" />
+    }
+  }
+}

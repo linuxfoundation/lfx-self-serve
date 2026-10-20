@@ -1197,6 +1197,31 @@ export interface JoinApplicationDialogResult {
   message: string | undefined;
 }
 
+// ── Group Join Button ──────────────────────────────────────────────────────
+
+/**
+ * The group fields `lfx-group-join-button` needs to run the join flow. Structural, so both a full
+ * `Committee` and a directory summary (`PublicGroupSummary`) can be passed as-is.
+ */
+export interface GroupJoinTarget {
+  uid: string;
+  name: string;
+  join_mode?: JoinMode;
+  /** Voting groups need an organization on join (see `committeeRequiresOrganization`). */
+  enable_voting?: boolean;
+  /** Groups that require a business email need an organization on join. */
+  business_email_required?: boolean;
+}
+
+/** Membership state a settled join attempt leaves the viewer in. */
+export type GroupJoinState = 'joined' | 'application_pending';
+
+/** Emitted by `lfx-group-join-button` when a join attempt changes the viewer's state for a group. */
+export interface GroupJoinStateChange {
+  group_uid: string;
+  state: GroupJoinState;
+}
+
 export interface MailingListPickerDialogData {
   mailingLists: GroupsIOMailingList[];
   associatedUids: Set<string>;

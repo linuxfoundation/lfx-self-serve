@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, linkedSignal, makeStateKey, PLATFORM_ID, signal, Signal, TransferState } from '@angular/core';
+import { Component, computed, DestroyRef, inject, linkedSignal, makeStateKey, PLATFORM_ID, signal, Signal, TransferState, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
@@ -28,12 +28,11 @@ import {
   TagSeverity,
 } from '@lfx-one/shared';
 import {
-  AcceptInviteOrganizationDialogData,
-  AcceptInviteOrganizationDialogResult,
   CommitteeEngagementResponse,
   CommitteeEngagementWindow,
   CommitteeJoinApplication,
-  CommitteeOrganizationReference,
+  GroupJoinStateChange,
+  GroupJoinTarget,
   GroupsIOMailingList,
   Meeting,
   PendingInvitation,
@@ -46,7 +45,6 @@ import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMEN
 import {
   canManageCommitteeMembers,
   canViewCommitteeRoster,
-  committeeRequiresOrganization,
   committeeRouteIdMatches,
   findPendingInvitationForCommittee,
   hasMeetingEnded,
@@ -72,31 +70,12 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { CharterDialogComponent } from '../components/charter-dialog/charter-dialog.component';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MessageService } from 'primeng/api';
-import {
-  catchError,
-  combineLatest,
-  distinctUntilChanged,
-  EMPTY,
-  exhaustMap,
-  filter,
-  finalize,
-  firstValueFrom,
-  map,
-  merge,
-  Observable,
-  of,
-  switchMap,
-  take,
-  tap,
-  timer,
-} from 'rxjs';
-import { committeeJoinErrorMessage, committeeLeaveErrorMessage, getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { catchError, combineLatest, distinctUntilChanged, EMPTY, exhaustMap, filter, finalize, map, Observable, of, switchMap, take, tap, timer } from 'rxjs';
+import { committeeLeaveErrorMessage, getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { restoreMeLensOnBrowserBack } from '@shared/utils/restore-me-lens.util';
-import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
-import { AcceptInviteOrganizationDialogComponent } from '@components/accept-invite-organization-dialog/accept-invite-organization-dialog.component';
-import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
+import { GroupJoinButtonComponent } from '@components/group-join-button/group-join-button.component';
 
 import { CommitteeAboutComponent } from '../components/committee-about/committee-about.component';
 import { CommitteeChannelsCardComponent } from '../components/committee-channels-card/committee-channels-card.component';
@@ -163,6 +142,7 @@ function buildTooltipHtml(title: string, bullets: string[]): string {
     InitialsPipe,
     InvitationSubtextPipe,
     JoinModeLabelPipe,
+    GroupJoinButtonComponent,
     CommitteeAboutComponent,
     CommitteeChannelsCardComponent,
     CommitteeDocumentsComponent,
@@ -248,11 +228,9 @@ export class CommitteeViewComponent {
   public surveysLoading = signal<boolean>(true);
   private readonly votesRefresh = signal(0);
   private readonly surveysRefresh = signal(0);
+  // Leave only — the join flow and its busy state live in lfx-group-join-button.
   public joiningOrLeaving = signal(false);
-  // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
-  // is open (signal stays true until .finally() resolves when the dialog closes) so a
-  // second tap can't open a parallel resolveCurrentEmployer() + dialog pair.
-  protected readonly resolvingOrg = signal(false);
+  private readonly joinButton = viewChild(GroupJoinButtonComponent);
   // Engagement rollup (LFXV2-1705): shared window state so the Members table and the Overview
   // summary stay in sync across tab switches (tab panels unmount in the @switch below).
   // linkedSignal, not signal: resets to the default window whenever committeeId() changes, the same
@@ -311,6 +289,14 @@ export class CommitteeViewComponent {
    * privacy-gated UI stays in visitor mode until a non-null role is confirmed.
    */
   public isVisitorForPrivacy: Signal<boolean> = computed(() => this.myRole() === null && !this.canEdit() && !this.canReview());
+  /**
+   * The group the header join button acts on — null while the route points at a different group
+   * than the one loaded, so a join flow waiting on a dialog is dropped if the user navigates away.
+   */
+  public joinTarget: Signal<GroupJoinTarget | null> = computed(() => {
+    const committee = this.committee();
+    return committeeRouteIdMatches(this.committeeId(), committee) ? committee : null;
+  });
   /** True when the visitor submitted an application for the current committee this session. */
   public hasPendingApplication: Signal<boolean> = computed(() => {
     const uid = this.committee()?.uid;
@@ -747,62 +733,17 @@ export class CommitteeViewComponent {
     });
   }
 
-  public async handleJoinRequest(): Promise<void> {
-    const committee = this.committee();
-    if (!committee || this.joiningOrLeaving() || this.resolvingOrg()) {
-      return;
-    }
+  /**
+   * Join requests from the Overview / About CTAs run through the header's join button, so every
+   * entry point shares one flow and one busy state. The button is always mounted alongside the tabs.
+   */
+  public handleJoinRequest(): void {
+    void this.joinButton()?.requestJoin();
+  }
 
-    const joinMode = committee.join_mode;
-    const requiresOrg = committeeRequiresOrganization(committee);
-
-    if (joinMode === 'open') {
-      let organization: CommitteeOrganizationReference | undefined;
-      if (requiresOrg) {
-        this.resolvingOrg.set(true);
-        const result = await this.openOrganizationDialog(committee.name).finally(() => this.resolvingOrg.set(false));
-        if (!result?.organization) {
-          return;
-        }
-        if (!committeeRouteIdMatches(this.committeeId(), committee)) {
-          return;
-        }
-        organization = result.organization;
-      }
-      this.joiningOrLeaving.set(true);
-      this.committeeService
-        .joinCommittee(committee.uid, organization)
-        .pipe(finalize(() => this.joiningOrLeaving.set(false)))
-        .subscribe({
-          next: () => {
-            this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
-            this.refreshCommitteeAfterMembershipChange();
-          },
-          error: (err: HttpErrorResponse) => {
-            const detail = committeeJoinErrorMessage(err, committee.name);
-            this.messageService.add({ severity: 'error', summary: 'Unable to Join', detail, life: 6000 });
-          },
-        });
-    } else if (joinMode === 'application') {
-      if (this.hasPendingApplication()) {
-        return;
-      }
-      let organization: CommitteeOrganizationReference | undefined;
-      if (requiresOrg) {
-        this.resolvingOrg.set(true);
-        const result = await this.openOrganizationDialog(committee.name).finally(() => this.resolvingOrg.set(false));
-        if (!result?.organization) {
-          return;
-        }
-        if (!committeeRouteIdMatches(this.committeeId(), committee)) {
-          return;
-        }
-        organization = result.organization;
-      }
-      this.openApplicationDialog(committee.uid, committee.name, organization);
-    } else {
-      // closed — no self-service action available
-      this.messageService.add({ severity: 'info', summary: 'Contact Admin', detail: 'Contact a group admin to request membership.' });
+  public onJoinStateChange(change: GroupJoinStateChange): void {
+    if (change.state === 'joined') {
+      this.refreshCommitteeAfterMembershipChange();
     }
   }
 
@@ -1046,103 +987,6 @@ export class CommitteeViewComponent {
           });
         },
       });
-  }
-
-  private openApplicationDialog(committeeUid: string, committeeName: string, organization?: CommitteeOrganizationReference): void {
-    if (this.joiningOrLeaving()) {
-      return;
-    }
-
-    this.joiningOrLeaving.set(true);
-
-    const ref = this.dialogService.open(JoinApplicationDialogComponent, {
-      header: 'Request to Join',
-      width: '520px',
-      modal: true,
-      closable: true,
-      dismissableMask: false,
-      data: { committeeName },
-    }) as DynamicDialogRef;
-
-    // PrimeNG DynamicDialog fires destroy() — not close() — when the user dismisses via the
-    // header X button (onDialogHide path). In that case onClose never emits. Merge onDestroy
-    // as a null fallback so joiningOrLeaving is always reset on every dismiss path.
-    merge(ref.onClose, ref.onDestroy.pipe(map(() => null as JoinApplicationDialogResult | null)))
-      .pipe(takeUntilDestroyed(this.destroyRef), take(1))
-      .subscribe((result: JoinApplicationDialogResult | null) => {
-        if (!result) {
-          this.joiningOrLeaving.set(false);
-          return;
-        }
-
-        this.committeeService
-          .submitApplication(committeeUid, result.message, organization)
-          .pipe(finalize(() => this.joiningOrLeaving.set(false)))
-          .subscribe({
-            next: () => {
-              this.joinApplicationSession.markPending(committeeUid);
-              this.messageService.add({
-                severity: 'success',
-                summary: 'Application Submitted',
-                detail: `Your request to join "${committeeName}" has been submitted. An admin will review it shortly.`,
-                life: 8000,
-              });
-            },
-            error: (err: HttpErrorResponse) => {
-              const upstream = err.error?.message as string | undefined;
-              let detail: string;
-              if (err.status === 409) {
-                this.joinApplicationSession.markPending(committeeUid);
-                detail = 'You already have a pending application for this group.';
-              } else {
-                detail = upstream ?? `Failed to submit your request for "${committeeName}". Please try again.`;
-              }
-              this.messageService.add({ severity: 'error', summary: 'Unable to Submit', detail, life: 6000 });
-            },
-          });
-      });
-  }
-
-  private async openOrganizationDialog(committeeName: string): Promise<AcceptInviteOrganizationDialogResult | null> {
-    // Pre-fill from the user's profile work experiences — same pre-resolution the invite
-    // accept flow uses so the user doesn't have to re-enter an org they've already set.
-    // takeUntilDestroyed cancels the observable if the component is destroyed while the
-    // profile/domain lookup (≤4 s worst case — 2 s for the work-experiences GET + 2 s for
-    // the CDP domain resolve) is still in flight, preventing dangling subscriptions.
-    // We track destruction explicitly because firstValueFrom's defaultValue: null causes
-    // the await to resolve successfully even when takeUntilDestroyed completed early due
-    // to component teardown — without this guard the dialog would open over a new route.
-    let destroyed = false;
-    const cleanupDestroyListener = this.destroyRef.onDestroy(() => {
-      destroyed = true;
-    });
-
-    const prefillOrg = await firstValueFrom(this.invitationAcceptFlow.resolveCurrentEmployer().pipe(takeUntilDestroyed(this.destroyRef)), {
-      defaultValue: null,
-    });
-
-    cleanupDestroyListener();
-    if (destroyed) {
-      return null;
-    }
-
-    const ref = this.dialogService.open(AcceptInviteOrganizationDialogComponent, {
-      header: 'Confirm Organization',
-      width: '32rem',
-      modal: true,
-      closable: true,
-      data: { committeeName, organization: prefillOrg } satisfies AcceptInviteOrganizationDialogData,
-    });
-    if (!ref) {
-      return Promise.resolve(null);
-    }
-    return new Promise((resolve) => {
-      // Same PrimeNG destroy()-vs-close() issue: X button fires onDestroy, not onClose.
-      // Merge onDestroy as a null fallback so resolvingOrg is always cleared on dismiss.
-      merge(ref.onClose, ref.onDestroy.pipe(map(() => null as AcceptInviteOrganizationDialogResult | null)))
-        .pipe(take(1))
-        .subscribe((result: AcceptInviteOrganizationDialogResult | null) => resolve(result ?? null));
-    });
   }
 
   // -- Private initializer functions --

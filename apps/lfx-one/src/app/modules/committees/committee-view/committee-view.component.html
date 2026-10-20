@@ -215,36 +215,13 @@
                  Suppressed for an invited visitor — the Accept/Decline banner above is the action.
                  Invite-only visitors see no header action (must wait for invitation). -->
             <div class="flex items-center gap-2 shrink-0">
-              @if (isVisitor() && !pendingInvitation()) {
-                @if (committee()?.join_mode === 'open') {
-                  <lfx-button
-                    label="Join Group"
-                    icon="fa-light fa-user-plus"
-                    severity="info"
-                    size="small"
-                    [loading]="joiningOrLeaving() || resolvingOrg()"
-                    (onClick)="handleJoinRequest()"
-                    data-testid="committee-view-join-btn" />
-                } @else if (committee()?.join_mode === 'application' && !hasPendingApplication()) {
-                  <lfx-button
-                    label="Apply to Join"
-                    icon="fa-light fa-file-signature"
-                    severity="info"
-                    size="small"
-                    [loading]="joiningOrLeaving() || resolvingOrg()"
-                    (onClick)="handleJoinRequest()"
-                    data-testid="committee-view-apply-btn" />
-                } @else if (committee()?.join_mode === 'closed') {
-                  <lfx-button
-                    label="Contact Admin"
-                    icon="fa-light fa-envelope"
-                    severity="secondary"
-                    [outlined]="true"
-                    size="small"
-                    (onClick)="handleJoinRequest()"
-                    data-testid="committee-view-contact-admin-btn" />
-                }
-              } @else if (myRole() !== null && !myRoleLoading()) {
+              <!-- Always mounted: the Overview / About CTAs route through it via handleJoinRequest(). -->
+              <lfx-group-join-button
+                [group]="joinTarget()"
+                [showButton]="isVisitor() && !pendingInvitation()"
+                testIdPrefix="committee-view"
+                (stateChange)="onJoinStateChange($event)" />
+              @if (myRole() !== null && !myRoleLoading()) {
                 <lfx-button
                   label="Leave Group"
                   icon="fa-light fa-arrow-right-from-bracket"
