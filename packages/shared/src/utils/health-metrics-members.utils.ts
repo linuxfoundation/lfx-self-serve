@@ -485,15 +485,18 @@ export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNps
     const score = quarter.npsScore;
     const ratePct = toWholePct(quarter.responseRatePct);
     const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
+    const isLowConfidence = score !== null && (quarter.isSampleTooSmall || isRateBelowFloor);
+    const scoreLabel = score === null ? '—' : formatSignedScore(score);
     return {
       quarterStartDate: quarter.quarterStartDate,
       label: quarter.quarterLabel ?? '—',
       score,
-      scoreLabel: score === null ? '—' : formatSignedScore(score),
+      scoreLabel,
+      scoreDescription: isLowConfidence ? `${scoreLabel} (low response)` : scoreLabel,
       ratePct,
       rateLabel: ratePct === null ? '—' : `${ratePct}%`,
       isRateBelowFloor,
-      isLowConfidence: score !== null && (quarter.isSampleTooSmall || isRateBelowFloor),
+      isLowConfidence,
     };
   });
 }

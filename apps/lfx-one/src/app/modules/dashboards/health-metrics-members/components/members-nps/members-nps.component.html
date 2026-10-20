@@ -145,7 +145,7 @@
             @for (point of trend(); track point.quarterStartDate) {
               <tr>
                 <th scope="row">{{ point.label }}</th>
-                <td>{{ point.isLowConfidence ? point.scoreLabel + ' (low response)' : point.scoreLabel }}</td>
+                <td>{{ point.scoreDescription }}</td>
                 <td>{{ point.rateLabel }}</td>
               </tr>
             }

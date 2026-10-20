@@ -246,8 +246,7 @@ export class MembersNpsComponent {
   private tooltipLabel(datasetIndex: number, index: number): string {
     const point = this.trend()[index];
     if (!point) return '';
-    if (datasetIndex === 0) return `Response rate ${point.rateLabel}`;
-    return point.isLowConfidence ? `NPS score ${point.scoreLabel} (low response)` : `NPS score ${point.scoreLabel}`;
+    return datasetIndex === 0 ? `Response rate ${point.rateLabel}` : `NPS score ${point.scoreDescription}`;
   }
 
   private syncUrl(): void {

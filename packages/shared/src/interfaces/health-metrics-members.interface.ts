@@ -663,6 +663,8 @@ export interface HealthMetricsMembersNpsTrendPointView {
   label: string;
   score: number | null;
   scoreLabel: string;
+  /** The score as the tooltip and screen-reader table read it, noting a low-response wave. */
+  scoreDescription: string;
   ratePct: number | null;
   rateLabel: string;
   isRateBelowFloor: boolean;
