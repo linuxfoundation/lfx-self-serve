@@ -2,14 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { MeetingVisibility } from '../enums';
-import type {
-  MeetingRegistrant,
-  MeetingTimelineOccurrence,
-  PastMeetingSummary,
-  PastOccurrenceSummary,
-  PublicPastMeetingRoster,
-  RsvpResponse,
-} from './meeting.interface';
+import type { MeetingRegistrant, MeetingTimelineOccurrence, PastMeetingSummary, PastOccurrenceSummary, RsvpResponse } from './meeting.interface';
 
 /**
  * Where the viewer sits relative to the meeting's schedule.
@@ -336,21 +329,6 @@ export interface MeetingSummaryArtifactState {
   approval?: PastMeetingSummaryApprovalState;
   /** The record behind `available`, for the full-summary modal. */
   record?: PastMeetingSummary;
-}
-
-/**
- * The V2 past roster's load (E4-05). `ready` carries the public roster. `no-access`: the BFF refused it
- * (403). `session-expired`: the session lapsed (401), so the section asks the viewer to sign in again.
- */
-export interface MeetingPastRosterState {
-  status: 'loading' | 'ready' | 'error' | 'no-access' | 'session-expired';
-  roster?: PublicPastMeetingRoster;
-}
-
-/** The organizer's link from the V2 page to the admin page (E4-05): router commands and query params. */
-export interface MeetingAdminLink {
-  commands: string[];
-  queryParams: Record<string, string>;
 }
 
 /**

@@ -58,7 +58,6 @@ own namespace; the two never share a value.
 | `meeting-header-badge-youtube`              | YouTube upload enabled                                                                                                                                                                    |
 | `meeting-header-badge-ai-summary`           | AI summary enabled                                                                                                                                                                        |
 | `meeting-header-copy-link`                  | Copy meeting link                                                                                                                                                                         |
-| `meeting-header-admin-link`                 | Admin view: the organizer's link to `/details`, on an ended meeting's occurrence only (E4-05)                                                                                             |
 | `meeting-status-pill`                       | Status pill: time state, or the viewer's RSVP (see `data-status`)                                                                                                                         |
 | `meeting-privacy-chip`                      | The single privacy chip (see below)                                                                                                                                                       |
 | `meeting-time-banner`                       | The time banner at the top of the rail card (see below); `data-cancelled="true"` on a cancelled occurrence (E6-05)                                                                        |
@@ -319,18 +318,6 @@ the row's contents.
 | `registrant-display-email-${uid}`        | In the drawer's guest list, a guest's email, wrapped: organizers only (O-04); never on V1's surfaces                     |
 | `people-drawer-count`                    | Its "{n} guests" / "{n} members" (a loaded roster only)                                                                  |
 | `people-drawer-close`                    | Its close button                                                                                                         |
-| `people-section-no-access`               | Past roster: the BFF refused it (403, E4-05)                                                                             |
-| `people-section-sign-in`                 | Past roster: the session lapsed (401), with `people-section-sign-in-link`                                                |
-| `people-past-attendance`                 | Past roster: the attendance figures (shared with the admin page)                                                         |
-| `people-past-rate`                       | Their rate, `—` when nobody is counted                                                                                   |
-| `people-past-rate-bar[data-tone]`        | The rate bar: `low`, `medium` or `high` (`PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS`)                                      |
-| `people-past-attended`                   | "{n} of {total} attended"                                                                                                |
-| `people-past-absent`                     | "{n} absent"                                                                                                             |
-| `people-past-filter-invitation-${value}` | Invitation filter: `all`, `invited`, `not-invited` (`aria-pressed`)                                                      |
-| `people-past-filter-attendance-${value}` | Attendance filter: `all`, `attended`, `absent` (`aria-pressed`)                                                          |
-| `people-past-status`                     | Past roster: the screen-reader status line ("Showing n of m people." / no match)                                         |
-| `people-past-filter-empty`               | Nobody matches the filters                                                                                               |
-| `people-past-unidentified`               | Attendees counted but not listed (identity not verified, N-02)                                                           |
 
 Upcoming and past rows come from different data, so they carry different state attributes. An
 upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP
@@ -368,9 +355,9 @@ data-invited:  true | false
 ```
 
 They mirror `PastMeetingParticipant.is_attended` and `.is_invited`, so a test can tell an invited
-no-show from an uninvited attendee. Both are on every past row. The public page lists only verified
-identities (an invitee who did not attend, or a verified attendee) and counts the rest
-(`people-past-unidentified`), so a past row carries no identity-tier attribute (E4-05, N-02).
+no-show from an uninvited attendee. Both are on every past row. The identity tier (verified · needs
+review · auto-matched · AI-reconciled) gets its own attribute when N-02 decides how much of it the
+public page shows; until then it has no name here.
 
 ## Tools, join details and discovery
 

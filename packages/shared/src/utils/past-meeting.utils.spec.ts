@@ -16,7 +16,6 @@ import {
   isPastMeetingArtifactPublic,
   isPastMeetingCalendarRow,
   countPastMeetingAttendance,
-  filterPublicPastMeetingRoster,
   getPastMeetingAttendanceFigures,
   getPastMeetingAttendanceTone,
   toPublicPastMeetingRecording,
@@ -449,8 +448,6 @@ describe('toPublicPastMeetingRoster', () => {
 
     expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee']);
     expect(roster.unidentified_attendees).toBe(4);
-    // E4-05: the counts cover every participant, listed or not, so the figures match the admin page's.
-    expect(roster.attendance).toEqual({ participant_count: 6, attended_count: 5, individual_registrants_count: 2 });
   });
 });
 
@@ -537,24 +534,5 @@ describe('past-meeting attendance figures (E4-05)', () => {
   it('is null when the counts are unknown, so unknown never reads as zero', () => {
     expect(getPastMeetingAttendanceFigures(undefined)).toBeNull();
     expect(getPastMeetingAttendanceFigures({ participant_count: 5 })).toBeNull();
-  });
-});
-
-describe('filterPublicPastMeetingRoster (E4-05)', () => {
-  const row = (uid: string, is_invited: boolean, is_attended: boolean) => ({ uid, first_name: uid, last_name: '', is_invited, is_attended });
-  const rows = [row('invited-attended', true, true), row('invited-absent', true, false), row('walk-in', false, true)];
-  const uids = (invitation: 'all' | 'invited' | 'not-invited', attendance: 'all' | 'attended' | 'absent') =>
-    filterPublicPastMeetingRoster(rows, invitation, attendance).map((r) => r.uid);
-
-  it('keeps every row with both filters on all', () => {
-    expect(uids('all', 'all')).toEqual(['invited-attended', 'invited-absent', 'walk-in']);
-  });
-
-  it('applies each filter on its own axis', () => {
-    expect(uids('invited', 'all')).toEqual(['invited-attended', 'invited-absent']);
-    expect(uids('not-invited', 'all')).toEqual(['walk-in']);
-    expect(uids('all', 'absent')).toEqual(['invited-absent']);
-    expect(uids('invited', 'attended')).toEqual(['invited-attended']);
-    expect(uids('not-invited', 'absent')).toEqual([]);
   });
 });

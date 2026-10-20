@@ -137,35 +137,17 @@
       </div>
     </div>
 
-    <!-- E4-05: the row is justify-between, so its actions sit together in one group at the end. -->
-    <div class="flex flex-none items-center gap-[8px]">
-      <!-- The prototype's Add to calendar is not built: V2 excludes add-to-calendar and .ics (FR-050). -->
-      @if (adminLink(); as link) {
-        <!-- E4-05: the organizer's single entry point to the admin page; no link the other way. -->
-        <lfx-button
-          label="Admin view"
-          icon="fa-light fa-sliders"
-          [rounded]="true"
-          [outlined]="true"
-          severity="secondary"
-          size="small"
-          ariaLabel="Open this meeting's admin view"
-          [routerLink]="link.commands"
-          [queryParams]="link.queryParams"
-          styleClass="flex-none !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !text-[var(--md-text-body)] hover:!bg-[var(--md-surface-hover)] hover:!text-[var(--md-text-heading)] focus-visible:!shadow-[var(--md-shadow-focus)] focus-visible:!outline-none"
-          data-testid="meeting-header-admin-link" />
-      }
-      <lfx-button
-        icon="fa-light fa-copy"
-        [rounded]="true"
-        [outlined]="true"
-        severity="secondary"
-        size="small"
-        ariaLabel="Copy meeting link"
-        styleClass="flex-none !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !text-[var(--md-text-body)] hover:!bg-[var(--md-surface-hover)] hover:!text-[var(--md-text-heading)] focus-visible:!shadow-[var(--md-shadow-focus)] focus-visible:!outline-none"
-        (onClick)="copyLink()"
-        data-testid="meeting-header-copy-link" />
-    </div>
+    <!-- The prototype's Add to calendar is not built: V2 excludes add-to-calendar and .ics (FR-050). -->
+    <lfx-button
+      icon="fa-light fa-copy"
+      [rounded]="true"
+      [outlined]="true"
+      severity="secondary"
+      size="small"
+      ariaLabel="Copy meeting link"
+      styleClass="flex-none !border-[var(--md-border-strong)] !bg-[var(--md-surface-card)] !text-[var(--md-text-body)] hover:!bg-[var(--md-surface-hover)] hover:!text-[var(--md-text-heading)] focus-visible:!shadow-[var(--md-shadow-focus)] focus-visible:!outline-none"
+      (onClick)="copyLink()"
+      data-testid="meeting-header-copy-link" />
   </div>
 }
 

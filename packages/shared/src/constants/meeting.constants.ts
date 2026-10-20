@@ -11,9 +11,6 @@ import type {
   MeetingTypeConfig,
   PastMeetingArtifactKind,
   PastMeetingSummaryApprovalState,
-  PastRosterAttendanceFilter,
-  PastRosterFilterOption,
-  PastRosterInvitationFilter,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -604,20 +601,6 @@ export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
  * below `high` is `medium`, the rest `high`. One set for the public and the admin page.
  */
 export const PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS = { medium: 25, high: 70 } as const;
-
-/** The V2 past roster's invitation filter (E4-05), worded as the admin page's cells ("Not invited"). */
-export const PAST_ROSTER_INVITATION_FILTER_OPTIONS: PastRosterFilterOption<PastRosterInvitationFilter>[] = [
-  { value: 'all', label: 'All' },
-  { value: 'invited', label: 'Invited' },
-  { value: 'not-invited', label: 'Not invited' },
-];
-
-/** The V2 past roster's attendance filter (E4-05). */
-export const PAST_ROSTER_ATTENDANCE_FILTER_OPTIONS: PastRosterFilterOption<PastRosterAttendanceFilter>[] = [
-  { value: 'all', label: 'All' },
-  { value: 'attended', label: 'Attended' },
-  { value: 'absent', label: 'Absent' },
-];
 
 /** The past-meeting field holding each artifact's own access level (E4-04). */
 export const PAST_MEETING_ARTIFACT_ACCESS_FIELDS: Record<PastMeetingArtifactKind, 'recording_access' | 'transcript_access' | 'ai_summary_access'> = {

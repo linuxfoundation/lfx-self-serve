@@ -20,9 +20,6 @@ import {
   PastMeetingRecording,
   PastMeetingTranscript,
   PastParticipantFilters,
-  PastRosterAttendanceFilter,
-  PastRosterInvitationFilter,
-  PublicPastMeetingParticipant,
   PublicPastMeetingRoster,
   RecordingFile,
   RecordingSession,
@@ -268,7 +265,6 @@ export function toPublicPastMeetingRoster(participants: PastMeetingParticipant[]
       is_invited,
     })),
     unidentified_attendees: participants.filter((participant) => participant.is_attended && !isPublicRosterIdentity(participant)).length,
-    attendance: countPastMeetingAttendance(participants),
   };
 }
 
@@ -374,20 +370,4 @@ export function getPastMeetingAttendanceFigures(
   const attended = Math.min(counts.attended_count, total);
   const rate = total > 0 ? Math.round((attended / total) * 100) : null;
   return { total, attended, absent: total - attended, rate, tone: rate === null ? null : getPastMeetingAttendanceTone(rate) };
-}
-
-/**
- * The public past roster's rows that match the V2 page's two filters (E4-05): invited or not, and
- * attended or absent, each independent of the other.
- */
-export function filterPublicPastMeetingRoster(
-  participants: PublicPastMeetingParticipant[],
-  invitation: PastRosterInvitationFilter,
-  attendance: PastRosterAttendanceFilter
-): PublicPastMeetingParticipant[] {
-  return participants.filter(
-    (participant) =>
-      (invitation === 'all' || participant.is_invited === (invitation === 'invited')) &&
-      (attendance === 'all' || participant.is_attended === (attendance === 'attended'))
-  );
 }
