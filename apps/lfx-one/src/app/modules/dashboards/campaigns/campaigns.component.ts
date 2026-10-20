@@ -938,12 +938,16 @@ export class CampaignsComponent {
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsBiddingEnabled = signal<boolean | null>(null);
   /**
-   * Where the read behind `briefCampaignsBiddingEnabled` stands, so the Implementation tab can tell
-   * "still checking" from "the check failed" when it holds a Manual choice it cannot send without
-   * the answer (#3299). `pending` ONLY while a read is in flight: every path that clears the
-   * capability without starting a read leaves `unknown`, which the tab answers with a Retry.
+   * Where `loadCreateCapabilitiesFor`'s read stands, so the Implementation tab can tell "still
+   * checking" from "the check failed" while any capability it set is still `null`. ONE read fills
+   * `briefCampaignsBiddingEnabled`, `briefCampaignsGoogleCreativeEnabled` and the rest, so this is
+   * their shared state: the tab reports on a Manual choice it cannot send (#3299) and on generated
+   * callouts and sitelinks it cannot send, both from this signal.
+   *
+   * `pending` ONLY while a read is in flight: every path that clears a capability without starting
+   * a read leaves `unknown`, which the tab answers with a Retry.
    */
-  protected readonly briefCampaignsBiddingRead = signal<CampaignCapabilityReadState>('unknown');
+  protected readonly briefCampaignsCapabilityRead = signal<CampaignCapabilityReadState>('unknown');
 
   /**
    * Generation counter for the campaign-list read — the same mechanism as `emailSearchGeneration`,
@@ -2491,7 +2495,7 @@ export class CampaignsComponent {
         this.briefCampaignsRedditCreativeEnabled.set(null);
         this.briefCampaignsRedditAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
-        this.briefCampaignsBiddingRead.set('unknown');
+        this.briefCampaignsCapabilityRead.set('unknown');
         // Cleared with the list. A failure banner belongs to the read that produced it; leaving it
         // set would report the previous foundation's outage against a foundation never queried.
         this.briefCampaignsUnavailable.set(false);
@@ -4179,9 +4183,9 @@ export class CampaignsComponent {
    * this is reached anyway the state is set to `unknown`, which the tab answers with the "save the
    * brief" guidance — a successful save is what starts the read (see the persist success arm).
    */
-  protected retryBiddingCapability(): void {
+  protected retryCreateCapabilities(): void {
     if (!this.briefPersistence().briefId) {
-      this.briefCampaignsBiddingRead.set('unknown');
+      this.briefCampaignsCapabilityRead.set('unknown');
       return;
     }
     this.loadCreateCapabilities();
@@ -4569,7 +4573,7 @@ export class CampaignsComponent {
     const dispatchedAt = this.capabilityGeneration;
     const mayWrite = (): boolean => dispatchedAt === this.capabilityGeneration && projectSlug === this.activeFoundationSlug();
     // Back to `pending` while this read is out, so a Retry after a failure shows "checking" again.
-    if (this.briefCampaignsBiddingEnabled() === null) this.briefCampaignsBiddingRead.set('pending');
+    if (this.briefCampaignsBiddingEnabled() === null) this.briefCampaignsCapabilityRead.set('pending');
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
       .pipe(take(1), takeUntilDestroyed(this.destroyRef))
@@ -4586,7 +4590,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
           this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
-          this.briefCampaignsBiddingRead.set('ready');
+          this.briefCampaignsCapabilityRead.set('ready');
         },
         // Cleared to `null`, not left alone and not set `false`. `false` would clear a restored
         // draft's selection on evidence a failed read does not have; leaving the previous value
@@ -4602,7 +4606,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCreativeEnabled.set(null);
           this.briefCampaignsRedditAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
-          this.briefCampaignsBiddingRead.set('failed');
+          this.briefCampaignsCapabilityRead.set('failed');
         },
       });
   }
@@ -4665,7 +4669,7 @@ export class CampaignsComponent {
     this.briefCampaignsRedditAssetUploadEnabled.set(null);
     this.briefCampaignsBiddingEnabled.set(null);
     // `unknown` until a read is actually dispatched below — the early return starts none.
-    this.briefCampaignsBiddingRead.set('unknown');
+    this.briefCampaignsCapabilityRead.set('unknown');
 
     if (projectSlug === '' || briefId === null || briefId === '') {
       // No brief id means nothing was persisted this session and no restore supplied one, so
@@ -4674,7 +4678,7 @@ export class CampaignsComponent {
       // way; this arm only stops here.
       return;
     }
-    this.briefCampaignsBiddingRead.set('pending');
+    this.briefCampaignsCapabilityRead.set('pending');
 
     this.campaignService
       .listBriefCampaigns(projectSlug, briefId)
@@ -4696,7 +4700,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCreativeEnabled.set(result.redditCreativeEnabled);
             this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
-            this.briefCampaignsBiddingRead.set('ready');
+            this.briefCampaignsCapabilityRead.set('ready');
           }
         },
         error: () => {
@@ -4718,7 +4722,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCreativeEnabled.set(null);
             this.briefCampaignsRedditAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
-            this.briefCampaignsBiddingRead.set('failed');
+            this.briefCampaignsCapabilityRead.set('failed');
           }
         },
       });

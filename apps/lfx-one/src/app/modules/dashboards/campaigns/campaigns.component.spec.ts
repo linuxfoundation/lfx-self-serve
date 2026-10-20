@@ -2067,21 +2067,21 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBe(true);
-        expect(c.briefCampaignsBiddingRead()).toBe('ready');
+        expect(c.briefCampaignsCapabilityRead()).toBe('ready');
       });
 
       it('marks the bidding read pending only while a read is out, and unknown when none is', async () => {
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingRead(): string };
+        const c = fixture.componentInstance as unknown as { briefCampaignsCapabilityRead(): string };
         // Nothing has been asked yet: unknown, not "checking".
-        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
+        expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
 
         const inFlight = new Subject<CampaignListResult>();
         vi.spyOn(TestBed.inject(CampaignService), 'listBriefCampaigns').mockReturnValue(inFlight);
         await withSavedBrief();
 
-        expect(c.briefCampaignsBiddingRead()).toBe('pending');
+        expect(c.briefCampaignsCapabilityRead()).toBe('pending');
       });
 
       it('leaves the bidding capability unknown when the capability read fails', async () => {
@@ -2090,11 +2090,11 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         await fixture.whenStable();
 
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
         // `failed`, not `pending`: the tab offers a Retry for a retained Manual choice rather than
         // saying it is still checking.
-        expect(c.briefCampaignsBiddingRead()).toBe('failed');
+        expect(c.briefCampaignsCapabilityRead()).toBe('failed');
       });
 
       /**
@@ -2526,14 +2526,14 @@ describe('CampaignsComponent brief persistence', () => {
         await withSavedBrief();
         load();
         await fixture.whenStable();
-        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsBiddingRead(): string };
-        expect(c.briefCampaignsBiddingRead()).toBe('ready');
+        const c = fixture.componentInstance as unknown as { briefCampaignsBiddingEnabled(): boolean | null; briefCampaignsCapabilityRead(): string };
+        expect(c.briefCampaignsCapabilityRead()).toBe('ready');
 
         selectFoundation('cncf');
         await fixture.whenStable();
 
         expect(c.briefCampaignsBiddingEnabled()).toBeNull();
-        expect(c.briefCampaignsBiddingRead()).toBe('unknown');
+        expect(c.briefCampaignsCapabilityRead()).toBe('unknown');
       });
 
       it('drops a campaign list that resolves after the foundation changed', async () => {
@@ -11042,7 +11042,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     onProceedToImplementation(b: CampaignBriefOutput): void;
     briefPersistence(): CampaignBriefPersistenceState;
     briefCampaignsBiddingEnabled(): boolean | null;
-    briefCampaignsBiddingRead(): string;
+    briefCampaignsCapabilityRead(): string;
   }
   const page = (): PageInternals => fixture.componentInstance as unknown as PageInternals;
   const tab = (): Record<string, any> => fixture.debugElement.query(By.directive(ImplementationTabComponent)).componentInstance as Record<string, any>;
@@ -11114,7 +11114,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(page().briefPersistence().briefId).toBeNull();
-    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
+    expect(page().briefCampaignsCapabilityRead()).toBe('unknown');
     expect(tab()['canSubmit']()).toBe(false);
     expect(q('implementation-bidding-capability-unsaved')?.textContent).toContain("Bidding support can't be checked until this brief is saved.");
     expect(q('implementation-bidding-capability-retry')).toBeNull();
@@ -11141,7 +11141,7 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(page().briefPersistence().briefId).toBe('brief-1');
-    expect(page().briefCampaignsBiddingRead()).toBe('failed');
+    expect(page().briefCampaignsCapabilityRead()).toBe('failed');
     expect(tab()['canSubmit']()).toBe(false);
     const retry = q('implementation-bidding-capability-retry')?.querySelector('button') as HTMLButtonElement | null;
     expect(retry).not.toBeNull();
@@ -11152,18 +11152,18 @@ describe('CampaignsComponent — bidding capability recovery (#3299)', () => {
     await settle();
 
     expect(listBriefCampaigns).toHaveBeenCalledTimes(1);
-    expect(page().briefCampaignsBiddingRead()).toBe('ready');
+    expect(page().briefCampaignsCapabilityRead()).toBe('ready');
     expect(tab()['biddingDrafts']()['meta-ads']).toEqual({ strategy: 'manual', bidAmount: 1 });
     expect(tab()['canSubmit']()).toBe(true);
   });
 
   it('a retry reached without a brief id reads nothing and leaves the state unknown', async () => {
-    (fixture.componentInstance as unknown as { briefCampaignsBiddingRead: { set(v: string): void } }).briefCampaignsBiddingRead.set('failed');
+    (fixture.componentInstance as unknown as { briefCampaignsCapabilityRead: { set(v: string): void } }).briefCampaignsCapabilityRead.set('failed');
     listBriefCampaigns.mockClear();
 
-    (fixture.componentInstance as unknown as { retryBiddingCapability(): void }).retryBiddingCapability();
+    (fixture.componentInstance as unknown as { retryCreateCapabilities(): void }).retryCreateCapabilities();
 
     expect(listBriefCampaigns).not.toHaveBeenCalled();
-    expect(page().briefCampaignsBiddingRead()).toBe('unknown');
+    expect(page().briefCampaignsCapabilityRead()).toBe('unknown');
   });
 });

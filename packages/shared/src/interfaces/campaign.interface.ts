@@ -4529,6 +4529,22 @@ export interface CampaignBiddingCapabilityBlock {
 }
 
 /**
+ * Why generated Google callouts and sitelinks are being WITHHELD from the create because the
+ * create-capability answer is not an explicit yes. The kinds mean what they do on
+ * `CampaignBiddingCapabilityBlock`: the same capability read answers both.
+ *
+ * Unlike that one this does not block Create, and the difference is deliberate. A withheld manual
+ * bid changes what the campaign DOES — it would be created automatic, spending differently from
+ * what was chosen — so the create waits for the answer. Withheld extensions cost only the
+ * extensions: the campaign is still the one the operator asked for. Blocking a create on a stalled
+ * capability read for that is worse than creating and saying so.
+ */
+export interface CampaignGoogleExtensionsCapabilityBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'unsupported';
+  message: string;
+}
+
+/**
  * Why Create is blocked for an uploaded Reddit image the draft still holds but the request cannot
  * carry, because the upload capability is unanswered or answered no. The kinds mean what they do on
  * `CampaignBiddingCapabilityBlock`: the same capability read answers both. `otherBrief`: the upload
