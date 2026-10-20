@@ -76,7 +76,8 @@ export class MeetingDetailsPageComponent {
 
   public constructor() {
     // The browser tab and history name the meeting, not just "Meeting" (#3260, WCAG 2.4.2).
-    bindLfxDocumentTitle(computed(() => this.state.meeting()?.title));
+    // V1's `meetingTitle`: the selected occurrence's own title, else the meeting's.
+    bindLfxDocumentTitle(computed(() => (this.state.meeting() ? this.state.meetingTitle() : undefined)));
     // #3260 (WCAG 2.4.11): the identity bar is sticky, so a control scrolled into view by focus must clear
     // it rather than land underneath. The scroll root's padding does that for every control on the page
     // while it is mounted (MEETING_DETAILS_SCROLL_PADDING_PX).

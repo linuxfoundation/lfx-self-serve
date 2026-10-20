@@ -22,11 +22,11 @@ import {
   MeetingCancelOccurrenceResult,
   MeetingCommitteeLink,
   MeetingPrivacyState,
+  MeetingRescheduleOccurrenceResult,
   MeetingStatusKind,
   MeetingTimeState,
   MeetingTypeConfig,
   ProjectContext,
-  MeetingRescheduleOccurrenceResult,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
 import { resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
@@ -100,6 +100,8 @@ export class MeetingHeaderComponent {
 
   protected readonly meeting: Signal<(Meeting & { project: PublicMeetingProject }) | undefined> = this.state.meeting;
   protected readonly project = computed(() => this.meeting()?.project);
+  /** V1's `meetingTitle`: the selected occurrence's own title, else the meeting's. */
+  protected readonly meetingTitle: Signal<string> = this.state.meetingTitle;
   /**
    * The one privacy chip (E1-04, FR-010), from `resolvePrivacy`: it reads an absent `visibility` as
    * private, so the label and icon helpers it calls always agree with each other and with the rail.
@@ -224,7 +226,8 @@ export class MeetingHeaderComponent {
 
   /**
    * V1's `cancelCurrentOccurrence`: the same Cancel Occurrence confirmation, then the page moves to
-   * the cancelled occurrence's successor (read before the cancel lands).
+   * the cancelled occurrence's successor. The successor is read with the occurrence, before the dialog
+   * opens: the clock can move the selection on while it is open.
    */
   protected cancelOccurrence(): void {
     const meeting = this.meeting();
@@ -232,6 +235,7 @@ export class MeetingHeaderComponent {
     if (!meeting || !occurrence) {
       return;
     }
+    const successorMs = this.state.nextLiveOccurrenceStartMs();
 
     const trigger = this.document.activeElement;
     const dialogRef = this.dialogService.open(CancelOccurrenceConfirmationComponent, {
@@ -251,7 +255,7 @@ export class MeetingHeaderComponent {
           summary: 'Occurrence cancelled',
           detail: 'This occurrence was cancelled. The rest of the series is unchanged.',
         });
-        this.state.showOccurrenceAfterChange(this.state.nextLiveOccurrenceStartMs());
+        this.state.showOccurrenceAfterChange(successorMs);
       } else if (result?.error) {
         this.messageService.add({ severity: 'error', summary: 'Error', detail: result.error });
       }

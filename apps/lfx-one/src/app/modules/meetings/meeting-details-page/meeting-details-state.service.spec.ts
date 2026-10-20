@@ -30,6 +30,7 @@ describe('MeetingDetailsStateService', () => {
   let getPublicMeeting: ReturnType<typeof vi.fn>;
   let getPublicPastMeeting: ReturnType<typeof vi.fn>;
   let getMyRsvp: ReturnType<typeof vi.fn>;
+  let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let navigate: ReturnType<typeof vi.fn>;
   let seed: MeetingJoinPageState | null;
   let authenticated: WritableSignal<boolean>;
@@ -55,7 +56,7 @@ describe('MeetingDetailsStateService', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
-        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp } },
+        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp, getPublicMeetingOccurrences } },
         { provide: UserService, useValue: { authenticated } },
         { provide: MeetingDetailsSeedService, useValue: { take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null) } },
       ],
@@ -69,6 +70,7 @@ describe('MeetingDetailsStateService', () => {
     getPublicMeeting = vi.fn().mockReturnValue(of({ meeting: buildMeeting(), project }));
     getPublicPastMeeting = vi.fn().mockReturnValue(throwError(() => ({ status: 404 })));
     getMyRsvp = vi.fn().mockReturnValue(of(null));
+    getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
     navigate = vi.fn().mockResolvedValue(true);
     seed = null;
     authenticated = signal(true);
@@ -573,6 +575,48 @@ describe('MeetingDetailsStateService', () => {
       const state = await load(series({ cancelled_occurrences: ['2'] } as Partial<Meeting>));
 
       expect(state.nextLiveOccurrenceStartMs()).toBe(third.getTime());
+    });
+
+    // V1 reads the successor off the merged series timeline, not the payload's occurrences alone.
+    it('finds a successor that only the series timeline has', async () => {
+      const fourth = new Date(Date.now() + 23 * DAY);
+      getPublicMeetingOccurrences.mockReturnValue(of({ past: [], future: [{ occurrence_id: '4', start_time: fourth.toISOString(), duration: 60 }] }));
+      queryParamMap$.next(convertToParamMap({ occurrence: String(third.getTime()) }));
+      const state = await load(series());
+
+      expect(state.nextLiveOccurrenceStartMs()).toBe(fourth.getTime());
+    });
+
+    it('reads the series timeline for a recurring meeting, with the page password, and again on a refresh', async () => {
+      queryParamMap$.next(convertToParamMap({ password: 'secret' }));
+      const state = await load(series());
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(1);
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledWith(MEETING_ID, 'secret');
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+
+      state.showOccurrenceAfterChange(second.getTime());
+      await settle();
+
+      expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
+    });
+
+    it("never reads a one-off meeting's series", async () => {
+      await load(series({ recurrence: null }));
+
+      expect(getPublicMeetingOccurrences).not.toHaveBeenCalled();
+    });
+
+    it("titles the page with the selected occurrence's own title, else the meeting's", async () => {
+      const titled = series();
+      (titled.occurrences ?? [])[1].title = 'Release review';
+      queryParamMap$.next(convertToParamMap({ occurrence: String(second.getTime()) }));
+      const state = await load(titled);
+
+      expect(state.meetingTitle()).toBe('Release review');
+
+      queryParamMap$.next(convertToParamMap({ occurrence: String(first.getTime()) }));
+      await settle();
+      expect(state.meetingTitle()).toBe('Weekly Sync');
     });
 
     it('has no successor after the last occurrence', async () => {
@@ -1168,6 +1212,17 @@ describe('MeetingDetailsStateService', () => {
   });
 
   describe('on the server', () => {
+    // The browser completes the timeline after hydration, as V1 does.
+    it('reads no series timeline', async () => {
+      getPublicMeetingOccurrences.mockClear();
+      getPublicMeeting.mockReturnValue(of({ meeting: { ...buildMeeting(), recurrence: { type: 2 } }, project }));
+      const state = create('server');
+      await settle();
+
+      expect(getPublicMeetingOccurrences).not.toHaveBeenCalled();
+      expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
+    });
+
     it('writes the resolved meeting to TransferState in the shape V1 writes', async () => {
       create('server');
       await settle();
