@@ -75,7 +75,9 @@ export class MeetingRsvpCardComponent {
 
   protected readonly scopeForm = new FormGroup({ scope: new FormControl<RsvpScope>('all', { nonNullable: true }) });
 
-  /** The meeting and occurrence the card answers for; the step state below resets when it changes. */
+  /** The meeting and occurrence the card answers for. */
+  private readonly viewKey: Signal<string> = this.initViewKey();
+  /** `viewKey` plus the page's removal count: the step state below resets when either changes. */
   private readonly rsvpKey: Signal<string> = this.initRsvpKey();
   /** True while the viewer is changing an existing answer (Change). */
   protected readonly changing = linkedSignal({ source: this.rsvpKey, computation: () => false });
@@ -144,14 +146,17 @@ export class MeetingRsvpCardComponent {
     this.focusAfterRender('[data-testid="meeting-rsvp-card-change"]');
   }
 
-  private initRsvpKey(): Signal<string> {
+  private initViewKey(): Signal<string> {
     return computed(() => {
       const meeting = this.state.meeting();
-      // `rsvpReset` is bumped when the viewer removes themselves, so the card's saved answer (and its
-      // step state) never outlives the registration it belonged to.
-      const reset = this.state.rsvpReset();
-      return meeting ? `${meeting.id}|${resolveRsvpOccurrenceId(meeting, { occurrence: this.state.selectedOccurrence() }) ?? ''}|${reset}` : '';
+      return meeting ? `${meeting.id}|${resolveRsvpOccurrenceId(meeting, { occurrence: this.state.selectedOccurrence() }) ?? ''}` : '';
     });
+  }
+
+  private initRsvpKey(): Signal<string> {
+    // `rsvpReset` is bumped when the viewer removes themselves, so the card's saved answer (and its
+    // step state) never outlives the registration it belonged to.
+    return computed(() => `${this.viewKey()}|${this.state.rsvpReset()}`);
   }
 
   private save(response: RsvpResponse, scope: RsvpScope): void {
@@ -169,8 +174,9 @@ export class MeetingRsvpCardComponent {
 
     // The card this save belongs to: if the page moves to another meeting or occurrence while it is in
     // flight, the card's state is the new view's, which the save must not touch.
-    const key = this.rsvpKey();
-    const current = (): boolean => !this.destroyed && this.rsvpKey() === key;
+    // Still the same meeting and occurrence (a removal resets the card in place, not the view).
+    const key = this.viewKey();
+    const current = (): boolean => !this.destroyed && this.viewKey() === key;
     // V1's acknowledgement check (`rsvp-button-group`): the registration generation at submit time, so a
     // removal while the save is in flight rejects the answer of a registration it deleted, while a
     // surviving registration's answer still lands.

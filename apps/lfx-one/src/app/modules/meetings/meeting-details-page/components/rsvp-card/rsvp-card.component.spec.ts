@@ -181,6 +181,8 @@ describe('MeetingRsvpCardComponent', () => {
     pending.complete();
 
     expect(setMyRsvp).toHaveBeenCalledWith('meeting-1', undefined, saved('maybe'));
+    // A removal resets the card in place: the page has not moved on, so no "RSVP Updated" toast.
+    expect(add).not.toHaveBeenCalled();
   });
 
   // The live region stays mounted, so the save is announced; focus moves to the confirmation's Change.

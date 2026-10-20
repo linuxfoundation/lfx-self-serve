@@ -73,6 +73,7 @@ describe('MeetingActionSlotComponent', () => {
   let leaveRequest: WritableSignal<MeetingLeaveRequest | null>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let markLeft: ReturnType<typeof vi.fn>;
+  let leavingFor: WritableSignal<string | null>;
   let markLeaveIncomplete: ReturnType<typeof vi.fn>;
   let consumeLeaveRequest: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
@@ -108,6 +109,7 @@ describe('MeetingActionSlotComponent', () => {
     leaveRequest = signal<MeetingLeaveRequest | null>(null);
     status = signal<MeetingDetailsLoadStatus>('ready');
     markLeft = vi.fn();
+    leavingFor = signal<string | null>(null);
     markLeaveIncomplete = vi.fn();
     consumeLeaveRequest = vi.fn(() => leaveRequest.set(null));
     // A real service, so `<p-confirmDialog>` can subscribe to it; only `confirm` is observed.
@@ -138,6 +140,7 @@ describe('MeetingActionSlotComponent', () => {
             leaveRequest,
             status,
             leaving: signal(false),
+            leavingFor,
             markLeft,
             markLeaveIncomplete,
             consumeLeaveRequest,
@@ -614,6 +617,35 @@ describe('MeetingActionSlotComponent', () => {
 
       expect(markLeft).not.toHaveBeenCalled();
       expect(add).toHaveBeenCalledWith({ severity: 'error', summary: 'Error', detail: 'Unable to remove you from this meeting. Please try again.' });
+    });
+
+    it('marks the removal in flight for its own meeting only, and clears it when it settles', () => {
+      const pending = new Subject<{ remaining_registrant_ids: string[] }>();
+      removeMyMeetingRegistration.mockReturnValue(pending.asObservable());
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+      expect(leavingFor()).toBe('meeting-1');
+
+      pending.next({ remaining_registrant_ids: [] });
+      pending.complete();
+
+      expect(leavingFor()).toBeNull();
+    });
+
+    it("keeps a removal's error off a meeting the page has moved to", () => {
+      const pending = new Subject<{ remaining_registrant_ids: string[] }>();
+      removeMyMeetingRegistration.mockReturnValue(pending.asObservable());
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+
+      meeting.set({ id: 'meeting-2' } as Meeting);
+      pending.error(new Error('boom'));
+
+      expect(add).not.toHaveBeenCalled();
     });
 
     it('ignores a removal that completes after the page moved to another meeting', () => {
