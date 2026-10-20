@@ -69,9 +69,14 @@ describe('CommitteeMembersComponent add-people actions', () => {
   describe('as a group manager', () => {
     beforeEach(async () => setup(WRITER_GROUP));
 
-    it('shows Import Members CSV beside Add Member', () => {
-      expect(query('add-member-btn')).not.toBeNull();
-      expect(query('import-members-csv-btn')?.textContent).toContain('Import Members CSV');
+    it('shows Import Members before Add Member', () => {
+      const actions = Array.from(fixture.nativeElement.querySelectorAll('lfx-button')) as HTMLElement[];
+      const importButton = query('import-members-csv-btn');
+      const addButton = query('add-member-btn');
+      expect(addButton).not.toBeNull();
+      expect(importButton?.textContent).toContain('Import Members');
+      expect(importButton?.textContent).not.toContain('CSV');
+      expect(actions.indexOf(importButton!)).toBeLessThan(actions.indexOf(addButton!));
       expect(query('invite-member-btn')).toBeNull();
     });
 

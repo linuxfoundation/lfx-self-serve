@@ -42,16 +42,28 @@ To link directly to a tab, append `?tab=members` to the group URL for the Member
 
 ## Import members from a CSV
 
-If you can manage a group's members, you can add many people at once from a CSV file. This adds members to an existing group directly; it does not send invitations or create groups, and it is not available while you are creating a new group.
+If you can manage a group's members, you can add many people at once from a CSV file. Import is available on an existing group's **Members** tab and in **Edit Group → Add Members**. It does not send invitations or create groups, and it is not available while you are creating a new group.
+
+### Import from the Members tab
 
 1. Open the group and go to its **Members** tab.
-2. Select **Import Members CSV** next to **Add Member**. The button becomes available after the group's members and pending invitations finish loading.
+2. Select **Import Members**, to the left of **Add Member**. The button becomes available after the group's members and pending invitations finish loading.
 3. Select **Download template**. The template contains only the columns that apply to this group. Open **Column reference** to see which columns are required and the complete accepted role and appointed-by values.
 4. Fill in one member per row and save the file as **CSV UTF-8 (comma delimited)**. Keep the template's lowercase column names; column order does not matter, and any other column is rejected.
 5. Select **Choose CSV file**. Nothing is added yet — you see a preview of every row first.
 6. Review the preview. Each row is **Ready**, **Invalid**, or **Skipped**, and invalid rows list their problems. To fix a value, correct the file and choose it again; you can also remove a row from the preview. The import cannot start while any row is invalid.
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
 8. Select **Add _N_ members**.
+
+### Import while editing a group
+
+1. Open **Edit Group** and go to the **Add Members** step.
+2. Select **Import Members** alongside **Invite by email** and **Add with details**.
+3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the edit form.
+4. Select **Import _N_ members**. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
+5. Select **Update Group** to save the pending member additions along with your other changes. Cancelling the CSV preview or leaving without saving does not add those members.
+
+People already in the group or already staged in the edit form are skipped. Imports use the edit form's normal save flow; notification choices and per-row import results described for the Members tab do not appear in this preview.
 
 ### What the CSV needs
 
@@ -62,7 +74,7 @@ If you can manage a group's members, you can add many people at once from a CSV 
 - A file can have up to 500 member rows and be up to 5 MB. Split larger lists into several files.
 - Usernames, member status, and group permissions can't be set from a CSV. Imported people get standard member access; change permissions afterwards from the member's **Edit** option.
 
-### Skipped rows, failures, and retry
+### Members-tab results and retry
 
 - People already in the group, and repeats of an email earlier in the file, are skipped and left unchanged. Emails are compared without regard to capitalization or surrounding spaces.
 - After the import, each row shows **Added**, **Skipped**, or **Failed** with the reason. Select **Retry _N_ failed** to send only the failed rows again — added and skipped rows are never resubmitted.

@@ -40,7 +40,12 @@ describe('ImportMembersDialogComponent', () => {
   let revokeResponses: Subject<void>[];
   let dialogRef: { close: ReturnType<typeof vi.fn> };
 
-  async function setup(committee: Committee = OPEN_GROUP, existingMembers: Partial<CommitteeMember>[] = [], existingInvites: Partial<CommitteeInvite>[] = []) {
+  async function setup(
+    committee: Committee = OPEN_GROUP,
+    existingMembers: Partial<CommitteeMember>[] = [],
+    existingInvites: Partial<CommitteeInvite>[] = [],
+    collectOnly = false
+  ) {
     pending = [];
     revokeResponses = [];
     committeeService = {
@@ -63,6 +68,7 @@ describe('ImportMembersDialogComponent', () => {
       committee,
       existingMembers: existingMembers as CommitteeMember[],
       existingInvites: existingInvites as CommitteeInvite[],
+      collectOnly,
     };
 
     await TestBed.configureTestingModule({
@@ -263,6 +269,58 @@ describe('ImportMembersDialogComponent', () => {
       await upload('email\nada@example.com');
       component.close();
       expect(dialogRef.close).toHaveBeenCalledWith({ added: 0, conflicts: 0 });
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('edit-wizard collection', () => {
+    it('returns only ready requests without writing members or revoking invitations', async () => {
+      await setup(OPEN_GROUP, [{ email: 'existing@example.com' }], [{ uid: 'invite-1', invitee_email: 'ada@example.com', status: 'pending' }], true);
+      await upload('email,first_name\nada@example.com,Ada\nexisting@example.com,Existing\nADA@example.com,Duplicate');
+      await render();
+
+      expect(query('import-members-guidance')?.textContent).toContain('saved only when you select Update Group');
+      expect(query('import-members-send-notification')).toBeNull();
+      expect(query('import-members-submit-btn')?.textContent).toContain('Import 1 member');
+      query('import-members-submit-btn')?.querySelector('button')?.click();
+
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([{ email: 'ada@example.com', first_name: 'Ada' }]);
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+      expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
+      expect(committeeService.createCommitteeInvite).not.toHaveBeenCalled();
+    });
+
+    it('returns no members when the collected preview is cancelled', async () => {
+      await setup(OPEN_GROUP, [], [], true);
+      await upload('email\nada@example.com');
+      component.close();
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith();
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+    });
+
+    it('blocks collection until every invalid row is corrected or removed', async () => {
+      await setup(VOTING_GROUP, [], [], true);
+      await upload('email,organization_name,organization_website,role,voting_status\nada@example.com,Example Org,https://org.example,None,Invalid');
+      component.startImport();
+      expect(component.invalidCount()).toBe(1);
+      expect(dialogRef.close).not.toHaveBeenCalled();
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+    });
+
+    it('collects 100 voting-group members with their organizations, roles and voting statuses', async () => {
+      await setup(VOTING_GROUP, [], [], true);
+      const rows = Array.from({ length: 100 }, (_, i) => `person${i}@example.com,Example Org,https://org.example,LF Staff,Observer`);
+      await upload(['email,organization_name,organization_website,role,voting_status', ...rows].join('\n'));
+      expect(component.readyCount()).toBe(100);
+      component.startImport();
+      const collected = dialogRef.close.mock.calls[0][0] as CreateCommitteeMemberRequest[];
+      expect(collected).toHaveLength(100);
+      expect(collected[99]).toEqual({
+        email: 'person99@example.com',
+        organization: { id: null, name: 'Example Org', website: 'https://org.example' },
+        role: { name: 'LF Staff' },
+        voting: { status: 'Observer' },
+      });
       expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
     });
   });

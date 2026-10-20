@@ -52,6 +52,8 @@ import { catchError, from, map, mergeMap, Observable, of, switchMap } from 'rxjs
  * apply. Each row keeps its own outcome; Retry resubmits failed rows only, and Close returns the
  * cumulative added/conflict counts so the roster refreshes. Never resolves organizations, creates
  * invitations, or changes permissions.
+ * In collect-only mode, confirmation returns validated member requests to the edit wizard instead
+ * of writing them; the wizard saves them with Update Group.
  */
 @Component({
   selector: 'lfx-import-members-dialog',
@@ -73,6 +75,7 @@ export class ImportMembersDialogComponent {
   /** Pinned at open — every write targets this group even if the page navigates elsewhere. */
   private readonly committeeUid: string = this.data.committee.uid;
   public readonly committeeName: string = this.data.committee.name;
+  public readonly collectOnly = !!this.data.collectOnly;
   public readonly rules: MemberImportGroupRules = {
     requiresOrganization: committeeRequiresOrganization(this.data.committee),
     votingEnabled: !!this.data.committee.enable_voting,
@@ -168,6 +171,10 @@ export class ImportMembersDialogComponent {
     if (!this.canImport()) {
       return;
     }
+    if (this.collectOnly) {
+      this.dialogRef.close(this.rows().flatMap((row) => (row.status === 'ready' && row.payload ? [row.payload] : [])));
+      return;
+    }
     this.submitRows(this.rows().filter((row) => row.status === 'ready'));
   }
 
@@ -180,6 +187,10 @@ export class ImportMembersDialogComponent {
 
   public close(): void {
     if (this.busy()) {
+      return;
+    }
+    if (this.collectOnly) {
+      this.dialogRef.close();
       return;
     }
     const result: MemberImportDialogResult = { added: this.addedCount(), conflicts: this.conflictCount() };

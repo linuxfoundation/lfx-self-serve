@@ -22,6 +22,7 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   MemberPendingChanges,
+  MemberImportDialogData,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
@@ -33,6 +34,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, finalize, of, take, tap } from 'rxjs';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
+import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
@@ -231,6 +233,44 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public removePendingInvite(email: string): void {
     this.pendingInvites.update((current) => current.filter((invite) => invite.invitee_email !== email));
     this.emitMemberUpdates();
+  }
+
+  /** Collect CSV members into the same pending state as Add with details; only Update Group writes them. */
+  public openImportMembersDialog(): void {
+    const committee = this.committee();
+    if (!this.isEditMode() || !committee || !committee.uid || this.mutationsDisabled()) {
+      return;
+    }
+    const committeeId = this.committeeId();
+    const data: MemberImportDialogData = {
+      committee: { ...committee, ...this.organizationRequirements() },
+      existingMembers: this.membersWithState(),
+      existingInvites: [],
+      collectOnly: true,
+    };
+    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
+      header: 'Import Members',
+      width: '960px',
+      breakpoints: { '1024px': '95vw' },
+      modal: true,
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data,
+    });
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((members: CreateCommitteeMemberRequest[] | undefined) => {
+      if (!members?.length || this.mutationsDisabled() || this.committeeId() !== committeeId) {
+        return;
+      }
+      const seen = new Set(this.membersWithState().map((member) => (member.email ?? '').trim().toLowerCase()));
+      for (const member of members) {
+        const email = member.email.trim().toLowerCase();
+        if (!seen.has(email)) {
+          seen.add(email);
+          this.handleAddMemberResult({ ...member, email });
+        }
+      }
+    });
   }
 
   public openAddMemberDialog(): void {
@@ -548,12 +588,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
   /** Maps a CreateCommitteeMemberRequest's display fields onto the CommitteeMember shape. */
   private memberFieldsFromRequest(
     request: CreateCommitteeMemberRequest
-  ): Pick<CommitteeMember, 'email' | 'first_name' | 'last_name' | 'job_title' | 'appointed_by' | 'organization' | 'role' | 'voting'> {
+  ): Pick<CommitteeMember, 'email' | 'first_name' | 'last_name' | 'job_title' | 'linkedin_profile' | 'appointed_by' | 'organization' | 'role' | 'voting'> {
     return {
       email: request.email,
       first_name: request.first_name || '',
       last_name: request.last_name || '',
       job_title: request.job_title || undefined,
+      linkedin_profile: request.linkedin_profile || undefined,
       appointed_by: request.appointed_by || undefined,
       organization: request.organization
         ? {
@@ -673,6 +714,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       first_name: member.first_name || null,
       last_name: member.last_name || null,
       job_title: member.job_title || null,
+      linkedin_profile: member.linkedin_profile || null,
       organization: member.organization
         ? {
             name: member.organization.name || null,

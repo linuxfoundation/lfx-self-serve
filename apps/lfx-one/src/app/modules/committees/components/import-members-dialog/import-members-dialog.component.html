@@ -11,7 +11,12 @@
           <h3 id="import-members-format-title" class="text-sm font-semibold text-gray-900">CSV format for {{ committeeName }}</h3>
           <p class="text-sm text-gray-600">
             One member per row, up to {{ maxRecords }} rows and {{ maxFileMegabytes }} MB. Use the template's column names in any order; other columns are
-            rejected. People are added to the group directly — no invitations are created.
+            rejected. No invitations are created.
+            @if (collectOnly) {
+              Members are added to the edit form and saved only when you select Update Group.
+            } @else {
+              People are added to the group directly.
+            }
           </p>
         </div>
         <lfx-button
@@ -104,7 +109,13 @@
           Nothing to add — every row is already in the group or repeats an earlier row.
         </p>
       } @else if (phase() === 'preview') {
-        <p class="text-sm text-gray-600">Review the rows below. Nothing is added until you confirm.</p>
+        <p class="text-sm text-gray-600">
+          @if (collectOnly) {
+            Review the rows below. Confirm to add them to the edit form, then select Update Group to save.
+          } @else {
+            Review the rows below. Nothing is added until you confirm.
+          }
+        </p>
       } @else if (phase() === 'importing') {
         <p class="text-sm text-gray-600" data-testid="import-members-progress">Adding members: {{ batchSettled() }} of {{ batchTotal() }} done…</p>
       }
@@ -198,7 +209,7 @@
       </ng-template>
     </lfx-table>
 
-    @if (phase() !== 'select') {
+    @if (phase() !== 'select' && !collectOnly) {
       <div class="flex flex-col gap-1">
         <lfx-checkbox
           [form]="form"
@@ -223,7 +234,7 @@
     </lfx-button>
     @if (phase() === 'preview') {
       <lfx-button
-        [label]="'Add ' + readyCount() + (readyCount() === 1 ? ' member' : ' members')"
+        [label]="(collectOnly ? 'Import ' : 'Add ') + readyCount() + (readyCount() === 1 ? ' member' : ' members')"
         icon="fa-light fa-user-plus"
         size="small"
         severity="info"
