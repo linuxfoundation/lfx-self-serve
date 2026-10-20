@@ -375,32 +375,6 @@ export function isMeetingOccurrenceCancelled(occurrence: MeetingOccurrence, canc
   return cancelledIds.length > 0 && cancelledIds.includes(occurrence.occurrence_id);
 }
 
-/**
- * The occurrence a `?occurrence=` link (a Unix-*millisecond* start) addresses when it was cancelled
- * (E6-05, #3588, FR-044), else `null`. Honours both cancellation signals: an occurrence entry with
- * `status: 'cancel'` (the single-meeting payload), and an id in `cancelled_occurrences` (Unix *seconds*,
- * 10 digits, the list payload), whether or not the payload still lists the occurrence. An id the
- * payload no longer lists is rebuilt from the start, with the series' duration. A start that is not a
- * whole second has no occurrence id, so it never matches one by flooring.
- */
-export function findCancelledOccurrence(
-  meeting: Pick<Meeting, 'occurrences' | 'cancelled_occurrences' | 'duration'>,
-  requestedMs: number
-): MeetingOccurrence | null {
-  if (!Number.isSafeInteger(requestedMs) || requestedMs <= 0) {
-    return null;
-  }
-  const entry = (meeting.occurrences ?? []).find((occurrence) => new Date(occurrence.start_time).getTime() === requestedMs);
-  if (entry) {
-    return isMeetingOccurrenceCancelled(entry, meeting.cancelled_occurrences) ? entry : null;
-  }
-  const occurrenceId = startMsToOccurrenceId(requestedMs);
-  if (requestedMs % 1000 !== 0 || !(meeting.cancelled_occurrences ?? []).includes(occurrenceId)) {
-    return null;
-  }
-  return { occurrence_id: occurrenceId, start_time: new Date(requestedMs).toISOString(), duration: meeting.duration ?? 0, status: 'cancel' };
-}
-
 export function getActiveOccurrences(occurrences: MeetingOccurrence[], cancelledOccurrences?: string[] | null): MeetingOccurrence[] {
   return occurrences.filter((occurrence) => !isMeetingOccurrenceCancelled(occurrence, cancelledOccurrences));
 }

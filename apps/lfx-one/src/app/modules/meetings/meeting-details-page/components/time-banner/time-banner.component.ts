@@ -38,8 +38,6 @@ export class MeetingTimeBannerComponent {
    */
   protected readonly window: Signal<MeetingTimeWindow | null> = this.initWindow();
   protected readonly timeState: Signal<MeetingTimeState | null> = this.state.timeState;
-  /** A cancelled occurrence (E6-05): its date struck through, and "cancelled" in place of the phase. */
-  protected readonly cancelled = computed(() => !!this.state.cancelledOccurrence());
   /** True inside the join window before the scheduled start: the pill's "Starting soon". */
   protected readonly startingSoon = computed(() => this.state.meetingStatus() === 'starting-soon');
   /** The occurrence's calendar day in the viewer's zone, as a local-noon carrier for DatePipe. */
@@ -59,12 +57,6 @@ export class MeetingTimeBannerComponent {
     before: { icon: 'fa-light fa-clock mt-[2px] text-[var(--md-text-muted)]', text: 'text-[var(--md-text-body)]' },
     live: { icon: 'fa-solid fa-circle mt-[4px] text-[8px] text-[var(--md-status-live)]', text: 'font-semibold text-[var(--md-status-live)]' },
     ended: { icon: 'fa-light fa-clock-rotate-left mt-[2px] text-[var(--md-text-muted)]', text: 'text-[var(--md-text-body)]' },
-  };
-
-  /** The cancelled state's icon and text colour (E6-05). */
-  protected readonly cancelledStyle = {
-    icon: 'fa-light fa-calendar-xmark mt-[2px] text-[var(--md-status-warn)]',
-    text: 'font-semibold text-[var(--md-status-warn)]',
   };
 
   public constructor() {
@@ -122,15 +114,12 @@ export class MeetingTimeBannerComponent {
       const window = this.window();
       // Read so the relative start moves on with the clock.
       this.state.now();
-      return window && this.timeState() === 'before' && !this.cancelled() ? `Starts ${formatFutureRelativeTime(window.start)}.` : '';
+      return window && this.timeState() === 'before' ? `Starts ${formatFutureRelativeTime(window.start)}.` : '';
     });
   }
 
   private initPhaseMessage(): Signal<string> {
     return computed(() => {
-      if (this.cancelled()) {
-        return 'This occurrence was cancelled.';
-      }
       switch (this.timeState()) {
         case 'ended':
           return 'This meeting has ended.';

@@ -3,12 +3,7 @@
 
 <!-- Prototype geometry in exact px (the app's 14px root would shrink rem utilities). -->
 @if (timeState(); as phase) {
-  <section
-    class="flex flex-col gap-[14px]"
-    data-testid="meeting-time-banner"
-    [attr.data-state]="phase"
-    [attr.data-cancelled]="cancelled() ? 'true' : null"
-    aria-label="Meeting time">
+  <section class="flex flex-col gap-[14px]" data-testid="meeting-time-banner" [attr.data-state]="phase" aria-label="Meeting time">
     @if (zonedDay(); as day) {
       <div class="flex items-start gap-[14px]">
         <span
@@ -20,9 +15,7 @@
           <span class="flex flex-1 items-center justify-center text-[17px] font-bold text-[var(--md-text-heading)]">{{ day | date: 'd' }}</span>
         </span>
         <div class="flex min-w-0 flex-col gap-[2px]">
-          <span class="text-[15px] font-bold text-[var(--md-text-heading)]" [class.line-through]="cancelled()" data-testid="meeting-time-banner-date">{{
-            day | date: 'EEEE, MMM d'
-          }}</span>
+          <span class="text-[15px] font-bold text-[var(--md-text-heading)]" data-testid="meeting-time-banner-date">{{ day | date: 'EEEE, MMM d' }}</span>
           <span class="text-[13.5px] text-[var(--md-text-body)]" data-testid="meeting-time-banner-time">{{ timeRange() }}</span>
           <span class="text-[12.5px] text-[var(--md-text-muted)]" data-testid="meeting-time-banner-timezone">{{ timezoneName() }}</span>
         </div>
@@ -41,14 +34,12 @@
     <!-- One line for the phase. Only the phase sentence is a live region, kept mounted so each phase
          change is announced; the relative start beside it ticks every few minutes and is not. -->
     <p class="m-0 flex items-start gap-[8px] text-[12.5px] leading-[1.4]" data-testid="meeting-time-banner-message">
-      <i [class]="cancelled() ? cancelledStyle.icon : phaseStyles[phase].icon" aria-hidden="true"></i>
-      <span [class]="cancelled() ? cancelledStyle.text : phaseStyles[phase].text">
+      <i [class]="phaseStyles[phase].icon" aria-hidden="true"></i>
+      <span [class]="phaseStyles[phase].text">
         @if (relativeStart(); as relative) {
           <!-- The trailing space is part of the text node, so it survives whitespace stripping. -->
           <span data-testid="meeting-time-banner-relative">{{ relative }}&#32;</span>
         }
-        <!-- One live region for every phase and the cancelled state (E6-05): only its text changes, so
-             each change is announced. -->
         <span role="status" aria-live="polite" aria-atomic="true" data-testid="meeting-time-banner-phase">{{ phaseMessage() }}</span>
       </span>
     </p>

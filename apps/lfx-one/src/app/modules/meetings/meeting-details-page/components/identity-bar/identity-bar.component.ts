@@ -75,13 +75,12 @@ export class MeetingIdentityBarComponent {
   private initSubtitle(): Signal<string> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting) {
+      const status = this.state.meetingStatus();
+      if (!meeting || !status) {
         return '';
       }
-      // The state service's status, which the header's pill shows too (E1-05); none on a cancelled
-      // occurrence (E6-05), where the project name stands alone.
-      const status = this.state.meetingStatus();
-      const label = status ? MEETING_STATUS_LABELS[status] : null;
+      // The state service's status, which the header's pill shows too (E1-05).
+      const label = MEETING_STATUS_LABELS[status];
       return [meeting.project?.name, label].filter(Boolean).join(' · ');
     });
   }

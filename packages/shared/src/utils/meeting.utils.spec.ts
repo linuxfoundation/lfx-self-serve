@@ -55,7 +55,6 @@ import {
   countMeetingDatesBefore,
   extractRegistrantEmails,
   filterUnlistedEmails,
-  findCancelledOccurrence,
   formatMeetingMailtoDate,
   formatMeetingOccurrenceLabel,
   fromMeetingApiVotingStatuses,
@@ -2208,54 +2207,6 @@ describe('isBatchRegistrantOperationResponse', () => {
     ['a body with a non-numeric count', { successes: [], failures: [], summary: { total: '1', successful: 0, failed: 1 } }],
   ])('rejects %s', (_label, value) => {
     expect(isBatchRegistrantOperationResponse(value)).toBe(false);
-  });
-});
-
-describe('findCancelledOccurrence', () => {
-  const start = Date.UTC(2026, 6, 23, 16, 0);
-  const id = String(start / 1000);
-  const entry = (extra: Partial<MeetingOccurrence> = {}): MeetingOccurrence => ({
-    occurrence_id: id,
-    start_time: new Date(start).toISOString(),
-    duration: 45,
-    ...extra,
-  });
-
-  it("finds an occurrence the single-meeting payload marks status 'cancel'", () => {
-    expect(findCancelledOccurrence({ occurrences: [entry({ status: 'cancel' })], duration: 60 }, start)).toEqual(
-      expect.objectContaining({ occurrence_id: id })
-    );
-  });
-
-  it('finds an occurrence listed in cancelled_occurrences', () => {
-    expect(findCancelledOccurrence({ occurrences: [entry()], cancelled_occurrences: [id], duration: 60 }, start)).toEqual(
-      expect.objectContaining({ duration: 45 })
-    );
-  });
-
-  it('finds it when both signals say so', () => {
-    expect(findCancelledOccurrence({ occurrences: [entry({ status: 'cancel' })], cancelled_occurrences: [id], duration: 60 }, start)).not.toBeNull();
-  });
-
-  it('rebuilds one the payload no longer lists from its id, with the series duration', () => {
-    expect(findCancelledOccurrence({ occurrences: [], cancelled_occurrences: [id], duration: 60 }, start)).toEqual({
-      occurrence_id: id,
-      start_time: new Date(start).toISOString(),
-      duration: 60,
-      status: 'cancel',
-    });
-  });
-
-  it('matches a millisecond start to its second id only on a whole second', () => {
-    expect(findCancelledOccurrence({ occurrences: [], cancelled_occurrences: [id], duration: 60 }, start + 999)).toBeNull();
-  });
-
-  it('returns null for an active occurrence, an unknown start, or a malformed request', () => {
-    const meeting = { occurrences: [entry()], cancelled_occurrences: [], duration: 60 };
-    expect(findCancelledOccurrence(meeting, start)).toBeNull();
-    expect(findCancelledOccurrence(meeting, start + 7 * 86_400_000)).toBeNull();
-    expect(findCancelledOccurrence(meeting, Number.NaN)).toBeNull();
-    expect(findCancelledOccurrence(meeting, 0)).toBeNull();
   });
 });
 

@@ -127,8 +127,7 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   (#2931) provide them.
 - **FR-044**: The occurrence strip MUST honour both cancellation sources (`cancelled_occurrences[]`
   in seconds, `status === 'cancel'`) and MUST show a cancelled occurrence as cancelled, not drop it
-  silently. A `?occurrence=` link to a cancelled occurrence MUST show that it was cancelled and offer the
-  next active occurrence, with no join or RSVP affordance (E6-05).
+  silently.
 - **FR-045**: "Discover more" MUST use the existing public project-meetings feed and groups
   directory, and MUST link to the public project calendar rather than rebuild it.
 - **FR-046**: An organizer of a recurring meeting MUST get "Edit this occurrence" (reschedule,

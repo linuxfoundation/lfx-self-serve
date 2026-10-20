@@ -30,13 +30,11 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   compositeIdToStartMs,
-  findCancelledOccurrence,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
   getMeetingSeriesUid,
   isMeetingAttendeeListShared,
   isMeetingInviteResponsesEnabled,
-  isMeetingOccurrenceCancelled,
   isPastMeetingCompositeId,
   resolveActionSlot,
   resolveMeetingStatus,
@@ -136,7 +134,6 @@ export class MeetingDetailsStateService {
         this.isInvited(meeting) &&
         isMeetingInviteResponsesEnabled(meeting) &&
         !this.loadedViaPastMeetingId() &&
-        !this.cancelledOccurrence() &&
         this.timeState() !== 'ended';
       if (!eligible || !meeting) {
         return null;
@@ -184,28 +181,12 @@ export class MeetingDetailsStateService {
   public readonly matchesRoute: Signal<boolean> = computed(() => this.routeId() === this.resolvedRouteId());
   /**
    * The occurrence the page is about, for every section to share (data-model.md § View-scoped state).
-   * @description `?occurrence=<start ms>` first: an active occurrence, or a cancelled one, kept so the page
-   * says it was cancelled (E6-05, `cancelledOccurrence`) rather than showing another date; otherwise the
+   * @description `?occurrence=<start ms>` first, among active (non-cancelled) occurrences; otherwise the
    * current or next one, re-selected on each clock tick so a series left open moves on; once a series
    * is exhausted, its last occurrence. `null` for a one-off meeting and for a past occurrence opened
    * by its composite id, where the meeting payload is the occurrence itself.
    */
   public readonly selectedOccurrence: Signal<MeetingOccurrence | null> = this.initSelectedOccurrence();
-  /**
-   * The selected occurrence when it was cancelled (E6-05, #3588): a `?occurrence=` link to one. The page
-   * then says so and offers the next active occurrence, with no join, RSVP or roster for it.
-   */
-  public readonly cancelledOccurrence: Signal<MeetingOccurrence | null> = computed(() => {
-    const meeting = this.meeting();
-    const occurrence = this.selectedOccurrence();
-    return meeting && occurrence && isMeetingOccurrenceCancelled(occurrence, meeting.cancelled_occurrences) ? occurrence : null;
-  });
-  /** The current or next active occurrence, which a cancelled occurrence's page offers. */
-  public readonly nextActiveOccurrence: Signal<MeetingOccurrence | null> = computed(() => {
-    this.now();
-    const meeting = this.meeting();
-    return meeting && this.cancelledOccurrence() ? getCurrentOrNextOccurrence(meeting) : null;
-  });
   /**
    * The series the page's meeting belongs to: the meeting itself for an upcoming one, its `meeting_id`
    * for a past occurrence opened by its composite id. `null` until the meeting has loaded.
@@ -404,20 +385,6 @@ export class MeetingDetailsStateService {
     void this.router.navigate(['/meetings', seriesUid], { ...extras, queryParams: { ...queryParams, occurrence: String(item.startMs) } });
   }
 
-  /** Opens an active occurrence of this series by its start, as a strip chip does (the cancelled state's offer). */
-  public openOccurrence(occurrence: MeetingOccurrence): void {
-    const startMs = new Date(occurrence.start_time).getTime();
-    this.navigateToOccurrence({
-      startMs,
-      startTime: occurrence.start_time,
-      duration: occurrence.duration,
-      endKnown: occurrence.duration > 0,
-      occurrenceId: occurrence.occurrence_id,
-      isPast: false,
-      cancelled: false,
-    });
-  }
-
   /**
    * Re-reads the meeting in the background, the page left as it is until the answer lands (e.g. when
    * the host-key window opens, so the server can return the key): unlike `refresh`, no retry state.
@@ -448,12 +415,6 @@ export class MeetingDetailsStateService {
         const match = active.find((occurrence) => new Date(occurrence.start_time).getTime() === requested);
         if (match) {
           return match;
-        }
-        // A link to a cancelled occurrence keeps it, so the page says it was cancelled (E6-05, FR-044)
-        // rather than silently showing another date.
-        const cancelled = findCancelledOccurrence(meeting, requested);
-        if (cancelled) {
-          return cancelled;
         }
       }
       // A series with none current or next left has ended: its last occurrence, not the series'
@@ -494,11 +455,7 @@ export class MeetingDetailsStateService {
   private initActionSlot(): Signal<ActionSlotKind | null> {
     return computed(() => {
       const timeState = this.timeState();
-      if (!timeState) {
-        return null;
-      }
-      // Nothing to join or answer on a cancelled occurrence: the slot offers the next one instead.
-      return this.cancelledOccurrence() ? 'none' : this.resolveSlotAt(timeState);
+      return timeState ? this.resolveSlotAt(timeState) : null;
     });
   }
 
@@ -510,7 +467,7 @@ export class MeetingDetailsStateService {
       if (!meeting || !timeState || !viewerRole) {
         return null;
       }
-      const sections = resolveVisibleSections({
+      return resolveVisibleSections({
         fullAccess: this.pastMeetingFullAccess(),
         inviteResponsesEnabled: isMeetingInviteResponsesEnabled(meeting),
         // A past occurrence's payload can omit `recurrence`: it is part of a series when its series
@@ -519,8 +476,6 @@ export class MeetingDetailsStateService {
         timeState,
         viewerRole,
       });
-      // A cancelled occurrence has no recording to come: no "pending" section contradicting its banner.
-      return this.cancelledOccurrence() ? { ...sections, tools: false } : sections;
     });
   }
 
@@ -543,7 +498,6 @@ export class MeetingDetailsStateService {
           this.visibleSections()?.people === true &&
           this.timeState() !== 'ended' &&
           !this.loadedViaPastMeetingId() &&
-          !this.cancelledOccurrence() &&
           (role === 'organizer' || (role === 'registrant' && isMeetingAttendeeListShared(meeting)));
         if (!allowed || !meeting) {
           return null;
@@ -556,9 +510,6 @@ export class MeetingDetailsStateService {
 
   private initJoinsInWindow(): Signal<boolean> {
     return computed(() => {
-      if (this.cancelledOccurrence()) {
-        return false;
-      }
       const kind = this.resolveSlotAt('live');
       return kind === 'join' || kind === 'guest-join';
     });
@@ -585,8 +536,7 @@ export class MeetingDetailsStateService {
     return computed(() => {
       const meeting = this.meeting();
       const timeState = this.timeState();
-      // A cancelled occurrence has no phase or answer to show: the rail says it was cancelled.
-      if (!meeting || !timeState || this.cancelledOccurrence()) {
+      if (!meeting || !timeState) {
         return null;
       }
       const start = new Date(this.selectedOccurrence()?.start_time ?? meeting.start_time).getTime();
