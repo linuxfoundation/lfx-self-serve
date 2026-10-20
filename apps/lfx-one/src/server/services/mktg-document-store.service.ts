@@ -410,7 +410,25 @@ export class MktgDocumentStoreService {
     readConcurrency = MKTG_DOCUMENT_READ_CONCURRENCY
   ): Promise<MktgDocumentDetailResponse | null> {
     const snapshot = await this.readCurrent(req, project, type, documentId);
-    return this.readDocument(req, project, type, documentId, snapshot, readConcurrency);
+    const detail = await this.readDocument(req, project, type, documentId, snapshot, readConcurrency);
+    const current = snapshot.record;
+    if (
+      type.kind === 'living' &&
+      current &&
+      Object.hasOwn(current.approvals ?? {}, current.revisionId) &&
+      !detail?.revisions.some((revision) => revision.id === current.revisionId)
+    ) {
+      throw new MicroserviceError('The approved current revision could not be read.', 502, 'MKTG_APPROVED_REVISION_UNREADABLE');
+    }
+    return detail;
+  }
+
+  /**
+   * Approved-current identity through the normal listing path: content-sha metadata
+   * avoids body reads; historical revisions without it are hydrated as in any listing.
+   */
+  public async readApprovedCurrentSummary(req: Request, project: string, type: MktgDocumentType, documentId: string): Promise<MktgRevisionSummary | null> {
+    return this.approvedCurrentOf(await this.getDocument(req, project, type, documentId));
   }
 
   /** Read one integrity-checked revision body with its document's navigation summaries. */
