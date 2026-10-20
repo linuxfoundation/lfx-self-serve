@@ -216,7 +216,7 @@ anonymous included (V1 HTML:585); an organizer is never `none` (FGA gives them `
 Not decided here, and each blocks the issue named:
 
 - ~~Unapproved AI summaries: hide them (`isPastMeetingSummaryVisible`) or keep "Pending"?~~ — V1 parity (scope reset, 2026-10-20): shown to everyone who can read the summary, marked Pending, as V1
-- `artifact_visibility` is authored but enforced nowhere — unchanged, as V1 (E4-04 withdrawn in the 2026-10-20 scope reset)
+- ~~`artifact_visibility` is authored but enforced nowhere~~ — access is enforced upstream, per artifact: a signed-in read on `/api/past-meetings/:uid/*` carries the caller's own token, and FGA gates each artifact on its own level (`recording_viewer`, `transcript_viewer`, `ai_summary_viewer`), a summary awaiting approval being the organizer's alone. Only the BFF's gate for a caller with no session went with E4-04's public routes (withdrawn in the 2026-10-20 scope reset): such a caller gets no artifact, as on V1
 - ~~`show_meeting_attendees` is enforced nowhere and V1 only toasts "Coming Soon"~~ — decided in E3-04: the BFF returns `[]` to a registrant of an unshared meeting, and V2 gives that registrant no people section rather than a placeholder
 - Materials "Primary / Supporting" is really file vs link — E3-02
 - RSVP alongside Join during the window (V1 has no RSVP there) — E2-01
