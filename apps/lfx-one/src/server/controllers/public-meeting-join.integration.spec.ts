@@ -190,6 +190,9 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
           title: 'Board',
         };
       }
+      if (path === '/projects/proj-1') {
+        return { uid: 'proj-1', slug: 'proj', name: 'Proj', public: true };
+      }
       if (path === '/query/resources') {
         return fakeQueryService(query);
       }
@@ -404,5 +407,61 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     expect(res.body.code).toBe('NOT_REGISTERED_FOR_MEETING');
     expect(subjectCalls(NatsSubjects.MEETING_PREFERRED_EMAIL_GET)).toHaveLength(0);
     expect(contactIdCalls).toBe(0);
+  });
+
+  const getOccurrences = async (): Promise<{ status: number; body: any }> => {
+    const res = await fetch(`${baseUrl}/public/api/meetings/${MEETING_ID}/occurrences`);
+    return { status: res.status, body: await res.json() };
+  };
+
+  it('9. lets a registrant whose row carries only the contact id view the restricted series timeline', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
+
+    const res = await getOccurrences();
+
+    expect(res.status).toBe(200);
+    expect(contactIdCalls).toBe(1);
+  });
+
+  it('9b. denies the series timeline when the alias row carries a different contact id', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: '0032M00003otherQAA' }];
+
+    const res = await getOccurrences();
+
+    expect(res.status).toBe(403);
+  });
+
+  it('9c. denies the series timeline while impersonating, with no contact-id lookup', async () => {
+    sessionOptions = {
+      email: 'admin.user@example.com',
+      apiGatewayToken: 'impersonator-gateway-token',
+      impersonation: { sub: 'auth0|target-1', email: 'target.user@example.com' },
+    };
+    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
+
+    const res = await getOccurrences();
+
+    expect(res.status).toBe(403);
+    expect(contactIdCalls).toBe(0);
+  });
+
+  it('10. flags a contact-id-only registrant as invited on the meeting detail response', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
+
+    const res = await fetch(`${baseUrl}/public/api/meetings/${MEETING_ID}`, { headers: { [MEETING_PASSWORD_HEADER]: PASSWORD } });
+    const body: any = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meeting.invited).toBe(true);
+  });
+
+  it('10b. does not flag a row carrying a different contact id as invited', async () => {
+    scenario.rows = [{ ...aliasRow(), user_id: '0032M00003otherQAA' }];
+
+    const res = await fetch(`${baseUrl}/public/api/meetings/${MEETING_ID}`, { headers: { [MEETING_PASSWORD_HEADER]: PASSWORD } });
+    const body: any = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.meeting.invited).toBe(false);
   });
 });
