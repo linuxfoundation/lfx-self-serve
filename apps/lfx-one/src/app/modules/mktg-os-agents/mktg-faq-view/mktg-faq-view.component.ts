@@ -4,8 +4,9 @@
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { FAQ_MODE_LABELS, FAQ_NEEDS_ANSWER_LABEL, FAQ_VIEW_TABS } from '@lfx-one/shared/constants';
-import { FaqGroupView, FaqViewTab, MktgFaqAsset, MktgFaqViewTab } from '@lfx-one/shared/interfaces';
-import { faqGroupViews } from '@lfx-one/shared/utils';
+import { FaqGroupView, FaqViewTab, MktgFaqAsset, MktgFaqViewTab, MktgAssetHeaderMetadata, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
+import { faqGroupViews, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
+import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 
 // The FAQ asset view, an app page in the Messaging Framework view's look
 // (full width, a tab bar, white cards, the version chip): the FAQ itself —
@@ -15,7 +16,7 @@ import { faqGroupViews } from '@lfx-one/shared/utils';
 // gaps. Purely presentational: the run page and the Documents area feed it.
 @Component({
   selector: 'lfx-mktg-faq-view',
-  imports: [NgClass],
+  imports: [NgClass, MktgAssetMetaComponent],
   templateUrl: './mktg-faq-view.component.html',
 })
 export class MktgFaqViewComponent {
@@ -29,6 +30,9 @@ export class MktgFaqViewComponent {
   public readonly asset = input.required<MktgFaqAsset>();
   /** The revision or run version shown in the header, when known. */
   public readonly version = input<number | null>(null);
+  public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
+  public readonly showMetadata = input(true);
+  public readonly approval = input<MktgRevisionApproval | null>(null);
   /** A note beside the version — the revision's standing in Documents ("latest"), or nothing. */
   public readonly note = input('');
 
@@ -37,7 +41,8 @@ export class MktgFaqViewComponent {
 
   // === Computed ===
   protected readonly title = computed(() => `${this.projectName()} FAQ`);
-  protected readonly modeLabel = computed(() => FAQ_MODE_LABELS[this.asset().mode] ?? '');
+  protected readonly header = computed(() => this.headerMetadata() ?? mktgAssetHeaderFallback('faq', this.version(), null, this.approval()));
+  protected readonly modeLabel = computed(() => (this.asset().mode === 'draft' ? '' : (FAQ_MODE_LABELS[this.asset().mode] ?? '')));
   protected readonly groups: Signal<FaqGroupView[]> = computed(() => faqGroupViews(this.asset().content));
   protected readonly questionCount = computed(() => this.groups().reduce((total, group) => total + group.questions.length, 0));
   /** What the header says about the FAQ's size. */

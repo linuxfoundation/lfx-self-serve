@@ -195,7 +195,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
-        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
+        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions, receiptKey: vi.fn(() => null) } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
@@ -1085,13 +1085,13 @@ describe('MktgAgentRunComponent', () => {
       expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
       expect(query('brand-kit-web-view-built-from')?.textContent).toContain('Built from the logo file logo.svg');
-      // The book is there for Download PDF only, in its print-only wrapper.
-      expect(query('brand-kit-web-view-print')?.className).toContain('lfx-brand-kit-print-only');
-      expect(query('brand-kit-web-view-print')?.querySelectorAll('.lfx-brand-kit-page')).toHaveLength(16);
-      expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
-      // Export to Google Slides reads the stored revision the version's hash names.
-      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
-      expect(slidesExport.last).toHaveBeenCalledWith({ project: 'proj-1', agentKey: 'brand-kit', documentId: 'living', contentSha256: 'd'.repeat(64) });
+      // A run is a Draft preview, never an approved print/export target even when a digest exists.
+      expect(query('brand-kit-web-view-print')).toBeNull();
+      expect(query('brand-kit-web-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('brand-kit-web-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+      expect(query('brand-kit-web-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(slidesExport.last).not.toHaveBeenCalled();
+      expect(query('mktg-agent-run-documents-link')?.textContent).toContain('Open in Documents');
       // A kit is revised from edited inputs, never from a feedback box.
       expect(query('mktg-agent-run-regenerate-button')).toBeNull();
       expect(query('mktg-agent-run-new-run')).not.toBeNull();
@@ -1204,7 +1204,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
 
       expect(component['submitDisabled']()).toBe(true);
-      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Run the messaging framework first');
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Approve the messaging framework in Documents first');
       const link = query('mktg-agent-run-missing-dependency-link');
       expect(link?.textContent).toContain('Open the Messaging Framework page');
       link?.querySelector('button')?.click();
@@ -1271,8 +1271,8 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-boilerplates-view-count-3')?.textContent).toContain('16 / 100 words');
       expect(query('mktg-framework-view')).toBeNull();
       expect(query('mktg-agent-run-change-note')?.textContent).toContain('To change the boilerplates, edit the inputs and generate again');
-      expect(query('mktg-agent-run-download-pdf')?.textContent).toContain('Download PDF');
-      expect(query('mktg-agent-run-export-slides')?.textContent).toContain('Export to Google Slides');
+      expect(query('mktg-agent-run-download-pdf')).toBeNull();
+      expect(query('mktg-agent-run-export-slides')).toBeNull();
       expect(notifyDocumentsChanged).toHaveBeenCalledWith('proj-1');
     });
   });
@@ -1892,7 +1892,7 @@ describe('MktgAgentRunComponent', () => {
       expect(component['intakeForm'].controls['project_name'].value).toBe('TestOrbit');
     });
 
-    it('prints the framework in the project’s Brand Kit and exports the version on screen: Download PDF and Export to Google Slides in the framework’s header', async () => {
+    it('keeps the standalone framework Draft with no approval inference or export by content digest', async () => {
       resolveBrandKit.mockReturnValue(of(brandKitTestRevision()));
       storedRuns = {
         'proj-1:foundation-setup': assetRun([{ version: 1, document: '', asset: ASSET, contentSha256: 'c'.repeat(64), createdAt: '2026-10-17T00:00:00.000Z' }]),
@@ -1902,25 +1902,19 @@ describe('MktgAgentRunComponent', () => {
       fixture.detectChanges();
 
       expect(resolveBrandKit).toHaveBeenCalledWith('proj-1');
-      expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(false);
-      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(false);
-      expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('kit');
-      // The export names this version's stored revision by the hash of its content.
-      query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
-      await new Promise((resolve) => setTimeout(resolve));
-      await fixture.whenStable();
-      expect(slidesExport.start).toHaveBeenCalledWith({
-        project: 'proj-1',
-        agentKey: 'foundation-message',
-        documentId: 'living',
-        contentSha256: 'c'.repeat(64),
-        mode: 'create',
-      });
+      expect(query('mktg-framework-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(query('mktg-framework-print')).toBeNull();
+      expect(slidesExport.last).not.toHaveBeenCalled();
+      expect(slidesExport.start).not.toHaveBeenCalled();
+      expect(host().textContent).not.toContain('approved by');
+      expect(host().textContent).not.toContain('the kit still shows');
       expect(query('mktg-agent-run-download-pdf')).toBeNull();
       expect(query('mktg-agent-run-export-slides')).toBeNull();
     });
 
-    it('exports the older version picked on the chips, never the newest: its own stored revision, by the hash of its content', async () => {
+    it('keeps every picked run version Draft and never turns its digest into an export selector', async () => {
       storedRuns = {
         'proj-1:foundation-setup': assetRun([
           { version: 1, document: '', asset: ASSET, contentSha256: '1'.repeat(64), createdAt: '2026-10-16T00:00:00.000Z' },
@@ -1930,29 +1924,37 @@ describe('MktgAgentRunComponent', () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(slidesExport.last).toHaveBeenLastCalledWith(expect.objectContaining({ contentSha256: '2'.repeat(64) }));
+      expect(slidesExport.last).not.toHaveBeenCalled();
 
       query('mktg-agent-run-version-chip-1')?.click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(slidesExport.last).toHaveBeenLastCalledWith({
-        project: 'proj-1',
-        agentKey: 'foundation-message',
-        documentId: 'living',
-        contentSha256: '1'.repeat(64),
-      });
+      expect(query('mktg-framework-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('mktg-framework-view-version')?.textContent?.trim()).toBe('v1');
+      expect(query('mktg-framework-view-export-slides')?.querySelector('button')?.disabled).toBe(true);
+      expect(slidesExport.last).not.toHaveBeenCalled();
+      expect(slidesExport.start).not.toHaveBeenCalled();
+    });
 
-      query('mktg-framework-view-export-slides')?.querySelector('button')?.click();
-      await new Promise((resolve) => setTimeout(resolve));
+    it.each([
+      [`documents/proj-1/foundation-message/living/000002-${'a'.repeat(64)}.json`, `000002-${'a'.repeat(64)}`],
+      ['foundation-message/proj-1/content.md', null],
+      [`documents/other-project/foundation-message/living/000002-${'a'.repeat(64)}.json`, null],
+      [`documents/proj-1/boilerplates/living/000002-${'a'.repeat(64)}.json`, null],
+    ])('opens the receipt-named revision only for its project and agent, otherwise the document default (%s)', async (key, revision) => {
+      storedRuns = {
+        'proj-1:foundation-setup': assetRun([{ version: 1, document: '', asset: ASSET, contentSha256: 'f'.repeat(64), createdAt: '2026-10-17T00:00:00Z' }]),
+      };
+      activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      expect(slidesExport.start).toHaveBeenCalledTimes(1);
-      expect(slidesExport.start).toHaveBeenCalledWith({
-        project: 'proj-1',
-        agentKey: 'foundation-message',
-        documentId: 'living',
-        contentSha256: '1'.repeat(64),
-        mode: 'create',
-      });
+      vi.mocked(TestBed.inject(MktgAgentRunService).receiptKey).mockReturnValue(key);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      query('mktg-agent-run-documents-link')?.querySelector('button')?.click();
+      expect(navigate).toHaveBeenCalledWith(
+        ['..', 'documents', 'foundation-message', 'living'],
+        expect.objectContaining({ queryParams: { revision }, queryParamsHandling: 'merge' })
+      );
+      expect(query('mktg-document-view-approve')).toBeNull();
     });
 
     it('restores a run the earlier Markdown form saved to the form, its answers kept — never an empty generating shell', async () => {
@@ -2332,7 +2334,7 @@ describe('MktgAgentRunComponent', () => {
       expect(host().textContent).not.toContain('Paul');
     });
 
-    it('stops the run with "Run the messaging framework first" and a link to it when the project has none', async () => {
+    it('requires an approved framework in Documents and links to it when none is available', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       component['intakeForm'].controls['website_url'].setValue('https://one.example.org');
@@ -2340,7 +2342,7 @@ describe('MktgAgentRunComponent', () => {
 
       expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], ['foundation-setup']);
       expect(component['submitDisabled']()).toBe(true);
-      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Run the messaging framework first');
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('Approve the messaging framework in Documents first.');
       expect(query('mktg-agent-run-missing-dependency-link')?.textContent).toContain('Open the Messaging Framework page');
     });
 
@@ -2396,6 +2398,14 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-faq-view-question-0-0')?.textContent).toContain('An open release toolkit.');
       expect(query('mktg-framework-view')).toBeNull();
       expect(query('mktg-agent-run-new-run')?.textContent).toContain('To change the FAQ, edit the inputs');
+      expect(query('mktg-faq-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('mktg-document-view-approve')).toBeNull();
+      expect(query('mktg-agent-run-download-pdf')).toBeNull();
+      expect(query('mktg-agent-run-export-slides')).toBeNull();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      query('mktg-agent-run-documents-link')?.querySelector('button')?.click();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenCalledWith(['..', 'documents', 'faq', 'living'], expect.objectContaining({ queryParams: { revision: null } }));
     });
   });
 

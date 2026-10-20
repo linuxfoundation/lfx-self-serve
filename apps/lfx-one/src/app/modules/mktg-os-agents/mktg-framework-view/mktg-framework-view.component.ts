@@ -4,12 +4,14 @@
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import {
   FOUNDATION_MESSAGE_MODE_LABELS,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
   FOUNDATION_MESSAGE_PRINT_ONLY_CLASS,
   FOUNDATION_MESSAGE_VIEW_TABS,
+  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -25,9 +27,12 @@ import {
   MktgFrameworkViewState,
   MktgFrameworkViewTab,
   MktgSlidesExportTarget,
+  MktgRevisionApproval,
+  MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
 import {
   buildFoundationMessagePrintView,
+  mktgAssetHeaderFallback,
   foundationMessageAudienceRows,
   foundationMessageAvoidRows,
   foundationMessageGoalViews,
@@ -36,6 +41,7 @@ import {
   foundationMessagePillarViews,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
+import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 
 import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framework-print.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
@@ -58,7 +64,15 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 // revision to export.
 @Component({
   selector: 'lfx-mktg-framework-view',
-  imports: [NgClass, ButtonComponent, MarkdownRendererComponent, MktgFrameworkPrintComponent, MktgSlidesExportComponent],
+  imports: [
+    NgClass,
+    MktgAssetMetaComponent,
+    MessageComponent,
+    ButtonComponent,
+    MarkdownRendererComponent,
+    MktgFrameworkPrintComponent,
+    MktgSlidesExportComponent,
+  ],
   templateUrl: './mktg-framework-view.component.html',
 })
 export class MktgFrameworkViewComponent {
@@ -76,12 +90,21 @@ export class MktgFrameworkViewComponent {
   public readonly state = input<MktgFrameworkViewState>('ready');
   /** The revision or run version shown in the header, when known. */
   public readonly version = input<number | null>(null);
-  /** A note beside the version — the revision's standing in Documents ("latest"), or nothing. */
+  public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
+  public readonly showMetadata = input(true);
+  /** Compatibility with the preceding document-view layer; not rendered. */
   public readonly note = input('');
+  public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The project's stored Brand Kit, which the print is set in; null for the LF look. */
   public readonly kit = input<BrandKitRevision | null>(null);
   /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
+  /** The viewed document for last-export lookup, independent of approved export bytes. */
+  public readonly exportLookupTarget = input<MktgSlidesExportTarget | null>(null);
+  public readonly approvedAsset = input<MktgFrameworkAsset | null>(null);
+  public readonly approvedVersion = input<number | null>(null);
+  public readonly approvedLoading = input(false);
+  public readonly approvedError = input('');
 
   // === Signals ===
   protected readonly selectedTab = signal<FoundationMessageViewTab>('framework');
@@ -92,9 +115,11 @@ export class MktgFrameworkViewComponent {
   protected readonly findings = computed(() => this.asset()?.checks.findings ?? []);
   protected readonly ready = computed(() => this.state() === 'ready' && this.content() !== null);
   protected readonly title = computed(() => `${this.projectName()} Messaging framework`);
+  protected readonly header = computed(() => this.headerMetadata() ?? mktgAssetHeaderFallback('foundation-message', this.version(), null, this.approval()));
+  protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
   protected readonly modeLabel = computed(() => {
     const asset = this.asset();
-    return asset ? FOUNDATION_MESSAGE_MODE_LABELS[asset.mode] : '';
+    return asset && asset.mode !== 'draft' ? FOUNDATION_MESSAGE_MODE_LABELS[asset.mode] : '';
   });
   protected readonly stateLabel = computed(() => {
     if (this.state() === 'generating') {
@@ -132,8 +157,8 @@ export class MktgFrameworkViewComponent {
   });
   /** The framework as its print lays it out, in the kit's brand or the LF look; null until the framework exists. */
   protected readonly printView: Signal<FoundationMessagePrintView | null> = computed(() => {
-    const content = this.content();
-    return content ? buildFoundationMessagePrintView(content, this.projectName(), this.version(), this.kit()) : null;
+    const approved = this.approvedAsset();
+    return approved ? buildFoundationMessagePrintView(approved.content, this.projectName(), this.approvedVersion(), this.kit()) : null;
   });
   protected readonly printOnlyClass = FOUNDATION_MESSAGE_PRINT_ONLY_CLASS;
   /** The report's notes as lines (a check writes one issue per line). */

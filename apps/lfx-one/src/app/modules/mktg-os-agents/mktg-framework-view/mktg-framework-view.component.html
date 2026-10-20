@@ -4,18 +4,16 @@
 <section class="flex flex-col gap-4 w-full" data-testid="mktg-framework-view">
   <!-- Asset header: what this is, which version, where the run stands -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-framework-view-header">
-    <span class="w-2 h-2 rounded-full shrink-0" [ngClass]="ready() ? 'bg-emerald-500' : 'bg-blue-400 motion-safe:animate-pulse'" aria-hidden="true"></span>
-    <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-framework-view-title">{{ title() }}</h2>
-    @if (version() !== null) {
-      <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500" data-testid="mktg-framework-view-version">v{{ version() }}</span>
-    }
-    @if (note()) {
-      <span class="text-xs text-gray-400">{{ note() }}</span>
-    }
-    @if (modeLabel()) {
-      <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-framework-view-mode">{{
-        modeLabel()
-      }}</span>
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-framework-view-title">{{ title() }}</h2>
+        @if (ready()) {
+          <lfx-mktg-asset-meta [metadata]="header()" prefix="mktg-framework-view" />
+        }
+      </div>
+      @if (modeLabel()) {
+        <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-framework-view-mode">{{ modeLabel() }}</span>
+      }
     }
     @if (stateLabel()) {
       <span class="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700" data-testid="mktg-framework-view-state">
@@ -31,7 +29,8 @@
           icon="fa-light fa-file-pdf"
           [outlined]="true"
           size="small"
-          ariaLabel="Download the messaging framework as a PDF (prints it as one document)"
+          [disabled]="!printView()"
+          ariaLabel="Download the approved current messaging framework as a PDF"
           data-testid="mktg-framework-view-download-pdf"
           (onClick)="onDownloadPdf()" />
         <lfx-button
@@ -44,12 +43,22 @@
           ariaLabel="Export the messaging framework to Google Slides"
           data-testid="mktg-framework-view-export-slides"
           (onClick)="slidesExport.onExport()" />
+        <ng-content select="[asset-actions]" />
       </div>
     }
   </div>
 
+  @if (ready() && !exportTarget()) {
+    @if (approvedLoading()) {
+      <p role="status" class="text-xs text-gray-500">Loading the approved current…</p>
+    } @else if (approvedError()) {
+      <lfx-message severity="error" [text]="approvedError()" />
+    } @else {
+      <p class="text-xs text-gray-500" data-testid="mktg-framework-view-approval-required">{{ approvalRequiredNote }}</p>
+    }
+  }
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
-  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" data-testid="mktg-framework-view-slides-export" />
+  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [lookupTarget]="exportLookupTarget()" data-testid="mktg-framework-view-slides-export" />
 
   <!-- Tabs: one per part of the bundle; disabled until the framework exists -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Messaging framework" data-testid="mktg-framework-view-tabs" (keydown)="onTabKeydown($event)">

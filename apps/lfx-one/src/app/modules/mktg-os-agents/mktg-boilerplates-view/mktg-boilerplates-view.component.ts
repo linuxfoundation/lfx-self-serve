@@ -5,9 +5,18 @@ import { DOCUMENT, isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { BOILERPLATES_MODE_LABELS, BOILERPLATES_VIEW_TABS } from '@lfx-one/shared/constants';
-import { BoilerplatesLengthView, BoilerplatesViewTab, BoilerplatesViewTabId, MktgBoilerplatesAsset } from '@lfx-one/shared/interfaces';
-import { boilerplatesLengthRows } from '@lfx-one/shared/utils';
+import {
+  BoilerplatesLengthView,
+  BoilerplatesViewTab,
+  BoilerplatesViewTabId,
+  MktgBoilerplatesAsset,
+  MktgRevisionApproval,
+  MktgAssetHeaderMetadata,
+} from '@lfx-one/shared/interfaces';
+import { boilerplatesLengthRows, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
+
+import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 
 // The Boilerplates view: the asset's own app page inside the mktg-os-agents
 // module, in the framework view's look (full width, a tab bar, white cards).
@@ -19,7 +28,7 @@ import { MessageService } from 'primeng/api';
 // the run page and the Documents area feed it.
 @Component({
   selector: 'lfx-mktg-boilerplates-view',
-  imports: [NgClass, ButtonComponent],
+  imports: [NgClass, MktgAssetMetaComponent, ButtonComponent],
   templateUrl: './mktg-boilerplates-view.component.html',
 })
 export class MktgBoilerplatesViewComponent {
@@ -36,8 +45,11 @@ export class MktgBoilerplatesViewComponent {
   public readonly asset = input.required<MktgBoilerplatesAsset>();
   /** The revision or run version shown in the header, when known. */
   public readonly version = input<number | null>(null);
-  /** A note beside the version — the revision's standing in Documents ("latest"), or nothing. */
+  public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
+  public readonly showMetadata = input(true);
+  /** Compatibility with the preceding document-view layer; not rendered. */
   public readonly note = input('');
+  public readonly approval = input<MktgRevisionApproval | null>(null);
 
   // === Signals ===
   protected readonly selectedTab = signal<BoilerplatesViewTabId>('boilerplates');
@@ -46,7 +58,8 @@ export class MktgBoilerplatesViewComponent {
 
   // === Computed ===
   protected readonly title = computed(() => `${this.projectName()} Boilerplates`);
-  protected readonly modeLabel = computed(() => BOILERPLATES_MODE_LABELS[this.asset().mode] ?? '');
+  protected readonly header = computed(() => this.headerMetadata() ?? mktgAssetHeaderFallback('boilerplates', this.version(), null, this.approval()));
+  protected readonly modeLabel = computed(() => (this.asset().mode === 'draft' ? '' : BOILERPLATES_MODE_LABELS[this.asset().mode]));
   protected readonly report = computed(() => this.asset().report);
   protected readonly findings = computed(() => this.asset().checks.findings);
   protected readonly rows: Signal<BoilerplatesLengthView[]> = this.initRows();

@@ -51,6 +51,9 @@ describe('BrandKitWebViewComponent', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(BrandKitWebViewComponent);
     fixture.componentRef.setInput('kit', kit);
+    // This fixture explicitly supplies the independently approved print payload.
+    fixture.componentRef.setInput('approvedKit', kit);
+    fixture.componentRef.setInput('approvedVersion', 1);
     await fixture.whenStable();
   };
 
@@ -87,19 +90,57 @@ describe('BrandKitWebViewComponent', () => {
     it('heads the page as the framework view does: the title, the kit’s version, the mode, and the actions', async () => {
       expect(query('brand-kit-web-view-title')?.textContent?.trim()).toBe('Project One Brand Kit');
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
-      expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe('Draft');
+      expect(query('brand-kit-web-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('brand-kit-web-view-mode')).toBeNull();
+      expect(query('brand-kit-web-view-header')?.textContent?.match(/v1/g)).toHaveLength(1);
       expect(button('brand-kit-web-view-download-pdf')?.disabled).toBe(false);
       // Export to Google Slides waits for the page to name a stored revision.
       expect(button('brand-kit-web-view-export-slides')?.disabled).toBe(true);
 
       fixture.componentRef.setInput('version', 3);
-      fixture.componentRef.setInput('note', 'latest');
       await fixture.whenStable();
       expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v3');
-      expect(query('brand-kit-web-view-header')?.textContent).toContain('latest');
-      // The printed book says what the page says: Download PDF of v3 prints V3.0, never the kit's own draft version.
-      expect(query('brand-kit-web-view-print')?.textContent).toContain('V3.0');
-      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V1.0');
+      // Viewing a new Draft does not relabel the independently approved print target.
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('V3.0');
+    });
+
+    it('prints approved kit bytes while the screen renders a different Draft', async () => {
+      fixture.componentRef.setInput('kit', { ...brandKitTestRevision(), projectName: 'Synthetic draft only' });
+      fixture.componentRef.setInput('version', 3);
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-title')?.textContent).toContain('Synthetic draft only');
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('Project One');
+      expect(query('brand-kit-web-view-print')?.textContent).not.toContain('Synthetic draft only');
+      expect(query('brand-kit-web-view-print')?.textContent).toContain('V1.0');
+    });
+
+    it('omits the book and guards Download PDF when no approved kit is supplied', async () => {
+      fixture.componentRef.setInput('approvedKit', null);
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-print')).toBeNull();
+      expect(button('brand-kit-web-view-download-pdf')?.disabled).toBe(true);
+      button('brand-kit-web-view-download-pdf')?.click();
+      await fixture.whenStable();
+      expect(print).not.toHaveBeenCalled();
+    });
+
+    it('shows Approved only from a store approval and hides the draft mode badge', async () => {
+      fixture.componentRef.setInput('approval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-approval-state')?.textContent?.trim()).toBe('Approved');
+      expect(query('brand-kit-web-view-version')?.textContent?.trim()).toBe('v1');
+      expect(query('brand-kit-web-view-mode')).toBeNull();
+    });
+
+    it.each([
+      ['redraft', 'Redraft'],
+      ['check', 'Checked'],
+    ] as const)('retains the distinct %s mode beside the state word', async (mode, label) => {
+      fixture.componentRef.setInput('kit', { ...brandKitTestRevision(), mode });
+      await fixture.whenStable();
+      expect(query('brand-kit-web-view-approval-state')?.textContent?.trim()).toBe('Draft');
+      expect(query('brand-kit-web-view-mode')?.textContent?.trim()).toBe(label);
     });
 
     it('keeps the book in its print-only wrapper — never on screen — and wraps every text block', () => {

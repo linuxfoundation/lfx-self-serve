@@ -69,9 +69,13 @@
             } @else if (phase() === 'result') {
               @if (currentBoilerplatesAsset(); as boilerplates) {
                 <!-- The Boilerplates' own app page: the four lengths with their word counts, then the run's report. -->
-                <lfx-mktg-boilerplates-view [projectName]="projectName()" [asset]="boilerplates" [version]="assetVersion()" />
+                <lfx-mktg-boilerplates-view
+                  [projectName]="projectName()"
+                  [asset]="boilerplates"
+                  [version]="assetVersion()"
+                  [headerMetadata]="previewMetadata()" />
               } @else if (currentFaqAsset(); as faq) {
-                <lfx-mktg-faq-view [projectName]="projectName()" [asset]="faq" [version]="assetVersion()" />
+                <lfx-mktg-faq-view [projectName]="projectName()" [asset]="faq" [version]="assetVersion()" [headerMetadata]="previewMetadata()" />
               } @else {
                 <lfx-mktg-framework-view
                   [projectName]="projectName()"
@@ -79,7 +83,7 @@
                   [state]="frameworkState()"
                   [version]="assetVersion()"
                   [kit]="printKit()"
-                  [exportTarget]="slidesExportTarget()" />
+                  [headerMetadata]="previewMetadata()" />
               }
             } @else {
               <div data-testid="mktg-agent-run-live">
@@ -123,7 +127,7 @@
               }
 
               <!-- Every stored asset is a document with revisions in the Documents area. -->
-              <!-- Where the asset goes next: Documents, or a new run from edited inputs. The framework's Download PDF and Google Slides export sit in its own header, as on the Brand Kit's web view; the Boilerplates' and the FAQ's are shown here but inert until they ship (hand test, 18 Oct). No raw-JSON download: nobody reads it. -->
+              <!-- Draft previews open in Documents for approval and approved export; a fresh run starts from edited inputs. -->
               <div
                 class="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3"
                 data-testid="mktg-agent-run-new-run">
@@ -132,29 +136,9 @@
                   <span class="text-xs text-gray-500" data-testid="mktg-agent-run-change-note">{{ assetChangeNote() }}</span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                  @if (currentBoilerplatesAsset() || currentFaqAsset()) {
-                    <lfx-button
-                      label="Download PDF"
-                      icon="fa-light fa-file-pdf"
-                      [outlined]="true"
-                      size="small"
-                      [disabled]="true"
-                      badge="coming soon"
-                      ariaLabel="Download PDF — coming soon"
-                      data-testid="mktg-agent-run-download-pdf" />
-                    <lfx-button
-                      label="Export to Google Slides"
-                      icon="fa-light fa-presentation-screen"
-                      [outlined]="true"
-                      size="small"
-                      [disabled]="true"
-                      badge="coming soon"
-                      ariaLabel="Export to Google Slides — coming soon"
-                      data-testid="mktg-agent-run-export-slides" />
-                  }
                   @if (documentsAgentKey) {
                     <lfx-button
-                      label="Go to Documents"
+                      label="Open in Documents"
                       icon="fa-light fa-folder-open"
                       [text]="true"
                       size="small"
@@ -493,7 +477,7 @@
                 @if (currentBrandKit(); as brandKit) {
                   <!-- The Brand Kit's revision is the kit itself, shown as an app page with its own header and actions (hand test, 18 Oct); the 16-page book is its print rendering. -->
                   <div data-testid="mktg-agent-run-brand-kit">
-                    <lfx-brand-kit-web-view [kit]="brandKit" [version]="currentVersion()?.version ?? null" [exportTarget]="slidesExportTarget()" />
+                    <lfx-brand-kit-web-view [kit]="brandKit" [version]="currentVersion()?.version ?? null" [headerMetadata]="previewMetadata()" />
                   </div>
                   <!-- What the agent asked before writing this version, and what went back — stored with the version. -->
                   @if (askedRows().length > 0) {
@@ -657,9 +641,9 @@
                 <!-- Every stored output is a document with revisions in the Documents area. -->
                 @if (documentsAgentKey) {
                   <div class="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-gray-500" data-testid="mktg-agent-run-documents-note">
-                    <span>Every revision of this document is kept in Documents, where you can view and restore it.</span>
+                    <span>Every revision is kept in Documents, where you can open it for review.</span>
                     <lfx-button
-                      label="Go to Documents"
+                      label="Open in Documents"
                       icon="fa-light fa-folder-open"
                       [text]="true"
                       size="small"

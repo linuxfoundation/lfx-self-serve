@@ -11,11 +11,14 @@ import { MktgFaqViewComponent } from './mktg-faq-view.component';
 @Component({
   selector: 'lfx-test-faq-host',
   imports: [MktgFaqViewComponent],
-  template: `<lfx-mktg-faq-view projectName="TestOrbit" [asset]="asset()" [version]="version()" note="latest" />`,
+  template: `<lfx-mktg-faq-view projectName="TestOrbit" [asset]="asset()" [version]="version()" [showMetadata]="showMetadata()" note="latest"
+    ><span asset-actions data-testid="faq-test-actions">Approve</span></lfx-mktg-faq-view
+  >`,
 })
 class HostComponent {
   public readonly asset = signal<MktgFaqAsset>(ASSET);
   public readonly version = signal<number | null>(3);
+  public readonly showMetadata = signal(true);
 }
 
 const ASSET: MktgFaqAsset = {
@@ -60,10 +63,20 @@ describe('MktgFaqViewComponent', () => {
   it('heads the page with the title, the version, the mode, the size and what needs the team', () => {
     expect(text('mktg-faq-view-title')).toBe('TestOrbit FAQ');
     expect(text('mktg-faq-view-version')).toBe('v3');
-    expect(text('mktg-faq-view-mode')).toBe('Draft');
+    expect(text('mktg-faq-view-approval-state')).toBe('Draft');
+    expect(query('mktg-faq-view-mode')).toBeNull();
     expect(text('mktg-faq-view-size')).toBe('3 questions in 2 groups');
     expect(text('mktg-faq-view-unanswered-chip')).toBe('1 question needs an answer from your team');
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer (1)');
+  });
+
+  it('hides duplicate document metadata while retaining header actions and native content', async () => {
+    host.showMetadata.set(false);
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-title')).toBeNull();
+    expect(query('mktg-faq-view-metadata')).toBeNull();
+    expect(text('faq-test-actions')).toBe('Approve');
+    expect(query('mktg-faq-view-groups')).not.toBeNull();
   });
 
   it('shows every group with its questions, each answer with its source, and flags the unanswered one', () => {

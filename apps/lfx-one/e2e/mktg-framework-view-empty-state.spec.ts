@@ -29,6 +29,7 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  MKTG_SLIDES_EXPORT_API_PATH,
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
@@ -182,6 +183,7 @@ async function stubContext(page: Page): Promise<void> {
     const items = isFoundation ? [] : [{ uid: PROJECT_UID, slug: PROJECT_SLUG, name: PROJECT_NAME, logoUrl: null, isFoundation: false }];
     return fulfillJson(route, { items, next_page_token: null, upstream_failed: false, lens: isFoundation ? 'foundation' : 'project' });
   });
+  await page.route(`**${MKTG_SLIDES_EXPORT_API_PATH}/last?*`, (route) => fulfillJson(route, { last: null, latestRevision: null }));
   // The document read (`/documents/foundation-message/<id>?project=`), then the revision read the view chains after it.
   await page.route(new RegExp(`/api/mktg-agents/documents/foundation-message/${DOCUMENT_ID}\\?`), (route) => fulfillJson(route, documentDetail()));
   await page.route(new RegExp(`/api/mktg-agents/documents/foundation-message/${DOCUMENT_ID}/revisions/`), (route) => fulfillJson(route, revisionResponse()));

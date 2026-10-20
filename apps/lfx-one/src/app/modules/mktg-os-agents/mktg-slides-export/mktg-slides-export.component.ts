@@ -53,6 +53,8 @@ export class MktgSlidesExportComponent {
   // === Inputs ===
   /** The stored revision to export; null when there is none (no project, or nothing stored yet). */
   public readonly target = input<MktgSlidesExportTarget | null>(null);
+  /** Read the viewed document's history before its approved export bytes resolve. */
+  public readonly lookupTarget = input<MktgSlidesExportTarget | null>(null);
 
   // === Signals ===
   public readonly phase = signal<MktgSlidesExportPhase>('idle');
@@ -80,9 +82,22 @@ export class MktgSlidesExportComponent {
    * being read, or after the read failed, would see no deck and create a
    * second one instead of offering Update.
    */
-  public readonly canExport = computed(() => this.target() !== null && this.lookupSettled() && !this.busy());
-  protected readonly assetLabel = computed(() => {
+  private readonly lastTarget = computed(() => this.lookupTarget() ?? this.target());
+  public readonly canExport = computed(() => {
     const target = this.target();
+    const lookup = this.lastTarget();
+    return Boolean(
+      target &&
+      lookup &&
+      target.project === lookup.project &&
+      target.agentKey === lookup.agentKey &&
+      target.documentId === lookup.documentId &&
+      this.lookupSettled() &&
+      !this.busy()
+    );
+  });
+  protected readonly assetLabel = computed(() => {
+    const target = this.lastTarget();
     return target ? MKTG_SLIDES_EXPORT_ASSET_LABELS[target.agentKey] : 'asset';
   });
   protected readonly stale = computed(() => isMktgSlidesExportStale(this.last(), this.latest()));
@@ -110,12 +125,10 @@ export class MktgSlidesExportComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // The panel belongs to one target (project, document and revision). When
-      // the page names another, the panel stops watching the export under way
-      // (it keeps running, and the server keeps its record either way), the
-      // last export is read again for the new one, and an export of the new
-      // target's document still under way in this tab is shown again.
-      toObservable(this.target)
+      // Follow the document lookup identity (the export target by default).
+      // Approved bytes resolving later must not reset an independent lookup.
+      // Changing documents detaches this tab's panel, not the server-side export.
+      toObservable(this.lastTarget)
         .pipe(
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
           tap(() => this.reset()),

@@ -11,7 +11,7 @@ import {
   MktgRestoreRevisionResponse,
   MktgRevisionResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, take, throwError } from 'rxjs';
+import { catchError, map, Observable, of, take, throwError } from 'rxjs';
 
 /**
  * Client for the Marketing OS Documents area: every stored agent output of a
@@ -48,6 +48,39 @@ export class MktgDocumentStoreService {
         params: this.projectParams(projectUid),
       })
       .pipe(catchError((error) => this.logAndRethrow('Failed to load a Marketing OS document revision', error)));
+  }
+
+  /** Resolve approved bytes separately from the viewed draft; refuse a stale pointer response. */
+  public getApprovedRevision(detail: MktgDocumentDetailResponse, viewed?: MktgRevisionResponse): Observable<MktgRevisionResponse | null> {
+    const current = detail.approvedCurrent;
+    if (detail.type.kind !== 'living' || !current) return of(null);
+    const revision$ =
+      viewed?.revision.id === current.revisionId ? of(viewed) : this.getRevision(detail.project, detail.type.agentKey, detail.documentId, current.revisionId);
+    return revision$.pipe(
+      map((revision) => {
+        if (
+          revision.project !== detail.project ||
+          revision.type.agentKey !== detail.type.agentKey ||
+          revision.documentId !== detail.documentId ||
+          revision.revision.id !== current.revisionId ||
+          !revision.revision.approval ||
+          revision.approvedCurrent?.revisionId !== current.revisionId
+        )
+          throw new Error('The approved current changed. Reload and try again.');
+        return revision;
+      })
+    );
+  }
+
+  /** Approve an existing revision; the response includes the approved current selection. */
+  public approveRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRevisionResponse> {
+    return this.http
+      .post<MktgRevisionResponse>(
+        `${this.documentPath(agentKey, documentId)}/revisions/${encodeURIComponent(revisionId)}/approve`,
+        {},
+        { params: this.projectParams(projectUid) }
+      )
+      .pipe(take(1));
   }
 
   /** Make a revision current without adding history; `/restore` is the compatibility URL. */
