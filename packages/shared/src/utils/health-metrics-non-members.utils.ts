@@ -87,7 +87,11 @@ export function buildHealthMetricsNonMembersConversionView(conversion: HealthMet
       { key: 'new', label: 'New this period', value: formatStat(conversion.newCount) },
     ],
     warmest: buildWarmestBars(conversion.warmest),
-    footnote: `Estimated pipeline multiplies high-fit organizations by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only.`,
+    footnote: [
+      { text: `Estimated pipeline multiplies high-fit organizations by ${tier ? `the ${tier}` : 'an entry-tier'} fee and is indicative only. The ` },
+      { text: 'fit score', bold: true },
+      { text: ' is a model change, sequenced after the matching fix.' },
+    ],
   };
 }
 

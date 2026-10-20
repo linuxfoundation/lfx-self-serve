@@ -18,7 +18,7 @@ import type {
   HealthMetricsEventsSpeakersTabOption,
   HealthMetricsEventsSponsorship,
 } from '../interfaces/health-metrics-events.interface';
-import type { HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
+import type { HealthMetricsFootnotePart, HealthMetricsL2CrossReference, HealthMetricsL2Range } from '../interfaces/health-metrics-l2.interface';
 
 /**
  * The nine Events sections in render order. `key` is the section's URL fragment and the scroll-spy
@@ -31,8 +31,11 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     heading: 'Registration forecast',
     description:
       'The most decision-sensitive view in Events: where registrations will land, while there is still time to act. Plotted against days to event so a small meetup and KubeCon can be read the same way.',
-    footnote:
-      'The forecast is a projection from historical pacing curves, not a promise — the band is the confidence range. An event with no last-year curve is projected from comparable events, which is why its range is wider.',
+    footnote: [
+      { text: 'The forecast is a projection from historical pacing curves, not a promise — the band is the confidence range. An event with ' },
+      { text: 'no last-year curve', bold: true },
+      { text: ' is projected from comparable events, which is why its range is wider.' },
+    ],
     footnoteCaution: false,
   },
   {
@@ -41,7 +44,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     heading: 'Past events',
     description:
       'Final performance for events that have already closed — the record the registration forecast was projecting toward while they were still open.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -49,7 +52,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     label: 'At a glance',
     heading: 'Events at a glance',
     description: 'Reach across every event this period.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -57,7 +60,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     label: 'Registrations & growth',
     heading: 'Registrations & growth',
     description: 'Registrations by year, split in-person versus virtual.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -66,7 +69,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     heading: 'Event revenue',
     description:
       'The two money lines events generate. Registration revenue is what attendees pay; sponsorship is what companies pay. They are driven by different teams and behave differently, so they are never merged into one figure.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
     headingBadge: 'Provisional',
   },
@@ -75,7 +78,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     label: 'Sponsorship',
     heading: 'Sponsorship',
     description: 'What companies paid to sponsor events, and what they bought.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
     headingBadge: 'Provisional',
   },
@@ -85,7 +88,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     heading: 'Speakers & proposals',
     description:
       'The speaking pipeline, kept separate from sponsorship — proposals measure community supply, sponsorship measures revenue. Acceptance rate shows how much choice the programme committee had.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -94,7 +97,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     heading: 'Organizations at events',
     description:
       'Which organizations show up, sponsor and speak. This is the events view of an organization — the same company also has a membership, meeting and contribution record in Members.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -102,7 +105,7 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     label: 'Geographic distribution',
     heading: 'Geographic distribution',
     description: 'Where registrations come from — useful for deciding where the next event should be and which regions are under-served.',
-    footnote: '',
+    footnote: [],
     footnoteCaution: false,
   },
 ] as const;
@@ -198,6 +201,13 @@ export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAt
 
 /** A year-over-year fall steeper than this flags the Attendees and Speakers tiles. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE = -0.3;
+
+/** At-a-glance footnote, in the design's words. */
+export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_FOOTNOTE: readonly HealthMetricsFootnotePart[] = [
+  { text: 'Registrations and attendees are both shown so the ' },
+  { text: 'show-up rate', bold: true },
+  { text: ' is visible. A registration is a promise; an attendee is the value delivered — reporting only one hides which of the two moved.' },
+];
 
 /** Years read per foundation; one past it flags a truncated read. The longest history spans under ten. */
 export const HEALTH_METRICS_EVENTS_REGISTRATIONS_GROWTH_YEAR_CAP = 100;

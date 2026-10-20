@@ -95,11 +95,11 @@
       </lfx-table>
     </div>
 
-    <p class="flex flex-wrap items-center gap-1 border-t border-gray-100 pt-3 text-[12px] text-gray-400" data-testid="events-past-events-footnote">
+    <lfx-health-metrics-footnote data-testid="events-past-events-footnote">
       A closed event's figures are its final result, not a projection.
       <button type="button" class="text-blue-600 hover:underline" (click)="onViewForecast()" data-testid="events-past-events-forecast-link">
         See upcoming events in the registration forecast
       </button>
-    </p>
+    </lfx-health-metrics-footnote>
   }
 </div>

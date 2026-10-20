@@ -16,6 +16,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
@@ -31,7 +32,7 @@ import type {
  */
 @Component({
   selector: 'lfx-non-members-conversion',
-  imports: [EmptyStateComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, Skeleton],
   templateUrl: './non-members-conversion.component.html',
 })
 export class NonMembersConversionComponent {

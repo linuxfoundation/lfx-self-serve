@@ -99,7 +99,9 @@ describe('NonMembersConversionComponent', () => {
     expect(text('non-members-conversion-side-high-fit-value')).toBe('2');
     expect(text('non-members-conversion-side-new-value')).toBe('37');
     expect(text('non-members-conversion-summary')).toBe('412 organizations tracked');
-    expect(text('non-members-conversion-footnote')).toBe('Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only.');
+    expect(text('non-members-conversion-footnote')).toBe(
+      'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only. The fit score is a model change, sequenced after the matching fix.'
+    );
   });
 
   it('shows the pipeline as a plain hero: no card, no tint, ink value', async () => {

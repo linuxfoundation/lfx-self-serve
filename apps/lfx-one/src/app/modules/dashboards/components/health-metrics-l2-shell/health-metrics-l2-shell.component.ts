@@ -26,6 +26,7 @@ import { buildHealthMetricsL2SectionId, buildHealthMetricsL2SectionViews, isHeal
 import { debounceTime, filter, Subject } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../health-metrics-gate/health-metrics-chrome.service';
+import { HealthMetricsFootnoteComponent } from '../health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsL2SubNavComponent } from '../health-metrics-l2-sub-nav/health-metrics-l2-sub-nav.component';
 import { HealthMetricsL2SectionDirective } from './health-metrics-l2-section.directive';
 
@@ -39,7 +40,7 @@ import type { HealthMetricsL2CrossReference, HealthMetricsL2Section, HealthMetri
  */
 @Component({
   selector: 'lfx-health-metrics-l2-shell',
-  imports: [HealthMetricsL2SubNavComponent, NgTemplateOutlet],
+  imports: [HealthMetricsFootnoteComponent, HealthMetricsL2SubNavComponent, NgTemplateOutlet],
   templateUrl: './health-metrics-l2-shell.component.html',
 })
 export class HealthMetricsL2ShellComponent implements OnInit {
