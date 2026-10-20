@@ -1488,7 +1488,8 @@
               [statusToggleEnabled]="briefCampaignsToggleEnabled()"
               (retryCampaigns)="retryBriefCampaigns()"
               [projectSlug]="activeFoundationSlug()"
-              [briefId]="briefPersistence().briefId ?? ''" />
+              [briefId]="briefPersistence().briefId ?? ''"
+              [suggestedNegativeKeywords]="briefOutput()?.negativeKeywords ?? null" />
           </div>
         }
       }

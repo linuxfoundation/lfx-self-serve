@@ -430,6 +430,16 @@ export class PlanningTabComponent implements OnInit {
    */
   protected readonly googleCallouts = signal<string[]>([]);
   protected readonly googleSitelinks = signal<CampaignSitelink[]>([]);
+  /**
+   * Negative keywords the generator produced, carried to the Optimize tab's editor the same way
+   * the two above are carried to the Implementation tab's — held here, emitted by
+   * `onProceedToImplementation`, no editor on THIS tab.
+   *
+   * Unlike those two it IS refreshed by a refinement: the server regenerates it on the keyword
+   * gate, and there is nothing of the operator's for a regeneration to overwrite, because the only
+   * place they edit these is the Optimize tab's own text box after launch.
+   */
+  protected readonly negativeKeywords = signal<string[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
   protected readonly linkedInStrategy = signal<LinkedInTargetingStrategy | null>(null);
   private lastLookedUpEventValue = '';
@@ -870,6 +880,7 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.googleCallouts.set([]);
     this.googleSitelinks.set([]);
+    this.negativeKeywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
     // Audience and pitch described the brief just DISCARDED; leaving them pre-filled the next New
@@ -1296,6 +1307,7 @@ export class PlanningTabComponent implements OnInit {
     this.keywords.set([]);
     this.googleCallouts.set([]);
     this.googleSitelinks.set([]);
+    this.negativeKeywords.set([]);
     this.linkedInStrategy.set(null);
     this.errorMessage.set(null);
 
@@ -1388,6 +1400,10 @@ export class PlanningTabComponent implements OnInit {
       // can only mean the list was never generated.
       googleCallouts: this.googleCallouts().length > 0 ? this.googleCallouts() : undefined,
       googleSitelinks: this.googleSitelinks().length > 0 ? this.googleSitelinks() : undefined,
+      // `undefined` rather than `[]` on the same rule as the two above, though the consequence is
+      // milder: nothing is cleared by an empty negative list, it simply offers the Optimize tab
+      // nothing. Kept identical so one reader of these three lines does not have to hold two rules.
+      negativeKeywords: this.negativeKeywords().length > 0 ? this.negativeKeywords() : undefined,
       hsUtm: this.hsUtm(),
       totalBudget: budgetStr && Number.isFinite(Number(budgetStr)) ? Number(budgetStr) : null,
       driveFolderUrl: this.briefForm.controls.driveFolderUrl.value.trim(),
@@ -1666,6 +1682,12 @@ export class PlanningTabComponent implements OnInit {
         break;
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
+        break;
+      // Refreshed on a refinement, unlike callouts and sitelinks: the server regenerates this list
+      // on the same gate as the keywords above, and the operator's own edits live in the Optimize
+      // tab's editor rather than in this field, so there is nothing here to overwrite.
+      case 'negativeKeywords':
+        this.negativeKeywords.set(event.data as string[]);
         break;
       case 'linkedin_strategy':
         break;
@@ -2289,9 +2311,13 @@ export class PlanningTabComponent implements OnInit {
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
         break;
+      case 'negativeKeywords':
+        this.negativeKeywords.set(event.data as string[]);
+        break;
       // Only the GENERATE stream carries these two. `handleRefineSSEEvent` has no arm for them
       // because the server's refine path yields neither -- regenerating an extension list would
-      // overwrite whatever the operator has since edited into it.
+      // overwrite whatever the operator has since edited into it. (It DOES yield
+      // `negativeKeywords`, which is why that arm above has a refine counterpart and these do not.)
       case 'callouts':
         this.googleCallouts.set(event.data as string[]);
         break;

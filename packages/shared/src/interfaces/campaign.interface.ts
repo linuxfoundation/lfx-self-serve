@@ -257,6 +257,7 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'negativeKeywords'
   | 'callouts'
   | 'sitelinks'
   | 'linkedin_strategy'
@@ -361,6 +362,32 @@ export interface CampaignBriefOutput {
   eventDetails: CampaignEventDetails;
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
+  /**
+   * Negative keywords the brief generated from the event page, for the Optimize tab's
+   * negative-keyword editor to open pre-filled with once the campaign is live.
+   *
+   * A SUGGESTION, and a weaker claim than {@link googleCallouts}' "seed": callouts are dispatched
+   * with the campaign at CREATE time, while negatives have no create-time path at all — upstream
+   * takes them only through `add-negative-keywords`, a mutation on a campaign that already exists.
+   * So this list is never sent by anything; it fills the editor's text, the operator edits it
+   * there, and nothing leaves until they press the button.
+   *
+   * Text only, no match type. The match type is one choice for the whole request and belongs to the
+   * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
+   * editor picks it at send time and a brief that guessed one would be guessing for a campaign that
+   * did not exist when it was written.
+   *
+   * Absent and empty mean different things, as on {@link googleCallouts}: `undefined` is a brief
+   * that carries no list (generated before this shipped, or a generation that produced nothing) and
+   * the editor opens as it always did; `[]` is a list, and an empty one offers nothing.
+   *
+   * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
+   * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
+   * of the four platforms that take negatives, since the brief cannot know which campaign these
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
+   * never opens holding a line it would refuse the operator for typing.
+   */
+  negativeKeywords?: string[];
   hsUtm: string | null;
   totalBudget: number | null;
   driveFolderUrl: string;

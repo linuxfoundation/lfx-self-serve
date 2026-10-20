@@ -1797,6 +1797,7 @@ describe('PlanningTabComponent email brief editing', () => {
     handleRefineSSEEvent(e: SSEEvent<CampaignSSEEventType>, feedback: string): void;
     googleCallouts(): string[];
     googleSitelinks(): { text: string; finalUrl: string }[];
+    negativeKeywords(): string[];
     onProceedToImplementation(): void;
     reset(): void;
   }
@@ -1840,20 +1841,49 @@ describe('PlanningTabComponent email brief editing', () => {
     expect(extensions().googleCallouts()).toEqual(['Free To Attend']);
   });
 
+  // The negative-keyword list rides the same stream and is held the same way, but goes to the
+  // OPTIMIZE tab's editor rather than the Implementation tab's: an unhandled type here is the same
+  // silent drop, and the operator is told the list was generated while the editor opens blank.
+  it('holds the negative-keyword list the generate stream sends', async () => {
+    await buildForExtensions();
+
+    extensions().handleSSEEvent({ type: 'negativeKeywords', data: ['free kubecon', 'kubecon jobs'] } as SSEEvent<CampaignSSEEventType>);
+
+    expect(extensions().negativeKeywords()).toEqual(['free kubecon', 'kubecon jobs']);
+  });
+
+  // The opposite of the callout/sitelink rule above, and deliberately so: the server DOES
+  // regenerate negatives on a refine, because this list is a suggestion rather than a stored
+  // decision — the operator's own edits live in the Optimize tab's text box, not in this field, so
+  // a refresh here overwrites nothing of theirs. A missing arm would leave the refined brief
+  // carrying suggestions derived from the pre-refinement event details.
+  it('refreshes the negative-keyword list from the refine stream', async () => {
+    await buildForExtensions();
+    extensions().handleSSEEvent({ type: 'negativeKeywords', data: ['free kubecon'] } as SSEEvent<CampaignSSEEventType>);
+
+    extensions().handleRefineSSEEvent({ type: 'negativeKeywords', data: ['kubecon jobs'] } as SSEEvent<CampaignSSEEventType>, 'more technical');
+
+    expect(extensions().negativeKeywords()).toEqual(['kubecon jobs']);
+  });
+
   // New Brief must leave nothing of the discarded brief behind: a stale sitelink points the next
   // event's ad at the previous event's agenda page.
-  it('clears both extension lists on reset', async () => {
+  it('clears the generated lists on reset', async () => {
     await buildForExtensions();
     extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
     extensions().handleSSEEvent({
       type: 'sitelinks',
       data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
     } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({ type: 'negativeKeywords', data: ['free kubecon'] } as SSEEvent<CampaignSSEEventType>);
 
     extensions().reset();
 
     expect(extensions().googleCallouts()).toEqual([]);
     expect(extensions().googleSitelinks()).toEqual([]);
+    // Carried on the same clear for the same reason: the previous event's exclusions are the wrong
+    // list to open the next event's editor with.
+    expect(extensions().negativeKeywords()).toEqual([]);
   });
 
   /**
@@ -1866,7 +1896,7 @@ describe('PlanningTabComponent email brief editing', () => {
    * `onProceedToImplementation` emits as present values because they are non-empty. That is the
    * stale-sitelink defect the reset test names, reached by regenerating rather than by New Brief.
    */
-  it('clears both extension lists when a new generation starts', async () => {
+  it('clears the generated lists when a new generation starts', async () => {
     await buildForExtensions();
     // Never completes, so the component stays in 'generating' and the cleared signals are
     // observable rather than overwritten by the new stream's own events.
@@ -1877,6 +1907,7 @@ describe('PlanningTabComponent email brief editing', () => {
       type: 'sitelinks',
       data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
     } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({ type: 'negativeKeywords', data: ['free kubecon'] } as SSEEvent<CampaignSSEEventType>);
 
     // `generate()` returns early unless the form validates, which would make the assertions below
     // pass with the clears deleted.
@@ -1887,6 +1918,7 @@ describe('PlanningTabComponent email brief editing', () => {
 
     expect(extensions().googleCallouts()).toEqual([]);
     expect(extensions().googleSitelinks()).toEqual([]);
+    expect(extensions().negativeKeywords()).toEqual([]);
   });
 
   /**
@@ -1907,16 +1939,21 @@ describe('PlanningTabComponent email brief editing', () => {
 
     expect(emitted[0].googleCallouts).toBeUndefined();
     expect(emitted[0].googleSitelinks).toBeUndefined();
+    // Held to the same rule, though nothing is cleared by an empty negative list: one reader of
+    // these three emits should not have to hold two rules for them.
+    expect(emitted[0].negativeKeywords).toBeUndefined();
 
     extensions().handleSSEEvent({ type: 'callouts', data: ['Free To Attend'] } as SSEEvent<CampaignSSEEventType>);
     extensions().handleSSEEvent({
       type: 'sitelinks',
       data: [{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }],
     } as SSEEvent<CampaignSSEEventType>);
+    extensions().handleSSEEvent({ type: 'negativeKeywords', data: ['free kubecon'] } as SSEEvent<CampaignSSEEventType>);
     extensions().onProceedToImplementation();
 
     expect(emitted[1].googleCallouts).toEqual(['Free To Attend']);
     expect(emitted[1].googleSitelinks).toEqual([{ text: 'View the Agenda', finalUrl: 'https://events.example.com/agenda' }]);
+    expect(emitted[1].negativeKeywords).toEqual(['free kubecon']);
   });
 });
 

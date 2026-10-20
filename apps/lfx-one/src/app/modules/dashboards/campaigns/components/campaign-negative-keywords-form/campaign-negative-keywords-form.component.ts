@@ -69,6 +69,14 @@ export class CampaignNegativeKeywordsFormComponent {
   public readonly campaignName = input.required<string>();
   /** The campaign's ad platform. Decides the match types, the cap, the wording and whether a revision is read and sent. */
   public readonly platform = input<NegativeKeywordCampaignPlatform>('microsoft-ads');
+  /**
+   * Negative keywords the brief generated from the event page, to open this editor pre-filled with.
+   *
+   * A SUGGESTION and nothing more: it is seeded into the text box, the operator edits or deletes it
+   * there, and nothing is sent until they press the button. Seeded once, into an empty field, and
+   * only when this campaign has no earlier request — see `initSuggestedKeywords`.
+   */
+  public readonly suggestedKeywords = input<string[] | null>(null);
 
   public readonly cancelEdit = output<void>();
 
@@ -167,6 +175,7 @@ export class CampaignNegativeKeywordsFormComponent {
 
   public constructor() {
     this.initPlatformDefaults();
+    this.initSuggestedKeywords();
     this.initRestoreUnsettledInput();
   }
 
@@ -207,6 +216,47 @@ export class CampaignNegativeKeywordsFormComponent {
         }
       }
     );
+  }
+
+  /**
+   * Opens the editor pre-filled with the brief's generated negative keywords, so the operator starts
+   * from a list instead of a blank box.
+   *
+   * Once, at the first non-empty suggestion this form sees — not in the constructor, where a signal
+   * input still holds its default because Angular binds inputs after construction — and only when
+   * the field is empty AND this campaign has no request on the shared service yet.
+   *
+   * Both conditions, not either. The empty check is what keeps a suggestion arriving late (the
+   * brief loading while the editor is already open) from overwriting what the operator has typed.
+   * The no-request check is what keeps it out of {@link initRestoreUnsettledInput}'s way: that
+   * restores the keywords of the last request which were refused or unconfirmed, and skips a
+   * non-empty field, so a form seeded before it ran would silently drop the ones the operator
+   * actually tried to send. A campaign that has been sent to has a real list to come back to; one
+   * that has not is where a suggestion helps.
+   *
+   * Re-parsed against THIS platform's caps rather than pasted in: the generator bounds the list to
+   * Google Ads' 80 characters and 60 keywords because it cannot know which campaign it will be sent
+   * to, and X takes only 20 per request. Re-parsing and truncating here means the editor never opens
+   * holding a list its own validator would refuse.
+   */
+  private initSuggestedKeywords(): void {
+    toObservable(this.suggestedKeywords)
+      .pipe(
+        filter((suggested): suggested is string[] => Array.isArray(suggested) && suggested.length > 0),
+        take(1),
+        takeUntilDestroyed()
+      )
+      .subscribe((suggested) => {
+        const control = this.form.controls.keywords;
+        if (control.value.trim() !== '' || this.request() !== null) {
+          return;
+        }
+        const keywords = parseNegativeKeywordInput(suggested.join('\n'), this.maxTextLength()).keywords.slice(0, this.maxKeywords());
+        if (keywords.length === 0) {
+          return;
+        }
+        control.setValue(keywords.join('\n'));
+      });
   }
 
   /**

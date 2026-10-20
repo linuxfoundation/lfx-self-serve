@@ -45,6 +45,8 @@ import {
   GOOGLE_ADS_MAX_SITELINKS,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
 } from '@lfx-one/shared/constants';
 import { readFileSync } from 'node:fs';
 
@@ -1463,6 +1465,46 @@ describe('fromBriefResponse', () => {
       { text: 'View the Agenda', finalUrl: 'https://example.test/agenda', description1: 'Two days', description2: 'Sixty sessions' },
       { text: 'Venue & Travel', finalUrl: 'https://example.test/venue' },
     ]);
+  });
+
+  // The negative-keyword suggestion list. Absent and empty both leave the Optimize tab's editor
+  // blank, unlike the two extension lists above where `[]` clears an editor — but the reader still
+  // has to tell a stored list from a missing one, since `undefined` is what the field means for
+  // every brief written before this shipped.
+  it.each([
+    ['an absent negativeKeywords', undefined],
+    ['a null negativeKeywords', null],
+    ['a non-array negativeKeywords', 'free kubecon'],
+  ])('restores %s as absent', (_label, negativeKeywords) => {
+    expect(fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords).toBeUndefined();
+  });
+
+  // Re-validated through the editor's own parser, so a row written by an older build or another
+  // client can never open the editor holding a line it would refuse the operator for typing:
+  // whitespace collapsed, a case-insensitive repeat dropped, a line over Google Ads' cap dropped,
+  // a line with characters the pattern refuses dropped, and a non-string entry ignored.
+  it('bounds and de-duplicates a stored negative-keyword list the way the editor would', () => {
+    const negativeKeywords = [
+      '  free   kubecon  ',
+      'FREE KUBECON',
+      42,
+      'kubecon [exact]',
+      'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1),
+      'kubecon jobs',
+    ];
+
+    expect(fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords).toEqual(['free kubecon', 'kubecon jobs']);
+  });
+
+  // The count cap is what one `add-negative-keywords` request may carry, so a longer stored list is
+  // filled to it and the overflow left out — head kept, as the callout and sitelink readers do.
+  it('fills a stored negative-keyword list to the per-request cap and drops the overflow', () => {
+    const negativeKeywords = Array.from({ length: MAX_NEGATIVE_KEYWORDS_PER_REQUEST + 5 }, (_unused, i) => `negative ${i}`);
+
+    const restored = fromBriefResponse(storedBrief({ copy: { negativeKeywords } }))?.negativeKeywords;
+
+    expect(restored).toHaveLength(MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+    expect(restored?.[0]).toBe('negative 0');
   });
 
   // An unknown platform id reaches a template that indexes icon and label maps by it and

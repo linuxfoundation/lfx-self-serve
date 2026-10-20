@@ -292,6 +292,61 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     expect(remounted.componentInstance.form.controls.keywords.value).toBe('');
   });
 
+  // The brief generates these from the event page, and the editor is the only place they can be
+  // sent from — negative keywords have no create-time path upstream at all. Seeding the box is the
+  // whole delivery of that generation.
+  it('opens pre-filled with the suggested keywords from the brief', () => {
+    fixture.componentRef.setInput('suggestedKeywords', ['free kubecon', 'kubecon jobs']);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value).toBe('free kubecon\nkubecon jobs');
+  });
+
+  // A suggestion arriving after the editor is open (the brief finishing its load) must never
+  // overwrite what the operator has typed. The seed is an offer, not a reset.
+  it('leaves typed keywords alone when the suggestion arrives later', () => {
+    typeKeywords('my own exclusion');
+
+    fixture.componentRef.setInput('suggestedKeywords', ['free kubecon']);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value).toBe('my own exclusion');
+  });
+
+  // Capped by THIS platform's rules, not by the generator's: the brief bounds its list to Google
+  // Ads' limits because it cannot know which campaign it will be sent to, and X takes far fewer per
+  // request. Without the re-cap the editor would open already failing its own validator.
+  it(`truncates the suggestion to X's ${MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST} keywords per request`, () => {
+    fixture.componentRef.setInput('platform', 'twitter-ads');
+    fixture.componentRef.setInput(
+      'suggestedKeywords',
+      Array.from({ length: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST + 5 }, (_unused, i) => `negative ${i}`)
+    );
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.form.controls.keywords.value.split('\n')).toHaveLength(MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST);
+  });
+
+  // The restore path owns a remounted editor on a campaign that has been sent to: those keywords
+  // are ones the operator chose and the platform did not confirm, and a suggestion seeded over them
+  // would be a silent loss of their work rather than a convenience.
+  it('restores the unconfirmed keywords rather than the suggestion after a request', () => {
+    addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [{ text: 'alpha', matchType: 'Exact', outcome: 'FAILED' }] }));
+    typeKeywords('alpha');
+    submit();
+    fixture.destroy();
+
+    const remounted = TestBed.createComponent(CampaignNegativeKeywordsFormComponent);
+    remounted.componentRef.setInput('projectSlug', 'tlf');
+    remounted.componentRef.setInput('briefId', 'b-1');
+    remounted.componentRef.setInput('campaignId', 'c-1');
+    remounted.componentRef.setInput('campaignName', 'KubeCon EU');
+    remounted.componentRef.setInput('suggestedKeywords', ['free kubecon']);
+    remounted.detectChanges();
+
+    expect(remounted.componentInstance.form.controls.keywords.value).toBe('alpha');
+  });
+
   describe('on Google, Reddit and X', () => {
     const targeting = (revision?: string): CampaignServiceKeywordTargeting => ({
       campaign_id: 'c-1',

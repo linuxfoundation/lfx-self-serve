@@ -580,6 +580,7 @@
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
                   [platform]="negativesPlatform"
+                  [suggestedKeywords]="suggestedNegativeKeywords()"
                   (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
               }
               @if (targetingPanelOpen()[row.campaign.id] && row.keywordTargetingPlatform; as targetingPlatform) {

@@ -184,6 +184,20 @@ export class OptimizationTabComponent implements OnInit {
   public readonly campaignsPossiblyStale = input(false);
 
   /**
+   * Negative keywords the brief generated from the event page, passed straight through to every
+   * negative-keyword editor this tab opens.
+   *
+   * A suggestion the editor opens pre-filled with, never a value this tab sends: nothing leaves
+   * until the operator presses that editor's own button. Unlike callouts and sitelinks, negative
+   * keywords have no create-time path upstream at all, so the brief's list can only ever arrive
+   * here, after the campaign exists.
+   *
+   * `null` is a brief that carries none — generated before this shipped, or a generation that
+   * produced nothing — and the editors open blank, as they did before this input.
+   */
+  public readonly suggestedNegativeKeywords = input<string[] | null>(null);
+
+  /**
    * True when the campaign list READ FAILED, as opposed to never having been asked for.
    *
    * `briefCampaigns` is `null` for both, and rendering nothing for both makes an outage

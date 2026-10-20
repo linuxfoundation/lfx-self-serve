@@ -33,8 +33,11 @@ import {
   isCreativeAssetMimeType,
   isGoogleAdsServableUrl,
   JOB_LOST_MESSAGE,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+  MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
 } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
+import { parseNegativeKeywordInput } from '@lfx-one/shared/utils/campaign.utils';
 import { coerceCampaignEventDetails } from '@lfx-one/shared/utils/campaign-event-details.utils';
 import { withAdoptedMarker } from '@lfx-one/shared/utils/campaign-optimize.utils';
 import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
@@ -3564,6 +3567,10 @@ function toBriefInput(brief: CampaignBriefOutput, eventSlug: string): CampaignSe
       // these fit; the same reasoning `targeting` carries for the planning fields.
       googleCallouts: brief.googleCallouts ?? null,
       googleSitelinks: brief.googleSitelinks ?? null,
+      // Stored beside them, and read back on the same `null`-is-absent rule, though nothing here
+      // CLEARS an editor: the Optimize tab's negative-keyword editor opens pre-filled from this
+      // list, and an absent or empty one simply leaves it blank, as it was before this field.
+      negativeKeywords: brief.negativeKeywords ?? null,
     },
     keywords: brief.keywords,
     targeting: {
@@ -3678,6 +3685,7 @@ export function fromBriefResponse(found: CampaignServiceBrief): CampaignBriefOut
     // see the write side for why the Implementation tab needs those to stay distinguishable.
     googleCallouts: asCallouts(copy['googleCallouts']),
     googleSitelinks: asSitelinks(copy['googleSitelinks']),
+    negativeKeywords: asNegativeKeywords(copy['negativeKeywords']),
     campaignGoal: CAMPAIGN_GOALS.some((o) => o.id === targeting['campaignGoal']) ? (targeting['campaignGoal'] as CampaignGoal) : null,
     totalBudget: typeof targeting['totalBudget'] === 'number' && Number.isFinite(targeting['totalBudget']) ? targeting['totalBudget'] : null,
     hsUtm: typeof targeting['hsUtm'] === 'string' ? targeting['hsUtm'] : null,
@@ -3985,6 +3993,31 @@ function asKeywords(value: unknown): CampaignKeyword[] {
  * one the model just produced and the next candidate can take its place, here it is one the
  * operator typed and the only alternative is losing it.
  */
+/**
+ * A stored negative-keyword suggestion list, or `undefined` when the field is absent or not an
+ * array.
+ *
+ * Re-validated rather than trusted, and through the EDITOR'S own parser
+ * ({@link parseNegativeKeywordInput}) rather than a reimplementation, because that is the thing
+ * this list has to satisfy: a stored row can carry anything a past client wrote, and a suggestion
+ * the editor would refuse the operator for typing must never arrive pre-filled in it. Google Ads'
+ * 80-character cap is applied for the reason the generator applies it — the narrowest of the four
+ * platforms, since the brief does not know which campaign these will be sent to — and the count is
+ * bounded to what one request may carry.
+ *
+ * `undefined` and `[]` both leave the editor empty here, unlike {@link asCallouts}, where `[]` is
+ * an operator-emptied list and clears an editor. Nothing is lost either way: the operator's own
+ * text has never been stored in this field.
+ */
+function asNegativeKeywords(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const lines = value.filter((entry): entry is string => typeof entry === 'string');
+  const { keywords } = parseNegativeKeywordInput(lines.join('\n'), MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+  return keywords.slice(0, MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
+}
+
 function asCallouts(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;
