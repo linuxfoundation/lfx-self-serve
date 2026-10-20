@@ -577,6 +577,23 @@ describe('MeetingActionSlotComponent', () => {
       expect(add).toHaveBeenCalledWith({ severity: 'success', summary: 'Removed', detail: 'You have been removed from this meeting.' });
     });
 
+    // #3260: Remove Myself leaves the slot on success, so focus moves to the slot's new first control.
+    it('hands focus to the slot once Remove Myself is gone', async () => {
+      markLeft.mockImplementation(() => showLeaveMeeting.set(false));
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      const button = query('meeting-action-leave-button')?.querySelector('button') as HTMLButtonElement;
+      button.focus();
+      button.click();
+      acceptConfirmation();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(query('meeting-action-leave-button')).toBeNull();
+      expect(document.activeElement).not.toBe(document.body);
+      expect(fixture.nativeElement.contains(document.activeElement) || document.activeElement === fixture.nativeElement).toBe(true);
+    });
+
     it('keeps the viewer invited, and warns, when some registrations remain', () => {
       removeMyMeetingRegistration.mockReturnValue(of({ remaining_registrant_ids: ['r-2'] }));
       showLeaveMeeting.set(true);
@@ -631,6 +648,21 @@ describe('MeetingActionSlotComponent', () => {
         expect(confirm).toHaveBeenCalledTimes(1);
         acceptConfirmation();
         expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'email-link');
+      });
+
+      // The page outlives in-app navigations: a second link must prompt again.
+      it('asks again for a later link, once the first has been handled', async () => {
+        leaveRequest.set({ meetingId: 'meeting-1', handledByV1: false });
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(confirm).toHaveBeenCalledTimes(1);
+
+        leaveRequest.set({ meetingId: 'meeting-1', handledByV1: false });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(consumeLeaveRequest).toHaveBeenCalledTimes(2);
+        expect(confirm).toHaveBeenCalledTimes(2);
       });
 
       it('tells a viewer who is not registered so, without a confirmation', async () => {

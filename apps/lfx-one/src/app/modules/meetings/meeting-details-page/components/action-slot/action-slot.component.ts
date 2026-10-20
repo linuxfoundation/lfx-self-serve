@@ -102,7 +102,11 @@ export class MeetingActionSlotComponent {
    */
   protected readonly organizerMailto: Signal<string | null> = this.initOrganizerMailto();
 
+  /** The removal outlives the slot (see `leave`), so a late success must not schedule work on a destroyed one. */
+  private destroyed = false;
+
   public constructor() {
+    this.destroyRef.onDestroy(() => (this.destroyed = true));
     this.initLeaveFromLink();
   }
 
@@ -182,8 +186,9 @@ export class MeetingActionSlotComponent {
       { injector: this.injector }
     )
       .pipe(
+        // Each link once: handling one clears the request, so a later in-app navigation to another
+        // `?action=leave` link raises a new one.
         filter((request): request is MeetingLeaveRequest => !!request),
-        take(1),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((request) => {
@@ -262,6 +267,19 @@ export class MeetingActionSlotComponent {
           } else {
             this.state.markLeft(meetingId);
             this.messageService.add({ severity: 'success', summary: 'Removed', detail: 'You have been removed from this meeting.' });
+            // Remove Myself is gone from the slot now: hand focus to the slot's new first control, as
+            // `register()` does, unless the viewer has moved it elsewhere meanwhile (#3260, WCAG 2.4.3).
+            if (!this.destroyed) {
+              afterNextRender(
+                () => {
+                  const active = this.document.activeElement;
+                  if (!active || active === this.document.body || !active.isConnected) {
+                    this.focusSlot();
+                  }
+                },
+                { injector: this.injector }
+              );
+            }
           }
         },
         error: (error: unknown) => {

@@ -914,6 +914,38 @@ describe('MeetingDetailsStateService', () => {
       expect(state.claimAutoJoin(MEETING_ID)).toBe(true);
     });
 
+    // The service outlives an in-app navigation, so the constructor never sees a later link.
+    it('raises a leave request for a ?action=leave link reached by an in-app navigation', async () => {
+      const state = await load(upcoming());
+      expect(state.leaveRequest()).toBeNull();
+
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await settle();
+
+      expect(state.leaveRequest()).toEqual({ meetingId: 'meeting-2', handledByV1: false });
+      expect(state.claimAutoJoin('meeting-2')).toBe(false);
+    });
+
+    it('asks once per link: a handled request is not raised again before the param is dropped', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      state.consumeLeaveRequest();
+      // A re-lookup before the navigation that drops the param lands.
+      state.reload();
+      await settle();
+      expect(state.leaveRequest()).toBeNull();
+
+      // Once the param is gone, a new link raises a new request.
+      queryParamMap$.next(convertToParamMap({}));
+      await settle();
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      await settle();
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
+    });
+
     it('drops a leave request when the route moves to another meeting before it is handled', async () => {
       queryParamMap$.next(convertToParamMap({ action: 'leave' }));
       const state = await load(upcoming());
