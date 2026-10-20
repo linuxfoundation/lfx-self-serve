@@ -8,7 +8,7 @@ import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
-  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_AGENDA_WARNING_LENGTH,
@@ -225,11 +225,11 @@ export class ComposerAgendaFieldComponent {
   private applyEstimatedDuration(estimate: number): void {
     const estimatedDuration = Math.round(estimate);
 
-    if (!Number.isFinite(estimatedDuration) || estimatedDuration < MIN_CUSTOM_DURATION || estimatedDuration > MAX_CUSTOM_DURATION) {
+    if (!Number.isFinite(estimatedDuration) || estimatedDuration < MIN_CUSTOM_DURATION || estimatedDuration > MAX_MEETING_DURATION) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Duration left unchanged',
-        detail: `The suggested duration is outside the allowed ${MIN_CUSTOM_DURATION}–${MAX_CUSTOM_DURATION} minute range. Set it yourself alongside the date.`,
+        detail: `The suggested duration is outside the allowed ${MIN_CUSTOM_DURATION}–${MAX_MEETING_DURATION} minute range. Set it yourself alongside the date.`,
       });
       return;
     }

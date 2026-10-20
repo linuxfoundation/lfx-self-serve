@@ -1,0 +1,147 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { PLATFORM_ID } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import { resolveMktgKit } from '@lfx-one/shared/utils';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { of, Subject, throwError } from 'rxjs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MktgFamilyDetailsComponent } from './mktg-family-details.component';
+
+const revisionId = '000003-' + 'a'.repeat(64);
+function family() {
+  return resolveMktgKit({
+    project: 'synthetic',
+    groups: MKTG_DOCUMENT_TYPES.map((type) => ({
+      type,
+      documents:
+        type.agentKey === 'foundation-message'
+          ? [
+              {
+                agentKey: type.agentKey,
+                documentId: 'living',
+                revisionCount: 9,
+                latestRevisionId: revisionId,
+                approvedCurrent: null,
+                createdAt: null,
+                updatedAt: null,
+              },
+            ]
+          : [],
+    })),
+  })[0];
+}
+function revision(): MktgRevisionResponse {
+  return {
+    project: 'synthetic',
+    type: MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message') ?? MKTG_DOCUMENT_TYPES[0],
+    documentId: 'living',
+    approvedCurrent: null,
+    approval: null,
+    revisions: [],
+    markdown: '{}',
+    sidecar: { report: { sources_read: ['project.example'], sources_failed: [{ name: 'README', reason: 'Timed out' }] } },
+    revision: {
+      id: revisionId,
+      number: 3,
+      createdAt: null,
+      origin: 'generated',
+      restoredFromNumber: null,
+      intakeMode: 'form',
+      status: '',
+      contentSha256: 'a'.repeat(64),
+      format: 'json',
+      commentCount: 0,
+      latest: true,
+      approval: null,
+    },
+  };
+}
+
+describe('Family-only source details', () => {
+  let getRevision: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    getRevision = vi.fn(() => of(revision()));
+    TestBed.configureTestingModule({ imports: [MktgFamilyDetailsComponent], providers: [{ provide: MktgDocumentStoreService, useValue: { getRevision } }] });
+  });
+  function create() {
+    const fixture = TestBed.createComponent(MktgFamilyDetailsComponent);
+    fixture.componentRef.setInput('family', family());
+    fixture.componentRef.setInput('projectUid', 'synthetic');
+    return fixture;
+  }
+  it('reads the latest stored revision and renders real read/failed source copy plus the static approval explainer', async () => {
+    const fixture = create();
+    await fixture.whenStable();
+    expect(getRevision).toHaveBeenCalledWith('synthetic', 'foundation-message', 'living', revisionId);
+    expect(fixture.nativeElement.textContent).toContain('Sources read on the last run: project.example.');
+    expect(fixture.nativeElement.textContent).toContain('README: Timed out');
+    expect(fixture.nativeElement.textContent).toContain('Any project writer approves an asset in October.');
+  });
+  it('omits sources with no document or no report, never faking a source list', async () => {
+    getRevision.mockReturnValue(of({ ...revision(), sidecar: null }));
+    const fixture = create();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources"]')).toBeNull();
+    fixture.componentRef.setInput('family', { ...family(), rows: [] });
+    await fixture.whenStable();
+    expect(getRevision).toHaveBeenCalledTimes(1);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-approve"]')).not.toBeNull();
+  });
+  it('keeps loading/error separate and retries without losing the static explainer', async () => {
+    getRevision.mockReturnValue(new Subject<MktgRevisionResponse>());
+    const fixture = create();
+    await fixture.whenStable();
+    const status = fixture.nativeElement.querySelector('[role="status"]');
+    expect(status?.textContent).toContain('Loading source details');
+    getRevision.mockReturnValue(throwError(() => new Error('synthetic read error')));
+    fixture.componentRef.setInput('projectUid', 'other');
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent).toBe('');
+    getRevision.mockReturnValue(of(revision()));
+    fixture.nativeElement.querySelector('[data-testid="mktg-family-sources-retry"] button').click();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources"]')).not.toBeNull();
+  });
+  it('reads only the framework row, ignores discarded-row failures and cancels the old scope', async () => {
+    const view = family();
+    const document = view.rows[0].document;
+    if (!document) throw new Error('Synthetic framework document missing');
+    const other = {
+      ...view.rows[0],
+      asset: { id: 'brand-extra', label: 'Brand kit', description: '', agentKey: 'brand-kit' as const },
+      document: { ...document, agentKey: 'brand-kit' as const },
+    };
+    const old = new Subject<MktgRevisionResponse>();
+    getRevision.mockImplementation((_project: string, key: string) =>
+      key === 'foundation-message' ? old : throwError(() => new Error('An unrelated read must not happen'))
+    );
+    const fixture = create();
+    fixture.componentRef.setInput('family', { ...view, rows: [other, ...view.rows] });
+    await fixture.whenStable();
+    expect(getRevision).toHaveBeenCalledTimes(1);
+    expect(getRevision).toHaveBeenCalledWith('synthetic', 'foundation-message', 'living', revisionId);
+    getRevision.mockReturnValue(of({ ...revision(), sidecar: null }));
+    fixture.componentRef.setInput('projectUid', 'other');
+    await fixture.whenStable();
+    old.next(revision());
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources"]')).toBeNull();
+    fixture.componentRef.setInput('family', { ...view, rows: [other] });
+    await fixture.whenStable();
+    expect(getRevision).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+  });
+  it('does not read during SSR', async () => {
+    TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+    const fixture = create();
+    await fixture.whenStable();
+    expect(getRevision).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-family-sources"]')).toBeNull();
+  });
+});

@@ -95,7 +95,8 @@ export class EngagementGroupAttendanceComponent {
   protected readonly query: Signal<HealthMetricsEngagementGroupQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementGroupAttendance> = this.initResponse();
 
-  protected readonly typeFilters: Signal<FilterPillOption[]> = this.initTypeFilters();
+  /** Labels only, as the design draws them; the per-type counts stay off the pills. */
+  protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({ id: filter.key, label: filter.label }));
   protected readonly rows = computed(() => this.response().rows);
   // Resolved here rather than per cell: the template only reads signals, and the period lookup and
   // trend build run once per row per response instead of on every change-detection pass.
@@ -113,12 +114,12 @@ export class EngagementGroupAttendanceComponent {
    * own counts, so this is not the same signal as `totalRecords() === 0`. */
   protected readonly counts = computed(() => this.response().counts);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
-  // Scope-wide, like the sub-nav badge: the selected chip narrows the table, and each chip carries its own count.
+  // Follows the selected chip, as in the design; the sub-nav badge stays scope-wide.
   protected readonly countLabel = computed(() => {
-    const counts = this.counts();
-    if (counts === null) return '—';
+    if (this.counts() === null) return '—';
 
-    return `${counts.groups.toLocaleString()} ${counts.groups === 1 ? 'group' : 'groups'}`;
+    const total = this.totalRecords();
+    return `${total.toLocaleString('en-US')} ${total === 1 ? 'group' : 'groups'}`;
   });
 
   public constructor() {
@@ -159,17 +160,6 @@ export class EngagementGroupAttendanceComponent {
       page: this.page(),
       size: this.size(),
     };
-  }
-
-  /** Each chip reads `Governance · 12` once counts land; until then, or on a failed read, the bare label. */
-  private initTypeFilters(): Signal<FilterPillOption[]> {
-    return computed(() => {
-      const typeCounts = this.loading() || this.loadFailed() ? [] : this.response().typeCounts;
-      return HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => {
-        const count = typeCounts.find((entry) => entry.groupType === filter.key);
-        return { id: filter.key, label: count ? `${filter.label} · ${count.groups.toLocaleString()}` : filter.label };
-      });
-    });
   }
 
   private initResponse(): Signal<HealthMetricsEngagementGroupAttendance> {

@@ -12,6 +12,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 import { MembersMovementsDrawerComponent } from '../members-movements-drawer/members-movements-drawer.component';
 
@@ -30,7 +31,7 @@ import type {
  */
 @Component({
   selector: 'lfx-members-bridge',
-  imports: [EmptyStateComponent, MembersMovementsDrawerComponent, Skeleton],
+  imports: [EmptyStateComponent, HealthMetricsFootnoteComponent, MembersMovementsDrawerComponent, Skeleton],
   templateUrl: './members-bridge.component.html',
 })
 export class MembersBridgeComponent {

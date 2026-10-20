@@ -15,6 +15,8 @@ import {
   HEALTH_METRICS_MEMBERS_DATA_SECTIONS,
   HEALTH_METRICS_MEMBERS_SECTIONS,
   HEALTH_METRICS_MEMBERS_SUB_NAV_CROSS_REFERENCE,
+  HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS,
+  HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS,
 } from './health-metrics-members.constants';
 
 describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
@@ -30,6 +32,16 @@ describe('HEALTH_METRICS_MEMBERS_SECTIONS', () => {
 describe('HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES', () => {
   it('labels every step except the closing total, whose label is built per year', () => {
     expect(Object.keys(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS)).toEqual(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES.filter((step) => step !== 'today'));
+  });
+});
+
+describe('HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS', () => {
+  it("captions every mode with the design's lead, swapping only the unit", () => {
+    expect(Object.keys(HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS)).toEqual(HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS.map((option) => option.id));
+    expect(HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS).toEqual({
+      members: 'the most-used table in PCC — exact counts',
+      revenue: 'the most-used table in PCC — in USD',
+    });
   });
 });
 

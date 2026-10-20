@@ -71,7 +71,7 @@ function skipWhenAuthMissing(page: Page): void {
 // unconditionally; an administrator's panel legitimately has none.
 async function openSelector(page: Page, options: { expectSearch?: boolean } = {}) {
   // Sidebar may be tucked behind a mobile hamburger on mobile-chrome — the trigger lives
-  // inside <lfx-sidebar>; the test ID is identical across desktop and mobile.
+  // inside <lfx-navbar>; the test ID is identical across desktop and mobile.
   const trigger = page.getByTestId('org-selector');
   await expect(trigger).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
   await trigger.click();
@@ -589,7 +589,7 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
 });
 
 // LF-team scenarios (S17–S20). These drive /org/overview rather than APP_HOME because the
-// org-selector slot is ANDed with the me-lens parent input (`sidebar.component.ts`
+// org-selector slot is ANDed with the me-lens parent input (`nav-menu-base.directive.ts`
 // initEffectiveShowOrgSelector), so the switcher is legitimately hidden on '/'.
 const ORG_LENS_HOME = '/org/overview';
 

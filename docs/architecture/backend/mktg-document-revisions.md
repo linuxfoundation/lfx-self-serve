@@ -1,0 +1,141 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+# Marketing OS document revisions
+
+`MktgDocumentStoreService` owns document history over the private object-store
+purpose `marketing-os-artifacts`. The existing project writer entitlement and
+server-resolved project partition still gate every route.
+
+## Current is not newest
+
+Revision bundles remain immutable JSON at
+`documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`.
+`current.json` in the same document prefix selects current, which is not
+necessarily approved. Without that record, the newest historical revision is
+current: existing documents need no migration, and no approval is invented.
+
+Make current (the compatibility HTTP endpoint remains `POST …/restore`) changes
+only `current.json`. It does not copy a bundle or add history. One-off run
+documents refuse this action. New runs append through `recordRevision`, which
+records their current base. When current is approved, a new Draft extends the
+manifest without moving the pointer or its selection attribution. Otherwise the
+newest generation becomes current. The future comment-and-revise
+writer uses that same method with its actual `basedOnId` and comments; this
+change does not introduce a Revise endpoint or UI.
+
+## Conditional publication
+
+The current record also holds the IDs of committed revisions. Appends and Make
+current preserve every previously committed ID even if its object is temporarily
+missing or unreadable; restoring the object makes it visible again. An immutable
+bundle is first created with `If-None-Match: *`, then a compare-and-swap of the
+current record atomically publishes its ID and the chosen selection. Generation
+can preserve approved current while publishing a newer Draft. An interrupted or
+losing write can leave an immutable object, but it is not visible history.
+New objects carry `managed` metadata so an interrupted first save is not mistaken
+for historical data when no current record exists yet. First publication initializes
+the manifest from all valid, eligible historical keys without validating their bodies;
+managed orphan objects and malformed keys stay out. Display summaries still require
+readable historical bodies, so repair restores visibility without rewriting the manifest.
+
+A bounded retry handles competing new writers. Each attempt derives an automatic
+base from its fresh committed snapshot and sequence listing. A caller's explicit
+`basedOnId`, including null, remains stable because it names the writer's actual
+base. The generation token in revision metadata deduplicates overlapping result
+polls, including one-off run polls.
+Historical revisions without that token are matched by session and content hash.
+A failed revision write drops the receipt so a later poll retries. Pre-revision
+artifacts become revision 1 on the next run, excluding that run's own artifact.
+Make current never retries a stale comparison: it returns 412 so the caller can
+reload rather than silently overwrite a concurrent choice. The file backend
+uses an exclusive per-key directory across processes for the same comparison;
+a crash leaves that lock for operator recovery rather than stealing it from a
+possibly live writer. All file puts take the lock, so unconditional writes cannot
+bypass a conditional comparison; unlike S3, an overlapping unconditional put can
+return 412. For recovery, first confirm no writer is active, then remove the
+`<key>.lock.partial` directory under the purpose folder. Never remove a live
+writer's lock. S3 passes the original ETag through `If-Match`.
+
+## Approval and consumers
+
+The optional `approvals` map on the same current record stores each revision's
+`approvedAt` and opaque effective-sub `approvedBy`; it is never part of hashed
+revision bytes. Missing or malformed optional annotations mean no approvals,
+not a corrupt critical pointer. Approve uses the existing `writeCurrent` CAS to
+add an annotation and select that revision atomically. Already approved and
+current is a no-op; selecting an earlier approval preserves its original
+approval time and actor. Make current only moves selection: it never approves
+a Draft. Both operations fail fast on a stale CAS with 412, without retries.
+One-off run documents cannot be approved. A true pre-revision document must have
+a stored revision before approval; the API returns a field validation error
+and the UI omits Approve rather than migrating it.
+
+Public summaries and revision responses expose nullable name-only `approval`.
+Detail and listing expose nullable `approvedCurrent: { revisionId, number }`,
+derived only when the current revision has an annotation, using the same
+current snapshot already read for the document. Directory resolution never
+substitutes the generator or pointer mover for an approver.
+
+All dependent attachments and actual PDF/Slides bytes use approved current:
+plain and sidecar `readLatest` return null when none is approved. Read failures
+propagate rather than being mislabeled as missing approval. Only the server's
+true pre-revision plain fallback remains; browser runs never supply attachments.
+Explicit export selectors must match approved current or fail instead of
+silently changing bytes. `readNewestRevisionRef` deliberately retains newest
+identity for export freshness comparison, so an approved export can be out of
+date when a newer Draft exists.
+
+Approval and the board's approval attribution live on the document Asset view.
+Standalone results are Draft previews with Open in Documents: an available
+canonical receipt key selects its exact revision; otherwise the document default
+opens. Receipt keys retained in memory never expand persisted run schemas, and
+content hashes never infer revision identity or approval.
+
+## Reads and attribution
+
+Listings provide IDs, sequence and time; bounded metadata-only HEAD requests
+provide new revision summaries. Opening a revision downloads and integrity-checks
+only that revision's body. Status metadata is capped at 200 characters (with an
+ellipsis); opening the body supplies the full status. Historical writers stored
+only origin/sequence metadata; those entries load their immutable bodies under
+the same concurrency bound to preserve date, intake mode, status, comments, and
+restoration provenance without migration. Missing intake modes render a neutral
+label, not an invented form run. Project listings read at most four documents
+concurrently with serial reads inside each; individual document histories also
+cap metadata/body and directory lookups at four. Dependent reads reuse one current
+snapshot. A corrupt current never silently selects a different revision for
+dependent agents; listings warn and omit an unreadable document without hiding
+authentication or permission failures.
+
+New revision metadata stores only an opaque effective user ID in `author-id`.
+The mutable current record stores the selector's opaque ID in `changedBy` plus
+a timestamp. If an impersonation target has no effective subject, generation and
+Make current still succeed with `author-id` absent and `changedBy: null`; neither
+the impersonator's subject nor any username is a fallback. These writes remain
+unattributed and use the existing absent-author label on reads. Ordinary writers
+without a subject still receive an authentication error. No names, usernames or
+emails are persisted as attribution in these objects, and no personal attribution
+is embedded in immutable revision bytes.
+Names are resolved at read time through `UserService.getUserInfo` and the existing
+NATS `USER_METADATA_READ` directory lookup, which accepts Auth0 subjects. Lookups
+are memoized per request and bounded like revision reads. A stored author whose
+name is empty or whose lookup failed renders “name unavailable”; only an absent
+author record renders the historical no-name label. Failures warn once per ID
+and never fail a document read. There is no username fallback.
+
+Detail, revision, and Make current responses expose `revisionId`, `changedAt` and
+name-only `changedBy` as `current`; neither stored user IDs nor the internal
+revision manifest cross the API. A successful Make current returns attribution
+from the committed CAS itself; a no-op keeps the original selection time and
+actor. No record means `current` is null and no selection attribution is invented.
+The document-view list shows “Current since” only on the current row, separately
+from revision authorship. No client body can choose either identity. The UI labels
+the selected current revision even when it is not newest, and shows a
+nonsequential base and comment count only when stored data supplies them.
+In-flight Make current writes are not cancelled by page destruction; late
+acknowledgements cannot update another project or view.
+
+The pre-revision artifact compatibility write carries `revision-managed`
+metadata. Failed new saves therefore cannot manufacture a pre-revision v1 from
+their leftover artifact.

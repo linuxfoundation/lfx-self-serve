@@ -88,11 +88,15 @@ export function campaignActionItemLever(rule: unknown, platform: unknown): Campa
  * platform (whitespace collapsed to one space, trimmed; case kept), so what the editor shows as
  * sent is what upstream echoes back. The checks mirror the BFF's and upstream's own, so a batch
  * this accepts is not refused for its shape: the character set (`NEGATIVE_KEYWORD_TEXT_PATTERN`),
- * `MAX_NEGATIVE_KEYWORD_TEXT_LENGTH` counted in characters rather than UTF-16 units, no two
- * punctuation characters together, and no keyword twice (compared case-insensitively). The count
- * limit is the caller's to check, against `keywords.length`.
+ * `maxTextLength` counted in characters rather than UTF-16 units, no two punctuation characters
+ * together, and no keyword twice (compared case-insensitively). The count limit is the caller's to
+ * check, against `keywords.length`.
+ *
+ * `maxTextLength` defaults to the shared `MAX_NEGATIVE_KEYWORD_TEXT_LENGTH` the BFF enforces, and a
+ * caller that knows the campaign's platform passes that platform's own, shorter limit instead
+ * (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES.maxTextLength` — Google Ads caps text at 80).
  */
-export function parseNegativeKeywordInput(text: unknown): ParsedNegativeKeywordInput {
+export function parseNegativeKeywordInput(text: unknown, maxTextLength: number = MAX_NEGATIVE_KEYWORD_TEXT_LENGTH): ParsedNegativeKeywordInput {
   const keywords: string[] = [];
   const problems: NegativeKeywordInputProblem[] = [];
   if (typeof text !== 'string') {
@@ -105,7 +109,7 @@ export function parseNegativeKeywordInput(text: unknown): ParsedNegativeKeywordI
       return;
     }
     const line = i + 1;
-    const reason = negativeKeywordProblem(keyword, seen);
+    const reason = negativeKeywordProblem(keyword, seen, maxTextLength);
     if (reason !== null) {
       problems.push({ line, text: keyword, reason });
       return;
@@ -116,9 +120,9 @@ export function parseNegativeKeywordInput(text: unknown): ParsedNegativeKeywordI
   return { keywords, problems };
 }
 
-function negativeKeywordProblem(keyword: string, seen: ReadonlySet<string>): string | null {
-  if ([...keyword].length > MAX_NEGATIVE_KEYWORD_TEXT_LENGTH) {
-    return `Longer than ${MAX_NEGATIVE_KEYWORD_TEXT_LENGTH} characters.`;
+function negativeKeywordProblem(keyword: string, seen: ReadonlySet<string>, maxTextLength: number): string | null {
+  if ([...keyword].length > maxTextLength) {
+    return `Longer than ${maxTextLength} characters.`;
   }
   if (!NEGATIVE_KEYWORD_TEXT_PATTERN.test(keyword)) {
     return "Use only letters, digits, spaces and & ' - .";

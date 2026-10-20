@@ -3,7 +3,7 @@
 
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
+import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
 import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -34,10 +34,10 @@ describe('RescheduleOccurrenceDialogComponent', () => {
   let close: ReturnType<typeof vi.fn>;
   let occurrence: MeetingOccurrence;
   let meeting: Meeting;
-  let config: { data: { meeting: Meeting; occurrence: MeetingOccurrence }; closable?: boolean };
+  let config: { data: { meeting: Meeting; occurrence: MeetingOccurrence; maxDuration?: number }; closable?: boolean };
 
-  async function mount(): Promise<RescheduleOccurrenceDialogComponent> {
-    config = { data: { meeting, occurrence }, closable: true };
+  async function mount(maxDuration?: number): Promise<RescheduleOccurrenceDialogComponent> {
+    config = { data: { meeting, occurrence, ...(maxDuration !== undefined && { maxDuration }) }, closable: true };
     TestBed.configureTestingModule({
       providers: [
         { provide: DynamicDialogRef, useValue: { close } },
@@ -164,7 +164,21 @@ describe('RescheduleOccurrenceDialogComponent', () => {
     expect(component.canSave()).toBe(false);
   });
 
-  it.each([0, 4, 481])('blocks a duration of %s minutes', async (duration) => {
+  it('takes a higher cap from the opener where meeting v2 is on', async () => {
+    const component = await mount(MAX_MEETING_DURATION);
+
+    component.form.patchValue({ duration: MAX_MEETING_DURATION });
+    expect(component.form.get('duration')?.valid).toBe(true);
+
+    component.form.patchValue({ duration: MAX_MEETING_DURATION + 1 });
+    expect(component.form.get('duration')?.valid).toBe(false);
+  });
+
+  it('keeps the pre-v2 eight-hour cap outside the v2 composer', () => {
+    expect(MAX_CUSTOM_DURATION).toBe(480);
+  });
+
+  it.each([0, 4, MAX_CUSTOM_DURATION + 1])('blocks a duration of %s minutes', async (duration) => {
     const component = await mount();
 
     component.form.patchValue({ duration });
@@ -293,7 +307,7 @@ describe('RescheduleOccurrenceDialogComponent', () => {
   });
 
   it('shows the duration error up front when the existing occurrence is longer than the form allows', async () => {
-    occurrence = { ...OCCURRENCE, duration: 600 };
+    occurrence = { ...OCCURRENCE, duration: MAX_CUSTOM_DURATION + 1 };
     const component = await mount();
 
     expect(component.showDurationError()).toBe(true);

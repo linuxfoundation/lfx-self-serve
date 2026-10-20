@@ -25,8 +25,7 @@
       <lfx-events-registration-forecast
         (countsChange)="forecastNote.set($event)"
         (reading)="shell.sectionReading('forecast')"
-        (settled)="shell.sectionSettled('forecast')"
-        (sectionPicked)="shell.scrollToSection($event)" />
+        (settled)="shell.sectionSettled('forecast')" />
     </ng-template>
     <ng-template lfxHealthMetricsL2Section="past">
       <lfx-events-past-events

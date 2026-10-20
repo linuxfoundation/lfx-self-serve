@@ -38,7 +38,6 @@ describe('NonMembersConversionComponent', () => {
   let getNonMembersConversion: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
   let lifecycle: string[];
-  let counts: (number | null)[];
 
   async function render(payload: HealthMetricsNonMembersConversion | Error = conversion()): Promise<void> {
     getNonMembersConversion = vi.fn().mockReturnValue(payload instanceof Error ? throwError(() => payload) : of(payload));
@@ -56,7 +55,6 @@ describe('NonMembersConversionComponent', () => {
     fixture = TestBed.createComponent(NonMembersConversionComponent);
     fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
     fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
-    fixture.componentInstance.countChange.subscribe((count) => counts.push(count));
     await settle();
   }
 
@@ -78,16 +76,14 @@ describe('NonMembersConversionComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
     lifecycle = [];
-    counts = [];
   });
 
-  it('reads the foundation for the period, settles and reports the high-fit count', async () => {
+  it('reads the foundation for the period and settles', async () => {
     await render();
 
     expect(getNonMembersConversion).toHaveBeenCalledTimes(1);
     expect(getNonMembersConversion).toHaveBeenCalledWith({ foundationSlug: 'acme', range: 'YTD' });
     expect(lifecycle).toEqual(['reading', 'settled']);
-    expect(counts).toEqual([null, 2]);
     expect(query('non-members-conversion-loading')).toBeNull();
   });
 
@@ -99,33 +95,43 @@ describe('NonMembersConversionComponent', () => {
     expect(text('non-members-conversion-side-high-fit-value')).toBe('2');
     expect(text('non-members-conversion-side-new-value')).toBe('37');
     expect(text('non-members-conversion-summary')).toBe('412 organizations tracked');
-    expect(text('non-members-conversion-footnote')).toBe('Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only.');
+    expect(text('non-members-conversion-footnote')).toBe(
+      'Estimated pipeline multiplies high-fit organizations by the Silver fee and is indicative only. The fit score is a model change, sequenced after the matching fix.'
+    );
   });
 
-  it('ranks the warmest organizations, sized by contributions', async () => {
+  it('shows the pipeline as a plain hero: no card, no tint, ink value', async () => {
+    await render();
+
+    const value = query('non-members-conversion-pipeline-value');
+    expect(value?.classList).toContain('text-gray-900');
+    expect(value?.closest('.bg-blue-50\\/40')).toBeNull();
+  });
+
+  it('lists the warmest organizations as name and value, with no bar', async () => {
     await render();
 
     expect(text('non-members-conversion-warm-0')).toContain('Acme Motors · 12 meetings');
     expect(text('non-members-conversion-warm-0-value')).toBe('400 contributions');
     expect(text('non-members-conversion-warm-1')).toContain('Vendor Corp · 1 meeting');
-    const bars = fixture.nativeElement.querySelectorAll('[data-testid^="non-members-conversion-warm-"] .bg-blue-600');
-    expect(bars.length).toBe(2);
-    expect((bars[1] as HTMLElement).style.width).toBe('25%');
+    expect(fixture.nativeElement.querySelector('[data-testid^="non-members-conversion-warm-"] [style*="width"]')).toBeNull();
   });
 
   it('never shows a bare figure when the estimate is missing, and says a NULL count is not available', async () => {
     await render(conversion({ estimatedPipelineUsd: null, newCount: null }));
 
     expect(text('non-members-conversion-pipeline-value')).toBe('—');
+    expect(query('non-members-conversion-pipeline-value')?.classList).toContain('text-gray-400');
+    expect(query('non-members-conversion-pipeline-value')?.classList).not.toContain('text-gray-900');
     expect(text('non-members-conversion-pipeline-label')).toBe('Estimated pipeline · not enough data');
     expect(text('non-members-conversion-side-new-value')).toBe('not available');
+    expect(query('non-members-conversion-warmest')).not.toBeNull();
   });
 
   it('says no organization is high-fit when the warmest list is empty', async () => {
     await render(conversion({ highFitCount: 0, warmest: [] }));
 
     expect(query('non-members-conversion-warmest-empty')).not.toBeNull();
-    expect(counts).toEqual([null, 0]);
   });
 
   it('re-reads a period change', async () => {
@@ -140,11 +146,15 @@ describe('NonMembersConversionComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  it('shows the not-measured state, with no badge, when the foundation has no conversion row', async () => {
+  it('keeps the hero with a muted dash, and no warmest list, when the foundation has no conversion row', async () => {
     await render(HEALTH_METRICS_NON_MEMBERS_CONVERSION_UNMEASURED);
 
-    expect(query('non-members-conversion-unmeasured')).not.toBeNull();
-    expect(counts).toEqual([null, null]);
+    expect(text('non-members-conversion-pipeline-value')).toBe('—');
+    expect(query('non-members-conversion-pipeline-value')?.classList).toContain('text-gray-400');
+    expect(text('non-members-conversion-pipeline-label')).toBe('Estimated pipeline · not enough data');
+    expect(query('non-members-conversion-warmest')).toBeNull();
+    expect(query('non-members-conversion-warmest-empty')).toBeNull();
+    expect(query('non-members-conversion-footnote')).not.toBeNull();
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
@@ -152,7 +162,6 @@ describe('NonMembersConversionComponent', () => {
     await render(new Error('boom'));
 
     expect(query('non-members-conversion-error')).not.toBeNull();
-    expect(counts).toEqual([null, null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 

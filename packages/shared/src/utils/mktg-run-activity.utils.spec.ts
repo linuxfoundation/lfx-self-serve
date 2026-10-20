@@ -19,7 +19,7 @@ const payloads = (upTo = events.length): string[] => events.slice(0, upTo).map((
 /** Index of the first event after the questions turn that starts a model call — the answers arrived just before it. */
 const afterAnswers = events.findIndex(
   (event, index) =>
-    event['type'] === 'llm_start' && events.slice(0, index).some((earlier) => JSON.stringify(earlier).includes('messaging-document-questions/v1'))
+    event['type'] === 'llm_start' && events.slice(0, index).some((earlier) => JSON.stringify(earlier).includes('messaging-framework-questions/v1'))
 );
 const labels = (activity: MktgRunActivity[]): string[] => activity.map((step) => step.label);
 
@@ -53,12 +53,12 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
 
   it('adds the writing stretch after the answers, running until the check, then the check itself', () => {
     const writing = buildMktgRunActivity(payloads(afterAnswers + 1));
-    expect(writing.at(-1)).toMatchObject({ id: 'writing', kind: 'writing', label: 'Writing the document', status: 'running' });
+    expect(writing.at(-1)).toMatchObject({ id: 'writing', kind: 'writing', label: 'Writing the framework', status: 'running' });
 
     const whole = buildMktgRunActivity(payloads());
     expect(whole.slice(-2).map((step) => [step.kind, step.label, step.status])).toEqual([
-      ['writing', 'Writing the document', 'done'],
-      ['checking', 'Checking the document against the template', 'done'],
+      ['writing', 'Writing the framework', 'done'],
+      ['checking', 'Checking the framework', 'done'],
     ]);
   });
 
@@ -108,6 +108,85 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
     };
     expect(buildMktgRunActivity(['not json', JSON.stringify(unknown)])).toEqual([]);
   });
+
+  it('names a Brand Kit run by its own sentences, not the framework’s', () => {
+    const toolCall = (createdAt: string, name: string): string =>
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: createdAt,
+        body: `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_x","name":"${name}","input":{}}}`,
+      });
+    const brandKitRun = [
+      toolCall('2026-10-16T08:00:00Z', 'inspect_logo_files'),
+      JSON.stringify({
+        type: 'agent_notification_progress',
+        created_at: '2026-10-16T08:01:00Z',
+        content: { type: 'text', data: 'BRAND KIT — QUESTIONS (brand-kit-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-16T08:02:00Z' }),
+      toolCall('2026-10-16T08:03:00Z', 'finalize_brand_kit'),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-16T08:04:00Z' }),
+    ];
+    expect(buildMktgRunActivity(brandKitRun).map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['reading', 'Inspecting the logo files', 'done'],
+      ['writing', 'Writing the document', 'done'],
+      ['checking', 'Checking the document against the template', 'done'],
+    ]);
+  });
+
+  it('names a Boilerplates run by its own sentences, and a second finalize as the fix', () => {
+    const toolCall = (createdAt: string, name: string): string =>
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: createdAt,
+        body: `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_x","name":"${name}","input":{}}}`,
+      });
+    const boilerplatesRun = [
+      toolCall('2026-10-19T08:00:00Z', 'ask_requester'),
+      JSON.stringify({
+        type: 'agent_notification_message',
+        created_at: '2026-10-19T08:01:00Z',
+        content: { type: 'text', data: 'BOILERPLATES — QUESTIONS (boilerplates-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:02:00Z' }),
+      toolCall('2026-10-19T08:03:00Z', 'finalize_boilerplates'),
+      toolCall('2026-10-19T08:04:00Z', 'finalize_boilerplates'),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:05:00Z' }),
+    ];
+    expect(buildMktgRunActivity(boilerplatesRun).map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['questions', 'Preparing a few questions for you', 'done'],
+      ['writing', 'Writing the boilerplates', 'done'],
+      ['checking', 'Checking the boilerplates against their word limits', 'done'],
+      ['checking', 'Fixing what the check found', 'done'],
+    ]);
+  });
+
+  it('names an FAQ run by its own sentences: its questions turn and its finalize tool', () => {
+    const toolCall = (createdAt: string, name: string): string =>
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: createdAt,
+        body: `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_x","name":"${name}","input":{}}}`,
+      });
+    const faqRun = [
+      toolCall('2026-10-19T08:00:00Z', 'ask_requester'),
+      JSON.stringify({
+        type: 'agent_notification_message',
+        created_at: '2026-10-19T08:01:00Z',
+        content: { type: 'text', data: 'FAQ — QUESTIONS (faq-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:02:00Z' }),
+      toolCall('2026-10-19T08:03:00Z', 'finalize_faq'),
+      toolCall('2026-10-19T08:04:00Z', 'finalize_faq'),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T08:05:00Z' }),
+    ];
+    expect(buildMktgRunActivity(faqRun).map((step) => [step.kind, step.label, step.status])).toEqual([
+      ['questions', 'Preparing a few questions for you', 'done'],
+      ['writing', 'Writing the FAQ', 'done'],
+      ['checking', 'Checking the FAQ', 'done'],
+      ['checking', 'Fixing what the check found', 'done'],
+    ]);
+  });
 });
 
 describe('mktgRunActivityReadingLabel', () => {
@@ -139,9 +218,12 @@ describe('mktgRunActivityPhases', () => {
 });
 
 describe('mktgRunQuestionShortLabel', () => {
-  it('gives each of the ten questions a short chip label, and any other its first two words', () => {
-    expect(mktgRunQuestionShortLabel('tagline_ctas_constraints', 'Tagline, CTAs and constraints')).toBe('Tagline');
-    expect(mktgRunQuestionShortLabel('proof_points', 'Proof points to confirm')).toBe('Proof points');
-    expect(mktgRunQuestionShortLabel('something_new', 'Something entirely new')).toBe('Something entirely');
+  it('shows a short label whole and cuts a long one without ending on a connector (hand test, 18 Oct: "Words to")', () => {
+    expect(mktgRunQuestionShortLabel('Tagline')).toBe('Tagline');
+    expect(mktgRunQuestionShortLabel('Words to avoid')).toBe('Words to avoid');
+    expect(mktgRunQuestionShortLabel('Ranked goals')).toBe('Ranked goals');
+    expect(mktgRunQuestionShortLabel('Proof points to confirm')).toBe('Proof points');
+    expect(mktgRunQuestionShortLabel('Tagline, CTAs and constraints')).toBe('Tagline, CTAs');
+    expect(mktgRunQuestionShortLabel('Something entirely new and long')).toBe('Something entirely new');
   });
 });

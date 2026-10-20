@@ -81,8 +81,8 @@ describe('CampaignNegativeKeywordsService', () => {
     expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
   });
 
-  // Reddit requires the keyword-targeting read's revision; Microsoft Advertising and X answer a
-  // PRESENT one (even empty) with 400, so it must reach Reddit and only Reddit.
+  // Reddit requires the keyword-targeting read's revision; Google Ads, Microsoft Advertising and X
+  // answer a PRESENT one (even empty) with 400, so it must reach Reddit and only Reddit.
   it('sends the revision for a Reddit campaign', () => {
     service.submit(submission({ platform: 'reddit-ads', matchType: 'Broad', revision: 'sha256:r1' }));
 

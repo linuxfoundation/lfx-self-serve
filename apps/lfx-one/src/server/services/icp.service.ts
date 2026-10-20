@@ -1,9 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ICP_CONTRACT_ID, ICP_MAX_DOCUMENT_BYTES, ICP_PROJECT_UID_REGEX } from '@lfx-one/shared/constants';
+import { ICP_CONTRACT_ID, ICP_FINALIZE_TOOL, ICP_MAX_DOCUMENT_BYTES, ICP_PROJECT_UID_REGEX } from '@lfx-one/shared/constants';
 import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgRunPersistReceipt } from '@lfx-one/shared/interfaces';
-import { buildIcpFormPayload, buildIcpObjectKey, extractIcpEnvelopeCandidates, renderIcpFormText, validateIcpEnvelope } from '@lfx-one/shared/utils';
+import {
+  buildIcpFormPayload,
+  buildIcpObjectKey,
+  extractIcpEnvelopeCandidates,
+  extractMktgToolResults,
+  renderIcpFormText,
+  validateIcpEnvelope,
+} from '@lfx-one/shared/utils';
 import { createHash } from 'node:crypto';
 import { Request } from 'express';
 
@@ -210,7 +217,7 @@ export class IcpService {
         documentBytes,
         'text/markdown; charset=utf-8',
         'private',
-        { version: String(envelope.version) },
+        { version: String(envelope.version), 'revision-managed': 'true' },
         // The bytes are immutable, but their metadata is not content: when a
         // later draft reproduces this document verbatim, the stored labels
         // still describe the draft that wrote it first. Strictly newer, never
@@ -307,12 +314,15 @@ export class IcpService {
   }
 
   /**
-   * Scan raw event payloads (chronologically ordered by the Guild service) for
-   * envelope candidates and return the authoritative one: the highest
-   * `version` among valid candidates, with the latest occurrence winning ties.
-   * The sha256 integrity gate runs PER CANDIDATE, before version selection — a
-   * newer candidate that fails the recompute must not shadow an older
-   * hash-valid envelope.
+   * The authoritative envelope of the session, read only from the results of
+   * the agent's finalize tool (`finalize_icp_document`), paired by id with a
+   * call of that tool — never from the model's own text, a tool call's input,
+   * the run's final output or another tool's result, where a model-written
+   * or fetched envelope could sit whole. Among the valid finalize results
+   * (raw payloads are chronological) the highest `version` wins, with the
+   * latest occurrence winning ties. The sha256 integrity gate runs PER
+   * CANDIDATE, before version selection — a newer candidate that fails the
+   * recompute must not shadow an older hash-valid envelope.
    */
   private findAuthoritativeEnvelope(req: Request, payloads: string[]): IcpEnvelope | null {
     let best: IcpEnvelope | null = null;
@@ -320,10 +330,15 @@ export class IcpService {
     let invalidCount = 0;
 
     for (const payload of payloads) {
-      for (const candidate of extractIcpEnvelopeCandidates(payload)) {
-        candidateCount++;
-        const result = validateIcpEnvelope(candidate);
-        if (result.valid) {
+      for (const resultText of extractMktgToolResults(payload, ICP_FINALIZE_TOOL)) {
+        for (const candidate of extractIcpEnvelopeCandidates(resultText)) {
+          candidateCount++;
+          const result = validateIcpEnvelope(candidate);
+          if (!result.valid) {
+            invalidCount++;
+            logger.debug(req, 'icp_result', 'Rejected envelope candidate', { errors: result.errors });
+            continue;
+          }
           // Safe: validateIcpEnvelope passed every schema and structure gate.
           const envelope = candidate as IcpEnvelope;
 
@@ -343,9 +358,6 @@ export class IcpService {
           if (!best || envelope.version >= best.version) {
             best = envelope;
           }
-        } else {
-          invalidCount++;
-          logger.debug(req, 'icp_result', 'Rejected envelope candidate', { errors: result.errors });
         }
       }
     }

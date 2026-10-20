@@ -47,10 +47,12 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(paragraph.querySelector('.font-bold')).toBeNull();
   });
 
-  it('shows the keyLabel only when the finding has no visual', async () => {
+  it('shows the keyLabel only when the finding has no visual, capitalizing just its first letter', async () => {
     await render();
 
-    expect(fixture.nativeElement.textContent).toContain('below 50%');
+    const keyLabel: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-key-label"]');
+    expect(keyLabel.textContent?.trim()).toBe('below 50%');
+    expect(keyLabel.classList).toContain('first-letter:uppercase');
   });
 
   it('renders the secondary key line under the keyLabel only when the finding carries one', async () => {
@@ -196,6 +198,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
 
     const chips = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-finding-tags"] span'));
     expect(chips.map((chip) => chip.textContent?.trim())).toEqual(['Cloud', 'Fintech']);
+    expect(chips.every((chip) => chip.classList.contains('rounded-full'))).toBe(true);
   });
 
   it('renders a link testid unique to the finding by sortRank', async () => {
@@ -204,7 +207,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-42"]')).not.toBeNull();
   });
 
-  it('renders an in-app link, not an external href, when the finding carries a route', async () => {
+  it('makes the whole row an in-app link, labelled by the title and with no "View details" text', async () => {
     await render({
       sortRank: 5,
       linkRoute: { commands: ['/foundation/health-metrics', 'engagement'], fragment: 'orgs', queryParams: { orgFilter: null } },
@@ -212,7 +215,43 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
 
     const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-5"]');
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement#orgs');
-    expect(link.textContent?.trim()).toBe('View details');
+    expect(link.getAttribute('aria-label')).toBe('Some finding');
+    expect(link.classList).toContain('inset-0');
+    expect(fixture.nativeElement.textContent).not.toContain('View details');
+  });
+
+  it('stacks the row link above a positioned band visual, so the band still opens the finding', async () => {
+    await render({
+      sortRank: 9,
+      linkRoute: { commands: ['/foundation/health-metrics', 'events'], fragment: 'forecast', queryParams: { event: null } },
+      visual: { kind: 'band', low: 55, high: 70, goal: 100, pred: 62 },
+    });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-9"]').classList).toContain('z-[1]');
+  });
+
+  it('opens an LFX Insights finding in a new tab and says so in its label', async () => {
+    await render({ sortRank: 6, linkHref: 'https://insights.lfx.dev/foundation-slug', linkIsExternal: true });
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-6"]');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('aria-label')).toBe('Some finding (opens LFX Insights in a new tab)');
+    expect(fixture.nativeElement.textContent).not.toContain('View in LFX Insights');
+  });
+
+  it('links the area eyebrow to the top of its tab', async () => {
+    await render({ sortRank: 7, areaTabRoute: ['/foundation/health-metrics', 'engagement'] });
+
+    const eyebrow: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-area-link-7"]');
+    expect(eyebrow.getAttribute('href')).toBe('/foundation/health-metrics/engagement');
+    expect(eyebrow.textContent?.trim()).toBe('Engagement');
+  });
+
+  it('renders the area eyebrow as plain text when the area has no tab', async () => {
+    await render({ sortRank: 8, area: 'code', areaLabel: 'Code' });
+
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-area-link-8"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Code');
   });
 
   it('points the dots visual at its visible caption via aria-labelledby instead of duplicating the text', async () => {

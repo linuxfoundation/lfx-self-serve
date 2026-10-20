@@ -60,7 +60,12 @@ export class MktgDocumentsController {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
       const detail = await this.documentStore.getDocument(req, project, params.type, params.documentId);
       if (!detail) {
-        throw new ResourceNotFoundError('Marketing OS document', params.documentId, { operation, service: 'mktg_documents_controller', path: req.path });
+        throw new ResourceNotFoundError('Marketing OS document', params.documentId, {
+          operation,
+          service: 'mktg_documents_controller',
+          path: req.path,
+          code: 'MKTG_DOCUMENT_NOT_FOUND',
+        });
       }
       logger.success(req, operation, startTime, { project, revisions: detail.revisions.length });
       res.json(detail);
@@ -88,6 +93,34 @@ export class MktgDocumentsController {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
       const revision = await this.documentStore.getRevision(req, project, params.type, params.documentId, revisionId);
       if (!revision) {
+        await this.requireDocument(req, project, params.type, params.documentId, operation);
+        throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
+      }
+      logger.success(req, operation, startTime, { project, revision: revision.revision.number });
+      res.json(revision);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** POST …/revisions/:revisionId/approve?project=<uid> — approve the selected revision. */
+  public async approveRevision(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'mktg_revision_approve';
+    const params = this.readDocumentParams(req, req.query['project'], operation);
+    if (params instanceof Error) {
+      next(params);
+      return;
+    }
+    const revisionId = this.readRevisionId(req.params['revisionId']);
+    if (!revisionId) {
+      next(this.invalidField(req, operation, 'revisionId', 'revisionId is required and must be a revision id'));
+      return;
+    }
+    const startTime = logger.startOperation(req, operation, { agent: params.type.agentKey, document: params.documentId });
+    try {
+      const project = await this.resolveWritableProject(req, params.projectUid, operation);
+      const revision = await this.documentStore.approveRevision(req, project, params.type, params.documentId, revisionId);
+      if (!revision) {
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
       logger.success(req, operation, startTime, { project, revision: revision.revision.number });
@@ -99,7 +132,7 @@ export class MktgDocumentsController {
 
   /**
    * POST /api/mktg-agents/documents/:agentKey/:documentId/restore — make an
-   * older revision the latest, as a new revision. Body: `{ project, revisionId }`.
+   * revision current by moving its pointer. Body: `{ project, revisionId }`.
    */
   public async restoreRevision(req: Request, res: Response, next: NextFunction): Promise<void> {
     const operation = 'mktg_revision_restore';
@@ -120,6 +153,7 @@ export class MktgDocumentsController {
       const project = await this.resolveWritableProject(req, params.projectUid, operation);
       const restored = await this.documentStore.restoreRevision(req, project, params.type, params.documentId, revisionId);
       if (!restored) {
+        await this.requireDocument(req, project, params.type, params.documentId, operation);
         throw new ResourceNotFoundError('Marketing OS document revision', revisionId, { operation, service: 'mktg_documents_controller', path: req.path });
       }
       const response: MktgRestoreRevisionResponse = { ...restored.detail, revision: restored.revision };
@@ -127,6 +161,17 @@ export class MktgDocumentsController {
       res.json(response);
     } catch (error) {
       next(error);
+    }
+  }
+
+  private async requireDocument(req: Request, project: string, type: MktgDocumentType, documentId: string, operation: string): Promise<void> {
+    if (!(await this.documentStore.getDocument(req, project, type, documentId))) {
+      throw new ResourceNotFoundError('Marketing OS document', documentId, {
+        operation,
+        service: 'mktg_documents_controller',
+        path: req.path,
+        code: 'MKTG_DOCUMENT_NOT_FOUND',
+      });
     }
   }
 

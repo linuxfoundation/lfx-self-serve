@@ -137,11 +137,11 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
   });
 
   /**
-   * No live agent depends on another today: the Messaging Document runs first
+   * No live agent depends on another today: the Messaging Framework runs first
    * and needs nothing, and Brand Guidelines — the next agent to gate, on the
-   * stored Messaging Document — is not in the catalog yet. The gate is
+   * stored Messaging Framework — is not in the catalog yet. The gate is
    * exercised on a TEST-ONLY dependency in that same direction: the Brand Kit
-   * card requiring the project's Messaging Document.
+   * card requiring the project's Messaging Framework.
    */
   describe('dependency gating (dec-agent-dependency-gating) — a gated card follows the stored document it requires', () => {
     const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
@@ -152,7 +152,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       agentId: 'foundation-setup',
       source,
       version: 2,
-      document: '# Messaging Document',
+      document: '{"mf":{},"icp":[],"mh":{},"nums":[]}',
     });
 
     beforeEach(async () => {
@@ -169,15 +169,26 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       delete gatedAgent.dependsOn;
     });
 
-    it('disables the card with a "Requires Messaging Document" tag while the active project has none stored', async () => {
+    it('disables the card with a "Requires Messaging framework" tag while the active project has none stored', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
       expect(mfTile()?.disabled).toBe(true);
-      expect(requiresTag()?.textContent).toContain('Requires Messaging Document');
-      expect(mfTile()?.getAttribute('aria-label')).toContain('requires Messaging Document');
-      // The Messaging Document Agent card itself runs first and stays clickable.
+      expect(requiresTag()?.textContent).toContain('Requires Messaging framework');
+      expect(mfTile()?.getAttribute('aria-label')).toContain('requires Messaging framework');
+      // The Messaging Framework Agent card itself runs first and stays clickable.
       expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.disabled).toBe(false);
+    });
+
+    it('keeps an unresolved dependency gated and retries on the next refresh', async () => {
+      resolveDependencies.mockReturnValueOnce(of({ 'foundation-setup': null }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(mfTile()?.disabled).toBe(true);
+      dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
+      documentsChanged.next(PROJECT_1.uid);
+      await fixture.whenStable();
+      expect(mfTile()?.disabled).toBe(false);
     });
 
     it('enables the card once the dependency resolves for the active project (server-persisted kit)', async () => {
@@ -185,7 +196,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup']);
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], [], true);
       expect(mfTile()?.disabled).toBe(false);
       expect(requiresTag()).toBeNull();
     });
@@ -203,19 +214,19 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       await fixture.whenStable();
 
       // Disabled by a missing dependency: the accessible name carries the same
-      // reason as the visible "Requires Messaging Document" tag.
-      expect(mfTile()?.getAttribute('aria-label')).toBe('Brand Kit Agent (requires Messaging Document)');
+      // reason as the visible "Requires Messaging framework" tag.
+      expect(mfTile()?.getAttribute('aria-label')).toBe('Brand Kit Agent (requires Messaging framework)');
       // Disabled for having no live agent yet — never described as dependency-blocked.
       expect(host().querySelector('[data-testid="mktg-os-agents-tile-pitch-deck"]')?.getAttribute('aria-label')).toBe('Pitch Deck Agent (coming soon)');
       // Enabled cards announce the action instead.
-      expect(host().querySelector('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.getAttribute('aria-label')).toBe('Open Messaging Document Agent');
+      expect(host().querySelector('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.getAttribute('aria-label')).toBe('Open Messaging Framework Agent');
     });
 
     it('leaves the ICP card open with nothing stored — its sibling documents are optional, not gates', async () => {
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      // The ICP agent CONSUMES the Brand Kit and the Messaging Document but
+      // The ICP agent CONSUMES the Brand Kit and the Messaging Framework but
       // does not require either, so it carries no `dependsOn`: gating it on
       // documents the agent runs without would lock out projects it can serve.
       const icpTile = host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-icp"]');
@@ -310,7 +321,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       activeContext.set(PROJECT_2);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-2', ['foundation-setup']);
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-2', ['foundation-setup'], [], true);
       expect(mfTile()?.disabled).toBe(true);
       expect(requiresTag()).not.toBeNull();
     });

@@ -7,7 +7,16 @@ import { ApplicationRef, Component, input, output, signal } from '@angular/core'
 import { ComponentFixture, DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
-import { Meeting, MeetingOccurrence, MeetingRegistrant, MeetingRegistrationRemovalResult, MeetingRsvp, User } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  MeetingRegistrationRemovalResult,
+  MeetingRsvp,
+  PastMeeting,
+  PastMeetingSummary,
+  User,
+} from '@lfx-one/shared/interfaces';
 import { MeetingInviteeAttendeesComponent } from '@app/modules/meetings/components/meeting-invitee-attendees/meeting-invitee-attendees.component';
 import { MeetingRsvpDetailsComponent } from '@app/modules/meetings/components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
@@ -655,6 +664,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount(meeting, options);
 
     expect(component.canLeaveMeeting()).toBe(false);
+    expect(component.isRegisteredAttendee()).toBe(false);
   });
 
   it.each([
@@ -664,6 +674,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const component = await mount({ ...INVITEE, organizer: true, ...extra } as Meeting);
 
     expect(component.canLeaveMeeting()).toBe(true);
+    expect(component.isRegisteredAttendee()).toBe(true);
 
     component.confirmLeaveMeeting();
 
@@ -738,7 +749,7 @@ describe('MeetingCardComponent — remove myself', () => {
 
     expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
     confirm.mock.calls[0][0].accept();
-    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1');
+    expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'meeting-card');
   });
 
   it('stops offering the action and tells the list to refresh once removed', async () => {
@@ -1135,5 +1146,104 @@ describe('MeetingCardComponent — RSVP cache freshness', () => {
     }
     http.verify();
     subscription.unsubscribe();
+  });
+});
+
+/**
+ * Covers the `readOnly` flag the card hands the summary modal.
+ * @description The "See AI Summary" button is shown to every viewer who may see the summary, but
+ * the modal's Edit and Approve actions only succeed for an organizer (the relation the upstream
+ * write checks) with a summary uid to write back to. The card decides that from the same
+ * `meeting().organizer` snapshot the review banner uses, so a non-organizer opens the modal
+ * view-only instead of seeing actions the write path would refuse.
+ */
+describe('MeetingCardComponent — summary modal read-only', () => {
+  const PAST_MEETING = { id: 'past-1', meeting_and_occurrence_id: 'meeting-1-0', project_uid: 'project-1', title: 'TAC Sync' } as PastMeeting;
+  const SUMMARY = { uid: 'sum-1', approved: true, requires_approval: false, summary_data: { content: 'Notes', edited_content: '' } } as PastMeetingSummary;
+
+  let dialogOpen: ReturnType<typeof vi.fn>;
+
+  /** Mounts a past-meeting card with an empty template and the given summary already fetched. */
+  async function mount(meeting: PastMeeting, summary: PastMeetingSummary): Promise<MeetingCardComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        {
+          provide: UserService,
+          useValue: {
+            user: signal(null),
+            authenticated: signal(true),
+            viewerUsername: signal(null),
+            meetingFeedIdentity: signal(''),
+            refreshUserMeetings: vi.fn(),
+            clearConfirmedMeetingRsvps: vi.fn(),
+            isMeetingRsvpCurrent: vi.fn(() => true),
+          },
+        },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: Router, useValue: { navigate: vi.fn() } },
+        { provide: ConfirmationService, useValue: {} },
+        { provide: DialogService, useValue: { open: dialogOpen } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            markRegistrationRemoved: vi.fn(),
+            clearRemovedRegistration: vi.fn(),
+            getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
+            getPastMeetingSummary: vi.fn().mockReturnValue(of(summary)),
+            getPastMeetingTranscript: vi.fn().mockReturnValue(of(null)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getPublicMeetingJoinUrl: vi.fn().mockReturnValue(of({ link: '' })),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { set: { template: '', imports: [], providers: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', meeting);
+    fixture.componentRef.setInput('pastMeeting', true);
+    fixture.detectChanges();
+
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    dialogOpen = vi.fn();
+  });
+
+  it.each([
+    ['organizer: false', { ...PAST_MEETING, organizer: false }],
+    ['organizer absent', PAST_MEETING],
+  ])('opens read-only for a viewer who is not an organizer (%s)', async (_label, meeting) => {
+    const component = await mount(meeting, SUMMARY);
+
+    component.openSummaryModal();
+
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(dialogOpen.mock.calls[0][1].data).toMatchObject({ summaryUid: 'sum-1', readOnly: true });
+  });
+
+  it('offers the actions to an organizer when the summary has a uid to write back to', async () => {
+    const component = await mount({ ...PAST_MEETING, organizer: true }, SUMMARY);
+
+    component.openSummaryModal();
+
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(dialogOpen.mock.calls[0][1].data).toMatchObject({ summaryUid: 'sum-1', readOnly: false });
+  });
+
+  it('still opens read-only for an organizer when the summary has no uid', async () => {
+    const component = await mount({ ...PAST_MEETING, organizer: true }, { ...SUMMARY, uid: '' });
+
+    component.openSummaryModal();
+
+    expect(dialogOpen).toHaveBeenCalledTimes(1);
+    expect(dialogOpen.mock.calls[0][1].data).toMatchObject({ summaryUid: '', readOnly: true });
   });
 });

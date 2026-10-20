@@ -1,216 +1,352 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeField, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
-import { BRAND_KIT_FORM_PREAMBLE_LINES, BRAND_KIT_INTAKE_QUESTIONS } from './brand-kit.constants';
+import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat, MktgReadmeSkipReason } from '../interfaces';
+import { BOILERPLATES_ANSWERS_ENDPOINT, BOILERPLATES_FIELD_KEYS, BOILERPLATES_FRAMEWORK_ANSWER_KEY } from './boilerplates.constants';
+import {
+  BRAND_KIT_ANSWERS_ENDPOINT,
+  BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
+  BRAND_KIT_FIELD_KEYS,
+  BRAND_KIT_FRAMEWORK_ANSWER_KEY,
+  BRAND_KIT_LOGO_FILE_EXTENSIONS,
+  BRAND_KIT_MAX_LOGO_FILE_CHARS,
+  BRAND_KIT_MAX_LOGO_FILES,
+  BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
+  BRAND_KIT_REQUIRED_HEADINGS,
+} from './brand-kit.constants';
+import {
+  FAQ_ANSWERS_ENDPOINT,
+  FAQ_DEFAULT_DOCUMENT_KIND,
+  FAQ_DESCRIPTION_KEY,
+  FAQ_DOCUMENT_KIND_OPTIONS,
+  FAQ_FRAMEWORK_ANSWER_KEY,
+  FAQ_GITHUB_KEY,
+  FAQ_MAX_DOCUMENTS,
+  FAQ_NOTES_KEY,
+  FAQ_WEBSITE_KEY,
+} from './faq.constants';
 import {
   FOUNDATION_MESSAGE_ANSWER_MAX_CHARS,
   FOUNDATION_MESSAGE_ANSWERS_ENDPOINT,
-  FOUNDATION_MESSAGE_DERIVATIVE_CHIPS,
+  FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+  FOUNDATION_MESSAGE_DECK_KEY,
+  FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND,
+  FOUNDATION_MESSAGE_DESCRIPTION_KEY,
   FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS,
+  FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS,
   FOUNDATION_MESSAGE_FILE_EXTENSIONS,
+  FOUNDATION_MESSAGE_GITHUB_KEY,
   FOUNDATION_MESSAGE_MAX_DOCUMENTS,
   FOUNDATION_MESSAGE_MAX_FILE_BYTES,
-  FOUNDATION_MESSAGE_MAX_OTHER_LINKS,
-  FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
-  FOUNDATION_MESSAGE_REQUIRED_HEADINGS,
-  FOUNDATION_MESSAGE_SOURCE_KINDS,
-  FOUNDATION_MESSAGE_SOURCE_LABELS,
-  FOUNDATION_MESSAGE_SOURCE_URL_KEYS,
+  FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+  FOUNDATION_MESSAGE_PLAN_KEY,
+  FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+  FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+  FOUNDATION_MESSAGE_WEBSITE_KEY,
 } from './foundation-message.constants';
 import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_Q_PROJECT_NAME, ICP_REQUIRED_HEADINGS } from './icp.constants';
-
-/** Paul's label for each source, sentence-cased for the form. */
-const sourceLabel = (kind: (typeof FOUNDATION_MESSAGE_SOURCE_KINDS)[number]): string =>
-  FOUNDATION_MESSAGE_SOURCE_LABELS[kind].charAt(0).toUpperCase() + FOUNDATION_MESSAGE_SOURCE_LABELS[kind].slice(1);
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
 // labels, browser persistence key, and result polling cadence.
 
 /**
- * Presentation layered onto Paul's verbatim brand-kit questions — control
- * kind, sizing, LFX prefill sources, and hints. Keyed by the question keys of
- * `BRAND_KIT_INTAKE_QUESTIONS`; the question wording itself is deliberately
- * NOT restated here (single verbatim copy, dec-paul-prompt-fidelity).
- */
-const BRAND_KIT_FIELD_PRESENTATION: Record<(typeof BRAND_KIT_INTAKE_QUESTIONS)[number]['key'], Omit<MktgIntakeField, 'key' | 'question'>> = {
-  project_name: { kind: 'text', prefill: 'project-name' },
-  // Q2 asks for the repo or README URL. The Brand Kit BFF passes the answer
-  // to the agent as text and fetches no README from it, so a GitHub
-  // organization URL (e.g. https://github.com/opensearch-project) is a usable
-  // answer too — accepted here (hand test, 2026-10-12); only a value that is
-  // not a GitHub URL at all is refused.
-  github_url: { kind: 'text', prefill: 'repository-url', format: 'github-url' },
-  one_line_description: {
-    kind: 'text',
-    prefill: 'project-description',
-    missingPrefillHint: 'Not set on your LFX project — describe it in your own words.',
-  },
-  primary_audience: { kind: 'textarea', rows: 2 },
-  voice_adjectives: { kind: 'text', placeholder: 'In your own words — statements are fine too' },
-  constraints: { kind: 'textarea', rows: 2 },
-  reference_brands: { kind: 'textarea', rows: 2 },
-};
-
-/**
- * Brand Kit Agent batch intake. The seven questions are DERIVED from
- * `BRAND_KIT_INTAKE_QUESTIONS` — Paul's intake wording quoted verbatim from
- * the brand-kit agent's own `src/questions.ts` (marketing-os-agents
- * `agents/brand-kit-ts`), never paraphrased and never duplicated — with the
- * form presentation layered on top. The batch preamble is the same
- * `BRAND_KIT_FORM_PREAMBLE_LINES` the BFF's `renderBrandKitFormMessage` sends,
- * so the agent's MODE RULES trigger identically for regeneration follow-ups.
+ * Brand Kit intake (marketing-os-agents agents/brand-kit 2.1.0,
+ * wi-brand-kit-page). The form asks for what a kit cannot be sourced
+ * without: the project (from LFX), the website the agent reads for its CSS
+ * and typeface, the logo files (SVG, PNG or ZIP, read in the browser and
+ * sent with the form; or a link the agent fetches), an existing brand page
+ * and notes. There are no questions on this form: after inspecting the
+ * artwork and reading the site, the agent asks only the gaps it could not
+ * settle — the logo files when none were uploaded, the colours, the
+ * typeface — each with a suggested answer, on the same run
+ * (`endpoints.answers`).
+ *
+ * The kit runs AFTER the messaging framework is approved: the project's
+ * approved current is attached automatically, with its version/date and a
+ * link to the Messaging Framework page. With none approved (including a
+ * stored but unapproved draft), Run is blocked with
+ * BRAND_KIT_APPROVAL_REQUIRED_MESSAGE and the link. An approved revision
+ * whose sidecar has no usable voice instead shows `incompleteNote`.
+ * The attachment comes from the server sidecar read, never a browser-stored
+ * run; its JSON supplies the Voice chapter. The generation endpoint still
+ * validates the JSON the browser sends, without re-checking approval.
+ * The agent itself refuses a run without a framework up front; that reply,
+ * should it ever come, is shown as the run's outcome.
+ *
+ * The result is a JSON kit, not a Markdown document: the run page renders it
+ * with the kit's web view (an app page, one tab per chapter), which prints
+ * the reference kit's 16-page book with Download PDF. Every submission is a fresh generate
+ * (`freshRunPerSubmission`); each result is stored as a new revision of the
+ * project's Brand Kit document, whose Markdown rendering is what sibling
+ * agents attach.
  */
 export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   agentId: 'brand-kit',
-  formTitleAction: 'Develop',
+  formTitleAction: 'Build',
   documentName: 'Brand Kit',
   intro:
-    'Seven questions, answered in your own words. Fields marked “From LFX” are pre-filled from your project — edit anything. Logos, colors, and fonts are generated for you; they are not inputs.',
-  batchPreamble: [...BRAND_KIT_FORM_PREAMBLE_LINES],
-  fields: BRAND_KIT_INTAKE_QUESTIONS.map((question) => ({
-    key: question.key,
-    question: question.question,
-    ...BRAND_KIT_FIELD_PRESENTATION[question.key],
-  })),
-  sections: [
-    'Review Sheet',
-    'How to Use This Document',
-    '1. Project Definition',
-    '2. Positioning',
-    '3. Voice & Language',
-    '4. Primary Audiences',
-    '5. Key Brand Strengths',
-    '6. Competitive Differentiation & Guardrails',
-    '7. Visual Identity — Five Components',
-    '8. Tagline Options (Starter Set)',
-    'Appendix A: Document Architecture',
-    'Appendix B: Source Intake',
-    'Appendix C: LFX Project Record & Research Sweep',
-  ],
-  endpoints: {
-    generate: '/api/mktg-agents/brand-kit/generate',
-    result: '/api/mktg-agents/brand-kit/result',
-    stored: '/api/mktg-agents/brand-kit/stored',
-  },
-  // The result endpoint writes every validated document to the project's
-  // storage partition and reports the receipt (dec-brand-kit-storage-v2), so a
-  // receipt-less ready result is a failed write the run shell must retry —
-  // without the server copy, this agent's own dependents stay locked for every
-  // browser but the one that generated the kit.
-  persistsDocument: true,
-};
-
-/**
- * Messaging Document intake (marketing-os-agents agents/foundation-message,
- * Paul's messaging-document 1.0.0; wi-message-foundation-existing-documents-form).
- * The form from the design canvas, in two parts:
- *
- * - Sources: the project name, Paul's four Step 0b sources and any other
- *   links, as URLs only. The agent fetches every link itself and researches
- *   the rest (web fetch, Exa search); "none" is a valid answer. The project
- *   name and the GitHub page come from LFX; the GitHub field takes a
- *   repository or an organization page.
- * - Existing documents, optional and last: PDF, Word, Markdown or text files,
- *   turned into text by the BFF, and links the agent reads itself. The agent
- *   maps them first.
- *
- * There are no questions on this form. After reading and researching, the
- * agent asks only the gaps it could not settle, each with a suggested answer
- * (`endpoints.answers`): the run page shows them as a second step on the
- * same run, every answer required, and the answers go back to the same
- * session. The questions and answers are stored with the version.
- *
- * It runs first and needs no other document, so nothing is attached. Every
- * submission is a fresh generate (`freshRunPerSubmission`): the generate form
- * carries no prior version or feedback, and each result is stored as a new
- * revision of the project's foundation-message document.
- */
-export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
-  agentId: 'foundation-setup',
-  formTitleAction: 'Build',
-  documentName: 'Messaging Document',
-  intro:
-    'Runs first; it needs no other document. Give the agent your sources as links: it reads every one, researches the rest on its own, and comes back with questions only for what the sources leave open — each with a suggested answer for you to accept or edit. Existing messaging or positioning documents can be attached at the end; the agent reads them first. Every result is stored as a new revision of the document in Documents.',
+    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s approved Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter, and downloads as a 16-page PDF. Every result is stored as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
   fields: [
-    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name' },
+    { key: BRAND_KIT_FIELD_KEYS.projectName, question: 'Project name', kind: 'text', prefill: 'project-name' },
     {
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.website,
-      question: sourceLabel('website'),
+      key: BRAND_KIT_FIELD_KEYS.websiteUrl,
+      question: 'Website',
+      kind: 'text',
+      prefill: 'website-url',
+      placeholder: 'https://…',
+      hint: 'The agent reads the home page, its CSS and the font links for the typeface and the colours.',
+      format: 'https-url',
+    },
+    {
+      key: BRAND_KIT_FIELD_KEYS.brandPageUrl,
+      question: 'Brand page or guidelines',
       kind: 'text',
       optional: true,
       placeholder: 'https://… or none',
+      hint: 'Published palette values and the named typeface win over what the agent infers.',
       format: 'source-url',
     },
     {
-      // A repository or an organization page: the agent reads either (hand
-      // test, 2026-10-15 — https://github.com/aaif is an organization page).
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.readme,
-      question: sourceLabel('readme'),
-      kind: 'text',
-      optional: true,
-      prefill: 'repository-url',
-      placeholder: 'https://github.com/org or https://github.com/org/repo',
-      format: 'github-url',
-    },
-    {
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.press_release,
-      question: sourceLabel('press_release'),
-      kind: 'text',
-      optional: true,
-      placeholder: 'https://… or none',
-      format: 'source-url',
-    },
-    {
-      key: FOUNDATION_MESSAGE_SOURCE_URL_KEYS.brand_page,
-      question: sourceLabel('brand_page'),
-      kind: 'text',
-      optional: true,
-      placeholder: 'https://… or none',
-      format: 'source-url',
-    },
-    {
-      key: FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
-      question: 'Other links',
+      key: BRAND_KIT_FIELD_KEYS.notes,
+      question: 'Notes',
       kind: 'textarea',
       rows: 3,
       optional: true,
-      placeholder: 'One link per line — docs, blog posts, talks, anything the agent should read',
-      hint: `Up to ${FOUNDATION_MESSAGE_MAX_OTHER_LINKS} links.`,
-      format: 'source-url-list',
+      placeholder: 'Audience, words to avoid, anything the agent should know',
     },
   ],
   fieldGroups: [
     {
       id: 'sources',
+      title: 'The project and its site',
+      hint: 'links only — the agent reads them itself',
+      fieldKeys: [BRAND_KIT_FIELD_KEYS.projectName, BRAND_KIT_FIELD_KEYS.websiteUrl, BRAND_KIT_FIELD_KEYS.brandPageUrl, BRAND_KIT_FIELD_KEYS.notes],
+    },
+  ],
+  logoFiles: {
+    title: 'Logo files',
+    hint: 'the horizontal lockup, the stacked lockup and the symbol',
+    footnote: `SVG, PNG or ZIP, up to ${BRAND_KIT_MAX_LOGO_FILES} files — read here and sent with the form. A file too big to send, or one on the site, goes as a link (SVG only); the agent fetches it. With no file, the agent asks for them. The kit never draws or reconstructs a mark.`,
+    maxFiles: BRAND_KIT_MAX_LOGO_FILES,
+    maxFileChars: BRAND_KIT_MAX_LOGO_FILE_CHARS,
+    maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
+    fileExtensions: [...BRAND_KIT_LOGO_FILE_EXTENSIONS],
+  },
+  // The messaging framework, required: the project's approved current,
+  // submitted as its JSON under the agent's own form key. Not
+  // in the catalog's `dependsOn` on purpose — the marketplace card stays
+  // open and the intake page itself says what is needed, with the link to
+  // the Messaging Framework page.
+  attachments: [
+    {
+      sourceAgentId: 'foundation-setup',
+      answerKey: BRAND_KIT_FRAMEWORK_ANSWER_KEY,
+      documentName: 'Messaging Framework',
+      format: 'json',
+      missingNote: BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
+      incompleteNote: 'The messaging framework has no positioning or tagline yet — finish it first.',
+    },
+  ],
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  submitsProject: true,
+  fullWidth: true,
+  sections: BRAND_KIT_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
+  endpoints: {
+    generate: '/api/mktg-agents/brand-kit/generate',
+    result: '/api/mktg-agents/brand-kit/result',
+    answers: BRAND_KIT_ANSWERS_ENDPOINT,
+    stored: '/api/mktg-agents/brand-kit/stored',
+  },
+  // The result endpoint stores every validated kit as a revision of the
+  // project's Brand Kit document and reports the receipt, so a receipt-less
+  // ready result is a failed write the run shell must retry — without the
+  // server copy, this agent's dependents stay locked for every browser but
+  // the one that generated the kit.
+  persistsDocument: true,
+};
+
+/**
+ * Messaging Framework intake (marketing-os-agents agents/foundation-message
+ * 4.0.0, messaging-framework-output/v1; wi-messaging-framework-intake-and-run).
+ * A GUIDED form (hand test, 17 Oct: the first cut was "too unguided — I did
+ * not even know myself what to put there"), in two parts:
+ *
+ * - Project: the name and the one-line description, both from LFX.
+ * - Sources: one labelled field per source the agent reads, each with a
+ *   one-line explanation and an example, in this order — the website (the
+ *   one required field), the GitHub repository or README (hand test, 18 Oct:
+ *   "add the GitHub"), the launch press release, the members page, the
+ *   projects page, the deck (upload or link), the plan (upload or link),
+ *   and the brand page. Every link field
+ *   maps to the agent's contract by key (`FOUNDATION_MESSAGE_URL_DOCUMENT_FIELDS`
+ *   → `documents[]` with the matching kind; the repository and the pages →
+ *   `links`); the agent fetches every one itself and researches the rest
+ *   (web fetch, Exa search, the LF press archive when no press release is
+ *   given).
+ *
+ * Other links and documents come last: files uploaded here (PDF, Word, PowerPoint,
+ * Markdown or text, read to text by the BFF) and document links, each tagged
+ * with what it is. A file picked on the deck or plan field lands here already
+ * tagged (`uploadTag`).
+ *
+ * There are no notes and no questions on this form (hand test, 18 Oct:
+ * "remove notes"). After reading and researching, the agent asks only the
+ * gaps it could not settle — audiences, the goals for the year, words to
+ * avoid — each with a suggested answer (`endpoints.answers`): the run shows
+ * them one at a time on the same run, every answer required, and the
+ * answers go back to the same session. The questions and answers are stored
+ * with the version.
+ *
+ * The output is not a document but the framework's JSON bundle, so the run
+ * lands on the framework's own view (`assetView`): the feed and the questions
+ * while the run is live, then the rendered framework. Every submission is a
+ * fresh draft (`freshRunPerSubmission`): the form carries no prior version or
+ * feedback (a redraft from comments and a check of a hand-edited version are
+ * later work), and each result is stored as a new revision of the project's
+ * foundation-message document, as the JSON content. A dependent agent that
+ * takes it as a document (the ICP's `message_foundation_markdown`) gets it
+ * rendered to Markdown (`renderFoundationMessageMarkdown`), never the JSON.
+ */
+export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
+  agentId: 'foundation-setup',
+  formTitleAction: 'Build',
+  documentName: 'Messaging framework',
+  intro:
+    'Give the agent its sources. It reads them, searches the web and LFX for the rest, and asks you only for what is still missing, with a suggested answer each time. Only the website is required. You get a messaging framework: vision, mission, positioning, tagline, goals, ICPs, message house and key numbers, saved as a new revision in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
+  fields: [
+    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name', oneLine: true },
+    {
+      key: FOUNDATION_MESSAGE_DESCRIPTION_KEY,
+      question: 'One-line description',
+      kind: 'text',
+      optional: true,
+      oneLine: true,
+      prefill: 'project-description',
+      placeholder: 'What the project does, in one line',
+      missingPrefillHint: 'Not set on your LFX project — describe it in one line, or leave it to the sources.',
+    },
+    {
+      key: FOUNDATION_MESSAGE_WEBSITE_KEY,
+      question: 'Website',
+      kind: 'text',
+      prefill: 'website-url',
+      placeholder: 'https://aaif.io',
+      hint: 'The project’s public site. The agent starts here and follows what it finds.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_GITHUB_KEY,
+      question: 'GitHub repository or README',
+      kind: 'text',
+      optional: true,
+      prefill: 'repository-url',
+      placeholder: 'https://github.com/…',
+      hint: 'The project’s repository or its README. Purpose, licence, governance and adopters come from there. Leave it empty and the agent looks for it itself.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+      question: 'Launch press release or announcement',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://www.linuxfoundation.org/press/…',
+      hint: 'The LF or project press release that announced the project. Leave it empty and the agent searches the LF press archive itself.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+      question: 'Members or partners page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/members',
+      hint: 'The page that lists who backs the project — members, partners, sponsors.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+      question: 'Projects or products page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/projects',
+      hint: 'The page that lists what the project ships or hosts — sub-projects, products, specifications.',
+      format: 'source-url',
+    },
+    {
+      key: FOUNDATION_MESSAGE_DECK_KEY,
+      question: 'Existing deck or pitch',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://docs.google.com/presentation/d/…',
+      hint: 'A board deck, a pitch, a keynote. Upload the file (PDF, PowerPoint, Word, Markdown or text) or give its link; an upload appears under Other links and documents below, tagged Deck.',
+      format: 'source-url',
+      uploadTag: 'deck',
+    },
+    {
+      key: FOUNDATION_MESSAGE_PLAN_KEY,
+      question: 'Marketing or strategy plan',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://docs.google.com/document/d/…',
+      hint: 'The marketing plan, the strategy for the year, the goals as written down. Upload the file or give its link; an upload appears under Other links and documents below, tagged Marketing plan.',
+      format: 'source-url',
+      uploadTag: 'plan',
+    },
+    {
+      key: FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
+      question: 'Brand page',
+      kind: 'text',
+      optional: true,
+      placeholder: 'https://aaif.io/brand',
+      hint: 'The brand or style guidelines page, when the project has one — how it already describes itself.',
+      format: 'source-url',
+    },
+  ],
+  fieldGroups: [
+    { id: 'project', title: 'Project', fieldKeys: ['project_name', FOUNDATION_MESSAGE_DESCRIPTION_KEY] },
+    {
+      id: 'sources',
       title: 'Sources',
-      hint: 'links only — “none” is a valid answer',
-      footnote: 'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say.',
+      hint: 'the website is required; the rest is optional',
+      footnote:
+        'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. Leave a field empty when you do not have it.',
       fieldKeys: [
-        'project_name',
-        ...FOUNDATION_MESSAGE_SOURCE_KINDS.map((kind) => FOUNDATION_MESSAGE_SOURCE_URL_KEYS[kind]),
-        FOUNDATION_MESSAGE_OTHER_LINKS_KEY,
+        FOUNDATION_MESSAGE_WEBSITE_KEY,
+        FOUNDATION_MESSAGE_GITHUB_KEY,
+        FOUNDATION_MESSAGE_PRESS_RELEASE_KEY,
+        FOUNDATION_MESSAGE_MEMBERS_PAGE_KEY,
+        FOUNDATION_MESSAGE_PROJECTS_PAGE_KEY,
+        FOUNDATION_MESSAGE_DECK_KEY,
+        FOUNDATION_MESSAGE_PLAN_KEY,
+        FOUNDATION_MESSAGE_BRAND_PAGE_KEY,
       ],
     },
   ],
   documents: {
-    title: 'Existing documents',
-    hint: 'Messaging, positioning, brand, audience or competitive documents. Several allowed.',
-    footnote: `Accepted: PDF, Word (.docx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it.`,
+    title: 'Other links and documents',
+    hint: 'Anything else worth reading — the docs, a blog post, a talk — and the logo package. Add a link or upload a file, then tag it.',
+    footnote: `Accepted: PDF, Word (.docx), PowerPoint (.pptx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link (a Google Doc, a wiki page) is sent as is; the agent reads it. A file uploaded on the deck or plan field above lands here with its tag. A logo package is passed on for later agents and never read as a source.`,
     maxDocuments: FOUNDATION_MESSAGE_MAX_DOCUMENTS,
     maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
     fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
     endpoints: { ...FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS },
+    tags: FOUNDATION_MESSAGE_DOCUMENT_KIND_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+    defaultTag: FOUNDATION_MESSAGE_DEFAULT_DOCUMENT_KIND,
   },
-  derivativeChips: FOUNDATION_MESSAGE_DERIVATIVE_CHIPS.map((chip) => ({ key: chip.key, label: chip.label })),
+  requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
   submitsProject: true,
-  sections: FOUNDATION_MESSAGE_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
+  assetView: 'messaging-framework',
+  // The asset view shows the framework itself; there is no section checklist to tick.
+  sections: [],
   endpoints: {
     generate: '/api/mktg-agents/foundation-message/generate',
     result: '/api/mktg-agents/foundation-message/result',
@@ -220,6 +356,248 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   // The result endpoint stores every validated bundle as a revision of the
   // project's foundation-message document and reports the receipt, so a
   // receipt-less ready result is a failed write the run shell must retry.
+  persistsDocument: true,
+};
+
+/**
+ * Boilerplates intake (marketing-os-agents agents/boilerplates 1.0.0,
+ * boilerplates-output/v1; wi-boilerplates-intake-and-run). A short form: the
+ * project name from LFX, the website from LFX (its host is the domain the
+ * 100-word version ends on: "Learn more at <domain>."; left empty, the agent
+ * takes the LFX record's website or asks) and notes. The LFX project uid
+ * rides the form (`submitsProject`) for the agent's own LFX lookups. The
+ * agent reads the website, the launch press release and the LFX record
+ * itself, then asks only the gaps it could not settle — the domain, the main
+ * programs, the member names it may use — each with a suggested answer
+ * (`endpoints.answers`), on the same run.
+ *
+ * The boilerplates carry the messaging framework's positioning and proof,
+ * so they run AFTER it: approved current is attached automatically as JSON,
+ * with its version/date on the chip. No approval means the Run button stays
+ * gated with approval guidance. An unreadable framework (including a legacy
+ * Markdown revision without structured content) gets `incompleteNote`. The agent itself refuses a run without a framework up front; that
+ * reply, should it ever come, is shown as the run's outcome.
+ *
+ * The output is not a document but the boilerplates' JSON, so the run lands
+ * on the Boilerplates view (`assetView`): the feed and the questions on their
+ * own while the run is live, then the four lengths with their word counts.
+ * Every submission is a fresh draft (`freshRunPerSubmission`): comments per
+ * length (a redraft) and a check of a hand edit are later work. Each result is
+ * stored as a new revision of the project's Boilerplates document, as the
+ * JSON content with the report in the sidecar.
+ */
+export const BOILERPLATES_INTAKE: MktgAgentIntake = {
+  agentId: 'boilerplates',
+  formTitleAction: 'Write',
+  documentName: 'Boilerplates',
+  intro:
+    'The agent writes the one-liner and the 25, 50 and 100-word boilerplates from your project’s Messaging Framework, which is attached automatically. It reads the website, the launch press release and the LFX record itself and asks you only for what is still missing, with a suggested answer each time. Every result is saved as a new revision in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
+  fields: [
+    {
+      key: BOILERPLATES_FIELD_KEYS.projectName,
+      question: 'Project name',
+      kind: 'text',
+      prefill: 'project-name',
+      oneLine: true,
+      hint: 'Every boilerplate names the project in full, as written here.',
+    },
+    {
+      key: BOILERPLATES_FIELD_KEYS.websiteUrl,
+      question: 'Website',
+      kind: 'text',
+      optional: true,
+      prefill: 'website-url',
+      placeholder: 'https://…',
+      hint: 'The agent reads it, and its domain ends the 100-word boilerplate (“Learn more at …”).',
+      missingPrefillHint: 'Not set on your LFX project — add the website, or the agent asks you for the domain.',
+      format: 'source-url',
+    },
+    {
+      key: BOILERPLATES_FIELD_KEYS.notes,
+      question: 'Notes',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'An audience to address, a fact to lead with, words to avoid',
+    },
+  ],
+  fieldGroups: [
+    {
+      id: 'project',
+      title: 'The project',
+      hint: 'the agent reads its sources itself',
+      fieldKeys: [BOILERPLATES_FIELD_KEYS.projectName, BOILERPLATES_FIELD_KEYS.websiteUrl, BOILERPLATES_FIELD_KEYS.notes],
+    },
+  ],
+  // The required approved-current messaging framework, submitted as JSON
+  // under the agent's own form key. Draft/browser copies never stand in.
+  attachments: [
+    {
+      sourceAgentId: 'foundation-setup',
+      answerKey: BOILERPLATES_FRAMEWORK_ANSWER_KEY,
+      documentName: 'Messaging Framework',
+      format: 'json',
+      frameworkContent: true,
+      incompleteNote: 'The approved messaging framework could not be read — generate and approve a new revision in Documents first.',
+    },
+  ],
+  requiredNote: '* required — everything else is optional',
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  submitsProject: true,
+  fullWidth: true,
+  assetView: 'boilerplates',
+  // The asset view shows the boilerplates themselves; there is no section checklist to tick.
+  sections: [],
+  endpoints: {
+    generate: '/api/mktg-agents/boilerplates/generate',
+    result: '/api/mktg-agents/boilerplates/result',
+    answers: BOILERPLATES_ANSWERS_ENDPOINT,
+  },
+  // The result endpoint stores every validated result as a revision of the
+  // project's Boilerplates document and reports the receipt, so a
+  // receipt-less ready result is a failed write the run shell must retry.
+  // No `stored` read endpoint yet: nothing attaches the boilerplates.
+  persistsDocument: true,
+};
+
+/**
+ * FAQ intake (marketing-os-agents agents/faq 1.0.0, faq-output/v1;
+ * wi-faq-intake-and-run), built like the Messaging Framework's:
+ *
+ * - Project: the name and the one-line description, both from LFX.
+ * - Sources: the website (the one required field) and the GitHub
+ *   repository or README, both prefilled from LFX when the project has them.
+ *   The repository reaches the agent as the first of its `links`.
+ * - Other links and documents: links and uploads in one section (an
+ *   existing FAQ page, the members page, the docs, a press release, a deck,
+ *   the plan), each tagged press, deck, document or plan. An upload is read
+ *   to text by the BFF; a link goes as its URL and the agent reads it.
+ * - Notes, last: who asks what, words to avoid — data, not instructions.
+ *
+ * The approved messaging framework is attached automatically: the project's
+ * LATEST stored framework revision, as on the Brand Kit page (LFX One has no
+ * Approve action yet, so the latest stands in for the approved one; Approve
+ * is a later item). The agent refuses a run without one, so a project with no
+ * framework revision cannot run: the page says to run the messaging framework
+ * first and links to it, and the chip names the revision it uses.
+ *
+ * After reading and researching, the agent asks only the questions the
+ * sources leave open (at most six, each with a suggested answer), one at a
+ * time on their own page, and the answers go back to the same session. The
+ * output is the FAQ's JSON, not a document, so the run lands on the FAQ view
+ * (`assetView`), where the questions the sources did not answer are flagged
+ * for the team. Every submission is a fresh draft (`freshRunPerSubmission`:
+ * a redraft from comments and a check of a hand-edited version are later
+ * work), stored as a new revision of the project's FAQ document.
+ */
+export const FAQ_INTAKE: MktgAgentIntake = {
+  agentId: 'faq',
+  formTitleAction: 'Build',
+  documentName: 'FAQ',
+  intro:
+    'Give the agent its sources. It reads them, searches the web and LFX for the rest, and asks you only for what is still missing, with a suggested answer each time. Your latest messaging framework is attached automatically: the questions and their wording come from it. Only the website is required. You get an FAQ of eight to ten questions in groups, each answer naming its source, saved as a new revision in Documents.',
+  // Never sent: the generate endpoint renders the agent's own intake form
+  // server-side, and with fresh runs there is no chat follow-up to prefix.
+  batchPreamble: [],
+  fields: [
+    { key: 'project_name', question: 'Project name', kind: 'text', prefill: 'project-name', oneLine: true },
+    {
+      key: FAQ_DESCRIPTION_KEY,
+      question: 'One-line description',
+      kind: 'text',
+      optional: true,
+      oneLine: true,
+      prefill: 'project-description',
+      placeholder: 'What the project does, in one line',
+      missingPrefillHint: 'Not set on your LFX project — describe it in one line, or leave it to the sources.',
+    },
+    {
+      key: FAQ_WEBSITE_KEY,
+      question: 'Website',
+      kind: 'text',
+      prefill: 'website-url',
+      placeholder: 'https://aaif.io',
+      hint: 'The project’s public site. The agent starts here and follows what it finds.',
+      format: 'source-url',
+    },
+    {
+      key: FAQ_GITHUB_KEY,
+      question: 'GitHub repository or README',
+      kind: 'text',
+      optional: true,
+      prefill: 'repository-url',
+      placeholder: 'https://github.com/…',
+      hint: 'The project’s repository or its README: how to contribute, the licence, who maintains it. Leave it empty and the agent looks for it itself.',
+      format: 'source-url',
+    },
+    {
+      key: FAQ_NOTES_KEY,
+      question: 'Anything the agent should know',
+      kind: 'textarea',
+      rows: 3,
+      optional: true,
+      placeholder: 'Who asks what, the questions people already ask, words to avoid',
+      hint: 'Read as information about the project, never as instructions.',
+    },
+  ],
+  fieldGroups: [
+    { id: 'project', title: 'Project', fieldKeys: ['project_name', FAQ_DESCRIPTION_KEY] },
+    {
+      id: 'sources',
+      title: 'Sources',
+      hint: 'the website is required; the rest is optional',
+      footnote:
+        'The agent reads every link itself and researches the rest on its own, so it never asks you to restate what the sources say. An existing FAQ page, the members page and the docs are worth adding below.',
+      fieldKeys: [FAQ_WEBSITE_KEY, FAQ_GITHUB_KEY],
+    },
+    { id: 'notes', title: 'Notes', hint: 'optional', fieldKeys: [FAQ_NOTES_KEY], afterDocuments: true },
+  ],
+  documents: {
+    title: 'Other links and documents',
+    hint: 'An existing FAQ, the members page, the docs, a press release, a deck, the marketing plan. Add a link or upload a file, then tag it.',
+    footnote: `Accepted: PDF, Word (.docx), PowerPoint (.pptx), Markdown and plain text, up to ${FOUNDATION_MESSAGE_MAX_FILE_BYTES / (1024 * 1024)} MB each — read here and sent as text. A link is sent as is; the agent reads it. Up to ${FAQ_MAX_DOCUMENTS} links and documents.`,
+    maxDocuments: FAQ_MAX_DOCUMENTS,
+    maxFileBytes: FOUNDATION_MESSAGE_MAX_FILE_BYTES,
+    fileExtensions: [...FOUNDATION_MESSAGE_FILE_EXTENSIONS],
+    // The same reader as the Messaging Framework's: turning an upload into text is the same for every agent.
+    endpoints: { ...FOUNDATION_MESSAGE_DOCUMENT_ENDPOINTS },
+    tags: FAQ_DOCUMENT_KIND_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+    defaultTag: FAQ_DEFAULT_DOCUMENT_KIND,
+  },
+  // The approved messaging framework, required: the LATEST stored revision
+  // of the project's messaging framework, submitted under the agent's own
+  // form key and unwrapped to its content by the BFF. Usable only when it
+  // carries the framework itself (`mf` or `mh`), the agent's own rule.
+  attachments: [
+    {
+      sourceAgentId: 'foundation-setup',
+      answerKey: FAQ_FRAMEWORK_ANSWER_KEY,
+      documentName: 'Messaging Framework',
+      format: 'json',
+      frameworkContent: true,
+      incompleteNote: 'The latest messaging framework revision carries no framework the FAQ can read — run the messaging framework again.',
+    },
+  ],
+  requiredNote: '* required — everything else is optional',
+  freshRunPerSubmission: true,
+  liveActivity: true,
+  submitsProject: true,
+  fullWidth: true,
+  assetView: 'faq',
+  // The FAQ view shows the questions themselves; there is no section checklist to tick.
+  sections: [],
+  endpoints: {
+    generate: '/api/mktg-agents/faq/generate',
+    result: '/api/mktg-agents/faq/result',
+    answers: FAQ_ANSWERS_ENDPOINT,
+  },
+  // The result endpoint stores every validated FAQ as a revision of the
+  // project's FAQ document and reports the receipt, so a receipt-less ready
+  // result is a failed write the run shell must retry.
   persistsDocument: true,
 };
 
@@ -254,7 +632,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Define',
   documentName: 'ICP & Target Markets',
   intro:
-    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Messaging Document are attached automatically when they exist.',
+    'One form, then the agent drafts the full ICP & Target Markets document. Fields marked “From LFX” are pre-filled from your project — edit anything. Your project’s Brand Kit and Messaging Framework are attached automatically when they exist.',
   // The agent's own form-mode preamble (src/form.ts renderFormMessage),
   // verbatim — the same ICP_FORM_PREAMBLE_LINES the BFF's `renderIcpFormText`
   // opens the batch submission with, so the agent's MODE RULES trigger
@@ -288,7 +666,7 @@ export const ICP_INTAKE: MktgAgentIntake = {
   ],
   attachments: [
     { sourceAgentId: 'brand-kit', answerKey: 'brand_kit_markdown', documentName: 'Brand Kit', optional: true },
-    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Messaging Document', optional: true },
+    { sourceAgentId: 'foundation-setup', answerKey: 'message_foundation_markdown', documentName: 'Messaging framework', optional: true },
   ],
   regenerateViaGenerate: true,
   sections: ICP_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
@@ -314,7 +692,9 @@ export const ICP_INTAKE: MktgAgentIntake = {
 export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BRAND_KIT_INTAKE.agentId]: BRAND_KIT_INTAKE,
   [FOUNDATION_MESSAGE_INTAKE.agentId]: FOUNDATION_MESSAGE_INTAKE,
+  [BOILERPLATES_INTAKE.agentId]: BOILERPLATES_INTAKE,
   [ICP_INTAKE.agentId]: ICP_INTAKE,
+  [FAQ_INTAKE.agentId]: FAQ_INTAKE,
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */
@@ -327,6 +707,14 @@ export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
  * them whole, so nothing a third-party page carries can pass for either.
  */
 export const MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES = ['runtime_start', 'runtime_done'] as const;
+
+/**
+ * Raw Guild session events that carry the runtime's output — the agent's
+ * final text and its progress notices. They are what the model wrote, never
+ * a transcript, so the tool-result reader never enters them: a call and its
+ * result written into an output prove nothing.
+ */
+export const MKTG_SESSION_AGENT_OUTPUT_EVENT_TYPES = ['agent_notification_message', 'agent_notification_progress'] as const;
 
 /**
  * Blocking field-error copy for an intake value that fails its `format` rule.
@@ -349,12 +737,23 @@ export const MKTG_INTAKE_FORMAT_ERRORS: Record<MktgIntakeFieldFormat, Partial<Re
       'That doesn’t look like a GitHub URL. Enter the project’s repository or organization URL, e.g. https://github.com/org/repo or https://github.com/org.',
   },
   'source-url': {
-    unrecognized: 'Enter the full link, starting with https://, or “none”.',
+    unrecognized: 'Enter the full link, starting with https://.',
   },
   'source-url-list': {
-    unrecognized: 'Every line must be a full link, starting with https://.',
+    unrecognized: 'Every link must be a full link, starting with https://.',
+  },
+  'https-url': {
+    unrecognized: 'Enter the full link, starting with https://.',
   },
 };
+
+/**
+ * Blocking field-error copy for a single-line intake field (`kind: 'text'`)
+ * whose value holds a line break (`oneLineValidator`). The input hides the
+ * break, so without this the form looks valid and the BFF refuses the run
+ * with a cause the user cannot see.
+ */
+export const MKTG_INTAKE_ONE_LINE_ERROR = 'Keep this to one line — the line breaks in it would make the run fail.';
 
 /**
  * What the result says when the document was generated WITHOUT a README. The
@@ -470,23 +869,6 @@ export const MKTG_RUN_POLL = {
 } as const;
 
 /**
- * Result-polling cadence for the STANDALONE Brand Kit intake form. Separate
- * from {@link MKTG_RUN_POLL} because the two surfaces bound the wait
- * differently — the run shell holds a wall-clock deadline while this form
- * counts attempts — but it lives here, not as module-level state inside
- * `apps/lfx-one`, so the cadence is reviewable next to the run shell's and
- * both stay in the shared package where the repo's constants belong.
- */
-export const MKTG_BRAND_KIT_FORM_POLL = {
-  /** Interval between result polls. */
-  intervalMs: 10000,
-  /** Poll budget for one generation (~5 minutes at the interval above). */
-  maxAttempts: 30,
-  /** Consecutive transient poll failures tolerated before giving up. */
-  maxConsecutiveErrors: 3,
-} as const;
-
-/**
  * Extra result polls spent in the background when a persisting agent's ready
  * result arrives WITHOUT its persistence receipt (dec-brand-kit-storage-v2).
  * Each poll re-runs the idempotent content-addressed server-side write, so a
@@ -494,7 +876,6 @@ export const MKTG_BRAND_KIT_FORM_POLL = {
  * document itself is already displayed, so this never delays the user.
  * Bounded because the condition can also be permanent (bucket intentionally
  * unconfigured, document over the size cap) and must not poll for the full
- * generation budget. ONE policy for every Brand Kit surface — the form-first
- * run shell and the standalone intake form.
+ * generation budget.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;

@@ -212,7 +212,6 @@ export const ORG_CLA_NOT_STARTED_COPY = {
   ],
   downloadLabel: 'Download a copy of the CCLA for review (non-executable)',
   startLabel: 'Start the CLA process',
-  identifySomeoneElseLabel: 'Not the right person to sign? Identify someone else →',
 } as const;
 
 /**
@@ -730,18 +729,14 @@ export const ORG_CLA_MANAGER_QUESTION_COPY = {
   yesLabel: 'Yes',
 } as const;
 
-/** The unsigned overview for a viewer already identified as the initial CLA Manager (Corporate Console, verbatim). */
-export const ORG_CLA_DESIGNEE_START_COPY = {
-  identified: 'Someone has identified you as the initial CLA Manager from your company for this project.',
-  role: 'The CLA Manager is the person who manages the list of approved contributors.',
-  stepsHeading: 'To proceed, click below to start the process:',
-  steps: [
-    {
-      label: 'Step 1:',
-      body: 'You will be able to either sign the CLA, or send it to someone else for signature if you are not authorized by your company to sign it.',
-    },
-    { label: 'Step 2:', body: 'Then, you will be able to start approving contributors and adding other CLA Managers.' },
-  ],
+/**
+ * One state whether the viewer said Yes in this session or held the role when the page loaded: the
+ * Sign pair check cannot tell the two apart after a reload, and the copy holds for both.
+ */
+export const ORG_CLA_DESIGNEE_RESTING_COPY = {
+  identified: "You've been identified as the initial CLA Manager from your company for this project.",
+  role: 'The CLA Manager is the person who manages the list of approved contributors. When this CLA is signed, you will be the initial CLA Manager.',
+  proceedLabel: 'Proceed with signing',
 } as const;
 
 export const ORG_CLA_IDENTIFY_MANAGER_COPY = {

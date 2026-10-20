@@ -147,6 +147,8 @@ describe('MembersChurnComponent', () => {
     expect(query('members-churn-change')?.classList).toContain('text-red-600');
     expect(text('members-churn-caption')).toBe("of last year's dues did not renew");
     expect(text('members-churn-side-dues-lost')).toBe('$1.5M');
+    // The hero sits flush in the section, as the design draws it, not inside a card.
+    expect(query('members-churn-hero')?.classList).not.toContain('border');
     expect(query('members-churn-side-dues-lost')?.classList).toContain('text-red-600');
     expect(text('members-churn-side-logo')).toBe('10% (12 of 120)');
     expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
@@ -274,6 +276,15 @@ describe('MembersChurnComponent', () => {
       lfxColors.blue[200],
       lfxColors.red[600],
     ]);
+  });
+
+  it("closes on the design's footnote for why churn leads, in the shared footnote", async () => {
+    await render();
+
+    expect(text('members-churn-footer')).toBe(
+      'Renewal rate is unreliable mid-year because renewals are lumpy, so churn leads instead. Not on the landing page at all — it is an outcome, not a decision.'
+    );
+    expect(query('members-churn-footer')?.querySelector('[data-testid="health-metrics-footnote-icon"]')?.classList).toContain('fa-circle-info');
   });
 
   it('separates a failed churn read from a year without churn', async () => {

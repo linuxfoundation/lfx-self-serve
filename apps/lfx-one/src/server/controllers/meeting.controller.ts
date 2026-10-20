@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
   MEETING_AGENDA_MAX_LENGTH,
   MEETING_AGENDA_PROMPT_MAX_LENGTH,
   MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH,
   MEETING_REGISTRANT_BATCH_CONCURRENCY,
   MEETING_REGISTRANT_BATCH_MAX,
+  MEETING_REMOVAL_SOURCE_HEADER,
+  MEETING_REMOVAL_SOURCES,
   MIN_CUSTOM_DURATION,
 } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
@@ -544,8 +546,8 @@ export class MeetingController {
         fieldErrors['start_time'] = startTimeError;
       }
 
-      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < MIN_CUSTOM_DURATION || duration > MAX_CUSTOM_DURATION) {
-        fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_CUSTOM_DURATION}`;
+      if (typeof duration !== 'number' || !Number.isInteger(duration) || duration < MIN_CUSTOM_DURATION || duration > MAX_MEETING_DURATION) {
+        fieldErrors['duration'] = `Duration must be a whole number of minutes between ${MIN_CUSTOM_DURATION} and ${MAX_MEETING_DURATION}`;
       }
 
       const title = typeof body.title === 'string' ? body.title.trim() : body.title;
@@ -1188,11 +1190,13 @@ export class MeetingController {
    * @description Removes the authenticated user as a registrant of the meeting. The caller's registrant
    * records are resolved server-side and the delete runs under the user's own token; the M2M token is
    * used only for the registrant lookup, after the caller's identity has been resolved from their session.
+   * The optional removal-source header only labels the log entries; an unrecognised value is logged as `unknown`.
    */
   public async removeMyMeetingRegistration(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
+    const source = MEETING_REMOVAL_SOURCES.find((known) => known === req.get(MEETING_REMOVAL_SOURCE_HEADER)) ?? 'unknown';
 
-    const startTime = logger.startOperation(req, 'remove_my_meeting_registration', { meeting_id: uid });
+    const startTime = logger.startOperation(req, 'remove_my_meeting_registration', { meeting_id: uid, source });
 
     try {
       if (
@@ -1223,6 +1227,8 @@ export class MeetingController {
 
       logger.success(req, 'remove_my_meeting_registration', startTime, {
         meeting_id: uid,
+        source,
+        removed_registrant_ids: result.removed_registrant_ids,
         removed_count: result.removed_registrant_ids.length,
         remaining_count: result.remaining_registrant_ids.length,
       });

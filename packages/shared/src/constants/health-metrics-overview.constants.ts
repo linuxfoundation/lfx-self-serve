@@ -12,7 +12,6 @@ import type {
   HealthMetricsOverviewLinkTarget,
   HealthMetricsOverviewMembersLinkSpec,
   HealthMetricsOverviewNonMembersLinkSpec,
-  HealthMetricsOverviewTileLinkSpec,
   HealthMetricsOverviewTrainingLinkSpec,
   HealthOverviewKpisRow,
   HealthOverviewRevenueRow,
@@ -23,22 +22,24 @@ import type {
  * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS},
  * {@link HEALTH_METRICS_OVERVIEW_EVENTS_LINK_TARGETS}, {@link HEALTH_METRICS_OVERVIEW_MEMBERS_LINK_TARGETS},
  * {@link HEALTH_METRICS_OVERVIEW_NON_MEMBERS_LINK_TARGETS} and {@link HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS}.
- * Order here is the tile-strip render order — never re-sorted.
+ * Order here is the tile-strip render order — never re-sorted. `name` labels a finding's area eyebrow;
+ * `tileName` heads the tile, as the design names the two differently (e.g. "Code" vs "Code contributions").
  */
 export const HEALTH_METRICS_OVERVIEW_AREAS = [
-  { key: 'eng', name: 'Engagement', icon: 'fa-light fa-users' },
-  { key: 'evt', name: 'Events', icon: 'fa-light fa-calendar' },
-  { key: 'mem', name: 'Members', icon: 'fa-light fa-building' },
-  { key: 'non', name: 'Non-Members', icon: 'fa-light fa-handshake' },
-  { key: 'trn', name: 'Training', icon: 'fa-light fa-graduation-cap' },
-  { key: 'code', name: 'Code', icon: 'fa-light fa-code-branch' },
+  { key: 'eng', name: 'Engagement', tileName: 'Engagement', icon: 'fa-light fa-users', tab: 'engagement' },
+  { key: 'evt', name: 'Events', tileName: 'Events', icon: 'fa-light fa-calendar-days', tab: 'events' },
+  { key: 'mem', name: 'Members', tileName: 'Members', icon: 'fa-light fa-circle-check', tab: 'members' },
+  { key: 'non', name: 'Non-Members', tileName: 'Non-members', icon: 'fa-light fa-handshake', tab: 'non-members' },
+  { key: 'trn', name: 'Training', tileName: 'Training', icon: 'fa-light fa-graduation-cap', tab: 'training' },
+  { key: 'code', name: 'Code', tileName: 'Code contributions', icon: 'fa-light fa-code', tab: null },
 ] as const;
 
 /**
  * Urgency classification only — never category or size (logic spec hard constraint). Group name
- * is the fixed findings-list section a classification's rows render under. `icon` matches the
- * design's `TTONE`/group-header icon set 1:1 — the same icon drives both the tile status row and
- * the finding-group heading.
+ * is the fixed findings-list section a classification's rows render under; `label` and
+ * `statusTextClass` are the tile status chip's own wording and colour (design's `TTONE`). `icon`
+ * matches the design's `TTONE`/group-header icon set 1:1 — the same icon drives both the tile status
+ * row and the finding-group heading.
  */
 export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
   act: {
@@ -48,6 +49,7 @@ export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
     dotClass: 'bg-red-500',
     accentClass: 'border-l-red-500',
     textClass: 'text-red-600',
+    statusTextClass: 'text-red-600',
   },
   watch: {
     label: 'Needs attention',
@@ -56,6 +58,7 @@ export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
     dotClass: 'bg-amber-500',
     accentClass: 'border-l-amber-500',
     textClass: 'text-amber-600',
+    statusTextClass: 'text-amber-600',
   },
   opp: {
     label: 'Opportunity',
@@ -64,22 +67,25 @@ export const HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS = {
     dotClass: 'bg-blue-500',
     accentClass: 'border-l-blue-500',
     textClass: 'text-blue-600',
+    statusTextClass: 'text-blue-500',
   },
   ok: {
-    label: 'Going well',
+    label: 'Healthy',
     group: 'Going well',
     icon: 'fa-light fa-circle-check',
     dotClass: 'bg-emerald-500',
     accentClass: 'border-l-emerald-500',
     textClass: 'text-emerald-600',
+    statusTextClass: 'text-emerald-600',
   },
   none: {
-    label: 'Awaiting data',
+    label: 'No data',
     group: 'Awaiting data',
     icon: 'fa-light fa-circle-info',
     dotClass: 'bg-gray-400',
     accentClass: 'border-l-gray-400',
     textClass: 'text-gray-500',
+    statusTextClass: 'text-gray-500',
   },
 } as const;
 
@@ -141,17 +147,17 @@ export const HEALTH_METRICS_OVERVIEW_TRAINING_LINK_TARGETS = {
   'trn.enrollment': { section: 'enroll', queryParams: {} },
 } as const satisfies Record<string, HealthMetricsOverviewTrainingLinkSpec>;
 
-/** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
+/** The stat value every no-data tile shows. */
 export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
 
-/** Each linked tile's target and link text; Engagement opens the unfiltered group attendance, the source of its counts. */
-export const HEALTH_METRICS_OVERVIEW_TILE_LINKS = {
-  eng: { linkTarget: 'eng.groups', label: 'View groups' },
-  evt: { linkTarget: 'evt.forecast', label: 'View forecast' },
-  mem: { linkTarget: 'mem.list', label: 'View members' },
-  non: { linkTarget: 'non.orgs', label: 'View organizations' },
-  trn: { linkTarget: 'trn.enrollment', label: 'View enrollment' },
-} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewTileLinkSpec>>;
+/** Each area's default `link_target`, used when a signal's key has no section of its own; Engagement opens group attendance, the source of its counts. */
+export const HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS = {
+  eng: 'eng.groups',
+  evt: 'evt.forecast',
+  mem: 'mem.list',
+  non: 'non.orgs',
+  trn: 'trn.enrollment',
+} as const satisfies Partial<Record<HealthMetricsOverviewArea, HealthMetricsOverviewLinkTarget>>;
 
 /** The one `link_target` that opens externally (LFX Insights) instead of an in-app tab. */
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
@@ -169,8 +175,8 @@ export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_
   'code',
 ]);
 
-/** Areas whose tile never renders a status chip — live or neutral — since no rule classifies them yet. */
-export const HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['eng']);
+/** Areas whose no-data tile renders no status chip, matching their live no-data state (Engagement unmeasured, Non-members without a pipeline). */
+export const HEALTH_METRICS_OVERVIEW_NO_DATA_STATUSLESS_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['eng', 'non']);
 
 /**
  * Period-suffixed `HEALTH_OVERVIEW_KPIS` columns, in their aliased uppercase form. `ProjectService`
@@ -178,8 +184,6 @@ export const HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS: ReadonlySet<(typeof HEALT
  * it emits and the key it later reads can't drift into a silent "no data" render for every period.
  */
 export const HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS = [
-  'EVENTS_REGISTRATIONS_COUNT',
-  'EVENTS_REGISTRATIONS_GOAL',
   'EVENTS_PCT_OF_REGISTRATION_GOAL',
   'EVENTS_STATUS',
   'CERTIFICATIONS_EARNED_COUNT',
@@ -207,13 +211,13 @@ export const HEALTH_OVERVIEW_SIGNAL_BAND_CLASSIFICATIONS: Readonly<Record<string
 };
 
 /** `HEALTH_OVERVIEW_SIGNALS.category` → Overview area. A row whose category isn't listed is dropped from the feed. */
-export const HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: Readonly<Record<string, keyof typeof HEALTH_METRICS_OVERVIEW_TILE_LINKS>> = {
+export const HEALTH_OVERVIEW_SIGNAL_CATEGORY_AREAS: Readonly<Record<string, keyof typeof HEALTH_METRICS_OVERVIEW_AREA_LINK_TARGETS>> = {
   ENGAGEMENT: 'eng',
   MEMBERS: 'mem',
   'NON-MEMBERS': 'non',
 };
 
-/** `signal_key` → the Level 2 section its finding opens; the table carries no link column, so an unknown key falls back to its area's tile link. */
+/** `signal_key` → the Level 2 section its finding opens; the table carries no link column, so an unknown key falls back to its area's default target. */
 export const HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS: Readonly<Record<string, HealthMetricsOverviewLinkTarget>> = {
   engagement_dormant_groups: 'eng.groups',
   engagement_tsc_steady: 'eng.groups',

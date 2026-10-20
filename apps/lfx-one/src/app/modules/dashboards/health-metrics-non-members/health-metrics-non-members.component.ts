@@ -36,8 +36,7 @@ export class HealthMetricsNonMembersComponent {
   protected readonly scopeNote = HEALTH_METRICS_NON_MEMBERS_SCOPE_NOTE;
   protected readonly orgsCount = signal<number | null>(null);
   protected readonly peopleCount = signal<number | null>(null);
-  protected readonly conversionCount = signal<number | null>(null);
   protected readonly subNavItems = computed<HealthMetricsNonMembersSubNavItem[]>(() =>
-    buildHealthMetricsNonMembersSubNavItems({ orgs: this.orgsCount(), people: this.peopleCount(), conversion: this.conversionCount() })
+    buildHealthMetricsNonMembersSubNavItems({ orgs: this.orgsCount(), people: this.peopleCount() })
   );
 }

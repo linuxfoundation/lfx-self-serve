@@ -107,6 +107,16 @@ describe('ProjectSelectorComponent ordering', () => {
 
     expect(renderedSlugs()).toEqual(['alpha-cloud', 'mid-cloud', 'zeta-cloud']);
   });
+
+  it('closes its open panel when the host asks, as a closing mobile drawer does', async () => {
+    expect(fixture.componentInstance.isPanelOpen()).toBe(true);
+
+    fixture.componentInstance.closePanel();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance.isPanelOpen()).toBe(false);
+    expect(renderedSlugs()).toEqual([]);
+  });
 });
 
 /**

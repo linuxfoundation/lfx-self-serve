@@ -6,7 +6,9 @@ import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
+import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
+import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it reaches
@@ -30,6 +32,7 @@ function handleDocumentFileParseError(err: unknown, req: Request, _res: Response
 const router = Router();
 const mktgAgentsController = new MktgAgentsController();
 const mktgDocumentsController = new MktgDocumentsController();
+const mktgSlidesExportController = new MktgSlidesExportController();
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
@@ -37,22 +40,25 @@ router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, nex
 // POST /api/mktg-agents/history - fetch mapped session history (owner-token in body)
 router.post('/history', (req, res, next) => mktgAgentsController.history(req, res, next));
 
-// POST /api/mktg-agents/brand-kit/generate - start a one-shot form-mode Brand Kit generation
+// POST /api/mktg-agents/brand-kit/generate - start a Brand Kit draft from the form and the uploaded logo files
 router.post('/brand-kit/generate', (req, res, next) => mktgAgentsController.generateBrandKit(req, res, next));
 
-// POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated document
+// POST /api/mktg-agents/brand-kit/answers - answer the session's questions turn (owner-token in body), on the same session
+router.post('/brand-kit/answers', (req, res, next) => mktgAgentsController.brandKitAnswers(req, res, next));
+
+// POST /api/mktg-agents/brand-kit/result - poll a generation session for the validated kit
 router.post('/brand-kit/result', (req, res, next) => mktgAgentsController.brandKitResult(req, res, next));
 
-// GET /api/mktg-agents/brand-kit/stored - the project's latest persisted document (writer-entitled callers only)
+// GET /api/mktg-agents/brand-kit/stored - approved current plain/sidecar bytes or 404; true pre-revision plain fallback only (writer-entitled).
 router.get('/brand-kit/stored', (req, res, next) => mktgAgentsController.storedBrandKit(req, res, next));
 
-// POST /api/mktg-agents/foundation-message/generate - start a one-shot Messaging Document generation
+// POST /api/mktg-agents/foundation-message/generate - start a Messaging Framework draft
 router.post('/foundation-message/generate', (req, res, next) => mktgAgentsController.generateFoundationMessage(req, res, next));
 
-// POST /api/mktg-agents/foundation-message/result - poll a generation session for the validated document
+// POST /api/mktg-agents/foundation-message/result - poll a generation session for the validated framework (or the agent's questions)
 router.post('/foundation-message/result', (req, res, next) => mktgAgentsController.foundationMessageResult(req, res, next));
 
-// POST /api/mktg-agents/foundation-message/documents/file - read one uploaded existing document to text (raw body, at most 20 MB)
+// POST /api/mktg-agents/foundation-message/documents/file - read one uploaded document to text (raw body, at most 20 MB)
 router.post(
   '/foundation-message/documents/file',
   express.raw({ type: FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, limit: FOUNDATION_MESSAGE_MAX_FILE_BYTES }),
@@ -63,13 +69,31 @@ router.post(
 // POST /api/mktg-agents/foundation-message/answers - answer the session's questions turn (owner-token in body), on the same session
 router.post('/foundation-message/answers', (req, res, next) => mktgAgentsController.foundationMessageAnswers(req, res, next));
 
+// POST /api/mktg-agents/boilerplates/generate - start a Boilerplates draft from the form and the attached messaging framework
+router.post('/boilerplates/generate', (req, res, next) => mktgAgentsController.generateBoilerplates(req, res, next));
+
+// POST /api/mktg-agents/boilerplates/answers - answer the session's questions turn (owner-token in body), on the same session
+router.post('/boilerplates/answers', (req, res, next) => mktgAgentsController.boilerplatesAnswers(req, res, next));
+
+// POST /api/mktg-agents/boilerplates/result - poll a generation session for the validated boilerplates (or the agent's questions)
+router.post('/boilerplates/result', (req, res, next) => mktgAgentsController.boilerplatesResult(req, res, next));
+
 // POST /api/mktg-agents/icp/generate - start a one-shot form-mode ICP & Target Markets generation
 router.post('/icp/generate', (req, res, next) => mktgAgentsController.generateIcp(req, res, next));
 
 // POST /api/mktg-agents/icp/result - poll a generation session for the validated document
 router.post('/icp/result', (req, res, next) => mktgAgentsController.icpResult(req, res, next));
 
-// GET /api/mktg-agents/foundation-message/stored - the project's latest persisted document (writer-entitled callers only)
+// POST /api/mktg-agents/faq/generate - start an FAQ draft from the form, its documents and the attached messaging framework
+router.post('/faq/generate', (req, res, next) => mktgAgentsController.generateFaq(req, res, next));
+
+// POST /api/mktg-agents/faq/answers - answer the session's questions turn (owner-token in body), on the same session
+router.post('/faq/answers', (req, res, next) => mktgAgentsController.faqAnswers(req, res, next));
+
+// POST /api/mktg-agents/faq/result - poll a generation session for the validated FAQ (or the agent's questions, or the reply that ended the run)
+router.post('/faq/result', (req, res, next) => mktgAgentsController.faqResult(req, res, next));
+
+// GET /api/mktg-agents/foundation-message/stored - approved current plain/sidecar bytes or 404; true pre-revision plain fallback only (writer-entitled).
 router.get('/foundation-message/stored', (req, res, next) => mktgAgentsController.storedFoundationMessage(req, res, next));
 
 // GET /api/mktg-agents/documents?project=<uid> - every stored Marketing OS document of the project, grouped by type (writer-entitled callers only)
@@ -81,7 +105,21 @@ router.get('/documents/:agentKey/:documentId', (req, res, next) => mktgDocuments
 // GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid> - one revision with its Markdown
 router.get('/documents/:agentKey/:documentId/revisions/:revisionId', (req, res, next) => mktgDocumentsController.getRevision(req, res, next));
 
-// POST /api/mktg-agents/documents/:agentKey/:documentId/restore - make an older revision the latest, as a new revision
+// POST /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId/approve?project=<uid>
+router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', blockDuringImpersonation, (req, res, next) =>
+  mktgDocumentsController.approveRevision(req, res, next)
+);
+
+// POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
+
+// POST /api/mktg-agents/slides-export/start - export a stored Messaging Framework or Brand Kit revision to Google Slides (a new deck, or the last export's deck refreshed in place)
+router.post('/slides-export/start', (req, res, next) => mktgSlidesExportController.start(req, res, next));
+
+// POST /api/mktg-agents/slides-export/result - poll an export (owner-token in body); a ready deck is kept with the revision it was made from
+router.post('/slides-export/result', (req, res, next) => mktgSlidesExportController.result(req, res, next));
+
+// GET /api/mktg-agents/slides-export/last - last export plus newest identity for freshness, not byte selection.
+router.get('/slides-export/last', (req, res, next) => mktgSlidesExportController.last(req, res, next));
 
 export default router;

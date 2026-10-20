@@ -19,6 +19,8 @@ import { ProjectContextService } from '@services/project-context.service';
 import { Skeleton } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { HealthMetricsFootnoteComponent } from '../../../components/health-metrics-footnote/health-metrics-footnote.component';
+
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
   FilterPillOption,
@@ -36,7 +38,7 @@ import type {
  */
 @Component({
   selector: 'lfx-events-registrations-growth',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, Skeleton, TableComponent],
+  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, HealthMetricsFootnoteComponent, Skeleton, TableComponent],
   templateUrl: './events-registrations-growth.component.html',
 })
 export class EventsRegistrationsGrowthComponent {

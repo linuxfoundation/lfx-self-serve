@@ -13,7 +13,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
   EARLY_JOIN_CHIP_OPTIONS,
   EARLY_JOIN_TOOLTIP,
-  MAX_CUSTOM_DURATION,
+  MAX_MEETING_DURATION,
   MAX_EARLY_JOIN_TIME,
   MEETING_DURATION_CHIP_OPTIONS,
   MIN_CUSTOM_DURATION,
@@ -110,7 +110,7 @@ export class ComposerDateScheduleComponent implements OnInit {
   protected readonly earlyJoinOptions: Signal<{ label: string; value: number }[]> = this.initEarlyJoinOptions();
   protected readonly recurringFeature = RECURRING_MEETING_FEATURE;
   protected readonly minCustomDuration = MIN_CUSTOM_DURATION;
-  protected readonly maxCustomDuration = MAX_CUSTOM_DURATION;
+  protected readonly maxCustomDuration = MAX_MEETING_DURATION;
   protected readonly minEarlyJoinTime = MIN_EARLY_JOIN_TIME;
   protected readonly maxEarlyJoinTime = MAX_EARLY_JOIN_TIME;
   protected readonly earlyJoinTooltip = EARLY_JOIN_TOOLTIP;

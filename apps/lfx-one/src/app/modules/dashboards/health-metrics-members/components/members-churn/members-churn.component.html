@@ -4,7 +4,12 @@
 <!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. -->
 <div class="flex flex-col gap-4" data-testid="members-churn">
   <div class="flex flex-wrap items-center justify-between gap-2" data-testid="members-churn-controls">
-    <lfx-filter-pills [options]="modeOptions" [selectedFilter]="mode()" (filterChange)="onModeChange($event)" data-testid="members-churn-mode-pills" />
+    <lfx-filter-pills
+      variant="track"
+      [options]="modeOptions"
+      [selectedFilter]="mode()"
+      (filterChange)="onModeChange($event)"
+      data-testid="members-churn-mode-pills" />
     <span class="text-[13px] tabular-nums text-gray-500" data-testid="members-churn-meta">
       @if (firstRead() || loadFailed() || !view().yearMeasured) {
         &mdash;
@@ -35,7 +40,7 @@
       subtitle="No memberships lapsed in the selected period."
       data-testid="members-churn-empty" />
   } @else {
-    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-start md:gap-9" data-testid="members-churn-hero">
+    <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-churn-hero">
       <div class="flex flex-col gap-2">
         <div class="flex items-baseline gap-2">
           <span class="text-3xl font-semibold tabular-nums text-red-600" data-testid="members-churn-rate">{{ view().heroLabel }}</span>
@@ -56,7 +61,7 @@
       <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-churn-sides">
         @for (side of view().sides; track side.key) {
           <div class="flex flex-col gap-0.5">
-            <dt class="text-[11.5px] text-gray-400">{{ side.label }}</dt>
+            <dt class="text-[11.5px] text-gray-500">{{ side.label }}</dt>
             <dd
               class="text-[17px] font-semibold tabular-nums"
               [class.text-red-600]="side.isLoss"
@@ -86,6 +91,7 @@
           data-testid="members-churn-departures-error" />
       } @else {
         <lfx-table
+          [rowHover]="false"
           [value]="departureRows()"
           [loading]="departuresLoading()"
           [lazy]="true"
@@ -150,7 +156,12 @@
           <span class="text-[11px] text-gray-400">by tier, most dues lost first</span>
         </div>
 
-        <lfx-table [value]="view().tiers" [scrollable]="true" [tableStyle]="{ 'min-width': '560px' }" data-testid="members-churn-tiers-table">
+        <lfx-table
+          [rowHover]="false"
+          [value]="view().tiers"
+          [scrollable]="true"
+          [tableStyle]="{ 'min-width': '560px' }"
+          data-testid="members-churn-tiers-table">
           <ng-template #header>
             <tr>
               <th scope="col"><span class="text-xs font-medium text-gray-500">Tier</span></th>
@@ -242,9 +253,6 @@
       </div>
     }
 
-    <p class="flex items-start gap-2 text-[12px] text-gray-500" data-testid="members-churn-footer">
-      <i class="fa-light fa-circle-info mt-0.5" aria-hidden="true"></i>
-      <span>Churn leads here because renewal rate is unreliable mid-year: renewals are lumpy, so a rate taken part-way through the year swings widely.</span>
-    </p>
+    <lfx-health-metrics-footnote [parts]="footer" data-testid="members-churn-footer" />
   }
 </div>

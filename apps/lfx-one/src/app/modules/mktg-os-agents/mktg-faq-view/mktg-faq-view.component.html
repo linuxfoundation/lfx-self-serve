@@ -1,0 +1,210 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL) wraps inside its card instead of running across the next one. -->
+<section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-faq-view">
+  <!-- Header: what this is, which version, how big, and what needs the team -->
+  <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-faq-view-header">
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-faq-view-title">{{ title() }}</h2>
+        <lfx-mktg-asset-meta [metadata]="header()" prefix="mktg-faq-view" />
+      </div>
+    }
+    @if (note()) {
+      <span class="text-xs text-gray-400">{{ note() }}</span>
+    }
+    @if (modeLabel()) {
+      <span class="rounded-full border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-faq-view-mode">{{ modeLabel() }}</span>
+    }
+    <span class="text-xs text-gray-500" data-testid="mktg-faq-view-size">{{ sizeLabel() }}</span>
+    @if (unanswered().length > 0) {
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+        data-testid="mktg-faq-view-unanswered-chip"
+        (click)="onGoToTab('unanswered')">
+        <i class="fa-light fa-circle-question" aria-hidden="true"></i>
+        {{ unansweredLabel() }}
+      </button>
+    }
+    <div class="grow"></div>
+    <ng-content select="[asset-actions]" />
+  </div>
+
+  <!-- Tabs: the FAQ, the questions it leaves for the team, the run's report -->
+  <div class="border-b border-gray-200" role="tablist" aria-label="FAQ" data-testid="mktg-faq-view-tabs" (keydown)="onTabKeydown($event)">
+    <div class="flex flex-wrap gap-x-1">
+      @for (tab of tabs(); track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="-mb-px border-b-2 px-3 py-2 text-sm font-medium [overflow-wrap:normal] focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+          [ngClass]="tab.tabClass"
+          [id]="tab.tabId"
+          [attr.aria-selected]="tab.selected"
+          [attr.aria-controls]="tab.panelId"
+          [attr.tabindex]="tab.selected ? 0 : -1"
+          [attr.data-testid]="'mktg-faq-view-tab-' + tab.id"
+          (click)="onSelectTab(tab.id)">
+          {{ tab.label }}
+        </button>
+      }
+    </div>
+  </div>
+
+  @switch (selectedTab()) {
+    <!-- FAQ: one card per group, each question with its answer and source, or flagged for the team -->
+    @case ('faq') {
+      <div class="flex flex-col gap-4" role="tabpanel" id="mktg-faq-panel-faq" aria-labelledby="mktg-faq-tab-faq" data-testid="mktg-faq-view-panel-faq">
+        @if (unanswered().length > 0) {
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+            data-testid="mktg-faq-view-unanswered-callout">
+            <span class="flex items-start gap-2 text-sm text-amber-900">
+              <i class="fa-light fa-circle-question mt-0.5 shrink-0" aria-hidden="true"></i>
+              <span>{{ unansweredLabel() }}: the sources did not answer them, so they are left open rather than guessed.</span>
+            </span>
+            <button
+              type="button"
+              class="text-sm font-medium text-amber-900 underline underline-offset-2 hover:text-amber-950"
+              data-testid="mktg-faq-view-unanswered-open"
+              (click)="onGoToTab('unanswered')">
+              See them
+            </button>
+          </div>
+        }
+
+        <div class="grid grid-cols-1 gap-3 xl:grid-cols-2" data-testid="mktg-faq-view-groups">
+          @for (group of groups(); track group.path; let g = $index) {
+            <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'mktg-faq-view-group-' + g">
+              <h3 class="text-base font-semibold text-gray-900">{{ group.name }}</h3>
+              <dl class="flex flex-col divide-y divide-gray-100">
+                @for (row of group.questions; track row.path; let q = $index) {
+                  <div class="flex flex-col gap-1 py-3 first:pt-0 last:pb-0" [attr.data-testid]="'mktg-faq-view-question-' + g + '-' + q">
+                    <dt class="text-sm font-medium text-gray-900">{{ row.question }}</dt>
+                    @if (row.answered) {
+                      <dd class="flex flex-wrap items-start gap-2">
+                        <span class="grow basis-64 text-sm leading-relaxed text-gray-800">{{ row.answer }}</span>
+                        @if (row.source) {
+                          <span
+                            class="shrink-0 rounded-full border border-gray-200 bg-gray-50 px-1.5 text-2xs text-gray-500"
+                            [attr.data-testid]="'mktg-faq-view-source-' + g + '-' + q"
+                            >{{ row.source }}</span
+                          >
+                        }
+                      </dd>
+                    } @else {
+                      <dd class="flex items-center gap-1.5 text-sm text-amber-800" [attr.data-testid]="'mktg-faq-view-needs-answer-' + g + '-' + q">
+                        <i class="fa-light fa-circle-question" aria-hidden="true"></i>
+                        {{ needsAnswerLabel }}
+                      </dd>
+                    }
+                  </div>
+                }
+              </dl>
+            </article>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- NEEDS AN ANSWER: the questions the sources did not answer (checks.unanswered), for the reviewer -->
+    @case ('unanswered') {
+      <div
+        class="flex flex-col gap-3"
+        role="tabpanel"
+        id="mktg-faq-panel-unanswered"
+        aria-labelledby="mktg-faq-tab-unanswered"
+        data-testid="mktg-faq-view-panel-unanswered">
+        @if (unanswered().length > 0) {
+          <p class="max-w-prose text-sm text-gray-600">
+            The sources the agent read do not answer these. They stay in the FAQ, marked as needing an answer, until your team gives one.
+          </p>
+          <ul class="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="mktg-faq-view-unanswered-list">
+            @for (item of unanswered(); track item.path) {
+              <li class="flex flex-col gap-1 rounded-xl border border-amber-200 bg-white p-4">
+                <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">{{ item.group }}</span>
+                <span class="text-sm font-medium text-gray-900">{{ item.question }}</span>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600" data-testid="mktg-faq-view-unanswered-empty">
+            Every question is answered from the sources.
+          </p>
+        }
+      </div>
+    }
+
+    <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state -->
+    @case ('sources') {
+      <div
+        class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+        role="tabpanel"
+        id="mktg-faq-panel-sources"
+        aria-labelledby="mktg-faq-tab-sources"
+        data-testid="mktg-faq-view-panel-sources">
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Sources read</h3>
+          @if (report().sources_read.length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="mktg-faq-view-sources-read">
+              @for (source of report().sources_read; track source) {
+                <li class="flex items-start gap-2"><i class="fa-light fa-check mt-1 shrink-0 text-xs text-emerald-600" aria-hidden="true"></i>{{ source }}</li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs text-gray-500" data-testid="mktg-faq-view-sources-read-empty">Nothing was read.</p>
+          }
+        </div>
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Could not be read</h3>
+          @if (report().sources_failed.length > 0) {
+            <ul class="flex flex-col gap-1.5 text-sm" data-testid="mktg-faq-view-sources-failed">
+              @for (failed of report().sources_failed; track failed.name) {
+                <li class="flex flex-col">
+                  <span class="text-gray-800">{{ failed.name }}</span>
+                  <span class="text-xs text-amber-700">{{ failed.reason }}</span>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs text-gray-500" data-testid="mktg-faq-view-sources-failed-empty">Every source was read.</p>
+          }
+        </div>
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Gaps</h3>
+          @if (report().gaps.length > 0) {
+            <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800" data-testid="mktg-faq-view-gaps">
+              @for (gap of report().gaps; track gap) {
+                <li>{{ gap }}</li>
+              }
+            </ul>
+          } @else {
+            <p class="text-xs text-gray-500" data-testid="mktg-faq-view-gaps-empty">The sources left no gap.</p>
+          }
+        </div>
+        <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
+          <h3 class="text-sm font-semibold text-gray-900">Notes and checks</h3>
+          @if (reportNotes().length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-gray-800" data-testid="mktg-faq-view-report-notes">
+              @for (line of reportNotes(); track line) {
+                <li>{{ line }}</li>
+              }
+            </ul>
+          }
+          @if (findings().length > 0) {
+            <ul class="flex flex-col gap-1 text-sm text-amber-800" data-testid="mktg-faq-view-findings">
+              @for (finding of findings(); track finding) {
+                <li class="flex items-start gap-2"><i class="fa-light fa-triangle-exclamation mt-1 shrink-0 text-xs" aria-hidden="true"></i>{{ finding }}</li>
+              }
+            </ul>
+          }
+          @if (reportNotes().length === 0 && findings().length === 0) {
+            <p class="text-xs text-gray-500" data-testid="mktg-faq-view-checks-empty">Nothing to check.</p>
+          }
+        </div>
+      </div>
+    }
+  }
+</section>

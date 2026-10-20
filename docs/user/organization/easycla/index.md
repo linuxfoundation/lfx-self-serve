@@ -4,7 +4,7 @@ description: View and manage an organization's corporate CLAs in the Organizatio
 audience: [all]
 product_area: Organization
 tags: [organization, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-10-16
+last_updated: 2026-10-19
 intercom_collection: Organization
 ---
 
@@ -74,7 +74,12 @@ Signing a corporate CLA starts on EasyCLA and finishes in DocuSign. Self Serve p
 
 1. On EasyCLA, select **Sign CLA**.
 2. In **Sign a CLA**, search for the project, CLA Group, or repository, then select **Continue to sign**.
-3. On the agreement, select **Start the CLA process**. If you are not already the initial CLA Manager, the page asks **Are you authorized to be a CLA Manager for your organization?** **Yes** continues as you. **No** asks you to **Identify CLA Manager** — a name and email for the person at your company who will be the CLA Manager. That person needs an LF Login before they can become the designee. Answering **No** ends your part: Overview shows a notice, and no confirmation screen follows. Steps 4 to 6 are for the person continuing as the initial CLA Manager.
+3. On the agreement, select **Start the CLA process**. If you are not already the initial CLA Manager, the page asks **Are you authorized to be a CLA Manager for your organization?**
+   - **Yes** shows **Configuring CLA Manager Settings…** while you are made the initial CLA Manager designee, then closes. Overview then says **You've been identified as the initial CLA Manager from your company for this project.** and offers **Proceed with signing**. Select it to continue to step 4.
+   - **No** asks you to **Identify CLA Manager** — a name and email for the person at your company who will be the CLA Manager. That person needs an LF Login before they can become the designee. Answering **No** ends your part: Overview shows a notice, and no confirmation screen follows.
+
+   If you are already the initial CLA Manager designee, Overview offers **Proceed with signing** instead of **Start the CLA process**, and the question is not asked. Steps 4 to 6 are for the person continuing as the initial CLA Manager.
+
 4. **Confirm Authorization to Sign the CLA** offers **Cancel**, **I am not authorized**, and **Continue**. Choose the branch that fits:
    - **You sign it yourself.** Complete **Authorization Confirmation** and **Compliance Confirmation**, then select **Continue**. **Continue** stays disabled until both are complete. Compliance Confirmation is the export-control and sanctions statement on that screen, including the Office of Foreign Assets Control (OFAC) condition. The statement stays on that screen. This article does not repeat it.
    - **Someone else signs it.** Select **I am not authorized**. You do not complete either confirmation for this branch.
@@ -88,7 +93,7 @@ Some rows in the picker stay visible and still cannot be signed from here:
 - **Your organization has already signed a corporate CLA for this CLA group.**
 - **Signing CLA using GitLab is not supported from Self Serve.**
 
-Before a signature exists, Overview explains the three steps: identify the initial CLA Manager, that person signs or sends the agreement to someone else, then the CLA Manager approves contributors and adds other CLA Managers. You can **Download a copy of the CCLA for review (non-executable)** from that preview. Approval List, Contributor Acknowledgments, and Activity Log stay empty until the agreement is signed, and each tab says so. CLA Managers says **CLA Managers become available once this CLA is signed**.
+Before a signature exists, Overview explains the three steps: identify the initial CLA Manager, that person signs or sends the agreement to someone else, then the CLA Manager approves contributors and adds other CLA Managers. If you are already the initial CLA Manager designee, Overview says so instead and offers **Proceed with signing**. You can **Download a copy of the CCLA for review (non-executable)** from that preview. Approval List, Contributor Acknowledgments, and Activity Log stay empty until the agreement is signed, and each tab says so. CLA Managers says **CLA Managers become available once this CLA is signed**.
 
 If you are not designated to sign, attestation **Continue** shows **Can't start signing** with **You aren't designated to sign this corporate CLA for your organization.** A grant made in the last half hour may not have arrived yet. Wait, then try again.
 

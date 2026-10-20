@@ -86,7 +86,7 @@ The `page_token` from the query service passes through unchanged.
 > only for internal consumers that need the raw upstream cursor, like committee-activity's
 > saturation walk.
 
-### Management vote summaries and closing-only lists
+### Management vote summaries, status-tab counts, and closing-only lists
 
 `GET /api/votes/summary` accepts exactly one nonempty `parent=project:<uid>` and an optional
 nonempty `group` committee name. Other keys and repeated values are rejected. Accepted Group
@@ -102,21 +102,56 @@ snapshot as the returned page; the dashboard skips the separate count request in
 False/omitted flags preserve the ordinary response shape. Summary and list both require
 `failOnPartial: true`, so a failed scan is unavailable, never a partial total.
 
-The canonical `filters=status:active` clause is evaluated locally with normalized status for
-both `GET /api/votes` and `GET /api/votes/count`. Forwarding it as an exact upstream term would
-exclude legacy mixed-case active votes that the summary counts. The BFF removes only that
-clause, keeps other filters/search/scope upstream, and applies normalized active matching to
-the complete authorized scan. The Active count therefore drains pages rather than using the
-upstream exact-value count; it ignores list pagination and rejects incomplete scans. Other
-count queries and the internal upstream-cursor passthrough retain their existing behavior.
-Recognized indexed statuses are canonicalized in returned rows so status-dependent actions
-agree with the normalized predicates; unrecognized values are preserved.
+`GET /api/votes/status-counts` returns `{ all, active, disabled, ended }` for the votes table's
+status tabs (#3687). It accepts exactly one nonempty `parent=project:<uid>`, plus an optional
+nonempty `name` search and an optional nonempty `group` committee name. Other keys and repeated
+values are rejected, and accepted values are trimmed. Unlike the summary, the search applies
+here, because each tab count must equal its tab's list total. One caller-authorized scan
+(`failOnPartial: true`) forwards `name` and `committee_name:<group>` upstream, then buckets rows
+with the shared `countVotesByStatus`. `all` counts every row, including statuses that are
+unrecognized after normalization; those rows fall into no per-status bucket. Status, quick
+filters, and pagination never affect these counts.
+
+Any `filters=status:<x>` clause whose value normalizes to a known `PollStatus` (`active`,
+`disabled`, `ended`) is evaluated locally with normalized status for both `GET /api/votes` and
+`GET /api/votes/count`. Forwarding it as an exact upstream term would exclude legacy mixed-case
+votes that the summary and status-tab counts include. The BFF removes only that clause, keeps
+other filters/search/scope upstream, and applies normalized status matching to the complete
+authorized scan. Status-filtered counts therefore drain pages rather than using the upstream
+exact-value count; they ignore list pagination and reject incomplete scans. Count queries
+without a recognized status clause, and the internal upstream-cursor passthrough, retain their
+existing behavior. Recognized indexed statuses are canonicalized in returned rows so
+status-dependent actions agree with the normalized predicates; unrecognized values are
+preserved.
+
+Returned vote-list rows are batch-decorated with effective `vote#writer` access, including committee-derived grants. Only the returned slice is checked; failed access checks default to `writer: false`. The reminder menu uses this per-row field, not the active project's writer flag. The reminder API independently enforces a strict writer check before reading voter identities.
+
+Reminder recipient reads validate the current poll's active status and deadline, then drain `vote_response` rows matching either `vote_uid` or legacy `poll_id` with `failOnPartial: true`. Rows must match the canonical parent, still be awaiting an uncast response, and not be removed; recipient UIDs are deduplicated before the identity-only projection. A send repeats this check and rejects the entire selection if any recipient is no longer eligible. `409 VOTE_REMINDER_INACTIVE` identifies an inactive poll; `409 VOTE_REMINDER_SELECTION_STALE` means no reminders were queued and the selection must be reloaded. The index is eventually consistent, so this recheck is not an atomic exclusion of ballots submitted concurrently with queuing.
 
 Closing means `now < end_time <= now + 7 × 24 hours`. Active totals still include indexed-active
 votes whose deadlines are past or invalid. The summary's RFC3339 `as_of` describes its snapshot;
 list pagination takes a fresh snapshot, so counts can legitimately differ at a deadline.
 Existing cursor recovery handles shrinking sets. Refresh/re-entry reloads totals and rows,
 but cannot promise immediate convergence of the search index after mutations.
+
+### Personal vote-feed completeness
+
+`GET /api/votes/my-votes` preserves its array response by default for already-open browser
+clients. New clients request `include_status=true` to receive `{ votes, complete }`, following
+the personal-newsletter feed's opt-in convention. Only the exact single string `true` opts in.
+Invitation enumeration retains successfully fetched pages when a later page exhausts retries,
+but marks the feed incomplete.
+Per-vote detail reads that explicitly return upstream 403/404 are skipped as not visible to the
+caller without marking the feed incomplete; exact counts describe the remaining readable votes.
+Other failed or empty required vote-detail reads still mark it incomplete while keeping usable
+votes. A first-page failure still fails the request. Optional project metadata does not prove
+invitation or vote-detail completeness.
+
+The Me-lens status tabs show unavailable counts unless `complete` is explicitly true; a
+partial feed with no usable rows is not a confirmed zero. Filtering or switching status tabs
+does not change completeness. Refresh fetches a new feed and restores counts on complete success.
+The frontend also accepts legacy array responses, retaining their rows with unknown completeness
+and withholding exact tab totals.
 
 ## Backend: Complete Fetch (All Pages)
 

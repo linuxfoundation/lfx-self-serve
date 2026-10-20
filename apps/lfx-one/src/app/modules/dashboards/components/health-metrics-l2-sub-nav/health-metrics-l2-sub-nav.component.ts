@@ -16,6 +16,12 @@ import type { HealthMetricsL2CrossReference, HealthMetricsL2SubNavItem } from '@
   selector: 'lfx-health-metrics-l2-sub-nav',
   imports: [NgClass, RouterLink],
   templateUrl: './health-metrics-l2-sub-nav.component.html',
+  // The host is the grid item, so it is what sticks; a sticky child would have no room to travel in it.
+  host: {
+    class: 'block lg:sticky lg:self-start',
+    '[style.top.px]': 'topPx()',
+    '[style.--l2-sub-nav-top]': "topPx() + 'px'",
+  },
 })
 export class HealthMetricsL2SubNavComponent {
   public readonly items = input.required<readonly HealthMetricsL2SubNavItem[]>();

@@ -4,7 +4,7 @@ description: Short answers about EasyCLA in the Organization lens — who can ed
 audience: [all]
 product_area: Organization
 tags: [organization, faq, easycla, cla, ccla, cla-manager]
-last_updated: 2026-10-16
+last_updated: 2026-10-19
 intercom_collection: Organization
 ---
 
@@ -34,7 +34,7 @@ On an agreement that is not signed yet, identify the initial CLA Manager while s
 
 ## How do I sign a corporate CLA?
 
-You sign a corporate CLA (CCLA) from **Sign CLA** on EasyCLA, either yourself in DocuSign or by sending it to the person who should sign. Select **Sign CLA**, choose the CLA Group, and, if asked, confirm you are authorized to be a CLA Manager. If you answer **No** and name someone else, your part ends there and that person continues. On **Confirm Authorization to Sign the CLA**, pick one branch:
+You sign a corporate CLA (CCLA) from **Sign CLA** on EasyCLA, either yourself in DocuSign or by sending it to the person who should sign. Select **Sign CLA**, choose the CLA Group, and, if asked, confirm you are authorized to be a CLA Manager. **Yes** shows **Configuring CLA Manager Settings…**, then Overview offers **Proceed with signing**, which opens **Confirm Authorization to Sign the CLA**. If you answer **No** and name someone else, your part ends there and that person continues. On **Confirm Authorization to Sign the CLA**, pick one branch:
 
 1. To sign yourself, complete **Authorization Confirmation** and **Compliance Confirmation**, select **Continue**, then **Review and Sign CCLA**. That opens DocuSign. Self Serve does not run the ceremony.
 2. To have someone else sign, select **I am not authorized** without completing the confirmations. In **Identify who should sign**, enter their name and email and select **Send Signature Request Email**. See [How do I sign a corporate CLA?](../easycla/#how-do-i-sign-a-corporate-cla).
