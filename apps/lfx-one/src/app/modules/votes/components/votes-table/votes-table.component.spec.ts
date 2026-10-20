@@ -991,11 +991,11 @@ describe('VotesTableComponent — row More menu', () => {
   });
 
   it.each([
-    { hasPMOAccess: true, writer: false, uid: 'active' },
-    { hasPMOAccess: true, writer: undefined, uid: 'active' },
-    { hasPMOAccess: false, writer: false, uid: 'active' },
-    { hasPMOAccess: true, writer: true, uid: 'ended' },
-  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid }) => {
+    { hasPMOAccess: true, writer: false, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
+    { hasPMOAccess: true, writer: undefined, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
+    { hasPMOAccess: false, writer: false, uid: 'active', expectedLabels: ['Copy link'] },
+    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Clone'] },
+  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid, expectedLabels }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
     fixture.componentRef.setInput(
       'votes',
@@ -1009,7 +1009,7 @@ describe('VotesTableComponent — row More menu', () => {
     // Asserting the absence of the reminder, not of Clone: Clone follows project access (#3781) and
     // is expected in every case here that has it, including the ended vote — a vote that has closed
     // can still be cloned into a new one.
-    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(hasPMOAccess ? ['Copy link', 'Clone'] : ['Copy link']);
+    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(expectedLabels);
   });
 
   it('exposes menu semantics and expands only the row whose menu is open', async () => {
