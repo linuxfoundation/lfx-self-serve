@@ -19,11 +19,11 @@ import { UserService } from '@services/user.service';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingRegistrantsDisplayComponent } from '../../../components/meeting-registrants-display/meeting-registrants-display.component';
+import { MeetingV2RegistrantsDisplayComponent } from '../v2-registrants-display/v2-registrants-display.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingPeopleComponent } from './people.component';
 
-@Component({ selector: 'lfx-meeting-registrants-display', template: '<span data-testid="registrants-display-stub"></span>' })
+@Component({ selector: 'lfx-meeting-v2-registrants-display', template: '<span data-testid="registrants-display-stub"></span>' })
 class RegistrantsDisplayStubComponent {
   public readonly meeting = input<unknown>();
   public readonly showAddRegistrant = input(false);
@@ -93,7 +93,7 @@ describe('MeetingPeopleComponent', () => {
         { provide: UserService, useValue: { viewerUsername: signal('me'), user: signal({ email: 'me@vendor-corp.example' }) } },
       ],
     })
-      .overrideComponent(MeetingPeopleComponent, { remove: { imports: [MeetingRegistrantsDisplayComponent] } })
+      .overrideComponent(MeetingPeopleComponent, { remove: { imports: [MeetingV2RegistrantsDisplayComponent] } })
       .overrideComponent(MeetingPeopleComponent, { add: { imports: [RegistrantsDisplayStubComponent] } })
       .compileComponents();
 

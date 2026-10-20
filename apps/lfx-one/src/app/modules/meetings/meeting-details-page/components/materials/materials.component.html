@@ -162,8 +162,8 @@
 </section>
 
 @if (canManage()) {
-  <!-- V1's materials drawer, unchanged: add, edit and remove files and links. -->
-  <lfx-meeting-materials-drawer
+  <!-- V1's materials drawer behaviour (add, edit and remove files and links) in V2's own variant, a named dialog that moves focus in and back. -->
+  <lfx-meeting-v2-materials-drawer
     [(visible)]="drawerVisible"
     [meetingId]="drawerMeetingId()"
     [pastMeetingId]="drawerPastMeetingId()"

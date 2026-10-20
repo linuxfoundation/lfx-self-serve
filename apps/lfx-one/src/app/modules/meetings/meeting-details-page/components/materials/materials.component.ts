@@ -17,8 +17,8 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { ButtonComponent } from '@components/button/button.component';
 import { catchError, map, Observable, of, startWith, Subject, switchMap, take, takeUntil, timer } from 'rxjs';
 
-import { MeetingMaterialsDrawerComponent } from '../../../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingV2MaterialsDrawerComponent } from '../v2-materials-drawer/v2-materials-drawer.component';
 
 /**
  * The V2 materials section, in the content column after the people section (E3-02, #3251, FR-031).
@@ -34,12 +34,12 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  * asked to sign in, as V1 asks (`meeting-join.component.html` "Sign in to view materials").
  *
  * Files download through a presigned URL (V1's "Download Failed" toast on failure); links open in a
- * new tab. An organizer gets Add material, V1's materials drawer, while the meeting is upcoming or
+ * new tab. An organizer gets Add material, V1's materials drawer (V2's own accessible variant), while the meeting is upcoming or
  * the page is a past occurrence's.
  */
 @Component({
   selector: 'lfx-meeting-materials',
-  imports: [NgTemplateOutlet, SkeletonModule, ButtonComponent, FileSizePipe, FileTypeDisplayPipe, MeetingMaterialsDrawerComponent],
+  imports: [NgTemplateOutlet, SkeletonModule, ButtonComponent, FileSizePipe, FileTypeDisplayPipe, MeetingV2MaterialsDrawerComponent],
   templateUrl: './materials.component.html',
 })
 export class MeetingMaterialsComponent {

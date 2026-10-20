@@ -6,7 +6,6 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MEETING_AGENDA_COLLAPSED_HEIGHT_PX, PAST_MEETING_SUMMARY_APPROVAL_LABELS } from '@lfx-one/shared/constants';
 import { MeetingArtifactState, MeetingRecordingSectionState, MeetingSummaryArtifactState } from '@lfx-one/shared/interfaces';
@@ -30,6 +29,7 @@ import { catchError, combineLatest, map, Observable, of, startWith, switchMap } 
 import { MeetingSummaryModalComponent } from '../../../components/meeting-summary-modal/meeting-summary-modal.component';
 import { TranscriptModalComponent } from '../../../components/transcript-modal/transcript-modal.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
+import { MeetingV2ExpandableTextComponent } from '../v2-expandable-text/v2-expandable-text.component';
 
 /**
  * The V2 Recording & Transcript section, at the top of the content column of an ended meeting
@@ -55,7 +55,7 @@ import { MeetingDetailsStateService } from '../../meeting-details-state.service'
  */
 @Component({
   selector: 'lfx-meeting-recording',
-  imports: [ButtonComponent, ExpandableTextComponent, MarkdownRendererComponent, SkeletonModule],
+  imports: [ButtonComponent, MeetingV2ExpandableTextComponent, MarkdownRendererComponent, SkeletonModule],
   templateUrl: './recording.component.html',
 })
 export class MeetingRecordingComponent {

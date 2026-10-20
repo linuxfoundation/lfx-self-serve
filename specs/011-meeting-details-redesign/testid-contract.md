@@ -304,6 +304,7 @@ assert on type without first reading the row's contents.
 | `people-drawer-title`                    | Its title: Meeting Members (a committee meeting) or Meeting Guests                              |
 | `people-drawer-count`                    | Its "{n} guests" / "{n} members" (a loaded roster only)                                         |
 | `people-drawer-close`                    | Its close button                                                                                |
+| `registrant-display-linkedin-${uid}`     | A guest's LinkedIn link in the drawer, named for that guest (V2's own guest-list variant only)  |
 | `people-section-no-access`               | Past roster: the BFF refused it (403, E4-05)                                                    |
 | `people-section-sign-in`                 | Past roster: the session lapsed (401), with `people-section-sign-in-link`                       |
 | `people-past-attendance`                 | Past roster: the attendance figures (shared with the admin page)                                |

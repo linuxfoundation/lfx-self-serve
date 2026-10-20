@@ -68,12 +68,12 @@ describe('MeetingAgendaComponent', () => {
   });
 
   it('remounts the expandable text when the description changes, so it is measured afresh', () => {
-    const before = fixture.nativeElement.querySelector('lfx-expandable-text');
+    const before = fixture.nativeElement.querySelector('lfx-meeting-v2-expandable-text');
 
     selectedOccurrence.set({ occurrence_id: 'occ-2', description: 'A short agenda' } as MeetingOccurrence);
     fixture.detectChanges();
 
-    const after = fixture.nativeElement.querySelector('lfx-expandable-text');
+    const after = fixture.nativeElement.querySelector('lfx-meeting-v2-expandable-text');
     expect(after).not.toBeNull();
     expect(after).not.toBe(before);
     expect(after.textContent).toContain('A short agenda');

@@ -11,11 +11,11 @@ import { MessageService } from 'primeng/api';
 import { Observable, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingMaterialsDrawerComponent } from '../../../components/meeting-materials-drawer/meeting-materials-drawer.component';
+import { MeetingV2MaterialsDrawerComponent } from '../v2-materials-drawer/v2-materials-drawer.component';
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingMaterialsComponent } from './materials.component';
 
-@Component({ selector: 'lfx-meeting-materials-drawer', template: '' })
+@Component({ selector: 'lfx-meeting-v2-materials-drawer', template: '' })
 class MaterialsDrawerStubComponent {
   public readonly meetingId = input<string>();
   public readonly pastMeetingId = input<string>();
@@ -86,7 +86,7 @@ describe('MeetingMaterialsComponent', () => {
         { provide: MessageService, useValue: messageService },
       ],
     })
-      .overrideComponent(MeetingMaterialsComponent, { remove: { imports: [MeetingMaterialsDrawerComponent] } })
+      .overrideComponent(MeetingMaterialsComponent, { remove: { imports: [MeetingV2MaterialsDrawerComponent] } })
       .overrideComponent(MeetingMaterialsComponent, { add: { imports: [MaterialsDrawerStubComponent] } })
       .compileComponents();
 
