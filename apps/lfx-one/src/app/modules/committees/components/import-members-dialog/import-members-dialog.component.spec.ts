@@ -280,14 +280,41 @@ describe('ImportMembersDialogComponent', () => {
       await render();
 
       expect(query('import-members-guidance')?.textContent).toContain('saved only when you select Update Group');
-      expect(query('import-members-send-notification')).toBeNull();
+      expect(query('import-members-send-notification')).not.toBeNull();
+      expect(component.form.controls.send_notification.value).toBe(false);
       expect(query('import-members-submit-btn')?.textContent).toContain('Import 1 member');
       query('import-members-submit-btn')?.querySelector('button')?.click();
 
-      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([{ email: 'ada@example.com', first_name: 'Ada' }]);
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([
+        { email: 'ada@example.com', first_name: 'Ada', createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1'] },
+      ]);
       expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
       expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
       expect(committeeService.createCommitteeInvite).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('collects notification opt-in %s and only matching pending invitation IDs without writes', async (notify) => {
+      await setup(
+        OPEN_GROUP,
+        [],
+        [
+          { uid: 'invite-1', invitee_email: ' ADA@EXAMPLE.COM ', status: 'pending' },
+          { uid: 'invite-2', invitee_email: 'ada@example.com', status: 'pending' },
+          { uid: 'revoked', invitee_email: 'ada@example.com', status: 'revoked' },
+          { uid: 'other', invitee_email: 'other@example.com', status: 'pending' },
+        ],
+        true
+      );
+      await upload('email\nada@example.com');
+      if (notify) {
+        query('import-members-send-notification')?.querySelector('input')?.click();
+      }
+      component.startImport();
+      expect(dialogRef.close).toHaveBeenCalledExactlyOnceWith([
+        { email: 'ada@example.com', createOptions: { skipNotification: !notify }, pendingInviteUids: ['invite-1', 'invite-2'] },
+      ]);
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+      expect(committeeService.revokeCommitteeInvite).not.toHaveBeenCalled();
     });
 
     it('returns no members when the collected preview is cancelled', async () => {
@@ -320,6 +347,8 @@ describe('ImportMembersDialogComponent', () => {
         organization: { id: null, name: 'Example Org', website: 'https://org.example' },
         role: { name: 'LF Staff' },
         voting: { status: 'Observer' },
+        createOptions: { skipNotification: true },
+        pendingInviteUids: [],
       });
       expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
     });

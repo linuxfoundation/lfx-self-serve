@@ -60,10 +60,11 @@ If you can manage a group's members, you can add many people at once from a CSV 
 1. Open **Edit Group** and go to the **Add Members** step.
 2. Select **Import Members** alongside **Invite by email** and **Add with details**.
 3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the edit form.
-4. Select **Import _N_ members**. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
-5. Select **Update Group** to save the pending member additions along with your other changes. Cancelling the CSV preview or leaving without saving does not add those members.
+4. Optionally select **Send notification emails to added members**. Notifications are off by default; this choice is retained when you edit staged members or move between steps.
+5. Select **Import _N_ members**. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
+6. Select **Update Group** to save the pending member additions along with your other changes. Cancelling the CSV preview or leaving without saving does not add those members or revoke their invitations.
 
-People already in the group or already staged in the edit form are skipped. Imports use the edit form's normal save flow; notification choices and per-row import results described for the Members tab do not appear in this preview.
+People already in the group or already staged in the edit form are skipped. Imports use the edit form's normal save flow rather than the Members tab's per-row results. After an imported member is successfully added, matching pending invitations are revoked. If cleanup fails, a warning directs you to revoke them from the **Pending** tab; the added member is not resubmitted when you retry other failed changes.
 
 ### What the CSV needs
 

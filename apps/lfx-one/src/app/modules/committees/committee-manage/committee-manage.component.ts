@@ -26,7 +26,24 @@ import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, concat, distinctUntilChanged, EMPTY, filter, finalize, from, map, merge, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import {
+  catchError,
+  concat,
+  concatMap,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  finalize,
+  from,
+  map,
+  merge,
+  mergeMap,
+  Observable,
+  of,
+  switchMap,
+  take,
+  toArray,
+} from 'rxjs';
 import { applyEntityProjectContext, syncEntityProjectContext } from '@shared/utils/entity-project-context.util';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { resolveEntityWriteSlug } from '@shared/utils/write-access.util';
@@ -757,18 +774,39 @@ export class CommitteeManageComponent {
     // Add create operation if there are members to add
     if (memberUpdates.toAdd.length > 0) {
       for (const member of memberUpdates.toAdd) {
+        const { createOptions, pendingInviteUids = [], ...payload } = member;
         operations.push(
           this.createMemberOperation(
             'add',
             member.email,
-            () => this.committeeService.createCommitteeMember(committeeId, member),
+            () => this.committeeService.createCommitteeMember(committeeId, payload, createOptions),
             (createdMember) => createdMember
-          )
+          ).pipe(switchMap((result) => this.revokeImportedInvites(committeeId, pendingInviteUids, result)))
         );
       }
     }
 
     return operations;
+  }
+
+  /** Cleanup is best-effort: a failed revoke must never put a successfully-created member back in toAdd. */
+  private revokeImportedInvites(committeeId: string, inviteUids: string[], result: MemberOperationResult): Observable<MemberOperationResult> {
+    if (!result.success || inviteUids.length === 0) {
+      return of(result);
+    }
+    return from(inviteUids).pipe(
+      concatMap((uid) =>
+        this.committeeService.revokeCommitteeInvite(committeeId, uid).pipe(
+          map(() => true),
+          catchError((error: HttpErrorResponse) => {
+            console.error('CSV member import invitation cleanup failed', { status: error.status });
+            return of(false);
+          })
+        )
+      ),
+      toArray(),
+      map((outcomes) => ({ ...result, cleanupWarning: outcomes.some((success) => !success) }))
+    );
   }
 
   /**
@@ -855,6 +893,15 @@ export class CommitteeManageComponent {
         severity: 'error',
         summary: 'Operation Failed',
         detail: `Failed to ${failVerb} ${totalFailed} ${noun}`,
+      });
+    }
+    const cleanupWarnings = results.filter((result) => result.cleanupWarning).length;
+    if (cleanupWarnings > 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Pending Invitation Cleanup',
+        detail: `${cleanupWarnings} added member(s) still have pending invitations that could not be revoked. Revoke them from the Pending tab.`,
+        life: 10000,
       });
     }
   }

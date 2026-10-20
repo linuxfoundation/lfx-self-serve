@@ -24,6 +24,7 @@ import {
   MemberPendingChanges,
   MemberImportDialogData,
   SucceededMemberOperations,
+  StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -127,6 +128,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
+  private readonly loadingImportInvites = signal(false);
 
   // Simple computed signals
   // Members in state 'deleted' stay in membersWithState (so emitMemberUpdates() keeps re-queuing
@@ -141,7 +143,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public readonly votingCount = computed(() => this.visibleMembers().filter((m) => this.isVotingMember(m)).length);
   /** Gates every action that stages/mutates member or invite state — load-in-progress, load-failed, or an active flush. */
   public readonly mutationsDisabled = computed(
-    () => this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting()
+    () =>
+      this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting() || this.loadingImportInvites()
   );
 
   // Complex computed signals (using private initializers)
@@ -238,39 +241,33 @@ export class CommitteeMembersManagerComponent implements OnInit {
   /** Collect CSV members into the same pending state as Add with details; only Update Group writes them. */
   public openImportMembersDialog(): void {
     const committee = this.committee();
-    if (!this.isEditMode() || !committee || !committee.uid || this.mutationsDisabled()) {
+    const committeeId = this.committeeId();
+    if (!this.isEditMode() || !committeeId || committee?.uid !== committeeId || this.mutationsDisabled()) {
       return;
     }
-    const committeeId = this.committeeId();
-    const data: MemberImportDialogData = {
-      committee: { ...committee, ...this.organizationRequirements() },
-      existingMembers: this.membersWithState(),
-      existingInvites: [],
-      collectOnly: true,
-    };
-    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
-      header: 'Import Members',
-      width: '960px',
-      breakpoints: { '1024px': '95vw' },
-      modal: true,
-      closable: false,
-      closeOnEscape: false,
-      dismissableMask: false,
-      data,
-    });
-    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((members: CreateCommitteeMemberRequest[] | undefined) => {
-      if (!members?.length || this.mutationsDisabled() || this.committeeId() !== committeeId) {
-        return;
-      }
-      const seen = new Set(this.membersWithState().map((member) => (member.email ?? '').trim().toLowerCase()));
-      for (const member of members) {
-        const email = member.email.trim().toLowerCase();
-        if (!seen.has(email)) {
-          seen.add(email);
-          this.handleAddMemberResult({ ...member, email });
-        }
-      }
-    });
+    this.loadingImportInvites.set(true);
+    this.committeeService
+      .getCommitteeInvites(committeeId)
+      .pipe(
+        take(1),
+        finalize(() => this.loadingImportInvites.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (invites) => {
+          this.loadingImportInvites.set(false);
+          this.openCollectImportDialog(committeeId, invites);
+        },
+        error: (error: { status?: number }) => {
+          console.error('Failed to load invitations for CSV import', { status: error.status });
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Open Import Dialog',
+            detail: 'Could not load existing invitations. Please try again.',
+            life: 6000,
+          });
+        },
+      });
   }
 
   public openAddMemberDialog(): void {
@@ -323,6 +320,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
             state: m.state === 'existing' ? ('modified' as CommitteeMemberState) : m.state,
             originalData: m.originalData,
             tempId: m.tempId,
+            createOptions: m.createOptions,
+            pendingInviteUids: m.email.trim().toLowerCase() === updateData.data.email.trim().toLowerCase() ? m.pendingInviteUids : undefined,
           } as CommitteeMemberWithState;
         }
         return m;
@@ -393,6 +392,42 @@ export class CommitteeMembersManagerComponent implements OnInit {
     this.pendingInvites.update((current) => current.filter((invite) => !succeeded.invitedEmails.has((invite.invitee_email ?? '').trim().toLowerCase())));
 
     this.emitMemberUpdates();
+  }
+
+  private openCollectImportDialog(committeeId: string, invites: CommitteeInvite[]): void {
+    const committee = this.committee();
+    if (!this.isEditMode() || committee?.uid !== committeeId || this.committeeId() !== committeeId || this.mutationsDisabled()) {
+      return;
+    }
+    const data: MemberImportDialogData = {
+      committee: { ...committee, ...this.organizationRequirements() },
+      existingMembers: this.membersWithState(),
+      existingInvites: invites,
+      collectOnly: true,
+    };
+    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
+      header: 'Import Members',
+      width: '960px',
+      breakpoints: { '1024px': '95vw' },
+      modal: true,
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data,
+    });
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((members: StagedCommitteeMemberRequest[] | undefined) => {
+      if (!members?.length || this.mutationsDisabled() || this.committeeId() !== committeeId) {
+        return;
+      }
+      const seen = new Set(this.membersWithState().map((member) => (member.email ?? '').trim().toLowerCase()));
+      for (const member of members) {
+        const email = member.email.trim().toLowerCase();
+        if (!seen.has(email)) {
+          seen.add(email);
+          this.handleAddMemberResult({ ...member, email });
+        }
+      }
+    });
   }
 
   private openCollectInviteDialog(serverInvites: CommitteeInvite[]): void {
@@ -466,7 +501,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
     });
   }
 
-  private handleAddMemberResult(memberData: CreateCommitteeMemberRequest): void {
+  private handleAddMemberResult(memberData: StagedCommitteeMemberRequest): void {
     // Build complete CommitteeMember object from the form data
     const newMemberData: CommitteeMember = {
       ...this.memberFieldsFromRequest(memberData),
@@ -483,6 +518,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
       state: 'new' as CommitteeMemberState,
       tempId: generateTempId(),
       originalData: undefined,
+      createOptions: memberData.createOptions,
+      pendingInviteUids: memberData.pendingInviteUids,
     };
 
     // Add to local state for immediate UI feedback
@@ -580,6 +617,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
       state: 'new' as CommitteeMemberState,
       tempId: generateTempId(),
       originalData: undefined,
+      createOptions: request.createOptions,
+      pendingInviteUids: request.pendingInviteUids,
     }));
 
     return [...reconciled, ...added];
@@ -696,7 +735,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
     }
 
     this.memberUpdatesChange.emit({
-      toAdd: members.filter((m) => m.state === 'new').map((m) => this.stripMetadata(m)),
+      toAdd: members
+        .filter((m) => m.state === 'new')
+        .map((m) => ({
+          ...this.stripMetadata(m),
+          ...(m.createOptions ? { createOptions: m.createOptions } : {}),
+          ...(m.pendingInviteUids ? { pendingInviteUids: m.pendingInviteUids } : {}),
+        })),
       toUpdate: members
         .filter((m) => m.state === 'modified')
         .map((m) => ({

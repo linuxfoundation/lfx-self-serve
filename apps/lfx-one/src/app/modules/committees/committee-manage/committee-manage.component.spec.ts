@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -10,9 +11,9 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { Committee, PersonaType, Project } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeMember, PersonaType, Project, StagedCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeManageComponent } from './committee-manage.component';
@@ -314,6 +315,120 @@ describe('CommitteeManageComponent', () => {
       personaLoaded.set(true);
       await TestBed.inject(ApplicationRef).whenStable();
       expect(fixture.componentInstance.form.get('category')?.value).toBe('Working Group');
+    });
+  });
+
+  describe('deferred CSV member save', () => {
+    let updateCommittee: ReturnType<typeof vi.fn>;
+    let createCommitteeMember: ReturnType<typeof vi.fn>;
+    let revokeCommitteeInvite: ReturnType<typeof vi.fn>;
+    const createdMember = { uid: 'added-1', email: 'ada@example.com', first_name: 'Ada', last_name: 'Example' } as CommitteeMember;
+
+    beforeEach(() => {
+      getCommittee.mockReturnValue(of(enrichedCommittee()));
+      updateCommittee = vi.fn().mockReturnValue(of(enrichedCommittee()));
+      createCommitteeMember = vi.fn().mockReturnValue(of(createdMember));
+      revokeCommitteeInvite = vi.fn().mockReturnValue(of(undefined));
+      TestBed.overrideProvider(CommitteeService, {
+        useValue: { getCommittee, updateCommittee, createCommitteeMember, revokeCommitteeInvite, getCommitteeMembers: vi.fn().mockReturnValue(of([])) },
+      });
+      // Render the real staging child so partial-save pruning and retry exercise the parent/child contract.
+      TestBed.overrideComponent(CommitteeManageComponent, {
+        set: {
+          template: `<lfx-committee-members-manager [committeeId]="committeeId()" [memberUpdates]="memberUpdates()"
+            [submitting]="submitting()" (memberUpdatesChange)="onMemberUpdatesChange($event)" />`,
+        },
+      });
+    });
+
+    async function setupPending(toAdd: StagedCommitteeMemberRequest[]): Promise<CommitteeManageComponent> {
+      const fixture = TestBed.createComponent(CommitteeManageComponent);
+      const component = fixture.componentInstance;
+      component.memberUpdates.set({ toAdd, toUpdate: [], toDelete: [], toInvite: [] });
+      component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
+      await fixture.whenStable();
+      return component;
+    }
+
+    it.each([true, false])('passes notification suppression %s separately from the native member body', async (skipNotification) => {
+      const component = await setupPending([{ email: createdMember.email, createOptions: { skipNotification }, pendingInviteUids: ['invite-1'] }]);
+      component.onSubmitAll();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, { email: createdMember.email }, { skipNotification });
+      expect(revokeCommitteeInvite).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, 'invite-1');
+      expect(navigate).toHaveBeenCalledWith(['/groups']);
+    });
+
+    it('waits for the group update and successful member creation before revoking invitations', async () => {
+      const groupResponse = new Subject<Committee>();
+      const memberResponse = new Subject<CommitteeMember>();
+      updateCommittee.mockReturnValue(groupResponse);
+      createCommitteeMember.mockReturnValue(memberResponse);
+      const component = await setupPending([
+        { email: createdMember.email, createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1', 'invite-2'] },
+      ]);
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+      component.onSubmitAll();
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      groupResponse.next(enrichedCommittee());
+      groupResponse.complete();
+      expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+      memberResponse.next(createdMember);
+      memberResponse.complete();
+      expect(revokeCommitteeInvite.mock.calls).toEqual([
+        [COMMITTEE_UID, 'invite-1'],
+        [COMMITTEE_UID, 'invite-2'],
+      ]);
+    });
+
+    it('does not create members or revoke invitations if the group update fails', async () => {
+      updateCommittee.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const component = await setupPending([{ email: createdMember.email, createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1'] }]);
+      component.onSubmitAll();
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+      expect(component.memberUpdates().toAdd).toHaveLength(1);
+      expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+    });
+
+    it('never retries an added member after cleanup failure, while retaining failed-row options for retry', async () => {
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        createCommitteeMember.mockReturnValueOnce(of(createdMember)).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+        revokeCommitteeInvite.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'private@example.com' } })));
+        const component = await setupPending([
+          { email: createdMember.email, createOptions: { skipNotification: true }, pendingInviteUids: ['invite-1'] },
+          { email: 'retry@example.com', createOptions: { skipNotification: false }, pendingInviteUids: ['invite-2'] },
+        ]);
+        component.onSubmitAll();
+        expect(component.memberUpdates().toAdd).toEqual([
+          expect.objectContaining({ email: 'retry@example.com', createOptions: { skipNotification: false }, pendingInviteUids: ['invite-2'] }),
+        ]);
+        expect(revokeCommitteeInvite.mock.calls).toEqual([[COMMITTEE_UID, 'invite-1']]);
+        expect(errorLog).toHaveBeenCalledExactlyOnceWith('CSV member import invitation cleanup failed', { status: 403 });
+        expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Pending Invitation Cleanup' }));
+        createCommitteeMember.mockReturnValue(of({ ...createdMember, uid: 'added-2', email: 'retry@example.com' }));
+        component.onSubmitAll();
+        expect(createCommitteeMember).toHaveBeenCalledTimes(3);
+        expect(createCommitteeMember.mock.calls[2]).toEqual([
+          COMMITTEE_UID,
+          expect.objectContaining({ email: 'retry@example.com' }),
+          { skipNotification: false },
+        ]);
+        expect(revokeCommitteeInvite.mock.calls).toEqual([
+          [COMMITTEE_UID, 'invite-1'],
+          [COMMITTEE_UID, 'invite-2'],
+        ]);
+      } finally {
+        errorLog.mockRestore();
+      }
+    });
+
+    it('keeps non-CSV additions on their existing notification path with no cleanup', async () => {
+      const component = await setupPending([{ email: createdMember.email }]);
+      component.onSubmitAll();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, { email: createdMember.email }, undefined);
+      expect(revokeCommitteeInvite).not.toHaveBeenCalled();
     });
   });
 });

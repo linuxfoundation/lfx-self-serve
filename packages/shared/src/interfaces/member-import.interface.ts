@@ -105,7 +105,7 @@ export interface MemberImportDialogData {
   committee: Committee;
   existingMembers: CommitteeMember[];
   existingInvites: CommitteeInvite[];
-  /** Collect validated member requests for the edit wizard; close returns CreateCommitteeMemberRequest[] without writing. */
+  /** Collect validated member requests for the edit wizard; close returns StagedCommitteeMemberRequest[] with notification/cleanup metadata, without writing. */
   collectOnly?: boolean;
 }
 

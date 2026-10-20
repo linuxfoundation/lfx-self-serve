@@ -28,6 +28,7 @@ import {
   MemberImportGroupRules,
   MemberImportRow,
   MemberImportRowView,
+  StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import {
   committeeRequiresOrganization,
@@ -172,7 +173,17 @@ export class ImportMembersDialogComponent {
       return;
     }
     if (this.collectOnly) {
-      this.dialogRef.close(this.rows().flatMap((row) => (row.status === 'ready' && row.payload ? [row.payload] : [])));
+      const members: StagedCommitteeMemberRequest[] = this.rows().flatMap((row) => {
+        if (row.status !== 'ready' || !row.payload) {
+          return [];
+        }
+        const pendingInviteUids = (this.data.existingInvites ?? [])
+          .filter((invite) => (invite.status ?? '').toLowerCase() === 'pending' && (invite.invitee_email ?? '').trim().toLowerCase() === row.normalizedEmail)
+          .map((invite) => invite.uid)
+          .filter(Boolean);
+        return [{ ...row.payload, createOptions: { skipNotification: !this.form.controls.send_notification.value }, pendingInviteUids }];
+      });
+      this.dialogRef.close(members);
       return;
     }
     this.submitRows(this.rows().filter((row) => row.status === 'ready'));
