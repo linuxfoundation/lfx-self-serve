@@ -516,6 +516,18 @@ export const MIN_EMAIL_REMINDER_HOURS = 2;
 export const MAX_EMAIL_REMINDER_HOURS = 24;
 
 /**
+ * Minimum minutes component of the reminder email lead time
+ * @description Lower bound for the minutes field alongside the reminder hours
+ */
+export const MIN_EMAIL_REMINDER_MINUTES = 0;
+
+/**
+ * Maximum minutes component of the reminder email lead time
+ * @description Upper bound for the minutes field; a full hour rolls into the hours field
+ */
+export const MAX_EMAIL_REMINDER_MINUTES = 59;
+
+/**
  * Default reminder email lead time in hours
  * @description Standard reminder window for meetings when the reminder is first enabled
  */
