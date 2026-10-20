@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
@@ -21,6 +22,9 @@ import {
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
 } from '@lfx-one/shared/constants';
 import type {
+  HealthMetricsEngagementAttendanceMonth,
+  HealthMetricsEngagementAttendanceTrend,
+  HealthMetricsEngagementAttendanceTrendQuery,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupQuery,
@@ -55,6 +59,7 @@ import { SnowflakeService } from './snowflake.service';
 import type { Request } from 'express';
 import type { Bind } from 'snowflake-sdk';
 
+const ATTENDANCE_MONTHLY_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ATTENDANCE_MONTHLY';
 const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE';
 const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION';
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
@@ -84,6 +89,15 @@ const PROJECT_SCOPE_PREDICATE = '((? IS NULL AND is_all_projects = TRUE) OR proj
 /** True when this service can serve the range — the controller uses it to validate before binding. */
 export function isSupportedEngagementRange(range: string): range is SupportedEngagementRange {
   return isHealthMetricsL2Range(range);
+}
+
+interface AttendanceMonthRow {
+  MONTH_START_DATE: Date | string | null;
+  MEETINGS_HELD_COUNT: number | null;
+  INVITED_COUNT: number | null;
+  ATTENDED_COUNT: number | null;
+  ATTENDANCE_PCT: number | string | null;
+  ATTENDANCE_PCT_CHANGE_PP: number | string | null;
 }
 
 interface GroupAttendanceRow {
@@ -357,6 +371,47 @@ export class HealthMetricsEngagementService {
       total: total ? mapParticipationRow(total) : null,
       rows: groups.map(mapParticipationRow).sort((a, b) => participationOrder(a.group) - participationOrder(b.group)),
     };
+  }
+
+  /**
+   * The trailing twelve months of all-meeting attendance, oldest first. The view zero-fills every
+   * month of the window, so a quiet month arrives as a row with a null rate rather than a missing one.
+   */
+  public async getAttendanceTrend(req: Request, query: HealthMetricsEngagementAttendanceTrendQuery): Promise<HealthMetricsEngagementAttendanceTrend> {
+    const sql = `
+      SELECT
+        month_start_date,
+        meetings_held_count,
+        invited_count,
+        attended_count,
+        attendance_pct,
+        attendance_pct_change_pp
+      FROM ${ATTENDANCE_MONTHLY_VIEW}
+      WHERE foundation_slug = ?
+        AND ${PROJECT_SCOPE_PREDICATE}
+      ORDER BY month_start_date ASC
+    `;
+
+    const result = await executeSnowflakeViewRead<AttendanceMonthRow>(
+      this.snowflakeService,
+      req,
+      sql,
+      [query.foundationSlug, query.projectSlug, query.projectSlug],
+      {
+        view: ATTENDANCE_MONTHLY_VIEW,
+        operation: 'get_engagement_attendance_trend',
+        clientMessage: 'Attendance trend is unavailable right now.',
+      }
+    );
+
+    logger.debug(req, 'get_engagement_attendance_trend', 'Fetched attendance trend', {
+      foundation_slug: query.foundationSlug,
+      project_slug: query.projectSlug,
+      row_count: result.rows.length,
+    });
+
+    const months = result.rows.map(mapAttendanceMonth).filter((month): month is HealthMetricsEngagementAttendanceMonth => month !== null);
+    return months.length > 0 ? { months } : HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED;
   }
 
   /**
@@ -787,6 +842,21 @@ function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriod
   if (counts.some((count) => count.reps === null || count.neverAttendedReps === null)) return null;
 
   return counts.map((count) => ({ range: count.range, reps: count.reps ?? 0, neverAttendedReps: count.neverAttendedReps ?? 0 }));
+}
+
+/** A row without a month cannot be placed on the axis, so it is dropped rather than guessed. */
+function mapAttendanceMonth(row: AttendanceMonthRow): HealthMetricsEngagementAttendanceMonth | null {
+  const monthStartDate = toIsoDate(row.MONTH_START_DATE);
+  if (!monthStartDate) return null;
+
+  return {
+    monthStartDate,
+    meetingsHeld: toNullableNumber(row.MEETINGS_HELD_COUNT),
+    invited: toNullableNumber(row.INVITED_COUNT),
+    attended: toNullableNumber(row.ATTENDED_COUNT),
+    attendancePct: toNullableNumber(row.ATTENDANCE_PCT),
+    attendanceChangePp: toNullableNumber(row.ATTENDANCE_PCT_CHANGE_PP),
+  };
 }
 
 function toNullableNumber(value: unknown): number | null {

@@ -12,6 +12,7 @@ import { buildHealthMetricsEngagementSubNavItems } from '@lfx-one/shared/utils';
 
 import { HealthMetricsL2SectionDirective } from '../components/health-metrics-l2-shell/health-metrics-l2-section.directive';
 import { HealthMetricsL2ShellComponent } from '../components/health-metrics-l2-shell/health-metrics-l2-shell.component';
+import { EngagementAttendanceTrendComponent } from './components/engagement-attendance-trend/engagement-attendance-trend.component';
 import { EngagementGroupAttendanceComponent } from './components/engagement-group-attendance/engagement-group-attendance.component';
 import { EngagementMeetingParticipationComponent } from './components/engagement-meeting-participation/engagement-meeting-participation.component';
 import { EngagementNonMemberParticipationComponent } from './components/engagement-non-member-participation/engagement-non-member-participation.component';
@@ -34,6 +35,7 @@ import type {
 @Component({
   selector: 'lfx-health-metrics-engagement',
   imports: [
+    EngagementAttendanceTrendComponent,
     EngagementGroupAttendanceComponent,
     EngagementMeetingParticipationComponent,
     EngagementNonMemberParticipationComponent,
