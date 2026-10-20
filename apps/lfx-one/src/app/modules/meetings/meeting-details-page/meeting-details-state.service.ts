@@ -721,7 +721,13 @@ export class MeetingDetailsStateService {
           }
           // As V1: the BFF and the client both read a failed lookup as "not answered" (`null`).
           return this.meetingService.getMeetingRsvpForCurrentUser(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
-            tap((rsvp) => (this.lastFetchedRsvp = rsvp ?? null)),
+            // As V1: a fetched answer of a registration the viewer has removed (the indexer can still
+            // return it) is no answer, so a later lookup never undoes a removal's correction.
+            map((rsvp) => {
+              const meeting = this.meeting();
+              return rsvp && meeting && this.userService.isMeetingRsvpCurrent(rsvp, meeting) ? rsvp : null;
+            }),
+            tap((rsvp) => (this.lastFetchedRsvp = rsvp)),
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
             // Defensive: the client already reads a failure as `null`; an error must never end the signal.
             catchError(() => of<RsvpResponse | null | undefined>(null)),
@@ -908,8 +914,9 @@ export class MeetingDetailsStateService {
    * payload the indexer has not caught up on yet.
    */
   private isInvited(meeting: Meeting): boolean {
+    // The session's removal wins over both sources; registering again (`markRegistered`) clears it.
     const removed = this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
-    return (meeting.invited === true && !removed) || this.optimisticInvitedId() === meeting.id;
+    return !removed && (meeting.invited === true || this.optimisticInvitedId() === meeting.id);
   }
 
   /** The action slot this viewer gets at the given time state, or `null` before the meeting loads. */
