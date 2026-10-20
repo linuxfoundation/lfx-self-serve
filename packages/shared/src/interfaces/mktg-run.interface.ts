@@ -385,7 +385,7 @@ export interface MktgIntakeLogoFilesConfig {
  * (dec-agent-dependency-gating): agents that CONSUME another agent's output
  * (e.g. the Message Foundation consumes the Brand Kit) never ask for it —
  * the run page fetches the dependency's stored document at submit time
- * (server-persisted preferred, browser-stored run fallback) and submits it
+ * (server-approved current only, never a browser Draft) and submits it
  * under the agent's own schema key. The form shows a non-interactive
  * "Using <project>'s <document> (vN)" chip instead of any choice UI.
  */
@@ -415,22 +415,16 @@ export interface MktgIntakeAttachment {
    * needed, with a link to the source agent's page.
    */
   optional?: boolean;
+  /** Gate guidance when the stored read returns no usable selection. */
+  missingNote?: string;
   /**
    * What is submitted under `answerKey`: the document's Markdown (the
    * default, what the ICP's attachments take) or the stored revision's
    * sidecar JSON — the envelope's structured fields — serialized (the
    * Brand Kit takes the messaging framework as JSON).
    *
-   * A `json` attachment resolves from the server's LATEST stored revision
-   * only — the newest revision that passes its integrity checks (a restore
-   * is itself the newest revision) — read with its sidecar and its date,
-   * so the chip names the revision ("Uses the latest
-   * messaging framework · v3 · 16 Oct"); never this browser's stored run,
-   * which carries no sidecar. The latest revision regardless of its review
-   * status (product decision, 17 Oct 2026): LFX One has no Approve action
-   * yet, so an approved-only gate could never open. Approve is a later
-   * item; when it lands, this is where the resolution narrows to the
-   * approved revision.
+   * All attachments resolve the server's approved current, never a browser
+   * Draft. JSON attachments additionally request the sidecar and date.
    *
    * A resolved revision counts as the attachment only when the consuming
    * agent can read from its sidecar what it takes
@@ -443,7 +437,7 @@ export interface MktgIntakeAttachment {
   format?: 'markdown' | 'json';
   /**
    * The note the run page shows, with the link to the source agent's page,
-   * when the project's latest revision exists but the agent can read
+   * when the selected approved revision exists but the agent can read
    * nothing from it (a `json` attachment whose sidecar lacks the fields the
    * agent takes — the Brand Kit's framework with no positioning or tagline
    * yet). Defaults to "Finish the <document> first." Only read for a
@@ -469,9 +463,9 @@ export interface MktgIntakeAttachment {
 export interface MktgDependencyDocument {
   /** Catalog agent id that produced the document. */
   agentId: string;
-  /** Where the document came from: BFF object-store persistence, or this browser's stored run. */
+  /** New resolutions use server-approved current only; `browser` remains for legacy type compatibility. */
   source: 'server' | 'browser';
-  /** Latest stored draft version. */
+  /** Attached approved revision's number in Documents, not a session's draft version. */
   version: number;
   /**
    * The stored document as a dependent agent reads it: always Markdown. A
@@ -507,7 +501,7 @@ export interface MktgMissingDependencyLink {
 export interface MktgAttachmentChip {
   /** Source agent id the chip describes; the `@for` track key. */
   key: string;
-  /** Chip text — "Using <project>'s <document> (vN)", "Uses the latest <document> · vN · <date>" or the honest absent note. */
+  /** Chip text — "Using <project>'s <document> (vN)", "Uses the approved <document> · vN · <date>" or the honest absent note. */
   label: string;
   /** Tailwind colour classes for the chip. */
   chipClass: string;
@@ -563,9 +557,9 @@ export interface MktgRunEndpoints {
    */
   answers?: string;
   /**
-   * GET `?project=<uid>` — the project's LATEST server-persisted document for
-   * this agent; responds `MktgArtifactStoredResponse`, 404 when nothing is
-   * stored, 403 for a caller without the project's writer grant. Only agents
+   * GET `?project=<uid>` — approved current for plain and sidecar reads;
+   * true pre-revision plain fallback is the only exception. Responds
+   * `MktgArtifactStoredResponse`, 404 when none is approved, 403 without writer rights. Only agents
    * that declare {@link MktgAgentIntake.persistsDocument} can have one, and
    * every persisting agent that is CONSUMED as a dependency or attachment
    * must — it is what lets dependency resolution reach ANY agent's document
@@ -1079,8 +1073,8 @@ export interface MktgRunVersion {
   brandKit?: BrandKitRevision;
   /**
    * SHA-256 of the content the server stored for this version (its
-   * persistence receipt), which names the stored revision an export of this
-   * version reads; absent when the result carried no receipt.
+   * persistence receipt); absent without a receipt. Content equality does
+   * not identify a revision or imply approval.
    */
   contentSha256?: string;
   /** ISO-8601 creation timestamp. */

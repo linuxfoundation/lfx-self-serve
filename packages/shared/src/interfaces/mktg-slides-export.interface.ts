@@ -139,9 +139,9 @@ export interface MktgSlidesExportRecord {
 }
 
 /**
- * Which stored revision to export. Documents names the revision on screen;
- * the run page names its version by the hash of its stored content; with
- * neither, the document's latest revision.
+ * Select approved current at export start. Explicit mismatching selectors
+ * fail with 409; absent selectors use approved current. Result polling loads
+ * the already-selected revision without rechecking a changed pointer.
  */
 export interface MktgSlidesExportTarget {
   /** The project uid; the BFF resolves it and requires the writer grant. */
@@ -189,7 +189,7 @@ export type MktgSlidesExportResultResponse =
   | { status: 'ready'; record: MktgSlidesExportRecord }
   | { status: 'failed'; failure: MktgSlidesExportFailure; message: string; deckLink: string | null };
 
-/** Response of `GET /api/mktg-agents/slides-export/last`: the document's last export and its latest revision. */
+/** Last export and newest revision identity for freshness comparison, not exported-byte selection. */
 export interface MktgSlidesExportLastResponse {
   last: MktgSlidesExportRecord | null;
   latestRevision: MktgSlidesExportRevisionRef | null;

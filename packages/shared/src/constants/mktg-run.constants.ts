@@ -5,6 +5,7 @@ import type { GithubRepoUrlErrorReason, MktgAgentIntake, MktgIntakeFieldFormat, 
 import { BOILERPLATES_ANSWERS_ENDPOINT, BOILERPLATES_FIELD_KEYS, BOILERPLATES_FRAMEWORK_ANSWER_KEY } from './boilerplates.constants';
 import {
   BRAND_KIT_ANSWERS_ENDPOINT,
+  BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
   BRAND_KIT_FIELD_KEYS,
   BRAND_KIT_FRAMEWORK_ANSWER_KEY,
   BRAND_KIT_LOGO_FILE_EXTENSIONS,
@@ -61,24 +62,17 @@ import { ICP_FORM_PREAMBLE_LINES, ICP_GAP_FILL_QUESTIONS, ICP_Q_GITHUB_URL, ICP_
  * typeface — each with a suggested answer, on the same run
  * (`endpoints.answers`).
  *
- * The kit runs AFTER the messaging framework (the plugin's run order:
- * messaging framework, then brand kit): the project's LATEST stored
- * messaging framework revision is attached automatically — the chip names
- * it with its version and date and links to the Messaging Framework page —
- * and its JSON always goes to the agent, whose Voice chapter comes from it.
- * The latest revision regardless of its review status (product decision,
- * 17 Oct 2026: LFX One has no Approve action yet, so an approved-only gate
- * could never open; Approve is a later item). A project with no framework
- * revision at all cannot run the agent: the Run button is disabled with
- * "Run the messaging framework first" and that link. Nor can one whose
- * latest revision carries no voice the agent can read (positioning and
- * tagline both still "tbd", or a restored revision without its sidecar):
- * the same rule the BFF validator applies, so Run is disabled with the
- * attachment's `incompleteNote` and that link instead of a 400 the user
- * could never retry out of. The attachment is required and server-only, so
- * no site-derived voice ever stands in. The agent itself (2.1.0) refuses a
- * run without a framework up front; that reply, should it ever come, is
- * shown as the run's outcome.
+ * The kit runs AFTER the messaging framework is approved: the project's
+ * approved current is attached automatically, with its version/date and a
+ * link to the Messaging Framework page. With none approved (including a
+ * stored but unapproved draft), Run is blocked with
+ * BRAND_KIT_APPROVAL_REQUIRED_MESSAGE and the link. An approved revision
+ * whose sidecar has no usable voice instead shows `incompleteNote`.
+ * The attachment comes from the server sidecar read, never a browser-stored
+ * run; its JSON supplies the Voice chapter. The generation endpoint still
+ * validates the JSON the browser sends, without re-checking approval.
+ * The agent itself refuses a run without a framework up front; that reply,
+ * should it ever come, is shown as the run's outcome.
  *
  * The result is a JSON kit, not a Markdown document: the run page renders it
  * with the kit's web view (an app page, one tab per chapter), which prints
@@ -92,7 +86,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   formTitleAction: 'Build',
   documentName: 'Brand Kit',
   intro:
-    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s latest Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter, and downloads as a 16-page PDF. Every result is stored as a new revision in Documents.',
+    'Upload the logo files and give the agent the website: it inspects the artwork, reads the site’s CSS and the brand page, sources every colour, and comes back with questions only for what is still open — each with a suggested answer to accept or edit. Your project’s approved Messaging Framework is attached automatically; the Voice chapter comes from it. The kit opens here as a page, one tab per chapter, and downloads as a 16-page PDF. Every result is stored as a new revision in Documents.',
   // Never sent: the generate endpoint renders the agent's own intake form
   // server-side, and with fresh runs there is no chat follow-up to prefix.
   batchPreamble: [],
@@ -142,9 +136,8 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
     maxPayloadChars: BRAND_KIT_MAX_LOGO_PAYLOAD_CHARS,
     fileExtensions: [...BRAND_KIT_LOGO_FILE_EXTENSIONS],
   },
-  // The messaging framework, required: the LATEST stored revision of the
-  // project's messaging framework document (approved or not — Approve is a
-  // later item), submitted as its JSON under the agent's own form key. Not
+  // The messaging framework, required: the project's approved current,
+  // submitted as its JSON under the agent's own form key. Not
   // in the catalog's `dependsOn` on purpose — the marketplace card stays
   // open and the intake page itself says what is needed, with the link to
   // the Messaging Framework page.
@@ -154,6 +147,7 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
       answerKey: BRAND_KIT_FRAMEWORK_ANSWER_KEY,
       documentName: 'Messaging Framework',
       format: 'json',
+      missingNote: BRAND_KIT_APPROVAL_REQUIRED_MESSAGE,
       incompleteNote: 'The messaging framework has no positioning or tagline yet — finish it first.',
     },
   ],
@@ -378,17 +372,10 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
  * (`endpoints.answers`), on the same run.
  *
  * The boilerplates carry the messaging framework's positioning and proof,
- * so they run AFTER it: the project's LATEST stored messaging framework
- * revision is attached automatically, the way the Brand Kit attaches it —
- * the chip names it with its version and date and links to the Messaging
- * Framework page — as its JSON, which the BFF unwraps to the framework's
- * content. The latest revision regardless of its review status (LFX One has
- * no Approve action yet; Approve is a later item). A project with no
- * framework revision cannot run the agent: the Run button is disabled with
- * "Run the messaging framework first" and the link; nor can one whose latest
- * revision does not carry the framework's content (a legacy Messaging
- * Document, a restore without its sidecar), which gets `incompleteNote`
- * instead. The agent itself refuses a run without a framework up front; that
+ * so they run AFTER it: approved current is attached automatically as JSON,
+ * with its version/date on the chip. No approval means the Run button stays
+ * gated with approval guidance. An unreadable framework (including a legacy
+ * Markdown revision without structured content) gets `incompleteNote`. The agent itself refuses a run without a framework up front; that
  * reply, should it ever come, is shown as the run's outcome.
  *
  * The output is not a document but the boilerplates' JSON, so the run lands
@@ -445,9 +432,8 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
       fieldKeys: [BOILERPLATES_FIELD_KEYS.projectName, BOILERPLATES_FIELD_KEYS.websiteUrl, BOILERPLATES_FIELD_KEYS.notes],
     },
   ],
-  // The messaging framework, required: the LATEST stored revision of the
-  // project's framework (approved or not — Approve is a later item),
-  // submitted as its JSON under the agent's own form key and read whole.
+  // The required approved-current messaging framework, submitted as JSON
+  // under the agent's own form key. Draft/browser copies never stand in.
   attachments: [
     {
       sourceAgentId: 'foundation-setup',
@@ -455,7 +441,7 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
       documentName: 'Messaging Framework',
       format: 'json',
       frameworkContent: true,
-      incompleteNote: 'The latest messaging framework could not be read as a framework — generate it again first.',
+      incompleteNote: 'The approved messaging framework could not be read — generate and approve a new revision in Documents first.',
     },
   ],
   requiredNote: '* required — everything else is optional',

@@ -1221,7 +1221,9 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
 
       expect(component['submitDisabled']()).toBe(true);
-      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain('could not be read as a framework');
+      expect(query('mktg-agent-run-missing-dependency')?.textContent).toContain(
+        'The approved messaging framework could not be read — generate and approve a new revision in Documents first.'
+      );
       expect(query('mktg-agent-run-missing-dependency-link')?.textContent).toContain('Open the Messaging Framework page');
       expect(query('mktg-agent-run-attachment-foundation-setup')).toBeNull();
     });

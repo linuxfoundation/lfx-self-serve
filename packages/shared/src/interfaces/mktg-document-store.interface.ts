@@ -20,7 +20,7 @@ import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.in
  * already persist through the shared artifact layer, plus the one-off run
  * agents whose outputs are documents too.
  */
-export type MktgDocumentAgentKey = MktgArtifactKey | 'aeo-geo' | 'linkedin-post' | 'member-360';
+export type MktgDocumentAgentKey = MktgArtifactKey | 'faq' | 'aeo-geo' | 'linkedin-post' | 'member-360';
 
 /**
  * `living` documents are updated in place (a new revision each time);
@@ -42,6 +42,22 @@ export interface MktgRevisionAuthor {
   name: string | null;
 }
 
+/** Mutable approval annotation; never put in a revision's hashed bytes. */
+export interface MktgDocumentApprovalAnnotation {
+  approvedAt: string;
+  approvedBy: string | null;
+}
+
+export interface MktgRevisionApproval {
+  approvedAt: string;
+  approvedBy: MktgRevisionAuthor | null;
+}
+
+export interface MktgApprovedCurrent {
+  revisionId: string;
+  number: number;
+}
+
 /** Server-only stored record; never an API response. Names are resolved at read time. */
 export interface MktgDocumentCurrentRecord {
   revisionId: string;
@@ -50,6 +66,8 @@ export interface MktgDocumentCurrentRecord {
   changedBy: string | null;
   /** Only these revisions are committed; interrupted writes remain invisible. */
   revisionIds: string[];
+  /** Optional for all records written before approval support. Unknown shapes mean no approvals. */
+  approvals?: Record<string, MktgDocumentApprovalAnnotation>;
 }
 
 /** Server-only stored record and compare-and-swap token; never an API response. */
@@ -181,6 +199,7 @@ export interface MktgRevisionSummary {
   commentCount: number;
   /** Current, not necessarily newest (kept for existing consumers). */
   latest: boolean;
+  approval?: MktgRevisionApproval | null;
   author?: MktgRevisionAuthor | null;
   draftVersion?: number;
   basedOnNumber?: number | null;
@@ -193,6 +212,7 @@ export interface MktgDocumentListItem {
   revisionCount: number;
   /** Current revision id, not necessarily the newest revision. */
   latestRevisionId: string;
+  approvedCurrent?: MktgApprovedCurrent | null;
   currentRevisionNumber?: number;
   /** When the current revision was stored (not when it was made current). */
   updatedAt: string | null;
@@ -219,6 +239,7 @@ export interface MktgDocumentDetailResponse {
   type: MktgDocumentType;
   documentId: string;
   revisions: MktgRevisionSummary[];
+  approvedCurrent?: MktgApprovedCurrent | null;
   /** Absent/null for documents whose newest revision is current by default. */
   current?: MktgDocumentCurrentSelection | null;
 }
@@ -226,6 +247,7 @@ export interface MktgDocumentDetailResponse {
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;
+  approval?: MktgRevisionApproval | null;
   /** The content text: the Markdown document, or the JSON text of the asset when `revision.format` is `json`. */
   markdown: string;
   /**

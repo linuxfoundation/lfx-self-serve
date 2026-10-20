@@ -243,7 +243,7 @@ function buildEnvelope(overrides: Partial<BrandKitEnvelope> = {}): BrandKitEnvel
   };
 }
 
-/** The messaging framework as the run page attaches it: the latest stored Messaging Document revision's sidecar, serialized. */
+/** The approved framework sidecar as the run page attaches it, serialized. */
 const FRAMEWORK = JSON.stringify({
   contract: 'messaging-document-output/v1',
   fields: {
@@ -284,7 +284,7 @@ describe('validateBrandKitIntakeAnswers', () => {
   it('requires the messaging framework as a JSON object the agent reads a voice from — the kit never runs without one', () => {
     const missing = validateBrandKitIntakeAnswers({ project_name: 'TestOrbit', website_url: 'https://a.example' });
     expect(missing.valid).toBe(false);
-    expect(missing.errors.join(' ')).toContain('a messaging framework first');
+    expect(missing.errors.join(' ')).toContain('Approve a messaging framework first — the Brand Kit builds on the approved one');
     expect(validateBrandKitIntakeAnswers({ project_name: 'TestOrbit', website_url: 'https://a.example', messaging_framework: '  ' }).valid).toBe(false);
     expect(validateBrandKitIntakeAnswers({ project_name: 'TestOrbit', website_url: 'https://a.example', messaging_framework: '[1,2]' }).valid).toBe(false);
     expect(validateBrandKitIntakeAnswers({ project_name: 'TestOrbit', website_url: 'https://a.example', messaging_framework: 'not json' }).valid).toBe(false);
