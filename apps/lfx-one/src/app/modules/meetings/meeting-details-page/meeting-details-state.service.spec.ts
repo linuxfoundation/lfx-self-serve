@@ -845,11 +845,12 @@ describe('MeetingDetailsStateService', () => {
       const surviving = { id: 'rsvp-2', registrant_id: 'r-2', meeting_id: MEETING_ID, response_type: 'maybe', scope: 'all' } as unknown as MeetingRsvp;
       getMyRsvp.mockReturnValue(of(removed));
       confirmedMeetingRsvps.mockReturnValue([surviving]);
-      isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
       const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
       await flush();
       expect(state.myRsvp()).toBe('accepted');
 
+      // The removal ends r-1's registration (clearConfirmedMeetingRsvps records it).
+      isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
       state.markLeaveIncomplete(MEETING_ID);
 
       expect(state.myRsvp()).toBe('maybe');
@@ -889,10 +890,11 @@ describe('MeetingDetailsStateService', () => {
     it('shows no answer after an incomplete removal when none survives', async () => {
       const removed = { id: 'rsvp-1', registrant_id: 'r-1', meeting_id: MEETING_ID, response_type: 'accepted', scope: 'all' } as unknown as MeetingRsvp;
       getMyRsvp.mockReturnValue(of(removed));
-      isMeetingRsvpCurrent.mockReturnValue(false);
       const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
       await flush();
+      expect(state.myRsvp()).toBe('accepted');
 
+      isMeetingRsvpCurrent.mockReturnValue(false);
       state.markLeaveIncomplete(MEETING_ID);
 
       expect(state.myRsvp()).toBeNull();
