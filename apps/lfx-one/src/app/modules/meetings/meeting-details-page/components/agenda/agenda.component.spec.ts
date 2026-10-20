@@ -3,38 +3,31 @@
 
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { Meeting, MeetingOccurrence, MeetingTimeState, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { MeetingDetailsStateService } from '../../meeting-details-state.service';
 import { MeetingAgendaComponent } from './agenda.component';
 
-type LoadedMeeting = Meeting & { project: PublicMeetingProject };
-
 describe('MeetingAgendaComponent', () => {
   let fixture: ComponentFixture<MeetingAgendaComponent>;
-  let meeting: WritableSignal<LoadedMeeting | undefined>;
+  let meeting: WritableSignal<Meeting | undefined>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
-  let timeState: WritableSignal<MeetingTimeState>;
 
-  const build = (overrides: Partial<Meeting> = {}): LoadedMeeting =>
+  const build = (overrides: Partial<Meeting> = {}): Meeting =>
     ({
       id: 'meeting-1',
       description: 'Review the roadmap. Notes: https://docs.acme-motors.example/roadmap',
-      organizer: false,
       ...overrides,
-      project: { uid: 'p1', name: 'Acme Project', slug: 'acme-project' },
-    }) as unknown as LoadedMeeting;
+    }) as Meeting;
 
   beforeEach(async () => {
-    meeting = signal<LoadedMeeting | undefined>(build());
+    meeting = signal<Meeting | undefined>(build());
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
-    timeState = signal<MeetingTimeState>('before');
 
     await TestBed.configureTestingModule({
       imports: [MeetingAgendaComponent],
-      providers: [provideRouter([]), { provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence, timeState } }],
+      providers: [{ provide: MeetingDetailsStateService, useValue: { meeting, selectedOccurrence } }],
     }).compileComponents();
 
     fixture = TestBed.createComponent(MeetingAgendaComponent);
