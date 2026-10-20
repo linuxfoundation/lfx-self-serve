@@ -16,17 +16,18 @@ get V1 during rollout.
 
 ## Contents
 
-| File                                                       | Plan ID | What it holds                                                              |
-| ---------------------------------------------------------- | ------- | -------------------------------------------------------------------------- |
-| [`spec.md`](spec.md)                                       | E0-01   | Governing rules, rollout invariants, traps, work order                     |
-| [`state-matrix.md`](state-matrix.md)                       | E0-01   | Every state combination, what V1 renders, what V2 renders                  |
-| [`requirements.md`](requirements.md)                       | E0-01   | `FR-###` / `SC-###` and the plan-ID traceability table                     |
-| [`data-model.md`](data-model.md)                           | E0-01   | Payload field → axis mapping, view-scoped state, counts, identifiers       |
-| [`testid-contract.md`](testid-contract.md)                 | E0-04   | Every `data-testid` and `data-*` state attribute V2 renders                |
-| [`design-token-deviations.md`](design-token-deviations.md) | E0-05   | Every V2 token, its `lfxColors` equivalent, and the convergence path       |
-| [`v2-scaffold.md`](v2-scaffold.md)                         | V2-02   | V1/V2 naming, where V2 code lives, V1-deletion definition of done          |
-| [`rollout.md`](rollout.md)                                 | V2-03   | Branch, release, flag stages, rollback; V1 stays (retirement out of scope) |
-| [`checklists/requirements.md`](checklists/requirements.md) | E0-01   | Spec quality checklist                                                     |
+| File                                                                       | Plan ID | What it holds                                                                          |
+| -------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| [`spec.md`](spec.md)                                                       | E0-01   | Governing rules, rollout invariants, traps, work order                                 |
+| [`state-matrix.md`](state-matrix.md)                                       | E0-01   | Every state combination, what V1 renders, what V2 renders                              |
+| [`requirements.md`](requirements.md)                                       | E0-01   | `FR-###` / `SC-###` and the plan-ID traceability table                                 |
+| [`data-model.md`](data-model.md)                                           | E0-01   | Payload field → axis mapping, view-scoped state, counts, identifiers                   |
+| [`testid-contract.md`](testid-contract.md)                                 | E0-04   | Every `data-testid` and `data-*` state attribute V2 renders                            |
+| [`design-token-deviations.md`](design-token-deviations.md)                 | E0-05   | Every V2 token, its `lfxColors` equivalent, and the convergence path                   |
+| [`v2-scaffold.md`](v2-scaffold.md)                                         | V2-02   | V1/V2 naming, where V2 code lives, V1-deletion definition of done                      |
+| [`rollout.md`](rollout.md)                                                 | V2-03   | Branch, release, flag stages, rollback; V1 stays (retirement out of scope)             |
+| [`spike-occurrence-timeline-scale.md`](spike-occurrence-timeline-scale.md) | S-02    | Measured series sizes, ITX ceiling on upcoming occurrences, occurrence window decision |
+| [`checklists/requirements.md`](checklists/requirements.md)                 | E0-01   | Spec quality checklist                                                                 |
 
 All work lands in the integration branch `feat/meeting-details-v2`; nothing reaches `main` until the
 release PR #3249 merges. See `rollout.md`.
