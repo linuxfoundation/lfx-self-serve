@@ -57,10 +57,10 @@ const {
   checkPastMeetingAccessMock: vi.fn(),
 }));
 
-// The enums are plain values with no heavy imports, so the real module is used: the deep-imported
-// past-meeting utils load the constants that read MeetingType. validation.helper is mocked wholesale
-// (see below) so its heavy shared/constants + shared/utils module graph never loads.
-vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
+// The `@lfx-one/shared/*` path alias isn't wired into vitest; stub the one runtime shared import
+// the controller/gate use. validation.helper is mocked wholesale (see below) so its heavy
+// shared/constants + shared/utils module graph never loads.
+vi.mock('@lfx-one/shared/enums', () => ({ MeetingVisibility: { PUBLIC: 'public', PRIVATE: 'private' } }));
 // meeting.helper (kept real via importOriginal) imports resolveMeetingOrganizer and
 // resolveMeetingOwner from shared/utils; stub them so the real barrel (and its MeetingType enum
 // dependency) isn't pulled into the mock graph. Both null => the enrichment gate always opens,
