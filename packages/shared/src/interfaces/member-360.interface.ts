@@ -38,10 +38,13 @@ export interface Member360PendingRun {
   session: Member360Session;
   startedAt: number;
 }
+export type Member360FailureReason = 'no_edit_access' | 'agent_stopped';
 export interface Member360Result {
   status: 'pending' | 'ready' | 'needs_input' | 'failed';
   /** Ephemeral, redacted terminal agent text; never stored as a document. */
   message?: string;
+  /** Server-classified failure; clients default older responses to agent_stopped. */
+  reason?: Member360FailureReason;
   /** Plain activity sentences from trusted session events while the run is pending. */
   activity?: MktgRunActivity[];
   documentId?: string;

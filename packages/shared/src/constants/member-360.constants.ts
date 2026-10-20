@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Member360SortColumn } from '../interfaces/member-360.interface';
+import type { Member360FailureReason, Member360SortColumn } from '../interfaces/member-360.interface';
 
 // Mirrored from marketing-os-agents main 45734bc6, agents/member-360/src/model.ts.
 export const CATEGORY_KEYS = ['committees', 'events', 'speaking', 'content', 'community_programs', 'marketing_social'] as const;
@@ -55,6 +55,15 @@ export const MEMBER_360_INVALID_RESULT = 'MEMBER_360_INVALID_RESULT';
 export const MEMBER_360_FAILURE_MESSAGE_MAX_CHARS = 600;
 export const MEMBER_360_FAILURE_MESSAGE = 'The run ended without a Member 360 result.';
 export const MEMBER_360_STOPPED_MESSAGE = 'The agent stopped before producing a result.';
+export const MEMBER_360_ACCESS_REFUSAL_REGEX =
+  /\b(?:no entitled project|entitlement (?:check )?(?:denied|failed|reports no)|not entitled|scope[\s_-]*guard)\b/i;
+export const MEMBER_360_FAILURE_MESSAGES: Readonly<Record<Member360FailureReason, string>> = {
+  no_edit_access: "Member 360 couldn't run: your account doesn't have edit access to this project's member data.",
+  agent_stopped: "Member 360 couldn't finish this run.",
+};
+export const MEMBER_360_TRACKER_TYPE_ERROR = 'Only .xlsx or .csv trackers can be uploaded.';
+export const MEMBER_360_TRACKER_FILENAME_ERROR = 'Use a shorter file name without slashes.';
+export const MEMBER_360_TRACKER_EXTENSION_REGEX = /\.(csv|xlsx)$/i;
 export const MEMBER_360_CONTRACT_ID = 'member-360-output/v1';
 export const MEMBER_360_FINALIZE_TOOL = 'finalize_member_360';
 export const MEMBER_360_QUESTIONS_MARKER = 'member-360-questions/v1';

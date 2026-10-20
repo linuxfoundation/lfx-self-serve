@@ -48,7 +48,7 @@ import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
 
 // Typed document integration: keep the imports together for sibling agents.
-import { MEMBER_360_FAILURE_MESSAGE, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MEMBER_360_FAILURE_MESSAGES, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 import { Member360Result, MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360Service } from '@services/member-360.service';
@@ -108,6 +108,7 @@ export class MktgDocumentViewComponent {
   protected readonly generating = signal(false);
   protected readonly needsInput = signal(false);
   protected readonly runFailed = signal(false);
+  protected readonly failureDetails = signal('');
   protected readonly runActivity = signal<MktgRunActivity[]>([]);
   protected readonly runStartedAt = signal(0);
   protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
@@ -306,6 +307,7 @@ export class MktgDocumentViewComponent {
             this.runActivity.set([]);
             this.needsInput.set(false);
             this.runFailed.set(false);
+            this.failureDetails.set('');
           }),
           switchMap((request) => {
             if (!request.project || !request.agentKey || !request.documentId || (request.agentKey === 'member-360' && !request.user)) {
@@ -323,7 +325,8 @@ export class MktgDocumentViewComponent {
                       this.needsInput.set(result.status === 'needs_input');
                       if (result.status === 'failed') {
                         this.runFailed.set(true);
-                        this.errorText.set(result.message || MEMBER_360_FAILURE_MESSAGE);
+                        this.errorText.set(MEMBER_360_FAILURE_MESSAGES[result.reason ?? 'agent_stopped'] ?? MEMBER_360_FAILURE_MESSAGES.agent_stopped);
+                        this.failureDetails.set(result.message ?? '');
                       }
                     }),
                     filter((result) => result.status !== 'needs_input')

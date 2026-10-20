@@ -220,6 +220,7 @@ describe('Member 360 entitlement and generation', () => {
     ]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
+      reason: 'no_edit_access',
       message: 'No entitled project for this session. Contact [contact redacted] for access.',
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
@@ -234,6 +235,7 @@ describe('Member 360 entitlement and generation', () => {
     ]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
+      reason: 'agent_stopped',
       message: 'The agent stopped before producing a result.',
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
@@ -246,6 +248,7 @@ describe('Member 360 entitlement and generation', () => {
     ]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
+      reason: 'agent_stopped',
       message: 'The run ended without a Member 360 result.',
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
@@ -254,6 +257,7 @@ describe('Member 360 entitlement and generation', () => {
     mocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'runtime_done', task: { entity_type: 'EntTaskAgent', status: 'DONE' }, content: {} })]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
+      reason: 'agent_stopped',
       message: 'The run ended without a Member 360 result.',
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();
@@ -300,6 +304,7 @@ describe('Member 360 entitlement and generation', () => {
     ]);
     expect(await new Member360Service().result(req, 'session-1', 'sample-project')).toEqual({
       status: 'failed',
+      reason: 'agent_stopped',
       message: 'Cannot complete this run; contact [contact redacted] or [contact redacted].',
     });
     expect(mocks.recordGeneration).not.toHaveBeenCalled();

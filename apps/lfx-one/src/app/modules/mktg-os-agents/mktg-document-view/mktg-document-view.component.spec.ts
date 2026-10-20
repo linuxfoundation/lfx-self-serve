@@ -289,12 +289,26 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getDocument).toHaveBeenCalled();
   });
 
-  it('ends a failed run with the agent message and Run again, never reading a stored result', async () => {
+  it.each(['no_edit_access', 'agent_stopped'] as const)('shows a short %s reason, collapsed Details and Run again', async (reason) => {
     run.isPending.mockReturnValue(true);
-    const message = 'No entitled project was found for this session.';
-    run.waitForStored.mockReturnValue(of({ status: 'failed', message }));
+    const message =
+      reason === 'no_edit_access'
+        ? 'SCOPE GUARD: no entitlement for sample-project-uid in this session.'
+        : 'The internal session stopped before producing the report.';
+    run.waitForStored.mockReturnValue(of({ status: 'failed', reason, message }));
     await render('/documents/member-360/run-0123456789abcdef01234567?revision=obsolete');
-    expect(query('mktg-document-view-error')?.textContent).toContain(message);
+    const short =
+      reason === 'no_edit_access'
+        ? "Member 360 couldn't run: your account doesn't have edit access to this project's member data."
+        : "Member 360 couldn't finish this run.";
+    expect(query('mktg-document-view-error')?.textContent).toContain(short);
+    expect(query('mktg-document-view-error')?.textContent).not.toContain(message);
+    const details = query('member-360-failure-details');
+    expect(details?.hasAttribute('open')).toBe(false);
+    expect(details?.querySelector('summary')?.textContent).toBe('Details');
+    expect(query('member-360-failure-message')?.textContent?.trim()).toBe(message);
+    details?.querySelector('summary')?.click();
+    expect(details?.hasAttribute('open')).toBe(true);
     expect(query('member-360-run-again')?.textContent?.trim()).toBe('Run again');
     expect(query('member-360-run-again')?.getAttribute('href')).toBe('/member-360');
     expect(query('mktg-document-view-retry')).toBeNull();

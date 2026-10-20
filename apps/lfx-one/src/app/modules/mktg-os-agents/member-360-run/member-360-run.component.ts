@@ -17,6 +17,10 @@ import {
   MEMBER_360_MAX_TRACKERS,
   MEMBER_360_WINDOW_OPTIONS,
   MEMBER_360_COMPARISON_UNAVAILABLE,
+  MEMBER_360_TRACKER_FILENAME_REGEX,
+  MEMBER_360_TRACKER_TYPE_ERROR,
+  MEMBER_360_TRACKER_FILENAME_ERROR,
+  MEMBER_360_TRACKER_EXTENSION_REGEX,
 } from '@lfx-one/shared/constants';
 import { Member360Envelope, Member360GenerateRequest, Member360TrackerUpload, MktgDocumentListItem } from '@lfx-one/shared/interfaces';
 import { Member360Service } from '@services/member-360.service';
@@ -172,8 +176,18 @@ export class Member360RunComponent {
       });
   }
 
+  protected rejectUnsupportedTrackers(selected: ArrayLike<File>): boolean {
+    const files = Array.from(selected);
+    const invalidType = files.some((file) => !MEMBER_360_TRACKER_EXTENSION_REGEX.test(file.name));
+    const invalidName = files.some((file) => !MEMBER_360_TRACKER_FILENAME_REGEX.test(file.name));
+    if (!invalidType && !invalidName) return false;
+    this.error.set(invalidType ? MEMBER_360_TRACKER_TYPE_ERROR : MEMBER_360_TRACKER_FILENAME_ERROR);
+    this.chooser()?.clear(true);
+    return true;
+  }
+
   protected async upload(selected: File[]): Promise<void> {
-    if (!isPlatformBrowser(this.platformId)) return;
+    if (!isPlatformBrowser(this.platformId) || this.rejectUnsupportedTrackers(selected)) return;
     const files = [...selected];
     const attempt = ++this.uploadSequence;
     this.uploading.set(true);
@@ -185,7 +199,6 @@ export class Member360RunComponent {
       for (const file of files) {
         if (attempt !== this.uploadSequence) return;
         if (file.size > MEMBER_360_MAX_BYTES) throw new Error('Each tracker must be smaller than 5 MB.');
-        if (!/\.(csv|xlsx)$/i.test(file.name)) throw new Error('Upload CSV or XLSX trackers.');
         const tracker = await firstValueFrom(this.api.parseTracker(project, file));
         parsed.push({
           id: ++this.nextTrackerId,

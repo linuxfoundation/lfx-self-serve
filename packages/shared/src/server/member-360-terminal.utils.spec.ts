@@ -2,9 +2,25 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { member360TerminalResult } from './member-360-terminal.utils';
+import { classifyMember360FailureReason, member360TerminalResult } from './member-360-terminal.utils';
 
 describe('Member 360 terminal session facts', () => {
+  it.each([
+    'No entitled project for this session.',
+    'The entitlement check denied this request.',
+    'SCOPE GUARD: project sample-project is unavailable.',
+    "This session was not actually initiated through the LFX One intake form (the platform's entitlement check reports no entitled project for this session).",
+    'This account is not entitled to the project.',
+  ])('classifies an access refusal without sending its internal text as the reason: %s', (text) => {
+    expect(classifyMember360FailureReason(text)).toBe('no_edit_access');
+  });
+  it.each([
+    'The run stopped before the report could be completed.',
+    'This session was not actually initiated through the LFX One intake form.',
+    'This project is entitled to the service, but the run stopped.',
+  ])('classifies non-access failures neutrally: %s', (text) => {
+    expect(classifyMember360FailureReason(text)).toBe('agent_stopped');
+  });
   it('ignores malformed, user-originated and nested terminal lookalikes', () => {
     expect(
       member360TerminalResult([
@@ -19,6 +35,7 @@ describe('Member 360 terminal session facts', () => {
   it.each(['DONE', 'FAILED', 'ABORTED', 'CANCELLED'])('recognizes a %s session status without reading arbitrary content', (status) => {
     expect(member360TerminalResult([JSON.stringify({ type: 'session_status', session: { status }, content: { text: 'not-final-text' } })])).toEqual({
       status: 'failed',
+      reason: 'agent_stopped',
       message: 'The run ended without a Member 360 result.',
     });
   });
@@ -42,6 +59,7 @@ describe('Member 360 terminal session facts', () => {
   it.each(['runtime_error', 'llm_failed', 'session_failure'])('classifies %s without echoing its internal body', (type) => {
     expect(member360TerminalResult([JSON.stringify({ type, content: { message: 'private-internal-details' } })])).toEqual({
       status: 'failed',
+      reason: 'agent_stopped',
       message: 'The agent stopped before producing a result.',
     });
   });
@@ -63,6 +81,6 @@ describe('Member 360 terminal session facts', () => {
         ],
         ['opaque-contact-1']
       )
-    ).toEqual({ status: 'failed', message: 'Final answer, contact [contact redacted].' });
+    ).toEqual({ status: 'failed', reason: 'agent_stopped', message: 'Final answer, contact [contact redacted].' });
   });
 });
