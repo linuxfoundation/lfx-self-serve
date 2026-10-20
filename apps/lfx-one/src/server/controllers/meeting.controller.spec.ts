@@ -36,6 +36,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     getMeetingJoinUrl: vi.fn(),
     getMeetingRegistrantsByUsername: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
+    getMeetingRegistrantsByVerifiedEmails: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -1289,6 +1290,7 @@ describe('MeetingController', () => {
 
     beforeEach(() => {
       meetingSvc.getMeetingJoinUrl.mockResolvedValue({ link: 'https://zoom.us/j/123' });
+      meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [], lookupFailed: false });
     });
 
     it('sets the response headers and sends the generated ICS for a non-recurring meeting', async () => {
@@ -1355,6 +1357,34 @@ describe('MeetingController', () => {
       meetingSvc.getMeetingRegistrantsByUsername.mockResolvedValue([]);
       vi.mocked(getEffectiveEmail).mockReturnValueOnce('mallory@example.com');
       meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'mallory@example.com');
+      expect(meetingSvc.getMeetingJoinUrl).not.toHaveBeenCalled();
+      expect(buildMeetingCalendarEvents).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ joinUrl: undefined }));
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("resolves the join link from a registrant row whose email was rewritten to an alias the user's contact id still matches", async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(getEffectiveUsername).mockReturnValueOnce(null);
+      vi.mocked(getEffectiveEmail).mockReturnValueOnce('jason@example.com');
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [{ email: 'jason+alias@example.com' }], lookupFailed: false });
+
+      await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
+
+      expect(meetingSvc.getMeetingJoinUrl).toHaveBeenCalledWith(expect.anything(), MEETING_ID, 'jason+alias@example.com');
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('omits the join link when the verified-email lookup fails rather than failing the download', async () => {
+      meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
+      vi.mocked(getEffectiveUsername).mockReturnValueOnce(null);
+      vi.mocked(getEffectiveEmail).mockReturnValueOnce('jason@example.com');
+      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+      meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [], lookupFailed: true });
 
       await controller.getMeetingCalendarIcs(buildIcsReq(), buildRes(), next);
 
