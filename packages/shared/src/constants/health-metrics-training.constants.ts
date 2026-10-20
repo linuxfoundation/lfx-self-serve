@@ -95,7 +95,7 @@ export const HEALTH_METRICS_TRAINING_ENROLLMENT_UNMEASURED: HealthMetricsTrainin
   trend: [],
 };
 
-/** The toggle above the by-type bars. */
+/** The toggle above the by-type list. */
 export const HEALTH_METRICS_TRAINING_ENROLLMENT_METRIC_OPTIONS: readonly HealthMetricsTrainingEnrollmentMetricOption[] = [
   { id: 'enrollments', label: 'Enrollments' },
   { id: 'revenue', label: 'Revenue' },
@@ -148,7 +148,7 @@ export const HEALTH_METRICS_TRAINING_QUERY_PARAMS = {
   coursesPage: 'trnPage',
 } as const satisfies Record<string, keyof HealthMetricsTrainingQueryParams>;
 
-/** A course's type pill names one course, so it reads singular where the by-type bars read plural. */
+/** A course's type pill names one course, so it reads singular where the by-type list reads plural. */
 export const HEALTH_METRICS_TRAINING_COURSE_TYPE_LABELS: Readonly<Record<string, string>> = {
   'E-Learning': 'eLearning',
   'Certification Exam': 'Certification',

@@ -141,7 +141,7 @@ describe('EventsSpeakersComponent', () => {
     expect(query('events-speakers-loading')).toBeNull();
   });
 
-  it("renders the period's headline, side stats and status bars", async () => {
+  it("renders the period's headline, side stats and status rows", async () => {
     await render();
 
     expect(text('events-speakers-headline-value')).toBe('300');

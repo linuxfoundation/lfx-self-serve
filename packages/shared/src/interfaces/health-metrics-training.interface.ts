@@ -75,10 +75,10 @@ export interface HealthMetricsTrainingEnrollment {
   trend: HealthMetricsTrainingEnrollmentYear[];
 }
 
-/** What the by-type bars rank by; the trend always shows enrollments. */
+/** What the by-type list ranks by; the trend always shows enrollments. */
 export type HealthMetricsTrainingEnrollmentMetric = 'enrollments' | 'revenue';
 
-/** A toggle option for the by-type bars. */
+/** A toggle option for the by-type list. */
 export interface HealthMetricsTrainingEnrollmentMetricOption extends FilterPillOption {
   id: HealthMetricsTrainingEnrollmentMetric;
 }

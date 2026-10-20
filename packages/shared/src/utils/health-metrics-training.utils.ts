@@ -73,7 +73,7 @@ export function formatHealthMetricsTrainingCoursesCountLabel(total: number | nul
   return `${formatHealthMetricsTrainingCount(total)} ${total === 1 ? 'course' : 'courses'}`;
 }
 
-/** Render-ready Enrollment & revenue section for the period, with the by-type bars ranked by `metric`. */
+/** Render-ready Enrollment & revenue section for the period, with the by-type list ranked by `metric`. */
 export function buildHealthMetricsTrainingEnrollmentView(
   enrollment: HealthMetricsTrainingEnrollment,
   range: HealthMetricsL2Range,

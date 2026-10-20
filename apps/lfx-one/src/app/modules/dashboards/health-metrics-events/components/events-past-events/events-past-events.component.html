@@ -70,8 +70,7 @@
               <span class="text-sm tabular-nums text-gray-800">{{ view.dateLabel }}</span>
             </td>
             <td class="w-[220px]">
-              <!-- The design's goal cell: the value in bold, then a small grey "/ goal", or "no goal set" under it; no bar.
-                   10px is the design's size; the 14px root makes the rem scale undershoot it. -->
+              <!-- The design's goal cell: the value in bold, then a small grey "/ goal", or "no goal set" under it; no bar. -->
               <div class="flex flex-col" [attr.data-testid]="'events-past-events-goal-' + view.event.eventId">
                 <span class="text-sm tabular-nums">
                   <b class="font-semibold text-gray-900">{{ view.registrationsLabel }}</b>

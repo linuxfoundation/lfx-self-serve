@@ -136,7 +136,7 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(view.side[1].delta).toBe('not available');
   });
 
-  it('ranks the by-type bars by the toggle, scaled to the largest', () => {
+  it('ranks the by-type list by the toggle', () => {
     const enrollments = buildHealthMetricsTrainingEnrollmentView(ENROLLMENT, 'YTD', 'enrollments');
     expect(enrollments.byType.map((row) => [row.label, row.value])).toEqual([
       ['eLearning', '2,900'],
@@ -169,7 +169,7 @@ describe('buildHealthMetricsTrainingEnrollmentView', () => {
     expect(view.byType.map((row) => row.deliveryType)).toEqual(['Instructor Led', 'E-Learning', 'Certification Exam']);
   });
 
-  it('leaves Bundle and types without enrollments off the enrollment bars, and edX off the revenue bars', () => {
+  it('leaves Bundle and types without enrollments off the enrollment list, and edX off the revenue list', () => {
     const byType = [
       ...PERIOD.byType,
       { deliveryType: 'Bundle', enrollments: 0, revenueUsd: 90000 },

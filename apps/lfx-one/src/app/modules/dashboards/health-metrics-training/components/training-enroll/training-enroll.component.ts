@@ -34,7 +34,7 @@ import type {
 
 /**
  * `#enroll` — the period's enrollments, certifications and revenue, the split by delivery type, and
- * enrollments per year. The by-type bars follow the Enrollments / Revenue toggle.
+ * enrollments per year. The by-type list follows the Enrollments / Revenue toggle.
  */
 @Component({
   selector: 'lfx-training-enroll',
