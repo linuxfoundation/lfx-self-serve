@@ -17,7 +17,7 @@ import { HealthMetricsEngagementComponent } from './health-metrics-engagement.co
 
 import type {
   HealthMetricsEngagementGroupCounts,
-  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementNonMemberPeriodCounts,
   HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementSectionKey,
@@ -36,6 +36,13 @@ class GroupAttendanceStubComponent {
 @Component({ selector: 'lfx-engagement-meeting-participation', template: '' })
 class MeetingParticipationStubComponent {
   public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
+// Same stand-in for Attendance trend: it reports its reads and nothing else.
+@Component({ selector: 'lfx-engagement-attendance-trend', template: '' })
+class AttendanceTrendStubComponent {
   public readonly reading = output<void>();
   public readonly settled = output<void>();
 }
@@ -59,7 +66,7 @@ class RepresentativesStubComponent {
 // Same stand-in for Non-member participation.
 @Component({ selector: 'lfx-engagement-non-member-participation', template: '' })
 class NonMemberParticipationStubComponent {
-  public readonly countsChange = output<HealthMetricsEngagementNonMemberCounts | null>();
+  public readonly countsChange = output<HealthMetricsEngagementNonMemberPeriodCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<void>();
 }
@@ -73,6 +80,10 @@ describe('HealthMetricsEngagementComponent', () => {
 
   function participationChild(): MeetingParticipationStubComponent {
     return fixture.debugElement.query(By.directive(MeetingParticipationStubComponent)).componentInstance as MeetingParticipationStubComponent;
+  }
+
+  function trendChild(): AttendanceTrendStubComponent {
+    return fixture.debugElement.query(By.directive(AttendanceTrendStubComponent)).componentInstance as AttendanceTrendStubComponent;
   }
 
   function orgChild(): OrgParticipationStubComponent {
@@ -98,6 +109,7 @@ describe('HealthMetricsEngagementComponent', () => {
   > = {
     participation: participationChild,
     committees: stubChild,
+    trend: trendChild,
     orgs: orgChild,
     reps: repChild,
     nonmem: nonMemberChild,
@@ -129,6 +141,7 @@ describe('HealthMetricsEngagementComponent', () => {
       .overrideComponent(HealthMetricsEngagementComponent, {
         set: {
           imports: [
+            AttendanceTrendStubComponent,
             GroupAttendanceStubComponent,
             HealthMetricsL2SectionDirective,
             HealthMetricsL2ShellComponent,
@@ -215,7 +228,7 @@ describe('HealthMetricsEngagementComponent', () => {
   });
 
   it('badges Non-member participation from the counts that section reports', () => {
-    nonMemberChild().countsChange.emit({ orgs: 63 });
+    nonMemberChild().countsChange.emit({ range: 'YTD', orgs: 63 });
     fixture.detectChanges();
 
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-nonmem"]');
@@ -247,6 +260,7 @@ describe('HealthMetricsEngagementComponent', () => {
     const emitters: Record<HealthMetricsEngagementSectionKey, (() => void) | undefined> = {
       participation: () => participationChild().settled.emit(),
       committees: () => stubChild().settled.emit(),
+      trend: () => trendChild().settled.emit(),
       orgs: () => orgChild().settled.emit(),
       reps: () => repChild().settled.emit(),
       nonmem: () => nonMemberChild().settled.emit(),

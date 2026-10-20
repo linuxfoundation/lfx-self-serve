@@ -212,6 +212,25 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
+  it('returns Back to agents to the grid route, preserving project scope', async () => {
+    await configure();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    component['onBack']();
+    expect(navigate).toHaveBeenCalledWith(['..', 'agents'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+  });
+
+  for (const agentId of ['not-catalogued', MKTG_AGENTS.find((agent) => agent.status === 'coming-soon')?.id ?? 'not-catalogued']) {
+    it(`redirects unrunnable ${agentId} to the grid route`, async () => {
+      const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+      try {
+        await configure('browser', agentId);
+        expect(navigate).toHaveBeenCalledWith(['..', 'agents'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      } finally {
+        navigate.mockRestore();
+      }
+    });
+  }
+
   describe('LFX prefill — applied (fromLfx) vs available (lfxMissing)', () => {
     beforeEach(async () => configure());
 

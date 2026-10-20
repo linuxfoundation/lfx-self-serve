@@ -84,6 +84,19 @@ export class UserService {
    */
   public readonly effectiveAvatarUrl: Signal<string> = computed(() => this.uploadedAvatarUrl() || this.user()?.picture || '');
   /**
+   * The identity a meeting join is performed as — the real viewer, never the impersonation target.
+   * While impersonating, `user` is the target (SSR overrides it), so the join link's display name
+   * (`uname`/`un`) and email must come from the operator instead. Null while impersonating without
+   * a known operator, so a join fails closed rather than falling back to the target.
+   */
+  public readonly meetingJoinIdentity: Signal<Pick<User, 'name' | 'email'> | null> = computed(() => {
+    if (!this.impersonating()) {
+      return this.user();
+    }
+    const impersonator = this.impersonator();
+    return impersonator ? { name: impersonator.name, email: impersonator.email } : null;
+  });
+  /**
    * The viewer's LFID as it appears on meeting `created_by` / host records — null when unresolved.
    * Single source for viewer-identity comparisons (e.g. the "Organized by you" chip and the
    * "Organized by me" meetings filter), so those surfaces can never resolve identity differently.

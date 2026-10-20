@@ -3,6 +3,7 @@
 
 import type {
   HealthMetricsEngagementAttendanceTone,
+  HealthMetricsEngagementAttendanceTrend,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
@@ -216,12 +217,13 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetri
 
 /**
  * Sections whose read can still change the pane's height, so a deep link is released only once
- * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
- * component emits `reading`/`settled` and the container binds both.
+ * every one of them has settled. A section joins this list only once its component emits
+ * `reading`/`settled` and the container binds both.
  */
 export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'participation',
   'committees',
+  'trend',
   'orgs',
   'reps',
   'nonmem',
@@ -278,6 +280,17 @@ export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED: HealthM
   total: null,
   rows: [],
 };
+
+/**
+ * The Attendance trend's empty shape: the server's answer for a scope the view has no months for,
+ * and the client's no-read state (pre-hydration, no foundation selected, or a failed read).
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED: HealthMetricsEngagementAttendanceTrend = {
+  months: [],
+};
+
+/** Fewer rated months than this draws the line under a low-confidence banner; one month draws none. */
+export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS = 6;
 
 /**
  * Debounce shared by the org and representatives search boxes. Either filter runs over the whole

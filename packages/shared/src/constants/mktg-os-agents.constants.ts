@@ -10,10 +10,6 @@ import type { MktgAgent } from '../interfaces';
 export const MKTG_OS_AGENTS_LABEL = {
   /** Sidebar nav entry, placed directly under Documents. */
   nav: 'Marketing OS',
-  /** Marketplace landing page title. */
-  marketplaceTitle: 'LFX Marketing OS Marketplace',
-  /** Short description shown under the landing page title. */
-  marketplaceDescription: 'Run LFX marketing agents for your project.',
 } as const;
 
 /** Route segment (lens-prefixed at the route layer, e.g. /project/mktg-os-agents). */

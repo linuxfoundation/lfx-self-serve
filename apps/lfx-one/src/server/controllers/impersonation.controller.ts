@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VALID_PERSONAS } from '@lfx-one/shared/constants';
+import { IMPERSONATION_ALREADY_TARGET_CODE, IMPERSONATION_ALREADY_TARGET_MESSAGE, VALID_PERSONAS } from '@lfx-one/shared/constants';
 import { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { ImpersonationService } from '../services/impersonation.service';
 import { decodeJwtPayload } from '../utils/auth-helper';
+import { resolveImpersonatorToken } from '../utils/impersonator-token';
 
 export class ImpersonationController {
   private readonly impersonationService: ImpersonationService = new ImpersonationService();
@@ -19,16 +20,6 @@ export class ImpersonationController {
     });
 
     try {
-      if (req.appSession?.['impersonationToken']) {
-        next(
-          new MicroserviceError('Already impersonating a user. Stop the current session first.', 409, 'ALREADY_IMPERSONATING', {
-            operation: 'start_impersonation',
-            service: 'impersonation',
-          })
-        );
-        return;
-      }
-
       const targetUser = req.body?.targetUser;
       if (!targetUser || typeof targetUser !== 'string' || targetUser.trim() === '') {
         next(
@@ -52,18 +43,26 @@ export class ImpersonationController {
       }
       const personaContext = (personaContextRaw ?? undefined) as PersonaType | undefined;
 
-      const realToken = req.oidc?.accessToken?.access_token || '';
-      const tokenPayload = decodeJwtPayload(realToken);
-      if (!tokenPayload || tokenPayload['http://lfx.dev/claims/can_impersonate'] !== true) {
-        next(new AuthorizationError('Insufficient permissions to impersonate users', { operation: 'start_impersonation', service: 'impersonation' }));
-        return;
-      }
+      // Switching users mid-impersonation: req.bearerToken is the current target's token here, so the exchange
+      // must be seeded with the impersonator's own token, never chaining one target's token into another.
+      const subjectToken = await resolveImpersonatorToken(req, 'start_impersonation');
 
-      const tokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim());
+      const tokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim(), subjectToken);
       const targetClaims = decodeJwtPayload(tokenResponse.access_token);
 
       if (!targetClaims) {
         throw new Error('Failed to decode target user claims from CTE response');
+      }
+
+      const currentTargetSub = req.appSession?.['impersonationUser']?.sub;
+      if (req.appSession?.['impersonationToken'] && currentTargetSub && currentTargetSub === targetClaims['sub']) {
+        next(
+          new MicroserviceError(IMPERSONATION_ALREADY_TARGET_MESSAGE, 409, IMPERSONATION_ALREADY_TARGET_CODE, {
+            operation: 'start_impersonation',
+            service: 'impersonation',
+          })
+        );
+        return;
       }
 
       const profile = await this.impersonationService.fetchTargetUserProfile(req, targetClaims['sub']);

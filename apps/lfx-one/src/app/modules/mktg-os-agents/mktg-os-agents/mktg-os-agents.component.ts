@@ -1,35 +1,35 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
-import { Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { DatePipe, formatDate, isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, inject, LOCALE_ID, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
-import { ButtonComponent } from '@components/button/button.component';
-import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
-import { TagComponent } from '@components/tag/tag.component';
-import { MKTG_AGENTS, MKTG_OS_AGENTS_LABEL } from '@lfx-one/shared/constants';
-import { MktgAgent, MktgAgentAccent, MktgAgentTile, MktgDependencyDocument, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_KIT_FRAMEWORK_AGENT_ID, MKTG_KIT_EXCLUDED_AGENT_IDS } from '@lfx-one/shared/constants';
+import {
+  MktgAgent,
+  MktgAgentAccent,
+  MktgAgentTile,
+  MktgDependencyDocument,
+  MktgKitAgentGroup,
+  MktgKitAgentTile,
+  MktgDocumentsResponse,
+} from '@lfx-one/shared/interfaces';
 import { mktgAgentDocumentName } from '@lfx-one/shared/utils';
-import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, forkJoin, map, merge, Observable, of, switchMap } from 'rxjs';
 
-// Marketplace landing for the Marketing OS marketplace (approved form-first
-// design): catalog grid with client-side search, "Coming soon" tags on
-// disabled cards, a "vN generated" badge on agents with stored output, and
-// dependency gating (dec-agent-dependency-gating): an agent that `dependsOn`
-// another stays disabled — tagged "Requires <document>" — until every
-// dependency has server-approved current for the ACTIVE project, never a
-// browser Draft fallback, re-evaluated on project switch.
-// Card clicks route to the per-agent run page (/:agentId) — the form-first
-// run shell that replaced the earlier in-page chat-panel approach.
+import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
+import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
+
+// Agents board: one catalog-driven grid grouped by family, with Live/Needs/Coming soon
+// state lines. Dependencies require server-approved current, never browser Drafts;
+// resolution and listing dates follow the active project.
 @Component({
   selector: 'lfx-mktg-os-agents',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, InputTextComponent, TagComponent, EmptyStateComponent],
+  imports: [DatePipe, NgClass, MktgKitTabsComponent, MktgKitHeaderComponent],
   templateUrl: './mktg-os-agents.component.html',
 })
 export class MktgOsAgentsComponent {
@@ -39,37 +39,28 @@ export class MktgOsAgentsComponent {
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly runService = inject(MktgAgentRunService);
-
-  // toObservable needs the injection context — created here, subscribed
-  // (browser only) in the constructor. Same pattern as the run page.
-  private readonly activeContext$ = toObservable(this.projectContext.activeContext);
-
-  // === Constants ===
-  protected readonly labels = MKTG_OS_AGENTS_LABEL;
-
-  // === Forms ===
-  protected readonly searchForm = new FormGroup({
-    search: new FormControl('', { nonNullable: true }),
-  });
+  private readonly documentStore = inject(MktgDocumentStoreService);
+  private readonly locale = inject(LOCALE_ID);
 
   // === Signals ===
-  // Stored-output version count per agent id for the active project. Read from
-  // localStorage after hydration only, so SSR output stays badge-free and stable.
-  protected readonly storedVersions = signal<Record<string, number>>({});
+  protected readonly documents = signal<MktgDocumentsResponse | null>(null);
+  protected readonly listFailed = signal(false);
+  protected readonly resolving = signal(true);
   /**
    * Resolved stored output per DEPENDENCY agent id for the active project
-   * (dec-agent-dependency-gating): server-persisted preferred, browser-stored
-   * run fallback. Starts empty and clears on every project switch, so
+   * (dec-agent-dependency-gating): server-approved current only, never browser Drafts.
+   * Starts empty and clears on every project switch, so
    * dependent cards are disabled (fail-closed) until resolution lands — on
-   * SSR they stay disabled, matching the badge-free SSR output.
+   * SSR they stay disabled with a neutral resolving state.
    */
   protected readonly dependencyDocs = signal<Record<string, MktgDependencyDocument | null>>({});
 
-  private readonly searchTerm = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
-
   // === Computed ===
-  protected readonly tiles: Signal<MktgAgentTile[]> = this.initTiles();
+  private readonly activeContext$ = toObservable(this.projectContext.activeContext);
+  protected readonly hasProject = computed(() => !!this.projectContext.activeContext()?.uid);
+  protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
+  protected readonly tiles: Signal<MktgKitAgentTile[]> = this.initTiles();
+  protected readonly familyGroups: Signal<MktgKitAgentGroup[]> = this.initFamilyGroups();
 
   // === Catalog-derived (static for the component's lifetime) ===
   /** Every dependency agent id referenced by the catalog — resolved once per active project. */
@@ -103,41 +94,40 @@ export class MktgOsAgentsComponent {
   private readonly entryNavigationId: number = this.router.getCurrentNavigation()?.id ?? 0;
 
   public constructor() {
-    // Stored-run badges read localStorage per project, and the project selector
-    // reuses this component on a switch (it only rewrites ?project= via
-    // Location.replaceState — no navigation), so the badges must follow the
-    // active context, never a one-shot first render: a one-shot would keep the
-    // previous project's versions after a switch and would never load at all
-    // when the context resolves after the first render. Browser-only so SSR
-    // output stays badge-free and stable; the first emission lands
-    // post-hydration. Same pattern as the run page's restore/prefill.
+    // Browser-only: stable SSR; switchMap cancels stale reads when the project changes.
     if (isPlatformBrowser(this.platformId)) {
       this.activeContext$
         .pipe(
-          filter((context): context is ProjectContext => !!context),
-          distinctUntilChanged((previous, current) => previous.uid === current.uid),
+          distinctUntilChanged((previous, current) => previous?.uid === current?.uid),
           switchMap((context) => {
-            // Clear first so a project with no stored runs never keeps the
-            // previous project's badges or dependency gating. Only on a
-            // project CHANGE — a refresh must not flash every dependent card
-            // back to locked while it re-resolves.
-            this.storedVersions.set({});
+            this.documents.set(null);
             this.dependencyDocs.set({});
-            // switchMap drops a stale in-flight resolution on project switch,
-            // so the gating always reflects the CURRENT active project. The
-            // inner stream resolves once immediately (`of`, synchronous — no
-            // double fetch) and again on every refresh trigger.
+            this.listFailed.set(false);
+            this.resolving.set(!!context);
+            if (!context) return of(null);
             return merge(of(context.uid), this.refreshTriggers(context.uid)).pipe(
               switchMap(() => {
-                this.loadStoredVersions(context.uid);
-                // A failed dependency locks only its dependents; successful siblings remain available.
-                return this.dependencyService.resolveDependencies(context.uid, this.catalogDependencyIds, [], true);
+                this.listFailed.set(false);
+                return forkJoin({
+                  documents: this.documentStore.listDocuments(context.uid).pipe(
+                    catchError(() => {
+                      this.listFailed.set(true);
+                      return of(null);
+                    })
+                  ),
+                  dependencies: this.dependencyService.resolveDependencies(context.uid, this.catalogDependencyIds, [], true),
+                });
               })
             );
           }),
           takeUntilDestroyed()
         )
-        .subscribe((dependencies) => this.dependencyDocs.set(dependencies));
+        .subscribe((snapshot) => {
+          if (!snapshot) return;
+          this.documents.set(snapshot.documents);
+          this.dependencyDocs.set(snapshot.dependencies);
+          this.resolving.set(false);
+        });
     }
   }
 
@@ -148,28 +138,16 @@ export class MktgOsAgentsComponent {
     if (tile.disabled) {
       return;
     }
-    this.router.navigate([tile.agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
-  }
-
-  /** The Documents area: every stored output of the active project, with revisions. */
-  protected onOpenDocuments(): void {
-    this.router.navigate(['documents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['../', tile.agent.id], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
   // === Private initializers ===
   /**
-   * When the marketplace must re-resolve its dependency gating for the active
-   * project, beyond the resolution it does on arrival:
-   *
-   * 1. **A run completed.** Generating a Brand Kit stores the very document
-   *    its dependents are gated on — leaving the grid on the old answer would
-   *    keep the Message Foundation card locked over a document that exists.
-   * 2. **The marketplace became active again.** Returning from a run page is
-   *    the ordinary way a user reaches the grid after generating something,
-   *    and it is exactly then that the gating is most likely stale. Navigation
-   *    events cover it whether this instance is rebuilt or kept alive by the
-   *    router's reuse strategy; the navigation that mounted us is excluded, so
-   *    first load still resolves exactly once.
+   * Refresh the Agents tab's snapshot after a run completes or on return from
+   * a run page. The existing snapshot stays visible during a same-project
+   * refresh; a project change clears it and resolves from a neutral state.
+   * Excluding the navigation that mounted this component avoids a duplicate
+   * first fetch even when the router retains the tab instance.
    */
   private refreshTriggers(projectUid: string): Observable<string> {
     const runCompleted$ = this.dependencyService.documentsChanged$.pipe(filter((changedUid) => changedUid === projectUid));
@@ -181,34 +159,37 @@ export class MktgOsAgentsComponent {
     return merge(runCompleted$, reentry$);
   }
 
-  private initTiles(): Signal<MktgAgentTile[]> {
-    return computed(() => {
-      const term = this.searchTerm().trim().toLowerCase();
-      const matches = term
-        ? MKTG_AGENTS.filter(
-            (agent) =>
-              agent.name.toLowerCase().includes(term) ||
-              agent.description.toLowerCase().includes(term) ||
-              agent.tags.some((tag) => tag.toLowerCase().includes(term))
-          )
-        : MKTG_AGENTS;
+  private initFamilyGroups(): Signal<MktgKitAgentGroup[]> {
+    return computed(() =>
+      MKTG_KIT_FAMILIES.map((family) => ({
+        family,
+        tiles: family.agentIds.flatMap((id) => this.tiles().filter((tile) => tile.agent.id === id)),
+      })).filter((group) => group.tiles.length > 0)
+    );
+  }
 
+  private initTiles(): Signal<MktgKitAgentTile[]> {
+    return computed(() => {
       const dependencies = this.dependencyDocs();
-      return matches.map((agent) => {
+      return MKTG_AGENTS.filter((agent) => !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)).map((agent) => {
         const accent = agent.accent ?? 'gray';
         // Dependency gating (dec-agent-dependency-gating): a dependent agent is
         // disabled until every dependency has stored output for the active
         // project. Unresolved (still loading / SSR) counts as missing — fail-closed.
         const missingDependencyNames =
           agent.status === 'active' ? (agent.dependsOn ?? []).filter((id) => !dependencies[id]).map((id) => mktgAgentDocumentName(id)) : [];
-        const disabled = agent.status !== 'active' || missingDependencyNames.length > 0;
+        const disabled = this.resolving() || agent.status !== 'active' || missingDependencyNames.length > 0;
+        const statusLabel = this.tileState(agent, missingDependencyNames, dependencies);
+        const lastRunAt = disabled ? null : (this.documents()?.groups.find((group) => group.type.catalogAgentId === agent.id)?.documents[0]?.updatedAt ?? null);
         return {
           agent,
           iconClass: this.accentIcon[accent],
           borderClass: this.accentBorder[accent],
           disabled,
           missingDependencyNames,
-          ariaLabel: this.tileAriaLabel(agent, disabled, missingDependencyNames),
+          ariaLabel: this.tileAriaLabel(agent, statusLabel, lastRunAt),
+          statusLabel,
+          lastRunAt,
         };
       });
     });
@@ -220,26 +201,17 @@ export class MktgOsAgentsComponent {
    * grid's binding would otherwise need a nested conditional, which the repo
    * prohibits, and the disabled reason belongs next to the `disabled` decision
    * it must agree with. A disabled card always says WHY — the same reason its
-   * visible tag carries, so the tag and the accessible name cannot diverge.
+   * visible state line carries, so the state line and the accessible name cannot diverge.
    */
-  private tileAriaLabel(agent: MktgAgent, disabled: boolean, missingDependencyNames: string[]): string {
-    if (!disabled) {
-      return `Open ${agent.name}`;
-    }
-    if (agent.status !== 'active') {
-      return `${agent.name} (coming soon)`;
-    }
-    return `${agent.name} (requires ${missingDependencyNames.join(' and ')})`;
+  private tileAriaLabel(agent: MktgAgent, state: string, date: string | null): string {
+    if (this.resolving()) return `${agent.name} — Resolving`;
+    const lastRun = date ? ` · Last run ${formatDate(date, 'd MMM', this.locale)}` : '';
+    return `${agent.name} — ${state}${lastRun}`;
   }
 
-  private loadStoredVersions(projectUid: string): void {
-    const counts: Record<string, number> = {};
-    for (const agent of MKTG_AGENTS) {
-      const run = this.runService.loadRun(projectUid, agent.id);
-      if (run && run.versions.length > 0) {
-        counts[agent.id] = run.versions[run.versions.length - 1].version;
-      }
-    }
-    this.storedVersions.set(counts);
+  private tileState(agent: MktgAgent, missing: string[], dependencies: Record<string, MktgDependencyDocument | null>): string {
+    if (agent.status !== 'active') return 'Coming soon';
+    if ((agent.dependsOn ?? []).includes(MKTG_KIT_FRAMEWORK_AGENT_ID) && !dependencies[MKTG_KIT_FRAMEWORK_AGENT_ID]) return 'Needs an approved framework';
+    return missing.length ? `Needs ${missing.join(' and ')}` : 'Live';
   }
 }

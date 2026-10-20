@@ -335,7 +335,8 @@ export class MeetingCardComponent implements OnInit {
     // Initialize join URL stream
     const meeting$ = toObservable(this.meetingInput);
     const occurrence$ = toObservable(this.occurrence);
-    const user$ = toObservable(this.userService.user);
+    // The join link is built for the real viewer, never the impersonation target.
+    const user$ = toObservable(this.userService.meetingJoinIdentity);
     const authenticated$ = toObservable(this.userService.authenticated);
     const pastMeeting$ = toObservable(this.pastMeeting);
 

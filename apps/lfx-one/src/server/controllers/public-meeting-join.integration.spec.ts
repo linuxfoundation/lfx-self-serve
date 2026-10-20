@@ -376,7 +376,7 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     expect(natsCalls).toHaveLength(0);
   });
 
-  it('8. never reads the impersonator preference while impersonating', async () => {
+  it("8. does not join an impersonator as the target through the target's verified emails", async () => {
     sessionOptions = {
       email: 'admin.user@example.com',
       apiGatewayToken: 'impersonator-gateway-token',
@@ -388,9 +388,10 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
 
     const res = await postJoin();
 
-    expect(res.status).toBe(200);
-    expect(subjectCalls(NatsSubjects.MEETING_PREFERRED_EMAIL_GET)).toHaveLength(0);
-    expect(subjectCalls(NatsSubjects.USER_EMAILS_READ)[0].payload.user.auth_token).toBe('auth0|target-1');
+    expect(res.status).toBe(403);
+    expect(joinCalls).toHaveLength(0);
+    expect(natsCalls).toHaveLength(0);
+    expect(contactIdCalls).toBe(0);
   });
 
   it('8b. answers 403, not 503, for an unregistered impersonation target even though no preference is read', async () => {

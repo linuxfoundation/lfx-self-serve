@@ -238,6 +238,9 @@ router.get('/engagement-meeting-participation', requireDashboardAccess, (req, re
   analyticsController.getEngagementMeetingParticipation(req, res, next)
 );
 
+// Health Metrics Engagement "Attendance trend" section (#3963)
+router.get('/engagement-attendance-trend', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementAttendanceTrend(req, res, next));
+
 // Health Metrics Engagement "Organization participation" section (#2802)
 router.get('/engagement-org-participation', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementOrgParticipation(req, res, next));
 

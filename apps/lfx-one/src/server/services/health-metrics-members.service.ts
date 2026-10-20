@@ -1264,13 +1264,12 @@ function mapNpsAudience(row: NpsAudienceRow): HealthMetricsMembersNpsAudience[] 
   const audience = row.AUDIENCE_TYPE;
   if (!audience?.trim()) return [];
 
-  // A flagged sample is withheld here, so no caller can render it as a precise score.
-  const isSampleTooSmall = row.IS_SAMPLE_TOO_SMALL === true;
+  // A flagged sample keeps its score; the flag rides along so the section marks it as low confidence.
   return [
     {
       audience,
-      npsScore: isSampleTooSmall ? null : toNullableNumber(row.NPS_SCORE),
-      scoreChangePp: isSampleTooSmall ? null : toNullableNumber(row.NPS_SCORE_CHANGE_PP),
+      npsScore: toNullableNumber(row.NPS_SCORE),
+      scoreChangePp: toNullableNumber(row.NPS_SCORE_CHANGE_PP),
       recipientsCount: toNullableNumber(row.RECIPIENTS_COUNT),
       responsesCount: toNullableNumber(row.RESPONSES_COUNT),
       responseRatePct: toNullableNumber(row.RESPONSE_RATE_PCT),
@@ -1278,7 +1277,7 @@ function mapNpsAudience(row: NpsAudienceRow): HealthMetricsMembersNpsAudience[] 
       passivesCount: toNullableNumber(row.PASSIVES_COUNT),
       detractorsCount: toNullableNumber(row.DETRACTORS_COUNT),
       noResponseCount: toNullableNumber(row.NO_RESPONSE_COUNT),
-      isSampleTooSmall,
+      isSampleTooSmall: row.IS_SAMPLE_TOO_SMALL === true,
       lastUpdatedQuarter: row.LAST_UPDATED_QUARTER || null,
     },
   ];
@@ -1288,14 +1287,13 @@ function mapNpsQuarter(row: NpsQuarterRow): HealthMetricsMembersNpsQuarter[] {
   const quarterStartDate = toIsoDate(row.QUARTER_START_DATE);
   if (!quarterStartDate) return [];
 
-  const isSampleTooSmall = row.IS_SAMPLE_TOO_SMALL === true;
   return [
     {
       quarterStartDate,
       quarterLabel: row.QUARTER_LABEL || null,
-      npsScore: isSampleTooSmall ? null : toNullableNumber(row.NPS_SCORE),
+      npsScore: toNullableNumber(row.NPS_SCORE),
       responseRatePct: toNullableNumber(row.RESPONSE_RATE_PCT),
-      isSampleTooSmall,
+      isSampleTooSmall: row.IS_SAMPLE_TOO_SMALL === true,
     },
   ];
 }

@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMember, MeetingRegistrant, QueryServiceResponse, UserSearchParams, UserSearchResponse, UserSearchResult } from '@lfx-one/shared/interfaces';
+import {
+  ApiRequestOptions,
+  CommitteeMember,
+  MeetingRegistrant,
+  QueryServiceResponse,
+  UserSearchParams,
+  UserSearchResponse,
+  UserSearchResult,
+} from '@lfx-one/shared/interfaces';
 import { dedupeUserSearchResults, matchesUserSearchQuery } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -20,7 +28,7 @@ export class SearchService {
   /**
    * Searches for users across meeting registrants and committee members
    */
-  public async searchUsers(req: Request, params: UserSearchParams): Promise<UserSearchResponse> {
+  public async searchUsers(req: Request, params: UserSearchParams, options?: ApiRequestOptions): Promise<UserSearchResponse> {
     const queryParams = {
       ...(params.name ? { name: params.name } : {}),
       ...(params.tags ? { tags: params.tags } : {}),
@@ -35,7 +43,10 @@ export class SearchService {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      queryParams
+      queryParams,
+      undefined,
+      undefined,
+      options
     );
 
     // Transform the resources to UserSearchResult format

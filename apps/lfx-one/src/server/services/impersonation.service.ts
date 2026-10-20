@@ -27,12 +27,14 @@ export class ImpersonationService {
     this.natsService = new NatsService();
   }
 
-  public async exchangeToken(req: Request, targetUser: string): Promise<M2MTokenResponse> {
+  // subjectToken is deliberately required: while impersonating, req.bearerToken is the current target's token, so
+  // defaulting to it would let a caller silently chain one target's token into another exchange.
+  public async exchangeToken(req: Request, targetUser: string, subjectToken: string): Promise<M2MTokenResponse> {
     logger.debug(req, 'cte_token_exchange', 'Starting CTE token exchange via NATS', { target_user: targetUser });
 
     const codec = this.natsService.getCodec();
     const payload = JSON.stringify({
-      subject_token: req.bearerToken || '',
+      subject_token: subjectToken,
       target_user: targetUser,
     });
 
@@ -154,6 +156,9 @@ export class ImpersonationService {
       name: oidcUser?.['name'] || '',
     };
 
+    // Set only when switching from an active session, so the audit trail shows which session this one replaced.
+    const previousTargetSub = req.appSession['impersonationToken'] ? (req.appSession['impersonationUser']?.sub ?? null) : null;
+
     req.appSession['impersonationToken'] = tokenResponse.access_token;
     const safetyBufferSeconds = tokenResponse.expires_in > 300 ? 300 : 0;
     req.appSession['impersonationExpiresAt'] = Date.now() + (tokenResponse.expires_in - safetyBufferSeconds) * 1000;
@@ -179,6 +184,7 @@ export class ImpersonationService {
       impersonator_email: impersonator.email,
       target_sub: targetUser.sub,
       target_email: targetUser.email,
+      previous_target_sub: previousTargetSub,
       persona_context: personaContext ?? null,
     });
   }

@@ -4,6 +4,7 @@
 import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
 import type { CommitteeReference } from './committee.interface';
+import type { GroupsIOMailingList } from './mailing-list.interface';
 
 /** Complete authorization-scoped management totals at one server time snapshot. */
 export interface VoteSummary {
@@ -1029,4 +1030,24 @@ export interface VotePermalinkState {
   /** Transient failure — retry card, HTTP 200 */
   error: boolean;
   target: VotePermalinkTarget | null;
+}
+
+/** Data passed to the mailing-list picker opened from a votes-table row when the committee has several lists (#3658). */
+export interface VoteMailingListReminderDialogData {
+  vote: VoteTableRow;
+  /** The committee's mailto-safe lists — already filtered by the caller. */
+  lists: GroupsIOMailingList[];
+}
+
+/** Subject and plain-text body of a mailing-list reminder draft, before `mailto:` encoding. */
+export interface VoteMailingListReminderDraft {
+  subject: string;
+  body: string;
+}
+
+/** One radio choice in the mailing-list picker when the committee has several lists. */
+export interface VoteMailingListReminderListOption {
+  uid: string;
+  /** `{group_name} ({address})` — the radio wrapper's label is a plain string. */
+  label: string;
 }

@@ -1,18 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DOCUMENT } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
-import { MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
+import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponseStatus, VoteStatusCounts } from '@lfx-one/shared';
 import { ClipboardShareService } from '@services/clipboard-share.service';
+import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { VoteMailingListReminderDialogComponent } from '../vote-mailing-list-reminder-dialog/vote-mailing-list-reminder-dialog.component';
 import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-reminder-dialog.component';
 import { VotesTableComponent } from './votes-table.component';
 
@@ -71,6 +75,15 @@ class StatusCountsHostComponent {
   public readonly selected: string[] = [];
 }
 
+@Component({
+  selector: 'lfx-status-counts-loading-host',
+  imports: [VotesTableComponent],
+  template: `<lfx-votes-table [votes]="[]" [showStatusCounts]="true" [statusCounts]="counts()" />`,
+})
+class LoadingCountsHostComponent {
+  public readonly counts = signal<VoteStatusCounts | null>(null);
+}
+
 describe('VotesTableComponent — status tab counts', () => {
   let fixture: ComponentFixture<StatusCountsHostComponent>;
   let host: StatusCountsHostComponent;
@@ -91,6 +104,7 @@ describe('VotesTableComponent — status tab counts', () => {
         { provide: VoteService, useValue: {} },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(StatusCountsHostComponent);
@@ -109,8 +123,15 @@ describe('VotesTableComponent — status tab counts', () => {
   const labels = (): string[] => pills().map((pill) => pill.textContent!.trim());
   const accessibleNames = (): (string | null)[] => pills().map((pill) => pill.getAttribute('aria-label'));
 
-  it('appends each tab count to its label and keeps a confirmed zero visible', () => {
-    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Draft (0)', 'Ended (2)']);
+  it('appends positive counts and leaves a confirmed zero as the plain label', () => {
+    expect(labels()).toEqual(['All (5)', 'Active (3)', 'Draft', 'Ended (2)']);
+    expect(accessibleNames()).toEqual(labels());
+  });
+
+  it('keeps a count of exactly 1 visible beside zero totals', async () => {
+    host.counts.set({ all: 1, active: 0, disabled: 1, ended: 0 });
+    await settle();
+    expect(labels()).toEqual(['All (1)', 'Active', 'Draft (1)', 'Ended']);
     expect(accessibleNames()).toEqual(labels());
   });
 
@@ -120,11 +141,33 @@ describe('VotesTableComponent — status tab counts', () => {
     expect(labels()).toEqual(['All (5)', 'Active (3)', 'Ended (2)']);
   });
 
-  it('renders unavailable counts as a dash and announces them as unavailable', async () => {
+  it('renders unavailable counts as plain labels without a placeholder', async () => {
     host.counts.set(null);
     await settle();
-    expect(labels()).toEqual(['All (–)', 'Active (–)', 'Draft (–)', 'Ended (–)']);
-    expect(accessibleNames()).toEqual(['All, count unavailable', 'Active, count unavailable', 'Draft, count unavailable', 'Ended, count unavailable']);
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(accessibleNames()).toEqual(labels());
+    expect(fixture.nativeElement.querySelector('[data-testid="votes-status-tabs"]').textContent).not.toMatch(/[–(]/);
+  });
+
+  it('follows count updates from loading to positive to zero and back to loading', async () => {
+    host.counts.set(null);
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+
+    host.counts.set({ all: 4, active: 1, disabled: 2, ended: 1 });
+    await settle();
+    expect(labels()).toEqual(['All (4)', 'Active (1)', 'Draft (2)', 'Ended (1)']);
+    expect(accessibleNames()).toEqual(labels());
+
+    host.counts.set({ all: 0, active: 0, disabled: 0, ended: 0 });
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(accessibleNames()).toEqual(labels());
+
+    host.counts.set(null);
+    await settle();
+    expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(accessibleNames()).toEqual(labels());
   });
 
   it('renders plain labels for consumers that do not opt in', async () => {
@@ -133,12 +176,54 @@ describe('VotesTableComponent — status tab counts', () => {
     expect(labels()).toEqual(['All', 'Active', 'Draft', 'Ended']);
   });
 
-  it('still selects counted tabs by their bare status id', async () => {
+  it('keeps zero-count tabs selectable by their bare status id', async () => {
+    expect(labels()[2]).toBe('Draft');
     (fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]') as HTMLButtonElement).click();
     await settle();
     expect(host.selected).toEqual([PollStatus.DISABLED]);
     expect(host.status()).toBe(PollStatus.DISABLED);
-    expect(fixture.nativeElement.querySelector('[data-testid="filter-pill-disabled"]').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('still selects counted tabs by their bare status id', async () => {
+    (fixture.nativeElement.querySelector(`[data-testid="filter-pill-${PollStatus.ENDED}"]`) as HTMLButtonElement).click();
+    await settle();
+    expect(host.selected).toEqual([PollStatus.ENDED]);
+    expect(host.status()).toBe(PollStatus.ENDED);
+    expect(fixture.nativeElement.querySelector(`[data-testid="filter-pill-${PollStatus.ENDED}"]`).getAttribute('aria-pressed')).toBe('true');
+  });
+});
+
+describe('VotesTableComponent — status tab counts on initial load', () => {
+  let fixture: ComponentFixture<LoadingCountsHostComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [LoadingCountsHostComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: {} },
+        { provide: MessageService, useValue: {} },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(LoadingCountsHostComponent);
+  });
+  afterEach(() => fixture?.destroy());
+
+  it('renders plain labels on the first render while counts are still pending, then shows positive counts', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const pills = (): HTMLButtonElement[] =>
+      Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]'));
+    expect(pills().map((pill) => pill.textContent!.trim())).toEqual(['All', 'Active', 'Draft', 'Ended']);
+    expect(pills().map((pill) => pill.getAttribute('aria-label'))).toEqual(['All', 'Active', 'Draft', 'Ended']);
+
+    fixture.componentInstance.counts.set({ all: 2, active: 2, disabled: 0, ended: 0 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(pills().map((pill) => pill.textContent!.trim())).toEqual(['All (2)', 'Active (2)', 'Draft', 'Ended']);
   });
 });
 
@@ -162,6 +247,7 @@ describe('VotesTableComponent — personal summary filters', () => {
         { provide: VoteService, useValue: {} },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
   });
@@ -364,6 +450,7 @@ describe('VotesTableComponent — empty-state copy', () => {
         { provide: VoteService, useValue: {} },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
@@ -540,21 +627,40 @@ describe('VotesTableComponent — row More menu', () => {
   let table: VotesTableComponent;
   let copyLink: ReturnType<typeof vi.fn>;
   let openDialog: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let getMailingListsByCommittee: ReturnType<typeof vi.fn>;
+  let location: { href: string };
   const ROWS = [vote('active'), vote('ended', { status: PollStatus.ENDED }), vote('draft', { status: PollStatus.DISABLED })];
   const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
 
   beforeEach(async () => {
     copyLink = vi.fn();
     openDialog = vi.fn();
+    messageAdd = vi.fn();
+    getMailingListsByCommittee = vi.fn().mockReturnValue(NEVER);
+    location = { href: '' };
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
         { provide: VoteService, useValue: {} },
-        { provide: MessageService, useValue: {} },
+        { provide: MessageService, useValue: { add: messageAdd } },
         { provide: ClipboardShareService, useValue: { copyLink } },
         { provide: DialogService, useValue: { open: openDialog } },
+        { provide: MailingListService, useValue: { getMailingListsByCommittee } },
+        // Only `location` is swapped: TestBed renders through DOCUMENT, and jsdom refuses a direct `document.location` assignment.
+        {
+          provide: DOCUMENT,
+          useFactory: () =>
+            new Proxy(globalThis.document, {
+              get: (target, prop) => {
+                if (prop === 'location') return location;
+                const value = Reflect.get(target, prop);
+                return typeof value === 'function' ? value.bind(target) : value;
+              },
+            }),
+        },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
@@ -677,7 +783,9 @@ describe('VotesTableComponent — row More menu', () => {
     // independent, which is the whole point of this case. Clone is appended last (#3781), so the
     // reminder stays at index 1 whether or not it is there.
     const items = table['rowActionMenuItems']();
-    expect(items.map((item) => item.label)).toEqual(hasPMOAccess ? ['Copy link', 'Send reminder', 'Clone'] : ['Copy link', 'Send reminder']);
+    expect(items.map((item) => item.label)).toEqual(
+      hasPMOAccess ? ['Copy link', 'Send reminder', 'Reminder mailing list', 'Clone'] : ['Copy link', 'Send reminder', 'Reminder mailing list']
+    );
 
     items[1].command!({});
 
@@ -690,6 +798,190 @@ describe('VotesTableComponent — row More menu', () => {
         data: { vote: expect.objectContaining({ uid: 'active' }) },
       })
     );
+  });
+
+  describe('Reminder mailing list (#3658)', () => {
+    const TSC = { uid: 'ml-1', group_name: 'tsc', domain: 'lists.example.org' } as GroupsIOMailingList;
+    const MAIN = { uid: 'ml-2', group_name: 'main', domain: 'lists.example.org' } as GroupsIOMailingList;
+    const UNSAFE = { uid: 'ml-3', group_name: 'tsc,other@evil.example', domain: 'lists.example.org' } as GroupsIOMailingList;
+
+    /** Opens the active row's menu as a manager and returns the Reminder mailing list item. */
+    async function reminderItem(overrides: Partial<Vote> = { committee_uid: 'committee-1' }) {
+      fixture.componentRef.setInput(
+        'votes',
+        ROWS.map((row) => ({ ...row, writer: true, ...overrides }))
+      );
+      await settle();
+      moreButton('active')!.click();
+      await settle();
+      return table['rowActionMenuItems']().find((item) => item.label === 'Reminder mailing list')!;
+    }
+
+    it('shows on manager rows with a tooltip saying it opens the mail app', async () => {
+      const item = await reminderItem();
+
+      expect(item.icon).toBe('fa-light fa-envelopes-bulk');
+      expect(item.tooltipOptions?.tooltipLabel).toBe('Opens your mail app to send a reminder email to the mailing list');
+    });
+
+    it('opens the mailto: draft straight away when the committee has one usable list', async () => {
+      getMailingListsByCommittee.mockReturnValue(of([TSC, UNSAFE]));
+      const item = await reminderItem();
+
+      item.command!({});
+
+      expect(getMailingListsByCommittee).toHaveBeenCalledWith('committee-1');
+      expect(openDialog).not.toHaveBeenCalled();
+      expect(location.href.startsWith('mailto:tsc@lists.example.org?subject=')).toBe(true);
+      const body = decodeURIComponent(location.href.split('&body=')[1]);
+      expect(body).toContain('Voting is open for "Board active"');
+      expect(body).toContain(`${window.location.origin}/votes/active`);
+    });
+
+    it.each([
+      { overrides: {}, expectedCommitteeUid: 'committee-fallback' },
+      { overrides: { committee_uid: 'committee-1' }, expectedCommitteeUid: 'committee-1' },
+    ])('resolves the mailing-list committee to $expectedCommitteeUid with a committee-tab fallback', async ({ overrides, expectedCommitteeUid }) => {
+      fixture.componentRef.setInput('editQueryParamsFallback', { committee_uid: 'committee-fallback' });
+      getMailingListsByCommittee.mockReturnValue(of([TSC]));
+      const item = await reminderItem(overrides);
+
+      item.command!({});
+
+      expect(getMailingListsByCommittee).toHaveBeenCalledWith(expectedCommitteeUid);
+      expect(location.href.startsWith('mailto:tsc@lists.example.org?subject=')).toBe(true);
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('asks which list when there are several, then drafts to the picked one', async () => {
+      const closed = new Subject<GroupsIOMailingList | undefined>();
+      openDialog.mockReturnValue({ onClose: closed });
+      getMailingListsByCommittee.mockReturnValue(of([TSC, MAIN]));
+      const item = await reminderItem();
+
+      item.command!({});
+
+      expect(openDialog).toHaveBeenCalledWith(
+        VoteMailingListReminderDialogComponent,
+        expect.objectContaining({
+          header: 'Reminder mailing list',
+          modal: true,
+          data: { vote: expect.objectContaining({ uid: 'active' }), lists: [TSC, MAIN] },
+        })
+      );
+      expect(location.href).toBe('');
+
+      closed.next(MAIN);
+
+      expect(location.href.startsWith('mailto:main@lists.example.org?subject=')).toBe(true);
+    });
+
+    it('ignores picker selections after the table is destroyed', async () => {
+      const closed = new Subject<GroupsIOMailingList | undefined>();
+      openDialog.mockReturnValue({ onClose: closed });
+      getMailingListsByCommittee.mockReturnValue(of([TSC, MAIN]));
+      const item = await reminderItem();
+
+      item.command!({});
+      expect(closed.observed).toBe(true);
+      fixture.destroy();
+      expect(closed.observed).toBe(false);
+      closed.next(MAIN);
+
+      expect(location.href).toBe('');
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('ignores duplicate clicks during a lookup and allows another reminder after success', async () => {
+      const pending = new Subject<GroupsIOMailingList[]>();
+      getMailingListsByCommittee.mockReturnValue(of([TSC])).mockReturnValueOnce(pending);
+      const item = await reminderItem();
+
+      item.command!({});
+      item.command!({});
+      expect(getMailingListsByCommittee).toHaveBeenCalledTimes(1);
+
+      pending.next([TSC, MAIN]);
+      expect(openDialog).toHaveBeenCalledTimes(1);
+      item.command!({});
+
+      expect(getMailingListsByCommittee).toHaveBeenCalledTimes(2);
+      expect(location.href.startsWith('mailto:tsc@lists.example.org?subject=')).toBe(true);
+    });
+
+    it.each(['error', 'empty completion'])('allows a retry after lookup %s', async (outcome) => {
+      const pending = new Subject<GroupsIOMailingList[]>();
+      getMailingListsByCommittee.mockReturnValue(of([TSC])).mockReturnValueOnce(pending);
+      const item = await reminderItem();
+
+      item.command!({});
+      if (outcome === 'error') {
+        pending.error(new Error('boom'));
+      } else {
+        pending.complete();
+      }
+      item.command!({});
+
+      expect(getMailingListsByCommittee).toHaveBeenCalledTimes(2);
+      expect(location.href.startsWith('mailto:tsc@lists.example.org?subject=')).toBe(true);
+    });
+
+    it('cancels a pending lookup and clears its guard when the table is destroyed', async () => {
+      const pending = new Subject<GroupsIOMailingList[]>();
+      getMailingListsByCommittee.mockReturnValue(pending);
+      const item = await reminderItem();
+
+      item.command!({});
+      expect(pending.observed).toBe(true);
+      fixture.destroy();
+      expect(pending.observed).toBe(false);
+      pending.next([TSC, MAIN]);
+
+      expect(openDialog).not.toHaveBeenCalled();
+      expect(location.href).toBe('');
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the picker is cancelled', async () => {
+      const closed = new Subject<GroupsIOMailingList | undefined>();
+      openDialog.mockReturnValue({ onClose: closed });
+      getMailingListsByCommittee.mockReturnValue(of([TSC, MAIN]));
+      const item = await reminderItem();
+
+      item.command!({});
+      closed.next(undefined);
+
+      expect(location.href).toBe('');
+    });
+
+    it.each([
+      { label: 'no usable list', lists: [UNSAFE], overrides: { committee_uid: 'committee-1' } },
+      { label: 'no committee', lists: [TSC], overrides: {} },
+    ])('shows the no-mailing-list toast for $label', async ({ lists, overrides }) => {
+      getMailingListsByCommittee.mockReturnValue(of(lists));
+      const item = await reminderItem(overrides);
+
+      item.command!({});
+
+      expect(location.href).toBe('');
+      expect(messageAdd).toHaveBeenCalledWith({
+        severity: 'info',
+        summary: 'No mailing list',
+        detail: 'This group has no mailing list. Use Copy link or Send reminder instead.',
+      });
+    });
+
+    it('shows an error toast when the lists fail to load', async () => {
+      getMailingListsByCommittee.mockReturnValue(throwError(() => new Error('boom')));
+      const item = await reminderItem();
+
+      item.command!({});
+
+      expect(location.href).toBe('');
+      expect(messageAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: "Couldn't load this group's mailing lists. Please try again." })
+      );
+    });
   });
 
   it.each([
@@ -791,6 +1083,7 @@ describe('VotesTableComponent — participation progress', () => {
         { provide: VoteService, useValue: {} },
         { provide: MessageService, useValue: {} },
         { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);

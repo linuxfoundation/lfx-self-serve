@@ -40,7 +40,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, getRealEmail, getRealUsername, isImpersonating } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -442,9 +442,13 @@ export class PublicMeetingController {
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const password = this.getRequestMeetingPassword(req);
-    const bodyEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
-    const email: string = bodyEmail || getEffectiveEmail(req) || '';
-    const username = getEffectiveUsername(req);
+    // While impersonating, the viewer joins as themselves, never as the impersonation target. The
+    // client-supplied email is the target's (the SSR user is overridden), so it is ignored in favor
+    // of the real session's identity.
+    const impersonating = isImpersonating(req);
+    const bodyEmail = !impersonating && typeof req.body.email === 'string' ? req.body.email.trim() : '';
+    const email: string = bodyEmail || (impersonating ? getRealEmail(req) : getEffectiveEmail(req)) || '';
+    const username = impersonating ? getRealUsername(req) : getEffectiveUsername(req);
     const startTime = logger.startOperation(req, 'post_meeting_link', {
       meeting_id: id,
     });
@@ -1040,7 +1044,8 @@ export class PublicMeetingController {
         matchedBy = 'email';
       }
     }
-    if (registrants.length === 0) {
+    // The verified-email lookup resolves the target's emails; an impersonator joins as themselves.
+    if (registrants.length === 0 && !isImpersonating(req)) {
       const byVerifiedEmail = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, email);
       registrants = byVerifiedEmail.registrants;
       if (registrants.length > 0) {
