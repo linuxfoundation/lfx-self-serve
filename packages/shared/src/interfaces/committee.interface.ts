@@ -1200,16 +1200,22 @@ export interface JoinApplicationDialogResult {
 // ── Group Join Button ──────────────────────────────────────────────────────
 
 /**
- * The group fields `lfx-group-join-button` needs to run the join flow. Structural, so both a full
- * `Committee` and a directory summary (`PublicGroupSummary`) can be passed as-is.
+ * The group fields `lfx-group-join-button` needs to run the join flow. A full `Committee` fits
+ * as-is. The host must supply the organization-requirement flags: `enable_voting` is required so a
+ * payload without them (e.g. today's `PublicGroupSummary`) does not type-check and silently skip the
+ * organization confirmation. A directory host (Discover more, #3596) needs these flags on its
+ * summary first.
  */
 export interface GroupJoinTarget {
   uid: string;
   name: string;
   join_mode?: JoinMode;
-  /** Voting groups need an organization on join (see `committeeRequiresOrganization`). */
-  enable_voting?: boolean;
-  /** Groups that require a business email need an organization on join. */
+  /** Voting groups need an organization on join (see `committeeRequiresOrganization`). Required: see above. */
+  enable_voting: boolean;
+  /**
+   * Groups that require a business email need an organization on join. Optional only because it is
+   * optional on `Committee`, where absent means not required.
+   */
   business_email_required?: boolean;
 }
 

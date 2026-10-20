@@ -418,4 +418,19 @@ describe('CommitteeViewComponent', () => {
       expect(component.activeTab()).toBe('members');
     });
   });
+
+  describe('join state changes', () => {
+    it('refreshes membership only for a join of the group currently shown', () => {
+      const component = createComponent();
+      flush();
+      const refresh = vi.spyOn(component as unknown as { refreshCommitteeAfterMembershipChange: () => void }, 'refreshCommitteeAfterMembershipChange');
+
+      component.onJoinStateChange({ group_uid: 'previous-group', state: 'joined' });
+      component.onJoinStateChange({ group_uid: committee.uid, state: 'application_pending' });
+      expect(refresh).not.toHaveBeenCalled();
+
+      component.onJoinStateChange({ group_uid: committee.uid, state: 'joined' });
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+  });
 });

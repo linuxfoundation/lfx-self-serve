@@ -204,7 +204,9 @@ export class GroupJoinButtonComponent {
     merge(ref.onClose, ref.onDestroy.pipe(map(() => null as JoinApplicationDialogResult | null)))
       .pipe(takeUntilDestroyed(this.destroyRef), take(1))
       .subscribe((result: JoinApplicationDialogResult | null) => {
-        if (!result) {
+        // The host may have cleared or swapped the group while the dialog was open — abandon the
+        // flow rather than submit for a group no longer on screen.
+        if (!result || this.group()?.uid !== group.uid) {
           this.joining.set(false);
           return;
         }

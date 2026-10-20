@@ -34,6 +34,7 @@ describe('GroupJoinButtonComponent', () => {
     uid: 'group-1',
     name: 'Technical Steering',
     join_mode: joinMode,
+    enable_voting: false,
     ...extra,
   });
 
@@ -181,6 +182,20 @@ describe('GroupJoinButtonComponent', () => {
       expect(markPending).toHaveBeenCalledWith('group-1');
       expect(emitted).toEqual([{ group_uid: 'group-1', state: 'application_pending' }]);
       expect(testIds(fixture)).toEqual([]);
+    });
+
+    it('drops the submission when the host swaps the group while the application dialog is open', async () => {
+      const closed = new Subject<unknown>();
+      openDialog.mockReturnValue(dialogRef(closed));
+      const fixture = await render(group('application'));
+
+      await fixture.componentInstance.requestJoin();
+      fixture.componentRef.setInput('group', group('application', { uid: 'group-2', name: 'Other Group' }));
+      closed.next({ message: 'Hello' });
+
+      expect(submitApplication).not.toHaveBeenCalled();
+      expect(markPending).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.busy()).toBe(false);
     });
 
     it('treats a 409 as an existing pending application', async () => {

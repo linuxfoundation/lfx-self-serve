@@ -742,7 +742,9 @@ export class CommitteeViewComponent {
   }
 
   public onJoinStateChange(change: GroupJoinStateChange): void {
-    if (change.state === 'joined') {
+    // The join request outlives navigation and this component is reused across /groups/:id, so a
+    // late event for the previous group must not refresh the one now on screen.
+    if (change.state === 'joined' && change.group_uid === this.committee()?.uid) {
       this.refreshCommitteeAfterMembershipChange();
     }
   }
