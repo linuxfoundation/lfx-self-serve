@@ -115,8 +115,8 @@ section deletes its placeholder and its row here. A test must never assert on on
 
 The feature badges render as V1's do, from the `*_enabled` flags whatever the viewer's artifact access
 (FR-041), before, during and after the meeting. The one exception is V1's: on a past occurrence opened
-by its own id, `meeting-header-badge-recording` renders only when that occurrence's recording actually
-loads. V1 names the same four `meeting-badge-*`; V2 keeps its own `meeting-header-badge-*`.
+by its own id, `meeting-header-badge-recording` renders only when a signed-in viewer with full access
+reads a recording for it (V1's `showRecordingBadge`). V1 names the same four `meeting-badge-*`; V2 keeps its own `meeting-header-badge-*`.
 
 The two occurrence controls port V1's (#3040, #3206): organizer only, on a recurring meeting, for the
 selected upcoming occurrence. V1 names them `meeting-reschedule-occurrence-button` and

@@ -274,6 +274,8 @@ export class MeetingHeaderComponent {
           id
             ? this.meetingService.getPastMeetingRecording(id).pipe(
                 map((recording) => getLargestSessionShareUrl(recording)),
+                // Silent on purpose, as V1's: this is the recording section's cached read, and that
+                // section logs its failures (`artifactFailure`). A failed read only hides the chip.
                 catchError(() => of(null))
               )
             : of(null)

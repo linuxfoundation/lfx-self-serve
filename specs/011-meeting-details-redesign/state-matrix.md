@@ -77,8 +77,9 @@ returns a payload, tiered by `full_access` (helpers/meeting.helper.ts:273–335)
   participant, or a member of a linked committee;
 - otherwise `none`, and the payload is trimmed to 19 fields: no description, no occurrences, no
   committees, no counts, no artifacts. The feature toggles survive, and V2's chips follow them as
-  V1's do; only the Recording chip on a past occurrence opened by its own id waits for that
-  occurrence's recording to load (V1's `showRecordingBadge`).
+  V1's do, with one exception: on a past occurrence opened by its own id, the Recording chip renders
+  only when a signed-in viewer with full access reads a recording for it (V1's `showRecordingBadge`),
+  so in this tier it never renders there.
 
 So every ended combination is legal. Anonymous + `full` happens only for `public-open` meetings.
 
