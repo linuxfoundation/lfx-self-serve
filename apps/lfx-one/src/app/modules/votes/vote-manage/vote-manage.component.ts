@@ -766,8 +766,10 @@ export class VoteManageComponent {
   }
 
   /**
-   * Access predicate mirroring writerGuard's votes standard — project writer on the vote's OWN project
-   * (never the boot context), or committee writer via ?committee_uid=; pending legs stay provisionally true.
+   * Access predicates mirroring writerGuard's votes standard — project writer on the vote's OWN
+   * project (never the boot context), or committee writer via ?committee_uid=. Returns an optimistic
+   * predicate (pending legs provisionally true, used for eviction) and a strict one (pending legs
+   * false, used to authorize submission).
    */
   private initWriteAccess(): { optimistic: Signal<boolean>; resolved: Signal<boolean> } {
     const editVoteId = this.route.snapshot.paramMap.get('id');
@@ -816,8 +818,15 @@ export class VoteManageComponent {
       map((vote) => (vote ? (vote.committee_uid ?? this.committeeUidFromUrl()) : undefined))
     );
     // Reactive on committeeUidFromUrl too (create mode) — the rail's Create Vote dialog can swap
-    // ?committee_uid= on this reused component without a full reload (GH-3781).
-    const committeeCandidate$: Observable<string | null | undefined> = editVoteId ? editCommitteeUid$ : toObservable(this.committeeUidFromUrl);
+    // ?committee_uid= on this reused component without a full reload (GH-3781). Folded to null while
+    // cloning: a clone's own committee comes from the source vote, not ?committee_uid — the clone
+    // form itself ignores that param (see initCommitteeContext()) — so granting write access off an
+    // unrelated committee the caller happens to write to would authorize a project the committee leg
+    // never actually vouched for (GH-3781 review: cursor, "Clone submit trusts unrelated committee
+    // grant").
+    const committeeCandidate$: Observable<string | null | undefined> = editVoteId
+      ? editCommitteeUid$
+      : combineLatest([toObservable(this.committeeUidFromUrl), toObservable(this.cloneSourceVote)]).pipe(map(([uid, clone]) => (clone ? null : uid)));
     // Gated on the project leg resolving false: a granted project leg makes the committee fetch
     // moot, and while it's pending this leg stays pending too. undefined stays pending; null resolves immediately.
     const committeeUid$: Observable<string | null | undefined> = combineLatest([toObservable(projectAccess), committeeCandidate$]).pipe(

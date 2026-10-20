@@ -586,6 +586,68 @@ describe('VoteManageComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'No project selected' }));
     });
 
+    // GH-3781 review round 4 (PRRT_kwDOPMiRQ86uNsR8, dealako): resolveAuthorizedProjectUid() fails
+    // closed on a pending (not just a denied) write-access leg — pin it directly rather than only
+    // through the eviction tests, which exercise the optimistic leg, not the strict one this gate
+    // actually reads.
+    it('blocks submission while project write access is still pending on a clone', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      activeContext.set({ uid: SOURCE_PROJECT_UID, slug: 'source-project', name: 'Source Project' });
+      getProject.mockReturnValue(new Subject<{ uid: string; writer: boolean } | null>().asObservable());
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      // getProject never resolves — projectAccess stays pending (undefined), so the strict
+      // resolvedWriteAccess() must stay false even though the clone's project matches activeContext.
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+    });
+
+    // GH-3781 review round 4 (PRRT_kwDOPMiRQ86uNuyT, cursor "Clone submit trusts unrelated committee
+    // grant"): the committee leg of write access previously still resolved off ?committee_uid= even
+    // while cloning, so a caller who happened to be a writer on some unrelated committee (e.g. a
+    // stale or unrelated ?committee_uid= left over from navigation) could satisfy
+    // resolvedWriteAccess() and have resolveAuthorizedProjectUid() hand back the clone's own
+    // (unsynced, unauthorized) project_uid. Pins the fix: committeeCandidate$ folds to null while
+    // cloning, so the committee leg can never vouch for a project it was never asked about.
+    it('does not authorize an unsynced clone project off write access to an unrelated committee', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      // Sync never converged (e.g. the clone source lacks project_slug) — activeContext stays null,
+      // so the project leg resolves false.
+      activeContext.set(null);
+      getProject.mockReturnValue(of(null));
+      routeMock.queryParamMap = of(convertToParamMap({ clone: CLONE_SOURCE_UID, committee_uid: 'unrelated-committee-uid' }));
+      // The caller IS a writer on this committee — if the committee leg still consulted it while
+      // cloning, resolvedWriteAccess() would wrongly resolve true.
+      fetchCommittee.mockReturnValue(of({ uid: 'unrelated-committee-uid', writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+
+      expect(fetchCommittee).not.toHaveBeenCalledWith('unrelated-committee-uid');
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+    });
+
     // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): the clone fetch disables the form while in flight
     // (initCloneFromQuery's `this.form().disable()` / `.enable()` pair) so a slow fetch can't let
     // the organizer type into a form about to be overwritten by the prefill. This is the only test
