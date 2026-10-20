@@ -253,10 +253,20 @@ export class MeetingActionSlotComponent {
       .subscribe({
         next: (result) => {
           this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
-          if (this.state.meeting()?.id !== meetingId || this.viewerSubject() !== subject) {
+          if (this.viewerSubject() !== subject) {
             return;
           }
-          if (result.remaining_registrant_ids.length > 0) {
+          const complete = result.remaining_registrant_ids.length === 0;
+          if (complete) {
+            // Recorded session-wide even if the page has moved to another meeting meanwhile, so the
+            // dashboard and a later visit never show the removed meeting as invited during indexer lag;
+            // `markLeft` guards its own page-local updates.
+            this.state.markLeft(meetingId);
+          }
+          if (this.state.meeting()?.id !== meetingId) {
+            return;
+          }
+          if (!complete) {
             this.state.markLeaveIncomplete(meetingId);
             this.messageService.add({
               severity: 'warn',
@@ -265,7 +275,6 @@ export class MeetingActionSlotComponent {
             });
             this.userService.refreshUserMeetings(false);
           } else {
-            this.state.markLeft(meetingId);
             this.messageService.add({ severity: 'success', summary: 'Removed', detail: 'You have been removed from this meeting.' });
             // Remove Myself is gone from the slot now: hand focus to the slot's new first control, as
             // `register()` does, unless the viewer has moved it elsewhere meanwhile (#3260, WCAG 2.4.3).

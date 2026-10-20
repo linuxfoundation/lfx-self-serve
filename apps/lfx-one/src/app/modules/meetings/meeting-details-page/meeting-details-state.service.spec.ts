@@ -872,6 +872,16 @@ describe('MeetingDetailsStateService', () => {
       expect(state.rsvpReset()).toBe(1);
     });
 
+    it('records a removal for a meeting the page has left, without touching the page', async () => {
+      const state = await load(upcoming());
+
+      state.markLeft('meeting-2');
+
+      expect(markRegistrationRemoved).toHaveBeenCalledWith('meeting-2');
+      expect(state.canLeaveMeeting()).toBe(true);
+      expect(state.rsvpReset()).toBe(0);
+    });
+
     it('ignores a removal result for a meeting the page has left', async () => {
       const state = await load(upcoming());
 
