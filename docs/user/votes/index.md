@@ -65,6 +65,10 @@ Select **⋮ → Copy link** on an active or ended vote to copy a direct link to
 
 Opening the link signs you in if needed and opens the vote in **My Votes**: you can cast your vote if you're invited and haven't voted yet, and otherwise you see the vote. Project and group managers see the same view they get from the Votes dashboard. People who don't have access to the vote see **Page not found**.
 
+### Your vote
+
+In **My Votes**, the **Your vote** column shows your participation rather than a response count. A solid green circle-check means **Voted**; hover over or focus the icon to see its tooltip. A muted dash means **Not voted**. Both indicators have accessible labels and apply to active and ended votes. The separate **Status** column shows whether the vote is active or ended. Project, Foundation, and group vote tables retain their response summaries.
+
 ### My Votes summary
 
 Two summary cells above the table help you find approaching deadlines and outstanding responses:

@@ -100,7 +100,7 @@
             <tr>
               <th class="w-[24%]">{{ voteLabel.singular }} Name</th>
               <th class="w-[20%]">Group</th>
-              <th class="w-[16%]">Responses</th>
+              <th class="w-[16%]">{{ showParticipationProgress() ? 'Responses' : 'Your vote' }}</th>
               <th class="w-[18%]">Due</th>
               <th class="w-[8%]">Status</th>
               <th class="w-[14%]"></th>
@@ -127,9 +127,21 @@
 
               <td>
                 @if (!showParticipationProgress()) {
-                  <span class="text-sm text-gray-700" [attr.data-testid]="'votes-responses-' + vote.uid">
-                    {{ vote.num_response_received }}
-                  </span>
+                  @if (vote.response_status === VoteResponseStatus.RESPONDED) {
+                    <span
+                      class="inline-flex items-center"
+                      role="img"
+                      pTooltip="Voted"
+                      tooltipPosition="top"
+                      tooltipEvent="both"
+                      tabindex="0"
+                      aria-label="Voted"
+                      [attr.data-testid]="'votes-your-vote-' + vote.uid">
+                      <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+                    </span>
+                  } @else {
+                    <span class="text-gray-400 text-xs" role="img" aria-label="Not voted" [attr.data-testid]="'votes-your-vote-' + vote.uid">—</span>
+                  }
                 } @else {
                   <div class="flex flex-col gap-1" [attr.data-testid]="'votes-participation-' + vote.uid">
                     @if (vote.participation.state === VoteRowParticipationState.PROGRESS) {

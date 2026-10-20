@@ -105,7 +105,7 @@ export class VotesTableComponent {
   public readonly showProjectFilter = input<boolean>(false);
   // Draft tab is only meaningful in management contexts (project/committee lens); hide it in the Me lens.
   public readonly showDraftTab = input<boolean>(true);
-  // Management contexts (project/foundation lens, committee tab) show "N of M responded" progress; the Me lens keeps the raw count.
+  // Management contexts (project/foundation lens, committee tab) show "N of M responded" progress; the Me lens shows the user's voting status.
   public readonly showParticipationProgress = input<boolean>(false);
   // Merged UNDER each row's own derived params — the committee tab passes its committee_uid here so a
   // row missing the field still admits committee writers; per-row values always win (dashboard spans projects).
