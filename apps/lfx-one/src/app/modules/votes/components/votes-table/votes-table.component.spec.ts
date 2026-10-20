@@ -673,8 +673,11 @@ describe('VotesTableComponent — row More menu', () => {
     moreButton('active')!.click();
     await settle();
 
+    // Clone rides on project access, reminders on per-vote writer access — the two gates are
+    // independent, which is the whole point of this case. Clone is appended last (#3781), so the
+    // reminder stays at index 1 whether or not it is there.
     const items = table['rowActionMenuItems']();
-    expect(items.map((item) => item.label)).toEqual(['Copy link', 'Send reminder']);
+    expect(items.map((item) => item.label)).toEqual(hasPMOAccess ? ['Copy link', 'Send reminder', 'Clone'] : ['Copy link', 'Send reminder']);
 
     items[1].command!({});
 
@@ -705,7 +708,10 @@ describe('VotesTableComponent — row More menu', () => {
     moreButton(uid)!.click();
     await settle();
 
-    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(['Copy link']);
+    // Asserting the absence of the reminder, not of Clone: Clone follows project access (#3781) and
+    // is expected in every case here that has it, including the ended vote — a vote that has closed
+    // can still be cloned into a new one.
+    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(hasPMOAccess ? ['Copy link', 'Clone'] : ['Copy link']);
   });
 
   it('exposes menu semantics and expands only the row whose menu is open', async () => {

@@ -4136,8 +4136,17 @@ export class ImplementationTabComponent implements OnInit {
       // Only an IN-FLIGHT read is "checking". `unknown` — no read out and none answered, as after a
       // foundation switch — is treated like a failure, for the reason the bidding block records:
       // nothing else will start the read.
+      //
+      // This one names the counts too, for a reason specific to it: unlike the bidding block, this
+      // one does not gate Create. A create started while the check is in flight is allowed, and it
+      // ships no extensions — so "checking…" on its own would be the only message in this set that
+      // lets the operator lose the lists without having been told. Waiting costs nothing; creating
+      // now costs the lists, and the sentence has to say which.
       if (this.createCapabilityRead() === 'pending') {
-        return { kind: 'pending', message: 'Checking whether Google ad extensions can be sent…' };
+        return {
+          kind: 'pending',
+          message: `Checking whether Google ad extensions can be sent. Creating the campaign before the check finishes sends it without the ${lost} generated for this brief.`,
+        };
       }
       if (!this.briefPersistence().briefId) {
         return {

@@ -6829,11 +6829,21 @@ describe('ImplementationTabComponent google extensions capability block', () => 
     expect(find('implementation-google-extensions-capability-retry')).toBeNull();
   });
 
-  it('says it is still checking while the read is in flight', () => {
+  /**
+   * The pending sentence carries the counts for a reason the other three do not need: this block
+   * does not gate Create, so a create started mid-check is allowed and ships no extensions. A bare
+   * "checking…" would be the one message in this set that lets the lists go without saying so.
+   */
+  it('says it is still checking while the read is in flight, and what creating now would cost', () => {
     const c = seedWithheld(null, 'pending', 'brief-1');
 
     expect(c['googleExtensionsCapabilityBlock']()?.kind).toBe('pending');
-    expect(find('implementation-google-extensions-capability-pending')?.textContent).toContain('Checking whether Google ad extensions can be sent');
+    const block = find('implementation-google-extensions-capability-pending')?.textContent ?? '';
+    expect(block).toContain('Checking whether Google ad extensions can be sent');
+    expect(block).toContain('Creating the campaign before the check finishes');
+    expect(block).toContain('1 callout and 1 sitelink');
+    // Create is deliberately not blocked here — the sentence is the whole mitigation.
+    expect(c['canSubmit']()).toBe(true);
     expect(find('implementation-google-extensions-capability-retry')).toBeNull();
   });
 
