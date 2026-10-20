@@ -1,8 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { _IdGenerator } from '@angular/cdk/a11y';
-import { afterNextRender, Component, ElementRef, inject, input, signal, ViewChild } from '@angular/core';
+import { afterNextRender, Component, ElementRef, input, signal, ViewChild } from '@angular/core';
 
 @Component({
   selector: 'lfx-expandable-text',
@@ -19,8 +18,6 @@ export class ExpandableTextComponent {
   public readonly isExpanded = signal(false);
   public readonly needsExpansion = signal(false);
   public readonly isInitialized = signal(false);
-  /** The content region's id, for the toggle's aria-controls (#3260); stable across SSR and hydration. */
-  protected readonly contentId = inject(_IdGenerator).getId('lfx-expandable-text-');
 
   private fullHeight = 0;
 
