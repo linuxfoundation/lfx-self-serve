@@ -27,7 +27,9 @@ export class ImpersonationService {
     this.natsService = new NatsService();
   }
 
-  public async exchangeToken(req: Request, targetUser: string, subjectToken: string = req.bearerToken || ''): Promise<M2MTokenResponse> {
+  // subjectToken is deliberately required: while impersonating, req.bearerToken is the current target's token, so
+  // defaulting to it would let a caller silently chain one target's token into another exchange.
+  public async exchangeToken(req: Request, targetUser: string, subjectToken: string): Promise<M2MTokenResponse> {
     logger.debug(req, 'cte_token_exchange', 'Starting CTE token exchange via NATS', { target_user: targetUser });
 
     const codec = this.natsService.getCodec();

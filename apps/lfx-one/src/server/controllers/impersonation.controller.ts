@@ -5,10 +5,11 @@ import { IMPERSONATION_ALREADY_TARGET_CODE, IMPERSONATION_ALREADY_TARGET_MESSAGE
 import { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { ImpersonationService } from '../services/impersonation.service';
-import { decodeJwtPayload, resolveRealAccessToken } from '../utils/auth-helper';
+import { decodeJwtPayload } from '../utils/auth-helper';
+import { resolveImpersonatorToken } from '../utils/impersonator-token';
 
 export class ImpersonationController {
   private readonly impersonationService: ImpersonationService = new ImpersonationService();
@@ -43,15 +44,8 @@ export class ImpersonationController {
       const personaContext = (personaContextRaw ?? undefined) as PersonaType | undefined;
 
       // Switching users mid-impersonation: req.bearerToken is the current target's token here, so the exchange
-      // must be seeded with the impersonator's own token (resolveRealAccessToken returns req.bearerToken when
-      // not impersonating, and refreshes an expired one) and fail closed rather than chain one target's token
-      // into another. The can_impersonate claim is read from that same token so the gate and the exchange agree.
-      const subjectToken = await resolveRealAccessToken(req);
-      const tokenPayload = subjectToken ? decodeJwtPayload(subjectToken) : null;
-      if (!subjectToken || !tokenPayload || tokenPayload['http://lfx.dev/claims/can_impersonate'] !== true) {
-        next(new AuthorizationError('Insufficient permissions to impersonate users', { operation: 'start_impersonation', service: 'impersonation' }));
-        return;
-      }
+      // must be seeded with the impersonator's own token, never chaining one target's token into another.
+      const subjectToken = await resolveImpersonatorToken(req, 'start_impersonation');
 
       const tokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim(), subjectToken);
       const targetClaims = decodeJwtPayload(tokenResponse.access_token);

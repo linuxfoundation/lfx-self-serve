@@ -14,8 +14,8 @@ import {
 import { UserSearchOption } from '@lfx-one/shared/interfaces';
 import { ImpersonationService } from '@services/impersonation.service';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
-import { throwError } from 'rxjs';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { NEVER, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UserSearchComponent } from '@components/user-search/user-search.component';
@@ -35,6 +35,7 @@ describe('ImpersonationDialogComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+        { provide: DynamicDialogConfig, useValue: { closable: true } },
         {
           provide: ImpersonationService,
           useValue: {
@@ -86,6 +87,39 @@ describe('ImpersonationDialogComponent', () => {
     const alert = fixture.nativeElement.querySelector('[data-testid="impersonation-error"]');
     expect(alert?.textContent).toContain('We could not start impersonation. Please try again.');
     expect(alert?.textContent).not.toContain('TIMEOUT');
+  });
+
+  it('keeps a live status region mounted and fills it only while loading', async () => {
+    const status = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="impersonation-loading-status"]');
+    expect(status()).not.toBeNull();
+    expect(status()?.textContent?.trim()).toBe('');
+
+    startImpersonation.mockReturnValueOnce(NEVER);
+    const component = fixture.componentInstance as unknown as {
+      targetUserForm: { controls: { targetUser: { setValue: (value: string) => void } } };
+      submit: () => void;
+    };
+    component.targetUserForm.controls.targetUser.setValue('jdoe');
+    component.submit();
+    await fixture.whenStable();
+
+    expect(status()?.textContent).toContain('Starting impersonation...');
+  });
+
+  it('does not let the dialog be dismissed while the request is pending', async () => {
+    const config = TestBed.inject(DynamicDialogConfig);
+    expect(config.closable).toBe(true);
+
+    startImpersonation.mockReturnValueOnce(NEVER);
+    const component = fixture.componentInstance as unknown as {
+      targetUserForm: { controls: { targetUser: { setValue: (value: string) => void } } };
+      submit: () => void;
+    };
+    component.targetUserForm.controls.targetUser.setValue('jdoe');
+    component.submit();
+    await fixture.whenStable();
+
+    expect(config.closable).toBe(false);
   });
 
   it('renders the name search ahead of the exact email or username field', () => {
@@ -214,5 +248,35 @@ describe('ImpersonationDialogComponent', () => {
     expect(dialog().targetUserForm.controls.targetUser.value).toBe('');
     expect(() => dialog().submit()).not.toThrow();
     expect(startImpersonation).not.toHaveBeenCalled();
+  });
+
+  it('searches the directory as the target when starting from the navbar', () => {
+    expect(nameSearch().asImpersonator()).toBe(false);
+  });
+
+  describe('when opened from the banner to switch users', () => {
+    it('searches the directory as the admin and starts the change as a switch', async () => {
+      TestBed.resetTestingModule();
+      startImpersonation = vi.fn().mockReturnValue(NEVER);
+      await TestBed.configureTestingModule({
+        imports: [ImpersonationDialogComponent],
+        providers: [
+          provideNoopAnimations(),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          { provide: DynamicDialogRef, useValue: { close: vi.fn() } },
+          { provide: DynamicDialogConfig, useValue: { closable: true, data: { switching: true } } },
+          { provide: ImpersonationService, useValue: { startImpersonation, getRecentImpersonations: () => [], addRecentImpersonation: vi.fn() } },
+        ],
+      }).compileComponents();
+      fixture = TestBed.createComponent(ImpersonationDialogComponent);
+      await fixture.whenStable();
+
+      expect(nameSearch().asImpersonator()).toBe(true);
+
+      dialog().targetUserForm.controls.targetUser.setValue('jdoe');
+      dialog().submit();
+      expect(startImpersonation).toHaveBeenCalledWith('jdoe', null, true);
+    });
   });
 });

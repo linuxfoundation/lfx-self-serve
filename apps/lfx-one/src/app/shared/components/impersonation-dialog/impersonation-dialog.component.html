@@ -2,11 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="relative flex flex-col gap-4">
+  <!-- Always mounted so the announcement is made when its text changes; a live region created together with its text is often missed. -->
+  <span class="sr-only" role="status" aria-live="polite" data-testid="impersonation-loading-status">{{ loadingMessage() }}</span>
   @if (loading()) {
-    <div class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80" aria-busy="true">
-      <div class="flex items-center gap-2 text-sm text-gray-600" role="status" aria-live="polite">
-        <span class="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" aria-hidden="true"></span>
-        <span>{{ switching ? 'Switching user...' : 'Starting impersonation...' }}</span>
+    <div class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80" aria-busy="true" aria-hidden="true">
+      <div class="flex items-center gap-2 text-sm text-gray-600">
+        <span class="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600"></span>
+        <span>{{ loadingMessage() }}</span>
       </div>
     </div>
   }
@@ -25,6 +27,7 @@
       [requireLfAccount]="true"
       [showManualEntry]="false"
       [waitForSearchableQuery]="true"
+      [asImpersonator]="switching"
       [displayValue]="nameSearchLabel()"
       [showClear]="true"
       placeholder="e.g. John Doe"

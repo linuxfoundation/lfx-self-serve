@@ -3,8 +3,8 @@
 
 import { Component, computed, inject } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
-import { IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
+import { IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationService } from '@services/impersonation.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';

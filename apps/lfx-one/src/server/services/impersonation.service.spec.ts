@@ -40,14 +40,14 @@ describe('ImpersonationService.exchangeToken', () => {
       data: JSON.stringify({ success: false, error: 'token exchange request failed: upstream returned status 400' }),
     });
 
-    await expect(service.exchangeToken(req, 'HWilson')).rejects.toMatchObject({
+    await expect(service.exchangeToken(req, 'HWilson', 'subject-token')).rejects.toMatchObject({
       statusCode: 404,
       code: IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
       message: IMPERSONATION_USER_NOT_FOUND_MESSAGE,
     });
 
     try {
-      await service.exchangeToken(req, 'HWilson');
+      await service.exchangeToken(req, 'HWilson', 'subject-token');
     } catch (error) {
       expect(error).toBeInstanceOf(MicroserviceError);
       const microserviceError = error as MicroserviceError;
@@ -66,7 +66,7 @@ describe('ImpersonationService.exchangeToken', () => {
     }
   });
 
-  it('sends the explicit subject token instead of req.bearerToken', async () => {
+  it('sends the given subject token, never req.bearerToken', async () => {
     natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, data: { access_token: 'target-token' } }) });
 
     await service.exchangeToken(req, 'jdoe', 'real-token');
@@ -74,18 +74,10 @@ describe('ImpersonationService.exchangeToken', () => {
     expect(JSON.parse(natsRequest.mock.calls[0][1])).toEqual({ subject_token: 'real-token', target_user: 'jdoe' });
   });
 
-  it('defaults the subject token to req.bearerToken', async () => {
-    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, data: { access_token: 'target-token' } }) });
-
-    await service.exchangeToken(req, 'jdoe');
-
-    expect(JSON.parse(natsRequest.mock.calls[0][1])).toEqual({ subject_token: 'subject-token', target_user: 'jdoe' });
-  });
-
   it('maps a NATS transport failure to CTE_NATS_ERROR 502', async () => {
     natsRequest.mockRejectedValue(new Error('TIMEOUT'));
 
-    await expect(service.exchangeToken(req, 'jdoe')).rejects.toMatchObject({
+    await expect(service.exchangeToken(req, 'jdoe', 'subject-token')).rejects.toMatchObject({
       statusCode: 502,
       code: 'CTE_NATS_ERROR',
     });
