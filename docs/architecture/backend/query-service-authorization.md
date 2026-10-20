@@ -129,11 +129,7 @@ rows, invited or attended, matched by email or username. Everyone else gets `[]`
 `show_meeting_attendees`, which defaults off and would otherwise blank the attendance of meetings
 already held. Counts stay intact: `GET /api/past-meetings/:uid` computes them before the gate, and
 the public past-meeting response adds `participant_count`, `attended_count`, and
-`individual_registrants_count` for full-access viewers who are not organizers. Both count with the
-shared `countPastMeetingAttendance` over a full read (a partial page walk fails it). The admin page
-derives rate, attended and absent from those counts with `getPastMeetingAttendanceFigures`
-(E4-05, issue 3259), the one place they are worked out. `GET /api/past-meetings/:uid` leaves the counts out when the participants
-cannot all be read, so a page shows them as unknown rather than as a meeting nobody attended.
+`individual_registrants_count` for full-access viewers who are not organizers.
 
 ---
 

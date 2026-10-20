@@ -26,10 +26,9 @@ const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParam
 vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal());
-vi.mock('@lfx-one/shared/utils', async () => ({
+vi.mock('@lfx-one/shared/utils', () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
-  countPastMeetingAttendance: (await import('@lfx-one/shared/utils/past-meeting.utils')).countPastMeetingAttendance,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({
@@ -248,50 +247,6 @@ describe('PastMeetingController.getPastMeetingParticipants — visibility gate (
     await controller.getPastMeetingParticipants(buildReq(true), res, next);
 
     expect(res.json).toHaveBeenCalledWith([]);
-    expect(next).not.toHaveBeenCalled();
-  });
-});
-
-describe('PastMeetingController.getPastMeetingById — attendance counts (E4-05)', () => {
-  let controller: PastMeetingController;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    validateUidParameterMock.mockReturnValue(true);
-    controller = new PastMeetingController();
-    addAccessToResourceMock.mockResolvedValue({ organizer: false });
-  });
-
-  it('puts the shared counts on the meeting, read without a partial page walk', async () => {
-    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting());
-    meetingSvc.getPastMeetingParticipants.mockResolvedValue([
-      { is_attended: true, is_invited: true },
-      { is_attended: false, is_invited: true },
-      { is_attended: true, is_invited: false },
-    ]);
-    const res = buildRes();
-
-    await controller.getPastMeetingById(buildReq(true), res, vi.fn());
-
-    expect(meetingSvc.getPastMeetingParticipants).toHaveBeenCalledWith(expect.anything(), PAST_MEETING_UID, true);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ participant_count: 3, attended_count: 2, individual_registrants_count: 2, committee_members_count: 0 })
-    );
-  });
-
-  // Unknown is not zero: the admin page used to show (or hide) a failed read as a meeting nobody attended.
-  it('leaves every count out when the participants cannot all be read', async () => {
-    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ participant_count: 9, attended_count: 4 }));
-    meetingSvc.getPastMeetingParticipants.mockRejectedValue(new Error('partial page walk'));
-    const res = buildRes();
-    const next = vi.fn();
-
-    await controller.getPastMeetingById(buildReq(true), res, next);
-
-    const body = res.json.mock.calls[0][0];
-    expect(body).not.toHaveProperty('participant_count');
-    expect(body).not.toHaveProperty('attended_count');
-    expect(body).not.toHaveProperty('individual_registrants_count');
     expect(next).not.toHaveBeenCalled();
   });
 });

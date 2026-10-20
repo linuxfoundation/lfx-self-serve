@@ -14,12 +14,12 @@ import { MeetingHeaderComponent } from './components/header/header.component';
 import { MeetingIdentityBarComponent } from './components/identity-bar/identity-bar.component';
 import { MeetingActionSlotComponent } from './components/action-slot/action-slot.component';
 import { MeetingAgendaComponent } from './components/agenda/agenda.component';
+import { MeetingAttendanceComponent } from './components/attendance/attendance.component';
 import { MeetingJoinDetailsComponent } from './components/join-details/join-details.component';
 import { MeetingOrganizerComponent } from './components/organizer/organizer.component';
 import { MeetingTimeBannerComponent } from './components/time-banner/time-banner.component';
 import { MeetingMaterialsComponent } from './components/materials/materials.component';
 import { MeetingOccurrenceNavComponent } from './components/occurrence-nav/occurrence-nav.component';
-import { MeetingPastPeopleComponent } from './components/past-people/past-people.component';
 import { MeetingPeopleComponent } from './components/people/people.component';
 import { MeetingRecordingComponent } from './components/recording/recording.component';
 import { MeetingDetailsStateService } from './meeting-details-state.service';
@@ -44,11 +44,11 @@ import { MeetingDetailsStateService } from './meeting-details-state.service';
     ImpersonationBannerComponent,
     MeetingActionSlotComponent,
     MeetingAgendaComponent,
+    MeetingAttendanceComponent,
     MeetingJoinDetailsComponent,
     MeetingMaterialsComponent,
     MeetingOccurrenceNavComponent,
     MeetingPeopleComponent,
-    MeetingPastPeopleComponent,
     MeetingRecordingComponent,
     MeetingHeaderComponent,
     MeetingIdentityBarComponent,

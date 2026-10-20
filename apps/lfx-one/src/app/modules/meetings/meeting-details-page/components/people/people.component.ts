@@ -19,7 +19,8 @@ import { MeetingV2RegistrantsDisplayComponent } from '../v2-registrants-display/
 
 /**
  * The V2 people section, in the content column after the agenda (E3-04, #3253, FR-032).
- * @description Upcoming and live meetings only: the past roster is N-02's. The page renders it only
+ * @description Upcoming and live meetings only: an ended meeting shows V1's attendance figures
+ * (`MeetingAttendanceComponent`) instead. The page renders it only
  * when `MeetingDetailsStateService.rosterRequest` is set, which is V1's roster gate: an organizer,
  * or a registrant of a meeting whose guest list is shared. Every count here is the fetched roster's
  * own length, because the detail payloads no longer carry registrant counts (GH-1731).

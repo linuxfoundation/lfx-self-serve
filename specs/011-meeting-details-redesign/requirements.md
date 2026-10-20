@@ -104,13 +104,12 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   viewer MUST get a sign-in state, as V1's "Sign in to view materials" (the E3-03 public
   attachments route and E3-05 categories were withdrawn in the 2026-10-20 scope reset).
 - **FR-032**: On an upcoming or live meeting, the people roster MUST render only for registrants
-  and organizers. On an ended meeting it MUST render for any signed-in viewer with artifact access,
-  whatever the role, and never for an anonymous viewer: the past payload carries no `invited`, so a
-  past registrant arrives as an outsider. No viewer may be shown a registrant count the payloads no
+  and organizers. On an ended meeting there is no named roster, as in V1 (the E4-05 past roster was
+  withdrawn in the 2026-10-20 scope reset): the page MUST show V1's attended / absent / rate
+  figures, from V1's source and with V1's gating (signed in, `full_access`). No viewer may be shown a registrant count the payloads no
   longer carry.
-- **FR-033**: Past participants MUST show their identity tier (verified · needs review ·
-  auto-matched · AI-reconciled) to the extent decided for the public surface in N-02, and MUST
-  distinguish `zoom_user_name` from `mapped_invitee_name`.
+- **FR-033**: _Withdrawn (scope reset, 2026-10-20)._ Past participant identity tiers (N-02): V1
+  shows none, and V2 keeps V1's functionality.
 
 ### Past meetings, join details, occurrences, discovery
 
@@ -224,7 +223,7 @@ V1 parity tracked by its FRs.
 | E2-05 RSVP card + scope       | #2881             | FR-024                                              |
 | E2-06 guest join in the rail  | #2882             | FR-025, SC-003                                      |
 | N-01 pre-2024 RSVP            | #3263             | FR-026, SC-005                                      |
-| N-02 identity tiers           | #3264             | FR-033                                              |
+| N-02 identity tiers           | #3264             | FR-033 (withdrawn)                                  |
 | N-03 admin route guard        | #3265             | FR-054                                              |
 | E3-01 agenda                  | #3250             | FR-030                                              |
 | E3-02 materials               | #3251             | FR-031                                              |
@@ -235,7 +234,7 @@ V1 parity tracked by its FRs.
 | E4-02 recording duration      | #3256             | FR-048                                              |
 | E4-03 inline AI summary       | #3257             | FR-040                                              |
 | E4-04 public artifact routes  | #3258             | FR-028                                              |
-| E4-05 align with admin page   | #3259             | FR-041                                              |
+| E4-05 align with admin page   | #3259             | FR-032 (withdrawn: V1 figures only)                 |
 | E5-01 page error state        | —                 | shipped before the epic (#2046)                     |
 | E5-02 accessibility           | #3260             | FR-061                                              |
 | E5-03 V2 specs                | #3261             | FR-062                                              |

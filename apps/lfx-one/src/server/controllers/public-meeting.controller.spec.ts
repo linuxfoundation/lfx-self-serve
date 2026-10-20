@@ -85,7 +85,6 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // the barrel needs the Angular JIT compiler (loaded at the top of this spec) in plain Node.
   isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
   getPastMeetingResourceId: (await import('@lfx-one/shared/utils/past-meeting.utils')).getPastMeetingResourceId,
-  countPastMeetingAttendance: (await import('@lfx-one/shared/utils/past-meeting.utils')).countPastMeetingAttendance,
   // Real, so the E4-04 gate assertions run the actual access rules and roster projection.
   isPastMeetingArtifactPublic: (await import('@lfx-one/shared/utils/past-meeting.utils')).isPastMeetingArtifactPublic,
   toPublicPastMeetingRoster: (await import('@lfx-one/shared/utils/past-meeting.utils')).toPublicPastMeetingRoster,
@@ -1670,8 +1669,6 @@ describe('PublicMeetingController public past-meeting artifacts (E4-04)', () => 
           },
         ],
         unidentified_attendees: 1,
-        // E4-05: counted over every participant, listed or not.
-        attendance: { participant_count: 2, attended_count: 2, individual_registrants_count: 1, unverified_attended_count: 1 },
       });
       const body = JSON.stringify(res.json.mock.calls[0][0]);
       expect(body).not.toContain('ada@example.com');

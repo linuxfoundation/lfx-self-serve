@@ -10,7 +10,6 @@ import { DEFAULT_MEETING_TYPE_CONFIG, MEETING_STATUS_LABELS, MEETING_TYPE_CONFIG
 import { MeetingType } from '@lfx-one/shared/enums';
 import {
   Meeting,
-  MeetingAdminLink,
   MeetingCommitteeLink,
   MeetingPrivacyState,
   MeetingStatusKind,
@@ -19,7 +18,7 @@ import {
   ProjectContext,
   PublicMeetingProject,
 } from '@lfx-one/shared/interfaces';
-import { getEntityCommands, getPastMeetingResourceId, resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
+import { resolveOccurrenceRecurrence } from '@lfx-one/shared/utils';
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -122,23 +121,6 @@ export class MeetingHeaderComponent {
    * while it is unknown, which covers everyone it is not loaded for (testid-contract.md).
    */
   protected readonly myRsvpAttr: Signal<string | null> = this.state.myRsvpAttr;
-  /**
-   * The organizer's way to the admin page (E4-05, E0-03 decision 3): an ended meeting's occurrence
-   * record, for its organizer only (`meeting.organizer`, FGA `v1_past_meeting#organizer`). The same
-   * entity-scoped route the meeting card builds, falling back to the flat one when the tier is unknown;
-   * `?project=` seeds the project context there. Null otherwise: no link.
-   */
-  protected readonly adminLink: Signal<MeetingAdminLink | null> = computed(() => {
-    const meeting = this.meeting();
-    if (!meeting || this.timeState() !== 'ended' || !this.state.loadedViaPastMeetingId() || this.state.viewerRole() !== 'organizer') {
-      return null;
-    }
-    const resourceId = getPastMeetingResourceId(meeting);
-    const commands = getEntityCommands('meetings', resourceId, meeting.is_foundation, 'details') ?? ['/meetings', resourceId, 'details'];
-    const slug = meeting.project?.slug;
-    const queryParams: Record<string, string> = slug ? { project: slug } : {};
-    return { commands, queryParams };
-  });
 
   /**
    * Opens the meeting's foundation overview in a new tab, as v1's context chips do: sets the

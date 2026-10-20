@@ -120,9 +120,11 @@
            registrant of a meeting whose guest list is shared. -->
       @if (state.rosterRequest()) {
         <lfx-meeting-people />
-      } @else if (state.timeState() === 'ended' && state.visibleSections()?.people && state.loadedViaPastMeetingId()) {
-        <!-- E4-05: an ended meeting's past roster, for a signed-in viewer with artifact access (FR-032). -->
-        <lfx-meeting-past-people />
+      }
+      <!-- An ended meeting's attended / absent / rate figures, as V1 shows them (no named roster); the
+           component renders nothing until there is a participant to count. -->
+      @if (state.status() === 'ready' && state.timeState() === 'ended') {
+        <lfx-meeting-attendance class="empty:hidden" />
       }
       <!-- E3-02: wherever content is visible (FR-031); hidden for an ended meeting without artifact access. -->
       @if (state.visibleSections()?.materials) {

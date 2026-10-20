@@ -47,14 +47,14 @@ class AgendaStubComponent {}
 @Component({ selector: 'lfx-meeting-people', template: '<span data-testid="people-stub"></span>' })
 class PeopleStubComponent {}
 
-@Component({ selector: 'lfx-meeting-past-people', template: '<span data-testid="past-people-stub"></span>' })
-class PastPeopleStubComponent {}
-
 @Component({ selector: 'lfx-meeting-materials', template: '<span data-testid="materials-stub"></span>' })
 class MaterialsStubComponent {}
 
 @Component({ selector: 'lfx-meeting-recording', template: '<span data-testid="recording-stub"></span>' })
 class RecordingStubComponent {}
+
+@Component({ selector: 'lfx-meeting-attendance', template: '<span data-testid="attendance-stub"></span>' })
+class AttendanceStubComponent {}
 
 @Component({ selector: 'lfx-meeting-join-details', template: '<span data-testid="join-details-stub"></span>' })
 class JoinDetailsStubComponent {}
@@ -67,11 +67,10 @@ describe('MeetingDetailsPageComponent', () => {
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let visibleSections: WritableSignal<Partial<MeetingSectionVisibility> | null>;
   let rosterRequest: WritableSignal<MeetingRosterRequest | null>;
+  let timeState: WritableSignal<MeetingTimeState | null>;
   let refresh: ReturnType<typeof vi.fn>;
   let retrying: WritableSignal<boolean>;
   let failureCount: WritableSignal<number>;
-  let timeState: WritableSignal<MeetingTimeState | null>;
-  let loadedViaPastMeetingId: WritableSignal<boolean>;
 
   const meeting = { id: 'meeting-1', title: 'Weekly Sync', project: {} as PublicMeetingProject } as unknown as Meeting & { project: PublicMeetingProject };
 
@@ -79,11 +78,10 @@ describe('MeetingDetailsPageComponent', () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
     visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true, materials: true, occurrences: true });
     rosterRequest = signal<MeetingRosterRequest | null>({ meetingId: 'meeting-1', occurrenceId: undefined });
+    timeState = signal<MeetingTimeState | null>('before');
     refresh = vi.fn();
     retrying = signal(false);
     failureCount = signal(1);
-    timeState = signal<MeetingTimeState | null>('before');
-    loadedViaPastMeetingId = signal(false);
 
     await TestBed.configureTestingModule({
       imports: [MeetingDetailsPageComponent],
@@ -97,6 +95,7 @@ describe('MeetingDetailsPageComponent', () => {
             ButtonComponent,
             ActionSlotStubComponent,
             AgendaStubComponent,
+            AttendanceStubComponent,
             HeaderStubComponent,
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
@@ -105,7 +104,6 @@ describe('MeetingDetailsPageComponent', () => {
             OccurrenceNavStubComponent,
             OrganizerStubComponent,
             PeopleStubComponent,
-            PastPeopleStubComponent,
             RecordingStubComponent,
             TimeBannerStubComponent,
             SkeletonModule,
@@ -113,17 +111,7 @@ describe('MeetingDetailsPageComponent', () => {
           providers: [
             {
               provide: MeetingDetailsStateService,
-              useValue: {
-                status,
-                meeting: signal(meeting),
-                refresh,
-                retrying,
-                failureCount,
-                visibleSections,
-                rosterRequest,
-                timeState,
-                loadedViaPastMeetingId,
-              },
+              useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections, rosterRequest, timeState },
             },
           ],
         },
@@ -256,24 +244,17 @@ describe('MeetingDetailsPageComponent', () => {
     expect(query('people-stub')).toBeNull();
   });
 
-  // E4-05: an ended meeting's past roster, where visibleSections().people allows, once the occurrence is loaded.
-  it("renders the past roster for an ended meeting's occurrence where the viewer may see it", () => {
-    rosterRequest.set(null);
+  // V1 parity: an ended meeting shows its attendance figures; the component itself hides with nobody to count.
+  it('renders the attendance figures only once the meeting has ended and the page is ready', () => {
     timeState.set('ended');
-    loadedViaPastMeetingId.set(true);
-    visibleSections.set({ people: true });
+    expect(query('attendance-stub')).toBeNull();
+
     show('ready');
-    expect(query('past-people-stub')).not.toBeNull();
-    expect(query('people-stub')).toBeNull();
+    expect(query('attendance-stub')).not.toBeNull();
 
-    visibleSections.set({ people: false });
+    timeState.set('live');
     fixture.detectChanges();
-    expect(query('past-people-stub')).toBeNull();
-
-    visibleSections.set({ people: true });
-    loadedViaPastMeetingId.set(false);
-    fixture.detectChanges();
-    expect(query('past-people-stub')).toBeNull();
+    expect(query('attendance-stub')).toBeNull();
   });
 
   // Placeholder testids are temporary (testid-contract.md), so this asserts on whatever skeleton
