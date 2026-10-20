@@ -4,7 +4,7 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
-import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget } from '@lfx-one/shared/interfaces';
+import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
@@ -17,18 +17,17 @@ import { MktgFrameworkViewComponent } from './mktg-framework-view.component';
 @Component({
   selector: 'lfx-test-framework-host',
   imports: [MktgFrameworkViewComponent],
-  template: `
-    <lfx-mktg-framework-view projectName="TestOrbit" [asset]="asset()" [state]="state()" [version]="version()" [kit]="kit()" [exportTarget]="exportTarget()">
-      <p data-testid="projected">The feed goes here</p>
-    </lfx-mktg-framework-view>
-  `,
+  templateUrl: './mktg-framework-view.test-host.html',
 })
 class HostComponent {
   public readonly asset = signal<MktgFrameworkAsset | null>(null);
   public readonly state = signal<MktgFrameworkViewState>('generating');
   public readonly version = signal<number | null>(null);
+  public readonly approvedAsset = signal<MktgFrameworkAsset | null>(null);
+  public readonly approvedVersion = signal<number | null>(null);
   public readonly kit = signal<BrandKitRevision | null>(null);
   public readonly exportTarget = signal<MktgSlidesExportTarget | null>(null);
+  public readonly approval = signal<MktgRevisionApproval | null>(null);
 }
 
 const pair = (a: string, b: string): [string, string] => [a, b];
@@ -155,6 +154,30 @@ describe('MktgFrameworkViewComponent', () => {
     await fixture.whenStable();
   });
 
+  it('shows a real approval without a duplicate Draft mode and preserves export wiring', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    host.version.set(2);
+    host.approval.set({ approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-approval-state')?.textContent?.trim()).toBe('Approved');
+    expect(query('mktg-framework-view-version')?.textContent?.trim()).toBe('v2');
+    expect(query('mktg-framework-view-mode')).toBeNull();
+    expect(query('mktg-framework-view-actions')).not.toBeNull();
+    expect(query('mktg-framework-view-slides-export')).not.toBeNull();
+  });
+
+  it.each([
+    ['redraft', 'Redraft'],
+    ['check', 'Checked'],
+  ] as const)('retains distinct %s mode metadata', async (mode, label) => {
+    host.asset.set({ ...ASSET, mode });
+    host.state.set('ready');
+    host.version.set(1);
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-mode')?.textContent?.trim()).toBe(label);
+  });
+
   it('shows the generating state with the projected feed where the framework will be, tabs disabled', () => {
     expect(query('mktg-framework-view-title')?.textContent).toContain('TestOrbit Messaging framework');
     expect(query('mktg-framework-view-state')?.textContent).toContain('Generating');
@@ -185,7 +208,8 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-framework-view-generating')).toBeNull();
     expect(query('mktg-framework-view-state')).toBeNull();
     expect(query('mktg-framework-view-version')?.textContent).toContain('v1');
-    expect(query('mktg-framework-view-mode')?.textContent).toContain('Draft');
+    expect(query('mktg-framework-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(query('mktg-framework-view-mode')).toBeNull();
     expect(query('mktg-framework-view-vision')?.textContent).toContain('A vision.');
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
     const adoption = query('mktg-framework-view-goal-adoption');
@@ -296,6 +320,8 @@ describe('MktgFrameworkViewComponent', () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     host.version.set(3);
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(3);
     await fixture.whenStable();
 
     const wrapper = query('mktg-framework-view-print');
@@ -325,6 +351,29 @@ describe('MktgFrameworkViewComponent', () => {
     expect(printer.clear).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS);
   });
 
+  it('prints approved current bytes/version independently of the newer viewed Draft', async () => {
+    host.asset.set({ ...ASSET, content: { ...ASSET.content, mf: { ...ASSET.content.mf, tagline: 'New draft only' } } });
+    host.state.set('ready');
+    host.version.set(3);
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-version')?.textContent).toContain('v3');
+    expect(query('mktg-framework-print-version')?.textContent).toContain('Version 1');
+    expect(query('mktg-framework-print-tagline')?.textContent).toContain('Release, open.');
+    expect(query('mktg-framework-print')?.textContent).not.toContain('New draft only');
+  });
+
+  it('does not create a print target or invoke the printer without approved current', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-download-pdf')?.querySelector('button')?.disabled).toBe(true);
+    expect(query('mktg-framework-view-print')).toBeNull();
+    query('mktg-framework-view-download-pdf')?.querySelector('button')?.click();
+    expect(printer.print).not.toHaveBeenCalled();
+  });
+
   it('exports the stored framework to Google Slides, the panel under the header showing the progress', async () => {
     const target: MktgSlidesExportTarget = { project: 'proj-1', agentKey: 'foundation-message', documentId: 'living', contentSha256: 'a'.repeat(64) };
     const kit = brandKitTestRevision();
@@ -349,6 +398,8 @@ describe('MktgFrameworkViewComponent', () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     host.kit.set(kit);
+    host.approvedAsset.set(ASSET);
+    host.approvedVersion.set(1);
     await fixture.whenStable();
 
     const print = query('mktg-framework-print') as HTMLElement;

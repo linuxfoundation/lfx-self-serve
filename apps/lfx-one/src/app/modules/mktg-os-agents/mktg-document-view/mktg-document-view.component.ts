@@ -169,7 +169,13 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     const project = this.projectContext.activeContextUid();
     const agentKey = view?.type.agentKey;
-    if (!view || !project || !isMktgSlidesExportAgentKey(agentKey) || (this.asset() === null && this.brandKit() === null)) {
+    if (
+      !view ||
+      !project ||
+      view.approvedCurrent?.revisionId !== view.revision.id ||
+      !isMktgSlidesExportAgentKey(agentKey) ||
+      (this.asset() === null && this.brandKit() === null)
+    ) {
       return null;
     }
     return { project, agentKey, documentId: view.documentId, revisionId: view.revision.id };

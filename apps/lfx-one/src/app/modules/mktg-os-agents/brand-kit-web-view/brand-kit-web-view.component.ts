@@ -3,8 +3,16 @@
 
 import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { MessageComponent } from '@components/message/message.component';
+import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { BRAND_KIT_MODE_LABELS, BRAND_KIT_PRINT_BODY_CLASS, BRAND_KIT_PRINT_ONLY_CLASS, BRAND_KIT_WEB_VIEW_TABS } from '@lfx-one/shared/constants';
+import {
+  BRAND_KIT_MODE_LABELS,
+  BRAND_KIT_PRINT_BODY_CLASS,
+  BRAND_KIT_PRINT_ONLY_CLASS,
+  BRAND_KIT_WEB_VIEW_TABS,
+  MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE,
+} from '@lfx-one/shared/constants';
 import {
   BrandKitBookView,
   BrandKitChapterSummary,
@@ -12,8 +20,10 @@ import {
   BrandKitWebViewTab,
   BrandKitWebViewTabId,
   MktgSlidesExportTarget,
+  MktgRevisionApproval,
+  MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { brandKitChapterSummaries, buildBrandKitBookView } from '@lfx-one/shared/utils';
+import { brandKitChapterSummaries, buildBrandKitBookView, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 
 import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
@@ -35,7 +45,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 // and the revision to export.
 @Component({
   selector: 'lfx-brand-kit-web-view',
-  imports: [NgClass, NgTemplateOutlet, ButtonComponent, BrandKitViewComponent, MktgSlidesExportComponent],
+  imports: [NgClass, NgTemplateOutlet, MktgAssetMetaComponent, MessageComponent, ButtonComponent, BrandKitViewComponent, MktgSlidesExportComponent],
   templateUrl: './brand-kit-web-view.component.html',
 })
 export class BrandKitWebViewComponent {
@@ -50,10 +60,19 @@ export class BrandKitWebViewComponent {
   public readonly kit = input.required<BrandKitRevision>();
   /** The revision or run version shown in the header; the kit's own version when not given. */
   public readonly version = input<number | null>(null);
-  /** A note beside the version — the revision's standing in Documents ("latest"), or nothing. */
+  public readonly headerMetadata = input<MktgAssetHeaderMetadata | null>(null);
+  public readonly showMetadata = input(true);
+  /** Compatibility with the preceding document-view layer; not rendered. */
   public readonly note = input('');
+  public readonly approval = input<MktgRevisionApproval | null>(null);
   /** The stored revision Export to Google Slides reads; null while there is none (the button shows disabled). */
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
+  /** The viewed document for last-export lookup, independent of approved export bytes. */
+  public readonly exportLookupTarget = input<MktgSlidesExportTarget | null>(null);
+  public readonly approvedKit = input<BrandKitRevision | null>(null);
+  public readonly approvedVersion = input<number | null>(null);
+  public readonly approvedLoading = input(false);
+  public readonly approvedError = input('');
 
   // === Signals ===
   protected readonly selectedTab = signal<BrandKitWebViewTabId>('overview');
@@ -63,8 +82,16 @@ export class BrandKitWebViewComponent {
   protected readonly view: Signal<BrandKitBookView> = computed(() => buildBrandKitBookView(this.kit(), this.versionNumber()));
   protected readonly chapters: Signal<BrandKitChapterSummary[]> = computed(() => brandKitChapterSummaries(this.kit()));
   protected readonly title = computed(() => `${this.kit().projectName} Brand Kit`);
+  protected readonly header = computed(
+    () => this.headerMetadata() ?? mktgAssetHeaderFallback('brand-kit', this.versionNumber(), this.kit().generatedAt, this.approval())
+  );
+  protected readonly approvalRequiredNote = MKTG_ASSET_APPROVAL_REQUIRED_MESSAGE;
+  protected readonly printView = computed(() => {
+    const kit = this.approvedKit();
+    return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
+  });
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
-  protected readonly modeLabel = computed(() => BRAND_KIT_MODE_LABELS[this.kit().mode] ?? '');
+  protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
   /** What the reviewer should look at: the gaps and the sources that could not be read. */
   protected readonly gapCount = computed(() => this.kit().report.gaps.length + this.kit().report.sources_failed.length);
   /** The report's notes as lines. */
@@ -89,8 +116,8 @@ export class BrandKitWebViewComponent {
    * loads from Google Fonts; null when it is not there.
    */
   private readonly printFont = computed(() => {
-    const view = this.view();
-    return view.fontUrl ? { family: view.type.family.trim(), weights: view.weights.map((entry) => entry.weight) } : null;
+    const view = this.printView();
+    return view?.fontUrl ? { family: view.type.family.trim(), weights: view.weights.map((entry) => entry.weight) } : null;
   });
   protected readonly printOnlyClass = BRAND_KIT_PRINT_ONLY_CLASS;
 
@@ -166,6 +193,7 @@ export class BrandKitWebViewComponent {
    * run out. The print service guards SSR.
    */
   protected onDownloadPdf(): void {
+    if (!this.printView()) return;
     const font = this.printFont();
     void this.printService.print(BRAND_KIT_PRINT_BODY_CLASS, font?.family ?? null, font?.weights);
   }

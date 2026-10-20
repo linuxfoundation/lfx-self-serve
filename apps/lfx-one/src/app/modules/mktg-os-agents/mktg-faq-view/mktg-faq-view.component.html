@@ -5,10 +5,11 @@
 <section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-faq-view">
   <!-- Header: what this is, which version, how big, and what needs the team -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-faq-view-header">
-    <span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true"></span>
-    <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-faq-view-title">{{ title() }}</h2>
-    @if (version() !== null) {
-      <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500" data-testid="mktg-faq-view-version">v{{ version() }}</span>
+    @if (showMetadata()) {
+      <div class="flex min-w-0 flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900" data-testid="mktg-faq-view-title">{{ title() }}</h2>
+        <lfx-mktg-asset-meta [metadata]="header()" prefix="mktg-faq-view" />
+      </div>
     }
     @if (note()) {
       <span class="text-xs text-gray-400">{{ note() }}</span>
@@ -27,6 +28,8 @@
         {{ unansweredLabel() }}
       </button>
     }
+    <div class="grow"></div>
+    <ng-content select="[asset-actions]" />
   </div>
 
   <!-- Tabs: the FAQ, the questions it leaves for the team, the run's report -->

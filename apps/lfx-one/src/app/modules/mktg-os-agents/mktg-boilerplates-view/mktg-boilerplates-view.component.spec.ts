@@ -49,7 +49,6 @@ describe('MktgBoilerplatesViewComponent', () => {
     fixture.componentRef.setInput('projectName', 'TestOrbit');
     fixture.componentRef.setInput('asset', asset);
     fixture.componentRef.setInput('version', 2);
-    fixture.componentRef.setInput('note', 'latest');
     await fixture.whenStable();
   };
 
@@ -63,8 +62,19 @@ describe('MktgBoilerplatesViewComponent', () => {
 
     expect(query('mktg-boilerplates-view-title')?.textContent).toContain('TestOrbit Boilerplates');
     expect(query('mktg-boilerplates-view-version')?.textContent).toContain('v2');
-    expect(query('mktg-boilerplates-view-header')?.textContent).toContain('latest');
-    expect(query('mktg-boilerplates-view-mode')?.textContent).toContain('Draft');
+    expect(query('mktg-boilerplates-view-meta')?.textContent).toContain('v2');
+    expect(query('mktg-boilerplates-view-approval-state')?.textContent?.trim()).toBe('Draft');
+    expect(query('mktg-boilerplates-view-mode')).toBeNull();
+  });
+
+  it('shows approval metadata without changing the native tabs or counts', async () => {
+    await render();
+    fixture.componentRef.setInput('approval', { approvedAt: '2026-10-19T10:00:00Z', approvedBy: { name: null } });
+    await fixture.whenStable();
+    expect(query('mktg-boilerplates-view-approval-state')?.textContent?.trim()).toBe('Approved');
+    expect(query('mktg-boilerplates-view-mode')).toBeNull();
+    expect(query('mktg-boilerplates-view-tabs')).not.toBeNull();
+    expect(query('mktg-boilerplates-view-count-0')?.textContent).toContain('6 / 15 words');
   });
 
   it('shows the four lengths in order, each with its word count against its limit and what it carries', async () => {

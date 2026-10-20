@@ -35,6 +35,7 @@ import {
   MktgDependencyDocument,
   MktgDocumentStatusChip,
   MktgFaqAsset,
+  MktgDocumentAgentKey,
   MktgGenerateProgress,
   MktgGenerateRequest,
   MktgIntakeAttachment,
@@ -55,12 +56,18 @@ import {
   MktgRunPhase,
   MktgRunQuestionsPending,
   MktgRunVersion,
-  MktgSlidesExportTarget,
   MktgStoredAgentRun,
   ProjectContext,
   User,
 } from '@lfx-one/shared/interfaces';
-import { findMktgDocumentStatus, isMktgSlidesExportAgentKey, mktgAgentDocumentName, mktgJsonAttachmentUsable } from '@lfx-one/shared/utils';
+import {
+  buildMktgDocumentProjectPrefix,
+  findMktgDocumentStatus,
+  mktgAssetHeaderFallback,
+  mktgAgentDocumentName,
+  mktgJsonAttachmentUsable,
+  parseMktgRevisionKey,
+} from '@lfx-one/shared/utils';
 import { githubRepoUrlValidator, httpsUrlValidator, oneLineValidator, sourceUrlValidator, trimmedRequired } from '@lfx-one/shared/validators';
 import { MessageService } from 'primeng/api';
 import type { FileSelectEvent } from 'primeng/fileupload';
@@ -364,22 +371,10 @@ export class MktgAgentRunComponent {
   protected readonly assetVersion = computed(() => (this.phase() === 'result' ? (this.currentVersion()?.version ?? null) : null));
   /** The Brand Kit of the version on screen, when the agent's revision is a kit rather than a document. */
   protected readonly currentBrandKit: Signal<BrandKitRevision | null> = computed(() => this.currentVersion()?.brandKit ?? null);
-  /**
-   * The stored revision Export to Google Slides reads for the version on
-   * screen: the agent's living document, the revision named by the hash of
-   * what the server stored for this version. Null outside the result, for an
-   * agent whose document does not export, and while the version carries no
-   * hash (its server copy has not landed yet): the export never falls back
-   * to the document's latest revision, which may be another version.
-   */
-  protected readonly slidesExportTarget: Signal<MktgSlidesExportTarget | null> = computed(() => {
-    const agentKey = this.documentsAgentKey;
-    const project = this.projectContext.activeContextUid();
-    const version = this.currentVersion();
-    if (this.phase() !== 'result' || !version?.contentSha256 || !project || !isMktgSlidesExportAgentKey(agentKey)) {
-      return null;
-    }
-    return { project, agentKey, documentId: MKTG_LIVING_DOCUMENT_ID, contentSha256: version.contentSha256 };
+  /** Run results are Draft previews, never approval evidence or approved export targets. */
+  protected readonly previewMetadata = computed(() => {
+    const key = this.documentsAgentKey;
+    return key ? mktgAssetHeaderFallback(key, this.assetVersion(), this.currentVersion()?.createdAt ?? null, null) : null;
   });
   /** Field labels as shown: the registered question per field key. */
   protected readonly fieldLabels: Record<string, string> = Object.fromEntries((this.intake?.fields ?? []).map((field) => [field.key, field.question]));
@@ -457,13 +452,13 @@ export class MktgAgentRunComponent {
       return unmet.attachment.incompleteNote ?? `Finish the ${unmet.attachment.documentName.toLowerCase()} first.`;
     }
     if (unmet) {
-      return unmet.attachment.missingNote ?? `Run the ${unmet.attachment.documentName.toLowerCase()} first.`;
+      return unmet.attachment.missingNote ?? `Approve the ${unmet.attachment.documentName.toLowerCase()} in Documents first.`;
     }
     const names = this.missingDependencyNames();
     if (names.length === 0) {
       return '';
     }
-    return `This agent builds on the project’s ${names.join(' and ')} — generate ${names.length > 1 ? 'them' : 'it'} from the marketplace first.`;
+    return `This agent builds on the project’s ${names.join(' and ')} — approve ${names.length > 1 ? 'them' : 'it'} in Documents first.`;
   });
   /** The link under the note: the page where the required document is made (the Messaging Framework page). */
   protected readonly missingDependencyLink: Signal<MktgMissingDependencyLink | null> = computed(() => {
@@ -607,7 +602,8 @@ export class MktgAgentRunComponent {
   /** The groups shown after it (the FAQ's notes). */
   protected readonly trailingFieldGroups: MktgResolvedFieldGroup[] = this.fieldGroups.filter((group) => group.afterDocuments);
   /** The Documents area type this agent's output is stored as, when it has one. */
-  protected readonly documentsAgentKey: string | null = MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
+  protected readonly documentsAgentKey: MktgDocumentAgentKey | null =
+    MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === this.agent?.id)?.agentKey ?? null;
 
   public constructor() {
     // One empty row per list field from the start, so the form never shows a list with no box.
@@ -682,9 +678,23 @@ export class MktgAgentRunComponent {
     this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
   }
 
-  /** Every revision of this agent's document is kept in the Documents area. */
+  /** Only a canonical receipt key can identify this run's revision; never infer it from content. */
   protected onOpenDocuments(): void {
-    this.router.navigate(['..', 'documents'], { relativeTo: this.route, queryParams: { type: this.documentsAgentKey }, queryParamsHandling: 'merge' });
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.documentsAgentKey);
+    if (!type || type.kind !== 'living') {
+      this.router.navigate(['..', 'documents'], { relativeTo: this.route, queryParams: { type: this.documentsAgentKey }, queryParamsHandling: 'merge' });
+      return;
+    }
+    const version = this.currentVersion();
+    const key = version ? this.runService.receiptKey(version) : null;
+    const project = this.projectContext.activeContextUid();
+    const parsed = key && project ? parseMktgRevisionKey(key, buildMktgDocumentProjectPrefix(project)) : null;
+    const revision = parsed?.agentKey === type.agentKey && parsed.documentId === MKTG_LIVING_DOCUMENT_ID ? parsed.id : null;
+    this.router.navigate(['..', 'documents', type.agentKey, MKTG_LIVING_DOCUMENT_ID], {
+      relativeTo: this.route,
+      queryParams: { revision },
+      queryParamsHandling: 'merge',
+    });
   }
 
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
@@ -1530,10 +1540,8 @@ export class MktgAgentRunComponent {
     }
     if (progress.type === 'persisted') {
       // The server copy landed on a retry after the document was already
-      // announced. Dependency resolution prefers the server copy, so
-      // without this second announcement consumers would stay attached
-      // to the PREVIOUS server version until a page reload. The run now
-      // names the version's stored revision, which its export reads.
+      // announced. Refresh server-approved dependencies; the run remains a
+      // Draft preview and never infers approval from the receipt's digest.
       if (progress.run) {
         this.run.set(progress.run);
       }

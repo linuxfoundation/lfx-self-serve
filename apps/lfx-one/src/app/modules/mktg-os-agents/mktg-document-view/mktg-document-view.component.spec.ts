@@ -142,14 +142,18 @@ describe('MktgDocumentViewComponent', () => {
       },
       nums: [['1,200', 'members']],
     };
-    const jsonRevision = revision(2, { latest: true, format: 'json', status: '' });
-    store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision] }));
+    const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
+    const jsonRevision = revision(2, { latest: true, format: 'json', status: '', approval });
+    const approvedCurrent = { revisionId: jsonRevision.id, number: 2 };
+    store.getDocument.mockReturnValue(of({ ...detail, type: FRAMEWORK, revisions: [jsonRevision], approvedCurrent }));
     store.getRevision.mockReturnValue(
       of({
         ...detail,
         type: FRAMEWORK,
         revisions: [jsonRevision],
         revision: jsonRevision,
+        approval,
+        approvedCurrent,
         markdown: JSON.stringify(content),
         sidecar: {
           report: { sources_read: ['https://testorbit.example.org'], sources_failed: [], gaps: ['No member count.'], notes: '' },
@@ -553,7 +557,10 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
   });
   it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
-    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
+    const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
+    store.getRevision.mockReturnValue(
+      of({ ...revisionResponse({ ...LATEST, approval }), approvedCurrent: { revisionId: LATEST.id, number: LATEST.number }, sidecar: kitSidecar() })
+    );
 
     await render('/documents/brand-kit/living');
 
@@ -574,9 +581,11 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it('exports the older revision in ?revision=, never the latest: the last export is read and the export started for exactly that revision', async () => {
-    store.getRevision.mockImplementation((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
-      of({ ...revisionResponse([LATEST, OLDER].find((candidate) => candidate.id === revisionId) ?? LATEST), sidecar: kitSidecar() })
-    );
+    store.getRevision.mockImplementation((_project: string, _agentKey: string, _documentId: string, revisionId: string) => {
+      const approval = { approvedAt: '2026-10-19T10:00:00Z', approvedBy: null };
+      const selected = { ...([LATEST, OLDER].find((entry) => entry.id === revisionId) ?? LATEST), latest: true, approval };
+      return of({ ...revisionResponse(selected), approvedCurrent: { revisionId: selected.id, number: selected.number }, sidecar: kitSidecar() });
+    });
 
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
     query('brand-kit-web-view-export-slides')?.querySelector('button')?.click();

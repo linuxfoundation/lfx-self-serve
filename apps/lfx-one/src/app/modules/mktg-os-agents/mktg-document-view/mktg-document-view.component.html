@@ -115,6 +115,9 @@
               state="ready"
               [version]="current.revision.number"
               [note]="revisionNote()"
+              [approval]="current.revision.approval"
+              [approvedAsset]="current.approvedCurrent?.revisionId === current.revision.id ? framework : null"
+              [approvedVersion]="current.revision.number"
               [kit]="printKit()"
               [exportTarget]="exportTarget()"
               data-testid="mktg-document-view-framework" />
@@ -137,6 +140,9 @@
             <!-- A Brand Kit revision is the kit itself, on its web view (the 16-page book is its print rendering); its Markdown rendering is what sibling agents read. -->
             <lfx-brand-kit-web-view
               [kit]="kit"
+              [approval]="current.revision.approval"
+              [approvedKit]="current.approvedCurrent?.revisionId === current.revision.id ? kit : null"
+              [approvedVersion]="current.revision.number"
               [version]="current.revision.number"
               [note]="revisionNote()"
               [exportTarget]="exportTarget()"
