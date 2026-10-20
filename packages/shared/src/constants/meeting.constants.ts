@@ -857,8 +857,12 @@ export const PUBLIC_REGISTRATION_FIELD_LABELS = {
 /** Lower bound for the custom meeting duration, in minutes */
 export const MIN_CUSTOM_DURATION = 5;
 
-/** Upper bound for the custom meeting duration, in minutes */
-export const MAX_CUSTOM_DURATION = 480;
+/**
+ * Upper bound for the custom meeting duration, in minutes (10 hours).
+ * @description Matches the meeting service's own `duration` maximum (`Maximum(600)` in
+ * lfx-v2-meeting-service `design/itx_types.go`) and what PCC allows.
+ */
+export const MAX_CUSTOM_DURATION = 600;
 
 /**
  * Duration chips for the meeting composer's Date & Schedule section
