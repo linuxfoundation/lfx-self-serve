@@ -7,7 +7,7 @@ import { TestBed } from '@angular/core/testing';
 import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
-import { CommitteeMemberVotingStatus, PollStatus } from '@lfx-one/shared/enums';
+import { CommitteeMemberVotingStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -588,9 +588,9 @@ describe('VoteManageComponent', () => {
 
     // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): the clone fetch disables the form while in flight
     // (initCloneFromQuery's `this.form().disable()` / `.enable()` pair) so a slow fetch can't let
-    // the organizer type into a form about to be overwritten by the prefill. Every other clone test
-    // resolves fetchVote synchronously via `of(...)`, so that disable/enable pair is never observed —
-    // deleting it would leave every other test here green.
+    // the organizer type into a form about to be overwritten by the prefill. This is the only test
+    // in this file that drives `fetchVote` through a deferred `Subject` to actually observe that
+    // disable/enable pair mid-flight; deleting the pair would turn it red.
     it('disables the form while the clone source is in flight and re-enables it once prefilled', async () => {
       const clone$ = new Subject<Vote>();
       fetchVote.mockReturnValue(clone$.asObservable());
@@ -758,32 +758,65 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.form().disabled).toBe(true);
       expect(fixture.componentInstance.currentStep()).toBe(1);
     });
+
+    // GH-3781 review (PRRT_kwDOPMiRQ86uAPFS, dealako): the poll-type/pseudo-anonymity guard is the
+    // only thing standing between a ranked-choice/anonymous election and a silent plurality
+    // re-creation — pin it so a refactor of this subscribe can't silently drop it.
+    it.each([
+      ['a non-generic poll type', sourceVote({ poll_type: PollType.CONDORCET_IRV })],
+      ['a pseudo-anonymous source', sourceVote({ pseudo_anonymity: true })],
+    ])('refuses to clone %s: warns and leaves the form blank and enabled', async (_label, unsupportedSource) => {
+      fetchVote.mockReturnValue(of(unsupportedSource));
+      const fixture = await createComponent();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Cannot clone' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
   });
 
-  // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN): pins the write-access-leg `startWith(undefined)` fix —
-  // a context switch (e.g. clone's syncEntityProjectContextFallback re-targeting activeContext to the
-  // source vote's own project) must park the changed leg at pending instead of exposing a stale
-  // resolved value while the new key's fetch is in flight, so evictOnWriteAccessLoss never observes a
-  // spurious false and navigates away mid-switch.
-  it('does not evict while a project-context switch leaves the write-access legs pending', async () => {
+  // GH-3781 review (PRRT_kwDOPMiRQ86tkpJN, PRRT_kwDOPMiRQ86uAPFN dealako): pins the project leg's
+  // `startWith(undefined)` fix against the specific race it guards — not just "no eviction while
+  // switching" (true either way, since a stale *true* can never itself cause a wrongful eviction),
+  // but the case the inline comment calls out: project A resolves to a definite `false` while the
+  // committee leg is still pending (so overall access correctly stays provisional-true); a context
+  // switch to project B then leaves B's own fetch pending too. Without the `startWith(undefined)`,
+  // the project leg would keep exposing A's stale resolved `false` through the switch, and once the
+  // committee leg's pending fetch resolves to `false` in that window, the stale `false` + the now-
+  // resolved `false` would combine into an outright `false` — evicting an organizer who IS a writer
+  // on B, before B's own fetch has had any chance to resolve `true`.
+  it('does not evict on a stale denied leg while a project-context switch leaves the new key pending', async () => {
     const PROJECT_B_UID = 'project-uid-b';
     const PROJECT_B_SLUG = 'project-b';
     setRouteMode(null); // create mode — projectKey$ is driven directly off activeContext
-    routeMock.queryParamMap = of(convertToParamMap({})); // no ?clone/?committee_uid — isolate the write-access race
+    routeMock.queryParamMap = of(convertToParamMap({ committee_uid: COMMITTEE_UID })); // project leg alone resolving false must route through the committee leg
     activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Project A' });
     const projectBFetch$ = new Subject<{ uid: string; writer: boolean }>();
-    getProject.mockImplementation((key: string) => (key === PROJECT_SLUG ? of({ uid: PROJECT_UID, writer: true }) : projectBFetch$.asObservable()));
+    const committeeFetch$ = new Subject<{ uid: string; writer: boolean }>();
+    getProject.mockImplementation((key: string) => (key === PROJECT_SLUG ? of({ uid: PROJECT_UID, writer: false }) : projectBFetch$.asObservable()));
+    fetchCommittee.mockReturnValue(committeeFetch$.asObservable());
     const router = TestBed.inject(Router);
     await createComponent();
 
+    // Project A denied (resolved); committee leg still pending — combined access stays
+    // provisional-true while the committee check is in flight.
     expect(router.navigateByUrl).not.toHaveBeenCalled();
 
-    // Simulate the clone context sync re-targeting activeContext mid-flight, before the new
-    // project's write-access fetch has resolved.
+    // The clone context sync re-targets activeContext to B mid-flight, before B's own write-access
+    // fetch has resolved.
     activeContext.set({ uid: PROJECT_B_UID, slug: PROJECT_B_SLUG, name: 'Project B' });
     await TestBed.inject(ApplicationRef).whenStable();
     expect(router.navigateByUrl).not.toHaveBeenCalled();
 
+    // The committee leg's pending fetch (still keyed to the original committee, untouched by the
+    // project switch) now resolves false. Without the project leg's `startWith(undefined)`, its
+    // stale `false` from A would combine with this to evict before B's own fetch ever runs.
+    committeeFetch$.next({ uid: COMMITTEE_UID, writer: false });
+    committeeFetch$.complete();
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(router.navigateByUrl).not.toHaveBeenCalled();
+
+    // B's own fetch finally resolves — access is correctly granted directly via B's project leg.
     projectBFetch$.next({ uid: PROJECT_B_UID, writer: true });
     projectBFetch$.complete();
     await TestBed.inject(ApplicationRef).whenStable();

@@ -359,7 +359,7 @@ describe('mapFiltersToEligibility', () => {
   // Pins the real widening rule: it keys on presence of Observer/Emeritus, not on absence of
   // Alternate/Emeritus — a set missing Alternate/Emeritus but containing neither Observer nor
   // Emeritus is NOT widened to 'all'.
-  it("widens to 'all' when the filter set contains Observer or Emeritus, not merely when it omits Alternate/Emeritus", () => {
+  it("widens to 'all' when the filter set contains Observer or Emeritus", () => {
     expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.EMERITUS])).toBe('all');
     expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP])).toBe('voting_rep');
   });

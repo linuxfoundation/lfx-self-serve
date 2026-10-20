@@ -173,8 +173,10 @@ function computeParticipationPercent(responses: number, invited: number): number
  * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
  * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
  * edit: {@link mapFiltersToEligibility} widens to 'all' whenever the filter set contains Observer or
- * Emeritus (not merely when it is missing Alternate/Emeritus), so a clone can re-expand to a broader
- * electorate than the source actually had.
+ * Emeritus, so a clone can re-expand to a broader electorate than the source actually had. This is a
+ * known, accepted tradeoff (not yet surfaced to the organizer) rather than an oversight — unlike the
+ * poll-type/pseudo-anonymity guard below, which refuses to clone a source it can't faithfully represent,
+ * electorate widening degrades silently. Revisit if this needs its own warning (GH-3781 review 3).
  * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
  * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
  * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own

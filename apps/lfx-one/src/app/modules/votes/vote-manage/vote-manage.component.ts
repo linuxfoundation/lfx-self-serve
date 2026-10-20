@@ -124,7 +124,14 @@ export class VoteManageComponent {
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly isDraftSavable: Signal<boolean> = this.initIsDraftSavable();
   private readonly voteEntityContext: Signal<EntityWithProject | null> = this.initVoteEntityContext();
-  private readonly writeAccess: Signal<boolean> = this.initWriteAccess();
+  private readonly accessLegs = this.initWriteAccess();
+  private readonly writeAccess: Signal<boolean> = this.accessLegs.optimistic;
+  // Strict counterpart to `writeAccess`: collapses a pending leg to false instead of true. `writeAccess`
+  // stays optimistic so an organizer isn't evicted mid-flicker while a leg re-resolves, but submission
+  // authorization must fail closed on "not yet confirmed" rather than trust an unresolved check — a
+  // provisionally-true `writeAccess()` is not proof that the current project is actually write-authorized
+  // (GH-3781 review: dealako, "Confirmed cross-tenant authorization bypass").
+  private readonly resolvedWriteAccess: Signal<boolean> = this.accessLegs.resolved;
 
   public constructor() {
     this.initCommitteeContext();
@@ -532,7 +539,18 @@ export class VoteManageComponent {
     if (cloneProjectUid && activeProjectUid && cloneProjectUid !== activeProjectUid) {
       return null;
     }
-    return cloneProjectUid ?? activeProjectUid;
+    const candidateProjectUid = cloneProjectUid ?? activeProjectUid;
+    // Gate on the strict (pending-fails-closed) leg, not `writeAccess()` — that signal is
+    // deliberately optimistic while a leg is pending (to avoid UX flicker via
+    // evictOnWriteAccessLoss) and so isn't proof the *current* candidate project is actually
+    // write-authorized. Without this, a reused component instance whose active project/committee
+    // context changed after writerGuard's one-time check (e.g. via the rail's Create Vote dialog)
+    // could submit into a project the organizer was never granted (GH-3781 review: dealako,
+    // "Confirmed cross-tenant authorization bypass").
+    if (!candidateProjectUid || !this.resolvedWriteAccess()) {
+      return null;
+    }
+    return candidateProjectUid;
   }
 
   private patchFormWithValue(formValue: VoteFormValue): void {
@@ -751,7 +769,7 @@ export class VoteManageComponent {
    * Access predicate mirroring writerGuard's votes standard — project writer on the vote's OWN project
    * (never the boot context), or committee writer via ?committee_uid=; pending legs stay provisionally true.
    */
-  private initWriteAccess(): Signal<boolean> {
+  private initWriteAccess(): { optimistic: Signal<boolean>; resolved: Signal<boolean> } {
     const editVoteId = this.route.snapshot.paramMap.get('id');
     const projectKey$: Observable<string | null | undefined> = editVoteId
       ? toObservable(this.vote).pipe(
@@ -828,17 +846,22 @@ export class VoteManageComponent {
       )
       // No initialValue: undefined doubles as the leg's pending state (see the doc above).
     );
-    return computed(() => {
-      const project = projectAccess();
-      const committee = committeeAccess();
-      if (project === true || committee === true) {
-        return true;
-      }
-      if (project === undefined || committee === undefined) {
-        return true; // provisional — a pending leg can still grant access
-      }
-      return false;
-    });
+    return {
+      optimistic: computed(() => {
+        const project = projectAccess();
+        const committee = committeeAccess();
+        if (project === true || committee === true) {
+          return true;
+        }
+        if (project === undefined || committee === undefined) {
+          return true; // provisional — a pending leg can still grant access
+        }
+        return false;
+      }),
+      // Fails closed on a pending leg instead of granting provisional access — used to gate
+      // submission authorization, where "not yet confirmed" must block rather than pass.
+      resolved: computed(() => projectAccess() === true || committeeAccess() === true),
+    };
   }
 
   private canNavigateToStep(step: number): boolean {
@@ -1018,9 +1041,11 @@ export class VoteManageComponent {
           // a normal-create -> clone back-navigation: the rail can drive this same route to a plain
           // create with no `?clone=`, which advances the form/step with `cloneSourceVote` staying null
           // (see the removal branch above), so gating this reset on `cloneSourceVote()` being truthy
-          // would leave that regular vote's fields and Review step sitting valid/enabled while this
-          // fetch is in flight, letting onSubmit() fire with the stale payload if the fetch is slow or
-          // fails.
+          // would leave that regular vote's Review step reachable while this fetch is in flight. The
+          // form itself gets `disable()`d below regardless, but a disabled FormGroup reports
+          // `invalid === false` — `onSubmit()`'s `form.invalid` guard can't catch a stale submit on its
+          // own, so it's this `internalStep` reset that actually keeps the stale Review step unreachable
+          // if the fetch is slow or fails.
           this.cloneSourceVote.set(null);
           this.form.set(this.createFormGroup());
           this.internalStep.set(1);
