@@ -84,18 +84,8 @@
         <lfx-meeting-rsvp-card />
       }
       @case ('rsvp-unavailable') {
-        <!-- N-01 (FR-026): an invitee on a meeting without RSVP tracking (in practice, one that predates
-             it). Says so, rather than V1's empty rail, and offers no RSVP control: there is nothing to
-             collect. When to join is the early-join hint's, below. -->
-        <div class="flex items-start gap-[10px]" data-testid="meeting-rsvp-unavailable-state">
-          <i class="fa-light fa-calendar-check mt-[2px] text-[var(--md-status-good)]" aria-hidden="true"></i>
-          <div class="flex flex-col gap-[2px] text-[13px] leading-[1.45]">
-            <span class="font-semibold text-[var(--md-text-heading)]">You're invited</span>
-            <span class="text-[var(--md-text-body)]" data-testid="meeting-action-message">
-              RSVPs aren't tracked for this meeting, so there's nothing to answer.
-            </span>
-          </div>
-        </div>
+        <!-- An invitee on a meeting without RSVP tracking (one that predates it): V1's empty rail, as
+             V2 keeps V1's behaviour. There is nothing to answer; when to join is the hint's, below. -->
       }
       @case ('tools') {
         <!-- As V1, the recording, transcript and summary need a session, so an anonymous viewer with

@@ -80,7 +80,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   different email.
 - **FR-026**: When RSVP tracking is off, a registrant MUST get `rsvp-unavailable`, and **no** RSVP
   UI may render anywhere on the page: no controls, summary strip, roster filter or per-avatar badge.
-  Only the invitee count remains.
+  Only the invitee count remains. The slot renders V1's empty rail for it (N-01's explanation was
+  withdrawn, scope reset 2026-10-20: V1 shows nothing there).
 - **FR-027**: `join` MUST be offered in the window to organizers and registrants, and to signed-in
   outsiders on unrestricted meetings. The join control MUST have loading, ready and error states,
   and the existing auto-join behaviour (signed in, email present, `zoom_redirect` not disabled) MUST
