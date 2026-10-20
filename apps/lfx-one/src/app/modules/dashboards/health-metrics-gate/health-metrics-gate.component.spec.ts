@@ -4,14 +4,14 @@
 import { Component, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { NgClass } from '@angular/common';
+import { NavigationEnd, provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet, Scroll } from '@angular/router';
+import { NgClass, ViewportScroller } from '@angular/common';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { PopoverModule } from 'primeng/popover';
-import { of, throwError } from 'rxjs';
+import { filter, firstValueFrom, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { FoundationProjectsDetailGroupedResponse, ProjectContext, ProjectTableRow } from '@lfx-one/shared/interfaces';
@@ -51,13 +51,15 @@ describe('HealthMetricsGateComponent', () => {
   async function render(
     overviewEnabled: WritableSignal<boolean>,
     url = '/',
-    projects: FoundationProjectsDetailGroupedResponse = projectsResponse(['beta-mesh', 'Beta Mesh'], ['alpha', 'Alpha'])
+    projects: FoundationProjectsDetailGroupedResponse = projectsResponse(['beta-mesh', 'Beta Mesh'], ['alpha', 'Alpha']),
+    scroller?: Partial<ViewportScroller>
   ): Promise<void> {
     loadFoundationProjectsDetailGrouped = vi.fn(() => of(projects));
     await TestBed.configureTestingModule({
       imports: [HealthMetricsGateComponent],
       providers: [
         provideRouter([{ path: '**', component: RouteStubComponent }]),
+        ...(scroller ? [{ provide: ViewportScroller, useValue: scroller }] : []),
         provideNoopAnimations(),
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => overviewEnabled } },
         { provide: UserService, useValue: { impersonating } },
@@ -369,6 +371,39 @@ describe('HealthMetricsGateComponent', () => {
       await render(signal(true), '/foundation/health-metrics/engagement', projectsResponse());
 
       expect(query('health-metrics-overview-project-selector')).toBeNull();
+    });
+  });
+
+  describe('scroll position', () => {
+    function stubScroller(): Partial<ViewportScroller> & { scrollToPosition: ReturnType<typeof vi.fn> } {
+      return { getScrollPosition: vi.fn(() => [0, 640] as [number, number]), scrollToPosition: vi.fn() };
+    }
+
+    // TestBed never starts the router's scroller, so this emits the `Scroll` it sends after the navigation ends.
+    async function navigateAndScroll(url: string): Promise<void> {
+      const router = TestBed.inject(Router);
+      const ended = firstValueFrom(router.events.pipe(filter((event) => event instanceof NavigationEnd)));
+      await router.navigateByUrl(url);
+      (router.events as unknown as Subject<Scroll>).next(new Scroll(await ended, null, null));
+      await Promise.resolve();
+    }
+
+    it('puts the page back where it was when only the query string changes', async () => {
+      const scroller = stubScroller();
+      await render(signal(true), '/foundation/health-metrics/engagement#orgs', undefined, scroller);
+
+      await navigateAndScroll('/foundation/health-metrics/engagement?orgSegment=members#orgs');
+
+      expect(scroller.scrollToPosition).toHaveBeenCalledWith([0, 640], { behavior: 'instant' });
+    });
+
+    it('leaves the router to scroll a tab switch to the top', async () => {
+      const scroller = stubScroller();
+      await render(signal(true), '/foundation/health-metrics/engagement', undefined, scroller);
+
+      await navigateAndScroll('/foundation/health-metrics/events');
+
+      expect(scroller.scrollToPosition).not.toHaveBeenCalled();
     });
   });
 });
