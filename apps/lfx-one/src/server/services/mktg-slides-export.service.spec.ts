@@ -604,6 +604,25 @@ describe('MktgSlidesExportService', () => {
       expect(await service.getResult(req, 'session-1', context)).toMatchObject({ status: 'failed', failure: 'intake' });
     });
 
+    it('takes the envelope only from the exporter’s final output, never a notice, a progress event or a tool’s event', async () => {
+      await seedFramework(documentStore);
+      const started = await service.startExport(req, input());
+      const context = { project: PROJECT, type: FRAMEWORK, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: started.revision.id };
+      const envelopeText = (JSON.parse(outputEvent()) as { content: { data: string } }).content.data;
+
+      guildMocks.getRawEventPayloads.mockResolvedValue([
+        JSON.stringify({ type: 'agent_notification_message', content: envelopeText }),
+        JSON.stringify({ type: 'agent_notification_progress', content: { type: 'text', data: envelopeText } }),
+        JSON.stringify({ type: 'runtime_done', content: { output: envelopeText } }),
+        JSON.stringify({ type: 'llm_start', payload: JSON.stringify({ messages: [{ role: 'assistant', content: [{ type: 'text', text: envelopeText }] }] }) }),
+      ]);
+      expect(await service.getResult(req, 'session-1', context)).toEqual({ status: 'pending' });
+      expect([...store.objects.keys()].some((key) => key.startsWith('slides-exports/'))).toBe(false);
+
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      expect(await service.getResult(req, 'session-1', context)).toMatchObject({ status: 'ready', record: { deckId: DECK_ID } });
+    });
+
     it('keeps a finished deck when another output follows its envelope, and takes the later of two envelopes', async () => {
       await seedFramework(documentStore);
       const started = await service.startExport(req, input());

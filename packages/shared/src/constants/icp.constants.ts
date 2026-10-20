@@ -17,6 +17,9 @@ export const ICP_CONTRACT_ID = 'icp-output/v1';
 /** Document kind within the contract. */
 export const ICP_KIND = 'icp';
 
+/** The agent's finalize tool: the only event source the BFF accepts an output envelope from (its tool RESULT). */
+export const ICP_FINALIZE_TOOL = 'finalize_icp_document';
+
 /** Batch payload discriminator of the agent's form-mode input contract. */
 export const ICP_FORM_TYPE = 'icp_intake_form';
 
