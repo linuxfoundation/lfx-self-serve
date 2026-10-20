@@ -23,6 +23,13 @@ const stateKey = makeStateKey<MeetingJoinPageState>(MEETING_JOIN_STATE_KEY);
 
 // `debounceTime(0)` puts the lookup one macrotask after the route emission.
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+// Settles the lookup, then runs the effects behind `toObservable` (TestBed runs them on `tick()`) and
+// settles the reads they start.
+const flush = async (): Promise<void> => {
+  await settle();
+  TestBed.tick();
+  await settle();
+};
 
 describe('MeetingDetailsStateService', () => {
   let paramMap$: BehaviorSubject<ParamMap>;
@@ -575,7 +582,7 @@ describe('MeetingDetailsStateService', () => {
     async function load(meeting: Meeting): Promise<MeetingDetailsStateService> {
       getPublicMeeting.mockReturnValue(of({ meeting, project }));
       const state = create();
-      await settle();
+      await flush();
       return state;
     }
 
@@ -600,7 +607,7 @@ describe('MeetingDetailsStateService', () => {
       paramMap$.next(convertToParamMap({ id: pastId }));
       getPublicPastMeeting.mockReturnValue(of({ meeting: series(), project, full_access: true }));
       const state = create();
-      await settle();
+      await flush();
 
       expect(state.canManageOccurrence()).toBe(false);
     });
@@ -630,7 +637,7 @@ describe('MeetingDetailsStateService', () => {
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
 
       state.showOccurrenceAfterChange(second.getTime());
-      await settle();
+      await flush();
 
       expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
     });
@@ -642,7 +649,7 @@ describe('MeetingDetailsStateService', () => {
 
       getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2', recurrence: null } as Partial<Meeting>), project }));
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
-      await settle();
+      await flush();
 
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
     });
@@ -655,7 +662,7 @@ describe('MeetingDetailsStateService', () => {
       getPublicMeetingOccurrences.mockReturnValue(new Subject());
       getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
-      await settle();
+      await flush();
 
       expect(getPublicMeetingOccurrences).toHaveBeenLastCalledWith('meeting-2', null);
       expect(state.seriesOccurrences()).toEqual({ past: [], future: [] });
@@ -667,10 +674,10 @@ describe('MeetingDetailsStateService', () => {
 
       getPublicMeeting.mockReturnValue(of({ meeting: series({ id: 'one-off', uid: 'one-off', recurrence: null } as Partial<Meeting>), project }));
       paramMap$.next(convertToParamMap({ id: 'one-off' }));
-      await settle();
+      await flush();
       getPublicMeeting.mockReturnValue(of({ meeting: series(), project }));
       paramMap$.next(convertToParamMap({ id: MEETING_ID }));
-      await settle();
+      await flush();
 
       expect(getPublicMeetingOccurrences).toHaveBeenCalledTimes(2);
     });
@@ -690,7 +697,7 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meetingTitle()).toBe('Release review');
 
       queryParamMap$.next(convertToParamMap({ occurrence: String(first.getTime()) }));
-      await settle();
+      await flush();
       expect(state.meetingTitle()).toBe('Weekly Sync');
     });
 
@@ -708,7 +715,7 @@ describe('MeetingDetailsStateService', () => {
       const lookups = getPublicMeeting.mock.calls.length;
 
       state.showOccurrenceAfterChange(second.getTime());
-      await settle();
+      await flush();
 
       expect(navigate).toHaveBeenCalledWith(
         [],
@@ -732,7 +739,7 @@ describe('MeetingDetailsStateService', () => {
       });
 
       state.showOccurrenceAfterChange(moved.getTime());
-      await settle();
+      await flush();
 
       // The held payload has only the old start: still the edited occurrence, not the series' first date.
       expect(state.selectedOccurrence()?.occurrence_id).toBe('2');
@@ -788,7 +795,7 @@ describe('MeetingDetailsStateService', () => {
     async function load(meeting: Meeting): Promise<MeetingDetailsStateService> {
       getPublicMeeting.mockReturnValue(of({ meeting, project }));
       const state = create();
-      await settle();
+      await flush();
       return state;
     }
 
@@ -812,7 +819,7 @@ describe('MeetingDetailsStateService', () => {
       const lookups = getPublicMeeting.mock.calls.length;
 
       state.markLeft(MEETING_ID);
-      await settle();
+      await flush();
 
       expect(markRegistrationRemoved).toHaveBeenCalledWith(MEETING_ID);
       expect(state.viewerRole()).toBe('outsider');
@@ -840,7 +847,7 @@ describe('MeetingDetailsStateService', () => {
       confirmedMeetingRsvps.mockReturnValue([surviving]);
       isMeetingRsvpCurrent.mockImplementation((rsvp: MeetingRsvp) => rsvp.registrant_id !== 'r-1');
       const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
-      await settle();
+      await flush();
       expect(state.myRsvp()).toBe('accepted');
 
       state.markLeaveIncomplete(MEETING_ID);
@@ -854,7 +861,7 @@ describe('MeetingDetailsStateService', () => {
       getMyRsvp.mockReturnValue(of(removed));
       isMeetingRsvpCurrent.mockReturnValue(false);
       const state = await load(upcoming({ is_invite_responses_enabled: true } as Partial<Meeting>));
-      await settle();
+      await flush();
 
       state.markLeaveIncomplete(MEETING_ID);
 
@@ -864,7 +871,7 @@ describe('MeetingDetailsStateService', () => {
     it('drops the answer and resets the card after a complete removal', async () => {
       getMyRsvp.mockReturnValue(of({ id: 'rsvp-1', registrant_id: 'r-1', response_type: 'accepted' } as unknown as MeetingRsvp));
       const state = await load(upcoming({ is_invite_responses_enabled: true, organizer: true } as Partial<Meeting>));
-      await settle();
+      await flush();
 
       state.markLeft(MEETING_ID);
 
@@ -932,7 +939,7 @@ describe('MeetingDetailsStateService', () => {
       getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ id: 'meeting-2', uid: 'meeting-2' } as Partial<Meeting>), project }));
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
       queryParamMap$.next(convertToParamMap({ action: 'leave' }));
-      await settle();
+      await flush();
 
       expect(state.leaveRequest()).toEqual({ meetingId: 'meeting-2', handledByV1: false });
       expect(state.claimAutoJoin('meeting-2')).toBe(false);
@@ -945,14 +952,14 @@ describe('MeetingDetailsStateService', () => {
       state.consumeLeaveRequest();
       // A re-lookup before the navigation that drops the param lands.
       state.reload();
-      await settle();
+      await flush();
       expect(state.leaveRequest()).toBeNull();
 
       // Once the param is gone, a new link raises a new request.
       queryParamMap$.next(convertToParamMap({}));
-      await settle();
+      await flush();
       queryParamMap$.next(convertToParamMap({ action: 'leave' }));
-      await settle();
+      await flush();
       expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
     });
 
@@ -963,7 +970,7 @@ describe('MeetingDetailsStateService', () => {
       // Navigating away, to a meeting with no leave link of its own.
       queryParamMap$.next(convertToParamMap({}));
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
-      await settle();
+      await flush();
 
       expect(state.leaveRequest()).toBeNull();
     });
