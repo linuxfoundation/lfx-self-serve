@@ -38,13 +38,8 @@ export class PermissionsMatrixComponent {
     {
       scope: 'Project',
       level: 'Meeting Coordinator',
-      description: 'Run meetings and review the project. Read-only outside of meetings',
-      capabilities: [
-        'View the project: details, links, folders and documents',
-        'Create, update and delete meetings and past meetings, including registrants, attachments and recordings',
-        'View every committee in the project: members and their email addresses, invites, applications, links, documents and settings',
-        'View the mailing lists, votes and surveys linked to those committees',
-      ],
+      description: 'Manage meetings for the project',
+      capabilities: ['Create, update and delete meetings and past meetings, including registrants, attachments and recordings'],
       badge: {
         color: 'text-purple-800',
         bgColor: 'bg-purple-100',
