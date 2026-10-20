@@ -47,7 +47,7 @@ export class EngagementAttendanceTrendComponent {
   protected readonly loading = signal<boolean>(true);
   /** A failed read is not a foundation without meetings, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
-  /** Decides which month is still in progress; fixed per mount, like the view's own daily window. */
+  /** Decides which month is still in progress; refreshed on every read, so a month rollover is seen. */
   protected readonly today = signal<Date>(new Date());
 
   protected readonly query: Signal<HealthMetricsEngagementAttendanceTrendQuery> = computed(() => ({
@@ -121,6 +121,8 @@ export class EngagementAttendanceTrendComponent {
               return of(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);
             }),
             tap(() => {
+              // The response's window rolls with the run date, so the in-progress month is judged now.
+              this.today.set(new Date());
               this.loading.set(!foundationSeen);
               // Held until a foundation has been seen: settling an unread section releases the
               // L2 shell's pending deep link before any real read can re-arm it.

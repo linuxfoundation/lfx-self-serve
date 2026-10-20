@@ -170,6 +170,21 @@ describe('EngagementAttendanceTrendComponent', () => {
     expect(getEngagementAttendanceTrend).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: 'acme-core' });
   });
 
+  // A tab left open across a month boundary must not headline the new month's partial attendance.
+  it('re-judges the month in progress on every read, so a month rollover is seen', async () => {
+    await render();
+    const now = new Date();
+    fixture.componentInstance['today'].set(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15)));
+    fixture.detectChanges();
+    // A stale date treats the current month (51%) as complete, so it headlines.
+    expect(text('engagement-attendance-trend-latest')).toBe('51%');
+
+    TestBed.inject(HealthMetricsChromeService).selectedProjectSlug.set('acme-core');
+    await settle();
+
+    expect(text('engagement-attendance-trend-latest')).toBe('50%');
+  });
+
   it('holds the skeleton and withholds the settle while no foundation is selected', async () => {
     selectedFoundation.set(null);
     await render(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_UNMEASURED);

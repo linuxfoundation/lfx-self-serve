@@ -204,16 +204,6 @@ export interface HealthMetricsEngagementAttendanceMonth {
   attendanceChangePp: number | null;
 }
 
-/** One raw `ENGAGEMENT_ATTENDANCE_MONTHLY` row as the Snowflake driver returns it; decimals arrive as strings. */
-export interface HealthMetricsEngagementAttendanceMonthRow {
-  MONTH_START_DATE: Date | string | null;
-  MEETINGS_HELD_COUNT: number | null;
-  INVITED_COUNT: number | null;
-  ATTENDED_COUNT: number | null;
-  ATTENDANCE_PCT: number | string | null;
-  ATTENDANCE_PCT_CHANGE_PP: number | string | null;
-}
-
 /** `GET /api/analytics/engagement-attendance-trend` — the trailing twelve months, oldest first. */
 export interface HealthMetricsEngagementAttendanceTrend {
   months: HealthMetricsEngagementAttendanceMonth[];
