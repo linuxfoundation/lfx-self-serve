@@ -25,6 +25,8 @@ describe('MeetingRsvpCardComponent', () => {
   let createMeetingRsvp: ReturnType<typeof vi.fn>;
   let add: ReturnType<typeof vi.fn>;
   let rsvpReset: WritableSignal<number>;
+  let recordConfirmedMeetingRsvp: ReturnType<typeof vi.fn>;
+  let isMeetingRsvpCurrent: ReturnType<typeof vi.fn>;
 
   const saved = (response: RsvpResponse): MeetingRsvp => ({ id: 'rsvp-1', meeting_id: 'meeting-1', response_type: response }) as unknown as MeetingRsvp;
 
@@ -33,6 +35,8 @@ describe('MeetingRsvpCardComponent', () => {
     myRsvp = signal<RsvpResponse | null | undefined>(null);
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
     rsvpReset = signal(0);
+    recordConfirmedMeetingRsvp = vi.fn().mockReturnValue(null);
+    isMeetingRsvpCurrent = vi.fn().mockReturnValue(true);
     setMyRsvp = vi.fn();
     createMeetingRsvp = vi.fn((_id: string, request: { response: RsvpResponse }) => of(saved(request.response)));
     add = vi.fn();
@@ -53,7 +57,16 @@ describe('MeetingRsvpCardComponent', () => {
           },
         },
         { provide: MeetingService, useValue: { createMeetingRsvp } },
-        { provide: UserService, useValue: { user: signal({ email: 'ada@acme-motors.example' } as User) } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal({ email: 'ada@acme-motors.example' } as User),
+            viewerUsername: signal(null),
+            meetingRegistrationGeneration: () => 0,
+            recordConfirmedMeetingRsvp,
+            isMeetingRsvpCurrent,
+          },
+        },
         { provide: MessageService, useValue: { add } },
       ],
     }).compileComponents();
@@ -139,21 +152,35 @@ describe('MeetingRsvpCardComponent', () => {
     expect(query('meeting-rsvp-card-confirmation')).toBeNull();
   });
 
-  it('does not put a save that completes after a removal back on the page', () => {
+  // V1's acknowledgement check: a removal while the save is in flight deletes its registration.
+  it("does not put a deleted registration's answer back on the page", () => {
     const pending = new Subject<MeetingRsvp>();
     createMeetingRsvp.mockReturnValue(pending.asObservable());
     click('meeting-rsvp-card-accepted');
 
-    // The viewer removes themselves while the save is in flight.
+    isMeetingRsvpCurrent.mockReturnValue(false);
     rsvpReset.update((count) => count + 1);
     fixture.detectChanges();
     pending.next(saved('accepted'));
     pending.complete();
     fixture.detectChanges();
 
+    expect(recordConfirmedMeetingRsvp).toHaveBeenCalledWith(saved('accepted'), 'ada@acme-motors.example', 0);
     expect(setMyRsvp).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
-    expect(query('meeting-rsvp-card-confirmation')).toBeNull();
+  });
+
+  it("still lands a surviving registration's answer after a partial removal", () => {
+    const pending = new Subject<MeetingRsvp>();
+    createMeetingRsvp.mockReturnValue(pending.asObservable());
+    click('meeting-rsvp-card-maybe');
+
+    rsvpReset.update((count) => count + 1);
+    fixture.detectChanges();
+    pending.next(saved('maybe'));
+    pending.complete();
+
+    expect(setMyRsvp).toHaveBeenCalledWith('meeting-1', undefined, saved('maybe'));
   });
 
   // The live region stays mounted, so the save is announced; focus moves to the confirmation's Change.

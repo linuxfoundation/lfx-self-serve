@@ -960,6 +960,8 @@ describe('MeetingDetailsStateService', () => {
       queryParamMap$.next(convertToParamMap({ action: 'leave' }));
       const state = await load(upcoming());
 
+      // Navigating away, to a meeting with no leave link of its own.
+      queryParamMap$.next(convertToParamMap({}));
       paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
       await settle();
 
