@@ -28,6 +28,13 @@
       title="No non-member organizations recorded for this foundation"
       subtitle="The analytics model has no non-member participation records for this foundation."
       data-testid="engagement-non-member-participation-empty" />
+  } @else if (!loading() && totalRecords() === 0 && !periodCounts()) {
+    <!-- Unmeasured attendance is not a measured zero, so it must not read as "none attended". -->
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Non-member attendance is not available for this period"
+      subtitle="The analytics model has not measured non-member attendance for this period."
+      data-testid="engagement-non-member-participation-period-unmeasured" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       icon="fa-light fa-building"

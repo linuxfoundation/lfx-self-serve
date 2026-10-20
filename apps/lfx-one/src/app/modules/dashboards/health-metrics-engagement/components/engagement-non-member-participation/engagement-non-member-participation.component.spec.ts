@@ -242,6 +242,18 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('0 organizations');
   });
 
+  // Null attendance and a null count are unmeasured, so the section must not claim nobody attended.
+  it('renders the unmeasured state, not the period-empty state, when attendance was not measured', async () => {
+    const rows = [nonMemberRow({ periods: [{ range: 'YTD', meetingsAttended: null, distinctPeople: null, sortRank: null }] })];
+    await render(response({ rows, counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-unmeasured"]')?.textContent).toContain(
+      'Non-member attendance is not available for this period'
+    );
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-period-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-count"]').textContent.trim()).toBe('—');
+  });
+
   // A view that reports no scope count has not measured zero organizations, and the table says so.
   it('captions an unmeasured scope with an em dash rather than a confident zero', async () => {
     const emitted: unknown[] = [];

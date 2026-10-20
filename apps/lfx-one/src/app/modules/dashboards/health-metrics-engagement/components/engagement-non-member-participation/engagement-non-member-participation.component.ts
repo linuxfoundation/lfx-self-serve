@@ -79,9 +79,10 @@ export class EngagementNonMemberParticipationComponent {
   protected readonly totalRecords = computed(() => this.rowViews().length);
   /** No row at all is an empty foundation; rows with none active in the period are a measured zero. */
   protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
-  /** The caption counts the selected period's scope, which the view denormalizes onto every row. */
+  /** The selected period's scope count, which the view denormalizes onto every row; `null` is unmeasured. */
+  protected readonly periodCounts = computed(() => selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange()));
   protected readonly countLabel = computed(() => {
-    const counts = selectHealthMetricsEngagementNonMemberCounts(this.response().counts, this.chrome.selectedRange());
+    const counts = this.periodCounts();
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.

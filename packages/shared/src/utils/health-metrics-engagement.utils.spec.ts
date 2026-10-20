@@ -463,7 +463,7 @@ describe('non-member participation rules', () => {
     expect(selectHealthMetricsEngagementNonMemberPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
   });
 
-  it('ranks by the selected period, so the period pill re-sorts rather than re-reads', () => {
+  it('filters and ranks by the selected period, so the period pill re-cuts rather than re-reads', () => {
     const rows = [nonMemberRow('Acme Motors', 4), nonMemberRow('Vendor Corp', 1)];
 
     expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp', 'Acme Motors']);
@@ -471,7 +471,7 @@ describe('non-member participation rules', () => {
   });
 
   // An unranked row is not the best row — sorting it first would put a blank at the top of the table.
-  it('sorts an unranked organization last, and breaks a rank tie by name', () => {
+  it('filters and ranks an unranked organization last, breaking a rank tie by name', () => {
     const rows = [nonMemberRow('Unranked Co', null), nonMemberRow('Zeta Labs', 2), nonMemberRow('Alpha Works', 2)];
 
     expect(filterHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Alpha Works', 'Zeta Labs', 'Unranked Co']);
