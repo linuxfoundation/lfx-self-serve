@@ -899,7 +899,7 @@ describe('VotesTableComponent — participation progress', () => {
     expect(notVoted.getAttribute('role')).toBe('img');
     expect(notVoted.getAttribute('aria-label')).toBe('Not voted');
     expect(notVoted.textContent?.trim()).toBe('—');
-    expect(notVoted.classList.contains('text-gray-400')).toBe(true);
+    expect(notVoted.classList.contains('text-gray-500')).toBe(true);
     expect(notVoted.querySelector('i')).toBeNull();
   });
 
