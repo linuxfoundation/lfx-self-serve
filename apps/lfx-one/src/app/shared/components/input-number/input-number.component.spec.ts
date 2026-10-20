@@ -36,6 +36,13 @@ describe('InputNumberComponent — native bounds', () => {
     expect(input.getAttribute('max')).toBe('24');
   });
 
+  it('keeps a zero bound rather than treating it as unset', async () => {
+    const input = await render({ min: 0, max: 59 });
+
+    expect(input.getAttribute('min')).toBe('0');
+    expect(input.getAttribute('max')).toBe('59');
+  });
+
   it('leaves the input unbounded when no bounds are given', async () => {
     const input = await render();
 
