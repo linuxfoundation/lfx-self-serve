@@ -5,7 +5,14 @@ import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ButtonComponent } from '@components/button/button.component';
-import { Meeting, MeetingDetailsLoadStatus, MeetingRosterRequest, MeetingSectionVisibility, PublicMeetingProject } from '@lfx-one/shared/interfaces';
+import {
+  Meeting,
+  MeetingDetailsLoadStatus,
+  MeetingRosterRequest,
+  MeetingSectionVisibility,
+  MeetingTimeState,
+  PublicMeetingProject,
+} from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -46,6 +53,9 @@ class MaterialsStubComponent {}
 @Component({ selector: 'lfx-meeting-recording', template: '<span data-testid="recording-stub"></span>' })
 class RecordingStubComponent {}
 
+@Component({ selector: 'lfx-meeting-attendance', template: '<span data-testid="attendance-stub"></span>' })
+class AttendanceStubComponent {}
+
 @Component({ selector: 'lfx-meeting-join-details', template: '<span data-testid="join-details-stub"></span>' })
 class JoinDetailsStubComponent {}
 
@@ -54,6 +64,7 @@ describe('MeetingDetailsPageComponent', () => {
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let visibleSections: WritableSignal<Partial<MeetingSectionVisibility> | null>;
   let rosterRequest: WritableSignal<MeetingRosterRequest | null>;
+  let timeState: WritableSignal<MeetingTimeState | null>;
   let refresh: ReturnType<typeof vi.fn>;
   let retrying: WritableSignal<boolean>;
   let failureCount: WritableSignal<number>;
@@ -64,6 +75,7 @@ describe('MeetingDetailsPageComponent', () => {
     status = signal<MeetingDetailsLoadStatus>('loading');
     visibleSections = signal<Partial<MeetingSectionVisibility> | null>({ agenda: true, materials: true });
     rosterRequest = signal<MeetingRosterRequest | null>({ meetingId: 'meeting-1', occurrenceId: undefined });
+    timeState = signal<MeetingTimeState | null>('before');
     refresh = vi.fn();
     retrying = signal(false);
     failureCount = signal(1);
@@ -80,6 +92,7 @@ describe('MeetingDetailsPageComponent', () => {
             ButtonComponent,
             ActionSlotStubComponent,
             AgendaStubComponent,
+            AttendanceStubComponent,
             HeaderStubComponent,
             IdentityBarStubComponent,
             ImpersonationBannerStubComponent,
@@ -94,7 +107,7 @@ describe('MeetingDetailsPageComponent', () => {
           providers: [
             {
               provide: MeetingDetailsStateService,
-              useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections, rosterRequest },
+              useValue: { status, meeting: signal(meeting), refresh, retrying, failureCount, visibleSections, rosterRequest, timeState },
             },
           ],
         },
@@ -213,6 +226,19 @@ describe('MeetingDetailsPageComponent', () => {
     rosterRequest.set(null);
     fixture.detectChanges();
     expect(query('people-stub')).toBeNull();
+  });
+
+  // V1 parity: an ended meeting shows its attendance figures; the component itself hides with nobody to count.
+  it('renders the attendance figures only once the meeting has ended and the page is ready', () => {
+    timeState.set('ended');
+    expect(query('attendance-stub')).toBeNull();
+
+    show('ready');
+    expect(query('attendance-stub')).not.toBeNull();
+
+    timeState.set('live');
+    fixture.detectChanges();
+    expect(query('attendance-stub')).toBeNull();
   });
 
   // Placeholder testids are temporary (testid-contract.md), so this asserts on whatever skeleton

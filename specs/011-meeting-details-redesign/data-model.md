@@ -110,8 +110,8 @@ one, through the participants list; only anonymous viewers have none (FR-032).
 ## Past participants
 
 `PastMeetingParticipant` carries `is_verified`, `is_unknown`, `is_auto_matched`,
-`is_ai_reconciled`, `zoom_user_name` and `mapped_invitee_name`, all optional. Nothing renders them
-today; N-02 decides how much of each tier the public surface shows (FR-033).
+`is_ai_reconciled`, `zoom_user_name` and `mapped_invitee_name`, all optional. Nothing renders them:
+N-02 was withdrawn (FR-033), as V1 shows no tiers.
 
 ## Not in the model yet
 

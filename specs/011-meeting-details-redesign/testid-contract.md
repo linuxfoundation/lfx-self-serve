@@ -298,32 +298,29 @@ the row's contents.
 
 ## People
 
-| `data-testid`                            | Element                                                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `people-section`                         | The roster section                                                                                                       |
-| `people-section-count`                   | "{n} invited": the roster's rows (less guests just removed) plus guests just added that the index has not caught up with |
-| `people-section-add`                     | Add guest (organizers, upcoming only)                                                                                    |
-| `people-section-loading`                 | The roster's first load                                                                                                  |
-| `people-section-error`                   | The roster failed to load, with nothing to fall back on                                                                  |
-| `people-section-retry`                   | Its Try again                                                                                                            |
-| `people-section-empty`                   | Nobody invited yet (upcoming); nobody listed (past)                                                                      |
-| `people-section-indexing`                | Added guests counted but not listed yet                                                                                  |
-| `people-section-tallies`                 | The RSVP tallies (RSVP tracking on only)                                                                                 |
-| `people-section-tally-${status}`         | One tally: `accepted`, `maybe`, `declined`, `pending`                                                                    |
-| `people-section-list`                    | The rows shown on the page (the first five; past: all of them after Show all)                                            |
-| `participant-row-${uid}`                 | One participant row                                                                                                      |
-| `people-section-view-all`                | Opens the full list (upcoming: the drawer; past: Show all / Show fewer inline, `aria-expanded`)                          |
-| `people-drawer`                          | The full list's drawer (V1's guest list inside)                                                                          |
-| `people-drawer-title`                    | Its title: Meeting Members (a committee meeting) or Meeting Guests                                                       |
-| `registrant-display-email-${uid}`        | In the drawer's guest list, a guest's email, wrapped: organizers only (O-04); never on V1's surfaces                     |
-| `people-drawer-count`                    | Its "{n} guests" / "{n} members" (a loaded roster only)                                                                  |
-| `people-drawer-close`                    | Its close button                                                                                                         |
+| `data-testid`                     | Element                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `people-section`                  | The roster section                                                                                                       |
+| `people-section-count`            | "{n} invited": the roster's rows (less guests just removed) plus guests just added that the index has not caught up with |
+| `people-section-add`              | Add guest (organizers, upcoming only)                                                                                    |
+| `people-section-loading`          | The roster's first load                                                                                                  |
+| `people-section-error`            | The roster failed to load, with nothing to fall back on                                                                  |
+| `people-section-retry`            | Its Try again                                                                                                            |
+| `people-section-empty`            | Nobody invited yet                                                                                                       |
+| `people-section-indexing`         | Added guests counted but not listed yet                                                                                  |
+| `people-section-tallies`          | The RSVP tallies (RSVP tracking on only)                                                                                 |
+| `people-section-tally-${status}`  | One tally: `accepted`, `maybe`, `declined`, `pending`                                                                    |
+| `people-section-list`             | The rows shown on the page (the first five)                                                                              |
+| `participant-row-${uid}`          | One participant row                                                                                                      |
+| `people-section-view-all`         | Opens the full list                                                                                                      |
+| `people-drawer`                   | The full list's drawer (V1's guest list inside)                                                                          |
+| `people-drawer-title`             | Its title: Meeting Members (a committee meeting) or Meeting Guests                                                       |
+| `registrant-display-email-${uid}` | In the drawer's guest list, a guest's email, wrapped: organizers only (O-04); never on V1's surfaces                     |
+| `people-drawer-count`             | Its "{n} guests" / "{n} members" (a loaded roster only)                                                                  |
+| `people-drawer-close`             | Its close button                                                                                                         |
 
-Upcoming and past rows come from different data, so they carry different state attributes. An
-upcoming row is a `MeetingRegistrant`; a past row is a `PastMeetingParticipant`, which has no RSVP
-and no registrant `type`. Never put the upcoming attributes on a past row: calling
-`getRegistrantAttendanceStatus` on a participant returns `pending` for everyone, and
-`data-invitation` has nothing to read.
+The section is for upcoming and live meetings only. An ended meeting has no named roster, as in
+V1; it shows V1's attendance figures instead (§ Attendance).
 
 ### Upcoming rows: `participant-row-${uid}[data-attendance]` and `[data-invitation]`
 
@@ -347,17 +344,18 @@ filter and per-avatar badge alike. An absent attribute is therefore the correct 
 pre-2024 meeting, and a test that expects `data-attendance="none"` there is asserting UI the product
 must not render.
 
-### Past rows: `participant-row-${uid}[data-attended]` and `[data-invited]`
+## Attendance
 
-```text
-data-attended: true | false
-data-invited:  true | false
-```
+An ended meeting's figures, as V1's `attendance-summary` shows them: no names, the same source
+(`/api/past-meetings/:uid/participants`, else the past endpoint's counts) and the same gating
+(signed in, `full_access`). The section renders only when there is at least one participant.
 
-They mirror `PastMeetingParticipant.is_attended` and `.is_invited`, so a test can tell an invited
-no-show from an uninvited attendee. Both are on every past row. The identity tier (verified · needs
-review · auto-matched · AI-reconciled) gets its own attribute when N-02 decides how much of it the
-public page shows; until then it has no name here.
+| `data-testid`                 | Element                                    |
+| ----------------------------- | ------------------------------------------ |
+| `attendance-section`          | The attendance section                     |
+| `attendance-section-attended` | "{n} attended"                             |
+| `attendance-section-absent`   | "{n} absent"                               |
+| `attendance-section-rate`     | "{n}% rate", rounded, as V1's attendance % |
 
 ## Tools, join details and discovery
 
