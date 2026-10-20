@@ -1,7 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
+<div class="relative container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-document-view-page">
+  <span class="sr-only" role="status" [textContent]="savingStatus()" data-testid="mktg-document-view-saving-status"></span>
   <div class="flex flex-col gap-5 mt-3">
     <!-- Top bar: back to Documents, the document, and which revision this is -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
@@ -42,8 +43,71 @@
     } @else if (view(); as current) {
       <!-- Excluding layout gutters, hosts are about 620px at 1024 and 876px at 1280; 800px leaves classic-scrollbar headroom. -->
       <div class="grid grid-cols-1 items-start gap-6 @[800px]:grid-cols-[minmax(0,1fr)_20rem]">
-        <!-- Structured frameworks span the full page; Markdown retains its document column. -->
-        <section aria-label="Document content" class="min-w-0" [ngClass]="fullWidth() ? '@[800px]:col-span-2' : ''">
+        <!-- Structured assets span the full page; Markdown retains its document column. -->
+        <section aria-label="Document content" class="flex min-w-0 flex-col gap-3" [ngClass]="fullWidth() ? '@[800px]:col-span-2' : ''">
+          @if (current.type.kind === 'living' && !current.revision.latest) {
+            @let active = currentRevision();
+            @let viewedAuthor = viewedAuthorLabel();
+            @let viewedDate = current.revision.createdAt | date: 'd MMM';
+            @let historySummary =
+              "You're viewing v" +
+              current.revision.number +
+              (viewedDate ? ' · ' + viewedDate : '') +
+              ' · ' +
+              viewedAuthor +
+              (active ? ' · v' + active.number + ' is current' : '');
+            <!-- The tester requested 32–36px height and 13px type. Below lg, clear the layout's sticky menu (h-10 + py-3 + border = 4rem + 1px). -->
+            <!-- Offsets target the standard layout; the impersonation banner is an accepted offset exception. -->
+            <div
+              class="sticky top-[calc(4rem+1px)] lg:top-0 z-10 flex h-[34px] min-w-0 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-gray-200 bg-gray-50 px-3 text-[13px] text-gray-600"
+              role="group"
+              aria-label="Revision navigation"
+              [attr.aria-busy]="restoringId() !== null"
+              data-testid="mktg-document-view-history-bar">
+              <span
+                class="hidden min-w-0 flex-1 truncate sm:block focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+                tabindex="0"
+                role="note"
+                [textContent]="historySummary"
+                [attr.aria-label]="historySummary"
+                [pTooltip]="historySummary"
+                tooltipPosition="bottom"
+                tooltipEvent="both"
+                [escape]="true"
+                appendTo="body"
+                data-testid="mktg-document-view-history-bar-summary"></span>
+              <span
+                class="min-w-0 flex-1 sm:hidden"
+                [textContent]="'Viewing v' + current.revision.number"
+                data-testid="mktg-document-view-history-bar-mobile-summary"></span>
+              <span class="sm:hidden" aria-hidden="true">·</span>
+              <button
+                type="button"
+                class="h-full shrink-0 text-blue-700 underline hover:text-blue-900 disabled:cursor-not-allowed disabled:text-gray-400"
+                [disabled]="restoringId() !== null"
+                data-testid="mktg-document-view-history-bar-make-current"
+                (click)="onRestore(current.revision)">
+                @if (restoringId() === current.revision.id) {
+                  <span>Saving…</span>
+                } @else {
+                  <span class="hidden sm:inline" [textContent]="'Make v' + current.revision.number + ' current'"></span>
+                  <span class="sm:hidden">Make current</span>
+                }
+              </button>
+              @if (active) {
+                <span class="sm:hidden" aria-hidden="true">·</span>
+                <a
+                  class="shrink-0 text-blue-700 underline hover:text-blue-900"
+                  [routerLink]="[]"
+                  [queryParams]="{ revision: active.id }"
+                  queryParamsHandling="merge"
+                  data-testid="mktg-document-view-history-bar-back">
+                  <span class="hidden sm:inline" [textContent]="'Back to v' + active.number"></span>
+                  <span class="sm:hidden">Back</span>
+                </a>
+              }
+            </div>
+          }
           @if (asset(); as framework) {
             <lfx-mktg-framework-view
               [projectName]="projectName()"
@@ -85,8 +149,8 @@
           <!-- Revisions: open or restore any other revision -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-revisions">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Revisions</h2>
-            <ol class="flex flex-col gap-2">
-              @for (row of revisionRows(); track row.revision.id) {
+            <ol class="flex flex-col gap-2" id="mktg-document-view-revision-list">
+              @for (row of visibleRevisionRows(); track row.revision.id) {
                 <li
                   class="flex items-start justify-between gap-2 rounded-lg border px-2.5 py-2 text-sm"
                   [ngClass]="row.revision.id === current.revision.id ? 'border-blue-600 bg-blue-100' : 'border-gray-200'"
@@ -149,14 +213,15 @@
                 </li>
               }
             </ol>
-            @if (!current.revision.latest && current.type.kind === 'living') {
+            @if (showAllRevisions() || visibleRevisionRows().length < revisionRows().length) {
               <button
                 type="button"
-                class="mt-1 min-h-10 rounded-lg border border-gray-300 bg-white px-3.5 text-sm font-semibold text-gray-900 hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
-                [disabled]="restoringId() !== null"
-                data-testid="mktg-document-view-restore-current"
-                (click)="onRestore(current.revision)">
-                {{ restoringId() === current.revision.id ? 'Saving…' : 'Make revision ' + current.revision.number + ' current' }}
+                class="self-start text-sm text-blue-700 underline hover:text-blue-900"
+                aria-controls="mktg-document-view-revision-list"
+                [attr.aria-expanded]="showAllRevisions()"
+                data-testid="mktg-document-view-show-all-revisions"
+                (click)="onToggleAllRevisions()">
+                {{ showAllRevisions() ? 'Show fewer ▴' : 'Show all ' + revisionRows().length + ' ▾' }}
               </button>
             }
             <p class="text-xs text-gray-500">Make current selects the revision agents read. No revision is added or deleted.</p>

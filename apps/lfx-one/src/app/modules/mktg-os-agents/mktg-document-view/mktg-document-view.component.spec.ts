@@ -159,6 +159,33 @@ describe('MktgDocumentViewComponent', () => {
     );
   }
 
+  function mockNineRevisionHistory(currentNumber = 2): MktgDocumentDetailResponse {
+    const revisions = Array.from({ length: 9 }, (_, index) =>
+      revision(9 - index, {
+        latest: 9 - index === currentNumber,
+        author: { name: 'The writer' },
+      })
+    );
+    const current = revisions.find((entry) => entry.latest);
+    if (!current) throw new Error('Synthetic history requires a current revision');
+    const history: MktgDocumentDetailResponse = {
+      ...detail,
+      revisions,
+      current: {
+        revisionId: current.id,
+        changedAt: '2026-10-14T12:00:00.000Z',
+        changedBy: { name: 'The selector' },
+      },
+    };
+    store.getDocument.mockImplementation((project: string) => of({ ...history, project }));
+    store.getRevision.mockImplementation((project: string, _agent: string, _document: string, id: string) => {
+      const selected = revisions.find((entry) => entry.id === id);
+      if (!selected) return throwError(() => new HttpErrorResponse({ status: 404 }));
+      return of({ ...history, project, revision: selected, markdown: `# Revision ${selected.number}\n`, sidecar: null });
+    });
+    return history;
+  }
+
   beforeEach(async () => {
     store = {
       getDocument: vi.fn(() => of(detail)),
@@ -214,6 +241,7 @@ describe('MktgDocumentViewComponent', () => {
       expect(currentBadge?.classList.contains(token)).toBe(true);
     }
     expect(query('mktg-document-view-restore-current')).toBeNull();
+    expect(query('mktg-document-view-history-bar')).toBeNull();
     expect(query('mktg-document-view-current-since-2')).toBeNull();
     expect(query('mktg-document-view-back-link')?.getAttribute('href')).toMatch(/^\/documents\?/);
   });
@@ -226,6 +254,31 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getRevision).toHaveBeenCalledExactlyOnceWith('proj-1', 'brand-kit', 'living', missing);
     expect(query('mktg-document-view-error')?.textContent).toContain('This document has no such revision.');
     expect(query('mktg-document-view-document')).toBeNull();
+  });
+
+  it('can repair a missing current target from the surviving revision without inventing a date or back link', async () => {
+    const survivor = { ...OLDER, createdAt: null };
+    const current = { revisionId: `000003-${'3'.repeat(64)}`, changedAt: '2026-10-19T11:00:00.000Z', changedBy: { name: 'The selector' } };
+    const survivingDetail = { ...detail, revisions: [survivor], current };
+    store.getRevision.mockReturnValue(of({ ...survivingDetail, revision: survivor, markdown: '# Surviving revision' }));
+    store.restoreRevision.mockReturnValue(
+      of({
+        ...survivingDetail,
+        current: { ...current, revisionId: survivor.id },
+        revisions: [{ ...survivor, latest: true }],
+        revision: { ...survivor, latest: true },
+      })
+    );
+    await render(`/documents/brand-kit/living?revision=${survivor.id}`);
+    expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe("You're viewing v1 · no name (stored before names were recorded)");
+    expect(query('mktg-document-view-history-bar-back')).toBeNull();
+    query('mktg-document-view-history-bar-make-current')?.click();
+    await settle();
+    expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', survivor.id);
+    expect(query('mktg-document-view-history-bar')).toBeNull();
+    expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Current');
+    expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
   });
 
   it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps the Documents back link in its %s host', async (host) => {
@@ -269,15 +322,20 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-current-since-1')).toBeNull();
   });
 
-  it('opens the revision in ?revision= and offers to restore it', async () => {
+  it('offers the open non-current revision in a subtle bar with a link back to current', async () => {
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 
     expect(store.getDocument).not.toHaveBeenCalled();
     expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
-    expect(query('mktg-document-view-restore-current')?.textContent).toContain('Make revision 1 current');
-    expect(query('mktg-document-view-restore-current')?.classList.contains('bg-white')).toBe(true);
-    expect(query('mktg-document-view-restore-current')?.classList.contains('border')).toBe(true);
+    expect(query('mktg-document-view-restore-current')).toBeNull();
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe(
+      "You're viewing v1 · 13 Oct · no name (stored before names were recorded) · v2 is current"
+    );
+    expect(query('mktg-document-view-history-bar-make-current')?.textContent).toContain('Make v1 current');
+    expect(query('mktg-document-view-history-bar-back')?.getAttribute('href')).toBe(`/documents/brand-kit/living?revision=${LATEST.id}`);
+    const bar = query('mktg-document-view-history-bar');
+    for (const token of ['sticky', 'h-[34px]', 'text-[13px]', 'bg-gray-50']) expect(bar?.classList.contains(token)).toBe(true);
     expect(query('mktg-document-view-hash')?.classList.contains('relative')).toBe(true);
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
   });
@@ -311,6 +369,83 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-framework-view-print')?.className).toContain('lfx-framework-print-only');
     expect(query('mktg-framework-print')?.getAttribute('data-brand')).toBe('lf');
     expect(query('mktg-framework-print-version')?.textContent).toContain('Version 2');
+  });
+
+  it('makes the full truncated history summary available on keyboard focus rather than title', async () => {
+    const name = 'The writer responsible for the synthetic revision and its detailed review notes';
+    const selected = { ...OLDER, author: { name } };
+    store.getRevision.mockReturnValue(of({ ...detail, revisions: [LATEST, selected], revision: selected, markdown: '# Older' }));
+    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    const summary = query('mktg-document-view-history-bar-summary');
+    if (!summary) throw new Error('The history summary must be rendered');
+    expect(summary.getAttribute('tabindex')).toBe('0');
+    expect(summary.hasAttribute('title')).toBe(false);
+    expect(summary.getAttribute('aria-label')).toBe(`You're viewing v1 · 13 Oct · ${name} · v2 is current`);
+    summary.focus();
+    await vi.waitFor(() => expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(summary.textContent));
+    summary.blur();
+  });
+
+  it.each([
+    { author: { name: 'The writer' }, label: 'The writer' },
+    { author: { name: null }, label: 'name unavailable' },
+    { author: null, label: 'no name (stored before names were recorded)' },
+  ])('uses the row attribution policy in the history bar: %j', async ({ author, label }) => {
+    const selected = { ...OLDER, author };
+    store.getRevision.mockReturnValue(of({ ...detail, revisions: [LATEST, selected], revision: selected, markdown: '# Older' }));
+    await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toBe(`You're viewing v1 · 13 Oct · ${label} · v2 is current`);
+  });
+
+  it('never shows the history bar for a one-off run', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'run');
+    if (!type) throw new Error('The catalog must have a one-off type for this test');
+    const only = revision(1, { latest: true });
+    const documentId = `run-${'a'.repeat(24)}`;
+    store.getRevision.mockReturnValue(of({ ...detail, type, documentId, revisions: [only], revision: only, markdown: '# One run' }));
+    await render(`/documents/${type.agentKey}/${documentId}?revision=${only.id}`);
+    expect(query('mktg-document-view-history-bar')).toBeNull();
+  });
+
+  it('shows the newest five and pins older open/current revisions, with an in-place Show all 9 disclosure', async () => {
+    const history = mockNineRevisionHistory();
+    await render(`/documents/brand-kit/living?revision=${history.revisions[8].id}`);
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(7);
+    for (const number of [9, 8, 7, 6, 5, 2, 1]) expect(query(`mktg-document-view-revision-${number}`)).not.toBeNull();
+    expect(query('mktg-document-view-revision-3')).toBeNull();
+    expect(query('mktg-document-view-revision-4')).toBeNull();
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v2 is current');
+    expect(query('mktg-document-view-show-all-revisions')?.textContent).toContain('Show all 9 ▾');
+    query('mktg-document-view-show-all-revisions')?.click();
+    await settle();
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(9);
+    expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('true');
+    expect(store.getRevision).toHaveBeenCalledTimes(1);
+    query('mktg-document-view-show-all-revisions')?.click();
+    await settle();
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(7);
+  });
+
+  it('shows only five rows when both the open and current revisions are among the newest five', async () => {
+    const history = mockNineRevisionHistory(9);
+    await render(`/documents/brand-kit/living?revision=${history.revisions[2].id}`);
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(5);
+    expect(query('mktg-document-view-revision-1')).toBeNull();
+    expect(query('mktg-document-view-history-bar-summary')?.textContent).toContain('v9 is current');
+  });
+
+  it('keeps expansion while opening another revision but resets it for another project', async () => {
+    const history = mockNineRevisionHistory();
+    await render(`/documents/brand-kit/living?revision=${history.revisions[8].id}`);
+    query('mktg-document-view-show-all-revisions')?.click();
+    await settle();
+    await harness.navigateByUrl(`/documents/brand-kit/living?revision=${history.revisions[6].id}`);
+    await settle();
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(9);
+    activeContext.set({ ...PROJECT, uid: 'proj-2', name: 'OtherOrbit' });
+    await settle();
+    expect(query('mktg-document-view-revisions')?.querySelectorAll('ol > li')).toHaveLength(7);
+    expect(query('mktg-document-view-show-all-revisions')?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('says the document has no such revision on a 404', async () => {
@@ -360,13 +495,15 @@ describe('MktgDocumentViewComponent', () => {
   it('makes the open revision current without adding one', async () => {
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 
-    query('mktg-document-view-restore-current')?.click();
+    query('mktg-document-view-history-bar-make-current')?.click();
     await settle();
 
     expect(store.restoreRevision).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living', OLDER.id);
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 1 of 2');
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current. No revision was added.');
+    expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
+    expect(query('mktg-document-view-history-bar')).toBeNull();
     expect(query('mktg-document-view-current-since-1')?.textContent).toMatch(/^Current since 15 Oct 2026, \d{2}:\d{2} · The selector$/);
     expect(query('mktg-document-view-current-since-2')).toBeNull();
     await harness.navigateByUrl(`/documents/brand-kit/living?revision=${LATEST.id}`);
@@ -378,7 +515,16 @@ describe('MktgDocumentViewComponent', () => {
     const pending = new Subject<unknown>();
     store.restoreRevision.mockReturnValue(pending);
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
-    query('mktg-document-view-restore-current')?.click();
+    const status = query('mktg-document-view-saving-status');
+    expect(status?.getAttribute('role')).toBe('status');
+    expect(status?.textContent).toBe('');
+    query('mktg-document-view-history-bar-make-current')?.click();
+    await settle();
+    expect(status?.textContent).toBe('Saving revision 1…');
+    expect(status?.closest('[aria-busy]')).toBeNull();
+    expect(query('mktg-document-view-history-bar-make-current')?.textContent?.trim()).toBe('Saving…');
+    expect(query('mktg-document-view-history-bar')?.getAttribute('aria-busy')).toBe('true');
+    expect((query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null)?.disabled).toBe(true);
     expect(pending.observed).toBe(true);
     harness.fixture.destroy();
     expect(pending.observed).toBe(true);
@@ -396,12 +542,14 @@ describe('MktgDocumentViewComponent', () => {
     store.restoreRevision.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
     await render(`/documents/brand-kit/living?revision=${OLDER.id}`);
 
-    query('mktg-document-view-restore-current')?.click();
+    query('mktg-document-view-history-bar-make-current')?.click();
     await settle();
 
     expect(query('mktg-document-view-error')?.textContent).toContain('The revision could not be made current. Reload to check its state, then try again.');
     expect(TestBed.inject(Router).url).toContain(`revision=${OLDER.id}`);
-    expect((query('mktg-document-view-restore-current') as HTMLButtonElement | null)?.disabled).toBe(false);
+    expect((query('mktg-document-view-history-bar-make-current') as HTMLButtonElement | null)?.disabled).toBe(false);
+    expect(query('mktg-document-view-history-bar')?.getAttribute('aria-busy')).toBe('false');
+    expect(query('mktg-document-view-saving-status')?.textContent).toBe('');
   });
   it('renders a Brand Kit revision on the kit’s web view, full width, from its sidecar — the book for print only, not the Markdown, not the framework view', async () => {
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), sidecar: kitSidecar() }));
