@@ -602,12 +602,12 @@ export class CampaignService {
   }
 
   /**
-   * Add negative keywords to one Microsoft Advertising, Reddit or X campaign.
+   * Add negative keywords to one Google Ads, Microsoft Advertising, Reddit or X campaign.
    *
    * NOT atomic and POSITIONAL: `results[i]` answers `negativeKeywords[i]`, each with its own outcome,
    * so the caller zips them onto the list it sent. No etag: nothing is persisted on the row.
    * `revision` is Reddit's, from the keyword-targeting read; it is put in the body only when given,
-   * because Microsoft Advertising and X refuse the field whenever it is present.
+   * because Google Ads, Microsoft Advertising and X refuse the field whenever it is present.
    */
   public addNegativeKeywords(
     projectSlug: string,

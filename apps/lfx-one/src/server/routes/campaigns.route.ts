@@ -117,7 +117,7 @@ router.patch('/:campaignId/status', (req, res, next) => campaignController.updat
 router.patch('/:campaignId/budget', (req, res, next) => campaignController.updateCampaignBudget(req, res, next));
 // campaign-service only, like the budget change. Manual max CPC bid, in the ad account's own currency.
 router.patch('/:campaignId/bid', (req, res, next) => campaignController.updateCampaignBid(req, res, next));
-// campaign-service only: Microsoft Advertising, Reddit and X. Positional response: results[i] answers
+// campaign-service only: Google Ads, Microsoft Advertising, Reddit and X. Positional response: results[i] answers
 // negativeKeywords[i]. Reddit requires the keyword-targeting read's `revision`; the others refuse it.
 router.post('/:campaignId/negative-keywords', (req, res, next) => campaignController.addNegativeKeywords(req, res, next));
 // One campaign's live counters (`get-campaign-metrics`): the Optimize tab's per-row Refresh, and the

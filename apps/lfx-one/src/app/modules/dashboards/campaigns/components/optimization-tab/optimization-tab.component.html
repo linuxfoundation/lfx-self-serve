@@ -457,7 +457,7 @@
                       Keyword targeting
                     </button>
                   }
-                  <!-- Microsoft Advertising, Reddit and X rows: negative keywords. -->
+                  <!-- Google Ads, Microsoft Advertising, Reddit and X rows: negative keywords. -->
                   @if (row.negativeKeywordsOffered) {
                     <button
                       type="button"
@@ -580,6 +580,7 @@
                   [campaignId]="row.campaign.id"
                   [campaignName]="row.campaign.campaign_name"
                   [platform]="negativesPlatform"
+                  [suggestedKeywords]="suggestedNegativeKeywords()"
                   (cancelEdit)="closeNegativesEditor(row.campaign.id)" />
               }
               @if (targetingPanelOpen()[row.campaign.id] && row.keywordTargetingPlatform; as targetingPlatform) {

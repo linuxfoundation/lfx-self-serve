@@ -257,6 +257,7 @@ export type CampaignSSEEventType =
   | 'copy_done'
   | 'copy_structured'
   | 'keywords'
+  | 'negativeKeywords'
   | 'callouts'
   | 'sitelinks'
   | 'linkedin_strategy'
@@ -361,6 +362,33 @@ export interface CampaignBriefOutput {
   eventDetails: CampaignEventDetails;
   structuredCopy: Record<string, unknown> | null;
   keywords: CampaignKeyword[];
+  /**
+   * Negative keywords the brief generated from the event page, for the Optimize tab's
+   * negative-keyword editor to open pre-filled with once the campaign is live.
+   *
+   * A SUGGESTION, and a weaker claim than {@link googleCallouts}' "seed": callouts are dispatched
+   * with the campaign at CREATE time, while negatives have no create-time path at all — upstream
+   * takes them only through `add-negative-keywords`, a mutation on a campaign that already exists.
+   * So this list is never sent by anything; it fills the editor's text, the operator edits it
+   * there, and nothing leaves until they press the button.
+   *
+   * Text only, no match type. The match type is one choice for the whole request and belongs to the
+   * platform the operator is sending to — Google offers three, Microsoft two, Reddit none — so the
+   * editor picks it at send time and a brief that guessed one would be guessing for a campaign that
+   * did not exist when it was written.
+   *
+   * Absent and empty are interchangeable here, UNLIKE {@link googleCallouts}, where `[]` is a list
+   * the operator emptied and clears an editor. Both leave this editor empty and nothing is lost
+   * either way, because the operator's own text is never stored in this field — a suggestion is all
+   * it ever holds, and the consumer seeds only on a non-empty one.
+   *
+   * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
+   * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
+   * of the four platforms that take negatives, since the brief cannot know which campaign these
+   * will be sent to — and every entry has already passed `parseNegativeKeywordInput`, so the editor
+   * never opens holding a line it would refuse the operator for typing.
+   */
+  negativeKeywords?: string[];
   hsUtm: string | null;
   totalBudget: number | null;
   driveFolderUrl: string;
@@ -3940,7 +3968,7 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
+  /** Whether the row shows the negative-keyword control at all: Google Ads, Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
@@ -4075,13 +4103,14 @@ export interface CampaignNegativeKeywordsSubmission {
   matchType: CampaignNegativeKeywordMatchType;
   /**
    * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
-   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   * Reddit campaign: Google Ads, Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
    */
   revision?: string;
 }
 
 /** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
-export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+export type NegativeKeywordCampaignPlatform = 'google-ads' | 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
 
 /** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
 export interface CampaignNegativeKeywordPlatformRules {
@@ -4093,6 +4122,13 @@ export interface CampaignNegativeKeywordPlatformRules {
   defaultMatchType: CampaignNegativeKeywordMatchType;
   /** Most keywords one request may carry on this platform. */
   maxKeywords: number;
+  /**
+   * Longest a keyword's text may be on this platform, in characters (code points). Google Ads'
+   * limit is shorter than the shared one the BFF enforces, and the BFF cannot apply it: the add
+   * route is addressed by campaign id alone and never learns the campaign's platform. So this is
+   * the editor's own cap, exactly as `maxKeywords` is for X's 20.
+   */
+  maxTextLength: number;
   /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
   requiresRevision: boolean;
   /** Where the negatives land, for the field hint. */
@@ -4770,7 +4806,7 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Google Ads, Reddit and X. */
   errorCode?: string;
 }
 
