@@ -1001,6 +1001,78 @@ describe('ProjectController permissions meetingCoordinator handling', () => {
     expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });
+
+  describe('addUserToProjectPermissions', () => {
+    const buildAddReqRes = (body: unknown) => {
+      const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', body);
+      return { req, res, next };
+    };
+
+    it('forwards meetingCoordinator true to the service', async () => {
+      const controller = new ProjectController();
+      projectSvc.updateProjectPermissions.mockResolvedValue({});
+      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', role: 'view', meetingCoordinator: true });
+
+      await controller.addUserToProjectPermissions(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(
+        req,
+        PROJECT_UID,
+        'add',
+        'blair.chen@vendor-corp.example',
+        'view',
+        undefined,
+        undefined,
+        true
+      );
+    });
+
+    it('passes false when the flag is omitted', async () => {
+      const controller = new ProjectController();
+      projectSvc.updateProjectPermissions.mockResolvedValue({});
+      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', role: 'view' });
+
+      await controller.addUserToProjectPermissions(req, res, next);
+
+      expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(
+        req,
+        PROJECT_UID,
+        'add',
+        'blair.chen@vendor-corp.example',
+        'view',
+        undefined,
+        undefined,
+        false
+      );
+    });
+
+    it("accepts role 'none' for a coordinator", async () => {
+      const controller = new ProjectController();
+      projectSvc.updateProjectPermissions.mockResolvedValue({});
+      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', role: 'none', meetingCoordinator: true });
+
+      await controller.addUserToProjectPermissions(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(projectSvc.updateProjectPermissions).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['none without meetingCoordinator', { role: 'none' }],
+      ['none with meetingCoordinator false', { role: 'none', meetingCoordinator: false }],
+      ['a non-boolean meetingCoordinator', { role: 'view', meetingCoordinator: 'yes' }],
+      ['an unknown role', { role: 'owner' }],
+    ])('rejects %s without calling the service', async (_label, extra) => {
+      const controller = new ProjectController();
+      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', ...extra });
+
+      await controller.addUserToProjectPermissions(req, res, next);
+
+      expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 // GH-3276: `duplicateIdentifiers` on the PUT/DELETE body must reach the service call

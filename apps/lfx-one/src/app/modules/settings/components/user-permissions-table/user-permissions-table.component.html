@@ -86,6 +86,7 @@
                         ? 'Meeting coordinator. Already covered by Manage; kept so it remains if the role is reduced'
                         : 'Meeting coordinator'
                     "
+                    tooltipEvent="both"
                     [pTooltip]="user.role === 'manage' ? 'Already covered by Manage; kept so it remains if the role is reduced' : ''"
                     data-testid="meeting-coordinator-chip">
                     Meeting coordinator
