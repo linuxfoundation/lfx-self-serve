@@ -66,6 +66,22 @@ describe('ImpersonationService.exchangeToken', () => {
     }
   });
 
+  it('sends the explicit subject token instead of req.bearerToken', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, data: { access_token: 'target-token' } }) });
+
+    await service.exchangeToken(req, 'jdoe', 'real-token');
+
+    expect(JSON.parse(natsRequest.mock.calls[0][1])).toEqual({ subject_token: 'real-token', target_user: 'jdoe' });
+  });
+
+  it('defaults the subject token to req.bearerToken', async () => {
+    natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, data: { access_token: 'target-token' } }) });
+
+    await service.exchangeToken(req, 'jdoe');
+
+    expect(JSON.parse(natsRequest.mock.calls[0][1])).toEqual({ subject_token: 'subject-token', target_user: 'jdoe' });
+  });
+
   it('maps a NATS transport failure to CTE_NATS_ERROR 502', async () => {
     natsRequest.mockRejectedValue(new Error('TIMEOUT'));
 

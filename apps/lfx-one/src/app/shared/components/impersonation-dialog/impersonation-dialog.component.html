@@ -6,11 +6,13 @@
     <div class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80" aria-busy="true">
       <div class="flex items-center gap-2 text-sm text-gray-600" role="status" aria-live="polite">
         <i class="fa-light fa-spinner-third fa-spin"></i>
-        <span>Starting impersonation...</span>
+        <span>{{ switching ? 'Switching user...' : 'Starting impersonation...' }}</span>
       </div>
     </div>
   }
-  <p class="text-sm text-gray-600">Enter the email or username of the user you want to view the app as.</p>
+  <p class="text-sm text-gray-600">
+    {{ switching ? 'Enter the email or username of the user you want to switch to.' : 'Enter the email or username of the user you want to view the app as.' }}
+  </p>
   <div class="flex flex-col gap-1" (keydown.enter)="submit()">
     <label for="targetUser" class="text-sm font-medium text-gray-700">Email or Username</label>
     @if (recentImpersonations().length > 0) {
@@ -85,7 +87,7 @@
       data-testid="impersonation-cancel-button" />
     <lfx-button
       size="small"
-      label="Start Impersonation"
+      [label]="switching ? 'Switch User' : 'Start Impersonation'"
       [loading]="loading()"
       [disabled]="targetUserForm.controls.targetUser.invalid || loading()"
       (onClick)="submit()"

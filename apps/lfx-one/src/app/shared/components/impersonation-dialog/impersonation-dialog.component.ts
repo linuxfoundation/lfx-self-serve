@@ -12,7 +12,7 @@ import { PersonaType, RecentImpersonation } from '@lfx-one/shared/interfaces';
 import { resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
 @Component({
@@ -23,6 +23,10 @@ import { take } from 'rxjs';
 export class ImpersonationDialogComponent {
   private readonly impersonationService = inject(ImpersonationService);
   private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly dialogConfig = inject(DynamicDialogConfig, { optional: true });
+
+  // True when opened from the impersonation banner to swap the active target rather than start a session.
+  protected readonly switching = Boolean(this.dialogConfig?.data?.['switching']);
 
   protected targetUserForm = new FormGroup({
     targetUser: new FormControl('', { nonNullable: true, validators: [Validators.required] }),

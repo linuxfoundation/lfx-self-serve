@@ -5,10 +5,10 @@ import { VALID_PERSONAS } from '@lfx-one/shared/constants';
 import { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { ImpersonationService } from '../services/impersonation.service';
-import { decodeJwtPayload } from '../utils/auth-helper';
+import { decodeJwtPayload, resolveRealAccessToken } from '../utils/auth-helper';
 
 export class ImpersonationController {
   private readonly impersonationService: ImpersonationService = new ImpersonationService();
@@ -19,16 +19,6 @@ export class ImpersonationController {
     });
 
     try {
-      if (req.appSession?.['impersonationToken']) {
-        next(
-          new MicroserviceError('Already impersonating a user. Stop the current session first.', 409, 'ALREADY_IMPERSONATING', {
-            operation: 'start_impersonation',
-            service: 'impersonation',
-          })
-        );
-        return;
-      }
-
       const targetUser = req.body?.targetUser;
       if (!targetUser || typeof targetUser !== 'string' || targetUser.trim() === '') {
         next(
@@ -59,7 +49,18 @@ export class ImpersonationController {
         return;
       }
 
-      const tokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim());
+      // Switching users mid-impersonation: req.bearerToken is the current target's token here, so the exchange
+      // must be seeded with the impersonator's own token (resolveRealAccessToken returns req.bearerToken when
+      // not impersonating) and fail closed rather than chain one target's token into another.
+      const subjectToken = await resolveRealAccessToken(req);
+      if (!subjectToken) {
+        next(
+          new AuthorizationError('Unable to resolve your session token to impersonate users', { operation: 'start_impersonation', service: 'impersonation' })
+        );
+        return;
+      }
+
+      const tokenResponse = await this.impersonationService.exchangeToken(req, targetUser.trim(), subjectToken);
       const targetClaims = decodeJwtPayload(tokenResponse.access_token);
 
       if (!targetClaims) {

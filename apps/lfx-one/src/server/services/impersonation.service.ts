@@ -27,12 +27,12 @@ export class ImpersonationService {
     this.natsService = new NatsService();
   }
 
-  public async exchangeToken(req: Request, targetUser: string): Promise<M2MTokenResponse> {
+  public async exchangeToken(req: Request, targetUser: string, subjectToken: string = req.bearerToken || ''): Promise<M2MTokenResponse> {
     logger.debug(req, 'cte_token_exchange', 'Starting CTE token exchange via NATS', { target_user: targetUser });
 
     const codec = this.natsService.getCodec();
     const payload = JSON.stringify({
-      subject_token: req.bearerToken || '',
+      subject_token: subjectToken,
       target_user: targetUser,
     });
 

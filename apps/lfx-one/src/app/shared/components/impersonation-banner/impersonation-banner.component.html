@@ -14,6 +14,13 @@
     >
     <span class="text-black/60">— by {{ userService.impersonator()?.name }}</span>
     <lfx-button
+      label="Switch User"
+      severity="secondary"
+      size="small"
+      [disabled]="stoppingImpersonation()"
+      (onClick)="openSwitchDialog()"
+      data-testid="switch-impersonation-button" />
+    <lfx-button
       label="Stop Impersonating"
       severity="contrast"
       size="small"
