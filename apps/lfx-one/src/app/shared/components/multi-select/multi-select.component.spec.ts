@@ -15,11 +15,11 @@ describe('MultiSelectComponent — placeholderOnly', () => {
 
   afterEach(() => fixture?.destroy());
 
-  const render = async (placeholderOnly?: boolean): Promise<MultiSelect> => {
+  const render = async (placeholderOnly?: boolean, picks: string[] = ['a']): Promise<MultiSelect> => {
     await TestBed.configureTestingModule({ imports: [MultiSelectComponent], providers: [provideNoopAnimations()] }).compileComponents();
 
     fixture = TestBed.createComponent(MultiSelectComponent);
-    fixture.componentRef.setInput('form', new FormGroup({ picks: new FormControl<string[]>(['a']) }));
+    fixture.componentRef.setInput('form', new FormGroup({ picks: new FormControl<string[]>(picks) }));
     fixture.componentRef.setInput('control', 'picks');
     fixture.componentRef.setInput('options', [
       { label: 'Alpha', value: 'a' },
@@ -47,5 +47,12 @@ describe('MultiSelectComponent — placeholderOnly', () => {
     expect(multiSelect.selectedItemsTemplate).toBeTruthy();
     expect(fixture.nativeElement.textContent).toContain('Select group(s)');
     expect(fixture.nativeElement.textContent).not.toContain('Alpha');
+  });
+
+  it('shows the placeholder exactly once when opted in with nothing selected', async () => {
+    await render(true, []);
+
+    const text: string = fixture.nativeElement.querySelector('.p-multiselect-label').textContent;
+    expect(text.match(/Select group\(s\)/g)).toHaveLength(1);
   });
 });

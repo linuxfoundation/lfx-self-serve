@@ -29,10 +29,13 @@
     (onPanelShow)="onPanelShow()"
     class="w-full">
     <!-- placeholderOnly: the trigger never lists the selection, it stays a "pick more" box; the consumer
-         renders what is selected elsewhere (e.g. as removable chips below the field) -->
+         renders what is selected elsewhere (e.g. as removable chips below the field). With nothing picked,
+         PrimeNG appends its own placeholder after this template, so it is only rendered here over a selection. -->
     @if (placeholderOnly()) {
-      <ng-template #selecteditems>
-        <span class="text-gray-400">{{ placeholder() }}</span>
+      <ng-template #selecteditems let-selected>
+        @if (selected?.length) {
+          <span class="text-gray-400">{{ placeholder() }}</span>
+        }
       </ng-template>
     }
     @if (panelStatus(); as status) {
