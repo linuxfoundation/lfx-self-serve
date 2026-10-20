@@ -65,11 +65,37 @@ describe('SearchService (server)', () => {
 
     await service.searchUsers(req, { name: 'kim', type: 'committee_member', sort: 'best_match' });
 
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      name: 'kim',
-      sort: 'best_match',
-      type: 'committee_member',
-    });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      {
+        name: 'kim',
+        sort: 'best_match',
+        type: 'committee_member',
+      },
+      undefined,
+      undefined,
+      undefined
+    );
+  });
+
+  it('forwards a per-request bearer token override to the query service', async () => {
+    proxyRequest.mockResolvedValue(upstream([]));
+
+    await service.searchUsers(req, { name: 'kim', type: 'committee_member', sort: 'best_match' }, { bearerToken: 'real-admin-token' });
+
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      { name: 'kim', sort: 'best_match', type: 'committee_member' },
+      undefined,
+      undefined,
+      { bearerToken: 'real-admin-token' }
+    );
   });
 
   it('forwards an exact email tag lookup without a sort', async () => {
@@ -77,10 +103,19 @@ describe('SearchService (server)', () => {
 
     await service.searchUsers(req, { tags: 'email:kim.park@partner-corp.example', type: 'committee_member' });
 
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      tags: 'email:kim.park@partner-corp.example',
-      type: 'committee_member',
-    });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      {
+        tags: 'email:kim.park@partner-corp.example',
+        type: 'committee_member',
+      },
+      undefined,
+      undefined,
+      undefined
+    );
   });
 
   it('maps committee members without committee attribution and collapses repeated memberships of the same person', async () => {
@@ -147,11 +182,20 @@ describe('SearchService (server)', () => {
 
     const response = await service.searchUsers(req, { name: 'rosa', type: 'v1_meeting_registrant', sort: 'best_match' });
 
-    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      name: 'rosa',
-      sort: 'best_match',
-      type: 'v1_meeting_registrant',
-    });
+    expect(proxyRequest).toHaveBeenCalledWith(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      {
+        name: 'rosa',
+        sort: 'best_match',
+        type: 'v1_meeting_registrant',
+      },
+      undefined,
+      undefined,
+      undefined
+    );
     expect(response.results[0]).toEqual({
       uid: 'registrant:1',
       email: 'rosa.diaz@vendor-corp.example',
