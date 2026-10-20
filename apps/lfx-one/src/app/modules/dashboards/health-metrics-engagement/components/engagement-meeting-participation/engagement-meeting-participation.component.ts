@@ -59,7 +59,7 @@ export class EngagementMeetingParticipationComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** The hero's cross-links; the L2 shell owns scrolling so both sections stay in one pane. */
+  /** The hero's cross-links; the L2 shell owns scrolling, so both land the same way. */
   public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
