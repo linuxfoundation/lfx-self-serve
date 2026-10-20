@@ -1,10 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from './health-metrics-overview.constants';
+
 import type {
   HealthMetricsEventsAtAGlance,
   HealthMetricsEventsForecast,
   HealthMetricsEventsForecastCurve,
+  HealthMetricsEventsForecastVerdictTone,
+  HealthMetricsEventsForecastVerdictToneStyle,
   HealthMetricsEventsGeography,
   HealthMetricsEventsOrganizations,
   HealthMetricsEventsOrganizationsSegmentOption,
@@ -31,11 +35,8 @@ export const HEALTH_METRICS_EVENTS_SECTIONS = [
     heading: 'Registration forecast',
     description:
       'The most decision-sensitive view in Events: where registrations will land, while there is still time to act. Plotted against days to event so a small meetup and KubeCon can be read the same way.',
-    footnote: [
-      { text: 'The forecast is a projection from historical pacing curves, not a promise — the band is the confidence range. An event with ' },
-      { text: 'no last-year curve', bold: true },
-      { text: ' is projected from comparable events, which is why its range is wider.' },
-    ],
+    // The section renders its own footnote, so it shows only beside a forecast and never under an empty state.
+    footnote: [],
     footnoteCaution: false,
   },
   {
@@ -157,6 +158,47 @@ export const HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO = 3;
 /** Goal and forecast this far apart, either way, is a data-entry problem: the chip is withheld. */
 export const HEALTH_METRICS_EVENTS_FORECAST_WITHHELD_GOAL_RATIO = 10;
 
+/** Forecast footnote, in the design's words; shown only while there are upcoming events to forecast. */
+export const HEALTH_METRICS_EVENTS_FORECAST_FOOTNOTE: readonly HealthMetricsFootnotePart[] = [
+  { text: 'The forecast is a projection from historical pacing curves, not a promise — the band is the confidence range. An event with ' },
+  { text: 'no last-year curve', bold: true },
+  { text: ' is projected from comparable events, which is why its range is wider.' },
+];
+
+/** The verdict banner per tone, with the Overview's urgency icons; `none` is the design's untinted grey Summary. */
+export const HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES: Readonly<
+  Record<HealthMetricsEventsForecastVerdictTone, HealthMetricsEventsForecastVerdictToneStyle>
+> = {
+  ok: {
+    label: 'Healthy',
+    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok.icon,
+    accentClass: 'border-l-emerald-500',
+    textClass: 'text-emerald-600',
+    tintClass: 'bg-emerald-50/50',
+  },
+  watch: {
+    label: 'Needs attention',
+    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.watch.icon,
+    accentClass: 'border-l-amber-500',
+    textClass: 'text-amber-600',
+    tintClass: 'bg-amber-50/50',
+  },
+  act: {
+    label: 'Needs action',
+    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.act.icon,
+    accentClass: 'border-l-red-500',
+    textClass: 'text-red-600',
+    tintClass: 'bg-red-50/50',
+  },
+  none: {
+    label: 'Summary',
+    icon: HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none.icon,
+    accentClass: 'border-l-gray-400',
+    textClass: 'text-gray-500',
+    tintClass: '',
+  },
+};
+
 /** Event pills truncate past this many characters. */
 export const HEALTH_METRICS_EVENTS_FORECAST_PILL_NAME_MAX = 34;
 
@@ -199,7 +241,7 @@ export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_COMPARED_RANGES: readonly HealthM
 /** Read-failed / no-foundation value: no periods, and `hasEvents` stays true so a failure never reads as "No events yet". */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_UNMEASURED: HealthMetricsEventsAtAGlance = { periods: [], upcomingEvents: null, hasEvents: true };
 
-/** A year-over-year fall steeper than this flags the Attendees and Speakers tiles. */
+/** A year-over-year fall in speakers steeper than this sets the sub-nav note. */
 export const HEALTH_METRICS_EVENTS_AT_A_GLANCE_WARN_CHANGE = -0.3;
 
 /** At-a-glance footnote, in the design's words. */
@@ -251,12 +293,6 @@ export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_NOTE =
 
 /** Screen-reader text for the * marker on a figure that leaves out unconverted revenue. */
 export const HEALTH_METRICS_EVENTS_REVENUE_UNCONVERTED_SCREEN_READER_TEXT = '(leaves out local-currency amounts not yet converted to USD)';
-
-/** Attainment chips for a past event against its combined goal; read off the past-events chips so the two can't drift. */
-export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES = {
-  met: { label: HEALTH_METRICS_EVENTS_PAST_STATUSES.hit.label, badgeClass: HEALTH_METRICS_EVENTS_PAST_STATUSES.hit.badgeClass },
-  missed: { label: HEALTH_METRICS_EVENTS_PAST_STATUSES.missed.label, badgeClass: HEALTH_METRICS_EVENTS_PAST_STATUSES.missed.badgeClass },
-} as const;
 
 /** Stands in for a goal set in a currency with no USD rate, so it never reads as no goal. */
 export const HEALTH_METRICS_EVENTS_REVENUE_GOAL_WITHHELD = 'goal not in USD';
@@ -313,14 +349,14 @@ export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MAX_SEARCH_LENGTH = 100;
 
 export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_SEARCH_DEBOUNCE_MS = 200;
 
-/** Membership pills. */
+/** Membership as the design's text status: a filled dot for a member, a hollow one otherwise. */
 export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP = {
-  member: { label: 'Member', badgeClass: 'bg-emerald-50 text-emerald-700' },
-  nonMember: { label: 'Non-member', badgeClass: 'bg-gray-100 text-gray-600' },
+  member: { label: 'Member', glyph: '●', textClass: 'text-emerald-600' },
+  nonMember: { label: 'Non-member', glyph: '○', textClass: 'text-gray-400' },
 } as const;
 
 /** Fill for the registrations mini bar. */
-export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS = 'bg-blue-500';
+export const HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS = 'bg-blue-300';
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_UNMEASURED: HealthMetricsEventsSponsorship = { periods: [] };
@@ -332,10 +368,10 @@ export const HEALTH_METRICS_EVENTS_SPONSORSHIP_PROGRESS_RANGES: readonly HealthM
 export const HEALTH_METRICS_EVENTS_SPONSORSHIP_GOAL_NOT_SET = 'not set';
 
 /** Fill for the progress-to-goal bar. */
-export const HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS = 'bg-blue-600';
+export const HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS = 'bg-blue-500';
 
 /** Read-failed / no-foundation value: no periods, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_UNMEASURED: HealthMetricsEventsGeography = { periods: [] };
 
-/** Countries ranked in the list; the rest collapse into a `+N more` line. */
+/** Countries ranked in the list. */
 export const HEALTH_METRICS_EVENTS_GEOGRAPHY_TOP_COUNTRIES = 5;

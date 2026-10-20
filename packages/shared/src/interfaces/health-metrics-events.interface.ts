@@ -4,7 +4,6 @@
 import type {
   HEALTH_METRICS_EVENTS_FORECAST_STATUSES,
   HEALTH_METRICS_EVENTS_PAST_STATUSES,
-  HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES,
   HEALTH_METRICS_EVENTS_SECTIONS,
   HEALTH_METRICS_EVENTS_SPEAKERS_STATUS_GROUPS,
 } from '../constants/health-metrics-events.constants';
@@ -85,10 +84,23 @@ export interface HealthMetricsEventsForecastCurve {
   formats: HealthMetricsEventsForecastCurveSeries[];
 }
 
+/** The forecast banner's tone; `none` reads as a neutral summary. */
+export type HealthMetricsEventsForecastVerdictTone = 'none' | 'ok' | 'watch' | 'act';
+
+/** How the forecast banner draws one tone: tag label and icon, left accent, tag colour and tint. */
+export interface HealthMetricsEventsForecastVerdictToneStyle {
+  label: string;
+  icon: string;
+  accentClass: string;
+  textClass: string;
+  /** Empty for the untinted summary. */
+  tintClass: string;
+}
+
 /** The forecast callout: its case plus the figures its copy quotes. */
 export interface HealthMetricsEventsForecastVerdict {
   kind: HealthMetricsEventsForecastVerdictKind;
-  tone: 'none' | 'ok' | 'watch' | 'act';
+  tone: HealthMetricsEventsForecastVerdictTone;
   forecast: number | null;
   goal: number | null;
   /** Registrations over (on track) or under (short) the goal. */
@@ -237,8 +249,6 @@ export interface HealthMetricsEventsAtAGlanceStatView extends HealthMetricsEvent
   key: string;
   label: string;
   value: string;
-  /** A fall steep enough to flag on the tile. */
-  warn: boolean;
 }
 
 /** The section for one period, with every label ready to render. */
@@ -283,7 +293,7 @@ export interface HealthMetricsEventsRegistrationsGrowthMetricOption extends Filt
   id: HealthMetricsEventsRegistrationsGrowthMetric;
 }
 
-/** One year of the chart and table; a gap year between the first and last reads as no events recorded. */
+/** One year of the chart and table; a gap year between the first and last is dashed, never zeroed. */
 export interface HealthMetricsEventsRegistrationsGrowthRowView {
   year: number;
   /** `false` for a gap year, which the table dashes and the chart leaves empty rather than zeroed. */
@@ -307,10 +317,6 @@ export interface HealthMetricsEventsRegistrationsGrowthView {
   /** The pandemic callout, set only when a pandemic year was mostly virtual for the metric. */
   pandemicNote: string | null;
 }
-
-/** A past event's attainment against its combined revenue goal. */
-export type HealthMetricsEventsRevenueGoalStatus =
-  (typeof HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES)[keyof typeof HEALTH_METRICS_EVENTS_REVENUE_GOAL_STATUSES];
 
 /** Foundation scope for event revenue; every period ships in one read, so the range stays client-side. */
 export interface HealthMetricsEventsRevenueQuery {
@@ -355,7 +361,7 @@ export interface HealthMetricsEventsRevenueEvent {
   /** A set goal in a currency with no USD rate, so it cannot sit against a USD figure. */
   registrationGoalWithheld: boolean;
   sponsorshipGoalWithheld: boolean;
-  /** The model's flag; an upcoming event falls in no period, and the current-year table lists it apart. */
+  /** The model's flag; an upcoming event falls in no period, so only the current-year table lists it, ahead of past events. */
   isPastEvent: boolean;
   /** Whether a past event met its combined goal; `null` when upcoming, with no goal, or with the goal withheld. */
   goalMet: boolean | null;
@@ -381,8 +387,6 @@ export interface HealthMetricsEventsRevenueRowView {
   registrationGoalLabel: string;
   sponsorshipLabel: string;
   sponsorshipGoalLabel: string;
-  /** Attainment chip for a past event with a goal; `null` otherwise, and always for an upcoming one. */
-  goalStatus: HealthMetricsEventsRevenueGoalStatus | null;
 }
 
 /** The section for one period, with every label ready to render. */
@@ -393,9 +397,8 @@ export interface HealthMetricsEventsRevenueView {
   measured: boolean;
   headline: HealthMetricsEventsAtAGlanceStatView;
   side: HealthMetricsEventsAtAGlanceStatView[];
+  /** Upcoming events soonest first (current-year view only, as they fall in no period), then the period's past events latest first. */
   rows: HealthMetricsEventsRevenueRowView[];
-  /** Events still to come, listed apart on the current-year view only, since they fall in no period yet. */
-  upcomingRows: HealthMetricsEventsRevenueRowView[];
   /** `false` when the foundation has totals but no per-event figures, so an empty list is not read as no events. */
   eventsMeasured: boolean;
   /** Whether the headline or any listed event is short for unconverted revenue, so the footer note shows. */
@@ -593,8 +596,9 @@ export interface HealthMetricsEventsOrganizations {
 export interface HealthMetricsEventsOrganizationRowView {
   accountId: string;
   accountName: string;
-  logoUrl: string;
   memberLabel: string;
+  /** `●` for a member, `○` otherwise; decorative, since the label says it. */
+  memberGlyph: string;
   memberClass: string;
   registrationsLabel: string;
   /** 0–100. */
@@ -696,7 +700,7 @@ export interface HealthMetricsEventsGeographyPeriod {
   changes: { countries: number | null } | null;
   /** The countries with the most registrations in the period, most first. */
   topCountries: HealthMetricsEventsGeographyCountry[];
-  /** Countries with a registration in the period, so the section can say how many the top list leaves out. */
+  /** Countries with a registration in the period, the top list included. */
   rankedCountries: number;
 }
 
@@ -717,6 +721,4 @@ export interface HealthMetricsEventsGeographyView {
   countriesLabel: string;
   headline: HealthMetricsEventsAtAGlanceStatView;
   topCountries: HealthMetricsEventsRankedRowView[];
-  /** e.g. `+37 more`; empty when the list shows every country. */
-  moreLabel: string;
 }

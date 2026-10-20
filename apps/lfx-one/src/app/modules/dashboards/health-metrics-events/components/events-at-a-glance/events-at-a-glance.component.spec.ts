@@ -88,12 +88,20 @@ describe('EventsAtAGlanceComponent', () => {
     expect(text('events-at-a-glance-side-show-up-rate-delta')).toBe('+2.2 pp');
   });
 
-  it('flags a steep fall in attendees and compares against the same point last year', async () => {
+  it('compares against the same point last year, with no warning icon on a steep fall', async () => {
     await render();
 
-    expect(query('events-at-a-glance-tile-attendees-warn')).not.toBeNull();
-    expect(query('events-at-a-glance-tile-speakers-warn')).toBeNull();
+    expect(text('events-at-a-glance-tile-attendees-delta')).toBe('−35%');
+    expect(query('events-at-a-glance-tile-attendees')?.querySelector('.fa-triangle-exclamation')).toBeNull();
     expect(text('events-at-a-glance-baseline')).toBe('all against the same point last year');
+  });
+
+  it('shows Events as past plus upcoming, with no year-over-year delta', async () => {
+    await render();
+
+    expect(query('events-at-a-glance-side-events')?.querySelector('dt')?.textContent?.trim()).toBe('Events');
+    expect(text('events-at-a-glance-side-events-value')).toBe('9');
+    expect(query('events-at-a-glance-side-events-delta')).toBeNull();
   });
 
   it('draws the hero and the metric tiles unboxed, each tile labelled above its value', async () => {

@@ -49,7 +49,10 @@
     </div>
 
     <div class="flex flex-col gap-2" data-testid="events-past-events-results">
-      <h4 class="text-sm font-medium text-gray-900">Every past event &middot; final vs goal</h4>
+      <div class="flex items-baseline gap-2">
+        <h4 class="text-sm font-medium text-gray-900">Every past event &middot; final vs goal</h4>
+        <span class="text-xs text-gray-500" data-testid="events-past-events-order">most recent first</span>
+      </div>
       <lfx-table [rowHover]="false" [value]="view().rows" data-testid="events-past-events-table">
         <ng-template #header>
           <tr>
@@ -102,10 +105,11 @@
     </div>
 
     <lfx-health-metrics-footnote data-testid="events-past-events-footnote">
-      A closed event's figures are its final result, not a projection.
+      Closed events stay separate from the forecast — a forecast is a projection with time left to act on it, a past event is a result.
       <button type="button" class="text-blue-600 hover:underline" (click)="onViewForecast()" data-testid="events-past-events-forecast-link">
-        See upcoming events in the registration forecast
+        See the registration forecast &rarr;
       </button>
+      for what is still open.
     </lfx-health-metrics-footnote>
   }
 </div>
