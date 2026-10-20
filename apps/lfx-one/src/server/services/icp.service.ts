@@ -8,6 +8,7 @@ import {
   buildIcpObjectKey,
   extractIcpEnvelopeCandidates,
   extractMktgToolResults,
+  getMktgSessionOutcome,
   renderIcpFormText,
   validateIcpEnvelope,
 } from '@lfx-one/shared/utils';
@@ -121,7 +122,8 @@ export class IcpService {
   /**
    * Fetch the session's current result: `pending` until a valid envelope
    * appears in the event stream, then `ready` with the validated document and
-   * (when the object-store write succeeds) its persistence receipt.
+   * (when the object-store write succeeds) its persistence receipt. A finished
+   * runtime with no valid envelope returns `failed` with its plain-text reply.
    *
    * `projectUid` is the LFX project the run is scoped to — it decides the
    * storage partition and is entitlement-checked before anything is written
@@ -134,7 +136,8 @@ export class IcpService {
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
     if (!envelope) {
-      return { status: 'pending' };
+      const outcome = getMktgSessionOutcome(payloads);
+      return outcome.ended ? { status: 'failed', failureText: outcome.replyText } : { status: 'pending' };
     }
 
     logger.info(req, 'icp_result', 'ICP document ready', {

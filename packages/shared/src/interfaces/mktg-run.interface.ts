@@ -17,6 +17,7 @@ import type { BrandKitRevision } from './brand-kit.interface';
 import type { FaqChecks, FaqContent, FaqMode, FaqReport } from './faq.interface';
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
+import type { MktgDocumentPersistLocation } from './mktg-document-store.interface';
 
 /**
  * How a single intake field is rendered on the run page: one line, several
@@ -769,6 +770,8 @@ export interface MktgRunQuestionChip {
  * needs no normalization layer — do not camelCase them.
  */
 export interface MktgRunPersistReceipt {
+  /** Exact revision recorded by this result; absent on legacy artifact-only receipts. */
+  document_location?: MktgDocumentPersistLocation;
   /** Content-addressed object key the document was written to, e.g. `brand-kit/{project}/{content_sha256}.md`. */
   s3_key: string;
   /** Validated + recomputed document SHA-256. */
@@ -791,19 +794,24 @@ export interface MktgRunPersistReceipt {
 }
 
 /**
- * Response of an agent's `result` endpoint: `pending` until the session emits
- * a schema-valid, integrity-checked envelope, then `ready` with the validated
- * document — or `questions` while the session holds a questions block the
- * agent wrote and no envelope yet: the latest block, reported on every poll
- * until a newer one or the envelope appears (`questionsId` tells an
- * already-answered block from a new one) — or `refused` when the agent
- * ended the session with a refusal reply instead of running (the Brand
- * Kit without a messaging framework): the session is over, and the reply
- * is the run's outcome.
+ * Response of an agent's `result` endpoint for the latest queued turn only:
+ * `pending` until its schema-valid, integrity-checked envelope, then `ready`
+ * with the validated document — or `questions` for its latest unanswered
+ * block (`questionsId` distinguishes an already-answered block from a new one).
+ * A later real reply after runtime end ends that pause as `failed`.
+ * `refused` preserves a current-turn refusal instead of running (for example,
+ * the Brand Kit without a messaging framework); its reply is the outcome.
+ * `failed` also means an idle runtime ended without a valid envelope or an
+ * outstanding questions pause. Its `failureText` is
+ * the final plain-text reply (possibly empty), not a rendered document.
+ * `refused` preserves an agent's explicit refusal contract in `reply`;
+ * both end generation, but only `ready` can carry a persisted asset.
  */
 export interface MktgRunResultResponse {
   /** Generation state. */
-  status: 'pending' | 'ready' | 'questions' | 'refused';
+  status: 'pending' | 'ready' | 'questions' | 'refused' | 'failed';
+  /** Final agent reply when its runtime ended without a valid asset; plain text only. */
+  failureText?: string;
   /** The agent's questions, present when `questions`. */
   questions?: MktgRunQuestion[];
   /** The agent's refusal reply, as the requester reads it. Present when `refused`. */

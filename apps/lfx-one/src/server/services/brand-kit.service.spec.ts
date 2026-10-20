@@ -475,6 +475,24 @@ describe('BrandKitService.getResult', () => {
     service = new BrandKitService();
   });
 
+  it('fails an idle runtime without a kit, but keeps an unanswered question and ignores its replay after the answers turn', async () => {
+    const ended = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-kit-task', entity_type: 'EntTaskAgent' } });
+    const questions = questionsPayload([VOICE_QUESTION]);
+    guildMocks.getRawEventPayloads.mockResolvedValue([questions, ended]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+    const queued = JSON.stringify({ type: 'mktg_session_turn_started' });
+    const started = JSON.stringify({ type: 'runtime_start', task: { id: 'synthetic-kit-task', entity_type: 'EntTaskAgent' } });
+    const replay = llmStartPayload([{ role: 'assistant', content: [{ type: 'text', text: questionsText([VOICE_QUESTION]) }] }]);
+    guildMocks.getRawEventPayloads.mockResolvedValue([questions, queued, started, replay, ended]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: '' });
+  });
+
+  it('does not return an old finalize from a queued same-session turn', async () => {
+    const old = toolResultPayload(buildEnvelope());
+    guildMocks.getRawEventPayloads.mockResolvedValue([old, JSON.stringify({ type: 'mktg_session_turn_started' }), old]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('pending');
+  });
+
   it('reports pending while no valid envelope exists in the event stream', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'llm_start' }), 'agent chatter']);
 
@@ -506,7 +524,7 @@ describe('BrandKitService.getResult', () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: `${reply}\n` } })]);
 
     expect(await service.getResult(req, 'session-1')).toEqual({ status: 'refused', reply, activity: [] });
-    expect(loggerMocks.info).toHaveBeenCalledWith(req, 'brand_kit_result', 'The agent refused the run', { reply_chars: reply.length });
+    expect(loggerMocks.debug).toHaveBeenCalledWith(req, 'brand_kit_result', 'The agent refused the run', { reply_chars: reply.length });
   });
 
   it('takes neither a questions block nor an envelope out of a page the agent fetched', async () => {

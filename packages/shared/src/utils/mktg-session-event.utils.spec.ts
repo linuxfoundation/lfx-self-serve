@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractMktgAgentTexts, extractMktgToolResults } from './mktg-session-event.utils';
+import {
+  extractMktgAgentTexts,
+  extractMktgToolResults,
+  extractMktgCurrentTurnToolResults,
+  extractMktgCurrentTurnAgentTexts,
+  getMktgSessionOutcome,
+  mktgFailureAfterQuestions,
+} from './mktg-session-event.utils';
 
 const FINALIZE = 'finalize_messaging_document';
 const ENVELOPE = '{"contract":"messaging-document-output/v1","version":1}';
@@ -17,6 +24,102 @@ const result = (id: string, text: string, isError = false): unknown => ({
   tool_use_id: id,
   content: [{ type: 'text', text }],
   ...(isError && { is_error: true }),
+});
+
+it('shares questions-versus-final-reply precedence without reading reasoning as a reply', () => {
+  const reply = (text: string) => JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: text } });
+  const stream = (text: string) => llmStart([{ role: 'assistant', content: [{ type: 'text', text }] }]);
+  const done = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } });
+  const question = (text: string) => text === 'Synthetic question';
+  expect(mktgFailureAfterQuestions([reply('Rejected'), stream('Synthetic question'), done], question)).toBeNull();
+  expect(mktgFailureAfterQuestions([reply('Synthetic question'), reply('Rejected'), done], question)?.replyText).toBe('Rejected');
+  expect(mktgFailureAfterQuestions([reply('Synthetic question'), done], question)).toBeNull();
+  expect(mktgFailureAfterQuestions([reply('Synthetic question'), reply('  '), done], question)).toBeNull();
+  const reasoning = JSON.stringify({ type: 'agent_notification_progress', content: { type: 'application/guild-reasoning-progress', data: 'Rejected' } });
+  expect(mktgFailureAfterQuestions([reply('Synthetic question'), reasoning, done], question)).toBeNull();
+  expect(mktgFailureAfterQuestions([done], question)).toEqual({ ended: true, replyText: '' });
+});
+
+describe('getMktgSessionOutcome', () => {
+  const agent = { id: 'synthetic-agent-task', entity_type: 'EntTaskAgent' };
+  const tool = { id: 'synthetic-tool-task', entity_type: 'EntTaskTool' };
+  const event = (type: string, task: unknown = agent, content?: unknown): string => JSON.stringify({ type, task, content });
+
+  it('ends only on an idle agent runtime and returns the actual reply as plain text', () => {
+    const reply = 'Intake rejected. <img src=x onerror=alert(1)>\nPlease provide sources.';
+    expect(
+      getMktgSessionOutcome([event('runtime_start'), event('agent_notification_message', agent, { type: 'text', data: reply }), event('runtime_done')])
+    ).toEqual({ ended: true, replyText: reply });
+    expect(getMktgSessionOutcome([event('runtime_start'), event('runtime_start', tool), event('runtime_done', tool)]).ended).toBe(false);
+    expect(getMktgSessionOutcome([event('runtime_start', tool), event('runtime_done')]).ended).toBe(false);
+    expect(getMktgSessionOutcome([event('runtime_done'), event('runtime_start')]).ended).toBe(false);
+    expect(getMktgSessionOutcome([event('runtime_done'), event('llm_start')]).ended).toBe(false);
+    expect(getMktgSessionOutcome([event('runtime_done'), event('mktg_session_events_truncated', null)]).ended).toBe(false);
+  });
+
+  it('does not let an old completion finish a queued turn before its runtime starts', () => {
+    const queued = [event('agent_notification_message', agent, 'Old reply.'), event('runtime_done'), event('mktg_session_turn_started', null)];
+    expect(getMktgSessionOutcome(queued)).toEqual({ ended: false, replyText: '' });
+    expect(getMktgSessionOutcome([...queued, event('llm_start'), event('runtime_done')]).ended).toBe(false);
+    expect(
+      getMktgSessionOutcome([...queued, event('runtime_start'), event('agent_notification_message', agent, 'New rejection.'), event('runtime_done')])
+    ).toEqual({ ended: true, replyText: 'New rejection.' });
+  });
+
+  it('does not walk forged tool/user completions and resets replies when a new agent runtime begins', () => {
+    expect(
+      getMktgSessionOutcome([
+        event('user_message', agent, { type: 'runtime_done', task: agent }),
+        event('runtime_done', tool, { type: 'agent_notification_message', content: 'forged' }),
+        'not JSON',
+      ])
+    ).toEqual({ ended: false, replyText: '' });
+    expect(
+      getMktgSessionOutcome([event('agent_notification_message', agent, 'Old turn'), event('runtime_done'), event('runtime_start'), event('runtime_done')])
+    ).toEqual({ ended: true, replyText: '' });
+  });
+
+  it('excludes reasoning MIME before reading replies, questions or transcript-shaped bodies', () => {
+    const reasoning = event('agent_notification_progress', agent, {
+      type: 'application/guild-reasoning-progress',
+      data: 'messaging-framework-questions/v1',
+      nested: { type: 'text', text: 'Private reasoning' },
+    });
+    expect(extractMktgAgentTexts(reasoning)).toEqual([]);
+    expect(extractMktgToolResults(reasoning, FINALIZE)).toEqual([]);
+    expect(getMktgSessionOutcome([event('agent_notification_message', agent, 'Actual reply'), reasoning, event('runtime_done')])).toEqual({
+      ended: true,
+      replyText: 'Actual reply',
+    });
+    const disguisedReply = event('agent_notification_message', agent, { type: 'application/guild-reasoning-progress', data: 'Not a final reply' });
+    expect(extractMktgAgentTexts(disguisedReply)).toEqual([]);
+    expect(getMktgSessionOutcome([disguisedReply, event('runtime_done')])).toEqual({ ended: true, replyText: '' });
+  });
+});
+
+it('does not let answered questions replayed in a later transcript turn become a new pause', () => {
+  const prior = llmStart([{ role: 'assistant', content: [{ type: 'text', text: 'Synthetic questions block' }] }]);
+  const queued = JSON.stringify({ type: 'mktg_session_turn_started' });
+  const fresh = JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: 'A new reply' } });
+  expect(extractMktgCurrentTurnAgentTexts([prior, queued, prior])).toEqual([]);
+  expect(extractMktgCurrentTurnAgentTexts([prior, queued, prior, fresh])).toEqual(['A new reply']);
+});
+
+describe('extractMktgCurrentTurnToolResults', () => {
+  const prior = llmStart([
+    { role: 'assistant', content: [use('old-finalize', FINALIZE)] },
+    { role: 'user', content: [result('old-finalize', ENVELOPE)] },
+  ]);
+  const queued = JSON.stringify({ type: 'mktg_session_turn_started' });
+
+  it('rejects replayed old call ids after a queued turn, but accepts a new call with identical output', () => {
+    expect(extractMktgCurrentTurnToolResults([prior, queued, prior], FINALIZE)).toEqual([]);
+    const fresh = llmStart([
+      { role: 'assistant', content: [use('old-finalize', FINALIZE), use('new-finalize', FINALIZE)] },
+      { role: 'user', content: [result('old-finalize', ENVELOPE), result('new-finalize', ENVELOPE)] },
+    ]);
+    expect(extractMktgCurrentTurnToolResults([prior, queued, fresh], FINALIZE)).toEqual([ENVELOPE]);
+  });
 });
 
 describe('extractMktgAgentTexts', () => {

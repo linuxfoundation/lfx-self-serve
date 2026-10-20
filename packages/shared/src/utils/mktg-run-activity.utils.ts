@@ -42,6 +42,7 @@ import { BOILERPLATES_QUESTIONS_CONTRACT_ID } from '../constants/boilerplates.co
 import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
 import { FAQ_QUESTIONS_CONTRACT_ID } from '../constants/faq.constants';
 import type { MktgRunActivity, MktgRunActivityKind, MktgRunActivityPhase, MktgRunActivityStatus } from '../interfaces';
+import { isMktgReasoningEvent } from './mktg-session-event.utils';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -185,7 +186,7 @@ function isQuestionsTurn(event: UnknownRecord): boolean {
  * feed, and ids are positional, so they stay stable while the run appends.
  */
 export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
-  const events = payloads.map(parseEvent).filter((event): event is UnknownRecord => event !== null);
+  const events = payloads.map(parseEvent).filter((event): event is UnknownRecord => event !== null && !isMktgReasoningEvent(event));
 
   const finishedTasks = new Set<string>();
   for (const event of events) {

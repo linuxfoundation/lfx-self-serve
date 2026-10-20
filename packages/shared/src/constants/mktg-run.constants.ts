@@ -908,3 +908,12 @@ export const MKTG_RUN_POLL = {
  * generation budget.
  */
 export const MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS = 3;
+
+/** Internal BFF marker: a capped event page cannot prove there is nothing pending. */
+export const MKTG_SESSION_EVENTS_TRUNCATED = 'mktg_session_events_truncated';
+/** Content-free BFF marker: a user/trigger turn queued before runtime_start appears. */
+export const MKTG_SESSION_TURN_STARTED = 'mktg_session_turn_started';
+/** Model reasoning is never a reply, a questions turn, or feed activity. */
+export const MKTG_SESSION_REASONING_CONTENT_TYPE = 'application/guild-reasoning-progress';
+/** Stable questions-block hash carried by accepted-answers continuation. */
+export const MKTG_RUN_QUESTIONS_ID_REGEX = /^[a-f0-9]{8}$/;

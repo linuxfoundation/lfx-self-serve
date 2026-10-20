@@ -480,11 +480,18 @@ describe('MktgDocumentStoreService', () => {
       const receipt = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
       expect(receipt?.s3_key).toBe(`brand-kit/${PROJECT}/${generated.content_sha256}.md`);
+      expect(receipt?.document_location).toMatchObject({ agent_key: 'brand-kit', document_id: 'living' });
       const keys = revisionKeys();
       expect(keys).toHaveLength(1);
       expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/brand-kit/living/000001-[0-9a-f]{64}\\.json$`));
       // Content-addressed by the record's own bytes.
       expect(keys[0]).toContain(sha(store.objects.get(keys[0])?.body ?? ''));
+      expect(receipt?.document_location?.revision_id).toBe(
+        keys[0]
+          .split('/')
+          .at(-1)
+          ?.replace(/\.json$/, '')
+      );
 
       const record = storedRecord(keys[0]);
       expect(record).toMatchObject({
@@ -512,11 +519,13 @@ describe('MktgDocumentStoreService', () => {
     it('records a generation once, however often the result is polled', async () => {
       const generated = envelope('# Brand Kit\n');
 
-      await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
-      await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
+      const first = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
+      const repeated = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
       await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
       expect(revisionKeys()).toHaveLength(1);
+      expect(first?.document_location).toBeDefined();
+      expect(repeated?.document_location).toEqual(first?.document_location);
     });
 
     it('adds a new latest revision for each new generation of a living document', async () => {
@@ -566,7 +575,21 @@ describe('MktgDocumentStoreService', () => {
       expect(keys).toHaveLength(1);
       expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/foundation-message/living/000001-[0-9a-f]{64}\\.json$`));
       // The revision IS the stored copy: the receipt names its key, and nothing lands in the pre-revision `.md` partition.
-      expect(receipt).toEqual({ s3_key: keys[0], content_sha256: generated.content_sha256, project: PROJECT, version: 1, intake_mode: 'form' });
+      expect(receipt).toEqual({
+        s3_key: keys[0],
+        content_sha256: generated.content_sha256,
+        project: PROJECT,
+        version: 1,
+        intake_mode: 'form',
+        document_location: {
+          agent_key: 'foundation-message',
+          document_id: 'living',
+          revision_id: keys[0]
+            .split('/')
+            .at(-1)
+            ?.replace(/\.json$/, ''),
+        },
+      });
       expect([...store.objects.keys()].filter((key) => key.endsWith('.md'))).toEqual([]);
 
       const record = storedRecord(keys[0]);
@@ -575,6 +598,22 @@ describe('MktgDocumentStoreService', () => {
       expect(record.bundle.contentSha256).toBe(generated.content_sha256);
       expect(record.bundle.sidecar).toMatchObject({ contract: 'messaging-framework-output/v1', report: { gaps: ['No member count.'] }, mode: 'draft' });
       expect(record.bundle.sidecar).not.toHaveProperty('content');
+    });
+
+    it('returns the exact recorded location on repeated JSON polls, not a newer session’s revision', async () => {
+      const first = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First.'), PROJECT, 'session-1');
+      const second = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Second.'), PROJECT, 'session-2');
+      const repeated = await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('First.'), PROJECT, 'session-1');
+      expect(first?.document_location).toBeDefined();
+      expect(repeated?.document_location).toEqual(first?.document_location);
+      expect(repeated?.document_location).not.toEqual(second?.document_location);
+      const location = repeated?.document_location;
+      expect(location).toBeDefined();
+      if (location) {
+        const stored = await service.getRevision(req, PROJECT, FRAMEWORK, location.document_id, location.revision_id);
+        expect(stored?.markdown).toBe(JSON.stringify(jsonEnvelope('First.').content));
+        expect(stored?.sidecar).toMatchObject({ report: { gaps: ['No member count.'] } });
+      }
     });
 
     it('serves the JSON revision to the Documents area with its format and sidecar, and to dependent agents as its text', async () => {

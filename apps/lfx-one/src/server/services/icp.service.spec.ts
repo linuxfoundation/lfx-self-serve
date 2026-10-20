@@ -287,6 +287,28 @@ describe('IcpService', () => {
   });
 
   describe('getResult', () => {
+    const ended = JSON.stringify({ type: 'runtime_done', task: { id: 'agent-1', entity_type: 'EntTaskAgent' } });
+
+    it('fails at agent completion without a valid document, carrying only the actual final reply', async () => {
+      const failureText = 'The intake was rejected. <script>not markup</script>';
+      const reply = JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: failureText } });
+      guildMocks.getRawEventPayloads.mockResolvedValue([reply, ended]);
+      await expect(service.getResult(req, 'session-1', PROJECT_UID)).resolves.toEqual({ status: 'failed', failureText });
+      expect(objectStoreMocks.putContentAddressedObject).not.toHaveBeenCalled();
+      guildMocks.getRawEventPayloads.mockResolvedValue([ended]);
+      await expect(service.getResult(req, 'session-1', PROJECT_UID)).resolves.toEqual({ status: 'failed', failureText: '' });
+    });
+
+    it('keeps unfinished tools and incomplete event pages pending rather than failing', async () => {
+      const pendingTool = JSON.stringify({ type: 'runtime_start', task: { id: 'tool-1', entity_type: 'EntTaskTool' } });
+      guildMocks.getRawEventPayloads.mockResolvedValue([pendingTool, ended]);
+      expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe('pending');
+      guildMocks.getRawEventPayloads.mockResolvedValue([ended, JSON.stringify({ type: 'mktg_session_events_truncated' })]);
+      expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe('pending');
+      guildMocks.getRawEventPayloads.mockResolvedValue([toolResultPayload(buildEnvelope()), ended]);
+      expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe('ready');
+    });
+
     it('stays pending until a valid envelope appears', async () => {
       guildMocks.getRawEventPayloads.mockResolvedValue(['the agent is thinking about segments']);
 
