@@ -99,7 +99,7 @@
       </p>
     </div>
 
-    @if (roleInvalid()) {
+    @if (form().hasError('roleRequiresCoordinator')) {
       <p class="text-xs text-red-600" data-testid="settings-user-form-role-error">Select View or Manage, or make this user a meeting coordinator.</p>
     }
 

@@ -249,7 +249,7 @@ export interface StaffEditDialogData {
 export interface UpdateUserRoleRequest {
   /** New role to assign - 'view' for auditors, 'manage' for writers, 'none' when only the meeting coordinator grant applies */
   role: ProjectPermissionRole;
-  /** Whether the user holds the meeting coordinator grant. Omitted leaves the current grant unchanged. 'none' requires this to be true. */
+  /** Whether the user holds the meeting coordinator grant. Omitted leaves the current grant unchanged, except that role 'none' always requires an explicit `true`. */
   meetingCoordinator?: boolean;
   /** Other backend entries for the same collapsed row to clear in the same request (see
    *  `ProjectPermissionUser.duplicateIdentifiers`) */

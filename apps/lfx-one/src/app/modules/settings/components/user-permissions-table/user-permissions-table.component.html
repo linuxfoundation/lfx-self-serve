@@ -80,6 +80,12 @@
                   <span
                     class="text-xs font-inter px-2 py-0.5 rounded-full bg-purple-100 text-purple-800"
                     [class.opacity-60]="user.role === 'manage'"
+                    [attr.tabindex]="user.role === 'manage' ? 0 : null"
+                    [attr.aria-label]="
+                      user.role === 'manage'
+                        ? 'Meeting coordinator. Already covered by Manage; kept so it remains if the role is reduced'
+                        : 'Meeting coordinator'
+                    "
                     [pTooltip]="user.role === 'manage' ? 'Already covered by Manage; kept so it remains if the role is reduced' : ''"
                     data-testid="meeting-coordinator-chip">
                     Meeting coordinator

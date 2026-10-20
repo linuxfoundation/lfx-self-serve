@@ -3162,6 +3162,16 @@ describe('ProjectService.updateProjectPermissions', () => {
       expect(result.meeting_coordinators).toEqual([member]);
     });
 
+    it('keeps a coordinator grant held only by a duplicate entry, re-filed under the surviving username entry', async () => {
+      const emailOnlyCoordinator = { name: 'Sam Chen', email: 'sam.chen.dup@cascade-data.example' };
+      mockFetch({ writers: [], auditors: [member], meeting_coordinators: [emailOnlyCoordinator] });
+
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view', undefined, ['sam.chen.dup@cascade-data.example']);
+
+      expect(result.auditors).toEqual([member]);
+      expect(result.meeting_coordinators).toEqual([member]);
+    });
+
     it('removes the coordinator entry along with the writer and auditor entries', async () => {
       mockFetch({ writers: [member], auditors: [], meeting_coordinators: [member] });
 

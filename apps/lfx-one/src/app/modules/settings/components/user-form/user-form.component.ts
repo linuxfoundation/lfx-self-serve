@@ -9,6 +9,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
+import { roleRequiresCoordinatorValidator } from '@lfx-one/shared/validators';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -56,11 +57,6 @@ export class UserFormComponent {
   }
 
   // Public methods
-  // 'none' without the meeting coordinator grant would leave the user with no access at all
-  public roleInvalid(): boolean {
-    return this.form().get('role')?.value === 'none' && !this.form().get('meetingCoordinator')?.value;
-  }
-
   public onSubmit(): void {
     // Mark all form controls as touched and dirty to show validation errors
     Object.keys(this.form().controls).forEach((key) => {
@@ -69,7 +65,7 @@ export class UserFormComponent {
       control?.markAsDirty();
     });
 
-    if (this.form().invalid || this.roleInvalid()) {
+    if (this.form().invalid) {
       return;
     }
 
@@ -254,14 +250,17 @@ export class UserFormComponent {
   }
 
   private createUserFormGroup(): FormGroup {
-    return new FormGroup({
-      email: new FormControl('', [Validators.required, Validators.email]),
-      name: new FormControl(''),
-      username: new FormControl(''),
-      avatar: new FormControl(''),
-      role: new FormControl('view', [Validators.required]),
-      meetingCoordinator: new FormControl(false),
-    });
+    return new FormGroup(
+      {
+        email: new FormControl('', [Validators.required, Validators.email]),
+        name: new FormControl(''),
+        username: new FormControl(''),
+        avatar: new FormControl(''),
+        role: new FormControl('view', [Validators.required]),
+        meetingCoordinator: new FormControl(false),
+      },
+      { validators: roleRequiresCoordinatorValidator() }
+    );
   }
 
   private initializeForm(): void {
