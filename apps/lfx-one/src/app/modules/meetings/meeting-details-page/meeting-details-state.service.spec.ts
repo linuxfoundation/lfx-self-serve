@@ -964,6 +964,17 @@ describe('MeetingDetailsStateService', () => {
       expect(state.meetingStatus()).toBe('awaiting-rsvp');
     });
 
+    // As V1: a failed lookup reads as not answered, never as an error that ends the signal.
+    it('reads a failed fetch as not answered', async () => {
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming(), project }));
+      getMyRsvp.mockReturnValue(throwError(() => ({ status: 500 })));
+      const state = create();
+      await load();
+
+      expect(state.myRsvp()).toBeNull();
+      expect(state.meetingStatus()).toBe('awaiting-rsvp');
+    });
+
     // N-01 (FR-026): RSVP tracking off is the whole off-state, not just a missing fetch.
     it('gives an invitee on a meeting without RSVP tracking the unavailable slot and the time state', async () => {
       getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ is_invite_responses_enabled: false }), project }));

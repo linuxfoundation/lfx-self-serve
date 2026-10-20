@@ -268,6 +268,7 @@ describe('MeetingRecordingComponent', () => {
 
   // As V1, which reads every failed artifact read as none (the BFF answers 404 for a failed lookup too).
   it('reads a failed read of any artifact as none', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
     meetingService.getPastMeetingSummary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
     await setup(
       () => throwError(() => new HttpErrorResponse({ status: 500 })),

@@ -190,6 +190,9 @@ export class MeetingRecordingComponent {
     if (status === 403) {
       return { status: 'no-access' };
     }
+    if (status !== 404) {
+      console.error('Failed to load a meeting artifact', error);
+    }
     return { status: 'none' };
   }
 }

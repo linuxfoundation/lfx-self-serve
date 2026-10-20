@@ -606,6 +606,8 @@ export class MeetingDetailsStateService {
           // As V1: the BFF and the client both read a failed lookup as "not answered" (`null`).
           return this.meetingService.getMeetingRsvpForCurrentUser(event.key.meetingId, event.key.occurrenceId, event.key.allDatesOnly).pipe(
             map((rsvp): RsvpResponse | null | undefined => rsvp?.response_type ?? null),
+            // Defensive: the client already reads a failure as `null`; an error must never end the signal.
+            catchError(() => of<RsvpResponse | null | undefined>(null)),
             startWith<RsvpResponse | null | undefined>(undefined)
           );
         })

@@ -288,9 +288,9 @@ export interface MeetingRosterState {
 
 /**
  * One past-meeting artifact as the V2 Recording & Transcript section knows it (E4-01): `available`
- * with somewhere to open it, `none` when the meeting has no such artifact, `no-access` when the
- * viewer may not open it, `error` when it could not be read, or `session-expired` when the read
- * answered 401 (the section then asks the viewer to sign in).
+ * with somewhere to open it, `none` when the meeting has no such artifact or the read failed (as V1),
+ * `no-access` when the viewer may not open it, or `session-expired` when the read answered 401 (the
+ * section then asks the viewer to sign in).
  */
 export interface MeetingArtifactState {
   status: 'available' | 'none' | 'no-access' | 'session-expired';
