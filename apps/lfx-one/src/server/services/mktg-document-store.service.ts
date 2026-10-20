@@ -130,6 +130,7 @@ export class MktgDocumentStoreService {
         project: partition,
         version: envelope.version,
         intake_mode: envelope.intake.mode,
+        document_location: { agent_key: type.agentKey, document_id: revision.record.documentId, revision_id: revision.id },
       };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the asset without a receipt; retried on next poll', {
@@ -153,7 +154,11 @@ export class MktgDocumentStoreService {
     if (!type) return receipt;
     try {
       const revision = await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
-      return { ...receipt, s3_key: revision.key };
+      return {
+        ...receipt,
+        s3_key: revision.key,
+        document_location: { agent_key: agentKey, document_id: revision.record.documentId, revision_id: revision.id },
+      };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
         agent: type.agentKey,

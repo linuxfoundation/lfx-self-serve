@@ -256,6 +256,20 @@ export interface MktgDocumentDetailResponse {
   current?: MktgDocumentCurrentSelection | null;
 }
 
+/** Snake-case location nested in an artifact persistence receipt. */
+export interface MktgDocumentPersistLocation {
+  agent_key: MktgDocumentAgentKey;
+  document_id: string;
+  revision_id: string;
+}
+
+/** Exact stored revision produced by a result poll, never whichever revision happens to be current. */
+export interface MktgDocumentLocation {
+  agentKey: MktgDocumentAgentKey;
+  documentId: string;
+  revisionId: string;
+}
+
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
 export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   revision: MktgRevisionSummary;

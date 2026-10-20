@@ -9,6 +9,9 @@ vi.mock('./logger.service', () => ({
 // `@lfx-one/shared/interfaces` provides types only here; mock it so the barrel's
 // Angular-tainted transitive imports never load (weekly-brief.service.spec.ts convention).
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  return vi.importActual('../../../../../packages/shared/src/constants/mktg-run.constants');
+});
 
 import type { Request } from 'express';
 
@@ -66,8 +69,12 @@ describe('GuildService.getRawEventPayloads', () => {
 
       const payloads = await service.getRawEventPayloads(req, 'session-1');
 
-      expect(payloads).toHaveLength(1);
-      expect(payloads[0]).toContain('llm_done');
+      expect(payloads).toHaveLength(3);
+      expect(payloads.slice(0, 2).map((payload) => JSON.parse(payload))).toEqual([
+        { type: 'mktg_session_turn_started', created_at: '2026-01-01T00:00:00Z' },
+        { type: 'mktg_session_turn_started', created_at: '2026-01-01T00:01:00Z' },
+      ]);
+      expect(payloads[2]).toContain('llm_done');
       for (const payload of payloads) {
         expect(payload).not.toContain('brand_kit_result');
         expect(payload).not.toContain('user_message');
@@ -140,7 +147,8 @@ describe('GuildService.getRawEventPayloads', () => {
 
       const payloads = await service.getRawEventPayloads(req, 'session-1');
 
-      expect(payloads).toHaveLength(250); // filtered well under the cap
+      expect(payloads).toHaveLength(501); // content-free turns plus an explicit incomplete-page marker
+      expect(JSON.parse(payloads.at(-1) ?? '{}')).toEqual({ type: 'mktg_session_events_truncated' });
       expect(logger.warning).toHaveBeenCalledWith(req, 'guild_get_raw_events', expect.stringContaining('truncated'), { count: 500, limit: 500 });
     });
 

@@ -23,6 +23,16 @@ const afterAnswers = events.findIndex(
 );
 const labels = (activity: MktgRunActivity[]): string[] => activity.map((step) => step.label);
 
+it('does not let reasoning MIME create a questions step or leak into the activity feed', () => {
+  const reasoning = JSON.stringify({
+    type: 'agent_notification_progress',
+    created_at: '2026-10-19T10:00:00Z',
+    content: { type: 'application/guild-reasoning-progress', data: 'messaging-framework-questions/v1 Private reasoning' },
+  });
+  expect(buildMktgRunActivity([reasoning])).toEqual([]);
+  expect(buildMktgRunActivity([...payloads(), reasoning])).toEqual(buildMktgRunActivity(payloads()));
+});
+
 describe('buildMktgRunActivity — the live feed from a real session', () => {
   it('reuses the generic phases with LinkedIn-specific writing/checking labels after its gap round', () => {
     const activity = buildMktgRunActivity([
