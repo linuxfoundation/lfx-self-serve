@@ -5,7 +5,6 @@ import { ArtifactVisibility, MeetingType, MeetingVisibility, CancelOnCommitteeRe
 import type {
   AttachmentCategory,
   CardSelectorOption,
-  FilterOption,
   MeetingComposerPreviewFeature,
   MeetingStatusKind,
   MeetingTypeConfig,
@@ -1117,28 +1116,6 @@ export const RECONCILIATION_BOT_NAME_PATTERN =
  * comment for why both need to agree on the exact same string (LFXV2-3077).
  */
 export const NOTES_ATTACHMENT_CATEGORY: AttachmentCategory = 'Notes';
-
-/**
- * Every `AttachmentCategory`, as the materials drawer offers them (E3-05, #3254). Before this the
- * drawer hard-coded `Other` for links and sent nothing for files, so the other three were
- * unreachable from the meetings UI.
- */
-export const MEETING_ATTACHMENT_CATEGORIES: readonly AttachmentCategory[] = Object.keys({
-  // Keyed by the union, so a category added to `AttachmentCategory` fails to compile here until listed.
-  'Meeting Minutes': true,
-  Notes: true,
-  Presentation: true,
-  Other: true,
-} satisfies Record<AttachmentCategory, true>) as AttachmentCategory[];
-
-/** The category a new attachment starts with in the materials drawer: what links always had. */
-export const DEFAULT_MEETING_ATTACHMENT_CATEGORY: AttachmentCategory = 'Other';
-
-/** `MEETING_ATTACHMENT_CATEGORIES` as select options (label and value are the same string). */
-export const MEETING_ATTACHMENT_CATEGORY_OPTIONS: FilterOption<AttachmentCategory>[] = MEETING_ATTACHMENT_CATEGORIES.map((category) => ({
-  label: category,
-  value: category,
-}));
 
 /**
  * Display label for each meeting status on the meeting details V2 page
