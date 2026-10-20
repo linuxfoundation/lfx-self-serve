@@ -26,6 +26,7 @@ get V1 during rollout.
 | [`design-token-deviations.md`](design-token-deviations.md) | E0-05   | Every V2 token, its `lfxColors` equivalent, and the convergence path       |
 | [`v2-scaffold.md`](v2-scaffold.md)                         | V2-02   | V1/V2 naming, where V2 code lives, V1-deletion definition of done          |
 | [`rollout.md`](rollout.md)                                 | V2-03   | Branch, release, flag stages, rollback; V1 stays (retirement out of scope) |
+| [`magic-link-requirements.md`](magic-link-requirements.md) | M-02    | Magic-link token, expiry, revocation, audit and reach (draft)              |
 | [`checklists/requirements.md`](checklists/requirements.md) | E0-01   | Spec quality checklist                                                     |
 
 All work lands in the integration branch `feat/meeting-details-v2`; nothing reaches `main` until the

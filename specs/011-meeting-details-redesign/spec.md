@@ -244,4 +244,6 @@ E6-01's is [`contracts/public-meeting-occurrences.schema.json`](contracts/public
 - [`v2-scaffold.md`](v2-scaffold.md) — V1/V2 naming, where V2 code lives, V1-deletion definition
   of done (V2-02).
 - [`rollout.md`](rollout.md) — branch, release, flag stages and retirement (V2-03).
+- [`magic-link-requirements.md`](magic-link-requirements.md) — magic-link token, expiry, revocation,
+  audit and reach requirements; draft awaiting the meeting authorization owner (M-02).
 - `docs/architecture/frontend/docs-portal.md` — the repo's precedent for a spec-shaped doc.

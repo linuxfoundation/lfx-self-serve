@@ -153,7 +153,7 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   are new scope on this page, not a port, and MUST be organizer-only. Single-occurrence edit and
   cancel are V1 behaviour and are covered by FR-046.
 - **FR-052**: Magic-link arrival (M-01) MUST NOT ship before upstream U-08 (#2934) and the M-02 security
-  requirements.
+  requirements ([`magic-link-requirements.md`](magic-link-requirements.md)) are met.
 - **FR-054**: The admin past-meeting route `/meetings/:id/details` MUST check access to the specific
   meeting before rendering, not only that a session exists (N-03; E0-03 decides the public/admin
   boundary). It is a security change and ships in its own PR (R06, FR-053).
