@@ -3,14 +3,23 @@
 
 import { addDays } from 'date-fns';
 import { FormControl, type FormGroup } from '@angular/forms';
-import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
+import {
+  CLONE_VOTE_DEFAULT_DURATION_DAYS,
+  CLONE_VOTE_TITLE_PREFIX,
+  DRAFT_VOTE_DEFAULT_DURATION_DAYS,
+  DRAFT_VOTE_PLACEHOLDER_QUESTION,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_DEFAULT_CLOSE_TIME,
+  VOTE_TITLE_MAX_LENGTH,
+} from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
-import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
+import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus } from './poll.utils';
+import { truncateToUtf16Units } from './string.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -145,7 +154,7 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
     committee,
     eligible_participants: mapFiltersToEligibility(vote.committee_filters),
     close_date: endDate ? toZonedDateCarrier(endDate, zone) : null,
-    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : '11:59 PM',
+    close_time: endDate ? formatTo12HourInTimezone(endDate, zone) : VOTE_DEFAULT_CLOSE_TIME,
     timezone: zone,
     allow_abstain: vote.allow_abstain ?? false,
     questions: (vote.poll_questions?.filter((question) => !isDraftPlaceholderPollQuestion(question)) ?? []).map(mapApiQuestionToFormValue),
@@ -156,6 +165,54 @@ export function mapVoteToFormValue(vote: Vote): VoteFormValue {
 /** Rounds participation against a positive electorate, capping incomplete counts at 99% and complete/excess counts at 100%. */
 function computeParticipationPercent(responses: number, invited: number): number {
   return Math.min(responses < invited ? 99 : 100, Math.round((responses / invited) * 100));
+}
+
+/**
+ * Maps a Vote API response to a VoteFormValue for prefilling the create form when cloning a vote
+ * @description Same field set as {@link mapVoteToFormValue} (committee, eligibility, questions, comment
+ * prompts, abstain) — cast ballots, results, and the source vote's status/uid are never part of a form
+ * value, so there is nothing to strip there. Eligibility is lossy in the same direction it already is for
+ * edit: {@link mapFiltersToEligibility} widens to 'all' whenever the filter set contains Observer or
+ * Emeritus, so a clone can re-expand to a broader electorate than the source actually had. This is a
+ * known, accepted tradeoff (not yet surfaced to the organizer) rather than an oversight — unlike the
+ * poll-type/pseudo-anonymity guard below, which refuses to clone a source it can't faithfully represent,
+ * electorate widening degrades silently. Revisit if this needs its own warning (GH-3781 review 3).
+ * Two fields are deliberately mutated: the title gets a "Copy of " prefix (skipped if already present, and
+ * clamped to VOTE_TITLE_MAX_LENGTH) so the organizer can tell the draft apart from the source vote, and a
+ * deadline that has already elapsed resets to CLONE_VOTE_DEFAULT_DURATION_DAYS out in the organizer's own
+ * timezone rather than the source's stored zone (a still-future deadline is reused as-is, in its own zone).
+ * @param vote - The source Vote entity to clone
+ * @param nowMs - Current time in epoch ms, injectable for deterministic tests (defaults to Date.now())
+ * @param fallbackTimezone - Zone to reset an elapsed deadline into; defaults to `getUserTimezone()` for
+ * non-Angular callers (e.g. tests), but an Angular caller that may run this during SSR must pass an
+ * SSR-safe value explicitly (e.g. `isPlatformBrowser(platformId) ? getUserTimezone() : 'UTC'`), matching
+ * the same pattern already used elsewhere in this app (votes-table, vote-cast-drawer, vote-results-drawer,
+ * newsletter-list): the reset falls back to UTC on the server and is replaced by the real zone on client
+ * hydration — this does not prevent a server/client difference, it just makes the server side
+ * deterministic instead of resolving a second, possibly different, non-UTC zone there (GH-3781)
+ * @returns VoteFormValue to patch into the create form
+ */
+export function mapVoteToCloneFormValue(vote: Vote, nowMs: number = Date.now(), fallbackTimezone: string = getUserTimezone()): VoteFormValue {
+  const base = mapVoteToFormValue(vote);
+  const title = base.title.startsWith(CLONE_VOTE_TITLE_PREFIX)
+    ? base.title
+    : truncateToUtf16Units(`${CLONE_VOTE_TITLE_PREFIX}${base.title}`, VOTE_TITLE_MAX_LENGTH);
+
+  const endMs = vote.end_time ? Date.parse(vote.end_time) : NaN;
+  const deadlineInFuture = Number.isFinite(endMs) && endMs > nowMs;
+  if (deadlineInFuture) {
+    return { ...base, title };
+  }
+
+  const timezone = fallbackTimezone;
+  const resetDate = addDays(new Date(nowMs), CLONE_VOTE_DEFAULT_DURATION_DAYS);
+  return {
+    ...base,
+    title,
+    timezone,
+    close_date: toZonedDateCarrier(resetDate, timezone),
+    close_time: VOTE_DEFAULT_CLOSE_TIME,
+  };
 }
 
 /**

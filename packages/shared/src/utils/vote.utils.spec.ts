@@ -11,8 +11,10 @@ import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
 import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
@@ -22,6 +24,8 @@ import {
   computeVoteParticipationStats,
   computeVoteRowParticipation,
   isVoteClosingSoon,
+  mapFiltersToEligibility,
+  mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
   votePermalinkPath,
@@ -257,6 +261,107 @@ describe('mapVoteToFormValue', () => {
     expect(form.timezone).toBe('America/Los_Angeles');
     expect(form.close_time).toBe('12:00 AM');
     expect(form.close_date?.getDate()).toBe(1);
+  });
+});
+
+describe('mapVoteToCloneFormValue', () => {
+  /** Minimal Vote fixture — the mapper only reads the fields set here. */
+  function vote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.DISABLED,
+      project_uid: 'project-uid',
+      ...overrides,
+    };
+  }
+
+  const NOW = Date.parse('2025-05-01T00:00:00Z');
+
+  it('prefixes the title with "Copy of "', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('does not double-prefix when cloning an already-cloned vote', () => {
+    const form = mapVoteToCloneFormValue(vote({ name: 'Copy of Board election' }), NOW);
+    expect(form.title).toBe('Copy of Board election');
+  });
+
+  it('clamps the prefixed title to the 200-character form limit', () => {
+    const longName = 'B'.repeat(199);
+    const form = mapVoteToCloneFormValue(vote({ name: longName }), NOW);
+    expect(form.title.length).toBe(200);
+    expect(form.title.startsWith('Copy of ')).toBe(true);
+  });
+
+  it('keeps the source deadline when it is still in the future', () => {
+    const source = mapVoteToFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }));
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-06-01T00:00:00Z' }), NOW);
+
+    expect(cloned.close_date?.getTime()).toBe(source.close_date?.getTime());
+    expect(cloned.close_time).toBe(source.close_time);
+  });
+
+  it('resets the deadline to 7 days out in the organizer timezone when the source deadline has already passed', () => {
+    // NOW is 2025-05-01T00:00Z; +7 days in UTC is 2025-05-08 — host pinned to UTC so the carrier's
+    // calendar fields land on that day regardless of the source's own stored zone (here, Tokyo).
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: 'Asia/Tokyo' }), NOW);
+
+      expect(cloned.timezone).toBe(getUserTimezone());
+      expect(cloned.close_date?.getFullYear()).toBe(2025);
+      expect(cloned.close_date?.getMonth()).toBe(4);
+      expect(cloned.close_date?.getDate()).toBe(8);
+      expect(cloned.close_time).toBe('11:59 PM');
+    } finally {
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
+  });
+
+  it("resets into the organizer's own timezone, not the legacy-vote fallback, when the source stored no zone", () => {
+    const cloned = mapVoteToCloneFormValue(vote({ end_time: '2025-04-01T00:00:00Z', end_time_timezone: undefined }), NOW);
+    expect(cloned.timezone).toBe(getUserTimezone());
+  });
+
+  it('preserves committee, eligibility and questions from the source vote', () => {
+    const source = vote({
+      committee_uid: 'committee-uid',
+      committee_filters: [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP],
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Who should join?',
+          type: 'single_choice',
+          choices: [
+            { choice_id: 'c1', choice_text: 'Alice' },
+            { choice_id: 'c2', choice_text: 'Bob' },
+          ],
+        },
+      ],
+    });
+    const cloned = mapVoteToCloneFormValue(source, NOW);
+
+    expect(cloned.committee?.uid).toBe('committee-uid');
+    expect(cloned.eligible_participants).toBe('voting_rep,alternate_voting_rep');
+    expect(cloned.questions).toEqual([{ question: 'Who should join?', response_type: 'single', options: ['Alice', 'Bob'] }]);
+  });
+});
+
+describe('mapFiltersToEligibility', () => {
+  // Pins the real widening rule: it keys on presence of Observer/Emeritus, not on absence of
+  // Alternate/Emeritus — a set missing Alternate/Emeritus but containing neither Observer nor
+  // Emeritus is NOT widened to 'all'.
+  it("widens to 'all' when the filter set contains Observer or Emeritus", () => {
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.EMERITUS])).toBe('all');
+    expect(mapFiltersToEligibility([CommitteeMemberVotingStatus.VOTING_REP])).toBe('voting_rep');
   });
 });
 
