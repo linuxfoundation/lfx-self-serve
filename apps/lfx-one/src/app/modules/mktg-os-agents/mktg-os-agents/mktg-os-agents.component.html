@@ -1,88 +1,71 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mktg-os-agents-page">
+<div class="@container mx-auto max-w-screen-2xl px-4 sm:px-6 lg:px-8" data-testid="mktg-os-agents-page">
   <div class="flex flex-col gap-5">
+    <!-- Page Header -->
     <lfx-mktg-kit-header [projectName]="projectName()" titleTestId="mktg-os-agents-title" />
+
     <lfx-mktg-kit-tabs />
 
-    <!-- Search -->
-    <div data-testid="mktg-os-agents-search">
-      <lfx-input-text
-        id="mktg-os-agents-search-input"
-        [form]="searchForm"
-        control="search"
-        placeholder="Search agents"
-        icon="fa-light fa-magnifying-glass"
-        dataTest="mktg-os-agents-search-input" />
-    </div>
+    @if (!hasProject()) {
+      <!-- Defensive: lens navigation normally selects a project or redirects an empty lens to Me. -->
+      <p class="py-8 text-gray-500" data-testid="mktg-os-agents-no-project">Select a project to see its Marketing kit.</p>
+    } @else {
+      @if (listFailed()) {
+        <p role="alert" class="text-sm text-red-700" data-testid="mktg-os-agents-error">Last-run dates could not be loaded.</p>
+      }
 
-    <!-- Agent grid -->
-    @if (tiles().length > 0) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="mktg-os-agents-results">
-        @for (tile of tiles(); track tile.agent.id) {
-          <button
-            type="button"
-            class="flex flex-col gap-3 text-left p-4 bg-white border border-gray-200 border-l-4 rounded-lg transition hover:border-gray-300 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-none"
-            [ngClass]="tile.borderClass"
-            [disabled]="tile.disabled"
-            [attr.aria-disabled]="tile.disabled"
-            [attr.data-testid]="'mktg-os-agents-tile-' + tile.agent.id"
-            [attr.aria-label]="tile.ariaLabel"
-            (click)="onSelectAgent(tile)">
-            <div class="flex items-center gap-3">
-              <span class="flex items-center justify-center w-10 h-10 rounded-lg" [ngClass]="tile.iconClass">
-                <i [class]="tile.agent.icon + ' text-lg'" aria-hidden="true"></i>
-              </span>
-              <div class="flex flex-col">
-                <span class="text-xs text-gray-400">Agent {{ tile.agent.number }}</span>
-                <span class="font-medium text-sm text-gray-900">{{ tile.agent.name }}</span>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap gap-1.5">
-              @if (tile.agent.status !== 'active') {
-                <lfx-tag value="Coming soon" severity="secondary" [attr.data-testid]="'mktg-os-agents-coming-soon-' + tile.agent.id" />
-              }
-              <!-- Dependency gating (dec-agent-dependency-gating): prominent amber tag on cards disabled until their dependency's stored output exists. -->
-              @for (dependencyName of tile.missingDependencyNames; track dependencyName) {
-                <lfx-tag
-                  [value]="'Requires ' + dependencyName"
-                  severity="warn"
-                  icon="fa-light fa-lock"
-                  [attr.data-testid]="'mktg-os-agents-requires-' + tile.agent.id" />
-              }
-              @if (storedVersions()[tile.agent.id]; as version) {
-                <lfx-tag
-                  [value]="'v' + version + ' generated'"
-                  severity="success"
-                  [outlined]="true"
-                  icon="fa-light fa-check"
-                  [attr.data-testid]="'mktg-os-agents-generated-' + tile.agent.id" />
+      <!-- Agent grid -->
+      <div class="flex flex-col gap-8" data-testid="mktg-os-agents-results">
+        @for (group of familyGroups(); track group.family.id) {
+          <section class="flex flex-col gap-3" [attr.data-testid]="'mktg-os-agents-family-' + group.family.id">
+            <div class="flex flex-wrap items-baseline gap-3">
+              <h2 class="text-lg font-bold">{{ group.family.name }}</h2>
+              @if (group.family.runOrder) {
+                <p class="text-sm text-gray-500" [attr.data-testid]="'mktg-os-agents-run-order-' + group.family.id">{{ group.family.runOrder }}</p>
               }
             </div>
+            <!-- Agents board: 1280/1440px windows leave ~876/1036px hosts; allow ~60px headroom. -->
+            <div class="grid grid-cols-1 @[700px]:grid-cols-2 @[980px]:grid-cols-3 gap-4">
+              @for (tile of group.tiles; track tile.agent.id) {
+                <button
+                  type="button"
+                  class="flex flex-col gap-3 text-left p-4 bg-white border border-gray-200 border-l-4 rounded-lg transition hover:border-gray-300 hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-none"
+                  [ngClass]="tile.borderClass"
+                  [disabled]="tile.disabled"
+                  [attr.aria-disabled]="tile.disabled"
+                  [attr.data-testid]="'mktg-os-agents-tile-' + tile.agent.id"
+                  [attr.aria-label]="tile.ariaLabel"
+                  (click)="onSelectAgent(tile)">
+                  <div class="flex items-center gap-3">
+                    <span class="flex items-center justify-center w-10 h-10 rounded-lg" [ngClass]="tile.iconClass">
+                      <i [class]="tile.agent.icon + ' text-lg'" aria-hidden="true"></i>
+                    </span>
+                    <div class="flex flex-col">
+                      <span class="text-xs text-gray-400">Agent {{ tile.agent.number }}</span>
+                      <span class="font-medium text-sm text-gray-900">{{ tile.agent.name }}</span>
+                    </div>
+                  </div>
 
-            <p class="text-xs text-gray-500 line-clamp-3">{{ tile.agent.description }}</p>
+                  <p class="text-xs text-gray-500 line-clamp-3">{{ tile.agent.description }}</p>
 
-            <!-- Dependency gating (dec-agent-dependency-gating): say plainly why the card is locked and what unlocks it. -->
-            @if (tile.missingDependencyNames.length) {
-              <div
-                class="flex items-start gap-2 w-full rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2"
-                [attr.data-testid]="'mktg-os-agents-requires-note-' + tile.agent.id">
-                <i class="fa-light fa-lock text-amber-600 text-xs mt-0.5" aria-hidden="true"></i>
-                <span class="text-xs text-amber-700"> Run the {{ tile.missingDependencyNames.join(' and ') }} Agent first — this agent builds on it. </span>
-              </div>
-            }
-          </button>
+                  <p class="mt-auto text-sm text-gray-500" [attr.data-testid]="'mktg-os-agents-state-' + tile.agent.id">
+                    @if (resolving()) {
+                      <span class="sr-only">Resolving</span><span aria-hidden="true">—</span>
+                    } @else {
+                      {{ tile.statusLabel }}
+                      @if (tile.lastRunAt) {
+                        <span [attr.data-testid]="'mktg-os-agents-last-run-' + tile.agent.id"> · Last run {{ tile.lastRunAt | date: 'd MMM' }}</span>
+                      }
+                    }
+                  </p>
+                </button>
+              }
+            </div>
+          </section>
         }
       </div>
-    } @else {
-      <lfx-empty-state
-        icon="fa-light fa-magnifying-glass"
-        title="No agents match your search"
-        subtitle="Try a different name, tag, or capability."
-        [withCard]="true"
-        data-testid="mktg-os-agents-empty" />
     }
   </div>
 </div>

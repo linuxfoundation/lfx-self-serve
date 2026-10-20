@@ -1,0 +1,152 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="@container mx-auto flex max-w-screen-2xl flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="mktg-family-page">
+  <nav aria-label="Breadcrumb" class="text-sm text-gray-500">
+    <a
+      [routerLink]="['../../']"
+      [queryParams]="kit.projectQueryParams()"
+      queryParamsHandling="merge"
+      class="text-blue-700 hover:underline"
+      data-testid="mktg-family-kit-link"
+      >{{ kit.projectName() }} kit</a
+    >
+    <span aria-hidden="true"> › </span><span aria-current="page">{{ definition()?.name ?? 'Family not found' }}</span>
+  </nav>
+  @if (definition(); as definition) {
+    <!-- Family board: ~900px routed host minus page gutters/headroom uses an 800px content query. -->
+    <header class="grid grid-cols-1 items-start gap-x-5 gap-y-2 @[800px]:grid-cols-[minmax(0,1fr)_auto]" data-testid="mktg-family-header">
+      <h1 class="min-w-0 text-3xl font-bold text-gray-900" data-testid="mktg-family-title">{{ definition.name }}</h1>
+      <div class="flex flex-col gap-2 @[800px]:col-span-2 @[800px]:row-start-2" data-testid="mktg-family-intro">
+        <p class="max-w-4xl text-sm text-gray-500">{{ definition.intro ?? definition.description }}</p>
+      </div>
+      @if (live()) {
+        <div class="flex flex-wrap items-start gap-3 @[800px]:col-start-2 @[800px]:row-start-1 @[800px]:justify-end" data-testid="mktg-family-actions">
+          @if (firstAgent()?.name ?? definition.pendingAgentName; as name) {
+            <div class="flex flex-col gap-1">
+              <lfx-button
+                [label]="'Run ' + name"
+                [ariaLabel]="firstAgent()?.status === 'active' ? 'Run ' + name : 'Run ' + name + ' (coming soon)'"
+                [disabled]="firstAgent()?.status !== 'active'"
+                (onClick)="runFirstAgent()"
+                data-testid="mktg-family-run" />
+              @if (firstAgent()?.status !== 'active') {
+                <span class="text-xs text-gray-500" data-testid="mktg-family-run-unavailable">{{ definition.pendingAgentReason ?? 'Coming soon' }}</span>
+              }
+            </div>
+          }
+          <!-- Stale = built-from framework revision older than current approved framework; boilerplates/FAQ/brand kit only (hard-coded framework → downstream), never one-off runs; separate item. -->
+          <div class="flex flex-col gap-1">
+            <lfx-button
+              label="Rebuild what is stale"
+              [outlined]="true"
+              [disabled]="true"
+              ariaLabel="Rebuild what is stale (coming soon)"
+              data-testid="mktg-family-rebuild" />
+            <span class="text-xs text-gray-500" data-testid="mktg-family-rebuild-unavailable">Coming soon</span>
+          </div>
+        </div>
+      }
+    </header>
+    @if (kit.loading()) {
+      <p role="status" class="py-8 text-gray-500" data-testid="mktg-family-loading">Loading family assets…</p>
+    } @else if (kit.error()) {
+      <div role="alert" class="flex flex-col items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-5" data-testid="mktg-family-error">
+        <p>{{ kit.error() }}</p>
+        <lfx-button label="Try again" [outlined]="true" (onClick)="kit.retry()" data-testid="mktg-family-error-retry" />
+      </div>
+    } @else if (family(); as family) {
+      @if (family.live) {
+        <!-- Family board: 1280px leaves ~876px host; 800px side-column threshold reserves ~60px headroom; 600px stacks the mobile table. -->
+        <div class="grid min-w-0 grid-cols-1 gap-5 @[800px]:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" data-testid="mktg-family-layout">
+          <section class="min-w-0" aria-label="Family assets">
+            <table class="block w-full border-separate border-spacing-y-3 text-left text-sm @[600px]:table" data-testid="mktg-family-assets">
+              <thead class="hidden @[600px]:table-header-group">
+                <tr class="text-xs uppercase tracking-wide text-gray-500">
+                  <th scope="col" class="p-2">Asset</th>
+                  <th scope="col" class="p-2">State</th>
+                  <th scope="col" class="p-2">Current</th>
+                  <th scope="col" class="p-2">Made by</th>
+                </tr>
+              </thead>
+              <tbody class="flex flex-col gap-3 @[600px]:table-row-group">
+                @for (row of family.rows; track row.asset.id) {
+                  <tr
+                    class="grid grid-cols-2 rounded-lg border border-gray-200 bg-white align-top @[600px]:table-row @[600px]:border-0"
+                    [attr.data-testid]="'mktg-family-asset-' + row.asset.id">
+                    <th scope="row" class="col-span-2 rounded-l-lg border-gray-200 bg-white p-3 font-normal @[600px]:border-y @[600px]:border-l">
+                      @if (row.document; as document) {
+                        <a
+                          [routerLink]="['../../documents', row.asset.agentKey, document.documentId]"
+                          [queryParams]="kit.projectQueryParams()"
+                          queryParamsHandling="merge"
+                          class="font-semibold text-blue-700 hover:underline"
+                          [attr.data-testid]="'mktg-family-open-' + row.asset.id"
+                          >{{ row.asset.label }}</a
+                        >
+                      } @else {
+                        <span class="font-semibold">{{ row.asset.label }}</span>
+                      }
+                      <p class="mt-1 text-xs text-gray-500">{{ row.asset.description }}</p>
+                      @if (rowRunAgents()[row.asset.id]; as agent) {
+                        <lfx-button
+                          [label]="'Run ' + agent.name"
+                          [text]="true"
+                          size="small"
+                          styleClass="p-0 text-sm"
+                          [routerLink]="['../../', agent.id]"
+                          [queryParams]="runQueryParams()"
+                          [attr.data-testid]="'mktg-family-run-' + row.asset.id" />
+                      }
+                    </th>
+                    <td class="whitespace-nowrap border-gray-200 bg-white p-3 @[600px]:border-y" [attr.data-testid]="'mktg-family-state-' + row.asset.id">
+                      <span class="block text-xs text-gray-500 @[600px]:hidden">State</span><lfx-mktg-kit-status [row]="row" />
+                    </td>
+                    <td class="whitespace-nowrap border-gray-200 bg-white p-3 @[600px]:border-y" [attr.data-testid]="'mktg-family-current-' + row.asset.id">
+                      <span class="block text-xs text-gray-500 @[600px]:hidden">Current</span>
+                      @if (row.document; as document) {
+                        @if (row.monthlyCount !== null) {
+                          {{ (document.createdAt | date: 'd MMM') ?? '—' }}
+                        } @else {
+                          @if (row.version !== null) {
+                            v{{ row.version }}
+                          } @else {
+                            —
+                          }
+                          @if (document.updatedAt) {
+                            · {{ document.updatedAt | date: 'd MMM' }}
+                          }
+                        }
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td class="col-span-2 rounded-r-lg border-gray-200 bg-white p-3 text-gray-500 @[600px]:border-y @[600px]:border-r">
+                      <!-- SEAM: append approved-by name / comment count only when approval/comments read metadata lands; never infer an author. -->
+                      <span class="block text-xs @[600px]:hidden">Made by</span>{{ row.madeBy }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </section>
+          <aside class="min-w-0 self-start" data-testid="mktg-family-exports">
+            <lfx-mktg-family-export-actions [familyId]="family.family.id" />
+            <lfx-mktg-family-details [family]="family" [projectUid]="kit.documents()?.project ?? ''" />
+          </aside>
+        </div>
+      } @else {
+        <section class="flex flex-col gap-2 rounded-lg border border-dashed border-gray-300 p-6" data-testid="mktg-family-coming-soon">
+          <h2 class="text-lg font-semibold">Coming soon</h2>
+          <p class="text-sm text-gray-500">This family has no assets on the store yet.</p>
+        </section>
+      }
+    } @else {
+      <!-- Defensive only: NavigationService normally selects a project or redirects an empty lens to Me. -->
+      <p data-testid="mktg-family-no-project">Select a project to see its family assets.</p>
+    }
+  } @else {
+    <h1 class="text-2xl font-bold" data-testid="mktg-family-not-found">Family not found</h1>
+    <p class="text-sm text-gray-500">Return to the kit to choose a family.</p>
+  }
+</div>
