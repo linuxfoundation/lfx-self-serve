@@ -3973,27 +3973,6 @@ function asKeywords(value: unknown): CampaignKeyword[] {
 }
 
 /**
- * A stored callout list, or `undefined` when the field is absent or not an array.
- *
- * `undefined` and `[]` are NOT interchangeable here, unlike in `asKeywords` above: the
- * Implementation tab seeds `googleCallouts` on `!== undefined`, so returning `[]` for a brief
- * written before this feature existed would clear an editor rather than leave it untouched.
- *
- * A stored `[]` is a list the OPERATOR emptied. It reaches the row from one producer only —
- * `briefWithCarriedExtensions` on the client, which carries an emptied draft list forward — because
- * the generator yields its `callouts` event only when it shaped at least one entry, so a generation
- * that produced nothing writes no field at all. So `[]` returns as `[]` and re-clears the editor,
- * which is what the operator asked for, while the generation-produced-nothing and
- * written-before-this-feature cases both arrive as the `null` `toBriefInput` writes, restore as
- * absent, and leave the editor alone.
- *
- * Bounded and de-duplicated by the editor's own rules, so a row written by an older or foreign
- * client cannot open the editor holding a list it would refuse the operator for typing. Where the
- * generator's `shapeCallouts` DROPS an over-long entry, this one TRUNCATES it: there the entry is
- * one the model just produced and the next candidate can take its place, here it is one the
- * operator typed and the only alternative is losing it.
- */
-/**
  * A stored negative-keyword suggestion list, or `undefined` when the field is absent or not an
  * array.
  *
@@ -4018,6 +3997,27 @@ function asNegativeKeywords(value: unknown): string[] | undefined {
   return keywords.slice(0, MAX_NEGATIVE_KEYWORDS_PER_REQUEST);
 }
 
+/**
+ * A stored callout list, or `undefined` when the field is absent or not an array.
+ *
+ * `undefined` and `[]` are NOT interchangeable here, unlike in `asKeywords` above: the
+ * Implementation tab seeds `googleCallouts` on `!== undefined`, so returning `[]` for a brief
+ * written before this feature existed would clear an editor rather than leave it untouched.
+ *
+ * A stored `[]` is a list the OPERATOR emptied. It reaches the row from one producer only —
+ * `briefWithCarriedExtensions` on the client, which carries an emptied draft list forward — because
+ * the generator yields its `callouts` event only when it shaped at least one entry, so a generation
+ * that produced nothing writes no field at all. So `[]` returns as `[]` and re-clears the editor,
+ * which is what the operator asked for, while the generation-produced-nothing and
+ * written-before-this-feature cases both arrive as the `null` `toBriefInput` writes, restore as
+ * absent, and leave the editor alone.
+ *
+ * Bounded and de-duplicated by the editor's own rules, so a row written by an older or foreign
+ * client cannot open the editor holding a list it would refuse the operator for typing. Where the
+ * generator's `shapeCallouts` DROPS an over-long entry, this one TRUNCATES it: there the entry is
+ * one the model just produced and the next candidate can take its place, here it is one the
+ * operator typed and the only alternative is losing it.
+ */
 function asCallouts(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) {
     return undefined;

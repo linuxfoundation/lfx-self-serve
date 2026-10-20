@@ -435,9 +435,12 @@ export class PlanningTabComponent implements OnInit {
    * the two above are carried to the Implementation tab's — held here, emitted by
    * `onProceedToImplementation`, no editor on THIS tab.
    *
-   * Unlike those two it IS refreshed by a refinement: the server regenerates it on the keyword
-   * gate, and there is nothing of the operator's for a regeneration to overwrite, because the only
-   * place they edit these is the Optimize tab's own text box after launch.
+   * Set by the GENERATE stream only, as those two are. A refinement leaves it alone, and not for
+   * their reason — there is nothing of the operator's here for a regeneration to overwrite, since
+   * the only place they edit these is the Optimize tab's own text box after launch. It is that
+   * `streamRefinedBrief` never scrapes: it has no event details to build negatives from, so a
+   * regeneration there would replace a list grounded in the event page with one built from the URL
+   * alone. A suggestion that is slightly stale beats one that is thinner.
    */
   protected readonly negativeKeywords = signal<string[]>([]);
   protected readonly errorMessage = signal<string | null>(null);
@@ -1683,12 +1686,6 @@ export class PlanningTabComponent implements OnInit {
       case 'keywords':
         this.keywords.set(event.data as CampaignKeyword[]);
         break;
-      // Refreshed on a refinement, unlike callouts and sitelinks: the server regenerates this list
-      // on the same gate as the keywords above, and the operator's own edits live in the Optimize
-      // tab's editor rather than in this field, so there is nothing here to overwrite.
-      case 'negativeKeywords':
-        this.negativeKeywords.set(event.data as string[]);
-        break;
       case 'linkedin_strategy':
         break;
       case 'error':
@@ -2314,10 +2311,11 @@ export class PlanningTabComponent implements OnInit {
       case 'negativeKeywords':
         this.negativeKeywords.set(event.data as string[]);
         break;
-      // Only the GENERATE stream carries these two. `handleRefineSSEEvent` has no arm for them
-      // because the server's refine path yields neither -- regenerating an extension list would
-      // overwrite whatever the operator has since edited into it. (It DOES yield
-      // `negativeKeywords`, which is why that arm above has a refine counterpart and these do not.)
+      // Only the GENERATE stream carries these two — and the `negativeKeywords` arm above, which is
+      // why none of the three has a counterpart in `handleRefineSSEEvent`. `streamRefinedBrief`
+      // yields no extension list because regenerating one would overwrite whatever the operator has
+      // since edited into it, and no negative-keyword list because it never scrapes, so it has
+      // nothing to rebuild the suggestion from.
       case 'callouts':
         this.googleCallouts.set(event.data as string[]);
         break;

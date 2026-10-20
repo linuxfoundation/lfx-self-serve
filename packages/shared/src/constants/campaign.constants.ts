@@ -2165,7 +2165,13 @@ export const MAX_NEGATIVE_KEYWORD_TEXT_LENGTH = 100;
  * Google Ads' limit on a negative keyword's text (`KeywordInfo.text`), in characters. Shorter than
  * the shared limit above, and campaign-service applies it in its Google dispatcher: a longer text
  * is refused with 400 before Google is contacted, taking the whole request with it. The editor
- * therefore refuses it first, so no Google batch is ever sent that upstream will reject whole.
+ * therefore refuses it first, so the UI never submits a Google batch upstream will reject whole.
+ *
+ * Enforced in the editor and in what the brief suggests, NOT at the BFF route, which guards the
+ * shared 100: `POST /:campaignId/negative-keywords` is given a campaign id and a brief id and no
+ * platform, so it would have to fetch the campaign to know which limit applies. A caller that
+ * bypasses the editor can still earn upstream's 400 — which is upstream's to give, and loses
+ * nothing, since the request is refused before Google is contacted.
  */
 export const MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH = 80;
 

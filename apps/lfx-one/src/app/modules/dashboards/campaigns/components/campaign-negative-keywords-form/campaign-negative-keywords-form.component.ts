@@ -231,8 +231,11 @@ export class CampaignNegativeKeywordsFormComponent {
    * The no-request check is what keeps it out of {@link initRestoreUnsettledInput}'s way: that
    * restores the keywords of the last request which were refused or unconfirmed, and skips a
    * non-empty field, so a form seeded before it ran would silently drop the ones the operator
-   * actually tried to send. A campaign that has been sent to has a real list to come back to; one
-   * that has not is where a suggestion helps.
+   * actually tried to send. The check is on the request EXISTING, not on it having left anything to
+   * restore: where every keyword of the last request was confirmed added, neither initializer fills
+   * the field and the editor opens blank for the rest of the session — which is the right default
+   * for a campaign whose exclusions are already in place, and never a loss, since the operator can
+   * still type. A campaign that has not been sent to is where a suggestion helps.
    *
    * Re-parsed against THIS platform's caps rather than pasted in: the generator bounds the list to
    * Google Ads' 80 characters and 60 keywords because it cannot know which campaign it will be sent

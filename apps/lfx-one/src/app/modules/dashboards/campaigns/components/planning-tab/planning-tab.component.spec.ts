@@ -1852,18 +1852,19 @@ describe('PlanningTabComponent email brief editing', () => {
     expect(extensions().negativeKeywords()).toEqual(['free kubecon', 'kubecon jobs']);
   });
 
-  // The opposite of the callout/sitelink rule above, and deliberately so: the server DOES
-  // regenerate negatives on a refine, because this list is a suggestion rather than a stored
-  // decision — the operator's own edits live in the Optimize tab's text box, not in this field, so
-  // a refresh here overwrites nothing of theirs. A missing arm would leave the refined brief
-  // carrying suggestions derived from the pre-refinement event details.
-  it('refreshes the negative-keyword list from the refine stream', async () => {
+  // The same rule as the callouts and sitelinks above, reached by a different route: a refinement
+  // regenerates the keywords and leaves the negatives standing. `streamRefinedBrief` never scrapes,
+  // so it has no event details to rebuild a negative-keyword suggestion from, and a regeneration
+  // there would replace a list grounded in the event page with one built from the URL alone.
+  // Pinned here because the cost of getting it wrong is invisible: an arm added on this side
+  // without the matching server yield is dead code that reads as a working feature.
+  it('keeps the generated negative keywords through a refinement', async () => {
     await buildForExtensions();
     extensions().handleSSEEvent({ type: 'negativeKeywords', data: ['free kubecon'] } as SSEEvent<CampaignSSEEventType>);
 
-    extensions().handleRefineSSEEvent({ type: 'negativeKeywords', data: ['kubecon jobs'] } as SSEEvent<CampaignSSEEventType>, 'more technical');
+    extensions().handleRefineSSEEvent({ type: 'keywords', data: [{ term: 'kubecon tickets' }] } as SSEEvent<CampaignSSEEventType>, 'more technical');
 
-    expect(extensions().negativeKeywords()).toEqual(['kubecon jobs']);
+    expect(extensions().negativeKeywords()).toEqual(['free kubecon']);
   });
 
   // New Brief must leave nothing of the discarded brief behind: a stale sitelink points the next

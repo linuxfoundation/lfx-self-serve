@@ -377,9 +377,10 @@ export interface CampaignBriefOutput {
    * editor picks it at send time and a brief that guessed one would be guessing for a campaign that
    * did not exist when it was written.
    *
-   * Absent and empty mean different things, as on {@link googleCallouts}: `undefined` is a brief
-   * that carries no list (generated before this shipped, or a generation that produced nothing) and
-   * the editor opens as it always did; `[]` is a list, and an empty one offers nothing.
+   * Absent and empty are interchangeable here, UNLIKE {@link googleCallouts}, where `[]` is a list
+   * the operator emptied and clears an editor. Both leave this editor empty and nothing is lost
+   * either way, because the operator's own text is never stored in this field — a suggestion is all
+   * it ever holds, and the consumer seeds only on a non-empty one.
    *
    * Already bounded by the generator to {@link MAX_NEGATIVE_KEYWORDS_PER_REQUEST} entries of at
    * most {@link MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters — Google's cap, the narrowest
