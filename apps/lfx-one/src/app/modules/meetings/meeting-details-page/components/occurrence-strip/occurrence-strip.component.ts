@@ -79,14 +79,6 @@ export class MeetingOccurrenceStripComponent {
   private readonly pagingRun = signal<number | null>(null);
   /** Bumped by each new request: a read whose run is no longer this one is dropped. */
   private runId = 0;
-  /** Bumped by each move: a move superseded by a later one, while its reads were in flight, is dropped. */
-  private moveId = 0;
-  /**
-   * The chip a move is opening, while it reads, with the run it reads for and the page's occurrence it
-   * started from: a repeat click on it is ignored only while all three still hold. Otherwise that move
-   * drops itself as stale, so the marker must not block the new click either.
-   */
-  private pendingMove: { startMs: number; run: number; from: number | null } | null = null;
 
   // One formatter per field, in the viewer's zone; the strip only renders its chips on the browser.
   private readonly timezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
@@ -180,14 +172,14 @@ export class MeetingOccurrenceStripComponent {
 
   protected select(item: MeetingOccurrenceStripItem): void {
     if (!item.cancelled && item.startMs !== this.selected()?.startMs) {
-      void this.moveTo(item);
+      this.moveTo(item);
     }
   }
 
   protected jumpToNext(): void {
     const nextUp = this.nextUp();
     if (nextUp) {
-      void this.moveTo(nextUp);
+      this.moveTo(nextUp);
     }
   }
 
@@ -200,7 +192,7 @@ export class MeetingOccurrenceStripComponent {
     for (let read = 0; read <= MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES; read++) {
       const { item, readFirst } = this.adjacent(direction);
       if (item) {
-        void this.moveTo(item);
+        this.moveTo(item);
         return;
       }
       if (!readFirst || read === MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES) {
@@ -228,57 +220,10 @@ export class MeetingOccurrenceStripComponent {
     this.scroller()?.nativeElement.querySelector<HTMLElement>(`[data-start-ms="${target.startMs}"]`)?.focus();
   }
 
-  /**
-   * Moves the page, and hands the tab stop back to the selection, wherever the viewer moved it. An ended
-   * occurrence the live list carries opens by its past record's composite id when there is one, so the
-   * page loads that record's recording and roster: when its record could be on a past page not read yet
-   * (older than the oldest record read, while the past side has more), those pages are read first (a
-   * bounded number, of the largest size) and the refreshed chip is used. A click always lands: when a
-   * read cannot run or fails, it opens by `?occurrence=` with what is known. It is dropped only when it
-   * is stale: a later move started, the run moved on, or the page moved elsewhere meanwhile.
-   */
-  private async moveTo(item: MeetingOccurrenceStripItem): Promise<void> {
-    // A repeat click on the chip already being opened changes nothing: it would only cut short the read
-    // for its record.
-    // The page's own occurrence, not the selected chip: a read can bring that chip in without the page
-    // having moved at all.
-    const from = this.state.selectedOccurrenceStartMs();
-    const pending = this.pendingMove;
-    if (pending?.startMs === item.startMs && pending.run === this.runId && pending.from === from) {
-      return;
-    }
+  /** Moves the page, and hands the tab stop back to the selection, wherever the viewer moved it. */
+  private moveTo(item: MeetingOccurrenceStripItem): void {
     this.focusStartMs.set(null);
-    const move = ++this.moveId;
-    const run = this.runId;
-    this.pendingMove = { startMs: item.startMs, run, from };
-    let target = item;
-    try {
-      for (let read = 0; read < MEETING_OCCURRENCE_STRIP_MAX_CHASE_PAGES && this.recordMayBeUnread(target); read++) {
-        const paged = await this.loadMore(run, 'past', MEETING_OCCURRENCES_PAGE_MAX_LIMIT);
-        if (move !== this.moveId || run !== this.runId || this.state.selectedOccurrenceStartMs() !== from) {
-          return;
-        }
-        if (!paged) {
-          break;
-        }
-        target = this.items().find((candidate) => candidate.startMs === item.startMs) ?? target;
-      }
-      this.state.navigateToOccurrence(target);
-    } finally {
-      if (move === this.moveId) {
-        this.pendingMove = null;
-      }
-    }
-  }
-
-  /** An ended chip with no record id yet, older than every past record read while the past side has more. */
-  private recordMayBeUnread(item: MeetingOccurrenceStripItem): boolean {
-    const loaded = this.loaded();
-    if (!item.isPast || item.pastResourceId || !loaded?.pastHasMore) {
-      return false;
-    }
-    const { oldestPast } = this.readEdges(loaded);
-    return oldestPast === undefined || item.startMs < oldestPast;
+    this.state.navigateToOccurrence(item);
   }
 
   /**
