@@ -19,6 +19,8 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
+  MeetingCommittee,
+  MeetingCommitteeContextEntry,
   MeetingJoinURL,
   MeetingRecurrence,
   MeetingRegistrant,
@@ -60,6 +62,7 @@ import {
   selectApplicableRsvp,
   selectPrimaryPastMeetingSummary,
 } from '@lfx-one/shared/utils';
+import { getGroupBehavioralClass } from '@lfx-one/shared/utils/committee.utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError, AuthorizationError, ServiceValidationError } from '../errors';
@@ -143,22 +146,18 @@ export class MeetingService {
       has_committees: hasCommittees,
     });
 
-    const [meetingsWithProjects, committeeNameMap] = await Promise.all([
+    const [meetingsWithProjects, committeeContextMap] = await Promise.all([
       this.getMeetingProjectName(req, meetings),
-      hasCommittees ? this.getCommitteeNameMap(req, meetings) : Promise.resolve(new Map<string, string>()),
+      hasCommittees ? this.getCommitteeContextMap(req, meetings) : Promise.resolve(new Map<string, MeetingCommitteeContextEntry>()),
     ]);
 
-    // Merge committee names into project-enriched meetings
+    // Merge committee names and context into project-enriched meetings
     meetings = meetingsWithProjects;
-    if (hasCommittees && committeeNameMap.size > 0) {
+    if (hasCommittees && committeeContextMap.size > 0) {
       meetings
         .filter((m) => m.committees && m.committees.length > 0)
         .forEach((m) => {
-          m.committees = m.committees.map((c) => ({
-            uid: c.uid,
-            name: committeeNameMap.get(c.uid) || c.name,
-            allowed_voting_statuses: c.allowed_voting_statuses,
-          }));
+          m.committees = this.mergeCommitteeContext(m.committees, committeeContextMap);
         });
     }
 
@@ -260,22 +259,18 @@ export class MeetingService {
 
     // Project enrichment runs in parallel with the committee-name lookup (both depend only on
     // the meeting payload), so it adds no sequential latency.
-    const [project, committeeNameMap] = await Promise.all([
+    const [project, committeeContextMap] = await Promise.all([
       includeProject
         ? fetchEntityProject(req, this.projectService, meeting.project_uid, { operation: 'get_meeting_by_id', meeting_id: meeting.id })
         : Promise.resolve(null),
-      committees ? this.getCommitteeNameMap(req, [meeting], apiOptions) : Promise.resolve(null),
+      committees ? this.getCommitteeContextMap(req, [meeting], apiOptions) : Promise.resolve(null),
     ]);
     if (project) {
       Object.assign(meeting, toEntityProjectFields(project));
     }
 
-    if (committees && committeeNameMap) {
-      meeting.committees = committees.map((c) => ({
-        uid: c.uid,
-        name: committeeNameMap.get(c.uid) || c.name,
-        allowed_voting_statuses: c.allowed_voting_statuses,
-      }));
+    if (committees && committeeContextMap) {
+      meeting.committees = this.mergeCommitteeContext(committees, committeeContextMap);
     }
 
     if (access) {
@@ -372,12 +367,8 @@ export class MeetingService {
         past_meeting_id: pastMeetingUid,
         committee_count: meeting.committees.length,
       });
-      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting], apiOptions);
-      meeting.committees = meeting.committees.map((c) => ({
-        uid: c.uid,
-        name: committeeNameMap.get(c.uid) || c.name,
-        allowed_voting_statuses: c.allowed_voting_statuses,
-      }));
+      const committeeContextMap = await this.getCommitteeContextMap(req, [meeting], apiOptions);
+      meeting.committees = this.mergeCommitteeContext(meeting.committees, committeeContextMap);
     }
 
     if (includeProject) {
@@ -568,6 +559,7 @@ export class MeetingService {
     // Include organizers in the create payload
     const createPayload = {
       ...meetingData,
+      ...(meetingData.committees && { committees: this.toUpstreamCommittees(meetingData.committees) }),
       ...(username && { organizers: [username] }),
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
@@ -644,6 +636,7 @@ export class MeetingService {
     // Include organizers in the update payload
     const updatePayload = {
       ...meetingData,
+      ...(meetingData.committees && { committees: this.toUpstreamCommittees(meetingData.committees) }),
       organizers: Array.from(organizersSet),
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
@@ -2492,10 +2485,44 @@ export class MeetingService {
   }
 
   /**
-   * Fetches committee names for all unique committees referenced in meetings.
-   * Returns a Map of committee UID -> committee name for merging into meeting data.
+   * Narrows request committees to the fields the meeting API takes. The edit forms hydrate
+   * `committees` verbatim from the detail payload and resubmit it, so without this the response-only
+   * `MeetingCommitteeContext` fields (#3593) would ride along to upstream on every save.
    */
-  private async getCommitteeNameMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, string>> {
+  private toUpstreamCommittees(committees: MeetingCommittee[]): MeetingCommittee[] {
+    return committees.map((c) => ({ uid: c.uid, name: c.name, allowed_voting_statuses: c.allowed_voting_statuses }));
+  }
+
+  /**
+   * Rebuilds a meeting's committee entries from the context map: `uid` and `allowed_voting_statuses`
+   * from the meeting, `name` from the committee resource (falling back to the meeting's own), and the
+   * `MeetingCommitteeContext` fields when the map carries them — only for committees the public group
+   * directory lists, see {@link getCommitteeContextMap}.
+   */
+  private mergeCommitteeContext(committees: MeetingCommittee[], contextMap: Map<string, MeetingCommitteeContextEntry>): MeetingCommittee[] {
+    return committees.map((c) => {
+      const { name, ...context } = contextMap.get(c.uid) ?? {};
+      return {
+        uid: c.uid,
+        name: name || c.name,
+        allowed_voting_statuses: c.allowed_voting_statuses,
+        ...context,
+      };
+    });
+  }
+
+  /**
+   * Resolves name and context for all unique committees referenced in meetings, from one
+   * query-service read per batch of 100 UIDs — the committee resource arrives whole, so widening
+   * what is kept costs no extra upstream call (#3593).
+   *
+   * Every entry carries the committee `name` (as before). The `MeetingCommitteeContext` fields
+   * (category, behavioral class, description, member count, join mode) are kept only for committees
+   * with `public: true` — the set the public group directory publishes. Public meeting pages read
+   * this with an M2M token, so without the gate a non-public committee's description and headcount
+   * would reach anonymous viewers.
+   */
+  private async getCommitteeContextMap(req: Request, meetings: Meeting[], options?: ApiRequestOptions): Promise<Map<string, MeetingCommitteeContextEntry>> {
     const uniqueCommitteeUids = [
       ...new Set(
         meetings
@@ -2547,12 +2574,12 @@ export class MeetingService {
       )
     );
 
-    const nameMap = new Map<string, string>();
+    const contextMap = new Map<string, MeetingCommitteeContextEntry>();
     for (const [i, result] of results.entries()) {
       if (result.status === 'fulfilled') {
         for (const committee of result.value) {
-          if (committee?.uid && committee.name) {
-            nameMap.set(committee.uid, committee.name);
+          if (committee?.uid) {
+            contextMap.set(committee.uid, this.toMeetingCommitteeContextEntry(committee));
           }
         }
       } else {
@@ -2565,7 +2592,24 @@ export class MeetingService {
       }
     }
 
-    return nameMap;
+    return contextMap;
+  }
+
+  /** Keeps a committee's `name`, plus its `MeetingCommitteeContext` fields when the committee is public. */
+  private toMeetingCommitteeContextEntry(committee: Committee): MeetingCommitteeContextEntry {
+    const entry: MeetingCommitteeContextEntry = {};
+    if (committee.name) {
+      entry.name = committee.name;
+    }
+    if (committee.public !== true) {
+      return entry;
+    }
+    entry.behavioral_class = getGroupBehavioralClass(committee.category);
+    if (committee.category) entry.category = committee.category;
+    if (committee.description) entry.description = committee.description;
+    if (typeof committee.total_members === 'number') entry.total_members = committee.total_members;
+    if (committee.join_mode) entry.join_mode = committee.join_mode;
+    return entry;
   }
 
   /**

@@ -5,6 +5,7 @@ import type { MEETING_ALLOWED_VOTING_STATUSES } from '../constants/committees.co
 import type { PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS } from '../constants/meeting-registrant.constants';
 import type { MEETING_COMPOSER_SECTIONS, PAST_MEETING_SORT, MEETING_FEATURE_BY_KEY } from '../constants/meeting.constants';
 import type { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType, CancelOnCommitteeRemoval } from '../enums';
+import type { Committee, GroupBehavioralClass } from './committee.interface';
 import type { TagSeverity } from './components.interface';
 import type { MeetingAttachment, PresignAttachmentResponse } from './meeting-attachment.interface';
 
@@ -130,7 +131,7 @@ export type MeetingAllowedVotingStatus = (typeof MEETING_ALLOWED_VOTING_STATUSES
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
  */
-export interface MeetingCommittee {
+export interface MeetingCommittee extends MeetingCommitteeContext {
   /** Unique identifier for the committee */
   uid: string;
   /** Allowed voting statuses for committee members (meeting API snake_case vocabulary) */
@@ -138,6 +139,23 @@ export interface MeetingCommittee {
   /** Committee name */
   name?: string;
 }
+
+/**
+ * Committee resource fields the BFF folds into a meeting's `committees[]` entries (#3593), taken
+ * from the same query-service read that resolves `name` — no extra upstream call. Response-only.
+ *
+ * Present only for committees the public group directory lists (`committee.public`), and then the
+ * same fields `PublicGroupSummary` already publishes for them: the read behind an anonymous meeting
+ * page runs on an M2M token, so a non-public committee's description or headcount would otherwise
+ * reach callers the directory deliberately hides it from. `name` keeps its pre-existing behaviour.
+ */
+export type MeetingCommitteeContext = Partial<Pick<Committee, 'category' | 'description' | 'total_members' | 'join_mode'>> & {
+  /** Behavioral class derived from `category` server-side; keys `BEHAVIORAL_CLASS_CONFIG` for the group tag. */
+  behavioral_class?: GroupBehavioralClass;
+};
+
+/** What the BFF keeps per committee from that read: the name, plus the context fields when public (#3593). */
+export type MeetingCommitteeContextEntry = Pick<MeetingCommittee, 'name'> & MeetingCommitteeContext;
 
 /**
  * User info embedded in meeting responses (the meeting creator / organizer).
@@ -1997,6 +2015,8 @@ export type PublicMeetingParentProject = {
   uid: string;
   name: string;
   slug: string;
+  /** Foundation logo, so the parent organization can render with its mark (#3593). */
+  logo_url: string;
 };
 
 /**

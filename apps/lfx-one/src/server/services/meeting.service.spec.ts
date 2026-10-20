@@ -1104,7 +1104,7 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
 
   const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
   // getMeetingById issues exactly one proxyRequest call (no committees on the fixture, so the
-  // committee-name-map enrichment path is skipped).
+  // committee-context-map enrichment path is skipped).
   const meetingResponse = (projectUid: string) => ({ id: MEETING_UID, project_uid: projectUid });
 
   beforeEach(() => {
@@ -2601,5 +2601,138 @@ describe('MeetingService.createMeetingRsvp — acknowledged response', () => {
     proxyRequest.mockResolvedValueOnce({ id: 'synthetic-rsvp', meeting_id: 'synthetic-meeting', response: 'declined', scope: 'all' });
     const saved = await service.createMeetingRsvp(req, 'synthetic-meeting', { response: 'accepted', scope: 'all' });
     expect(saved.response_type).toBe('declined');
+  });
+});
+
+// E8-01 (#3593): the committee read behind every meeting detail payload keeps the context the
+// redesign's group header and Discover section need, from the same query-service call that already
+// resolved `name` — and keeps it only for committees the public group directory lists.
+describe('MeetingService committee context enrichment (#3593)', () => {
+  let service: MeetingService;
+
+  const committeeResources = (committees: Record<string, unknown>[]) => ({
+    resources: committees.map((c) => ({ id: `committee:${c['uid']}`, data: c })),
+    page_token: undefined,
+  });
+  const publicCommittee = {
+    uid: 'cmt-public',
+    name: 'Technical Steering Committee',
+    public: true,
+    category: 'Technical Steering Committee',
+    description: 'Steers the technical direction.',
+    total_members: 12,
+    join_mode: 'open',
+    sso_group_name: 'tsc-sso',
+    project_uid: 'project-1',
+  };
+  const privateCommittee = {
+    uid: 'cmt-private',
+    name: 'Security Response',
+    public: false,
+    category: 'Working Group',
+    description: 'Handles embargoed reports.',
+    total_members: 4,
+    join_mode: 'invite_only',
+  };
+  const meetingWithCommittees = (id: string) => ({
+    id,
+    project_uid: 'project-1',
+    committees: [
+      { uid: 'cmt-public', allowed_voting_statuses: ['voting_rep'] },
+      { uid: 'cmt-private', name: 'stale name' },
+    ],
+  });
+  const committeeQueries = () => proxyRequest.mock.calls.filter((call) => call[2] === '/query/resources' && call[4]?.type === 'committee');
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('adds the public committee context to the detail payload with a single committee read', async () => {
+    proxyRequest.mockResolvedValueOnce(meetingWithCommittees('meeting-1')).mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]));
+
+    const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(committeeQueries()).toHaveLength(1);
+    expect(meeting.committees).toEqual([
+      {
+        uid: 'cmt-public',
+        name: 'Technical Steering Committee',
+        allowed_voting_statuses: ['voting_rep'],
+        category: 'Technical Steering Committee',
+        behavioral_class: 'oversight-committee',
+        description: 'Steers the technical direction.',
+        total_members: 12,
+        join_mode: 'open',
+      },
+      // Not in the public group directory: the name resolves as before, nothing else is attached.
+      { uid: 'cmt-private', name: 'Security Response', allowed_voting_statuses: undefined },
+    ]);
+    expect(meeting.committees[0]).not.toHaveProperty('sso_group_name');
+  });
+
+  it('reads with the explicit bearer token a public route passes', async () => {
+    proxyRequest.mockResolvedValueOnce(meetingWithCommittees('meeting-1')).mockResolvedValueOnce(committeeResources([publicCommittee]));
+
+    await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false, bearerToken: 'm2m-token' });
+
+    expect(committeeQueries()).toHaveLength(1);
+    expect(committeeQueries()[0][7]).toEqual({ bearerToken: 'm2m-token' });
+  });
+
+  it('adds the same context to the past-meeting payload with a single committee read', async () => {
+    proxyRequest.mockResolvedValueOnce(meetingWithCommittees('past-1')).mockResolvedValueOnce(committeeResources([publicCommittee, privateCommittee]));
+
+    const meeting = await service.getPastMeetingById(req, 'past-1', { bearerToken: 'm2m-token' });
+
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(committeeQueries()).toHaveLength(1);
+    expect(meeting.committees[0]).toMatchObject({ behavioral_class: 'oversight-committee', total_members: 12, join_mode: 'open' });
+    expect(meeting.committees[1]).toEqual({ uid: 'cmt-private', name: 'Security Response', allowed_voting_statuses: undefined });
+  });
+
+  it('does not send the response-only context back upstream when an edit resubmits hydrated committees', async () => {
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('alice');
+    proxyRequestWithResponse.mockReset();
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', {
+      project_uid: 'project-1',
+      start_time: '2026-01-01T00:00:00Z',
+      duration: 30,
+      timezone: 'UTC',
+      title: 'Test',
+      description: '',
+      committees: [
+        {
+          uid: 'cmt-public',
+          name: 'Technical Steering Committee',
+          allowed_voting_statuses: ['voting_rep'],
+          category: 'Technical Steering Committee',
+          behavioral_class: 'oversight-committee',
+          description: 'Steers the technical direction.',
+          total_members: 12,
+          join_mode: 'open',
+        },
+      ],
+    });
+
+    expect(proxyRequestWithResponse.mock.calls[0][5].committees).toEqual([
+      { uid: 'cmt-public', name: 'Technical Steering Committee', allowed_voting_statuses: ['voting_rep'] },
+    ]);
+  });
+
+  it('keeps the meeting-supplied committee name when the committee read fails', async () => {
+    proxyRequest.mockResolvedValueOnce(meetingWithCommittees('meeting-1')).mockRejectedValueOnce(new Error('query service down'));
+
+    const meeting = await service.getMeetingById(req, 'meeting-1', 'v1_meeting', { access: false });
+
+    expect(meeting.committees).toEqual([
+      { uid: 'cmt-public', name: undefined, allowed_voting_statuses: ['voting_rep'] },
+      { uid: 'cmt-private', name: 'stale name', allowed_voting_statuses: undefined },
+    ]);
   });
 });

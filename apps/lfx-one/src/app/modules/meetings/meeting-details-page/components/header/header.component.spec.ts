@@ -33,7 +33,7 @@ describe('MeetingHeaderComponent', () => {
     slug: 'acme-project',
     logo_url: 'https://acme-motors.example/logo.svg',
     parent_uid: 'foundation-1',
-    parent: { uid: 'foundation-1', name: 'Acme Foundation', slug: 'acme-foundation' },
+    parent: { uid: 'foundation-1', name: 'Acme Foundation', slug: 'acme-foundation', logo_url: 'https://acme-foundation.example/logo.svg' },
   };
 
   const build = (overrides: Partial<Meeting> = {}): LoadedMeeting =>

@@ -589,7 +589,7 @@ describe('PublicMeetingController.getMeetingById parent project resolution (LFXV
 
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
-    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation' });
+    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation', logo_url: 'flogo' });
   });
 
   it('returns parent: null when the project has no parent_uid', async () => {
@@ -654,7 +654,7 @@ describe('PublicMeetingController.getPublicPastMeetingById parent project resolu
 
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
-    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation' });
+    expect(payload.project.parent).toEqual({ uid: 'parent', name: 'Foundation', slug: 'foundation', logo_url: 'flogo' });
   });
 
   it('returns parent: null when the project has no parent_uid', async () => {

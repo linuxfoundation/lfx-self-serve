@@ -2293,7 +2293,7 @@ export class MeetingController {
     const committeeMap = new Map<string, Committee | null>();
     committees.forEach(({ uid, committee }) => committeeMap.set(uid, committee));
     // The meeting's own committee entries, which already carry a resolved `name`: `getMeetingById`
-    // fills them from `getCommitteeNameMap`, a query-service read, while `getCommitteeById` above is
+    // fills them from `getCommitteeContextMap`, a query-service read, while `getCommitteeById` above is
     // a committee-service read gated on the caller being a committee reader. An organizer who is not
     // one gets `null` from that fetch, and without this fallback the "via [Group]" chip silently
     // stops rendering for them. Swapping in an M2M token here instead would also hand them the
@@ -2457,7 +2457,7 @@ export class MeetingController {
    * retry. An empty set is reserved for the case it actually describes: a meeting with no committees.
    *
    * `access: false` because only `committees[].uid` is read here, and the default would additionally
-   * pay an FGA access check that is discarded. It does *not* skip `getCommitteeNameMap` — that runs
+   * pay an FGA access check that is discarded. It does *not* skip `getCommitteeContextMap` — that runs
    * unconditionally inside `getMeetingById` — so this saves the access check, not the name query.
    */
   private async getMeetingCommitteeUids(req: Request, meetingUid: string): Promise<Set<string>> {

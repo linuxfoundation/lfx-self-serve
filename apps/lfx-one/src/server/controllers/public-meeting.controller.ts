@@ -946,7 +946,7 @@ export class PublicMeetingController {
       logo_url: project.logo_url,
       uid: project.uid,
       parent_uid: project.parent_uid,
-      parent: parent ? { uid: parent.uid, name: parent.name, slug: parent.slug } : null,
+      parent: parent ? { uid: parent.uid, name: parent.name, slug: parent.slug, logo_url: parent.logo_url } : null,
     };
   }
 
