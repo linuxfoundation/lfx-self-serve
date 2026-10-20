@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  IMPERSONATION_ALREADY_TARGET_CODE,
+  IMPERSONATION_ALREADY_TARGET_MESSAGE,
   IMPERSONATION_START_FAILED_MESSAGE,
   IMPERSONATION_TARGET_USER_NOT_FOUND_CODE,
   IMPERSONATION_USER_NOT_FOUND_MESSAGE,
@@ -43,6 +45,10 @@ export function classifyImpersonationExchangeFailure(upstreamError: string): { s
 export function resolveImpersonationStartErrorMessage(code: string | undefined): string {
   if (code === IMPERSONATION_TARGET_USER_NOT_FOUND_CODE) {
     return IMPERSONATION_USER_NOT_FOUND_MESSAGE;
+  }
+
+  if (code === IMPERSONATION_ALREADY_TARGET_CODE) {
+    return IMPERSONATION_ALREADY_TARGET_MESSAGE;
   }
 
   return IMPERSONATION_START_FAILED_MESSAGE;

@@ -63,6 +63,11 @@ export interface ImpersonationStartResponse {
 }
 
 /**
+ * The page-blocking impersonation change in flight; the page reloads once it completes.
+ */
+export type ImpersonationTransition = 'starting' | 'switching' | 'stopping';
+
+/**
  * A previously impersonated profile, persisted client-side for quick re-selection.
  */
 export interface RecentImpersonation {

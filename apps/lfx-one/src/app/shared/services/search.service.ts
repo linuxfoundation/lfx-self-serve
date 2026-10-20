@@ -28,19 +28,19 @@ export class SearchService {
    *   rows whose email starts with what was typed. True partial-email matching needs the
    *   committee service to alias the email upstream (#2772 follow-up).
    */
-  public searchUsers(name: string, type: UserSearchType): Observable<UserSearchResult[]> {
+  public searchUsers(name: string, type: UserSearchType, asImpersonator = false): Observable<UserSearchResult[]> {
     const term = (name ?? '').trim();
     if (!term || !type) {
       return of([]);
     }
 
     if (!term.includes('@')) {
-      return this.fetchUsers(type, { name: term });
+      return this.fetchUsers(type, { name: term }, asImpersonator);
     }
 
     if (isEmailShape(term)) {
       const addresses = [...new Set([term, term.toLowerCase()])];
-      return forkJoin(addresses.map((address) => this.fetchUsers(type, { tags: `email:${address}` }))).pipe(
+      return forkJoin(addresses.map((address) => this.fetchUsers(type, { tags: `email:${address}` }, asImpersonator))).pipe(
         map((results) => dedupeUserSearchResults(results.flat()))
       );
     }
@@ -50,7 +50,9 @@ export class SearchService {
       return of([]);
     }
     const typed = term.toLowerCase();
-    return this.fetchUsers(type, { name: localPart }).pipe(map((users) => users.filter((user) => (user.email ?? '').toLowerCase().startsWith(typed))));
+    return this.fetchUsers(type, { name: localPart }, asImpersonator).pipe(
+      map((users) => users.filter((user) => (user.email ?? '').toLowerCase().startsWith(typed)))
+    );
   }
 
   /** Fetch the current employer for any user by LFID — used to pre-fill org fields. Fails silently. */
@@ -63,12 +65,15 @@ export class SearchService {
   /**
    * One `GET /api/search/users` call; a failed lookup degrades to no results rather than breaking
    * the typeahead. Strict encoding, so a plus-addressed email survives the query string.
+   * `asImpersonator` targets the admin-token route, which searches as the signed-in admin rather than
+   * the impersonation target.
    */
-  private fetchUsers(type: UserSearchType, query: { name: string } | { tags: string }): Observable<UserSearchResult[]> {
+  private fetchUsers(type: UserSearchType, query: { name: string } | { tags: string }, asImpersonator: boolean): Observable<UserSearchResult[]> {
     let params = strictHttpParams().set('type', type);
     params = 'name' in query ? params.set('name', query.name) : params.set('tags', query.tags);
+    const url = asImpersonator ? '/api/search/users/impersonator' : '/api/search/users';
 
-    return this.http.get<UserSearchResponse>('/api/search/users', { params }).pipe(
+    return this.http.get<UserSearchResponse>(url, { params }).pipe(
       map((response) => response.results || []),
       catchError((error: unknown) => {
         // Status and code only — the response object carries the request URL, whose query string

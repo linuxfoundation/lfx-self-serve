@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
@@ -9,12 +9,13 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE } from '@lfx-one/shared/constants';
+import { IMPERSONATION_SEARCH_NO_ACCOUNT_MESSAGE, IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { PersonaType, RecentImpersonation, UserSearchOption } from '@lfx-one/shared/interfaces';
 import { composeFullName, resolveImpersonationStartErrorMessage } from '@lfx-one/shared/utils';
 import { ImpersonationService } from '@services/impersonation.service';
+import { lockDynamicDialogWhile } from '@shared/utils/lock-dynamic-dialog.util';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { take } from 'rxjs';
 
 @Component({
@@ -25,6 +26,10 @@ import { take } from 'rxjs';
 export class ImpersonationDialogComponent {
   private readonly impersonationService = inject(ImpersonationService);
   private readonly dialogRef = inject(DynamicDialogRef);
+  private readonly dialogConfig = inject(DynamicDialogConfig, { optional: true });
+
+  // True when opened from the impersonation banner to swap the active target rather than start a session.
+  protected readonly switching = Boolean(this.dialogConfig?.data?.['switching']);
 
   protected targetUserForm = new FormGroup({
     targetUser: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
@@ -44,6 +49,7 @@ export class ImpersonationDialogComponent {
   ];
 
   protected loading = signal(false);
+  protected loadingMessage = computed(() => (this.loading() ? IMPERSONATION_TRANSITION_MESSAGES[this.switching ? 'switching' : 'starting'] : ''));
   protected error = signal('');
   protected recentImpersonations = signal<RecentImpersonation[]>(this.impersonationService.getRecentImpersonations());
   protected suggestions = signal<RecentImpersonation[]>(this.recentImpersonations());
@@ -54,6 +60,9 @@ export class ImpersonationDialogComponent {
   private nameSearchPickedUsername = signal<string | null>(null);
 
   public constructor() {
+    // Closing mid-request would drop the loading UI while the change still goes through and reloads the page.
+    lockDynamicDialogWhile(this.loading);
+
     // Drop the auto-restored persona context as soon as the user steers the target away from
     // the recent profile they picked — otherwise submit() would impersonate the new target
     // under the previous profile's lens.
@@ -86,7 +95,7 @@ export class ImpersonationDialogComponent {
     this.targetUserForm.controls.personaContext.disable();
 
     this.impersonationService
-      .startImpersonation(target, personaContext)
+      .startImpersonation(target, personaContext, this.switching)
       .pipe(take(1))
       .subscribe({
         next: (response) => {
@@ -98,7 +107,8 @@ export class ImpersonationDialogComponent {
             picture: response.targetUser.picture,
             personaContext,
           });
-          this.dialogRef.close(true);
+          // Left open (still under its loading overlay) until the reload unloads the page: closing it here would
+          // drop the loading UI for the whole reload.
           window.location.reload();
         },
         error: (err) => {

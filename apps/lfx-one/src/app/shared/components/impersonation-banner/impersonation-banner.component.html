@@ -8,17 +8,30 @@
     aria-label="Impersonation active"
     class="fixed top-0 left-0 right-0 z-[60] flex min-h-12 items-center justify-center gap-2 bg-yellow-400 py-2 text-sm font-medium text-black"
     data-testid="impersonation-banner">
-    <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
-    <span
-      >Viewing as <strong>{{ userService.user()?.email }}</strong></span
-    >
-    <span class="text-black/60">— by {{ userService.impersonator()?.name }}</span>
+    @if (transitionMessage(); as message) {
+      <!-- Pure-CSS spinner: the Font Awesome kit is deferred and must not gate a loading indicator (see styling.md). -->
+      <span class="h-4 w-4 animate-spin rounded-full border-2 border-black/20 border-t-black" aria-hidden="true"></span>
+      <span data-testid="impersonation-transition-message">{{ message }}</span>
+    } @else {
+      <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
+      <span
+        >Viewing as <strong>{{ userService.user()?.email }}</strong></span
+      >
+      <span class="text-black/60">— by {{ userService.impersonator()?.name }}</span>
+    }
+    <lfx-button
+      label="Switch User"
+      severity="secondary"
+      size="small"
+      [disabled]="transitioning()"
+      (onClick)="openSwitchDialog()"
+      data-testid="switch-impersonation-button" />
     <lfx-button
       label="Stop Impersonating"
       severity="contrast"
       size="small"
-      [disabled]="stoppingImpersonation()"
-      [loading]="stoppingImpersonation()"
+      [disabled]="transitioning()"
+      [loading]="transitioning()"
       (onClick)="stopImpersonation()"
       data-testid="stop-impersonation-button" />
   </div>
