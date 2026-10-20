@@ -204,6 +204,29 @@ export function isFileTypeAllowed(mimeType: string, fileName: string, allowedTyp
 }
 
 /**
+ * Resolve the MIME type to store for an upload, inferring it from the extension when the browser
+ * reports an empty or generic type.
+ * @description Not a validation step — run `isFileTypeAllowed` on the original metadata first. An
+ * explicit, non-generic MIME type is always returned unchanged, as is a generic one whose extension
+ * has no mapping.
+ * @param mimeType - The MIME type reported by the browser
+ * @param fileName - The file name to extract the extension from
+ * @returns The inferred MIME type for a blank or generic input with a known extension, otherwise `mimeType`
+ */
+export function resolveFileMimeType(mimeType: string, fileName: string): string {
+  if (mimeType && mimeType !== 'application/octet-stream') {
+    return mimeType;
+  }
+
+  const lastDotIndex = fileName.lastIndexOf('.');
+  if (lastDotIndex === -1) {
+    return mimeType;
+  }
+
+  return EXTENSION_TO_MIME[fileName.toLowerCase().substring(lastDotIndex)] ?? mimeType;
+}
+
+/**
  * Check whether a caller-supplied upload file name is safe to forward upstream.
  * Rejects path separators and `..` (path traversal), and control characters (0x00-0x1F, 0x7F)
  * and `"` — the name is written into a multipart `Content-Disposition: ...; filename="..."`
