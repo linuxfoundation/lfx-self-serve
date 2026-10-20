@@ -61,7 +61,7 @@ describe('HealthMetricsFootnoteComponent', () => {
 
   it('renders a bold run in bold and a routed run as a link to that tab', () => {
     expect(fixture.nativeElement.querySelector('b')?.textContent).toBe('governance-accurate');
-    const link = fixture.nativeElement.querySelector('a') as HTMLAnchorElement;
+    const link = fixture.nativeElement.querySelector('[data-testid="health-metrics-footnote-link-members"]') as HTMLAnchorElement;
     expect(link.textContent).toBe('Members');
     expect(link.getAttribute('href')).toBe('/foundation/health-metrics/members');
   });

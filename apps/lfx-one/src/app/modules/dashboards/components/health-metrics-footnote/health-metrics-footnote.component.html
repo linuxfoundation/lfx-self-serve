@@ -14,7 +14,13 @@
     @for (part of parts(); track $index) {
       @if (part.route) {
         <!-- Preserves query params, matching the tab bar's links. -->
-        <a class="text-blue-600 hover:underline" [routerLink]="[basePath, part.route]" queryParamsHandling="preserve">{{ part.text }}</a>
+        <a
+          class="text-blue-600 hover:underline"
+          [routerLink]="[basePath, part.route]"
+          queryParamsHandling="preserve"
+          [attr.data-testid]="'health-metrics-footnote-link-' + part.route"
+          >{{ part.text }}</a
+        >
       } @else if (part.bold) {
         <b class="font-semibold">{{ part.text }}</b>
       } @else {
