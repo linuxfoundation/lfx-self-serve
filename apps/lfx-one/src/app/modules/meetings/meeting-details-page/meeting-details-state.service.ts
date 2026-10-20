@@ -49,7 +49,6 @@ import {
   combineLatest,
   distinctUntilChanged,
   EMPTY,
-  filter,
   interval,
   map,
   merge,
@@ -519,9 +518,18 @@ export class MeetingDetailsStateService {
     return toSignal(
       toObservable(this.meeting).pipe(
         map((meeting) => (meeting && (meeting.recurrence || getMeetingSeriesUid(meeting) !== meeting.id) ? getMeetingSeriesUid(meeting) : null)),
-        filter((seriesUid): seriesUid is string => !!seriesUid),
         distinctUntilChanged(),
-        switchMap((seriesUid) => this.occurrencesRefresh$.pipe(switchMap(() => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password()))))
+        // Another series (or none) starts empty: the service outlives in-app navigations, so the
+        // previous meeting's dates must never merge into this one's while its own read is in flight.
+        // A refresh of the same series keeps the timeline it has until the new one lands.
+        switchMap((seriesUid) =>
+          seriesUid
+            ? this.occurrencesRefresh$.pipe(
+                switchMap(() => this.meetingService.getPublicMeetingOccurrences(seriesUid, this.password())),
+                startWith(empty)
+              )
+            : of(empty)
+        )
       ),
       { initialValue: empty }
     );
