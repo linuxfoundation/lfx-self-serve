@@ -270,9 +270,9 @@ Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | 
 | `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page) |
 | `materials-section-updated`      | The "Updated" pill: a change in the last seven days              |
 | `materials-section-loading`      | The list's first load                                            |
-| `materials-section-sign-in`      | Sign in to view the materials (anonymous and refused)            |
+| `materials-section-sign-in`      | Sign in to view the materials (anonymous, as on V1)              |
 | `materials-section-sign-in-link` | Its Sign in link                                                 |
-| `materials-section-error`        | The list failed to load, with nothing to fall back on            |
+| `materials-section-error`        | A past occurrence's list failed, with nothing to fall back on    |
 | `materials-section-retry`        | Its Try again                                                    |
 | `materials-section-empty`        | None attached                                                    |
 | `materials-section-files`        | The files group ("Primary materials")                            |
@@ -280,9 +280,8 @@ Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | 
 | `materials-section-files-toggle` | Show N more / Show less for files                                |
 | `materials-section-links-toggle` | Show N more / Show less for links                                |
 
-Files and links are separate prefixes rather than one `materials-item-${uid}` because E3-05 groups
-attachments by category, and a test for the grouping needs to assert on type without first reading
-the row's contents.
+Files and links are separate prefixes rather than one `materials-item-${uid}`, so a test can
+assert on type without first reading the row's contents.
 
 ## People
 

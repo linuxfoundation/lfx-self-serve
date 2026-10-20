@@ -1270,13 +1270,6 @@ export const MEETING_MATERIALS_UPDATED_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
  */
 export const MEETING_MATERIALS_REFETCH_DELAYS_MS: readonly number[] = [1000, 5000, 15000];
 
-/**
- * How long a just-added file's row waits (Processing, no download) for the list to return it. Past
- * this the row is released, so a failed refetch cannot leave it stuck; a download then still works
- * once the index has it, and otherwise shows the usual failure toast.
- */
-export const MEETING_MATERIALS_PENDING_MAX_MS = 30_000;
-
 /** Recording file types that carry a meeting's media, as opposed to chat, captions or transcripts (E4-02). */
 export const MEETING_RECORDING_MEDIA_FILE_TYPES: readonly string[] = ['MP4', 'M4A'];
 

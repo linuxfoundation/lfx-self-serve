@@ -235,11 +235,6 @@ export interface MaterialsChangedEvent {
   deletedUids: string[];
   /** Newly created past-meeting attachments, ready for optimistic display */
   addedAttachments: PastMeetingAttachment[];
-  /**
-   * Newly created attachments of an upcoming meeting (the drawer in meeting mode), for the same
-   * optimistic display; absent or empty in past mode. V1's join page refetches instead and ignores it.
-   */
-  addedMeetingAttachments?: MeetingAttachment[];
 }
 
 /**
@@ -267,27 +262,25 @@ export interface PendingAttachment {
 
 /**
  * The V2 materials section's load (E3-02). `sign-in` is a viewer who must sign in to see this
- * meeting's materials (anonymous, and refused by the public route or on a past meeting), told apart
- * from `ready` with none attached.
+ * meeting's materials (anonymous, as on V1, or a session the past route refused), told apart from
+ * `ready` with none attached.
  */
 export interface MeetingMaterialsState {
   status: 'loading' | 'ready' | 'sign-in' | 'error';
-  attachments: PublicMeetingAttachment[];
+  attachments: MeetingAttachment[];
 }
 
-/** What the V2 materials section fetches (E3-02): a past occurrence's own list, or the meeting's public one. */
+/** What the V2 materials section fetches (E3-02): a past occurrence's own list, or the meeting's (V1's signed-in routes). */
 export interface MeetingMaterialsRequest {
-  /** `past` for a page loaded by a past occurrence's id; `upcoming` reads the public route. */
+  /** `past` for a page loaded by a past occurrence's id; `upcoming` reads `/api/meetings/:id/attachments`. */
   mode: 'upcoming' | 'past';
   /** The meeting id, or for `past` the occurrence's resource id (`getPastMeetingResourceId`). */
   id: string;
-  /** The meeting password the page holds, sent in its header to the public route. */
-  password: string | null;
 }
 
 /** One supporting-materials row of the V2 materials section (E3-02), display-ready. */
 export interface MeetingMaterialLink {
-  attachment: PublicMeetingAttachment;
+  attachment: MeetingAttachment;
   /** The link made safe for an `href` (`toSafeExternalHref`); `null` renders the row as text. */
   href: string | null;
   /** "Link · host", or "Link" without a recognisable host. */
