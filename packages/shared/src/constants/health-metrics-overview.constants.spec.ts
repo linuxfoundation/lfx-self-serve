@@ -35,3 +35,16 @@ describe('HEALTH_OVERVIEW_SIGNAL_LINK_TARGETS', () => {
     expect(buildHealthMetricsOverviewTabRoute(linkTarget)).toBeDefined();
   });
 });
+
+describe('HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS', () => {
+  it('words the tile status chip per the design while the findings groups keep their headings', () => {
+    expect(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.ok).toEqual(expect.objectContaining({ label: 'Healthy', group: 'Going well' }));
+    expect(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none).toEqual(expect.objectContaining({ label: 'No data', group: 'Awaiting data' }));
+  });
+
+  it('colours the Opportunity chip blue-500 without retinting the Opportunities heading', () => {
+    expect(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.opp).toEqual(
+      expect.objectContaining({ label: 'Opportunity', statusTextClass: 'text-blue-500', textClass: 'text-blue-600' })
+    );
+  });
+});

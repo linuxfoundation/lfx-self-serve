@@ -5,7 +5,6 @@ import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from '@lfx-one/shared/constants';
-import { formatHealthMetricsOverviewAsOfLabel } from '@lfx-one/shared/utils';
 
 import type { HealthMetricsOverviewTileViewModel } from '@lfx-one/shared/interfaces';
 
@@ -21,7 +20,4 @@ export class HealthMetricsOverviewTileComponent {
   protected readonly classificationMeta = computed(
     () => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.tile().classification] ?? HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none
   );
-  // An untoned detail line reads as neutral, the same gray as an unclassified tile.
-  protected readonly statDetailTextClass = computed(() => HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS[this.tile().statDetail?.tone ?? 'none'].textClass);
-  protected readonly asOfLabel = computed(() => formatHealthMetricsOverviewAsOfLabel(this.tile().evaluatedAt));
 }

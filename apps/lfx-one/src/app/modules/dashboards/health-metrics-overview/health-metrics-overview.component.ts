@@ -9,8 +9,8 @@ import {
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
+  HEALTH_METRICS_OVERVIEW_NO_DATA_STATUSLESS_AREAS,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
-  HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS,
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsOverviewAreaTabRoute,
@@ -68,6 +68,8 @@ export class HealthMetricsOverviewComponent {
   protected readonly revenue = computed<HealthMetricsOverviewRevenue>(
     () => this.revenueByRange()[this.selectedRange()] ?? HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY
   );
+  // The period pill's own label ("YTD", "2025"), so the rail's "Total <period>" reads as the selector does.
+  protected readonly revenuePeriodLabel = computed(() => this.chrome.periods.find((period) => period.range === this.selectedRange())?.label ?? 'YTD');
 
   protected readonly foundationSummaryLoading = signal(true);
 
@@ -226,11 +228,10 @@ export class HealthMetricsOverviewComponent {
       statLabel: loading ? 'loading…' : 'no data this period',
       statSource: 'HEALTH_OVERVIEW_KPIS',
       classification: 'none',
-      // Empty, not today's date — this area was never actually evaluated, so "as of today" would
-      // claim fresh data for a tile that has none (formatHealthMetricsOverviewAsOfLabel hides it).
+      // Empty, not today's date — this area was never actually evaluated.
       evaluatedAt: '',
-      // Matches the live tile: a failed read must not surface a chip the live state never shows.
-      ...(HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS.has(area) && { showStatus: false }),
+      // Matches the live no-data tile: a failed read must not surface a chip that state never shows.
+      ...(HEALTH_METRICS_OVERVIEW_NO_DATA_STATUSLESS_AREAS.has(area) && { showStatus: false }),
     };
   }
 

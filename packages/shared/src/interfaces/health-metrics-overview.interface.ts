@@ -108,21 +108,13 @@ export interface HealthMetricsAreaState {
    */
   evaluatedAt: string;
   /**
-   * False to hide the status chip entirely (distinct from a 'none' classification's "Awaiting data"
+   * False to hide the status chip entirely (distinct from a 'none' classification's "No data"
    * chip) — e.g. events with neither a registration goal nor a computed status. Omitted/true renders
    * the chip normally. Synthesized by the service layer (e.g. `project.service.ts`'s
    * `getHealthOverviewKpis`) — unlike every other field on this interface, it has no backing
    * `hm_area_state` column.
    */
   showStatus?: boolean;
-  /** Optional second line under the stat label — e.g. the Events registration count or the Members unsecured chip. */
-  statDetail?: HealthMetricsAreaStateDetail;
-}
-
-/** A tile's second line; `tone` colours it as a chip in that classification's text color, omitted for plain text. */
-export interface HealthMetricsAreaStateDetail {
-  text: string;
-  tone?: HealthMetricsOverviewClassification;
 }
 
 /**
@@ -132,20 +124,14 @@ export interface HealthMetricsAreaStateDetail {
  * vary by period; the members/non-members fields are point-in-time and repeat across every range.
  */
 export interface HealthOverviewKpisRow {
-  EVENTS_REGISTRATIONS_COUNT: number | null;
-  EVENTS_REGISTRATIONS_GOAL: number | null;
   EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
   EVENTS_STATUS: string | null;
   CERTIFICATIONS_EARNED_COUNT: number | null;
   TRAINING_STATUS: string | null;
   CONTRIBUTORS_COUNT: number | null;
   MEMBERS_RENEWING_90D_VALUE_USD: number | null;
-  MEMBERS_RENEWING_90D_ORG_COUNT: number | null;
-  MEMBERS_RENEWING_90D_UNSECURED_ORG_COUNT: number | null;
-  MEMBERS_RENEWING_90D_UNSECURED_VALUE_USD: number | null;
   MEMBERS_STATUS: string | null;
   NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
-  NON_MEMBERS_STATUS: string | null;
 }
 
 /**
@@ -163,12 +149,12 @@ export interface HealthOverviewRevenueRow {
 
 /**
  * One period's group counts behind the Engagement tile, read from `ENGAGEMENT_GROUP_ATTENDANCE` until
- * `HEALTH_OVERVIEW_KPIS` carries engagement columns. Both counts share the expected-to-meet population;
- * `null` means the view has no figure for that period.
+ * `HEALTH_OVERVIEW_KPIS` carries engagement columns: every group, and those the view flags dormant —
+ * the same pair the Engagement tab's group attendance counts. `null` means no figure for that period.
  */
 export interface HealthOverviewEngagementCounts {
-  activeGroups: number | null;
-  lowAttendanceGroups: number | null;
+  totalGroups: number | null;
+  dormantGroups: number | null;
 }
 
 /**
@@ -276,8 +262,6 @@ export interface HealthMetricsOverviewTileViewModel {
   insightsUrl?: string;
   /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
   showStatus?: boolean;
-  /** Second line under the stat label — see {@link HealthMetricsAreaState.statDetail}. */
-  statDetail?: HealthMetricsAreaStateDetail;
   /** The top of the area's Level 2 tab; the whole tile links there. Unset for `code`, which has no tab. */
   tabRoute?: readonly string[];
 }

@@ -27,7 +27,6 @@
               <div class="flex items-center gap-2 px-[26px] pt-4 pb-2">
                 <i [class]="findingGroup.groupIcon" [ngClass]="findingGroup.groupTextClass" aria-hidden="true"></i>
                 <h2 class="text-[11px] font-semibold tracking-wide uppercase" [ngClass]="findingGroup.groupTextClass">{{ findingGroup.group }}</h2>
-                <span class="h-px flex-1 bg-gray-200" aria-hidden="true"></span>
               </div>
               @for (finding of findingGroup.findings; track finding.sortRank; let last = $last) {
                 <lfx-health-metrics-overview-finding-item
@@ -58,6 +57,7 @@
     <lfx-health-metrics-overview-rail
       [topPx]="chrome.stickyTopPx()"
       [revenue]="revenue()"
+      [revenuePeriodLabel]="revenuePeriodLabel()"
       [revenueLoading]="revenueLoading()"
       [foundationSummary]="foundationSummary()"
       [foundationSummaryLoading]="foundationSummaryLoading()" />

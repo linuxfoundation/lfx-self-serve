@@ -185,7 +185,9 @@ export default {
     'bg-gray-100',
     // Health Metrics Overview classification accents (HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS in
     // @lfx-one/shared, not scanned here) — applied via [ngClass] on tiles and finding rows.
-    ...Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).flatMap((c) => [c.dotClass, c.accentClass, c.textClass].flatMap((s) => s.split(' '))),
+    ...Object.values(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS).flatMap((c) =>
+      [c.dotClass, c.accentClass, c.textClass, c.statusTextClass].flatMap((s) => s.split(' '))
+    ),
     // Health Metrics Overview revenue-stream legend dots (HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS in
     // @lfx-one/shared, not scanned here) plus the UNKNOWN_REVENUE_STREAM_META fallback's bg-gray-400.
     ...Object.values(HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS).flatMap((s) => s.dotClass.split(' ')),
