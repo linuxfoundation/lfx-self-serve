@@ -18,7 +18,6 @@ import type {
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnDepartures,
   HealthMetricsMembersChurnModeOption,
-  HealthMetricsMembersChurnRisk,
   HealthMetricsMembersDataSectionKey,
   HealthMetricsMembersDirectory,
   HealthMetricsMembersDirectoryTierOption,
@@ -33,6 +32,7 @@ import type {
   HealthMetricsMembersRenewalsWindow,
   HealthMetricsMembersRenewalsWindowOption,
   HealthMetricsMembersTiers,
+  HealthMetricsMembersTiersMode,
   HealthMetricsMembersTiersModeOption,
 } from '../interfaces/health-metrics-members.interface';
 
@@ -73,7 +73,7 @@ export const HEALTH_METRICS_MEMBERS_SECTIONS = [
     key: 'risk',
     label: 'At-risk & balance',
     heading: 'At-risk & outstanding balance',
-    description: 'Act-now view. Sorted by dues at risk rather than days overdue — the money order, not the calendar order.',
+    description: 'Act-now view. Sorted by dues at risk rather than days overdue — the ED needs the money order, not the calendar order.',
     footnote: [
       {
         text: 'Overdue balance and lapsed engagement together are the strongest churn predictor available today — which is why this sits above churn, not below it.',
@@ -160,6 +160,15 @@ export const HEALTH_METRICS_MEMBERS_TIERS_MODE_OPTIONS: readonly HealthMetricsMe
   { id: 'members', label: 'Members' },
   { id: 'revenue', label: 'Revenue' },
 ];
+
+/** The matrix caption per mode: the design's counts wording, with the unit swapped for revenue. */
+export const HEALTH_METRICS_MEMBERS_TIERS_MATRIX_CAPTIONS: Record<HealthMetricsMembersTiersMode, string> = {
+  members: 'the most-used table in PCC — exact counts',
+  revenue: 'the most-used table in PCC — in USD',
+};
+
+/** The composition chart's caption, in either mode. */
+export const HEALTH_METRICS_MEMBERS_TIERS_COMPOSITION_CAPTION = 'the same table as shares, so a shifting mix is visible';
 
 /** Upper bound on tier rows read; the busiest foundation has around a hundred. */
 export const HEALTH_METRICS_MEMBERS_TIERS_ROW_CAP = 500;
@@ -341,13 +350,6 @@ export const HEALTH_METRICS_MEMBERS_AT_RISK_FILTER_OPTIONS: readonly HealthMetri
 /** `MEMBERSHIP_AT_RISK`'s `churn_risk` bands, highest first. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISKS = ['High', 'Medium', 'Low'] as const;
 
-/** Each churn-risk chip's colours, applied via `[class]`. */
-export const HEALTH_METRICS_MEMBERS_AT_RISK_CHURN_RISK_CLASSES: Record<HealthMetricsMembersChurnRisk, string> = {
-  High: 'bg-red-50 text-red-700',
-  Medium: 'bg-amber-50 text-amber-700',
-  Low: 'bg-gray-100 text-gray-500',
-};
-
 /** Read-failed / no-foundation value: no members, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_AT_RISK_UNMEASURED: HealthMetricsMembersAtRisk = {
   rows: [],
@@ -495,6 +497,13 @@ export const HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT = 25;
 
 /** The share-of-loss bar fill. */
 export const HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS = 'bg-red-600';
+
+/** Under the churn trend: why churn leads rather than renewal rate. */
+export const HEALTH_METRICS_MEMBERS_CHURN_FOOTER: readonly HealthMetricsFootnotePart[] = [
+  {
+    text: 'Renewal rate is unreliable mid-year because renewals are lumpy, so churn leads instead. Not on the landing page at all — it is an outcome, not a decision.',
+  },
+];
 
 /** Read-failed value for "Who left". */
 export const HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_UNMEASURED: HealthMetricsMembersChurnDepartures = { rows: [], totalRecords: 0 };

@@ -278,6 +278,15 @@ describe('MembersChurnComponent', () => {
     ]);
   });
 
+  it("closes on the design's footnote for why churn leads, in the shared footnote", async () => {
+    await render();
+
+    expect(text('members-churn-footer')).toBe(
+      'Renewal rate is unreliable mid-year because renewals are lumpy, so churn leads instead. Not on the landing page at all — it is an outcome, not a decision.'
+    );
+    expect(query('members-churn-footer')?.querySelector('[data-testid="health-metrics-footnote-icon"]')?.classList).toContain('fa-circle-info');
+  });
+
   it('separates a failed churn read from a year without churn', async () => {
     await render(throwError(() => new Error('gateway timeout')));
 

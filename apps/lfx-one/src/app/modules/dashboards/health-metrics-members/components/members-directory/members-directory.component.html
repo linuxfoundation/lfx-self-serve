@@ -103,7 +103,7 @@
               }}</span>
               @if (view.npsLabel) {
                 <span
-                  class="rounded px-1.5 py-0.5 text-[11px] font-medium"
+                  class="rounded-[4px] px-[6px] py-[2px] text-[10px] font-bold uppercase tracking-[0.03em]"
                   [class]="view.npsClass"
                   [attr.data-testid]="'members-directory-row-' + view.accountId + '-nps'"
                   >{{ view.npsLabel }}</span
@@ -119,17 +119,17 @@
             </div>
           </td>
           <td>
-            <div class="flex flex-col items-start gap-0.5">
+            <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
               <span
                 class="rounded-full px-2 py-0.5 text-[12px] font-medium"
                 [class]="tierPillClass"
                 [attr.data-testid]="'members-directory-row-' + view.accountId + '-tier'"
                 >{{ view.tierLabel }}</span
               >
-              <span class="text-[12px] tabular-nums text-gray-500" [attr.data-testid]="'members-directory-row-' + view.accountId + '-dues'">{{
+              <span class="text-[13px] tabular-nums text-gray-400" [attr.data-testid]="'members-directory-row-' + view.accountId + '-dues'">{{
                 view.duesLabel
               }}</span>
-            </div>
+            </span>
           </td>
           <td>
             <span class="inline-flex items-center gap-1.5 text-sm text-gray-800" [attr.data-testid]="'members-directory-row-' + view.accountId + '-engagement'">
