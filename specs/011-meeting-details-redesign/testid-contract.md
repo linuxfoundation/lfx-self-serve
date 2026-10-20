@@ -163,8 +163,8 @@ as V1 lets an invited organizer set and see their own RSVP. Key the attribute on
 the role. Everywhere else it is absent, for the same reason `data-attendance` is (see People).
 
 The public payload does not carry the viewer's own RSVP, so the page fetches it (E2-04, #2880).
-Until it has loaded, and whenever the fetch fails, the attribute is absent for that viewer too and
-`data-status` shows the time state. Absent therefore never means `none`: a test asserts
+Until it has loaded, the attribute is absent for that viewer too and `data-status` shows the time
+state. As V1, a failed fetch reads as not answered (`none`). Absent never means `none`: a test asserts
 `data-my-rsvp` only once the RSVP has loaded. The RSVP card (`meeting-rsvp-card`, E2-05) carries the
 same attribute with the same values.
 
@@ -370,32 +370,31 @@ show the Zoom display name and the matched invitee where they differ from the ro
 
 ## Tools, join details and discovery
 
-| `data-testid`                               | Element                                                                                           |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `tools-section`                             | Post-meeting tools section                                                                        |
-| `tools-recording-link`                      | Recording link                                                                                    |
-| `tools-summary-btn`                         | AI summary control                                                                                |
-| `tools-summary`                             | The AI summary block (E4-03)                                                                      |
-| `tools-summary-content`                     | The summary, rendered from its markdown                                                           |
-| `tools-summary-pending`                     | Pending review pill (organizers, unapproved summary)                                              |
-| `tools-summary-unavailable[data-reason]`    | No summary to read: `none`, `no-access`, `error` or `awaiting-review` (non-organizer, unapproved) |
-| `tools-transcript-btn`                      | Transcript control                                                                                |
-| `tools-recording-poster`                    | The recording's decorative still (not a link)                                                     |
-| `tools-recording-unavailable[data-reason]`  | No recording to open: `none` (no artifact) or `no-access`                                         |
-| `tools-transcript-unavailable[data-reason]` | No transcript to open: `none` (no artifact) or `no-access`                                        |
-| `tools-loading`                             | The artifacts' first load                                                                         |
-| `tools-error`                               | An artifact failed to load, with Try again (`tools-retry`)                                        |
-| `tools-sign-in`                             | Anonymous viewer: Sign in (`tools-sign-in-link`), as V1                                           |
-| `tools-pending`                             | Ended meeting opened by its series id: no occurrence record yet                                   |
-| `join-details-section`                      | Join details region (E7-01); rendered only while it has a row: today the host key alone (FR-043)  |
-| `join-details-host-key`                     | The host key row, `data-dd-privacy="mask"`                                                        |
-| `join-details-host-key-toggle`              | Reveal toggle: one stable name "Show host key", `aria-pressed`, the help text as its description  |
-| `join-details-host-key-value`               | The key, masked until revealed, in a polite live region                                           |
-| `join-details-host-key-copy`                | Copy host key, only once revealed; toasts "Host Key Copied" / "Copy Failed"                       |
-| `join-details-host-key-pending`             | An organizer before the window (E7-02): "Available 70 minutes before the meeting starts"          |
-| `discover-section`                          | Discovery section                                                                                 |
-| `discover-group-${uid}`                     | One discovery group                                                                               |
-| `discover-meeting-${uid}`                   | One discovered meeting                                                                            |
+| `data-testid`                               | Element                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `tools-section`                             | Post-meeting tools section                                                                       |
+| `tools-recording-link`                      | Recording link                                                                                   |
+| `tools-summary-btn`                         | AI summary control                                                                               |
+| `tools-summary`                             | The AI summary block (E4-03)                                                                     |
+| `tools-summary-content`                     | The summary, rendered from its markdown                                                          |
+| `tools-summary-pending`                     | Pending pill (unapproved summary, every viewer who can read it, as V1)                           |
+| `tools-summary-unavailable[data-reason]`    | No summary to read: `none` (none, or a failed read, as V1) or `no-access`                        |
+| `tools-transcript-btn`                      | Transcript control                                                                               |
+| `tools-recording-poster`                    | The recording's decorative still (not a link)                                                    |
+| `tools-recording-unavailable[data-reason]`  | No recording to open: `none` (no artifact, or a failed read, as V1) or `no-access`               |
+| `tools-transcript-unavailable[data-reason]` | No transcript to open: `none` (no artifact, or a failed read, as V1) or `no-access`              |
+| `tools-loading`                             | The artifacts' first load                                                                        |
+| `tools-sign-in`                             | Anonymous viewer: Sign in (`tools-sign-in-link`), as V1                                          |
+| `tools-pending`                             | Ended meeting opened by its series id: no occurrence record yet                                  |
+| `join-details-section`                      | Join details region (E7-01); rendered only while it has a row: today the host key alone (FR-043) |
+| `join-details-host-key`                     | The host key row, `data-dd-privacy="mask"`                                                       |
+| `join-details-host-key-toggle`              | Reveal toggle: one stable name "Show host key", `aria-pressed`, the help text as its description |
+| `join-details-host-key-value`               | The key, masked until revealed, in a polite live region                                          |
+| `join-details-host-key-copy`                | Copy host key, only once revealed; toasts "Host Key Copied" / "Copy Failed"                      |
+| `join-details-host-key-pending`             | An organizer before the window (E7-02): "Available 70 minutes before the meeting starts"         |
+| `discover-section`                          | Discovery section                                                                                |
+| `discover-group-${uid}`                     | One discovery group                                                                              |
+| `discover-meeting-${uid}`                   | One discovered meeting                                                                           |
 
 ### `tools-summary-btn[data-approval]`
 

@@ -98,8 +98,8 @@
         </div>
       }
       @case ('tools') {
-        <!-- E4 adds the recording, transcript and summary; until public artifact routes exist (E4-04),
-             an anonymous viewer with access signs in first (FR-028). -->
+        <!-- As V1, the recording, transcript and summary need a session, so an anonymous viewer with
+             access signs in first (FR-028). -->
         @if (viewerRole() === 'visitor') {
           <p class="m-0 text-[13px] leading-[1.45] text-[var(--md-text-body)]" data-testid="meeting-action-message">
             This meeting has ended. Sign in to see its recording, transcript and summary, where available.

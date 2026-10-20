@@ -141,13 +141,13 @@ parity · `fix` V2 deliberately repairs a V1 dead end · `D-n` the row a decisio
 
 ### Ended
 
-| Viewer                | D      | V1                                                                                                     | V2 (#2909)  | Status                            |
-| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ----------- | --------------------------------- |
-| organizer             | any    | Meeting Tools (organizer always has `full` per FGA)                                                    | `tools`     | =                                 |
-| outsider / registrant | `full` | Meeting Tools — recording / AI summary (Approved·Pending) / transcript, each with an unavailable state | `tools`     | =                                 |
-| outsider / registrant | `none` | no column; amber "This is a private meeting" lock panel; agenda + materials hidden                     | `no-access` | =                                 |
-| visitor               | `full` | **no column** — branch D needs `authenticated()`, and every artifact route is `/api/*` (auth required) | `tools`     | D-4 — sign-in variant until E4-04 |
-| visitor               | `none` | no column; "Sign in to view meeting details" card; agenda + materials hidden                           | `no-access` | =                                 |
+| Viewer                | D      | V1                                                                                                     | V2 (#2909)  | Status                       |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ----------- | ---------------------------- |
+| organizer             | any    | Meeting Tools (organizer always has `full` per FGA)                                                    | `tools`     | =                            |
+| outsider / registrant | `full` | Meeting Tools — recording / AI summary (Approved·Pending) / transcript, each with an unavailable state | `tools`     | =                            |
+| outsider / registrant | `none` | no column; amber "This is a private meeting" lock panel; agenda + materials hidden                     | `no-access` | =                            |
+| visitor               | `full` | **no column** — branch D needs `authenticated()`, and every artifact route is `/api/*` (auth required) | `tools`     | D-4 — sign-in variant, as V1 |
+| visitor               | `none` | no column; "Sign in to view meeting details" card; agenda + materials hidden                           | `no-access` | =                            |
 
 ## Decisions (signed off 2026-09-24)
 
@@ -168,8 +168,9 @@ registrants. All four recommendations were accepted; D-1 to D-3 are applied in P
   setting, so `invitation-required` would be wrong; they cannot register, because the BFF only
   registers for public meetings, and the time banner already says when the window opens.
 - **D-4 — An anonymous viewer of an ended public-open meeting keeps `tools`.** `full_access` is
-  true, but every artifact route requires auth, so E4-01 renders the tools slot's sign-in variant
-  until E4-04 ships public artifact routes. No resolver change.
+  true, but every artifact route requires auth, so E4-01 renders the tools slot's sign-in variant,
+  as V1 (E4-04's public artifact routes were withdrawn in the 2026-10-20 scope reset). No resolver
+  change.
 
 The resolver's live and before branches are therefore:
 
@@ -197,7 +198,7 @@ anonymous included (V1 HTML:585); an organizer is never `none` (FGA gives them `
 | RSVP summary, filter, badges | ❌                                                  | summary: ended with access ✅      | F=`on`     | F=`on`           | Filter and badges: upcoming or live only (an ended meeting's roster is `PastMeetingParticipant` records, which carry no RSVP). Summary: from meeting counts; on an ended meeting it goes wherever the past roster goes, as V1 shows it. F=`off` removes all three; invitee count only                                                                                                                                                                                                                                                |
 | Join details                 | ❌                                                  | ❌                                 | ✅         | ✅               | not once the meeting has ended (`joinDetails: !ended && onTheMeeting`). Today the section holds only the host key row (E7-01), so it renders exactly when that row does; Meeting ID, Passcode and Dial-in wait for U-04 / U-05 (FR-043)                                                                                                                                                                                                                                                                                              |
 | Host key                     | ❌                                                  | if host                            | if host    | if host          | any signed-in viewer the BFF returns `host_key` to (FGA `host` relation, which includes co-hosts who are not organizers), inside −70 / +40 min, never on a past meeting. Must not depend on the join-details row, which a non-organizer host may not see. Before the window an organizer sees when it becomes available, and the page reads the meeting again when the window opens, and once more 90 seconds later if the key has not arrived (E7-02); a co-host who is not an organizer cannot be told apart until the key arrives |
-| Meeting Tools                | D-4                                                 | `full`                             | `full`     | ✅               | per-tool unavailable states; an unapproved AI summary shows only to organizers (Pending review), others are told it awaits review (E4-03)                                                                                                                                                                                                                                                                                                                                                                                            |
+| Meeting Tools                | D-4                                                 | `full`                             | `full`     | ✅               | per-tool unavailable states; an unapproved AI summary shows to every viewer who can read it, marked Pending, as V1 (E4-03)                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Occurrence strip             | series                                              | series                             | series     | series           | cancelled occurrences are shown struck through and never selected from the strip (E6-03); a link to one opens its cancelled state (E6-05: banner says it was cancelled, the slot offers the next active occurrence, no join/RSVP/roster/status). Its trigger opens the browse-all dialog (E6-04): Upcoming / Past tabs, no attendance column until E6-06. Hidden on the endpoint's refusal, any failure, or a single occurrence                                                                                                      |
 | Occurrence actions           | ❌                                                  | ❌                                 | ❌         | series, upcoming | "Edit this occurrence" and "Cancel this occurrence" for the selected upcoming occurrence; on V1 since #3040 / #3206 (after this matrix's verification commit), so V2 ports them (FR-046)                                                                                                                                                                                                                                                                                                                                             |
 
@@ -214,8 +215,8 @@ anonymous included (V1 HTML:585); an organizer is never `none` (FGA gives them `
 
 Not decided here, and each blocks the issue named:
 
-- ~~Unapproved AI summaries: hide them (`isPastMeetingSummaryVisible`) or keep "Pending"?~~ — decided in E4-03 (2026-10-12): hidden from non-organizers, who are told it awaits review; organizers see it marked Pending review
-- `artifact_visibility` is authored but enforced nowhere; enforcing it hides some artifacts — E4-04
+- ~~Unapproved AI summaries: hide them (`isPastMeetingSummaryVisible`) or keep "Pending"?~~ — V1 parity (scope reset, 2026-10-20): shown to everyone who can read the summary, marked Pending, as V1
+- `artifact_visibility` is authored but enforced nowhere — unchanged, as V1 (E4-04 withdrawn in the 2026-10-20 scope reset)
 - ~~`show_meeting_attendees` is enforced nowhere and V1 only toasts "Coming Soon"~~ — decided in E3-04: the BFF returns `[]` to a registrant of an unshared meeting, and V2 gives that registrant no people section rather than a placeholder
 - Materials "Primary / Supporting" is really file vs link — E3-02
 - RSVP alongside Join during the window (V1 has no RSVP there) — E2-01

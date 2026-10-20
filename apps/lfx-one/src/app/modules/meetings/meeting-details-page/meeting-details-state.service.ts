@@ -246,8 +246,8 @@ export class MeetingDetailsStateService {
   /**
    * The viewer's own answer for the selected occurrence (E2-04, FR-023): `null` when they have not
    * answered, `undefined` while unknown. It is only fetched for a signed-in viewer on the invite list
-   * of an upcoming or live meeting with RSVP tracking on; everyone else stays `undefined`, and so
-   * does a failed fetch, which the pill reads as the time state rather than "Awaiting your RSVP".
+   * of an upcoming or live meeting with RSVP tracking on; everyone else stays `undefined`. As V1, a
+   * failed fetch reads as not answered (`null`): the BFF and the client both answer `null` for it.
    */
   public readonly myRsvp: Signal<RsvpResponse | null | undefined> = this.initMyRsvp();
   /**

@@ -176,15 +176,16 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
   // `hasArtifactAccess` is the same rule {@link resolveEndedActionSlot} applies, shared rather
   // than restated: if the rail resolves to `tools`, the sections it points at must be visible.
   const contentVisible = !ended || hasArtifactAccess(input.viewerRole, input.fullAccess);
-  // Ended: the past roster's audience — any signed-in viewer with artifact access, whatever the
-  // role, because the past payload never sets `invited` and a past registrant arrives as `outsider`.
+  // Ended: the audience of V1's past attendance data — any signed-in viewer with artifact access,
+  // whatever the role, because the past payload never sets `invited` and a past registrant arrives as
+  // `outsider`. No named past roster renders (V1 has none; E4-05 withdrawn): on an ended meeting the
+  // V2 page shows V1's attended / absent / rate figures instead, gated the same way.
   const pastRosterVisible = input.viewerRole !== 'visitor' && hasArtifactAccess(input.viewerRole, input.fullAccess);
   // The aggregate strip reads meeting-level counts, not roster rows, so on an ended meeting it goes
-  // wherever the past roster goes; v1 shows it on a clock-ended meeting whenever the counts exist.
+  // to that same audience; v1 shows it on a clock-ended meeting whenever the counts exist.
   const rsvpSummaryVisible = input.inviteResponsesEnabled && (ended ? pastRosterVisible : onTheMeeting);
-  // The roster filter and per-avatar badges read roster rows. A past roster is built from
-  // `PastMeetingParticipant` records, which carry attendance and invitation but no RSVP answer, so
-  // on an ended meeting there is nothing for them to show.
+  // The roster filter and per-avatar badges read roster rows, and only an upcoming or live meeting
+  // has a roster: an ended meeting renders none, so there is nothing for them to show.
   const rsvpRosterVisible = input.inviteResponsesEnabled && onTheMeeting && !ended;
 
   return {
@@ -195,11 +196,11 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
     // and a viewer locked out of one past occurrence may still open the upcoming ones.
     occurrences: input.recurring,
     // Upcoming: registrants and organizers only — nobody else has a roster or count source.
-    // Ended: any signed-in viewer with artifact access, not keyed on the role. The past payload never
-    // carries `invited` (the BFF folds registrant status into `full_access` instead), so a past
-    // registrant resolves as `outsider`; keying on the role would hide the roster from exactly the
-    // people it is for. This matches v1, which loads past participants for any authenticated viewer
-    // with access, and still withholds it from anonymous viewers, who get no participant list.
+    // Ended: no roster renders (the V2 page shows V1's attendance figures instead); the flag keeps the
+    // audience of that past attendance data, any signed-in viewer with artifact access, not keyed on
+    // the role. The past payload never carries `invited` (the BFF folds registrant status into
+    // `full_access` instead), so a past registrant resolves as `outsider`. This matches v1, which loads
+    // past participants for any authenticated viewer with access and none for an anonymous viewer.
     people: ended ? pastRosterVisible : onTheMeeting,
     rsvpAvatarBadges: rsvpRosterVisible,
     rsvpRosterFilter: rsvpRosterVisible,
@@ -217,7 +218,7 @@ function resolveEndedActionSlot(input: ActionSlotInput): ActionSlotKind {
 }
 
 /**
- * Whether a viewer may see a past meeting's agenda, materials, roster and recording.
+ * Whether a viewer may see a past meeting's agenda, materials, attendance figures and recording.
  *
  * `PublicPastMeetingResponse.full_access` is the general gate, but an organizer is never locked
  * out of their own meeting's artifacts — the flag describes what the meeting exposes to its

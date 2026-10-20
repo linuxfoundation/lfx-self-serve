@@ -87,7 +87,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   be kept.
 - **FR-028**: After the meeting ends, the slot MUST be `tools` for organizers and for any viewer with
   `full_access`, and `no-access` otherwise. For an anonymous viewer with `full_access`, `tools` MUST
-  render a sign-in variant until public artifact routes exist (E4-04).
+  render the sign-in variant, as V1: the artifacts are read on V1's `/api/past-meetings/:id/*`
+  routes only (E4-04 public artifact routes withdrawn in the 2026-10-20 scope reset).
 - **FR-029**: Inside the join window the slot MUST be Join only, as in V1: no RSVP in the window
   (decided 2026-10-06 in E2-01). Revisit with the RSVP card (E2-05) if late RSVPs become a need.
 
@@ -141,9 +142,8 @@ axis values and `ActionSlotKind` members defined in the state matrix.
   each occurrence's title and registrant count (E6-01) and paginated with a bounded page size
   (E6-02). A per-occurrence attendance figure on past occurrences MUST wait for upstream U-01 (#2927)
   rather than fan out one participants call per occurrence (E6-06).
-- **FR-048**: A recording's duration MUST be derived from `recording_end − recording_start` on the
-  matched recording file and shown only when both ends are present; no duration field exists
-  upstream (E4-02).
+- **FR-048**: _Withdrawn (scope reset, 2026-10-20)._ Recording duration (E4-02): V1 shows none,
+  and V2 keeps V1's functionality and backend.
 - **FR-050**: V2 MUST NOT add: add-to-calendar, `.ics` download, share beyond copy-link, recording
   download, an inline video player, approve/edit of the AI summary, or attendance export. (Passcode
   and dial-in numbers are not on this list: they are planned E7 work, held back only until upstream
@@ -231,9 +231,9 @@ V1 parity tracked by its FRs.
 | E3-04 people                  | #3253             | FR-032                                              |
 | E3-05 attachment categories   | #3254             | FR-031                                              |
 | E4-01 recording + transcript  | #3255             | FR-028, FR-040                                      |
-| E4-02 recording duration      | #3256             | FR-048                                              |
+| E4-02 recording duration      | #3256             | FR-048 (withdrawn)                                  |
 | E4-03 inline AI summary       | #3257             | FR-040                                              |
-| E4-04 public artifact routes  | #3258             | FR-028                                              |
+| E4-04 public artifact routes  | #3258             | FR-028 (withdrawn: V1 routes only)                  |
 | E4-05 align with admin page   | #3259             | FR-041                                              |
 | E5-01 page error state        | —                 | shipped before the epic (#2046)                     |
 | E5-02 accessibility           | #3260             | FR-061                                              |
