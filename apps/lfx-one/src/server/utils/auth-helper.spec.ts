@@ -14,6 +14,7 @@ import {
   getEffectiveUsername,
   getRawEffectiveEmail,
   getRealEmail,
+  getRealUsername,
   hasActiveImpersonation,
   hasActiveImpersonationSession,
   isImpersonating,
@@ -224,6 +225,22 @@ describe('getRealEmail', () => {
     expect(getRealEmail(buildReq({ oidc: { email: 'User@Example.com', email_verified: false } }))).toBeNull();
     const req = buildReq({ impersonating: true, target: { email: 'target@example.com' }, oidc: { ...OPERATOR_OIDC, email_verified: false } });
     expect(getRealEmail(req)).toBeNull();
+  });
+});
+
+describe('getRealUsername', () => {
+  it('returns the OPERATOR LF username claim when impersonating — never the target', () => {
+    const req = buildReq({ impersonating: true, target: { username: 'targetuser' }, oidc: { ...OPERATOR_OIDC, [LF_USERNAME_CLAIM]: 'operatoruser' } });
+    expect(getRealUsername(req)).toBe('operatoruser');
+  });
+
+  it('returns null when the operator session has no LF username claim, even though the target has a username', () => {
+    const req = buildReq({ impersonating: true, target: { username: 'targetuser' }, oidc: OPERATOR_OIDC });
+    expect(getRealUsername(req)).toBeNull();
+  });
+
+  it('returns the LF username claim when not impersonating', () => {
+    expect(getRealUsername(buildReq({ oidc: { [LF_USERNAME_CLAIM]: 'lfuser', nickname: 'displayname' } }))).toBe('lfuser');
   });
 });
 

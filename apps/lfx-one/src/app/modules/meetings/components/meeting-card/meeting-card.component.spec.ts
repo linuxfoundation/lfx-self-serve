@@ -67,6 +67,10 @@ describe('MeetingCardComponent — edit-access re-check', () => {
           provide: UserService,
           useValue: {
             user: signal(null),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
             authenticated: signal(false),
             viewerUsername: signal(null),
             meetingFeedIdentity: signal(''),
@@ -451,6 +455,10 @@ describe('MeetingCardComponent — invitee panels', () => {
           provide: UserService,
           useValue: {
             user: signal(null),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
             authenticated: signal(true),
             viewerUsername: signal(null),
             meetingFeedIdentity: signal(''),
@@ -1171,6 +1179,10 @@ describe('MeetingCardComponent — summary modal read-only', () => {
           provide: UserService,
           useValue: {
             user: signal(null),
+            // The real service derives the join identity from `user` when not impersonating.
+            get meetingJoinIdentity() {
+              return this.user;
+            },
             authenticated: signal(true),
             viewerUsername: signal(null),
             meetingFeedIdentity: signal(''),
