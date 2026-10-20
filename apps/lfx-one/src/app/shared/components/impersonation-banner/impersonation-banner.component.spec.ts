@@ -23,7 +23,7 @@ describe('ImpersonationBannerComponent', () => {
       providers: [
         provideNoopAnimations(),
         { provide: DialogService, useValue: { open } },
-        { provide: ImpersonationService, useValue: { stopImpersonation: vi.fn() } },
+        { provide: ImpersonationService, useValue: { stopImpersonation: vi.fn(), transition: signal(null) } },
         {
           provide: UserService,
           useValue: { impersonating: signal(true), user: signal({ email: 'jdoe@example.test' }), impersonator: signal({ name: 'Admin' }) },

@@ -2,14 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="relative flex flex-col gap-4">
-  @if (loading()) {
-    <div class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80" aria-busy="true">
-      <div class="flex items-center gap-2 text-sm text-gray-600" role="status" aria-live="polite">
-        <i class="fa-light fa-spinner-third fa-spin"></i>
-        <span>{{ switching ? 'Switching user...' : 'Starting impersonation...' }}</span>
-      </div>
-    </div>
-  }
   <p class="text-sm text-gray-600">
     {{
       switching

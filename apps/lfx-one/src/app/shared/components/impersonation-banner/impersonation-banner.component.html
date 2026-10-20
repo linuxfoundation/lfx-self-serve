@@ -17,15 +17,15 @@
       label="Switch User"
       severity="secondary"
       size="small"
-      [disabled]="stoppingImpersonation()"
+      [disabled]="transitioning()"
       (onClick)="openSwitchDialog()"
       data-testid="switch-impersonation-button" />
     <lfx-button
       label="Stop Impersonating"
       severity="contrast"
       size="small"
-      [disabled]="stoppingImpersonation()"
-      [loading]="stoppingImpersonation()"
+      [disabled]="transitioning()"
+      [loading]="transitioning()"
       (onClick)="stopImpersonation()"
       data-testid="stop-impersonation-button" />
   </div>

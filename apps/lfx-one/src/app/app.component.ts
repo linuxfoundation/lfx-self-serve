@@ -11,6 +11,7 @@ import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { filter } from 'rxjs';
 
+import { ImpersonationTransitionOverlayComponent } from '@components/impersonation-transition-overlay/impersonation-transition-overlay.component';
 import { MeetingComposerHostComponent } from './modules/meetings/meeting-composer/meeting-composer-host.component';
 import { MeetingComposerService } from './modules/meetings/meeting-composer/meeting-composer.service';
 import { getRuntimeConfig } from './shared/providers/runtime-config.provider';
@@ -36,7 +37,7 @@ const ACCESS_DENIED_MESSAGES: Record<string, string> = {
 
 @Component({
   selector: 'lfx-root',
-  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent],
+  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent, ImpersonationTransitionOverlayComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })

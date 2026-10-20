@@ -90,7 +90,7 @@ export class ImpersonationDialogComponent {
     this.targetUserForm.controls.personaContext.disable();
 
     this.impersonationService
-      .startImpersonation(target, personaContext)
+      .startImpersonation(target, personaContext, this.switching)
       .pipe(take(1))
       .subscribe({
         next: (response) => {

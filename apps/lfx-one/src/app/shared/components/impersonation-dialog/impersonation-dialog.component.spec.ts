@@ -160,7 +160,7 @@ describe('ImpersonationDialogComponent', () => {
 
     startImpersonation.mockReturnValueOnce(throwError(() => ({ error: { code: 'CTE_NATS_ERROR' } })));
     dialog().submit();
-    expect(startImpersonation).toHaveBeenCalledWith('jdoe', null);
+    expect(startImpersonation).toHaveBeenCalledWith('jdoe', null, false);
   });
 
   it('rejects a pick with no LF account without filling the target', async () => {

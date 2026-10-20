@@ -1,0 +1,13 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (message(); as text) {
+  <!-- z-[2000] clears PrimeNG's modal mask, so the overlay also covers the impersonation dialog. The spinner is
+       pure CSS: the Font Awesome kit is deferred and must not gate a loading indicator (see styling.md). -->
+  <div class="fixed inset-0 z-[2000] flex items-center justify-center bg-white/80" aria-busy="true" data-testid="impersonation-transition-overlay">
+    <div class="flex flex-col items-center gap-3" role="status" aria-live="polite">
+      <div class="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-blue-500" aria-hidden="true"></div>
+      <span class="text-sm font-medium text-gray-700" data-testid="impersonation-transition-message">{{ text }}</span>
+    </div>
+  </div>
+}

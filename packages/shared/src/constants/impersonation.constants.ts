@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ImpersonationTransition } from '../interfaces/impersonation.interface';
+
 export const RECENT_IMPERSONATIONS_STORAGE_KEY = 'lfx:recent-impersonations';
 export const MAX_RECENT_IMPERSONATIONS = 5;
 
@@ -19,6 +21,13 @@ export const IMPERSONATION_START_FAILED_MESSAGE = 'We could not start impersonat
 export const IMPERSONATION_ALREADY_TARGET_CODE = 'ALREADY_IMPERSONATING_TARGET';
 
 export const IMPERSONATION_ALREADY_TARGET_MESSAGE = 'You are already impersonating this user. Choose a different user to switch to.';
+
+/** Copy shown by the page-level overlay while an impersonation change is in flight, keyed by transition. */
+export const IMPERSONATION_TRANSITION_MESSAGES: Record<ImpersonationTransition, string> = {
+  starting: 'Starting impersonation...',
+  switching: 'Switching user...',
+  stopping: 'Stopping impersonation...',
+};
 
 /**
  * Rendered height of the fixed impersonation banner. `styles.scss` sets the root font size to

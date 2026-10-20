@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { ImpersonationDialogComponent } from '@components/impersonation-dialog/impersonation-dialog.component';
 import { ImpersonationService } from '@services/impersonation.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { finalize, take } from 'rxjs';
+import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-impersonation-banner',
@@ -18,7 +18,7 @@ export class ImpersonationBannerComponent {
   private readonly impersonationService = inject(ImpersonationService);
   private readonly dialogService = inject(DialogService);
   protected readonly userService = inject(UserService);
-  protected readonly stoppingImpersonation = signal(false);
+  protected readonly transitioning = computed(() => this.impersonationService.transition() !== null);
 
   protected openSwitchDialog(): void {
     this.dialogService.open(ImpersonationDialogComponent, {
@@ -32,17 +32,14 @@ export class ImpersonationBannerComponent {
   }
 
   protected stopImpersonation(): void {
-    if (this.stoppingImpersonation()) {
+    if (this.transitioning()) {
       return;
     }
 
-    this.stoppingImpersonation.set(true);
+    // The transition stays set after success so the page-level overlay covers the reload; the service clears it on error.
     this.impersonationService
       .stopImpersonation()
-      .pipe(
-        take(1),
-        finalize(() => this.stoppingImpersonation.set(false))
-      )
+      .pipe(take(1))
       .subscribe({
         next: () => {
           if (typeof window !== 'undefined') {
