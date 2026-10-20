@@ -532,6 +532,8 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
   });
 
   test('board-member without an opted-in group navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
+    // The sidebar the client-side navigation waits on is hidden below the lg breakpoint.
+    await page.setViewportSize({ width: 1440, height: 900 });
     await stubPersona(page, ['board-member']);
     // The guard also asks the access probe. page.route() only reaches browser requests, so the page is
     // opened by client-side navigation below — an SSR load would ask the real BFF for the test account.
@@ -546,7 +548,10 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
     skipWhenAuthMissing(page);
 
     // Client-side navigation, so the guard runs in the browser where the access-probe stub answers it.
-    await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+    await expect(
+      page.getByTestId('sidebar'),
+      'persona=board-member lens=foundation sidebar should be visible before client-side navigation to /foundation/social-listening'
+    ).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
     await page.evaluate((url) => {
       window.history.pushState({}, '', url);
       window.dispatchEvent(new PopStateEvent('popstate'));
