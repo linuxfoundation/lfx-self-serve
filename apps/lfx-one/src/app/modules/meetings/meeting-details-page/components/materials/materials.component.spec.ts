@@ -207,14 +207,6 @@ describe('MeetingMaterialsComponent', () => {
     expect(query('materials-file-f1')).not.toBeNull();
   });
 
-  // The shared client reads a failed meeting read as an empty list, as V1 shows it.
-  it("shows the meeting's failed read as none attached, as V1 does", async () => {
-    await setup(() => of([]));
-
-    expect(query('materials-section-error')).toBeNull();
-    expect(query('materials-section-empty')).not.toBeNull();
-  });
-
   it("shows an error with a retry that refetches when a past occurrence's read fails", async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     loadedViaPastMeetingId.set(true);

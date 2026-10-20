@@ -92,8 +92,9 @@ export class MeetingMaterialsComponent {
   protected readonly canManage = computed(
     () =>
       this.state.matchesRoute() &&
-      // An expired session reads as signed in until a request says otherwise: once one has, the
-      // drawer's writes would fail too, so only Sign in is offered.
+      // An expired session reads as signed in until a request says otherwise: once the past route
+      // has (the meeting's list reads a 401 as empty, as on V1), the drawer's writes would fail
+      // too, so only Sign in is offered.
       this.materials().status !== 'sign-in' &&
       this.state.viewerRole() === 'organizer' &&
       (this.state.timeState() !== 'ended' || this.state.loadedViaPastMeetingId())
@@ -178,8 +179,9 @@ export class MeetingMaterialsComponent {
 
   private initMaterials(): Signal<MeetingMaterialsState> {
     const trigger = computed(() => ({ request: this.request(), refresh: this.refreshCount(), signedIn: this.userService.authenticated() }));
-    // The last list fetched and what for: a refetch of the same one keeps showing it, and a failed
-    // refetch keeps it rather than replacing the rows with an error.
+    // The last list fetched and what for: a refetch of the same one keeps showing it. For a past
+    // occurrence a failed refetch keeps it rather than replacing the rows with an error; the
+    // meeting's list reads a failure as empty, as V1 does.
     let last: { key: string; attachments: MeetingAttachment[] } | null = null;
     // Which meeting (mode and id) the section is on; `undefined` before the first request. The reset
     // below runs only when this changes, not on a retry of the same meeting before its first success.
@@ -221,8 +223,9 @@ export class MeetingMaterialsComponent {
               return { status: 'ready', attachments };
             }),
             catchError((error: unknown) => {
-              // Not a failure, so not logged: the session-gated route answers 401 for a session that
-              // expired while the page still reads signed in; signing in is the way forward.
+              // Past occurrence only (the meeting's list never errors). Not a failure, so not logged:
+              // the session-gated route answers 401 for a session that expired while the page still
+              // reads signed in; signing in is the way forward.
               if (error instanceof HttpErrorResponse && error.status === 401) {
                 return of<MeetingMaterialsState>({ status: 'sign-in', attachments: [] });
               }

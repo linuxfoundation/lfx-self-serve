@@ -259,26 +259,26 @@ Each chip carries `data-selected`, `data-cancelled` and `data-nextup` (`true` | 
 
 ## Agenda and materials
 
-| `data-testid`                    | Element                                                          |
-| -------------------------------- | ---------------------------------------------------------------- |
-| `agenda-section`                 | Agenda section                                                   |
-| `agenda-section-description`     | The description, links made clickable, collapsed past 200px      |
-| `agenda-section-empty`           | Shown when the meeting has no description                        |
-| `materials-section`              | Materials section                                                |
-| `materials-file-${uid}`          | One attached file                                                |
-| `materials-link-${uid}`          | One attached link                                                |
-| `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page) |
-| `materials-section-updated`      | The "Updated" pill: a change in the last seven days              |
-| `materials-section-loading`      | The list's first load                                            |
-| `materials-section-sign-in`      | Sign in to view the materials (anonymous, as on V1)              |
-| `materials-section-sign-in-link` | Its Sign in link                                                 |
-| `materials-section-error`        | A past occurrence's list failed, with nothing to fall back on    |
-| `materials-section-retry`        | Its Try again                                                    |
-| `materials-section-empty`        | None attached                                                    |
-| `materials-section-files`        | The files group ("Primary materials")                            |
-| `materials-section-links`        | The links group ("Supporting materials")                         |
-| `materials-section-files-toggle` | Show N more / Show less for files                                |
-| `materials-section-links-toggle` | Show N more / Show less for links                                |
+| `data-testid`                    | Element                                                                                  |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `agenda-section`                 | Agenda section                                                                           |
+| `agenda-section-description`     | The description, links made clickable, collapsed past 200px                              |
+| `agenda-section-empty`           | Shown when the meeting has no description                                                |
+| `materials-section`              | Materials section                                                                        |
+| `materials-file-${uid}`          | One attached file                                                                        |
+| `materials-link-${uid}`          | One attached link                                                                        |
+| `materials-section-add`          | Add material (organizers; upcoming, or a past occurrence's page)                         |
+| `materials-section-updated`      | The "Updated" pill: a change in the last seven days                                      |
+| `materials-section-loading`      | The list's first load                                                                    |
+| `materials-section-sign-in`      | Sign in to view the materials (anonymous, as on V1, or a session the past route refused) |
+| `materials-section-sign-in-link` | Its Sign in link                                                                         |
+| `materials-section-error`        | A past occurrence's list failed, with nothing to fall back on                            |
+| `materials-section-retry`        | Its Try again                                                                            |
+| `materials-section-empty`        | None attached                                                                            |
+| `materials-section-files`        | The files group ("Primary materials")                                                    |
+| `materials-section-links`        | The links group ("Supporting materials")                                                 |
+| `materials-section-files-toggle` | Show N more / Show less for files                                                        |
+| `materials-section-links-toggle` | Show N more / Show less for links                                                        |
 
 Files and links are separate prefixes rather than one `materials-item-${uid}`, so a test can
 assert on type without first reading the row's contents.
