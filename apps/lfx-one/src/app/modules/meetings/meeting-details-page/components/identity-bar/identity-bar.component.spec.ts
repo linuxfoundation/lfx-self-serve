@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal, WritableSignal } from '@angular/core';
+import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, ParamMap, provideRouter, Router } from '@angular/router';
@@ -46,7 +46,14 @@ describe('MeetingIdentityBarComponent', () => {
         provideNoopAnimations(),
         {
           provide: MeetingDetailsStateService,
-          useValue: { status, meeting: signal(meeting), meetingStatus, selectedOccurrence, signInHref: signal(SIGN_IN_HREF) },
+          useValue: {
+            status,
+            meeting: signal(meeting),
+            meetingStatus,
+            selectedOccurrence,
+            meetingTitle: computed(() => selectedOccurrence()?.title || meeting.title),
+            signInHref: signal(SIGN_IN_HREF),
+          },
         },
         {
           provide: UserService,
