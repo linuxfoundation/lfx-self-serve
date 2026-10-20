@@ -197,6 +197,15 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
   });
 
   describe('getContactIdForMatching', () => {
+    it('treats a 404 from /me as a definite no-contact, not an incomplete lookup', async () => {
+      fetchMock.mockResolvedValueOnce({ ok: false, status: 404 });
+
+      const result = await service.getUserVerifiedEmails(buildReq());
+
+      expect(result.contactId).toBeNull();
+      expect(result.incomplete).toBe(false);
+    });
+
     it('shares one /me call across callers on the same request', async () => {
       const req = buildReq();
 

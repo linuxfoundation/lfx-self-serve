@@ -101,6 +101,9 @@ export class UserVerifiedEmailsService {
         headers: { Authorization: `Bearer ${v1Token}` },
         signal: AbortSignal.timeout(10000),
       });
+      if (response.status === 404) {
+        return null;
+      }
       if (!response.ok) {
         logger.warning(req, 'get_contact_id', 'User-service /me returned a non-OK status', { status: response.status });
         return undefined;

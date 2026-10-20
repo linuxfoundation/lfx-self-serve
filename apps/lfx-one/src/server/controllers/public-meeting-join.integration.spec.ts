@@ -453,6 +453,7 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
 
     expect(res.status).toBe(200);
     expect(body.meeting.invited).toBe(true);
+    expect(contactIdCalls).toBe(1);
   });
 
   it('10b. does not flag a row carrying a different contact id as invited', async () => {

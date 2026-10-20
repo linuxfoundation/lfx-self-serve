@@ -657,7 +657,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   });
 
   it('adds the contact id to the single-meeting user lookup so a rewritten email still matches', async () => {
-    getContactIdForMatching.mockResolvedValue('lfOMJfHvkTWsGKfRzu');
+    getContactIdForMatching.mockResolvedValue('lfTESTCONTACT00001');
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-alias', email: 'user+alias@example.com' }]));
 
     const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', 'user@example.com', undefined, 'm2m');
@@ -666,19 +666,19 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     expect(proxyRequest.mock.calls[0][4].filters_or).toEqual([
       'email:user@example.com',
       'case_insensitive_email:user@example.com',
-      'user_id:lfOMJfHvkTWsGKfRzu',
+      'user_id:lfTESTCONTACT00001',
     ]);
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
   it('matches by contact id alone when the user has no email or username', async () => {
-    getContactIdForMatching.mockResolvedValue('lfOMJfHvkTWsGKfRzu');
+    getContactIdForMatching.mockResolvedValue('lfTESTCONTACT00001');
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-alias' }]));
 
     const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', undefined, undefined);
 
     expect(rows).toHaveLength(1);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:lfOMJfHvkTWsGKfRzu']);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:lfTESTCONTACT00001']);
   });
 
   it('returns nothing without querying when there is no email, username or contact id', async () => {

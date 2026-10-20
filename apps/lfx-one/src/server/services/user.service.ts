@@ -941,7 +941,7 @@ export class UserService {
 
   /**
    * Gets all unique meeting IDs the user is registered for by querying registrant records.
-   * Checks both email and username (fallback) to find all registrations. Uses the user's
+   * Checks email, username and contact id (fallback) to find all registrations. Uses the user's
    * bearer token — the query service enforces ACL (registrant records require `viewer` on
    * the parent meeting, which `host`/`participant` relations grant transitively).
    * @param req - Express request object

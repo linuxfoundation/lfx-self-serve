@@ -1519,22 +1519,22 @@ describe('UserService.getUserMeetingRegistrations', () => {
   });
 
   it('adds the contact id so registrations whose email was rewritten still count', async () => {
-    getContactIdForMatching.mockResolvedValueOnce('lfOMJfHvkTWsGKfRzu');
+    getContactIdForMatching.mockResolvedValueOnce('lfTESTCONTACT00001');
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'r1', meeting_id: 'm1', type: 'committee' }]));
 
     const registrations = await service.getUserMeetingRegistrations(req, 'user@example.com');
 
     expect([...registrations.keys()]).toEqual(['m1']);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'username:testuser', 'user_id:lfOMJfHvkTWsGKfRzu']);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'username:testuser', 'user_id:lfTESTCONTACT00001']);
   });
 
   it('matches on the contact id alone when there is no email or username', async () => {
     getUsernameFromAuth.mockResolvedValue(null);
-    getContactIdForMatching.mockResolvedValueOnce('lfOMJfHvkTWsGKfRzu');
+    getContactIdForMatching.mockResolvedValueOnce('lfTESTCONTACT00001');
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'r1', meeting_id: 'm1', type: 'direct' }]));
 
     expect((await service.getUserMeetingRegistrations(req, undefined)).size).toBe(1);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:lfOMJfHvkTWsGKfRzu']);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:lfTESTCONTACT00001']);
   });
 
   it('returns an empty result when the caller has no email or username to match on', async () => {
@@ -1553,7 +1553,7 @@ describe('UserService.fetchUserActiveRegistrantIdentities contact id', () => {
   });
 
   it('includes registrants whose email was rewritten by matching the contact id', async () => {
-    getContactIdForMatching.mockResolvedValueOnce('lfOMJfHvkTWsGKfRzu');
+    getContactIdForMatching.mockResolvedValueOnce('lfTESTCONTACT00001');
     proxyRequest.mockResolvedValueOnce({
       resources: [{ id: 'reg-alias', type: 'v1_meeting_registrant', data: { uid: 'reg-alias', meeting_id: 'm1', type: 'committee' } }],
     });
@@ -1563,7 +1563,7 @@ describe('UserService.fetchUserActiveRegistrantIdentities contact id', () => {
 
     expect([...result.uids]).toEqual(['reg-alias']);
     expect([...result.committeeMeetingIds]).toEqual(['m1']);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'user_id:lfOMJfHvkTWsGKfRzu']);
+    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'user_id:lfTESTCONTACT00001']);
   });
 
   it('skips the query when there is no email, username or contact id', async () => {

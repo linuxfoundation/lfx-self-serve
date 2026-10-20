@@ -933,7 +933,7 @@ export class MeetingService {
   /**
    * Whether the caller may read a meeting's guest rows (names, emails, RSVP status).
    * @description Organizers always may. Anyone else must be a registrant of the meeting, matched by
-   * email or username like `isUserInvitedToMeeting`, and the meeting must share its guest list
+   * email, username or contact id like `isUserInvitedToMeeting`, and the meeting must share its guest list
    * (`isMeetingAttendeeListShared`), the same rule
    * `GET /meetings/:uid/my-meeting-registrants` applies. Query-service FGA alone is not enough: it
    * lets anyone who can view the meeting list its registrants. The organizer probe is strict, so an
@@ -1252,7 +1252,7 @@ export class MeetingService {
 
   /**
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
-   * The caller's registrant records are resolved server-side (by email or username) so the client
+   * The caller's registrant records are resolved server-side (by email, username or contact id) so the client
    * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
    * record. Committee and mailing list registrations are removed like any other: the meeting service flags
    * the delete as a self removal, so ITX records an exclusion that keeps later syncs from adding the user back.
