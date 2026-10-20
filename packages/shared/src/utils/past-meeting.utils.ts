@@ -4,19 +4,16 @@
 import {
   MEETING_RECORDING_MEDIA_FILE_TYPES,
   MEETING_RECORDING_SESSION_TOLERANCE_MS,
-  PAST_MEETING_ARTIFACT_ACCESS_FIELDS,
   PAST_MEETING_ATTENDANCE_RATE_THRESHOLDS,
   PAST_MEETING_IDENTITY_TIER_LABELS,
   PAST_MEETING_IDENTITY_UNKNOWN_LABEL,
   PAST_MEETING_NOTETAKER_BOT_LABEL,
   RECONCILIATION_BOT_NAME_PATTERN,
 } from '../constants/meeting.constants';
-import { ArtifactVisibility, MeetingVisibility } from '../enums';
 import {
   EnrichedPastMeetingParticipant,
   Meeting,
   PastMeeting,
-  PastMeetingArtifactKind,
   PastMeetingAttendanceCounts,
   PastMeetingAttendanceFigures,
   PastMeetingAttendanceTone,
@@ -25,13 +22,10 @@ import {
   PastMeetingParticipant,
   PastMeetingParticipantRow,
   PastMeetingRecording,
-  PastMeetingTranscript,
   PastParticipantFilters,
   PastRosterAttendanceFilter,
   PastRosterInvitationFilter,
   PublicPastMeetingParticipant,
-  PublicPastMeetingRoster,
-  RecordingFile,
   RecordingSession,
 } from '../interfaces';
 import { firstValidTimestampMs } from './iso-timestamp.utils';
@@ -179,75 +173,6 @@ export function getPastMeetingResourceId(meeting: Pick<PastMeeting, 'id' | 'meet
 }
 
 /**
- * Whether a viewer with no session may read one artifact of a past meeting (E4-04): only when the
- * meeting is public and unrestricted and the artifact's own access level is `public`. An unset or
- * unrecognised level is never public, as upstream FGA treats it (host-only). Anyone signed in reads
- * with their own token, and upstream decides.
- */
-export function isPastMeetingArtifactPublic(
-  meeting: Pick<PastMeeting, 'visibility' | 'restricted' | 'recording_access' | 'transcript_access' | 'ai_summary_access'>,
-  kind: PastMeetingArtifactKind
-): boolean {
-  return (
-    meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted && meeting[PAST_MEETING_ARTIFACT_ACCESS_FIELDS[kind]] === ArtifactVisibility.PUBLIC
-  );
-}
-
-/** A recording file with only the fields a viewer needs, for the public routes (E4-04). */
-function toPublicRecordingFile(file: RecordingFile): RecordingFile {
-  return {
-    id: file.id,
-    download_url: file.download_url,
-    play_url: file.play_url,
-    file_size: file.file_size,
-    file_type: file.file_type,
-    recording_type: file.recording_type,
-    recording_start: file.recording_start,
-    recording_end: file.recording_end,
-    status: file.status,
-    platform_meeting_id: file.platform_meeting_id,
-  };
-}
-
-/** A recording session with only the fields a viewer needs, for the public routes (E4-04). */
-function toPublicRecordingSession(session: RecordingSession): RecordingSession {
-  return { start_time: session.start_time, share_url: session.share_url, total_size: session.total_size, uuid: session.uuid };
-}
-
-/**
- * A recording as the public past-meeting route gives it to a caller with no session (E4-04): an
- * allowlist of what the page plays and measures, so nothing upstream adds to the document (host
- * identity, audit users) reaches an anonymous caller.
- */
-export function toPublicPastMeetingRecording(recording: PastMeetingRecording): PastMeetingRecording {
-  return {
-    uid: recording.uid,
-    past_meeting_id: recording.past_meeting_id,
-    platform: recording.platform,
-    platform_meeting_id: recording.platform_meeting_id,
-    recording_count: recording.recording_count,
-    recording_files: (recording.recording_files ?? []).map(toPublicRecordingFile),
-    sessions: (recording.sessions ?? []).map(toPublicRecordingSession),
-    total_size: recording.total_size,
-    duration_seconds: recording.duration_seconds,
-    created_at: recording.created_at,
-    updated_at: recording.updated_at,
-  };
-}
-
-/** A transcript record as the public route gives it to a caller with no session (E4-04): an allowlist, as for the recording. */
-export function toPublicPastMeetingTranscript(transcript: PastMeetingTranscript): PastMeetingTranscript {
-  return {
-    id: transcript.id,
-    meeting_id: transcript.meeting_id,
-    meeting_and_occurrence_id: transcript.meeting_and_occurrence_id,
-    title: transcript.title,
-    recording_files: transcript.recording_files?.map(toPublicRecordingFile),
-    sessions: transcript.sessions?.map(toPublicRecordingSession),
-  };
-}
-
-/**
  * An attendee's identity tier (N-02, FR-033), or null for someone who did not attend. The flags are not
  * exclusive: reconciliation sets `is_verified` on every match it makes, automatic or AI, so they are
  * read in order. Left unknown, or never verified: `unverified`. Then how the match was made: an AI
@@ -318,20 +243,6 @@ export function isPastMeetingNotetakerBot(participant: Partial<Pick<PastMeetingP
 }
 
 /**
- * Whether a past participant may be named on the public roster (N-02 / `meeting-surface-boundary.md`
- * § Public roster fields): an invitee who did not attend (a registrant, so a known identity), or an
- * identified attendee, in any tier but `unverified` (an auto-match is an exact email or username
- * match, an AI match one an organizer confirmed). Unverified attendees are only counted.
- */
-function isPublicRosterIdentity(participant: PastMeetingParticipant): boolean {
-  // A bot is never named, invited or not (#2253).
-  if (isPastMeetingNotetakerBot(participant)) {
-    return false;
-  }
-  return participant.is_attended ? getPastMeetingIdentityTier(participant) !== 'unverified' : participant.is_invited;
-}
-
-/**
  * An attendee in the `unverified` tier who is not a notetaker bot (N-02): someone nobody has
  * identified. Reconciliation never queues a bot, so a bot is neither listed nor counted as one.
  */
@@ -340,28 +251,6 @@ export function isPastMeetingUnverifiedAttendee(
     Partial<Pick<PastMeetingParticipant, 'is_verified' | 'is_unknown' | 'is_ai_reconciled' | 'is_auto_matched' | 'first_name' | 'last_name' | 'zoom_user_name'>>
 ): boolean {
   return getPastMeetingIdentityTier(participant) === 'unverified' && !isPastMeetingNotetakerBot(participant);
-}
-
-/**
- * The public roster of a past meeting (`meeting-surface-boundary.md` § Public roster fields): name,
- * avatar, organization and attended / invited for each verified identity, and a count of the
- * attendees whose identity is not verified. Never email, job title or committee standing.
- */
-export function toPublicPastMeetingRoster(participants: PastMeetingParticipant[]): PublicPastMeetingRoster {
-  const identified = participants.filter(isPublicRosterIdentity);
-  return {
-    participants: identified.map(({ uid, first_name, last_name, avatar_url, org_name, is_attended, is_invited }) => ({
-      uid,
-      first_name,
-      last_name,
-      avatar_url,
-      org_name,
-      is_attended,
-      is_invited,
-    })),
-    unidentified_attendees: participants.filter(isPastMeetingUnverifiedAttendee).length,
-    attendance: countPastMeetingAttendance(participants),
-  };
 }
 
 /** Past-meeting list rows carry scheduled_start_time and/or past-only identity fields. */

@@ -9,7 +9,6 @@ import type {
   MeetingComposerPreviewFeature,
   MeetingStatusKind,
   MeetingTypeConfig,
-  PastMeetingArtifactKind,
   PastMeetingIdentityTier,
   PastMeetingSummaryApprovalState,
   PastRosterAttendanceFilter,
@@ -644,13 +643,6 @@ export const PAST_ROSTER_ATTENDANCE_FILTER_OPTIONS: PastRosterFilterOption<PastR
   { value: 'attended', label: 'Attended' },
   { value: 'absent', label: 'Absent' },
 ];
-
-/** The past-meeting field holding each artifact's own access level (E4-04). */
-export const PAST_MEETING_ARTIFACT_ACCESS_FIELDS: Record<PastMeetingArtifactKind, 'recording_access' | 'transcript_access' | 'ai_summary_access'> = {
-  recording: 'recording_access',
-  transcript: 'transcript_access',
-  summary: 'ai_summary_access',
-};
 
 /**
  * Default repeat interval for recurring meetings

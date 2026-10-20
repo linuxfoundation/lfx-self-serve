@@ -306,52 +306,6 @@ describe('MeetingService past-meeting artifacts (E4-01)', () => {
   });
 });
 
-describe('MeetingService.getPastMeetingArtifactAccessLevels (E4-04)', () => {
-  let service: MeetingService;
-
-  beforeEach(() => {
-    proxyRequest.mockReset();
-    service = new MeetingService();
-  });
-
-  it("reads the three levels from the past meeting's query-service document with the given token", async () => {
-    proxyRequest.mockResolvedValueOnce({
-      resources: [
-        { data: { id: 'pm-1', recording_access: 'public', transcript_access: 'meeting_hosts', ai_summary_access: 'meeting_participants', title: 'TSC' } },
-      ],
-    });
-
-    await expect(service.getPastMeetingArtifactAccessLevels(req, 'pm-1', { bearerToken: 'm2m-token' })).resolves.toEqual({
-      recording_access: 'public',
-      transcript_access: 'meeting_hosts',
-      ai_summary_access: 'meeting_participants',
-    });
-    expect(proxyRequest).toHaveBeenCalledWith(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      { type: 'v1_past_meeting', tags: 'past_meeting_id:pm-1' },
-      undefined,
-      undefined,
-      { bearerToken: 'm2m-token' }
-    );
-  });
-
-  it('is null when there is no document', async () => {
-    proxyRequest.mockResolvedValueOnce({ resources: [] });
-    await expect(service.getPastMeetingArtifactAccessLevels(req, 'pm-1')).resolves.toBeNull();
-  });
-
-  // Fails closed: another document's levels never decide this past meeting's.
-  it('ignores a document for any other past meeting', async () => {
-    proxyRequest.mockResolvedValueOnce({
-      resources: [{ data: { id: 'pm-2', recording_access: 'public', transcript_access: 'public', ai_summary_access: 'public' } }],
-    });
-    await expect(service.getPastMeetingArtifactAccessLevels(req, 'pm-1')).resolves.toBeNull();
-  });
-});
-
 describe('MeetingService.getPastMeetingRecording duration (E4-02)', () => {
   let service: MeetingService;
 

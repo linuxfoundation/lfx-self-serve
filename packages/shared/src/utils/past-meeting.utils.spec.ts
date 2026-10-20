@@ -3,8 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { ArtifactVisibility, MeetingVisibility } from '../enums';
-import { EnrichedPastMeetingParticipant, PastMeeting, PastMeetingRecording, PastMeetingTranscript, RecordingFile, RecordingSession } from '../interfaces';
+import { EnrichedPastMeetingParticipant, PastMeetingRecording, RecordingFile, RecordingSession } from '../interfaces';
 import {
   filterPastMeetingParticipants,
   formatRecordingDuration,
@@ -13,7 +12,6 @@ import {
   getPastMeetingResourceId,
   getPastMeetingStartTimeMs,
   getRecordingDurationSeconds,
-  isPastMeetingArtifactPublic,
   isPastMeetingCalendarRow,
   countPastMeetingAttendance,
   filterPublicPastMeetingRoster,
@@ -24,9 +22,6 @@ import {
   isPastMeetingNotetakerBot,
   isPastMeetingUnverifiedAttendee,
   toPastMeetingParticipantRow,
-  toPublicPastMeetingRecording,
-  toPublicPastMeetingRoster,
-  toPublicPastMeetingTranscript,
 } from './past-meeting.utils';
 
 /** Builds an EnrichedPastMeetingParticipant fixture, defaulting every field so tests set only what they assert on. */
@@ -395,123 +390,6 @@ describe('formatRecordingDuration', () => {
     expect(formatRecordingDuration(-1)).toBeNull();
   });
 });
-
-describe('isPastMeetingArtifactPublic (E4-04)', () => {
-  type AccessFields = Pick<PastMeeting, 'visibility' | 'restricted' | 'recording_access' | 'transcript_access' | 'ai_summary_access'>;
-  const meeting = (fields: Partial<AccessFields>): AccessFields => ({ visibility: MeetingVisibility.PUBLIC, restricted: false, ...fields });
-
-  it("reads each artifact's own access level", () => {
-    const record = meeting({ recording_access: ArtifactVisibility.PUBLIC, ai_summary_access: ArtifactVisibility.MEETING_HOSTS });
-    expect(isPastMeetingArtifactPublic(record, 'recording')).toBe(true);
-    expect(isPastMeetingArtifactPublic(record, 'summary')).toBe(false);
-  });
-
-  it('is never public when the level is unset, whatever the meeting-wide artifact_visibility says', () => {
-    const record = { ...meeting({}), artifact_visibility: ArtifactVisibility.PUBLIC };
-    expect(isPastMeetingArtifactPublic(record, 'transcript')).toBe(false);
-    expect(isPastMeetingArtifactPublic(record, 'summary')).toBe(false);
-  });
-
-  it('is public only for a public, unrestricted meeting', () => {
-    expect(isPastMeetingArtifactPublic(meeting({ ai_summary_access: ArtifactVisibility.PUBLIC, restricted: true }), 'summary')).toBe(false);
-    expect(isPastMeetingArtifactPublic(meeting({ ai_summary_access: ArtifactVisibility.PUBLIC, visibility: MeetingVisibility.PRIVATE }), 'summary')).toBe(
-      false
-    );
-    expect(isPastMeetingArtifactPublic(meeting({ ai_summary_access: ArtifactVisibility.MEETING_PARTICIPANTS }), 'summary')).toBe(false);
-  });
-});
-
-describe('toPublicPastMeetingRoster', () => {
-  it('keeps only the public roster fields', () => {
-    const roster = toPublicPastMeetingRoster([
-      participant({
-        uid: 'p1',
-        first_name: 'Ada',
-        last_name: 'Lovelace',
-        email: 'ada@example.com',
-        job_title: 'Engineer',
-        org_name: 'Acme',
-        is_attended: true,
-        is_verified: true,
-      }),
-    ]);
-
-    expect(roster.participants).toEqual([
-      { uid: 'p1', first_name: 'Ada', last_name: 'Lovelace', avatar_url: undefined, org_name: 'Acme', is_attended: true, is_invited: false },
-    ]);
-    expect(JSON.stringify(roster)).not.toContain('ada@example.com');
-    expect(JSON.stringify(roster)).not.toContain('Engineer');
-  });
-
-  // N-02: the public roster names every identified attendee, without the tier, and counts the unverified.
-  it('names invitees and identified attendees, and only counts the unverified ones', () => {
-    const roster = toPublicPastMeetingRoster([
-      participant({ uid: 'verified', is_attended: true, is_verified: true }),
-      participant({ uid: 'invitee', is_invited: true }),
-      participant({ uid: 'unknown', is_attended: true, is_unknown: true }),
-      participant({ uid: 'needs-review', is_attended: true }),
-      // Reconciliation sets is_verified on every match it makes (N-02), automatic or AI.
-      participant({ uid: 'auto-matched', is_attended: true, is_invited: true, is_verified: true, is_auto_matched: true }),
-      participant({ uid: 'ai-reconciled', is_attended: true, is_verified: true, is_ai_reconciled: true }),
-    ]);
-
-    expect(roster.participants.map((row) => row.uid)).toEqual(['verified', 'invitee', 'auto-matched', 'ai-reconciled']);
-    expect(roster.unidentified_attendees).toBe(2);
-    expect(JSON.stringify(roster.participants)).not.toMatch(/is_auto_matched|is_ai_reconciled|is_verified/);
-    // E4-05: the counts cover every participant, listed or not, so the figures match the admin page's.
-    expect(roster.attendance).toEqual({ participant_count: 6, attended_count: 5, individual_registrants_count: 2, unverified_attended_count: 2 });
-  });
-});
-
-describe('public recording and transcript allowlists (E4-04)', () => {
-  const file = {
-    id: 'f1',
-    download_url: 'https://zoom.example/dl',
-    play_url: 'https://zoom.example/play',
-    file_size: 10,
-    file_type: 'MP4',
-    recording_type: 'shared_screen',
-    recording_start: '',
-    recording_end: '',
-    status: 'completed',
-    platform_meeting_id: 'z-1',
-  };
-  const session = { start_time: '', share_url: 'https://zoom.example/share', total_size: 10, uuid: 'u-1' };
-  // Upstream documents carry host and audit identities the typed interface does not list.
-  const leaky = { host_email: 'host@example.com', host_id: 'h-1', created_by: { email: 'creator@example.com' } };
-
-  it('keeps what the page plays and measures, and nothing upstream adds', () => {
-    const recording = {
-      uid: 'rec-1',
-      past_meeting_id: 'pm-1',
-      platform: 'Zoom',
-      platform_meeting_id: 'z-1',
-      recording_count: 1,
-      recording_files: [{ ...file, ...leaky }],
-      sessions: [{ ...session, ...leaky }],
-      total_size: 10,
-      duration_seconds: 60,
-      created_at: '',
-      updated_at: '',
-      ...leaky,
-    } as PastMeetingRecording;
-
-    const result = toPublicPastMeetingRecording(recording);
-
-    expect(result.recording_files).toEqual([file]);
-    expect(result.sessions).toEqual([session]);
-    expect(result.duration_seconds).toBe(60);
-    expect(JSON.stringify(result)).not.toMatch(/host@example.com|creator@example.com|h-1/);
-  });
-
-  it('allowlists the transcript record the same way', () => {
-    const result = toPublicPastMeetingTranscript({ id: 't-1', title: 'TSC', recording_files: [{ ...file, ...leaky }], ...leaky } as PastMeetingTranscript);
-
-    expect(result.recording_files).toEqual([file]);
-    expect(JSON.stringify(result)).not.toMatch(/host@example.com|creator@example.com|h-1/);
-  });
-});
-
 describe('past-meeting attendance figures (E4-05)', () => {
   it('counts every record, the attended and the invited', () => {
     expect(
@@ -613,7 +491,7 @@ describe('participant identity tiers (N-02)', () => {
   });
 
   // #2253: reconciliation never queues a bot, so no surface treats one as awaiting review.
-  it('treats an unmatched notetaker bot as a bot everywhere: no tier, not unverified, not listed', () => {
+  it('treats an unmatched notetaker bot as a bot everywhere: no tier, not unverified', () => {
     const bot = participant({ uid: 'bot', is_attended: true, zoom_user_name: "Libby's Notetaker (Otter.ai)" });
 
     expect(toPastMeetingParticipantRow(bot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
@@ -622,12 +500,6 @@ describe('participant identity tiers (N-02)', () => {
     const matchedBot = participant({ is_attended: true, is_verified: true, is_ai_reconciled: true, zoom_user_name: 'Fathom Notetaker' });
     expect(toPastMeetingParticipantRow(matchedBot)).toMatchObject({ identity_tier: null, identity_label: 'Notetaker bot', is_notetaker_bot: true });
     expect(isPastMeetingUnverifiedAttendee(bot)).toBe(false);
-
-    const invitedBot = participant({ uid: 'invited-bot', is_invited: true, first_name: 'Fireflies.ai', last_name: 'Notetaker' });
-    const roster = toPublicPastMeetingRoster([bot, invitedBot, participant({ uid: 'unknown', is_attended: true, is_unknown: true })]);
-    expect(roster.participants).toEqual([]);
-    expect(roster.unidentified_attendees).toBe(1);
-    expect(roster.attendance.unverified_attended_count).toBe(1);
   });
 
   it('tells a notetaker bot by its Zoom name, else its first and last name', () => {

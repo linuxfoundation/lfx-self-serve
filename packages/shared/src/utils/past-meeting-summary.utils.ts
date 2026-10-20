@@ -63,35 +63,3 @@ export function getPastMeetingSummaryApprovalState(summary: SummaryApprovalFlags
 export function getPastMeetingSummaryContent(summary: Pick<PastMeetingSummary, 'summary_data'> | null | undefined): string {
   return summary?.summary_data?.edited_content?.trim() || summary?.summary_data?.content?.trim() || '';
 }
-
-/**
- * A summary as the public past-meeting route gives it to a caller with no session (E4-04): an
- * allowlist of the text in effect (the organizer's edit, else the generated text), title, times and
- * approval flags. Never the Zoom summary document link or
- * its password, the Zoom configuration, the internal email flag, or anything upstream adds later.
- */
-export function toPublicPastMeetingSummary(summary: PastMeetingSummary): PastMeetingSummary {
-  const data = summary.summary_data;
-  return {
-    uid: summary.uid,
-    meeting_id: summary.meeting_id,
-    past_meeting_id: summary.past_meeting_id,
-    platform: summary.platform,
-    approved: summary.approved,
-    requires_approval: summary.requires_approval,
-    email_sent: false,
-    password: '',
-    summary_data: {
-      title: data?.title ?? '',
-      // Only the text in effect: an organizer's edit supersedes the generated text, so what it removed
-      // must not stay readable alongside it.
-      content: getPastMeetingSummaryContent(summary),
-      edited_content: '',
-      doc_url: '',
-      start_time: data?.start_time ?? '',
-      end_time: data?.end_time ?? '',
-    },
-    created_at: summary.created_at,
-    updated_at: summary.updated_at,
-  };
-}
