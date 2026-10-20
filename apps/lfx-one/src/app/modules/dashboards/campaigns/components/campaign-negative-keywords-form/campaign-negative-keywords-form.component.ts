@@ -28,10 +28,12 @@ import { controlTouchedSignal, controlValueSignal, touchedErrorSignal, touchedIn
 import { catchError, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 /**
- * Adds negative keywords to one Microsoft Advertising, Reddit or X campaign from the Optimize tab.
+ * Adds negative keywords to one Google Ads, Microsoft Advertising, Reddit or X campaign from the
+ * Optimize tab.
  *
  * What it offers follows the campaign's platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`):
- * Microsoft Exact or Phrase, X Exact, Phrase or Broad (20 per request), Reddit Broad only. A Reddit
+ * Microsoft Exact or Phrase, Google and X Exact, Phrase or Broad (X 20 per request, Google a
+ * keyword text of at most 80 characters against the shared 100), Reddit Broad only. A Reddit
  * request must carry the `revision` of the ad group's targeting, so for Reddit the editor reads the
  * campaign's keyword targeting first, and again whenever a request for the campaign settles (the
  * write changes the fingerprint, and a 409 means it changed under us). While one is still in flight
@@ -70,13 +72,23 @@ export class CampaignNegativeKeywordsFormComponent {
 
   public readonly cancelEdit = output<void>();
 
-  // Before the form: its validator reads the cap on construction.
+  // Before the form: its validator reads the caps on construction.
   protected readonly rules: Signal<CampaignNegativeKeywordPlatformRules> = computed(() => CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES[this.platform()]);
   protected readonly maxKeywords: Signal<number> = computed(() => this.rules().maxKeywords);
+  /** The platform's own text limit, shorter than the shared one on Google Ads. */
+  private readonly maxTextLength: Signal<number> = computed(() => this.rules().maxTextLength);
   protected readonly matchTypeOptions: Signal<readonly CampaignNegativeKeywordMatchTypeOption[]> = computed(() => this.rules().matchTypes);
 
   public readonly form = new FormGroup({
-    keywords: new FormControl<string>('', { nonNullable: true, validators: [campaignNegativeKeywordsValidator(() => this.maxKeywords())] }),
+    keywords: new FormControl<string>('', {
+      nonNullable: true,
+      validators: [
+        campaignNegativeKeywordsValidator(
+          () => this.maxKeywords(),
+          () => this.maxTextLength()
+        ),
+      ],
+    }),
     // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic
     // where the platform offers it; Reddit offers Broad only (see `initPlatformDefaults`).
     matchType: new FormControl<CampaignNegativeKeywordMatchType>('Exact', { nonNullable: true, validators: [Validators.required] }),
@@ -129,10 +141,10 @@ export class CampaignNegativeKeywordsFormComponent {
   );
 
   /** How many keywords the text holds right now, for the live counter. */
-  protected readonly keywordCount: Signal<number> = computed(() => parseNegativeKeywordInput(this.keywordsText()).keywords.length);
+  protected readonly keywordCount: Signal<number> = computed(() => parseNegativeKeywordInput(this.keywordsText(), this.maxTextLength()).keywords.length);
   /** The lines that cannot be sent, shown once the field has been left or a submit was tried. */
   protected readonly lineProblems: Signal<NegativeKeywordInputProblem[]> = computed(() =>
-    this.keywordsTouched() ? parseNegativeKeywordInput(this.keywordsText()).problems : []
+    this.keywordsTouched() ? parseNegativeKeywordInput(this.keywordsText(), this.maxTextLength()).problems : []
   );
   /** The field-level message (none, too many), or `''`. Line problems are listed separately. */
   protected readonly keywordsError: Signal<string> = this.initKeywordsError();
@@ -172,7 +184,7 @@ export class CampaignNegativeKeywordsFormComponent {
     }
     const { keywords: text, matchType } = this.form.getRawValue();
     // The SAME list the outcomes are zipped onto: parsed once, sent as-is, rendered by index.
-    const keywords = parseNegativeKeywordInput(text).keywords;
+    const keywords = parseNegativeKeywordInput(text, this.maxTextLength()).keywords;
     const revision = this.revisionState().revision;
 
     this.negativeKeywordsService.submit(
@@ -236,8 +248,9 @@ export class CampaignNegativeKeywordsFormComponent {
   }
 
   /**
-   * Keeps the match type one the platform takes (Reddit: Broad only) and re-checks the keyword cap,
-   * which differs by platform. A match type restored from an earlier request is kept when valid.
+   * Keeps the match type one the platform takes (Reddit: Broad only) and re-checks the keyword text
+   * against the new platform's caps, both of which differ by platform (X takes 20 keywords; Google
+   * caps a keyword's text at 80). A match type restored from an earlier request is kept when valid.
    */
   private initPlatformDefaults(): void {
     toObservable(this.rules)

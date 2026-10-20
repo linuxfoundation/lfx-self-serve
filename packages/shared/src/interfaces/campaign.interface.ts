@@ -3940,7 +3940,7 @@ export interface CampaignRow {
   bidUnavailableReason: string;
   /** Why an available bid editor cannot submit RIGHT NOW (stale validator, another write in flight), or `''`. */
   bidBlockedReason: string;
-  /** Whether the row shows the negative-keyword control at all: Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
+  /** Whether the row shows the negative-keyword control at all: Google Ads, Microsoft Advertising, Reddit and X campaigns (`NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS`). */
   negativeKeywordsOffered: boolean;
   /** Whether that control can be used (the campaign exists on the platform and is not deleted). */
   negativeKeywordsAvailable: boolean;
@@ -4075,13 +4075,14 @@ export interface CampaignNegativeKeywordsSubmission {
   matchType: CampaignNegativeKeywordMatchType;
   /**
    * Reddit's compare-and-set token, from the campaign's keyword-targeting read. Sent ONLY for a
-   * Reddit campaign: Microsoft Advertising and X refuse the field whenever it is present, even empty.
+   * Reddit campaign: Google Ads, Microsoft Advertising and X refuse the field whenever it is
+   * present, even empty.
    */
   revision?: string;
 }
 
 /** A platform whose campaigns take negative keywords through `add-negative-keywords`. */
-export type NegativeKeywordCampaignPlatform = 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
+export type NegativeKeywordCampaignPlatform = 'google-ads' | 'microsoft-ads' | 'reddit-ads' | 'twitter-ads';
 
 /** What the negative-keyword editor offers and sends for one platform (`CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES`). */
 export interface CampaignNegativeKeywordPlatformRules {
@@ -4093,6 +4094,13 @@ export interface CampaignNegativeKeywordPlatformRules {
   defaultMatchType: CampaignNegativeKeywordMatchType;
   /** Most keywords one request may carry on this platform. */
   maxKeywords: number;
+  /**
+   * Longest a keyword's text may be on this platform, in characters (code points). Google Ads'
+   * limit is shorter than the shared one the BFF enforces, and the BFF cannot apply it: the add
+   * route is addressed by campaign id alone and never learns the campaign's platform. So this is
+   * the editor's own cap, exactly as `maxKeywords` is for X's 20.
+   */
+  maxTextLength: number;
   /** Whether a request must carry the keyword-targeting read's `revision` (Reddit). */
   requiresRevision: boolean;
   /** Where the negatives land, for the field hint. */
@@ -4770,7 +4778,7 @@ export interface CampaignNegativeKeywordResult {
   outcome: CampaignNegativeKeywordOutcome;
   /** The platform's id for a negative keyword this request added. Absent for every other outcome. */
   negativeKeywordId?: string;
-  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Reddit and X. */
+  /** Why a keyword is FAILED: Microsoft's machine-readable code when it named one; NOT_SENT or REJECTED on Google Ads, Reddit and X. */
   errorCode?: string;
 }
 

@@ -3750,18 +3750,20 @@ describe('OptimizationTabComponent — bid, negatives and Microsoft keyword acti
     expect((q('optimization-campaign-toggle-c-1') as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('offers negative keywords on Microsoft, Reddit and X rows only', () => {
+  it('offers negative keywords on Google, Microsoft, Reddit and X rows only', () => {
     render([
       doc(),
-      doc({ id: 'c-2', platform: 'google-ads', campaign_name: 'Other' }),
+      doc({ id: 'c-2', platform: 'linkedin-ads', campaign_name: 'Other' }),
       doc({ id: 'c-3', platform: 'reddit-ads', campaign_name: 'Reddit one' }),
       doc({ id: 'c-4', platform: 'twitter-ads', campaign_name: 'X one' }),
+      doc({ id: 'c-5', platform: 'google-ads', campaign_name: 'Google one' }),
     ]);
 
     expect(q('optimization-campaign-negatives-edit-c-1')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-2')).toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-3')).not.toBeNull();
     expect(q('optimization-campaign-negatives-edit-c-4')).not.toBeNull();
+    expect(q('optimization-campaign-negatives-edit-c-5')).not.toBeNull();
 
     (q('optimization-campaign-negatives-edit-c-1') as HTMLButtonElement).click();
     fixture.detectChanges();

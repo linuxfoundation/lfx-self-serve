@@ -2131,7 +2131,7 @@ export const CAMPAIGN_BID_OUTCOME_UNCONFIRMED =
 
 /**
  * Match types a negative keyword may carry (campaign-service's `negativeKeywordMatchTypeEnum`),
- * across the three platforms. Which of them a campaign's platform takes is upstream's to decide: it
+ * across the four platforms. Which of them a campaign's platform takes is upstream's to decide: it
  * refuses any other with 400 before the platform is contacted.
  */
 export const VALID_CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPES: ReadonlySet<CampaignNegativeKeywordMatchType> = new Set<CampaignNegativeKeywordMatchType>([
@@ -2154,8 +2154,20 @@ export const MAX_NEGATIVE_KEYWORDS_PER_REQUEST = 60;
 /** Most negative keywords one request may carry on X: one write per keyword, paced at one a second, so upstream caps it at 20. */
 export const MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST = 20;
 
-/** Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). */
+/**
+ * Microsoft's limit on a negative keyword's text, in characters (code points, not bytes). Upstream
+ * admits this length on every platform, so it is also what the BFF enforces — a platform with a
+ * shorter limit narrows it in `CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES.maxTextLength`.
+ */
 export const MAX_NEGATIVE_KEYWORD_TEXT_LENGTH = 100;
+
+/**
+ * Google Ads' limit on a negative keyword's text (`KeywordInfo.text`), in characters. Shorter than
+ * the shared limit above, and campaign-service applies it in its Google dispatcher: a longer text
+ * is refused with 400 before Google is contacted, taking the whole request with it. The editor
+ * therefore refuses it first, so no Google batch is ever sent that upstream will reject whole.
+ */
+export const MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH = 80;
 
 /**
  * The characters a negative keyword's text may hold: letters, combining marks, digits, spaces and
@@ -2386,6 +2398,7 @@ export const CAMPAIGN_BID_DEFINITE_FAILURE_MARKER = 'was not modified';
 
 /** The platforms a negative keyword can be added on (`add-negative-keywords`). */
 export const NEGATIVE_KEYWORD_CAMPAIGN_PLATFORMS: ReadonlySet<string> = new Set<NegativeKeywordCampaignPlatform>([
+  'google-ads',
   'microsoft-ads',
   'reddit-ads',
   'twitter-ads',
@@ -2404,18 +2417,37 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS: readonly CampaignNega
 /**
  * What the negative-keyword editor offers and sends per platform, from campaign-service's
  * `add-negative-keywords` contract:
+ * - Google Ads: Broad, Phrase or Exact, as campaign criteria, up to 60, and a keyword's text is
+ *   capped at 80 characters rather than the shared 100.
  * - Microsoft Advertising: Exact or Phrase, at campaign level, up to 60.
  * - Reddit: Broad only (its excluded keywords carry no match type), on the campaign's one ad group,
  *   up to 60, and the keyword-targeting read's `revision` is REQUIRED.
  * - X: Broad, Phrase or Exact, as negated targeting on the campaign's one line item, up to 20.
  */
 export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeKeywordCampaignPlatform, CampaignNegativeKeywordPlatformRules>> = {
+  'google-ads': {
+    label: 'Google Ads',
+    matchTypes: [
+      { value: 'Exact', label: 'Exact' },
+      { value: 'Phrase', label: 'Phrase' },
+      { value: 'Broad', label: 'Broad' },
+    ],
+    // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic.
+    defaultMatchType: 'Exact',
+    maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    // Google's own mutate is ATOMIC, so one over-long keyword would take the whole batch with it.
+    maxTextLength: MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
+    requiresRevision: false,
+    destination: 'Added to this campaign in Google Ads.',
+    matchTypeHint: 'Applies to every keyword in this request. Google Ads supports Exact, Phrase and Broad for negatives.',
+  },
   'microsoft-ads': {
     label: 'Microsoft Advertising',
     matchTypes: CAMPAIGN_NEGATIVE_KEYWORD_MATCH_TYPE_OPTIONS,
     // Exact is the narrowest a negative can be, so it is the default that blocks the least traffic.
     defaultMatchType: 'Exact',
     maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    maxTextLength: MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
     requiresRevision: false,
     destination: 'Added to this campaign in Microsoft Advertising.',
     matchTypeHint: 'Applies to every keyword in this request. Microsoft supports Exact and Phrase for negatives.',
@@ -2425,6 +2457,7 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeK
     matchTypes: [{ value: 'Broad', label: 'Broad' }],
     defaultMatchType: 'Broad',
     maxKeywords: MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
+    maxTextLength: MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
     requiresRevision: true,
     destination: "Added to the excluded keywords of this campaign's ad group on Reddit.",
     matchTypeHint: "Reddit's excluded keywords carry no match type, so Broad is the only choice.",
@@ -2438,6 +2471,7 @@ export const CAMPAIGN_NEGATIVE_KEYWORD_PLATFORM_RULES: Readonly<Record<NegativeK
     ],
     defaultMatchType: 'Exact',
     maxKeywords: MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
+    maxTextLength: MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
     requiresRevision: false,
     destination: "Added as negative keyword targeting on this campaign's line item on X.",
     matchTypeHint: 'Applies to every keyword in this request. X supports Exact, Phrase and Broad for negatives.',

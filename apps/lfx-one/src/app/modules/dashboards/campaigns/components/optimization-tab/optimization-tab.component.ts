@@ -278,7 +278,7 @@ export class OptimizationTabComponent implements OnInit {
   /** The bid this session CONFIRMED per row. The index carries no bid, so this is the only one the row can show. */
   protected readonly confirmedBid = signal<Partial<Record<string, CampaignConfirmedBid>>>({});
 
-  /** Which Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
+  /** Which Google Ads, Microsoft Advertising, Reddit and X rows have their negative-keyword editor open. */
   protected readonly negativesEditorOpen = signal<Record<string, boolean>>({});
   /** Which Reddit and X rows have their keyword-targeting panel open. */
   protected readonly targetingPanelOpen = signal<Record<string, boolean>>({});
@@ -1243,7 +1243,7 @@ export class OptimizationTabComponent implements OnInit {
   }
 
   /**
-   * Opens or closes one row's negative-keyword editor (Microsoft Advertising, Reddit or X). A request in flight keeps it open,
+   * Opens or closes one row's negative-keyword editor (Google Ads, Microsoft Advertising, Reddit or X). A request in flight keeps it open,
    * but does not keep a CLOSED one shut: after a remount the editor shows the request's progress.
    */
   protected toggleNegativesEditor(row: CampaignRow): void {

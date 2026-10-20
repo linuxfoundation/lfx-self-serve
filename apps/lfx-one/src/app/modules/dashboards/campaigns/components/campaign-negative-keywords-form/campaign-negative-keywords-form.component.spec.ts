@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import {
   CAMPAIGN_NEGATIVE_KEYWORDS_OUTCOME_UNCONFIRMED,
+  MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH,
   MAX_NEGATIVE_KEYWORDS_PER_REQUEST,
   MAX_X_NEGATIVE_KEYWORDS_PER_REQUEST,
 } from '@lfx-one/shared/constants';
@@ -291,7 +292,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
     expect(remounted.componentInstance.form.controls.keywords.value).toBe('');
   });
 
-  describe('on Reddit and X', () => {
+  describe('on Google, Reddit and X', () => {
     const targeting = (revision?: string): CampaignServiceKeywordTargeting => ({
       campaign_id: 'c-1',
       platform: 'reddit-ads',
@@ -300,7 +301,7 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       ...(revision !== undefined && { revision }),
     });
 
-    function setPlatform(platform: 'reddit-ads' | 'twitter-ads'): void {
+    function setPlatform(platform: 'google-ads' | 'reddit-ads' | 'twitter-ads'): void {
       fixture.componentRef.setInput('platform', platform);
       fixture.detectChanges();
     }
@@ -436,6 +437,28 @@ describe('CampaignNegativeKeywordsFormComponent', () => {
       typeKeywords('free');
       submit();
       expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text: 'free', matchType: 'Exact' }], undefined);
+    });
+
+    // Google's own mutate is atomic and campaign-service refuses an over-long text with a 400
+    // before Google is contacted, taking the whole batch with it — so the editor refuses it first.
+    it(`offers Google its three match types, caps a keyword's text at ${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH}, and never reads or sends a revision`, () => {
+      addNegativeKeywords.mockReturnValue(of({ campaignId: 'c-1', appliedCount: 0, results: [] }));
+      setPlatform('google-ads');
+
+      for (const type of ['Exact', 'Phrase', 'Broad']) {
+        expect(el().querySelector(`label[for="campaign-negatives-type-c-1-${type}"]`)).not.toBeNull();
+      }
+      expect(getKeywordTargeting).not.toHaveBeenCalled();
+
+      typeKeywords('a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH + 1));
+      submit();
+      expect(addNegativeKeywords).not.toHaveBeenCalled();
+      expect(q('optimization-campaign-negatives-line-error-1')!.textContent).toContain(`${MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH} characters`);
+
+      const text = 'a'.repeat(MAX_GOOGLE_NEGATIVE_KEYWORD_TEXT_LENGTH);
+      typeKeywords(text);
+      submit();
+      expect(addNegativeKeywords).toHaveBeenCalledWith('tlf', 'b-1', 'c-1', [{ text, matchType: 'Exact' }], undefined);
     });
   });
 });

@@ -1877,9 +1877,9 @@ export class CampaignServiceClient {
   }
 
   /**
-   * Add negative keywords to one live Microsoft Advertising, Reddit or X campaign: at campaign level
-   * on Microsoft, in the excluded keywords of the campaign's one ad group on Reddit, and as negated
-   * keyword targeting on its one line item on X.
+   * Add negative keywords to one live Google Ads, Microsoft Advertising, Reddit or X campaign: as
+   * campaign criteria on Google, at campaign level on Microsoft, in the excluded keywords of the
+   * campaign's one ad group on Reddit, and as negated keyword targeting on its one line item on X.
    *
    * NOT ATOMIC and POSITIONAL: upstream answers one result per requested keyword, in request
    * order, each with its own outcome. The response is therefore mapped index for index and never
@@ -1887,8 +1887,8 @@ export class CampaignServiceClient {
    * at `i`, and a shifted entry would show a keyword that was not added as added.
    *
    * `revision` (Reddit's compare-and-set token from the keyword-targeting read) goes in the body
-   * ONLY when the caller passed one: Microsoft Advertising and X refuse the field whenever it is
-   * present, even empty.
+   * ONLY when the caller passed one: Google Ads, Microsoft Advertising and X refuse the field
+   * whenever it is present, even empty.
    *
    * No `If-Match` and no ETag: upstream persists nothing for this lever. Upstream's own refusals
    * (400 malformed batch or unsupported platform, 409, 503) pass through unchanged. A transport

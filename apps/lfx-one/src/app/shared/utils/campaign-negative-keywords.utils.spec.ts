@@ -70,9 +70,11 @@ describe('negativeKeywordOutcomeRows', () => {
     expect(summarizeNegativeKeywordOutcomes([])).toBe('');
   });
 
-  // Reddit and X return only NOT_SENT or REJECTED for a FAILED keyword, never their own text; any
-  // other code is wire data with no meaning here and is not shown.
+  // Google Ads, Reddit and X return only NOT_SENT or REJECTED for a FAILED keyword, never their own
+  // text; any other code is wire data with no meaning here and is not shown.
   it.each([
+    ['google-ads', 'NOT_SENT', 'It was not sent to Google Ads, so nothing changed.'],
+    ['google-ads', 'REJECTED', 'Google Ads refused it.'],
     ['reddit-ads', 'NOT_SENT', 'It was not sent to Reddit, so nothing changed.'],
     ['reddit-ads', 'REJECTED', 'Reddit refused it.'],
     ['twitter-ads', 'REJECTED', 'X refused it.'],
