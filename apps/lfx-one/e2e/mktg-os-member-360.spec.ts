@@ -46,7 +46,10 @@ test('form-only intake fixes the project, parses/removes CSV, and has an empty h
     .evaluate((element) => {
       const next = element.nextElementSibling;
       if (!next) throw new Error('Tracker optional label is missing');
-      return next.getBoundingClientRect().left - element.getBoundingClientRect().right;
+      // A wrapped inline span's bounding box includes later lines; measure its first text fragment.
+      const first = next.getClientRects()[0];
+      if (!first) throw new Error('Tracker optional label has no text fragment');
+      return first.left - element.getBoundingClientRect().right;
     });
   expect(trackerSpacing).toBeGreaterThan(0);
   await expect(page.getByTestId('member-360-run-history')).toContainText('No Member 360 runs yet.');
@@ -114,20 +117,30 @@ test('Generate lands on the document and stays generating until the run is store
   await page.screenshot({ path: info.outputPath('generated-document.png'), fullPage: true });
 });
 
-test('a finished refusal ends generating, shows the agent message and offers Run again', async ({ page }, info) => {
+test('a finished refusal shows a plain reason, collapsed Details and Run again', async ({ page }, info) => {
   await setupMember360(page); // Includes suppressCookieBanner(page).
   let polls = 0;
-  const message = 'No entitled project was found for this session. I cannot run Member 360.';
+  const message = 'SCOPE GUARD: no entitlement for sample-project-uid in this session; the intake form could not be verified.';
   await page.route('**/api/mktg-agents/member-360/generate', (route) =>
     json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-token', documentId: MEMBER_360_DOCUMENT_ID })
   );
   await page.route('**/api/mktg-agents/member-360/result', (route) => {
     polls++;
-    return json(route, { status: 'failed', message });
+    return json(route, { status: 'failed', reason: 'no_edit_access', message });
   });
   await openMember360(page);
   await page.getByTestId('member-360-run').getByRole('button').click();
-  await expect(page.getByTestId('mktg-document-view-error')).toContainText(message);
+  await expect(page.getByTestId('mktg-document-view-error')).toContainText(
+    "Member 360 couldn't run: your account doesn't have edit access to this project's member data."
+  );
+  await expect(page.getByTestId('mktg-document-view-error')).not.toContainText('SCOPE GUARD');
+  const details = page.getByTestId('member-360-failure-details');
+  await expect(details).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('member-360-failure-message')).not.toBeVisible();
+  await page.screenshot({ path: info.outputPath('terminal-refusal-collapsed.png'), fullPage: true });
+  await details.getByText('Details', { exact: true }).click();
+  await expect(page.getByTestId('member-360-failure-message')).toBeVisible();
+  await expect(page.getByTestId('member-360-failure-message')).toHaveText(message);
   await expect(page.getByTestId('mktg-run-activity')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
   await expect(page.getByTestId('member-360-result')).toHaveCount(0);
@@ -138,6 +151,30 @@ test('a finished refusal ends generating, shows the agent message and offers Run
   await expect(page.getByTestId('member-360-run').getByRole('button')).toBeEnabled();
   expect(polls).toBe(1);
   await page.screenshot({ path: info.outputPath('run-again-intake.png'), fullPage: true });
+});
+
+test('an unsupported tracker type is explained inline before upload', async ({ page }, info) => {
+  await setupMember360(page); // Includes suppressCookieBanner(page).
+  let uploads = 0;
+  await page.route('**/api/mktg-agents/member-360/tracker**', async (route) => {
+    uploads++;
+    await route.abort();
+  });
+  await openMember360(page);
+  await expect(page.getByTestId('member-360-upload-types')).toHaveText('XLSX or CSV');
+  await page
+    .getByTestId('member-360-upload')
+    .locator('input[type="file"]')
+    .setInputFiles({
+      name: 'tracker.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('synthetic pdf'),
+    });
+  await expect(page.getByTestId('member-360-error')).toContainText('Only .xlsx or .csv trackers can be uploaded.');
+  await expect(page.getByTestId('member-360-tracker')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-run').getByRole('button')).toBeEnabled();
+  expect(uploads).toBe(0);
+  await page.screenshot({ path: info.outputPath('unsupported-tracker.png'), fullPage: true });
 });
 
 test('a questions turn keeps the document open with the feed and an unsupported-answer notice', async ({ page }, info) => {

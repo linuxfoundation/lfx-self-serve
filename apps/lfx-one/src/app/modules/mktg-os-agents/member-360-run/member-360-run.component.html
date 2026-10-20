@@ -33,6 +33,7 @@
       <lfx-message severity="warn" text="You need write access to this project to run Member 360." data-testid="member-360-no-access" />
     } @else {
       <form [formGroup]="form" (ngSubmit)="run()" class="flex flex-col gap-5">
+        <!-- Exact px per Member360Run.dc.html: 10px gap and 10px/12px padding in the Project box, 13px hints. -->
         <section
           class="flex flex-col gap-[14px] rounded-[10px] border border-gray-200 bg-white px-[20px] py-[18px]"
           aria-labelledby="member-360-sources-title"
@@ -40,9 +41,13 @@
           <h2 id="member-360-sources-title" class="text-[16px] font-bold">Sources</h2>
           <div class="flex flex-col gap-1">
             <b>Project</b>
-            <div class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3" data-testid="member-360-project">
+            <div
+              class="flex flex-wrap items-center gap-[10px] rounded-lg border border-gray-200 bg-gray-50 px-[12px] py-[10px]"
+              data-testid="member-360-project">
               <b>{{ context.activeContext()?.name }}</b
-              ><span class="text-sm text-gray-500">fixed to the project you are in; the agent refuses any other</span>
+              ><span class="text-[13px] font-normal text-gray-500" data-testid="member-360-project-hint"
+                >fixed to the project you are in; the agent refuses any other</span
+              >
             </div>
           </div>
           <!-- The board's two-column intake stacks on mobile; long selected labels wrap rather than clip. -->
@@ -72,8 +77,10 @@
             </div>
           </div>
           <div class="flex flex-col gap-2">
-            <p class="flex items-baseline gap-x-1">
-              <b>Trackers</b><span class="text-sm text-gray-500">optional · speaking, content, ambassadors, marketing activity</span>
+            <p data-testid="member-360-trackers-label">
+              <span class="font-semibold">Trackers</span>&ngsp;<span class="text-[13px] font-normal text-gray-500" data-testid="member-360-trackers-hint"
+                >optional · speaking, content, ambassadors, marketing activity</span
+              >
             </p>
             @for (upload of trackers(); track upload.id) {
               <div
@@ -96,18 +103,22 @@
                   [attr.data-testid]="'member-360-remove-' + upload.id" />
               </div>
             }
-            <lfx-file-upload
-              mode="basic"
-              accept=".csv,.xlsx"
-              [multiple]="true"
-              [customUpload]="true"
-              [auto]="true"
-              [maxFileSize]="trackerMaxBytes"
-              [disabled]="uploading() || submitting()"
-              chooseLabel="Upload tracker"
-              chooseStyleClass="p-button-outlined p-button-secondary !border-dashed"
-              (onCustomUpload)="upload($event.files)"
-              dataTest="member-360-upload" />
+            <div class="flex flex-wrap items-center gap-[10px]">
+              <lfx-file-upload
+                mode="basic"
+                accept=".csv,.xlsx"
+                [multiple]="true"
+                [customUpload]="true"
+                [auto]="true"
+                [maxFileSize]="trackerMaxBytes"
+                [disabled]="uploading() || submitting()"
+                chooseLabel="Upload tracker"
+                chooseStyleClass="p-button-outlined p-button-secondary !border-dashed"
+                (onSelect)="rejectUnsupportedTrackers($event.files)"
+                (onCustomUpload)="upload($event.files)"
+                dataTest="member-360-upload" />
+              <span class="text-[13px] font-normal text-gray-500" data-testid="member-360-upload-types">XLSX or CSV</span>
+            </div>
             @if (uploading()) {
               <p role="status">Parsing tracker rows…</p>
             }
