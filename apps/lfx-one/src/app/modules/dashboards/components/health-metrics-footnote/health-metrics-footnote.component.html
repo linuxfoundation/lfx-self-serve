@@ -1,9 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Pixel sizes follow the design; the 14px root makes the rem scale undershoot them. Each run is its own element, so
-     template whitespace never adds a space the text does not carry. -->
-<p class="flex items-start gap-2 border-t border-gray-100 pt-3 text-[12px] leading-[1.55] text-gray-400">
+<!-- Pixel sizes follow the design (the 14px root undershoots the rem scale); gray-500, not its gray-400, meets WCAG AA.
+     Each run is its own element, so template whitespace never adds a space the text does not carry. -->
+<p class="flex items-start gap-2 border-t border-gray-100 pt-3 text-[12px] leading-[1.55] text-gray-500">
   <i
     class="mt-[3px] shrink-0 fa-light"
     [class.fa-circle-info]="!caution()"

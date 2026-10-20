@@ -200,7 +200,11 @@ describe('buildHealthMetricsNonMembersConversionView', () => {
     expect(view.pipelineValue).toBe('—');
     expect(view.pipelineLabel).toBe('Estimated pipeline · not enough data');
     expect(view.hasEstimate).toBe(false);
-    expect(view.footnote[0].text).toBe('Estimated pipeline multiplies high-fit organizations by an entry-tier fee and is indicative only. The ');
+    expect(view.footnote).toEqual([
+      { text: 'Estimated pipeline multiplies high-fit organizations by an entry-tier fee and is indicative only. The ' },
+      { text: 'fit score', bold: true },
+      { text: ' is a model change, sequenced after the matching fix.' },
+    ]);
   });
 
   it('renders a NULL count as not available but keeps a real zero', () => {
