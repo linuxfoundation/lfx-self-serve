@@ -219,7 +219,6 @@ The parts of #1766's deliverable that live beside this spec rather than in it:
 **`contracts/`** (JSON Schema for new or widened BFF responses) moves to the PRs that build each
 endpoint (E3-03, E4-04, E6-01), so each schema is reviewed with its code.
 E3-03's is [`contracts/public-meeting-attachments.schema.json`](contracts/public-meeting-attachments.schema.json).
-E6-01's is [`contracts/public-meeting-occurrences.schema.json`](contracts/public-meeting-occurrences.schema.json).
 
 ### Deviations from #1766's acceptance criteria
 
