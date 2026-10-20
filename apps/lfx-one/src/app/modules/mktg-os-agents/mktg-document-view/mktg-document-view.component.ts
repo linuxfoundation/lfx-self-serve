@@ -287,8 +287,6 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
-  /** Boilerplates, FAQ and Brand Kit stay full width; the framework keeps Revisions and Downstream in the right column. */
-  protected readonly fullWidth = computed(() => this.boilerplates() !== null || this.faq() !== null || this.brandKit() !== null);
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
