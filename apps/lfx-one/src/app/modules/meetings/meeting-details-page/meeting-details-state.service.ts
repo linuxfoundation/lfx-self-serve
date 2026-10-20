@@ -153,8 +153,10 @@ export class MeetingDetailsStateService {
    * `registrantsRefresh$`).
    */
   public readonly rosterRefresh = signal(0);
-  /** True while the viewer's own removal (Remove Myself) is in flight. */
-  public readonly leaving = signal(false);
+  /** The meeting the viewer's own removal (Remove Myself) is in flight for, if any. */
+  public readonly leavingFor = signal<string | null>(null);
+  /** True while a removal is in flight for the meeting on screen: another meeting's never spins here. */
+  public readonly leaving: Signal<boolean> = computed(() => !!this.leavingFor() && this.leavingFor() === this.meeting()?.id);
   /**
    * A `?action=leave` link (invite emails, calendar events) until the page has handled it: the action
    * slot then asks the viewer to confirm, as V1 does. Removal never runs from the link. Tied to the
@@ -352,11 +354,13 @@ export class MeetingDetailsStateService {
    */
   public markLeft(meetingId: string): void {
     this.meetingService.markRegistrationRemoved(meetingId);
-    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
-      return;
-    }
+    // Ahead of the page guard: a registration made here and removed after the page moved on must not
+    // read as invited when the viewer comes back to that meeting on the same page.
     if (this.optimisticInvitedId() === meetingId) {
       this.optimisticInvitedId.set(null);
+    }
+    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
+      return;
     }
     // As V1 (`rsvpUpdateTrigger$.next(null)`): the removed registrations' answer is gone.
     this.myRsvpUpdates$.next(null);

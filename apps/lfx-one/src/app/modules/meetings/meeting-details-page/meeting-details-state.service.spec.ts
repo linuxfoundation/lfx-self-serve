@@ -879,6 +879,33 @@ describe('MeetingDetailsStateService', () => {
       expect(state.rsvpReset()).toBe(1);
     });
 
+    // Registered here, removed after moving on: coming back must not read as invited.
+    it("clears this page's optimistic registration for a removal completed after the page moved on", async () => {
+      const state = await load(upcoming({ invited: false }));
+      state.markRegistered(MEETING_ID);
+      expect(state.canLeaveMeeting()).toBe(true);
+
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ id: 'meeting-2', uid: 'meeting-2', invited: false } as Partial<Meeting>), project }));
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await flush();
+      state.markLeft(MEETING_ID);
+      clearRemovedRegistration.mockClear();
+      getPublicMeeting.mockReturnValue(of({ meeting: upcoming({ invited: false }), project }));
+      paramMap$.next(convertToParamMap({ id: MEETING_ID }));
+      await flush();
+
+      expect(state.canLeaveMeeting()).toBe(false);
+    });
+
+    it('spins Remove Myself only for the meeting whose removal is in flight', async () => {
+      const state = await load(upcoming());
+
+      state.leavingFor.set('meeting-2');
+      expect(state.leaving()).toBe(false);
+      state.leavingFor.set(MEETING_ID);
+      expect(state.leaving()).toBe(true);
+    });
+
     it('records a removal for a meeting the page has left, without touching the page', async () => {
       const state = await load(upcoming());
 

@@ -240,7 +240,7 @@ export class MeetingActionSlotComponent {
    */
   private leave(meetingId: string, source: MeetingRemovalSource): void {
     const subject = this.viewerSubject();
-    this.state.leaving.set(true);
+    this.state.leavingFor.set(meetingId);
 
     this.meetingService
       .removeMyMeetingRegistration(meetingId, source)
@@ -248,7 +248,11 @@ export class MeetingActionSlotComponent {
         take(1),
         // Not torn down with the slot, as V1's is not: a navigation mid-removal must still clear the
         // session's RSVP cache; the meeting and account guard below keeps the page out of it.
-        finalize(() => this.state.leaving.set(false))
+        finalize(() => {
+          if (this.state.leavingFor() === meetingId) {
+            this.state.leavingFor.set(null);
+          }
+        })
       )
       .subscribe({
         next: (result) => {
@@ -292,6 +296,10 @@ export class MeetingActionSlotComponent {
           }
         },
         error: (error: unknown) => {
+          // As the success path: the error belongs to the page and account the removal was made on.
+          if (this.state.meeting()?.id !== meetingId || this.viewerSubject() !== subject) {
+            return;
+          }
           const fallback = 'Unable to remove you from this meeting. Please try again.';
           this.messageService.add({
             severity: 'error',
