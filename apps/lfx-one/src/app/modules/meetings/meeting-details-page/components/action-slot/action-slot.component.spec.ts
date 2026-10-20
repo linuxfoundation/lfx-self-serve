@@ -10,6 +10,7 @@ import {
   Meeting,
   MeetingDetailsLoadStatus,
   MeetingOccurrence,
+  MeetingLeaveRequest,
   MeetingPrivacyState,
   MeetingTimeState,
   MeetingViewerRole,
@@ -69,7 +70,7 @@ describe('MeetingActionSlotComponent', () => {
   let showAddToCalendar: WritableSignal<boolean>;
   let showLeaveMeeting: WritableSignal<boolean>;
   let canLeaveMeeting: WritableSignal<boolean>;
-  let leaveRequested: WritableSignal<boolean>;
+  let leaveRequest: WritableSignal<MeetingLeaveRequest | null>;
   let status: WritableSignal<MeetingDetailsLoadStatus>;
   let markLeft: ReturnType<typeof vi.fn>;
   let markLeaveIncomplete: ReturnType<typeof vi.fn>;
@@ -104,11 +105,11 @@ describe('MeetingActionSlotComponent', () => {
     showAddToCalendar = signal(false);
     showLeaveMeeting = signal(false);
     canLeaveMeeting = signal(true);
-    leaveRequested = signal(false);
+    leaveRequest = signal<MeetingLeaveRequest | null>(null);
     status = signal<MeetingDetailsLoadStatus>('ready');
     markLeft = vi.fn();
     markLeaveIncomplete = vi.fn();
-    consumeLeaveRequest = vi.fn(() => leaveRequested.set(false));
+    consumeLeaveRequest = vi.fn(() => leaveRequest.set(null));
     // A real service, so `<p-confirmDialog>` can subscribe to it; only `confirm` is observed.
     const confirmationService = new ConfirmationService();
     confirm = vi.spyOn(confirmationService, 'confirm').mockImplementation(() => confirmationService) as unknown as ReturnType<typeof vi.fn>;
@@ -134,7 +135,7 @@ describe('MeetingActionSlotComponent', () => {
             showAddToCalendar,
             showLeaveMeeting,
             canLeaveMeeting,
-            leaveRequested,
+            leaveRequest,
             status,
             leaving: signal(false),
             markLeft,
@@ -617,7 +618,7 @@ describe('MeetingActionSlotComponent', () => {
     describe('from a ?action=leave link', () => {
       it('drops the param and asks to confirm, attributed to the email link, once the meeting is ready', async () => {
         status.set('loading');
-        leaveRequested.set(true);
+        leaveRequest.set({ meetingId: 'meeting-1', handledByV1: false });
         fixture.detectChanges();
         await fixture.whenStable();
         expect(confirm).not.toHaveBeenCalled();
@@ -634,13 +635,34 @@ describe('MeetingActionSlotComponent', () => {
 
       it('tells a viewer who is not registered so, without a confirmation', async () => {
         canLeaveMeeting.set(false);
-        leaveRequested.set(true);
+        leaveRequest.set({ meetingId: 'meeting-1', handledByV1: false });
         fixture.detectChanges();
         await fixture.whenStable();
 
         expect(consumeLeaveRequest).toHaveBeenCalledTimes(1);
         expect(confirm).not.toHaveBeenCalled();
         expect(add).toHaveBeenCalledWith({ severity: 'info', summary: 'Not registered', detail: 'You are not registered for this meeting.' });
+      });
+
+      // V1, seeded with the same meeting, showed this toast on its first render, before the swap.
+      it("does not repeat V1's Not registered toast for a link V1 has handled", async () => {
+        canLeaveMeeting.set(false);
+        leaveRequest.set({ meetingId: 'meeting-1', handledByV1: true });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(consumeLeaveRequest).toHaveBeenCalledTimes(1);
+        expect(add).not.toHaveBeenCalled();
+      });
+
+      it('asks nothing while the page shows another meeting than the link named', async () => {
+        meeting.set({ id: 'meeting-2' } as Meeting);
+        leaveRequest.set({ meetingId: 'meeting-1', handledByV1: false });
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(consumeLeaveRequest).not.toHaveBeenCalled();
+        expect(confirm).not.toHaveBeenCalled();
       });
     });
   });

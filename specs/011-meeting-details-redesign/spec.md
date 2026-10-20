@@ -116,7 +116,8 @@ approve / edit AI summary  export attendance
 ```
 
 Add to calendar (Google, Outlook / Microsoft 365, `.ics`) **is** on the V1 details page, so V2 keeps
-it where V1 offers it: a signed-in organizer or invitee, before the join window (FR-050).
+it where V1 offers it: a signed-in organizer or invitee, before the join window (FR-050). So is
+Remove Myself, with V1's `?action=leave` link from invite emails and calendar events (FR-050).
 
 Passcode display and dial-in numbers are **not** permanent exclusions. They are planned join-details
 work (E7-01, E7-03) that is blocked upstream: U-04 (#2930) exposes the Zoom meeting ID and passcode,

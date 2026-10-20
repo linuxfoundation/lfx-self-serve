@@ -78,20 +78,31 @@ describe('MeetingDetailsSeedService', () => {
     it('captures the request for the meeting it was made on, and hands it over once', () => {
       const { service } = create('browser', null, { action: 'leave' });
 
-      expect(service.takeLeaveRequest('meeting-1')).toBe(true);
-      expect(service.takeLeaveRequest('meeting-1')).toBe(false);
+      expect(service.takeLeaveRequest('meeting-1')).toEqual({ meetingId: 'meeting-1', handledByV1: false });
+      expect(service.takeLeaveRequest('meeting-1')).toBeNull();
+    });
+
+    // V1, seeded with the meeting, handles the link on its first render, before the swap to V2.
+    it('marks a request V1 has already handled, when the seed carried the meeting', () => {
+      const { service } = create(
+        'browser',
+        { ...seeded, meeting: { id: 'meeting-1' } as MeetingJoinPageState['meeting'], meetingLoadFailed: false },
+        { action: 'leave' }
+      );
+
+      expect(service.takeLeaveRequest('meeting-1')).toEqual({ meetingId: 'meeting-1', handledByV1: true });
     });
 
     it('withholds the request from another meeting', () => {
       const { service } = create('browser', null, { action: 'leave' });
 
-      expect(service.takeLeaveRequest('meeting-2')).toBe(false);
+      expect(service.takeLeaveRequest('meeting-2')).toBeNull();
     });
 
     it('captures nothing without the param, or on the server', () => {
-      expect(create('browser', null).service.takeLeaveRequest('meeting-1')).toBe(false);
+      expect(create('browser', null).service.takeLeaveRequest('meeting-1')).toBeNull();
       TestBed.resetTestingModule();
-      expect(create('server', null, { action: 'leave' }).service.takeLeaveRequest('meeting-1')).toBe(false);
+      expect(create('server', null, { action: 'leave' }).service.takeLeaveRequest('meeting-1')).toBeNull();
     });
   });
 });

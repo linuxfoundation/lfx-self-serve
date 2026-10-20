@@ -36,6 +36,7 @@ describe('MeetingDetailsStateService', () => {
   let removedRegistrationMeetingIds: WritableSignal<ReadonlySet<string>>;
   let markRegistrationRemoved: ReturnType<typeof vi.fn>;
   let leaveLinkFor: string | null;
+  let clearRemovedRegistration: ReturnType<typeof vi.fn>;
 
   function create(platform: 'browser' | 'server' = 'browser'): MeetingDetailsStateService {
     TestBed.configureTestingModule({
@@ -60,14 +61,21 @@ describe('MeetingDetailsStateService', () => {
         { provide: Router, useValue: { navigate } },
         {
           provide: MeetingService,
-          useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp, removedRegistrationMeetingIds, markRegistrationRemoved },
+          useValue: {
+            getPublicMeeting,
+            getPublicPastMeeting,
+            getMeetingRsvpForCurrentUser: getMyRsvp,
+            removedRegistrationMeetingIds,
+            markRegistrationRemoved,
+            clearRemovedRegistration,
+          },
         },
         { provide: UserService, useValue: { authenticated } },
         {
           provide: MeetingDetailsSeedService,
           useValue: {
             take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null),
-            takeLeaveRequest: (routeId: string | null) => routeId === leaveLinkFor,
+            takeLeaveRequest: (routeId: string | null) => (routeId && routeId === leaveLinkFor ? { meetingId: routeId, handledByV1: true } : null),
           },
         },
       ],
@@ -87,6 +95,13 @@ describe('MeetingDetailsStateService', () => {
     removedRegistrationMeetingIds = signal<ReadonlySet<string>>(new Set());
     markRegistrationRemoved = vi.fn((id: string) => removedRegistrationMeetingIds.update((ids) => new Set(ids).add(id)));
     leaveLinkFor = null;
+    clearRemovedRegistration = vi.fn((id: string) =>
+      removedRegistrationMeetingIds.update((ids) => {
+        const next = new Set(ids);
+        next.delete(id);
+        return next;
+      })
+    );
     // Lookup failures are logged on purpose; keep the test output readable.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -742,7 +757,7 @@ describe('MeetingDetailsStateService', () => {
       queryParamMap$.next(convertToParamMap({ action: 'leave' }));
       const state = await load(upcoming());
 
-      expect(state.leaveRequested()).toBe(true);
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: false });
       expect(state.claimAutoJoin(MEETING_ID)).toBe(false);
     });
 
@@ -750,7 +765,7 @@ describe('MeetingDetailsStateService', () => {
       leaveLinkFor = MEETING_ID;
       const state = await load(upcoming());
 
-      expect(state.leaveRequested()).toBe(true);
+      expect(state.leaveRequest()).toEqual({ meetingId: MEETING_ID, handledByV1: true });
     });
 
     it('drops the param once the link is handled', async () => {
@@ -759,15 +774,37 @@ describe('MeetingDetailsStateService', () => {
 
       state.consumeLeaveRequest();
 
-      expect(state.leaveRequested()).toBe(false);
+      expect(state.leaveRequest()).toBeNull();
       expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true }));
     });
 
     it('has no leave request without the link', async () => {
       const state = await load(upcoming());
 
-      expect(state.leaveRequested()).toBe(false);
+      expect(state.leaveRequest()).toBeNull();
       expect(state.claimAutoJoin(MEETING_ID)).toBe(true);
+    });
+
+    it('drops a leave request when the route moves to another meeting before it is handled', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      paramMap$.next(convertToParamMap({ id: 'meeting-2' }));
+      await settle();
+
+      expect(state.leaveRequest()).toBeNull();
+    });
+
+    // As V1 and the meeting card: a re-registration stops the session's removal from hiding the meeting.
+    it('clears the session-wide removal when the viewer registers again', async () => {
+      const state = await load(upcoming({ invited: false }));
+      state.markLeft(MEETING_ID);
+      expect(removedRegistrationMeetingIds().has(MEETING_ID)).toBe(true);
+
+      state.markRegistered(MEETING_ID);
+
+      expect(clearRemovedRegistration).toHaveBeenCalledWith(MEETING_ID);
+      expect(removedRegistrationMeetingIds().has(MEETING_ID)).toBe(false);
     });
   });
 

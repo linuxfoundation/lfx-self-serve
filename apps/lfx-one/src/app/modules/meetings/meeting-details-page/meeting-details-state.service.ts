@@ -22,6 +22,7 @@ import {
   MeetingViewerRole,
   PublicMeetingProject,
   PublicPastMeetingResponse,
+  MeetingLeaveRequest,
   RsvpResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -145,10 +146,11 @@ export class MeetingDetailsStateService {
   /** True while the viewer's own removal (Remove Myself) is in flight. */
   public readonly leaving = signal(false);
   /**
-   * True from a `?action=leave` link (invite emails, calendar events) until the page has handled it:
-   * the action slot then asks the viewer to confirm, as V1 does. Removal never runs from the link.
+   * A `?action=leave` link (invite emails, calendar events) until the page has handled it: the action
+   * slot then asks the viewer to confirm, as V1 does. Removal never runs from the link. Tied to the
+   * meeting the link named, and dropped when the route moves on, so it never prompts for another one.
    */
-  public readonly leaveRequested = signal(false);
+  public readonly leaveRequest = signal<MeetingLeaveRequest | null>(null);
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -298,12 +300,13 @@ export class MeetingDetailsStateService {
     // round trip. The param is read from the gate's snapshot (V1 has dropped it by now) or, on an
     // in-app navigation, from the route. A new Zoom tab would bury the confirmation, so auto-join
     // stays off for the visit.
-    const leaveFromLink =
-      isPlatformBrowser(this.platformId) &&
-      (!!this.seedService?.takeLeaveRequest(routeId) || this.activatedRoute.snapshot.queryParamMap.get('action') === 'leave');
-    if (leaveFromLink && routeId) {
-      this.leaveRequested.set(true);
-      this.autoJoinedMeetingIds.add(routeId);
+    if (isPlatformBrowser(this.platformId) && routeId) {
+      const fromRoute = this.activatedRoute.snapshot.queryParamMap.get('action') === 'leave' ? { meetingId: routeId, handledByV1: false } : null;
+      const request = this.seedService?.takeLeaveRequest(routeId) ?? fromRoute;
+      if (request) {
+        this.leaveRequest.set(request);
+        this.autoJoinedMeetingIds.add(routeId);
+      }
     }
   }
 
@@ -312,7 +315,7 @@ export class MeetingDetailsStateService {
    * not ask again.
    */
   public consumeLeaveRequest(): void {
-    this.leaveRequested.set(false);
+    this.leaveRequest.set(null);
     void this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
@@ -323,7 +326,7 @@ export class MeetingDetailsStateService {
    */
   public markLeft(meetingId: string): void {
     this.meetingService.markRegistrationRemoved(meetingId);
-    if (this.meeting()?.id !== meetingId) {
+    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
       return;
     }
     if (this.optimisticInvitedId() === meetingId) {
@@ -338,7 +341,7 @@ export class MeetingDetailsStateService {
    * incomplete"): they stay on the invite list, and the meeting and the roster are read again.
    */
   public markLeaveIncomplete(meetingId: string): void {
-    if (this.meeting()?.id !== meetingId) {
+    if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
       return;
     }
     this.optimisticInvitedId.set(meetingId);
@@ -364,6 +367,9 @@ export class MeetingDetailsStateService {
    * Ignored when `meetingId` is no longer the page's meeting.
    */
   public markRegistered(meetingId: string): void {
+    // As V1 and the meeting card: the registration happened server-side either way, so the session's
+    // removed set (`markLeft`) must stop hiding this meeting everywhere, not only on this page.
+    this.meetingService.clearRemovedRegistration(meetingId);
     // A registration for a meeting the page has since left, or is leaving (the held meeting outlives
     // the route change until the next lookup resolves), says nothing about the current one.
     if (!this.matchesRoute() || this.meeting()?.id !== meetingId) {
@@ -679,6 +685,9 @@ export class MeetingDetailsStateService {
         if (meetingId !== this.routeId()) {
           this.loadFailed.set(false);
           this.failureCount.set(0);
+          if (this.leaveRequest() && this.leaveRequest()?.meetingId !== meetingId) {
+            this.leaveRequest.set(null);
+          }
         }
         this.routeId.set(meetingId);
       }),

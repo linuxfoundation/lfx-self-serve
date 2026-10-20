@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { environment } from '@environments/environment';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
-import { ActionSlotKind, MeetingRemovalSource, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { ActionSlotKind, MeetingLeaveRequest, MeetingRemovalSource, MeetingViewerRole } from '@lfx-one/shared/interfaces';
 import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, getMeetingSelfRemovalMessage, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -168,9 +168,70 @@ export class MeetingActionSlotComponent {
   }
 
   /**
+   * V1's `initializeLeaveFromLink`, for a signed-in viewer (V2 renders for no one else): once the
+   * linked meeting has loaded, the param is dropped and the viewer asked to confirm, or told they are
+   * not registered.
+   */
+  private initLeaveFromLink(): void {
+    toObservable(
+      computed(() => {
+        const request = this.state.leaveRequest();
+        // Tied to the meeting the link named: a page that has moved on never prompts for another one.
+        return request && this.state.status() === 'ready' && this.state.meeting()?.id === request.meetingId ? request : null;
+      }),
+      { injector: this.injector }
+    )
+      .pipe(
+        filter((request): request is MeetingLeaveRequest => !!request),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((request) => {
+        this.state.consumeLeaveRequest();
+        if (!this.state.canLeaveMeeting()) {
+          // V1, seeded with the same meeting, has shown this toast already on its first render.
+          if (!request.handledByV1) {
+            this.messageService.add({ severity: 'info', summary: 'Not registered', detail: 'You are not registered for this meeting.' });
+          }
+          return;
+        }
+        // V1's confirmation, if it opened one, went with V1 when the page swapped to V2.
+        this.confirmLeave('email-link');
+      });
+  }
+
+  private initOrganizerMailto(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.state.meeting();
+      if (!meeting || this.kind() !== 'invitation-required') {
+        return null;
+      }
+      // The selected occurrence's date, so a series' email names the occurrence the page is about, in
+      // the meeting's own timezone so the server render and the browser agree.
+      return buildMeetingOrganizerMailto({
+        email: resolveMeetingOrganizer(meeting)?.email,
+        meetingTitle: meeting.title,
+        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
+        detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
+      });
+    });
+  }
+
+  private initJoinHint(): Signal<string> {
+    return computed(() => {
+      const meeting = this.state.meeting();
+      if (!meeting || this.state.timeState() !== 'before' || !this.state.joinsInWindow()) {
+        return '';
+      }
+      const minutes = meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME;
+      return `You can join up to ${minutes} minutes before the start time.`;
+    });
+  }
+
+  /**
    * V1's `leaveMeeting`: removes the viewer's registrations, then records the outcome on the page
    * (`markLeft`, or `markLeaveIncomplete` when some remain) with V1's toasts. A result for a meeting
-   * or account the page has since left changes nothing here.
+   * or account the page has since left changes nothing here, beyond V1's RSVP cache cleanup.
    */
   private leave(meetingId: string, source: MeetingRemovalSource): void {
     const subject = this.viewerSubject();
@@ -180,8 +241,9 @@ export class MeetingActionSlotComponent {
       .removeMyMeetingRegistration(meetingId, source)
       .pipe(
         take(1),
-        finalize(() => this.state.leaving.set(false)),
-        takeUntilDestroyed(this.destroyRef)
+        // Not torn down with the slot, as V1's is not: a navigation mid-removal must still clear the
+        // session's RSVP cache; the meeting and account guard below keeps the page out of it.
+        finalize(() => this.state.leaving.set(false))
       )
       .subscribe({
         next: (result) => {
@@ -213,58 +275,9 @@ export class MeetingActionSlotComponent {
       });
   }
 
-  /**
-   * V1's `initializeLeaveFromLink`, for a signed-in viewer (V2 renders for no one else): once the
-   * linked meeting has loaded, the param is dropped and the viewer asked to confirm, or told they are
-   * not registered.
-   */
-  private initLeaveFromLink(): void {
-    toObservable(
-      computed(() => this.state.leaveRequested() && this.state.status() === 'ready'),
-      { injector: this.injector }
-    )
-      .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.state.consumeLeaveRequest();
-        if (!this.state.canLeaveMeeting()) {
-          this.messageService.add({ severity: 'info', summary: 'Not registered', detail: 'You are not registered for this meeting.' });
-          return;
-        }
-        this.confirmLeave('email-link');
-      });
-  }
-
   /** The account a removal is attributed to, as V1 keys it. */
   private viewerSubject(): string {
     return this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
-  }
-
-  private initOrganizerMailto(): Signal<string | null> {
-    return computed(() => {
-      const meeting = this.state.meeting();
-      if (!meeting || this.kind() !== 'invitation-required') {
-        return null;
-      }
-      // The selected occurrence's date, so a series' email names the occurrence the page is about, in
-      // the meeting's own timezone so the server render and the browser agree.
-      return buildMeetingOrganizerMailto({
-        email: resolveMeetingOrganizer(meeting)?.email,
-        meetingTitle: meeting.title,
-        meetingDate: formatMeetingMailtoDate(this.state.selectedOccurrence()?.start_time ?? meeting.start_time, meeting.timezone),
-        detailUrl: `${environment.urls.home}/meetings/${encodeURIComponent(meeting.id)}`,
-      });
-    });
-  }
-
-  private initJoinHint(): Signal<string> {
-    return computed(() => {
-      const meeting = this.state.meeting();
-      if (!meeting || this.state.timeState() !== 'before' || !this.state.joinsInWindow()) {
-        return '';
-      }
-      const minutes = meeting.early_join_time_minutes ?? DEFAULT_EARLY_JOIN_TIME;
-      return `You can join up to ${minutes} minutes before the start time.`;
-    });
   }
 
   /** Focuses the slot's first control, or the slot itself (made programmatically focusable) when it has none. */

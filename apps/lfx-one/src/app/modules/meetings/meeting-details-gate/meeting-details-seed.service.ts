@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, Injectable, makeStateKey, PLATFORM_ID, TransferState } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { MEETING_JOIN_STATE_KEY } from '@lfx-one/shared/constants';
-import { MeetingDetailsSeed, MeetingJoinPageState } from '@lfx-one/shared/interfaces';
+import { MeetingDetailsSeed, MeetingJoinPageState, MeetingLeaveRequest } from '@lfx-one/shared/interfaces';
 
 /**
  * Holds the public meeting page's SSR seed for the V2 tree (E1-01, #1770).
@@ -26,7 +26,7 @@ export class MeetingDetailsSeedService {
    * The meeting a `?action=leave` link (invite emails, calendar events) asked to leave, captured with
    * the seed: V1 mounts first and drops the param once it has handled it, so V2 could never see it.
    */
-  private leaveRequestRouteId: string | null = this.initLeaveRequest();
+  private leaveRequest: MeetingLeaveRequest | null = this.initLeaveRequest();
 
   /**
    * Hands the snapshot to V2, once.
@@ -41,18 +41,26 @@ export class MeetingDetailsSeedService {
   }
 
   /** Hands V2 the `?action=leave` request, once, when it was captured for `routeId`. */
-  public takeLeaveRequest(routeId: string | null): boolean {
-    const requested = this.leaveRequestRouteId;
-    this.leaveRequestRouteId = null;
-    return !!requested && requested === routeId;
+  public takeLeaveRequest(routeId: string | null): MeetingLeaveRequest | null {
+    const request = this.leaveRequest;
+    this.leaveRequest = null;
+    return request && request.meetingId === routeId ? request : null;
   }
 
-  private initLeaveRequest(): string | null {
+  /**
+   * V1 is seeded with the same meeting, so it handles the link on its first render, before the swap:
+   * `handledByV1` then tells V2 not to repeat V1's "Not registered" toast.
+   */
+  private initLeaveRequest(): MeetingLeaveRequest | null {
     if (!isPlatformBrowser(this.platformId)) {
       return null;
     }
     const { paramMap, queryParamMap } = this.activatedRoute.snapshot;
-    return queryParamMap.get('action') === 'leave' ? paramMap.get('id') : null;
+    const meetingId = paramMap.get('id');
+    if (queryParamMap.get('action') !== 'leave' || !meetingId) {
+      return null;
+    }
+    return { meetingId, handledByV1: !!this.snapshot?.state.meeting };
   }
 
   private initSnapshot(): MeetingDetailsSeed | null {
