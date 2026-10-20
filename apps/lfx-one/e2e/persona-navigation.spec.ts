@@ -533,6 +533,10 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
 
   test('board-member without an opted-in group navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
     await stubPersona(page, ['board-member']);
+    // The guard also asks the access probe, which would otherwise evaluate the real signed-in account.
+    await page.route('**/api/social-listening/access**', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ canView: false, reason: 'none' }) })
+    );
     await stubNavLensItems(page, 'foundation');
     await stubProjectApi(page, MOCK_FOUNDATION_SLUG, false);
     await setPersonaCookie(page, ['board-member']);
