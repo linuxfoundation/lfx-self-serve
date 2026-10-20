@@ -33,6 +33,9 @@ describe('MeetingDetailsStateService', () => {
   let navigate: ReturnType<typeof vi.fn>;
   let seed: MeetingJoinPageState | null;
   let authenticated: WritableSignal<boolean>;
+  let removedRegistrationMeetingIds: WritableSignal<ReadonlySet<string>>;
+  let markRegistrationRemoved: ReturnType<typeof vi.fn>;
+  let leaveLinkFor: string | null;
 
   function create(platform: 'browser' | 'server' = 'browser'): MeetingDetailsStateService {
     TestBed.configureTestingModule({
@@ -55,9 +58,18 @@ describe('MeetingDetailsStateService', () => {
           },
         },
         { provide: Router, useValue: { navigate } },
-        { provide: MeetingService, useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp } },
+        {
+          provide: MeetingService,
+          useValue: { getPublicMeeting, getPublicPastMeeting, getMeetingRsvpForCurrentUser: getMyRsvp, removedRegistrationMeetingIds, markRegistrationRemoved },
+        },
         { provide: UserService, useValue: { authenticated } },
-        { provide: MeetingDetailsSeedService, useValue: { take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null) } },
+        {
+          provide: MeetingDetailsSeedService,
+          useValue: {
+            take: (routeId: string | null) => (routeId === MEETING_ID ? seed : null),
+            takeLeaveRequest: (routeId: string | null) => routeId === leaveLinkFor,
+          },
+        },
       ],
     });
     return TestBed.inject(MeetingDetailsStateService);
@@ -72,6 +84,9 @@ describe('MeetingDetailsStateService', () => {
     navigate = vi.fn().mockResolvedValue(true);
     seed = null;
     authenticated = signal(true);
+    removedRegistrationMeetingIds = signal<ReadonlySet<string>>(new Set());
+    markRegistrationRemoved = vi.fn((id: string) => removedRegistrationMeetingIds.update((ids) => new Set(ids).add(id)));
+    leaveLinkFor = null;
     // Lookup failures are logged on purpose; keep the test output readable.
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
   });
@@ -652,6 +667,107 @@ describe('MeetingDetailsStateService', () => {
 
       expect(state.timeState()).toBe('live');
       expect(state.showAddToCalendar()).toBe(false);
+    });
+  });
+
+  describe("V1's Remove Myself and the ?action=leave link", () => {
+    const upcoming = (overrides: Partial<Meeting> = {}) =>
+      ({
+        ...buildMeeting(),
+        start_time: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+        duration: 60,
+        occurrences: [],
+        invited: true,
+        ...overrides,
+      }) as unknown as Meeting;
+
+    async function load(meeting: Meeting): Promise<MeetingDetailsStateService> {
+      getPublicMeeting.mockReturnValue(of({ meeting, project }));
+      const state = create();
+      await settle();
+      return state;
+    }
+
+    it('offers Remove Myself to an invitee before the join window', async () => {
+      const state = await load(upcoming());
+
+      expect(state.canLeaveMeeting()).toBe(true);
+      expect(state.showLeaveMeeting()).toBe(true);
+    });
+
+    it('offers no Remove Myself to someone not on the invite list, or inside the join window', async () => {
+      expect((await load(upcoming({ invited: false }))).canLeaveMeeting()).toBe(false);
+      TestBed.resetTestingModule();
+      const live = await load(upcoming({ start_time: new Date(Date.now() - 5 * 60 * 1000).toISOString() }));
+      expect(live.canLeaveMeeting()).toBe(true);
+      expect(live.showLeaveMeeting()).toBe(false);
+    });
+
+    it('takes the viewer off the invite list at once after a removal, ahead of the indexer', async () => {
+      const state = await load(upcoming());
+      const lookups = getPublicMeeting.mock.calls.length;
+
+      state.markLeft(MEETING_ID);
+      await settle();
+
+      expect(markRegistrationRemoved).toHaveBeenCalledWith(MEETING_ID);
+      expect(state.viewerRole()).toBe('outsider');
+      expect(state.canLeaveMeeting()).toBe(false);
+      expect(state.rosterRefresh()).toBe(1);
+      // The refetch still reports `invited: true` (indexer lag): the session's removal wins.
+      expect(getPublicMeeting.mock.calls.length).toBeGreaterThan(lookups);
+      expect(state.canLeaveMeeting()).toBe(false);
+    });
+
+    it('keeps the viewer invited after an incomplete removal', async () => {
+      const state = await load(upcoming());
+
+      state.markLeaveIncomplete(MEETING_ID);
+
+      expect(state.canLeaveMeeting()).toBe(true);
+      expect(state.rosterRefresh()).toBe(1);
+    });
+
+    it('ignores a removal result for a meeting the page has left', async () => {
+      const state = await load(upcoming());
+
+      state.markLeft('meeting-2');
+      state.markLeaveIncomplete('meeting-2');
+
+      expect(state.rosterRefresh()).toBe(0);
+      expect(state.canLeaveMeeting()).toBe(true);
+    });
+
+    it('reads a ?action=leave link from the route, and keeps auto-join off for the visit', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      expect(state.leaveRequested()).toBe(true);
+      expect(state.claimAutoJoin(MEETING_ID)).toBe(false);
+    });
+
+    it("reads a ?action=leave link V1 has already dropped from the gate's snapshot", async () => {
+      leaveLinkFor = MEETING_ID;
+      const state = await load(upcoming());
+
+      expect(state.leaveRequested()).toBe(true);
+    });
+
+    it('drops the param once the link is handled', async () => {
+      queryParamMap$.next(convertToParamMap({ action: 'leave' }));
+      const state = await load(upcoming());
+
+      state.consumeLeaveRequest();
+
+      expect(state.leaveRequested()).toBe(false);
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+    });
+
+    it('has no leave request without the link', async () => {
+      const state = await load(upcoming());
+
+      expect(state.leaveRequested()).toBe(false);
+      expect(state.claimAutoJoin(MEETING_ID)).toBe(true);
     });
   });
 

@@ -5,12 +5,21 @@ import { Component, input, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
-import { ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import {
+  ActionSlotKind,
+  Meeting,
+  MeetingDetailsLoadStatus,
+  MeetingOccurrence,
+  MeetingPrivacyState,
+  MeetingTimeState,
+  MeetingViewerRole,
+} from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
 import { UserService } from '@services/user.service';
-import { MessageService } from 'primeng/api';
+import { MeetingService } from '@services/meeting.service';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AddToCalendarComponent } from '../../../components/add-to-calendar/add-to-calendar.component';
@@ -58,6 +67,17 @@ describe('MeetingActionSlotComponent', () => {
   let add: ReturnType<typeof vi.fn>;
   let selectedOccurrence: WritableSignal<MeetingOccurrence | null>;
   let showAddToCalendar: WritableSignal<boolean>;
+  let showLeaveMeeting: WritableSignal<boolean>;
+  let canLeaveMeeting: WritableSignal<boolean>;
+  let leaveRequested: WritableSignal<boolean>;
+  let status: WritableSignal<MeetingDetailsLoadStatus>;
+  let markLeft: ReturnType<typeof vi.fn>;
+  let markLeaveIncomplete: ReturnType<typeof vi.fn>;
+  let consumeLeaveRequest: ReturnType<typeof vi.fn>;
+  let confirm: ReturnType<typeof vi.fn>;
+  let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let clearConfirmedMeetingRsvps: ReturnType<typeof vi.fn>;
+  let refreshUserMeetings: ReturnType<typeof vi.fn>;
 
   const open: MeetingPrivacyState = { icon: '', label: 'Public', openToPublic: true, restricted: false, visibility: MeetingVisibility.PUBLIC };
   const restricted: MeetingPrivacyState = {
@@ -82,6 +102,19 @@ describe('MeetingActionSlotComponent', () => {
     add = vi.fn();
     selectedOccurrence = signal<MeetingOccurrence | null>(null);
     showAddToCalendar = signal(false);
+    showLeaveMeeting = signal(false);
+    canLeaveMeeting = signal(true);
+    leaveRequested = signal(false);
+    status = signal<MeetingDetailsLoadStatus>('ready');
+    markLeft = vi.fn();
+    markLeaveIncomplete = vi.fn();
+    consumeLeaveRequest = vi.fn(() => leaveRequested.set(false));
+    // A real service, so `<p-confirmDialog>` can subscribe to it; only `confirm` is observed.
+    const confirmationService = new ConfirmationService();
+    confirm = vi.spyOn(confirmationService, 'confirm').mockImplementation(() => confirmationService) as unknown as ReturnType<typeof vi.fn>;
+    removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ remaining_registrant_ids: [] }));
+    clearConfirmedMeetingRsvps = vi.fn();
+    refreshUserMeetings = vi.fn();
 
     await TestBed.configureTestingModule({
       imports: [MeetingActionSlotComponent],
@@ -99,10 +132,27 @@ describe('MeetingActionSlotComponent', () => {
             markRegistered,
             selectedOccurrence,
             showAddToCalendar,
+            showLeaveMeeting,
+            canLeaveMeeting,
+            leaveRequested,
+            status,
+            leaving: signal(false),
+            markLeft,
+            markLeaveIncomplete,
+            consumeLeaveRequest,
             signInHref: signal(SIGN_IN_HREF),
           },
         },
-        { provide: UserService, useValue: { user: signal({ name: 'Ada Example', email: 'ada@acme-motors.example' }) } },
+        {
+          provide: UserService,
+          useValue: {
+            user: signal({ sub: 'auth0|ada', name: 'Ada Example', email: 'ada@acme-motors.example' }),
+            viewerUsername: signal('ada'),
+            clearConfirmedMeetingRsvps,
+            refreshUserMeetings,
+          },
+        },
+        { provide: MeetingService, useValue: { removeMyMeetingRegistration } },
         { provide: IntercomService, useValue: { openMessenger: vi.fn() } },
         { provide: MessageService, useValue: { add } },
       ],
@@ -111,7 +161,14 @@ describe('MeetingActionSlotComponent', () => {
         remove: { imports: [AddToCalendarComponent, MeetingJoinActionComponent, MeetingGuestJoinComponent, MeetingRsvpCardComponent] },
         add: { imports: [AddToCalendarStubComponent, JoinActionStubComponent, GuestJoinStubComponent, RsvpCardStubComponent] },
       })
-      .overrideComponent(MeetingActionSlotComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
+      .overrideComponent(MeetingActionSlotComponent, {
+        set: {
+          providers: [
+            { provide: DialogService, useValue: { open: openDialog } },
+            { provide: ConfirmationService, useValue: confirmationService },
+          ],
+        },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(MeetingActionSlotComponent);
@@ -477,6 +534,114 @@ describe('MeetingActionSlotComponent', () => {
       render('rsvp');
 
       expect(query('add-to-calendar-stub')).toBeNull();
+    });
+  });
+
+  describe('Remove Myself', () => {
+    const acceptConfirmation = (): void => (confirm.mock.calls.at(-1)?.[0] as { accept: () => void }).accept();
+
+    it("offers V1's Remove Myself when the state service allows it", () => {
+      render('rsvp');
+      expect(query('meeting-action-leave-button')).toBeNull();
+
+      showLeaveMeeting.set(true);
+      fixture.detectChanges();
+
+      expect(text('meeting-action-leave-button')).toBe('Remove Myself');
+    });
+
+    it("asks V1's Remove Yourself confirmation, and removes nothing until it is accepted", () => {
+      showLeaveMeeting.set(true);
+      meeting.set({ id: 'meeting-1', title: 'Weekly Sync' } as Meeting);
+      render('rsvp');
+
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+
+      expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ header: 'Remove Yourself', acceptLabel: 'Remove Me', rejectLabel: 'Cancel' }));
+      expect(removeMyMeetingRegistration).not.toHaveBeenCalled();
+
+      acceptConfirmation();
+
+      expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'meeting-join');
+    });
+
+    it('takes the viewer off the page after a complete removal', () => {
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+
+      expect(clearConfirmedMeetingRsvps).toHaveBeenCalledWith('meeting-1', 'auth0|ada', { remaining_registrant_ids: [] });
+      expect(markLeft).toHaveBeenCalledWith('meeting-1');
+      expect(add).toHaveBeenCalledWith({ severity: 'success', summary: 'Removed', detail: 'You have been removed from this meeting.' });
+    });
+
+    it('keeps the viewer invited, and warns, when some registrations remain', () => {
+      removeMyMeetingRegistration.mockReturnValue(of({ remaining_registrant_ids: ['r-2'] }));
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+
+      expect(markLeaveIncomplete).toHaveBeenCalledWith('meeting-1');
+      expect(markLeft).not.toHaveBeenCalled();
+      expect(refreshUserMeetings).toHaveBeenCalledWith(false);
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Removal incomplete' }));
+    });
+
+    it("reports a failed removal with V1's fallback message", () => {
+      removeMyMeetingRegistration.mockReturnValue(throwError(() => new Error('boom')));
+      showLeaveMeeting.set(true);
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+
+      expect(markLeft).not.toHaveBeenCalled();
+      expect(add).toHaveBeenCalledWith({ severity: 'error', summary: 'Error', detail: 'Unable to remove you from this meeting. Please try again.' });
+    });
+
+    it('ignores a removal that completes after the page moved to another meeting', () => {
+      showLeaveMeeting.set(true);
+      const pending = new Subject<{ remaining_registrant_ids: string[] }>();
+      removeMyMeetingRegistration.mockReturnValue(pending.asObservable());
+      render('rsvp');
+      query('meeting-action-leave-button')?.querySelector('button')?.click();
+      acceptConfirmation();
+
+      meeting.set({ id: 'meeting-2' } as Meeting);
+      pending.next({ remaining_registrant_ids: [] });
+
+      expect(markLeft).not.toHaveBeenCalled();
+    });
+
+    describe('from a ?action=leave link', () => {
+      it('drops the param and asks to confirm, attributed to the email link, once the meeting is ready', async () => {
+        status.set('loading');
+        leaveRequested.set(true);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(confirm).not.toHaveBeenCalled();
+
+        status.set('ready');
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(consumeLeaveRequest).toHaveBeenCalledTimes(1);
+        expect(confirm).toHaveBeenCalledTimes(1);
+        acceptConfirmation();
+        expect(removeMyMeetingRegistration).toHaveBeenCalledWith('meeting-1', 'email-link');
+      });
+
+      it('tells a viewer who is not registered so, without a confirmation', async () => {
+        canLeaveMeeting.set(false);
+        leaveRequested.set(true);
+        fixture.detectChanges();
+        await fixture.whenStable();
+
+        expect(consumeLeaveRequest).toHaveBeenCalledTimes(1);
+        expect(confirm).not.toHaveBeenCalled();
+        expect(add).toHaveBeenCalledWith({ severity: 'info', summary: 'Not registered', detail: 'You are not registered for this meeting.' });
+      });
     });
   });
 });

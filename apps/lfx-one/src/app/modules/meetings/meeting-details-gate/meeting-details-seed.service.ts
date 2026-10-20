@@ -22,6 +22,11 @@ export class MeetingDetailsSeedService {
   private readonly activatedRoute = inject(ActivatedRoute);
 
   private snapshot: MeetingDetailsSeed | null = this.initSnapshot();
+  /**
+   * The meeting a `?action=leave` link (invite emails, calendar events) asked to leave, captured with
+   * the seed: V1 mounts first and drops the param once it has handled it, so V2 could never see it.
+   */
+  private leaveRequestRouteId: string | null = this.initLeaveRequest();
 
   /**
    * Hands the snapshot to V2, once.
@@ -33,6 +38,21 @@ export class MeetingDetailsSeedService {
     const snapshot = this.snapshot;
     this.snapshot = null;
     return snapshot && snapshot.routeId === routeId ? snapshot.state : null;
+  }
+
+  /** Hands V2 the `?action=leave` request, once, when it was captured for `routeId`. */
+  public takeLeaveRequest(routeId: string | null): boolean {
+    const requested = this.leaveRequestRouteId;
+    this.leaveRequestRouteId = null;
+    return !!requested && requested === routeId;
+  }
+
+  private initLeaveRequest(): string | null {
+    if (!isPlatformBrowser(this.platformId)) {
+      return null;
+    }
+    const { paramMap, queryParamMap } = this.activatedRoute.snapshot;
+    return queryParamMap.get('action') === 'leave' ? paramMap.get('id') : null;
   }
 
   private initSnapshot(): MeetingDetailsSeed | null {

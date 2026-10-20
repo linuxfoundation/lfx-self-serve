@@ -3,17 +3,21 @@
 
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { environment } from '@environments/environment';
 import { DEFAULT_EARLY_JOIN_TIME } from '@lfx-one/shared/constants';
-import { ActionSlotKind, MeetingViewerRole } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { ActionSlotKind, MeetingRemovalSource, MeetingViewerRole } from '@lfx-one/shared/interfaces';
+import { buildMeetingOrganizerMailto, formatMeetingMailtoDate, getMeetingSelfRemovalMessage, resolveMeetingOrganizer } from '@lfx-one/shared/utils';
+import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { restoreFocusOnDialogClose } from '@shared/utils/restore-dialog-focus.util';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
-import { take } from 'rxjs';
+import { filter, finalize, take } from 'rxjs';
 
 import { AddToCalendarComponent } from '../../../components/add-to-calendar/add-to-calendar.component';
 import { PublicRegistrationModalComponent } from '../../../components/public-registration-modal/public-registration-modal.component';
@@ -33,7 +37,8 @@ import { MeetingRsvpCardComponent } from '../rsvp-card/rsvp-card.component';
  * (N-01, FR-026) are complete here. Only `tools` still carries one line of copy until E4 builds its
  * full design, so no viewer meets an empty rail meanwhile.
  *
- * Under the slot, an organizer or invitee gets V1's Add to calendar before the join window.
+ * Under the slot, an organizer or invitee gets V1's Add to calendar and Remove Myself before the join
+ * window, and a `?action=leave` link (invite emails, calendar events) asks them to confirm the removal.
  *
  * Inside the join window the slot is Join only, as in V1 (FR-029, decided 2026-10-06). Before the
  * window, a viewer who will be able to join then is told the early-join rule here, under the slot,
@@ -44,13 +49,15 @@ import { MeetingRsvpCardComponent } from '../rsvp-card/rsvp-card.component';
   imports: [
     AddToCalendarComponent,
     ButtonComponent,
+    ConfirmDialogModule,
     MeetingGuestJoinComponent,
     MeetingJoinActionComponent,
     MeetingRsvpCardComponent,
     NgTemplateOutlet,
     OpenIntercomDirective,
   ],
-  providers: [DialogService],
+  // Its own ConfirmationService, as the registrants display has, so its confirmation never shows twice.
+  providers: [ConfirmationService, DialogService],
   templateUrl: './action-slot.component.html',
 })
 export class MeetingActionSlotComponent {
@@ -61,6 +68,9 @@ export class MeetingActionSlotComponent {
   private readonly injector = inject(Injector);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly confirmationService = inject(ConfirmationService);
+  private readonly messageService = inject(MessageService);
+  private readonly meetingService = inject(MeetingService);
 
   /**
    * The prototype's primary rail button on `lfx-button`, as Join's: a 42px pill on the accent.
@@ -91,6 +101,10 @@ export class MeetingActionSlotComponent {
    * usable email, and the slot offers the support chat instead.
    */
   protected readonly organizerMailto: Signal<string | null> = this.initOrganizerMailto();
+
+  public constructor() {
+    this.initLeaveFromLink();
+  }
 
   /**
    * `register` for a signed-in outsider (E2-02, FR-021): the shared registration dialog V1 opens, with
@@ -130,6 +144,99 @@ export class MeetingActionSlotComponent {
         }
       }
     });
+  }
+
+  /**
+   * V1's `confirmLeaveMeeting`: the same "Remove Yourself" confirmation and copy. Removal runs only
+   * from the confirmation, never from a link.
+   */
+  protected confirmLeave(source: MeetingRemovalSource = 'meeting-join'): void {
+    const meeting = this.state.meeting();
+    if (!meeting) {
+      return;
+    }
+    const title = this.state.selectedOccurrence()?.title || meeting.title || '';
+    this.confirmationService.confirm({
+      header: 'Remove Yourself',
+      message: getMeetingSelfRemovalMessage(title, { viaCommittee: meeting.invited_via_committee, organizer: meeting.organizer }),
+      acceptLabel: 'Remove Me',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => this.leave(meeting.id, source),
+    });
+  }
+
+  /**
+   * V1's `leaveMeeting`: removes the viewer's registrations, then records the outcome on the page
+   * (`markLeft`, or `markLeaveIncomplete` when some remain) with V1's toasts. A result for a meeting
+   * or account the page has since left changes nothing here.
+   */
+  private leave(meetingId: string, source: MeetingRemovalSource): void {
+    const subject = this.viewerSubject();
+    this.state.leaving.set(true);
+
+    this.meetingService
+      .removeMyMeetingRegistration(meetingId, source)
+      .pipe(
+        take(1),
+        finalize(() => this.state.leaving.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (result) => {
+          this.userService.clearConfirmedMeetingRsvps(meetingId, subject, result);
+          if (this.state.meeting()?.id !== meetingId || this.viewerSubject() !== subject) {
+            return;
+          }
+          if (result.remaining_registrant_ids.length > 0) {
+            this.state.markLeaveIncomplete(meetingId);
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Removal incomplete',
+              detail: 'Some of your registrations could not be removed. You are still invited to this meeting. Please try again.',
+            });
+            this.userService.refreshUserMeetings(false);
+          } else {
+            this.state.markLeft(meetingId);
+            this.messageService.add({ severity: 'success', summary: 'Removed', detail: 'You have been removed from this meeting.' });
+          }
+        },
+        error: (error: unknown) => {
+          const fallback = 'Unable to remove you from this meeting. Please try again.';
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
+          });
+        },
+      });
+  }
+
+  /**
+   * V1's `initializeLeaveFromLink`, for a signed-in viewer (V2 renders for no one else): once the
+   * linked meeting has loaded, the param is dropped and the viewer asked to confirm, or told they are
+   * not registered.
+   */
+  private initLeaveFromLink(): void {
+    toObservable(
+      computed(() => this.state.leaveRequested() && this.state.status() === 'ready'),
+      { injector: this.injector }
+    )
+      .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.state.consumeLeaveRequest();
+        if (!this.state.canLeaveMeeting()) {
+          this.messageService.add({ severity: 'info', summary: 'Not registered', detail: 'You are not registered for this meeting.' });
+          return;
+        }
+        this.confirmLeave('email-link');
+      });
+  }
+
+  /** The account a removal is attributed to, as V1 keys it. */
+  private viewerSubject(): string {
+    return this.userService.user()?.sub || this.userService.viewerUsername() || this.userService.user()?.email || '';
   }
 
   private initOrganizerMailto(): Signal<string | null> {

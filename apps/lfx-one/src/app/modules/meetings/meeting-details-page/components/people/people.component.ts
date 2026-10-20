@@ -141,7 +141,8 @@ export class MeetingPeopleComponent {
   }
 
   private initRoster(): Signal<MeetingRosterState> {
-    const request = computed(() => ({ key: this.state.rosterRequest(), refresh: this.refreshCount() }));
+    // `rosterRefresh` is the page's: bumped after the viewer removes themselves (Remove Myself).
+    const request = computed(() => ({ key: this.state.rosterRequest(), refresh: this.refreshCount() + this.state.rosterRefresh() }));
 
     return toSignal(
       toObservable(request).pipe(

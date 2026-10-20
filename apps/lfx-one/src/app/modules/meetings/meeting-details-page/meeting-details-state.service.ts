@@ -137,6 +137,18 @@ export class MeetingDetailsStateService {
       allDatesOnly: !!meeting.recurrence && !occurrenceId,
     };
   });
+  /**
+   * Bumped after the viewer removes themselves, so the people section refetches its roster (V1's
+   * `registrantsRefresh$`).
+   */
+  public readonly rosterRefresh = signal(0);
+  /** True while the viewer's own removal (Remove Myself) is in flight. */
+  public readonly leaving = signal(false);
+  /**
+   * True from a `?action=leave` link (invite emails, calendar events) until the page has handled it:
+   * the action slot then asks the viewer to confirm, as V1 does. Removal never runs from the link.
+   */
+  public readonly leaveRequested = signal(false);
   /** Meetings this page has auto-joined, so a remounted Join control does not open them again. */
   private readonly autoJoinedMeetingIds = new Set<string>();
   /** The meeting password for lookups: `?password=`, or else the composer's navigation state. */
@@ -256,6 +268,13 @@ export class MeetingDetailsStateService {
    * (inside it V1's rail is Join only).
    */
   public readonly showAddToCalendar: Signal<boolean> = this.initShowAddToCalendar();
+  /** V1's `canLeaveMeeting`: the viewer is on the invite list (an optimistic registration included). */
+  public readonly canLeaveMeeting: Signal<boolean> = computed(() => {
+    const meeting = this.meeting();
+    return !!meeting && this.isInvited(meeting);
+  });
+  /** Where V1 shows Remove Myself: an invitee (organizer or not) before the join window. */
+  public readonly showLeaveMeeting: Signal<boolean> = computed(() => this.timeState() === 'before' && this.canLeaveMeeting());
 
   public constructor() {
     const routeId = this.activatedRoute.snapshot.paramMap.get('id');
@@ -274,6 +293,57 @@ export class MeetingDetailsStateService {
 
     this.applyPassword(this.activatedRoute.snapshot.queryParamMap);
     this.meeting = this.initMeeting(seed);
+
+    // V1's `initializeLeaveFromLink`: V2 renders for signed-in viewers only, so it needs no login
+    // round trip. The param is read from the gate's snapshot (V1 has dropped it by now) or, on an
+    // in-app navigation, from the route. A new Zoom tab would bury the confirmation, so auto-join
+    // stays off for the visit.
+    const leaveFromLink =
+      isPlatformBrowser(this.platformId) &&
+      (!!this.seedService?.takeLeaveRequest(routeId) || this.activatedRoute.snapshot.queryParamMap.get('action') === 'leave');
+    if (leaveFromLink && routeId) {
+      this.leaveRequested.set(true);
+      this.autoJoinedMeetingIds.add(routeId);
+    }
+  }
+
+  /**
+   * Marks the `?action=leave` link handled and drops the param, so a refresh or a later visit does
+   * not ask again.
+   */
+  public consumeLeaveRequest(): void {
+    this.leaveRequested.set(false);
+    void this.router.navigate([], { relativeTo: this.activatedRoute, queryParams: { action: null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  /**
+   * Records the viewer's completed removal from `meetingId` (V1's `leaveMeeting` success): off the
+   * invite list at once, through the session-wide removed set that bridges the indexer's lag, then
+   * the meeting and the roster are read again. Ignored when the page has moved to another meeting.
+   */
+  public markLeft(meetingId: string): void {
+    this.meetingService.markRegistrationRemoved(meetingId);
+    if (this.meeting()?.id !== meetingId) {
+      return;
+    }
+    if (this.optimisticInvitedId() === meetingId) {
+      this.optimisticInvitedId.set(null);
+    }
+    this.rosterRefresh.update((count) => count + 1);
+    this.refresh$.next();
+  }
+
+  /**
+   * Records a removal that left some of the viewer's registrations in place (V1's "Removal
+   * incomplete"): they stay on the invite list, and the meeting and the roster are read again.
+   */
+  public markLeaveIncomplete(meetingId: string): void {
+    if (this.meeting()?.id !== meetingId) {
+      return;
+    }
+    this.optimisticInvitedId.set(meetingId);
+    this.rosterRefresh.update((count) => count + 1);
+    this.refresh$.next();
   }
 
   /**
@@ -730,9 +800,14 @@ export class MeetingDetailsStateService {
     );
   }
 
-  /** On the invite list, per the payload or a registration made from this page. */
+  /**
+   * On the invite list, per the payload or a registration made from this page, as V1's
+   * `effectivelyInvited`: a removal made this session (`removedRegistrationMeetingIds`) wins over a
+   * payload the indexer has not caught up on yet.
+   */
   private isInvited(meeting: Meeting): boolean {
-    return meeting.invited === true || this.optimisticInvitedId() === meeting.id;
+    const removed = this.meetingService.removedRegistrationMeetingIds().has(meeting.id);
+    return (meeting.invited === true && !removed) || this.optimisticInvitedId() === meeting.id;
   }
 
   /** The action slot this viewer gets at the given time state, or `null` before the meeting loads. */
