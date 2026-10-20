@@ -183,6 +183,23 @@ test('filter button aria-label updates when a filter is active', async ({ page }
 });
 ```
 
+### Accessibility scans (axe)
+
+`@axe-core/playwright` is a dev dependency (added for the meeting details V2 suite, #3262). Scope a scan to
+the page under test rather than the app shell the test boots through, run the WCAG A/AA rule tags, and
+assert no violations, summarised so a failure names the rule and how many nodes it hit:
+
+```typescript
+const results = await new AxeBuilder({ page })
+  .include('[data-testid="meeting-details-gate-v2"]')
+  .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+  .analyze();
+expect(results.violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.length }))).toEqual([]);
+```
+
+`apps/lfx-one/e2e/helpers/meeting-details-v2.helper.ts` (`axeViolations`) is the reference. The docs portal's
+`e2e/docs/accessibility.spec.ts` keeps its hand-written assertions.
+
 ## Browser Projects
 
 `playwright.config.ts` defines three projects, all sharing the saved auth state under `playwright/.auth/user.json`:
