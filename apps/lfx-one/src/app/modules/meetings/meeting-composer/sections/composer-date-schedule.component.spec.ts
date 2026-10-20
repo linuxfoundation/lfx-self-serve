@@ -402,7 +402,7 @@ describe('ComposerDateScheduleComponent — custom duration description ids', ()
 
   it('accepts a 10-hour meeting, the meeting service and PCC maximum', () => {
     const control = formService.form().get('customDuration');
-    control?.setValue(600);
+    control?.setValue(MAX_CUSTOM_DURATION);
     control?.markAsTouched();
 
     expect(MAX_CUSTOM_DURATION).toBe(600);
