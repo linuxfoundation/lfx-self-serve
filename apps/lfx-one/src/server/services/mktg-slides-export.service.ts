@@ -379,8 +379,11 @@ export class MktgSlidesExportService {
    * The exporter's outputs in the session: the latest valid envelope, and the
    * last final output that is not one (an exporter that answered with
    * something else has failed). Only the runtime's final outputs are read —
-   * `agent_notification_message` events — never a tool's result, where a
-   * deck's own text comes back from Slides.
+   * the `content.data` of `agent_notification_message` events — never a
+   * plain notice or a progress event, and never a tool's result, where a
+   * deck's own text comes back from Slides. The exporter has no model and no
+   * finalize tool: its final output is the one place its envelope is
+   * delivered, so an envelope anywhere else is not its result.
    *
    * A valid envelope wins over any other output, wherever it falls: the
    * exporter returns it only once the deck is filled, and its hash is checked
@@ -396,19 +399,19 @@ export class MktgSlidesExportService {
       if (output === null) {
         continue;
       }
-      const valid = extractMktgEnvelopeCandidates(output.text, MKTG_SLIDES_EXPORT_CONTRACT_ID).filter((candidate) => this.isValidEnvelope(req, candidate));
+      const valid = extractMktgEnvelopeCandidates(output, MKTG_SLIDES_EXPORT_CONTRACT_ID).filter((candidate) => this.isValidEnvelope(req, candidate));
       if (valid.length > 0) {
         // Safe: isValidEnvelope passed every schema gate and the sha recompute.
         envelope = valid[valid.length - 1] as MktgSlidesExportEnvelope;
-      } else if (output.final) {
-        otherOutput = output.text;
+      } else {
+        otherOutput = output;
       }
     }
     return { envelope, otherOutput };
   }
 
-  /** A notification's text, and whether it is a final output (`content.data`) rather than a plain notice. */
-  private finalOutputText(payload: string): { text: string; final: boolean } | null {
+  /** A final output's text (`content.data` of an agent_notification_message); a plain notice, whose content is a string, is not one. */
+  private finalOutputText(payload: string): string | null {
     let event: unknown;
     try {
       event = JSON.parse(payload);
@@ -419,14 +422,11 @@ export class MktgSlidesExportService {
       return null;
     }
     const content = event['content'];
-    if (typeof content === 'string') {
-      return { text: content, final: false };
-    }
     if (!this.isRecord(content) || content['data'] === undefined || content['data'] === null) {
       return null;
     }
     const data = content['data'];
-    return { text: typeof data === 'string' ? data : JSON.stringify(data), final: true };
+    return typeof data === 'string' ? data : JSON.stringify(data);
   }
 
   private isValidEnvelope(req: Request, candidate: unknown): boolean {

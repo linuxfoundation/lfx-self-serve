@@ -574,6 +574,14 @@ export const MKTG_ENVELOPE_EXTRACTION_MAX_DEPTH = 16;
 export const MKTG_SESSION_PLATFORM_TOOL_EVENT_TYPES = ['runtime_start', 'runtime_done'] as const;
 
 /**
+ * Raw Guild session events that carry the runtime's output — the agent's
+ * final text and its progress notices. They are what the model wrote, never
+ * a transcript, so the tool-result reader never enters them: a call and its
+ * result written into an output prove nothing.
+ */
+export const MKTG_SESSION_AGENT_OUTPUT_EVENT_TYPES = ['agent_notification_message', 'agent_notification_progress'] as const;
+
+/**
  * Blocking field-error copy for an intake value that fails its `format` rule.
  * Keyed by the rule and by what the value turned out to be, so the message
  * names the ACTUAL problem instead of a generic "invalid" — an account
