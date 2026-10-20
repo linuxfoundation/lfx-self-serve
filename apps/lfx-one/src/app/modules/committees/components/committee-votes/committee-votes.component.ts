@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, model, output, signal, Signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -49,6 +49,18 @@ export class CommitteeVotesComponent {
   // Edit-link fallback: every row here belongs to this committee, so its committee_uid admits
   // committee writers through writerGuard even when the indexed row omits the field (GH-1568).
   public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
+
+  constructor() {
+    // Keeps the open drawer's listVote fed with the latest row data (e.g. an extended deadline) once
+    // the parent re-fetches after refresh.emit() — selectedVote is otherwise a one-time snapshot taken
+    // in viewVoteResults() that never sees a later votes() update on its own (per @cursor).
+    effect(() => {
+      const id = this.selectedVoteId();
+      if (!id) return;
+      const match = this.votes().find((v) => v.uid === id);
+      if (match) this.selectedVote.set(match);
+    });
+  }
 
   public viewVoteResults(voteUid: string): void {
     const vote = this.votes().find((v) => v.uid === voteUid) || null;

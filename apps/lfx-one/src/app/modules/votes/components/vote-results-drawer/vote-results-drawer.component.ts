@@ -162,8 +162,18 @@ export class VoteResultsDrawerComponent {
     // Keys off visible() (not just voteId$) the way initMyResponse() does (per @cursor) — reopening the same
     // voteId after an extend-triggered cache eviction otherwise never re-fetches, since toObservable only
     // emits on value changes, and visible() flips on every open/close cycle.
+    // Also keys off listVote()'s own deadline fields (per @cursor): a manager can extend a vote's deadline
+    // from the underlying table row while this drawer stays open on the same vote, and neither voteId nor
+    // visible() flips in that case — only the caller's listVote input changes once it re-fetches.
     return toSignal(
-      combineLatest([this.voteId$, toObservable(this.visible)]).pipe(
+      combineLatest([this.voteId$, toObservable(this.visible), toObservable(this.listVote)]).pipe(
+        distinctUntilChanged(
+          ([prevId, prevVisible, prevListVote], [id, visible, listVote]) =>
+            prevId === id &&
+            prevVisible === visible &&
+            prevListVote?.end_time === listVote?.end_time &&
+            prevListVote?.end_time_timezone === listVote?.end_time_timezone
+        ),
         switchMap(([id, visible]) => {
           if (!id) {
             this.loadingVoteDetails.set(false);

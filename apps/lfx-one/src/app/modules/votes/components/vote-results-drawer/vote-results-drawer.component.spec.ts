@@ -179,4 +179,70 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     expect(service.getVote).not.toHaveBeenCalled();
     expect(fixture.componentInstance['vote']()).toEqual(vote);
   });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uSzGw @cursor "Open drawer keeps stale deadline"): a manager extending
+  // a vote's deadline from the table row while this drawer stays open on the same vote never re-fetched,
+  // since neither voteId nor visible() changed — only the caller's listVote input updated once it re-fetched.
+  // Pins the fix: initVote() also keys off listVote()'s end_time/end_time_timezone, so an extended deadline
+  // re-fetches the vote while the drawer remains open.
+  it('re-fetches the vote when the open listVote input gets an extended deadline', async () => {
+    const vote = makeVote(PollStatus.ACTIVE);
+    vote.end_time = '2026-01-01T00:00:00Z';
+    const service = {
+      getVote: vi.fn(() => of(vote)),
+      getMyVoteResponse: vi.fn(() => of(null)),
+      getVoteResults: vi.fn(() => of(null)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', vote.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('listVote', vote);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(service.getVote).toHaveBeenCalledTimes(1);
+
+    service.getVote.mockClear();
+    const extended = { ...vote, end_time: '2026-02-01T00:00:00Z' };
+    service.getVote.mockReturnValue(of(extended));
+    fixture.componentRef.setInput('listVote', extended);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(service.getVote).toHaveBeenCalledTimes(1);
+    expect(service.getVote).toHaveBeenCalledWith(vote.uid);
+  });
+
+  it('does not re-fetch when listVote is replaced without a deadline change', async () => {
+    const vote = makeVote(PollStatus.ACTIVE);
+    vote.end_time = '2026-01-01T00:00:00Z';
+    const service = {
+      getVote: vi.fn(() => of(vote)),
+      getMyVoteResponse: vi.fn(() => of(null)),
+      getVoteResults: vi.fn(() => of(null)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', vote.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('listVote', vote);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(service.getVote).toHaveBeenCalledTimes(1);
+
+    service.getVote.mockClear();
+    fixture.componentRef.setInput('listVote', { ...vote });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(service.getVote).not.toHaveBeenCalled();
+  });
 });
