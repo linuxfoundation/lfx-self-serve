@@ -48,8 +48,9 @@
         <span class="flex items-baseline gap-2">
           <span
             class="text-3xl font-semibold tabular-nums"
-            [class.text-gray-400]="summary().isWithheld"
-            [class.text-gray-900]="!summary().isWithheld"
+            [class.text-gray-400]="summary().isUnscored"
+            [class.text-amber-600]="summary().isLowConfidence"
+            [class.text-gray-900]="!summary().isUnscored && !summary().isLowConfidence"
             data-testid="members-nps-score"
             >{{ summary().scoreLabel }}</span
           >
@@ -67,24 +68,22 @@
         <span class="text-[12.5px] text-gray-500" data-testid="members-nps-caption">{{ summary().caption }}</span>
       </div>
 
-      @if (!summary().isWithheld) {
-        <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-nps-side">
-          <div class="flex flex-col gap-0.5">
-            <dt class="text-[11.5px] text-gray-500">Responded</dt>
-            <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-nps-responded">{{ summary().respondedLabel }}</dd>
-          </div>
-          <div class="flex flex-col gap-0.5">
-            <dt class="text-[11.5px] text-gray-500">Response rate</dt>
-            <dd
-              class="text-[17px] font-semibold tabular-nums"
-              [class.text-amber-600]="summary().isRateBelowFloor"
-              [class.text-gray-900]="!summary().isRateBelowFloor"
-              data-testid="members-nps-rate">
-              {{ summary().rateLabel }}
-            </dd>
-          </div>
-        </dl>
-      }
+      <dl class="flex flex-wrap gap-7 pt-1" data-testid="members-nps-side">
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-500">Responded</dt>
+          <dd class="text-[17px] font-semibold tabular-nums text-gray-900" data-testid="members-nps-responded">{{ summary().respondedLabel }}</dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11.5px] text-gray-500">Response rate</dt>
+          <dd
+            class="text-[17px] font-semibold tabular-nums"
+            [class.text-amber-600]="summary().isRateBelowFloor"
+            [class.text-gray-900]="!summary().isRateBelowFloor"
+            data-testid="members-nps-rate">
+            {{ summary().rateLabel }}
+          </dd>
+        </div>
+      </dl>
     </div>
 
     <div class="flex flex-col gap-2" data-testid="members-nps-distribution">
@@ -124,6 +123,7 @@
         </div>
         <div class="flex flex-wrap gap-4 text-[10px] text-gray-500" aria-hidden="true" data-testid="members-nps-chart-legend">
           <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-blue-300"></span>NPS score (left)</span>
+          <span class="inline-flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-300"></span>Low-response score</span>
           <span class="inline-flex items-center gap-1.5"><span class="h-0.5 w-3.5 bg-amber-600"></span>Response rate (right)</span>
           <span class="inline-flex items-center gap-1.5 text-red-600"
             ><span class="h-2 w-2 rounded-full bg-red-600"></span>below {{ rateFloorPct }}% — too few replies to trust</span
@@ -145,7 +145,7 @@
             @for (point of trend(); track point.quarterStartDate) {
               <tr>
                 <th scope="row">{{ point.label }}</th>
-                <td>{{ point.scoreLabel }}</td>
+                <td>{{ point.isLowConfidence ? point.scoreLabel + ' (low response)' : point.scoreLabel }}</td>
                 <td>{{ point.rateLabel }}</td>
               </tr>
             }

@@ -864,7 +864,8 @@ describe('members nps', () => {
 
   it('reports a sample it can trust with its change and the non-response footer', () => {
     expect(buildHealthMetricsMembersNpsSummary(audience())).toEqual({
-      isWithheld: false,
+      isUnscored: false,
+      isLowConfidence: false,
       scoreLabel: '+62',
       changeLabel: '+4pp',
       changeDirection: 'up',
@@ -897,19 +898,32 @@ describe('members nps', () => {
     expect(buildHealthMetricsMembersNpsSummary(audience({ scoreChangePp: null }))).toMatchObject({ changeLabel: null, changeDirection: 'neutral' });
   });
 
-  it('withholds a flagged sample and explains why', () => {
+  it('reports a flagged sample as low confidence and explains why', () => {
     expect(
       buildHealthMetricsMembersNpsSummary(
         audience({ npsScore: 80, recipientsCount: 24, responsesCount: 5, responseRatePct: 0.208, noResponseCount: 19, isSampleTooSmall: true })
       )
     ).toMatchObject({
-      isWithheld: true,
+      isUnscored: false,
+      isLowConfidence: true,
+      scoreLabel: '+80',
+      changeLabel: '+4pp',
+      caption: 'Net Promoter Score · board audience',
+      lowSampleNote: 'Only 5 of 24 responded (21%). Below the confidence threshold, so read this score with caution.',
+      isRateBelowFloor: true,
+      footer: { isBelowFloor: true, lead: '19 of 24 did not respond.', text: 'A score computed on 5 replies is not a foundation-wide signal.' },
+    });
+  });
+
+  it('marks a below-floor rate as low confidence without the flag, and an unscored audience as neither', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: 0.39 }))).toMatchObject({ isLowConfidence: true, lowSampleNote: null });
+    expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: null, responseRatePct: 0.2, isSampleTooSmall: true }))).toMatchObject({
+      isUnscored: true,
+      isLowConfidence: false,
       scoreLabel: '—',
       changeLabel: null,
       caption: 'Not enough responses to report a score',
-      lowSampleNote: 'Only 5 of 24 responded (21%). Below the confidence threshold — the score is suppressed rather than shown as precise.',
-      isRateBelowFloor: true,
-      footer: { isBelowFloor: true, lead: '19 of 24 did not respond.', text: 'A score computed on 5 replies is not a foundation-wide signal.' },
+      lowSampleNote: null,
     });
   });
 
@@ -918,7 +932,8 @@ describe('members nps', () => {
       'A score computed on 1 reply is not a foundation-wide signal.'
     );
     expect(buildHealthMetricsMembersNpsSummary(null)).toMatchObject({
-      isWithheld: true,
+      isUnscored: true,
+      isLowConfidence: false,
       scoreLabel: '—',
       respondedLabel: '—',
       rateLabel: '—',
@@ -945,10 +960,66 @@ describe('members nps', () => {
     ]);
   });
 
-  it('withholds a flagged wave score but keeps its rate', () => {
-    expect(buildHealthMetricsMembersNpsTrend([quarter('2025-07-01', 54, 0.71), quarter('2026-04-01', 80, 0.21, true)])).toEqual([
-      { quarterStartDate: '2025-07-01', label: 'Q3 25', score: 54, scoreLabel: '+54', ratePct: 71, rateLabel: '71%', isRateBelowFloor: false },
-      { quarterStartDate: '2026-04-01', label: 'Q2 26', score: null, scoreLabel: 'Withheld', ratePct: 21, rateLabel: '21%', isRateBelowFloor: true },
+  it('keeps a flagged or below-floor wave score, marked as low confidence', () => {
+    expect(
+      buildHealthMetricsMembersNpsTrend([
+        quarter('2025-07-01', 54, 0.71),
+        quarter('2025-10-01', 61, 0.62, true),
+        quarter('2026-01-01', 70, 0.39),
+        quarter('2026-04-01', 80, 0.21, true),
+        quarter('2026-07-01', null, 0.1, true),
+      ])
+    ).toEqual([
+      {
+        quarterStartDate: '2025-07-01',
+        label: 'Q3 25',
+        score: 54,
+        scoreLabel: '+54',
+        ratePct: 71,
+        rateLabel: '71%',
+        isRateBelowFloor: false,
+        isLowConfidence: false,
+      },
+      {
+        quarterStartDate: '2025-10-01',
+        label: 'Q4 25',
+        score: 61,
+        scoreLabel: '+61',
+        ratePct: 62,
+        rateLabel: '62%',
+        isRateBelowFloor: false,
+        isLowConfidence: true,
+      },
+      {
+        quarterStartDate: '2026-01-01',
+        label: 'Q1 26',
+        score: 70,
+        scoreLabel: '+70',
+        ratePct: 39,
+        rateLabel: '39%',
+        isRateBelowFloor: true,
+        isLowConfidence: true,
+      },
+      {
+        quarterStartDate: '2026-04-01',
+        label: 'Q2 26',
+        score: 80,
+        scoreLabel: '+80',
+        ratePct: 21,
+        rateLabel: '21%',
+        isRateBelowFloor: true,
+        isLowConfidence: true,
+      },
+      {
+        quarterStartDate: '2026-07-01',
+        label: 'Q3 26',
+        score: null,
+        scoreLabel: '—',
+        ratePct: 10,
+        rateLabel: '10%',
+        isRateBelowFloor: true,
+        isLowConfidence: false,
+      },
     ]);
   });
 
@@ -979,8 +1050,18 @@ describe('members nps', () => {
     expect(buildHealthMetricsMembersNpsTrendNote(rising)).toBeNull();
   });
 
-  it('compares reportable scores only, then judges the latest rate', () => {
+  it('counts a flagged wave score in the comparison', () => {
     const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.7), quarter('2025-07-01', 55, 0.68), quarter('2026-01-01', 90, 0.3, true)]);
+    expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({
+      kind: 'diverging',
+      scoreChangeLabel: '40 points',
+      fromRateLabel: '70%',
+      toRateLabel: '30%',
+    });
+  });
+
+  it('compares scored waves only, then judges the latest rate', () => {
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.7), quarter('2025-07-01', 55, 0.68), quarter('2026-01-01', null, 0.3, true)]);
     expect(buildHealthMetricsMembersNpsTrendNote(points)).toEqual({ kind: 'below-floor', scoreChangeLabel: '', fromRateLabel: '', toRateLabel: '30%' });
   });
 
