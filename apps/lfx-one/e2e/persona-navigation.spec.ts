@@ -533,7 +533,8 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
 
   test('board-member without an opted-in group navigating to /foundation/social-listening is redirected to /foundation/overview', async ({ page }) => {
     await stubPersona(page, ['board-member']);
-    // The guard also asks the access probe, which would otherwise evaluate the real signed-in account.
+    // The guard also asks the access probe. page.route() only reaches browser requests, so the page is
+    // opened by client-side navigation below — an SSR load would ask the real BFF for the test account.
     await page.route('**/api/social-listening/access**', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ canView: false, reason: 'none' }) })
     );
@@ -544,8 +545,12 @@ test.describe('S7: Route guard — non-ED redirected from ED-only routes', () =>
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    await page.goto(`/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
+    // Client-side navigation, so the guard runs in the browser where the access-probe stub answers it.
+    await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+    await page.evaluate((url) => {
+      window.history.pushState({}, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, `/foundation/social-listening?project=${MOCK_FOUNDATION_SLUG}`);
 
     await expect(page, 'persona=board-member should be redirected away from /foundation/social-listening').toHaveURL(/\/foundation\/overview/, {
       timeout: ELEMENT_TIMEOUT,
