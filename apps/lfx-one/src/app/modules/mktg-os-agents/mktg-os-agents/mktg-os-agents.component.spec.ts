@@ -180,12 +180,23 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       expect(host().querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]')?.disabled).toBe(false);
     });
 
+    it('keeps an unresolved dependency gated and retries on the next refresh', async () => {
+      resolveDependencies.mockReturnValueOnce(of({ 'foundation-setup': null }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(mfTile()?.disabled).toBe(true);
+      dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
+      documentsChanged.next(PROJECT_1.uid);
+      await fixture.whenStable();
+      expect(mfTile()?.disabled).toBe(false);
+    });
+
     it('enables the card once the dependency resolves for the active project (server-persisted kit)', async () => {
       dependencyDocs = { 'proj-1:foundation-setup': kitDoc() };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup']);
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-1', ['foundation-setup'], [], true);
       expect(mfTile()?.disabled).toBe(false);
       expect(requiresTag()).toBeNull();
     });
@@ -310,7 +321,7 @@ describe('MktgOsAgentsComponent — stored-version badges follow the active proj
       activeContext.set(PROJECT_2);
       await fixture.whenStable();
 
-      expect(resolveDependencies).toHaveBeenCalledWith('proj-2', ['foundation-setup']);
+      expect(resolveDependencies).toHaveBeenCalledWith('proj-2', ['foundation-setup'], [], true);
       expect(mfTile()?.disabled).toBe(true);
       expect(requiresTag()).not.toBeNull();
     });
