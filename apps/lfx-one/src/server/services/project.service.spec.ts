@@ -3085,94 +3085,60 @@ describe('ProjectService.updateProjectPermissions', () => {
     expect(result.auditors).toEqual([member]);
   });
 
-  describe('meeting coordinators', () => {
-    it('adds a coordinator alongside the view role', async () => {
+  describe('meeting coordinator role', () => {
+    const kim = { name: 'Kim Park', email: 'kim.park@partner-corp.example' };
+
+    it('adds a user as a meeting coordinator only', async () => {
       mockFetch({ writers: [], auditors: [] });
 
-      const result = await service.updateProjectPermissions(
-        req,
-        'project-1',
-        'add',
-        'kim.park@partner-corp.example',
-        'view',
-        { name: 'Kim Park', email: 'kim.park@partner-corp.example' },
-        undefined,
-        true
-      );
+      const result = await service.updateProjectPermissions(req, 'project-1', 'add', kim.email, 'meeting_coordinator', kim);
 
-      const kim = { name: 'Kim Park', email: 'kim.park@partner-corp.example' };
-      expect(result.auditors).toEqual([kim]);
       expect(result.meeting_coordinators).toEqual([kim]);
-    });
-
-    it("adds a coordinator-only user under role 'none' without a writer or auditor entry", async () => {
-      mockFetch({ writers: [], auditors: [] });
-
-      const result = await service.updateProjectPermissions(
-        req,
-        'project-1',
-        'add',
-        'kim.park@partner-corp.example',
-        'none',
-        { name: 'Kim Park', email: 'kim.park@partner-corp.example' },
-        undefined,
-        true
-      );
-
       expect(result.writers).toEqual([]);
       expect(result.auditors).toEqual([]);
-      expect(result.meeting_coordinators).toHaveLength(1);
     });
 
-    it("rejects role 'none' without the coordinator grant, before persisting anything", async () => {
-      mockFetch({ writers: [member], auditors: [] });
+    it('moves a writer to meeting coordinator, leaving no writer entry', async () => {
+      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [] });
 
-      await expect(service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'none', undefined, undefined, false)).rejects.toMatchObject({
-        statusCode: 400,
-      });
-
-      expect(updateWithETag).not.toHaveBeenCalled();
-    });
-
-    it('keeps an existing coordinator grant when a role change omits meetingCoordinator', async () => {
-      mockFetch({ writers: [member], auditors: [], meeting_coordinators: [member] });
-
-      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view');
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'meeting_coordinator');
 
       expect(result.writers).toEqual([]);
-      expect(result.auditors).toEqual([member]);
       expect(result.meeting_coordinators).toEqual([member]);
     });
 
-    it('drops the coordinator grant when the update sets it to false', async () => {
-      mockFetch({ writers: [], auditors: [member], meeting_coordinators: [member] });
+    it('moves a meeting coordinator to view, leaving no coordinator entry', async () => {
+      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
 
-      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view', undefined, undefined, false);
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view');
 
       expect(result.auditors).toEqual([member]);
       expect(result.meeting_coordinators).toEqual([]);
     });
 
-    it('grants coordinator to an existing coordinator-only user who is moved to manage', async () => {
-      mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
+    it('normalizes a user held in several lists to the one chosen role', async () => {
+      mockFetch({ writers: [member], auditors: [member], meeting_coordinators: [member] });
 
       const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'manage');
 
       expect(result.writers).toEqual([member]);
-      expect(result.meeting_coordinators).toEqual([member]);
+      expect(result.auditors).toEqual([]);
+      expect(result.meeting_coordinators).toEqual([]);
     });
 
-    it('keeps a coordinator grant held only by a duplicate entry, re-filed under the surviving username entry', async () => {
+    it('re-files a coordinator held only by a duplicate (email-only) entry under the surviving username entry', async () => {
       const emailOnlyCoordinator = { name: 'Sam Chen', email: 'sam.chen.dup@cascade-data.example' };
       mockFetch({ writers: [], auditors: [member], meeting_coordinators: [emailOnlyCoordinator] });
 
-      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view', undefined, ['sam.chen.dup@cascade-data.example']);
+      const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'meeting_coordinator', undefined, [
+        'sam.chen.dup@cascade-data.example',
+      ]);
 
-      expect(result.auditors).toEqual([member]);
+      expect(result.auditors).toEqual([]);
       expect(result.meeting_coordinators).toEqual([member]);
     });
 
-    it('removes the coordinator entry along with the writer and auditor entries', async () => {
+    it('removes the coordinator entry along with any writer and auditor entries', async () => {
       mockFetch({ writers: [member], auditors: [], meeting_coordinators: [member] });
 
       const result = await service.updateProjectPermissions(req, 'project-1', 'remove', 'sam.chen');
@@ -3181,7 +3147,7 @@ describe('ProjectService.updateProjectPermissions', () => {
       expect(result.meeting_coordinators).toEqual([]);
     });
 
-    it('refuses to re-add a coordinator-only user already on the project', async () => {
+    it('refuses to re-add a coordinator already on the project', async () => {
       mockFetch({ writers: [], auditors: [], meeting_coordinators: [member] });
 
       await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'sam.chen', 'view')).rejects.toMatchObject({ statusCode: 409 });

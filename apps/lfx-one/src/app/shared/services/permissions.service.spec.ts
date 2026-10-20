@@ -48,7 +48,6 @@ describe('PermissionsService', () => {
           username: 'averystone',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
         },
       ]);
     });
@@ -77,7 +76,6 @@ describe('PermissionsService', () => {
           username: 'blairchen',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
           duplicateIdentifiers: ['bchen@vendor-corp.example'],
         },
       ]);
@@ -107,7 +105,6 @@ describe('PermissionsService', () => {
           username: 'blairchen',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
           duplicateIdentifiers: ['bchen@vendor-corp.example'],
         },
       ]);
@@ -139,7 +136,6 @@ describe('PermissionsService', () => {
           username: 'jordanpike',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
         },
       ]);
     });
@@ -168,7 +164,6 @@ describe('PermissionsService', () => {
           username: 'BlairChen',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
           duplicateIdentifiers: ['bchen@vendor-corp.example'],
         },
       ]);
@@ -198,7 +193,6 @@ describe('PermissionsService', () => {
           username: 'samriver',
           avatar: undefined,
           role: 'view',
-          meetingCoordinator: false,
         },
         {
           name: 'Sam Uppercase',
@@ -206,7 +200,6 @@ describe('PermissionsService', () => {
           username: 'SamRiver',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
         },
       ]);
     });
@@ -238,7 +231,6 @@ describe('PermissionsService', () => {
           username: 'primaryuser',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
           duplicateIdentifiers: ['dup1', 'dup2'],
         },
       ]);
@@ -268,7 +260,6 @@ describe('PermissionsService', () => {
           username: 'caseydoyle',
           avatar: undefined,
           role: 'view',
-          meetingCoordinator: false,
         },
         {
           name: 'Dakota Reyes',
@@ -276,7 +267,6 @@ describe('PermissionsService', () => {
           username: 'dakotareyes',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
         },
       ]);
     });
@@ -305,7 +295,6 @@ describe('PermissionsService', () => {
           username: '',
           avatar: undefined,
           role: 'view',
-          meetingCoordinator: false,
         },
         {
           name: 'Anonymous Two',
@@ -313,7 +302,6 @@ describe('PermissionsService', () => {
           username: '',
           avatar: undefined,
           role: 'manage',
-          meetingCoordinator: false,
         },
       ]);
     });
@@ -341,31 +329,25 @@ describe('PermissionsService', () => {
 
       const jordan = { name: 'Jordan Lee', email: 'jlee@acme-motors.example', username: 'jordanlee' };
 
-      it("shows a coordinator who holds no other role as a 'none' row", () => {
+      it("shows a meeting coordinator as a 'meeting_coordinator' row", () => {
         const result = load(settingsWith({ meeting_coordinators: [jordan] }));
 
         expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ username: 'jordanlee', role: 'none', meetingCoordinator: true });
+        expect(result[0]).toMatchObject({ username: 'jordanlee', role: 'meeting_coordinator' });
       });
 
-      it('keeps the coordinator flag on the same row as an auditor', () => {
+      it('collapses a user under auditors and meeting coordinators to view', () => {
         const result = load(settingsWith({ auditors: [jordan], meeting_coordinators: [jordan] }));
 
         expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ role: 'view', meetingCoordinator: true });
+        expect(result[0].role).toBe('view');
       });
 
-      it('keeps the coordinator flag on the same row as a writer, with manage winning', () => {
-        const result = load(settingsWith({ writers: [jordan], auditors: [jordan], meeting_coordinators: [jordan] }));
+      it('collapses a user under writers and meeting coordinators (a v1 sync) to manage', () => {
+        const result = load(settingsWith({ writers: [jordan], meeting_coordinators: [jordan] }));
 
         expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ role: 'manage', meetingCoordinator: true });
-      });
-
-      it('leaves the flag false for a writer who is not a coordinator', () => {
-        const result = load(settingsWith({ writers: [jordan] }));
-
-        expect(result[0]).toMatchObject({ role: 'manage', meetingCoordinator: false });
+        expect(result[0].role).toBe('manage');
       });
 
       it('carries a differing coordinator identifier as a duplicate so it is cleared with the row', () => {
@@ -373,7 +355,7 @@ describe('PermissionsService', () => {
         const result = load(settingsWith({ auditors: [jordan], meeting_coordinators: [emailOnly] }));
 
         expect(result).toHaveLength(1);
-        expect(result[0]).toMatchObject({ username: 'jordanlee', role: 'view', meetingCoordinator: true });
+        expect(result[0]).toMatchObject({ username: 'jordanlee', role: 'view' });
         expect(result[0].duplicateIdentifiers).toEqual(['jlee@acme-motors.example']);
       });
     });

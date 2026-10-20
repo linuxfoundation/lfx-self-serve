@@ -5,11 +5,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
-import { roleRequiresCoordinatorValidator } from '@lfx-one/shared/validators';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -20,7 +18,7 @@ import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-user-form',
-  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, CheckboxComponent, RadioButtonComponent, TooltipModule, ConfirmDialogModule],
+  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, RadioButtonComponent, TooltipModule, ConfirmDialogModule],
   templateUrl: './user-form.component.html',
 })
 export class UserFormComponent {
@@ -44,11 +42,11 @@ export class UserFormComponent {
   public user = computed(() => (this.config.data?.user as ProjectPermissionUser) || null);
   public project = computed(() => this.projectContextService.activeContext());
 
-  // Base project role options. 'none' is only valid together with the meeting coordinator grant.
+  // A user holds exactly one role
   public permissionLevelOptions = [
     { label: 'View', value: 'view' },
     { label: 'Manage', value: 'manage' },
-    { label: 'None (meeting coordinator only)', value: 'none' },
+    { label: 'Meeting Coordinator', value: 'meeting_coordinator' },
   ];
 
   public constructor() {
@@ -82,7 +80,7 @@ export class UserFormComponent {
     this.submitting.set(true);
     const formValue = this.form().value;
 
-    // For editing, update role and meeting coordinator grant
+    // For editing, update role only
     if (this.isEditing()) {
       this.permissionsService
         .updateUserRole(
@@ -90,7 +88,6 @@ export class UserFormComponent {
           this.user()!.username || this.user()!.email,
           {
             role: formValue.role,
-            meetingCoordinator: formValue.meetingCoordinator,
           } as UpdateUserRoleRequest,
           this.user()!.duplicateIdentifiers
         )
@@ -123,7 +120,6 @@ export class UserFormComponent {
         .addUserToProject(project.uid, {
           email: formValue.email,
           role: formValue.role,
-          meetingCoordinator: formValue.meetingCoordinator,
         } as AddUserToProjectRequest)
         .pipe(take(1))
         .subscribe({
@@ -216,7 +212,6 @@ export class UserFormComponent {
       email: formValue.email,
       username: formValue.username,
       role: formValue.role,
-      meetingCoordinator: formValue.meetingCoordinator,
     };
 
     // Only include avatar if it's not empty
@@ -250,17 +245,13 @@ export class UserFormComponent {
   }
 
   private createUserFormGroup(): FormGroup {
-    return new FormGroup(
-      {
-        email: new FormControl('', [Validators.required, Validators.email]),
-        name: new FormControl(''),
-        username: new FormControl(''),
-        avatar: new FormControl(''),
-        role: new FormControl('view', [Validators.required]),
-        meetingCoordinator: new FormControl(false),
-      },
-      { validators: roleRequiresCoordinatorValidator() }
-    );
+    return new FormGroup({
+      email: new FormControl('', [Validators.required, Validators.email]),
+      name: new FormControl(''),
+      username: new FormControl(''),
+      avatar: new FormControl(''),
+      role: new FormControl('view', [Validators.required]),
+    });
   }
 
   private initializeForm(): void {
@@ -276,7 +267,6 @@ export class UserFormComponent {
         username: user.username,
         avatar: user.avatar,
         role: user.role,
-        meetingCoordinator: user.meetingCoordinator,
       });
 
       // Disable username, name, email, and avatar fields when editing (user info is immutable)

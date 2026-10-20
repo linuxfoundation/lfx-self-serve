@@ -749,8 +749,7 @@ export class ProjectService {
     usernameOrEmail: string,
     role?: ProjectPermissionRole,
     manualUserInfo?: { name: string; email: string; username?: string; avatar?: string },
-    duplicateIdentifiers?: string[],
-    meetingCoordinator?: boolean
+    duplicateIdentifiers?: string[]
   ): Promise<ProjectSettings> {
     // Step 0: Authorize before touching anything — the gate `updateProjectStaff` runs, for the same
     // reason. Upstream gates the settings PUT at writer, but the directory lookup below runs first
@@ -846,11 +845,6 @@ export class ProjectService {
     const matchesAnyDuplicate = (u: { username?: string; email?: string }): boolean =>
       duplicateIdentifierList.some((id) => (id.includes('@') ? !u.username && u.email?.toLowerCase() === id.toLowerCase() : u.username === id));
 
-    // The meeting coordinator grant is independent of the writer/auditor role: an update that
-    // omits `meetingCoordinator` keeps whatever the person holds today instead of dropping it.
-    const wasMeetingCoordinator = updatedSettings.meeting_coordinators.some((u) => matchesUser(u) || matchesAnyDuplicate(u));
-    const isMeetingCoordinator = operation === 'remove' ? false : (meetingCoordinator ?? (operation === 'update' && wasMeetingCoordinator));
-
     // Remove user from all arrays first (for all operations)
     updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
     updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
@@ -901,21 +895,13 @@ export class ProjectService {
         userInfo = { ...fetchedUserInfo };
       }
 
-      if (role === 'none' && !isMeetingCoordinator) {
-        throw ServiceValidationError.forField('role', 'A user without a View or Manage role must be a meeting coordinator', {
-          operation: `${operation}_user_project_permissions`,
-          service: 'project_service',
-        });
-      }
-
+      // A user holds exactly one role, so they were removed from every list above and re-added to one.
       if (role === 'manage') {
         updatedSettings.writers = [...updatedSettings.writers, userInfo];
-      } else if (role === 'view') {
-        updatedSettings.auditors = [...updatedSettings.auditors, userInfo];
-      }
-
-      if (isMeetingCoordinator) {
+      } else if (role === 'meeting_coordinator') {
         updatedSettings.meeting_coordinators = [...updatedSettings.meeting_coordinators, userInfo];
+      } else {
+        updatedSettings.auditors = [...updatedSettings.auditors, userInfo];
       }
     }
     // For 'remove' operation, user is already removed from all arrays above
@@ -928,7 +914,6 @@ export class ProjectService {
       project_id: uid,
       username: maskIdentifierForLogs(backendIdentifier),
       role: role || 'N/A',
-      meeting_coordinator: isMeetingCoordinator,
     });
 
     const result = await this.etagService.updateWithETag<ProjectSettings>(

@@ -16,7 +16,6 @@ export * from './newsletter.validators';
 export * from './one-line.validator';
 export * from './plain-text-message.validator';
 export * from './project-application.validators';
-export * from './project-permission.validators';
 export * from './source-url.validator';
 export * from './substantive-answer.validator';
 export * from './vote.validators';

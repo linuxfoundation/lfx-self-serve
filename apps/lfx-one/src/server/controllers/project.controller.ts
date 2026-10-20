@@ -298,7 +298,7 @@ export class ProjectController {
       }
 
       // Validate role value
-      const addRoleError = validateProjectPermissionRole(userData.role, userData.meetingCoordinator, 'add_user_project_permissions', req.path);
+      const addRoleError = validateProjectPermissionRole(userData.role, 'add_user_project_permissions', req.path);
       if (addRoleError) {
         next(addRoleError);
         return;
@@ -322,16 +322,7 @@ export class ProjectController {
       }
 
       // Pass the identifier (username or email fallback) to updateProjectPermissions
-      const result = await this.projectService.updateProjectPermissions(
-        req,
-        uid,
-        'add',
-        identifier,
-        userData.role,
-        manualUserInfo,
-        undefined,
-        userData.meetingCoordinator === true
-      );
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', identifier, userData.role, manualUserInfo);
 
       logger.success(req, 'add_user_project_permissions', startTime, {
         uid,
@@ -396,7 +387,7 @@ export class ProjectController {
       }
 
       // Validate role value
-      const updateRoleError = validateProjectPermissionRole(roleData.role, roleData.meetingCoordinator, 'update_user_role_project_permissions', req.path);
+      const updateRoleError = validateProjectPermissionRole(roleData.role, 'update_user_role_project_permissions', req.path);
       if (updateRoleError) {
         next(updateRoleError);
         return;
@@ -404,22 +395,12 @@ export class ProjectController {
 
       const duplicateIdentifiers = getValidatedDuplicateIdentifiers(roleData.duplicateIdentifiers, 'update_user_role_project_permissions');
 
-      const result = await this.projectService.updateProjectPermissions(
-        req,
-        uid,
-        'update',
-        username,
-        roleData.role,
-        undefined,
-        duplicateIdentifiers,
-        roleData.meetingCoordinator
-      );
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role, undefined, duplicateIdentifiers);
 
       logger.success(req, 'update_user_role_project_permissions', startTime, {
         uid,
         username: maskIdentifierForLogs(username),
         new_role: roleData.role,
-        meeting_coordinator: roleData.meetingCoordinator,
       });
 
       res.json(result);

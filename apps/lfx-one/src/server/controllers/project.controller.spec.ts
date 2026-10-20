@@ -961,117 +961,46 @@ function buildPermissionsReqRes(uid: string, username: string, body: unknown = {
   return { req, res, next };
 }
 
-describe('ProjectController permissions meetingCoordinator handling', () => {
+describe('ProjectController permissions role validation', () => {
+  const EMAIL = 'blair.chen@vendor-corp.example';
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('updateUserPermissionRole passes meetingCoordinator through to the service', async () => {
+  it.each(['view', 'manage', 'meeting_coordinator'])("addUserToProjectPermissions accepts role '%s' and forwards it", async (role) => {
     const controller = new ProjectController();
     projectSvc.updateProjectPermissions.mockResolvedValue({});
-    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'view', meetingCoordinator: true });
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
 
-    await controller.updateUserPermissionRole(req, res, next);
+    await controller.addUserToProjectPermissions(req, res, next);
 
-    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'view', undefined, undefined, true);
+    expect(next).not.toHaveBeenCalled();
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'add', EMAIL, role, undefined);
   });
 
-  it("updateUserPermissionRole accepts role 'none' for a coordinator", async () => {
+  it.each(['view', 'manage', 'meeting_coordinator'])("updateUserPermissionRole accepts role '%s' and forwards it", async (role) => {
     const controller = new ProjectController();
     projectSvc.updateProjectPermissions.mockResolvedValue({});
-    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role: 'none', meetingCoordinator: true });
+    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
 
     await controller.updateUserPermissionRole(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledTimes(1);
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', role, undefined, undefined);
   });
 
-  it.each([
-    ['none without meetingCoordinator', { role: 'none' }],
-    ['none with meetingCoordinator false', { role: 'none', meetingCoordinator: false }],
-    ['a non-boolean meetingCoordinator', { role: 'view', meetingCoordinator: 'yes' }],
-    ['an unknown role', { role: 'owner' }],
-  ])('updateUserPermissionRole rejects %s without calling the service', async (_label, body) => {
+  it.each([['owner'], ['none'], [1]])('rejects role %j on add and update without calling the service', async (role) => {
     const controller = new ProjectController();
-    const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', body);
+    const add = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { email: EMAIL, role });
+    const update = buildPermissionsReqRes(PROJECT_UID, 'blairchen', { role });
 
-    await controller.updateUserPermissionRole(req, res, next);
+    await controller.addUserToProjectPermissions(add.req, add.res, add.next);
+    await controller.updateUserPermissionRole(update.req, update.res, update.next);
 
     expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  describe('addUserToProjectPermissions', () => {
-    const buildAddReqRes = (body: unknown) => {
-      const { req, res, next } = buildPermissionsReqRes(PROJECT_UID, 'blairchen', body);
-      return { req, res, next };
-    };
-
-    it('forwards meetingCoordinator true to the service', async () => {
-      const controller = new ProjectController();
-      projectSvc.updateProjectPermissions.mockResolvedValue({});
-      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', role: 'view', meetingCoordinator: true });
-
-      await controller.addUserToProjectPermissions(req, res, next);
-
-      expect(next).not.toHaveBeenCalled();
-      expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(
-        req,
-        PROJECT_UID,
-        'add',
-        'blair.chen@vendor-corp.example',
-        'view',
-        undefined,
-        undefined,
-        true
-      );
-    });
-
-    it('passes false when the flag is omitted', async () => {
-      const controller = new ProjectController();
-      projectSvc.updateProjectPermissions.mockResolvedValue({});
-      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', role: 'view' });
-
-      await controller.addUserToProjectPermissions(req, res, next);
-
-      expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(
-        req,
-        PROJECT_UID,
-        'add',
-        'blair.chen@vendor-corp.example',
-        'view',
-        undefined,
-        undefined,
-        false
-      );
-    });
-
-    it("accepts role 'none' for a coordinator", async () => {
-      const controller = new ProjectController();
-      projectSvc.updateProjectPermissions.mockResolvedValue({});
-      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', role: 'none', meetingCoordinator: true });
-
-      await controller.addUserToProjectPermissions(req, res, next);
-
-      expect(next).not.toHaveBeenCalled();
-      expect(projectSvc.updateProjectPermissions).toHaveBeenCalledTimes(1);
-    });
-
-    it.each([
-      ['none without meetingCoordinator', { role: 'none' }],
-      ['none with meetingCoordinator false', { role: 'none', meetingCoordinator: false }],
-      ['a non-boolean meetingCoordinator', { role: 'view', meetingCoordinator: 'yes' }],
-      ['an unknown role', { role: 'owner' }],
-    ])('rejects %s without calling the service', async (_label, extra) => {
-      const controller = new ProjectController();
-      const { req, res, next } = buildAddReqRes({ email: 'blair.chen@vendor-corp.example', ...extra });
-
-      await controller.addUserToProjectPermissions(req, res, next);
-
-      expect(projectSvc.updateProjectPermissions).not.toHaveBeenCalled();
-      expect(next).toHaveBeenCalledTimes(1);
-    });
+    expect(add.next).toHaveBeenCalledTimes(1);
+    expect(update.next).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1092,16 +1021,9 @@ describe('ProjectController permissions duplicateIdentifiers pass-through', () =
 
     await controller.updateUserPermissionRole(req, res, next);
 
-    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(
-      req,
-      PROJECT_UID,
-      'update',
-      'blairchen',
-      'manage',
-      undefined,
-      ['bchen@vendor-corp.example'],
-      undefined
-    );
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, [
+      'bchen@vendor-corp.example',
+    ]);
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -1112,7 +1034,7 @@ describe('ProjectController permissions duplicateIdentifiers pass-through', () =
 
     await controller.updateUserPermissionRole(req, res, next);
 
-    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, undefined, undefined);
+    expect(projectSvc.updateProjectPermissions).toHaveBeenCalledWith(req, PROJECT_UID, 'update', 'blairchen', 'manage', undefined, undefined);
   });
 
   it('removeUserFromProjectPermissions passes duplicateIdentifiers from the body through to the service', async () => {

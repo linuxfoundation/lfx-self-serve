@@ -38,11 +38,12 @@ export class PermissionsMatrixComponent {
     {
       scope: 'Project',
       level: 'Meeting Coordinator',
-      description: 'Add-on for running meetings, granted separately from View/Manage',
+      description: 'Run meetings and review the project. Read-only outside of meetings',
       capabilities: [
-        'Create and organize meetings and past meetings',
-        'View the project and its committees',
-        'No access to project settings. Already included in Manage',
+        'View the project: details, links, folders and documents',
+        'Create, update and delete meetings and past meetings, including registrants, attachments and recordings',
+        'View every committee in the project: members and their email addresses, invites, applications, links, documents and settings',
+        'View the mailing lists, votes and surveys linked to those committees',
       ],
       badge: {
         color: 'text-purple-800',
