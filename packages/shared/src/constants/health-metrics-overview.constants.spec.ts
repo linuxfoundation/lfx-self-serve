@@ -42,9 +42,10 @@ describe('HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS', () => {
     expect(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.none).toEqual(expect.objectContaining({ label: 'No data', group: 'Awaiting data' }));
   });
 
-  it('colours the Opportunity chip blue-500 without retinting the Opportunities heading', () => {
+  // The design's accent (`#009aff`, our blue-500) colours both the Opportunity chip and its group heading.
+  it('colours the Opportunity chip and the Opportunities heading with the accent blue-500', () => {
     expect(HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS.opp).toEqual(
-      expect.objectContaining({ label: 'Opportunity', statusTextClass: 'text-blue-500', textClass: 'text-blue-600' })
+      expect.objectContaining({ label: 'Opportunity', statusTextClass: 'text-blue-500', textClass: 'text-blue-500' })
     );
   });
 });

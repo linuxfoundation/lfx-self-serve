@@ -70,9 +70,17 @@
 
             <!-- Role Column -->
             <td>
-              <span class="text-sm font-inter {{ user.role === 'manage' ? 'text-emerald-700 font-medium' : 'text-blue-600' }}">
-                {{ user.role === 'manage' ? 'Manage' : 'View' }}
-              </span>
+              @switch (user.role) {
+                @case ('manage') {
+                  <span class="text-sm font-inter text-emerald-700 font-medium">Manage</span>
+                }
+                @case ('meeting_coordinator') {
+                  <span class="text-sm font-inter text-purple-700">Meeting Coordinator</span>
+                }
+                @default {
+                  <span class="text-sm font-inter text-blue-600">View</span>
+                }
+              }
             </td>
 
             @if (canWrite()) {

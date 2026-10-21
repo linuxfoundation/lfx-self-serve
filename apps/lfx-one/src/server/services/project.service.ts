@@ -143,6 +143,7 @@ import {
   ProjectIssuesResolutionAggregatedRow,
   ProjectIssuesResolutionResponse,
   ProjectIssuesResolutionRow,
+  ProjectPermissionRole,
   ProjectPullRequestsWeeklyResponse,
   ProjectPullRequestsWeeklyRow,
   ProjectRow,
@@ -746,7 +747,7 @@ export class ProjectService {
     uid: string,
     operation: 'add' | 'update' | 'remove',
     usernameOrEmail: string,
-    role?: 'view' | 'manage',
+    role?: ProjectPermissionRole,
     manualUserInfo?: { name: string; email: string; username?: string; avatar?: string },
     duplicateIdentifiers?: string[]
   ): Promise<ProjectSettings> {
@@ -781,6 +782,7 @@ export class ProjectService {
     // Initialize arrays if they don't exist
     if (!updatedSettings.writers) updatedSettings.writers = [];
     if (!updatedSettings.auditors) updatedSettings.auditors = [];
+    if (!updatedSettings.meeting_coordinators) updatedSettings.meeting_coordinators = [];
 
     // Step 3: Determine the backend identifier for array operations.
     // For emails on update/remove: check settings first. If the user is stored without
@@ -788,7 +790,11 @@ export class ProjectService {
     // email directly — calling NATS for such users would fail with NOT_FOUND.
     const originalEmail = usernameOrEmail.includes('@') ? usernameOrEmail.trim().toLowerCase() : '';
     const matchesByEmail = (u: { username?: string; email?: string }): boolean => !u.username && !!originalEmail && u.email?.toLowerCase() === originalEmail;
-    const existingByEmail = originalEmail ? updatedSettings.writers.find(matchesByEmail) || updatedSettings.auditors.find(matchesByEmail) : undefined;
+    const existingByEmail = originalEmail
+      ? updatedSettings.writers.find(matchesByEmail) ||
+        updatedSettings.auditors.find(matchesByEmail) ||
+        updatedSettings.meeting_coordinators.find(matchesByEmail)
+      : undefined;
 
     let backendIdentifier = usernameOrEmail.trim();
     if (originalEmail) {
@@ -812,7 +818,8 @@ export class ProjectService {
 
     // Capture the user's existing UserInfo before removal — used by the 'update' path to
     // avoid a NATS roundtrip when only the role is changing.
-    const existingUserInfo = updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser);
+    const existingUserInfo =
+      updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser) || updatedSettings.meeting_coordinators.find(matchesUser);
 
     // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
     if (operation === 'add' && existingUserInfo) {
@@ -838,9 +845,10 @@ export class ProjectService {
     const matchesAnyDuplicate = (u: { username?: string; email?: string }): boolean =>
       duplicateIdentifierList.some((id) => (id.includes('@') ? !u.username && u.email?.toLowerCase() === id.toLowerCase() : u.username === id));
 
-    // Remove user from both arrays first (for all operations)
+    // Remove user from all arrays first (for all operations)
     updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
     updatedSettings.auditors = updatedSettings.auditors.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
+    updatedSettings.meeting_coordinators = updatedSettings.meeting_coordinators.filter((u) => !matchesUser(u) && !matchesAnyDuplicate(u));
 
     // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
@@ -887,13 +895,16 @@ export class ProjectService {
         userInfo = { ...fetchedUserInfo };
       }
 
+      // A user holds exactly one role, so they were removed from every list above and re-added to one.
       if (role === 'manage') {
         updatedSettings.writers = [...updatedSettings.writers, userInfo];
+      } else if (role === 'meeting_coordinator') {
+        updatedSettings.meeting_coordinators = [...updatedSettings.meeting_coordinators, userInfo];
       } else {
         updatedSettings.auditors = [...updatedSettings.auditors, userInfo];
       }
     }
-    // For 'remove' operation, user is already removed from both arrays above
+    // For 'remove' operation, user is already removed from all arrays above
 
     // Upstream rejects empty strings on validated fields; send null instead so the key is preserved.
     const sanitizedSettings = nullifyEmptyStrings(updatedSettings);

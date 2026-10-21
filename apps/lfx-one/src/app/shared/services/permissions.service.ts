@@ -3,7 +3,14 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { AddUserToProjectRequest, ProjectPermissionUser, ProjectSettings, UpdateProjectStaffRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
+import {
+  AddUserToProjectRequest,
+  ProjectPermissionRole,
+  ProjectPermissionUser,
+  ProjectSettings,
+  UpdateProjectStaffRequest,
+  UpdateUserRoleRequest,
+} from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { catchError, map, Observable, shareReplay, throwError } from 'rxjs';
 
@@ -111,6 +118,20 @@ export class PermissionsService {
           );
         }
 
+        // Add meeting coordinators. A user holds one role; if the backend has them under more than
+        // one list the rows collapse below to the highest-ranked role.
+        if (settings.meeting_coordinators) {
+          users.push(
+            ...settings.meeting_coordinators.map((userInfo) => ({
+              name: userInfo.name,
+              email: userInfo.email,
+              username: userInfo.username || userInfo.email,
+              avatar: userInfo.avatar,
+              role: 'meeting_coordinator' as const,
+            }))
+          );
+        }
+
         return this.collapseDuplicateUsers(users).sort((a, b) => {
           const aKey = (a.username || a.email || '').toLowerCase();
           const bKey = (b.username || b.email || '').toLowerCase();
@@ -120,17 +141,11 @@ export class PermissionsService {
     );
   }
 
-  // A v1 permission sync can legitimately leave a user with both auditor (view) and writer
-  // (manage) entries for the same project — the backend does not collapse this. Show a single
-  // row per user, with 'manage' taking precedence over 'view' (see #3218).
-  //
-  // Two entries belong to the same person if they share EITHER identifier — email or a real
-  // username — not just whichever one a naive `email || username` key happens to pick per
-  // entry. Picking only one key misses the pairing when, e.g., one entry carries both email
-  // and username and its counterpart shares only the username with no email (PR #3244 review,
-  // Copilot). Union-find groups entries transitively by every identifier they carry; a user
-  // with neither username nor email can't be identified at all and is left uncollapsed rather
-  // than merged with unrelated anonymous users.
+  // A user can legitimately appear under more than one of the auditor (view), writer (manage) and
+  // meeting coordinator lists for the same project — the backend does not collapse this (a v1
+  // permission sync can leave both auditor and writer, #3218, and writes managers into the
+  // coordinator list too). Show a single row per user, with 'manage' taking precedence over 'view'
+  // over 'meeting_coordinator'. Saving the row in the dialog normalizes the user to that one role.
   private collapseDuplicateUsers(users: ProjectPermissionUser[]): ProjectPermissionUser[] {
     const parent = new Map<string, string>();
 
@@ -213,7 +228,8 @@ export class PermissionsService {
     const ownIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email);
     const normalizedIdentifier = (user: ProjectPermissionUser): string => (hasRealUsername(user) ? user.username! : user.email.toLowerCase());
 
-    const winner = group.reduce((best, user) => (best.role === 'view' && user.role === 'manage' ? user : best));
+    const roleRank: Record<ProjectPermissionRole, number> = { meeting_coordinator: 0, view: 1, manage: 2 };
+    const winner = group.reduce((best, user) => (roleRank[user.role] > roleRank[best.role] ? user : best));
     const withRealUsername = group.find(hasRealUsername);
     const merged: ProjectPermissionUser = !hasRealUsername(winner) && withRealUsername ? { ...winner, username: withRealUsername.username } : { ...winner };
 
