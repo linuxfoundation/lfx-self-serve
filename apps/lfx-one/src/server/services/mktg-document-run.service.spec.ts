@@ -357,6 +357,21 @@ describe('MktgDocumentRunService core', () => {
     expect(progress).not.toHaveProperty('progressUnavailable');
   });
 
+  it('reads stored detail after explicit failure refresh so a late stored asset is not lost', async () => {
+    const order: string[] = [];
+    vi.spyOn(service, 'refreshFailure').mockImplementationOnce(async () => {
+      order.push('refresh');
+      return null;
+    });
+    const readDetail = async (): Promise<MktgDocumentDetailResponse> => {
+      order.push('detail');
+      return { project, type: types[0], documentId: 'living', revisions: [], approvedCurrent: null };
+    };
+    const result = await service.detailWithProgress(req, project, types[0], 'living', readDetail, { runs: [] }, false, hash(session));
+    expect(order).toEqual(['refresh', 'detail']);
+    expect(result).toMatchObject({ project, runs: [] });
+  });
+
   it('has one empty-detail policy and rejects malformed/timer refresh before querying a session', async () => {
     const progress: MktgDocumentRunSnapshot = { runs: [] };
     expect(await service.detailWithProgress(req, project, types[0], 'living', null, progress)).toBeNull();
