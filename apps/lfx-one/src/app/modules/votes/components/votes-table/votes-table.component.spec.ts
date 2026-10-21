@@ -787,6 +787,13 @@ describe('VotesTableComponent — row More menu', () => {
       hasPMOAccess ? ['Copy link', 'Send reminder', 'Send reminder to mailing list', 'Clone'] : ['Copy link', 'Send reminder', 'Send reminder to mailing list']
     );
 
+    const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
+    reminderItem.dispatchEvent(new Event('mouseenter'));
+    await fixture.whenStable();
+    expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Opens a dialog to send reminders to eligible voters who have not voted yet');
+    expect(items[1].tooltipOptions?.tooltipPosition).toBe('left');
+    reminderItem.dispatchEvent(new Event('mouseleave'));
+
     items[1].command!({});
 
     expect(openDialog).toHaveBeenCalledWith(
