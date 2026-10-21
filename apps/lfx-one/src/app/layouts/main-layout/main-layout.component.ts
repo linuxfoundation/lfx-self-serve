@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, model, signal } from '@angular/core';
+import { Component, inject, model, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
+import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { NavbarComponent } from '@components/navbar/navbar.component';
 import { ALL_LENSES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
@@ -14,17 +15,15 @@ import { AppService } from '@services/app.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
-import { TranscendService } from '@services/transcend.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
 import { distinctUntilChanged, filter, map } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, NavbarComponent, DrawerModule, ImpersonationBannerComponent],
+  imports: [NgClass, RouterModule, AppFooterComponent, NavbarComponent, DrawerModule, ImpersonationBannerComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class MainLayoutComponent {
   private readonly router = inject(Router);
@@ -33,7 +32,6 @@ export class MainLayoutComponent {
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly sidebarNavService = inject(SidebarNavService);
-  private readonly transcendService = inject(TranscendService);
   protected readonly userService = inject(UserService);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
@@ -108,12 +106,6 @@ export class MainLayoutComponent {
   /** Toggle the mobile sidebar drawer from the header control. */
   public toggleMobileSidebar(): void {
     this.appService.toggleMobileSidebar();
-  }
-
-  /** Opens the Transcend consent manager from the footer's "Cookie settings" link. */
-  public openCookieSettings(event: Event): void {
-    event.preventDefault();
-    this.transcendService.showPreferences();
   }
 
   /** Mirror the PrimeNG drawer's visibility back into app state when it closes itself (backdrop, Esc). */

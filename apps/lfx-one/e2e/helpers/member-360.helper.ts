@@ -26,7 +26,9 @@ export function json(route: Route, body: unknown): Promise<void> {
 /** All API data, rights and auth are synthetic; no Guild key or real user session. */
 export async function setupMember360(page: Page, options: { writer?: boolean; stored?: boolean; emptyEvidence?: boolean } = {}): Promise<void> {
   await suppressCookieBanner(page);
-  await page.route('**/api/**', (route) => json(route, {}));
+  await page.route('**/api/**', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: `Unmocked API endpoint: ${route.request().url()}` }) })
+  );
   await page.route('**/api/mktg-agents/member-360/tracker?*', (route) => {
     expect(route.request().headers()['content-type']).toBe('application/octet-stream');
     expect(new URL(route.request().url()).searchParams.get('project')).toBe(MEMBER_360_PROJECT.uid);
@@ -141,7 +143,7 @@ export async function openMember360(page: Page, path = 'member-360'): Promise<vo
     window.dispatchEvent(new PopStateEvent('popstate'));
   }, `/project/mktg-os-agents/${path}?project=${MEMBER_360_PROJECT.slug}`);
   let testId = 'member-360-run-page';
-  if (!path) testId = 'mktg-os-agents-page';
+  if (!path || path === 'agents') testId = 'mktg-os-agents-page';
   if (path.startsWith('documents')) testId = 'mktg-document-view-page';
   await expect(page.getByTestId(testId)).toBeVisible({ timeout: 20000 });
 }

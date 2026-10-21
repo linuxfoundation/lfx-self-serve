@@ -59,6 +59,42 @@ describe('Member360ResultComponent', () => {
     envelope.run_date = envelope.period.window_start = envelope.period.window_end = '2026-10-01';
     expect(render(envelope).query('member-360-result-header').textContent).toContain('Run 1 Oct 2026 · window Oct 2026 to');
   });
+  it('defaults to descending score and sorts by score, priority and tier', () => {
+    const view = render();
+    expect(view.names()).toEqual([SYNTHETIC_SECOND_ORG_LEGAL_NAME, SYNTHETIC_ORG_NAME]);
+    view.sort('engagement_score');
+    expect(view.names()[0]).toBe(SYNTHETIC_ORG_NAME);
+    view.sort('priority');
+    expect(view.names()[0]).toBe(SYNTHETIC_ORG_NAME);
+    view.sort('engagement_tier');
+    expect(view.names()[0]).toBe(SYNTHETIC_SECOND_ORG_LEGAL_NAME);
+  });
+  it('combines reactive tier/owner/search filters and exposes no matches', () => {
+    const view = render();
+    view.component.filters.controls.tier.setValue('At Risk');
+    view.fixture.detectChanges();
+    expect(view.names()).toEqual([SYNTHETIC_ORG_NAME]);
+    view.component.filters.controls.owner.setValue('Sales');
+    view.fixture.detectChanges();
+    expect(view.query('member-360-no-matches').textContent).toContain('No members match');
+    view.component.filters.reset();
+    view.component.filters.controls.search.setValue(SYNTHETIC_SECOND_ORG_LEGAL_NAME.toUpperCase());
+    view.fixture.detectChanges();
+    expect(view.names()).toEqual([SYNTHETIC_SECOND_ORG_LEGAL_NAME]);
+  });
+  it('selects All as a real value and keeps disclosures closed with singular counts', () => {
+    const view = render();
+    expect(view.component.filters.controls.tier.value).toBe('All');
+    expect(view.component.filters.controls.owner.value).toBe('All');
+    for (const id of ['member-360-tier', 'member-360-owner']) expect(view.query(id).textContent?.trim()).toBe('All');
+    for (const section of ['evidence', 'method']) {
+      expect(view.query(`member-360-${section}`).hasAttribute('open')).toBe(false);
+      expect(view.query(`member-360-${section}-toggle`).textContent?.trim()).toBe(section === 'evidence' ? 'Evidence' : 'Method');
+    }
+    expect(view.query('member-360-actions').textContent).toContain('Member Success · 1 action');
+    expect(view.query('member-360-actions').textContent).not.toContain('1 actions');
+    expect(view.query('member-360-evidence').textContent).toContain('1 row this run.');
+  });
   it('ignores stray trend glyphs when no prior run was provided', () => {
     const envelope = member360Fixture();
     envelope.tabs.member_ranking[1].trend = '▼';
@@ -95,6 +131,25 @@ describe('Member360ResultComponent', () => {
     expect(view.query('member-360-summary-renewals').querySelector('b')?.textContent?.trim()).toBe('1');
     expect(view.query('member-360-ranking').textContent).toContain('Unknown');
     expect(view.query('member-360-ranking').querySelector('[role="img"]')?.getAttribute('tabindex')).toBe('0');
+  });
+  it('copies team actions and reports clipboard denial', async () => {
+    const view = render();
+    const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    try {
+      await view.component['copyTeam']('Member Success');
+      view.fixture.detectChanges();
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining(SYNTHETIC_ORG_NAME));
+      expect(view.query('member-360-notice').textContent).toContain('list copied');
+      writeText.mockRejectedValueOnce(new Error('clipboard denied'));
+      await view.component['copyTeam']('Member Success');
+      view.fixture.detectChanges();
+      expect(view.query('member-360-notice').textContent).toContain('Copy failed');
+    } finally {
+      if (previous) Object.defineProperty(navigator, 'clipboard', previous);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
   it('downloads the stored BFF workbook and exposes a download failure', async () => {
     const view = render();

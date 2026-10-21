@@ -36,6 +36,7 @@ export * from './chart.constants';
 export * from './chart-options.constants';
 export * from './cla.constants';
 export * from './cookie.constants';
+export * from './footer.constants';
 export * from './impersonation.constants';
 export * from './mailing-list.constants';
 export * from './primeng-theme.constants';
