@@ -231,6 +231,8 @@ describe('VotesTableComponent — personal summary filters', () => {
   let fixture: ComponentFixture<unknown>;
   let table: VotesTableComponent;
   beforeEach(async () => {
+    // RxJS debounceTime uses intervals; leave Angular's timeout/rAF scheduler real.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     TestBed.overrideComponent(SummaryHostComponent, {
       set: {
         imports: [VotesTableComponent],
@@ -251,10 +253,14 @@ describe('VotesTableComponent — personal summary filters', () => {
       ],
     }).compileComponents();
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function settle(debounce = false): Promise<void> {
-    if (debounce) await new Promise((resolve) => setTimeout(resolve, 350));
+    if (debounce) await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -442,6 +448,7 @@ describe('VotesTableComponent — empty-state copy', () => {
   const NO_MATCH = ['No votes match your filters', 'Try changing your search or filters, or reset filters to see all votes.'];
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
@@ -458,10 +465,14 @@ describe('VotesTableComponent — empty-state copy', () => {
     fixture.componentRef.setInput('groupOptions', GROUPS);
     fixture.componentRef.setInput('quickFilterNowMs', NOW);
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function settle(debounce = true): Promise<void> {
-    if (debounce) await new Promise((resolve) => setTimeout(resolve, 350));
+    if (debounce) await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -634,6 +645,7 @@ describe('VotesTableComponent — row More menu', () => {
   const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     copyLink = vi.fn();
     openDialog = vi.fn();
     messageAdd = vi.fn();
@@ -673,10 +685,18 @@ describe('VotesTableComponent — row More menu', () => {
     table = fixture.componentInstance;
     fixture.componentRef.setInput('votes', ROWS);
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function settle(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // Noop animation callbacks (including the menu's onShow/onHide) arrive on the real clock.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -1089,6 +1109,7 @@ describe('VotesTableComponent — participation progress', () => {
   const text = (testId: string): string => el(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
@@ -1103,11 +1124,15 @@ describe('VotesTableComponent — participation progress', () => {
     fixture = TestBed.createComponent(VotesTableComponent);
     fixture.componentRef.setInput('votes', ROWS);
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function render(showParticipationProgress = true): Promise<void> {
     if (showParticipationProgress) fixture.componentRef.setInput('showParticipationProgress', true);
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     await fixture.whenStable();
   }
