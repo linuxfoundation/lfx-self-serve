@@ -11,7 +11,12 @@ import type {
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
 } from '../interfaces/mentorship-mentor.interface';
-import { MENTORSHIP_MENTEE_STATUS_LABELS, MENTORSHIP_MENTOR_STATUS_LABELS } from './mentorship.constants';
+import {
+  MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES,
+  MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS,
+  MENTORSHIP_MENTEE_STATUS_LABELS,
+  MENTORSHIP_MENTOR_STATUS_LABELS,
+} from './mentorship.constants';
 
 /**
  * Tab metadata for the mentor shell (`MentorPageComponent`). The label doubles as the
@@ -196,8 +201,8 @@ export const MENTORSHIP_MENTOR_PICKER_LIST_PADDING = '0.5rem';
  */
 export const MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS = { autoSize: false };
 
-/** Note on a disabled picker option the mentor holds an invitation to. */
-export const MENTORSHIP_MENTOR_PICKER_INVITED_NOTE = 'Invited';
+/** Note on a disabled picker option the mentor holds an invitation to: the admin Mentors tab's wording for it. */
+export const MENTORSHIP_MENTOR_PICKER_INVITED_NOTE = MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.invited;
 
 /**
  * Note on a disabled picker option a request found gone (404). A page of programs already read still
@@ -236,9 +241,9 @@ export const MENTORSHIP_MENTOR_WITHDRAW_STALE_ERROR_MESSAGES: Readonly<Record<nu
   409: 'This request is no longer pending, so it cannot be withdrawn. Your requests have been refreshed.',
 };
 
-/** Badge on an invitation row in the request list; the admin Mentors tab shows invited mentors in the same colors. */
-export const MENTORSHIP_MENTOR_INVITATION_STATUS_LABEL = 'Invited';
-export const MENTORSHIP_MENTOR_INVITATION_STATUS_BADGE_CLASS = 'bg-blue-100 text-blue-700';
+/** Badge on an invitation row in the request list, worded and colored as the admin Mentors tab shows an invited mentor. */
+export const MENTORSHIP_MENTOR_INVITATION_STATUS_LABEL = MENTORSHIP_ADMIN_MENTOR_STATUS_LABELS.invited;
+export const MENTORSHIP_MENTOR_INVITATION_STATUS_BADGE_CLASS = MENTORSHIP_ADMIN_MENTOR_STATUS_BADGE_CLASSES.invited;
 
 export const MENTORSHIP_MENTOR_INVITATION_ACCEPT_LABEL = 'Accept';
 export const MENTORSHIP_MENTOR_INVITATION_DECLINE_LABEL = 'Decline';
