@@ -10,7 +10,8 @@ import {
   HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS,
   HEALTH_METRICS_TRAINING_NOT_AVAILABLE,
   HEALTH_METRICS_TRAINING_SECTIONS,
-  HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES,
+  HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES,
+  HEALTH_METRICS_TRAINING_TREND_YEARS,
 } from '../constants/health-metrics-training.constants';
 import { formatCurrency } from './number.utils';
 
@@ -100,6 +101,7 @@ export function buildHealthMetricsTrainingEnrollmentView(
     byType: buildTrainingTypeRows(byType, metric),
     trend: [...enrollment.trend]
       .sort((a, b) => a.year - b.year)
+      .slice(-HEALTH_METRICS_TRAINING_TREND_YEARS)
       .map((year) => {
         const isPartialYear = year.year === partialYear;
         return {
@@ -113,13 +115,14 @@ export function buildHealthMetricsTrainingEnrollmentView(
   };
 }
 
-/** Enrollments keep the model's `sort_rank` order, showing only types with any; revenue drops edX and ranks highest first. */
+/** Enrollments keep the model's `sort_rank` order, showing listed types with any; revenue drops edX and ranks highest first. */
 function buildTrainingTypeRows(
   types: HealthMetricsTrainingEnrollmentType[],
   metric: HealthMetricsTrainingEnrollmentMetric
 ): HealthMetricsTrainingEnrollmentTypeView[] {
   const pick = (type: HealthMetricsTrainingEnrollmentType): number | null => (metric === 'revenue' ? type.revenueUsd : type.enrollments);
-  const shown = metric === 'revenue' ? types.filter((type) => !isStructuralZero(type, metric)) : types.filter(hasEnrollments);
+  const shown =
+    metric === 'revenue' ? types.filter((type) => !HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES.includes(type.deliveryType)) : types.filter(hasEnrollments);
   const ordered = metric === 'revenue' ? [...shown].sort((a, b) => (pick(b) ?? -Infinity) - (pick(a) ?? -Infinity)) : shown;
 
   return ordered.map((type) => {
@@ -132,12 +135,9 @@ function buildTrainingTypeRows(
   });
 }
 
-function isStructuralZero(type: HealthMetricsTrainingEnrollmentType, metric: HealthMetricsTrainingEnrollmentMetric): boolean {
-  return HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES[metric].includes(type.deliveryType);
-}
-
+/** The by-type list and its count: a type the model lists, with enrollments in the period. */
 function hasEnrollments(type: HealthMetricsTrainingEnrollmentType): boolean {
-  return !isStructuralZero(type, 'enrollments') && (type.enrollments ?? 0) > 0;
+  return type.isListed && (type.enrollments ?? 0) > 0;
 }
 
 /** Negative net revenue (refunds) shows as it is; free is reach, and an uncaptured course is not available. */

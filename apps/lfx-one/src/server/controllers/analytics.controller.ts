@@ -4383,7 +4383,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/training-courses` — one page of the foundation's courses with enrollments in a period. */
+  /** `GET /api/analytics/training-courses` — one page of every course the foundation has ever had an enrollment in. */
   public async getTrainingCourses(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_training_courses');
 
