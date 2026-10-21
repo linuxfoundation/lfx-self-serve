@@ -127,7 +127,7 @@ import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_POLL } fro
 import type { MktgDocumentType, MktgSlidesExportStartInput } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-import { brandKitTestRevision } from '../../app/shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
 import { ConflictError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';

@@ -38,7 +38,7 @@ test.describe('Marketing OS Documents structure', () => {
       await open.press('Enter');
       await expect(page.getByTestId('mktg-document-view-live-state')).toHaveAttribute('aria-live', 'polite');
       await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Waiting for your answers.');
-      const intake = page.getByTestId('mktg-document-view-intake-link');
+      const intake = page.getByTestId('mktg-document-view-intake-link').getByRole('button');
       await intake.focus();
       await expect(intake).toBeFocused();
       await expect(page.getByTestId('mktg-document-view-page').locator('h1')).toHaveCount(1);

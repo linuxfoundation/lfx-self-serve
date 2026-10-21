@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
 
 import {
   DOCUMENTS_URL,
@@ -41,7 +42,7 @@ test.describe('Marketing OS current revisions', () => {
       await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
       await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
       await expect(page.getByTestId('mktg-document-view-revision-chip')).toHaveCount(0);
-      if (state === 'failed') await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText!);
+      if (state === 'failed') await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText ?? '');
     });
   }
 
@@ -129,6 +130,23 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-documents-nav')).not.toContainText(/Not generated yet|No runs yet/);
     await expect(page.getByTestId('mktg-documents-refresh-progress').getByRole('button')).toBeVisible();
   });
+
+  for (const state of ['unavailable', 'started']) {
+    test(`one-off ${state} progress never asserts that no runs exist`, async ({ page }) => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+      if (!type) throw new Error('Missing synthetic one-off document type');
+      await setupDocuments(page, {
+        empty: true,
+        progressUnavailable: state === 'unavailable',
+        runs: state === 'started' ? [{ ...startedDocumentRun(), agentKey: type.agentKey }] : [],
+      });
+      const url = new URL(DOCUMENTS_URL, 'http://localhost');
+      url.searchParams.set('type', type.agentKey);
+      await openDocuments(page, url.pathname + url.search);
+      await expect(page.getByTestId('mktg-documents-empty-runs')).toHaveCount(0);
+      await expect(page.getByTestId('mktg-documents-pending-run')).toContainText(state === 'unavailable' ? 'unavailable' : 'recorded run');
+    });
+  }
 
   test('does not expose progress to a project reader without writer access', async ({ page }) => {
     await setupDocuments(page, { writer: false, runs: [startedDocumentRun()] });

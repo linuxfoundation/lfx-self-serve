@@ -7,7 +7,7 @@ import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
-import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
