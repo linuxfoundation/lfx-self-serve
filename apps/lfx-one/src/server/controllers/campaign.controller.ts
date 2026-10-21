@@ -4789,7 +4789,7 @@ export class CampaignController {
    * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
    * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
    * road: a non-string entry is left for the normalisers to drop and is not counted — except for the
-   * three lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
+   * four lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
    * objects, so the strings inside them are measured rather than skipped.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
@@ -4835,7 +4835,7 @@ export class CampaignController {
       }
     }
 
-    // Three request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // Four request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
     // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
     // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
@@ -4843,11 +4843,23 @@ export class CampaignController {
     // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
     // copy is how the two drift apart.
     //
-    // `sitelinks` is the only one of the three that is not already a `candidates` key, so its list
-    // length is checked here. For the other two the check above has already refused an over-long
-    // list with the same field and message, which is why this one re-states rather than contradicts.
+    // `sitelinks` and `structuredSnippets` are the two that are not already `candidates` keys, so
+    // their list lengths are checked here. For the other two the check above has already refused an
+    // over-long list with the same field and message, which is why this one re-states rather than
+    // contradicts.
+    //
+    // `structuredSnippets.values` is a nested list of STRINGS rather than a string, which is why a
+    // named field is measured either way below. Its own caps — ten snippets, ten values, 25 runes
+    // each — are the refusals an operator can act on, but they sit behind `cutoverOn`, the
+    // `google-ads` platform and a resolvable `googleAdsConfig.channel`, all of which are read out of
+    // `createConfigEnvelope`'s output and so are decided AFTER the normalisation this bounds. A body
+    // that resolves none of them still reaches `googleStructuredSnippetList`, which allocates a
+    // fresh object and a fresh trimmed string per value as it walks. That is the same reason the geo
+    // lists and schedules are listed above, and the same reason the `callouts` and `sitelinks`
+    // siblings are bounded here rather than left to their own caps.
     const nestedStringFields: readonly (readonly [string, readonly string[]])[] = [
       ['sitelinks', ['text', 'description1', 'description2', 'finalUrl']],
+      ['structuredSnippets', ['header', 'values']],
       ['adSchedules', ['dayOfWeek']],
       ['deviceBidModifiers', ['device']],
     ];
@@ -4862,6 +4874,19 @@ export class CampaignController {
         for (const name of names) {
           const value = (entry as Record<string, unknown>)[name];
           const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+          // A nested list is bounded on both axes, as the top-level loop bounds a list of strings:
+          // its length first, then each string in it. Measured with the same `max` as a plain field,
+          // so one named field cannot be bounded two different ways depending on how it is shaped.
+          if (Array.isArray(value)) {
+            if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+              return { field: `${key}.${name}`, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+            }
+            const long = value.find((nested) => typeof nested === 'string' && this.boundedLength(nested) > max);
+            if (long !== undefined) {
+              return { field: `${key}.${name}`, message: `an entry exceeds the maximum length of ${max}` };
+            }
+            continue;
+          }
           if (typeof value === 'string' && this.boundedLength(value) > max) {
             return { field: `${key}.${name}`, message: `a value exceeds the maximum length of ${max}` };
           }

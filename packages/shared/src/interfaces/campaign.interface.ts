@@ -997,10 +997,20 @@ export interface CampaignImplementationDraft {
   /**
    * Google's structured snippets, as the operator typed them.
    *
-   * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}. It
-   * has no counterpart on `CampaignBriefOutput`, unlike those two: callouts and sitelinks are
-   * GENERATED from the event page and so have to survive a re-generate, while snippets are typed
-   * by hand and this draft is the only thing that carries them between visits.
+   * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
+   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   *
+   * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
+   * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
+   * is cleared on every hand-over from Planning and on Start Over, and a reload never had it.
+   *
+   * Callouts and sitelinks outlive that clear because they also exist on `CampaignBriefOutput` —
+   * they are GENERATED from the event page, so `briefWithCarriedExtensions` replays the operator's
+   * edits onto an incoming brief whose generated lists are the ones those edits were typed over.
+   * Snippets are typed by hand, have no brief counterpart, and are outside that carry: a re-generate
+   * or a Start Over drops them and the operator types them again. That is the accepted scope of this
+   * slice, not an oversight — a carry needs a generated baseline to compare against, and there is
+   * none until snippet generation exists.
    */
   googleStructuredSnippets?: CampaignStructuredSnippet[];
   /**

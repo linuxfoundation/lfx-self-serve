@@ -1535,6 +1535,19 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly googleStructuredSnippetsFull = computed(() => this.googleStructuredSnippets().length >= GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS);
 
   /**
+   * The added snippets with their values pre-joined for display. A computed rather than `.join()`
+   * in the `@for`: `docs/reviews/frontend-checklist.md` permits signal reads, computeds and pipes
+   * in bindings but not logic-bearing calls, which here would re-run once per row on every
+   * change-detection pass. Same reason as {@link microsoftEffectiveGeoLabel}, applied per row.
+   *
+   * `header` is carried through unchanged so the template keeps tracking by it — the add refuses a
+   * case-folded duplicate, which is what makes the header a stable identity for the whole list.
+   */
+  protected readonly googleStructuredSnippetRows = computed(() =>
+    this.googleStructuredSnippets().map((snippet) => ({ header: snippet.header, valuesLabel: snippet.values.join(', ') }))
+  );
+
+  /**
    * Whether the snippet add button is withheld — the sitelink sub-form's rule exactly, so the
    * button's condition and {@link addGoogleStructuredSnippet}'s refusals stay one list in one place.
    */

@@ -1306,6 +1306,21 @@ describe('CampaignController.createCampaign cutover', () => {
     ],
     ['an oversized sitelink field', { sitelinks: [{ text: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1), finalUrl: 'https://x.example' }] }],
     ['an oversized sitelink URL', { sitelinks: [{ text: 'Register', finalUrl: `https://x.example/${'a'.repeat(2084)}` }] }],
+    // Every snippet row runs on `display`, where the named snippet caps never fire — they sit
+    // behind a resolvable Search channel, read out of the envelope this guard runs before. These
+    // pin the bound that holds whatever the channel turns out to be.
+    [
+      'an oversized structured-snippet list',
+      {
+        structuredSnippets: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ({ header: `H${i}`, values: ['A', 'B', 'C'] })),
+      },
+    ],
+    ['an oversized structured-snippet header', { structuredSnippets: [{ header: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1), values: ['A'] }] }],
+    [
+      'an oversized structured-snippet value list',
+      { structuredSnippets: [{ header: 'Brands', values: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `v-${i}`) }] },
+    ],
+    ['an oversized structured-snippet value', { structuredSnippets: [{ header: 'Brands', values: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] }] }],
   ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
@@ -1341,6 +1356,22 @@ describe('CampaignController.createCampaign cutover', () => {
     [
       'a callout padded with U+0085, which Go trims',
       { campaignTypes: ['search'], callouts: [`Free shipping${'\u0085'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`] },
+    ],
+    // The snippet normaliser trims with Go's rules, as the callout one does, so U+0085 is the
+    // direction that matters for both of its string fields.
+    [
+      'a structured-snippet header padded with U+0085, which Go trims',
+      {
+        campaignTypes: ['search'],
+        structuredSnippets: [{ header: `Brands${'\u0085'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`, values: ['Go', 'Rust', 'Zig'] }],
+      },
+    ],
+    [
+      'a structured-snippet value padded with U+0085, which Go trims',
+      {
+        campaignTypes: ['search'],
+        structuredSnippets: [{ header: 'Brands', values: [`Go${'\u0085'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH)}`, 'Rust', 'Zig'] }],
+      },
     ],
   ])('does not refuse %s that is only over the bound because of padding upstream trims', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');

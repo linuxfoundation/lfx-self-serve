@@ -6966,6 +6966,31 @@ describe('ImplementationTabComponent google structured snippets', () => {
     expect(c['googleStructuredSnippets']().map((s: CampaignStructuredSnippet) => s.header)).toEqual(['Second']);
   });
 
+  /**
+   * The chip renders the values pre-joined by a computed, not by a `.join()` in the `@for`
+   * (`docs/reviews/frontend-checklist.md`). This pins the rendered text to the live list, so the
+   * indirection cannot drift from what was added or survive a removal.
+   */
+  it('renders each added snippet with its values joined, and drops the row on removal', () => {
+    const c = seedChannel(fixture, { includeSearch: true });
+    c['addGoogleStructuredSnippet']('Brands', VALUES);
+    c['addGoogleStructuredSnippet']('Courses', ['Go', 'Rust', 'Zig']);
+    fixture.detectChanges();
+
+    const rows = (): string[] =>
+      Array.from(fixture.nativeElement.querySelectorAll('[data-testid="implementation-google-structured-snippets-section"] .flex-col > span')).map(
+        (el) => (el as HTMLElement).textContent?.trim() ?? ''
+      );
+
+    expect(rows()).toEqual(expect.arrayContaining(['Brands', VALUES.join(', '), 'Courses', 'Go, Rust, Zig']));
+
+    c['removeGoogleStructuredSnippet'](0);
+    fixture.detectChanges();
+
+    expect(rows()).not.toContain(VALUES.join(', '));
+    expect(rows()).toContain('Go, Rust, Zig');
+  });
+
   /** Search only, and WITHHELD elsewhere rather than refused — exactly as the other two are. */
   it('offers snippets on Search and withholds them on a non-Search channel', () => {
     const c = seedChannel(fixture, { includeSearch: true });
