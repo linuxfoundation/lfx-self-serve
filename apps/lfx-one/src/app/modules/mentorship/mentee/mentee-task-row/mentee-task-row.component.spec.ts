@@ -252,7 +252,7 @@ describe('MenteeTaskRowComponent', () => {
       expect(changeStatus).toHaveBeenLastCalledWith('row_pending', 'submitted');
       expect(form.controls[task.id].value).toBe('submitted');
       expect(select().styleClass()).toBe(`mentee-task-status-dropdown ${uploadedTask().statusClass}`);
-      expect(optionState()).toEqual({ pending: true, in_progress: true, submitted: true });
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
     });
 
     it('keeps showing a chained change when the first refresh lands while it is in flight', async () => {
@@ -275,7 +275,24 @@ describe('MenteeTaskRowComponent', () => {
 
       expect(form.controls[task.id].value).toBe('submitted');
       expect(select().styleClass()).toBe(`mentee-task-status-dropdown ${uploadedTask().statusClass}`);
-      expect(optionState()).toEqual({ pending: true, in_progress: true, submitted: true });
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+    });
+
+    it('saves a submitted to in progress move and offers Remove for the stored file again', async () => {
+      const task = uploadedTask();
+      const form = await buildRow(task);
+      expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeNull();
+
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+      inFlight.next(true);
+      inFlight.complete();
+      fixture.detectChanges();
+
+      expect(changeStatus).toHaveBeenCalledWith('row_uploaded', 'in_progress');
+      expect(form.controls[task.id].value).toBe('in_progress');
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+      expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeTruthy();
     });
 
     it('reverts a failed change to the status a mid-flight refresh brought in', async () => {
@@ -373,12 +390,28 @@ describe('MenteeTaskRowComponent', () => {
       expect(byTestId('mentee-tasks-status-hint-row_progress')).toBeNull();
     });
 
-    it('locks a submitted row read-only with every option disabled', async () => {
+    it('lets a submitted row go back to In Progress, with no hint', async () => {
       await buildRow(uploadedTask());
+
+      expect(select().readonly()).toBe(false);
+      expect(optionState()).toEqual({ pending: true, in_progress: false, submitted: false });
+      expect(byTestId('mentee-tasks-status-hint-row_uploaded')).toBeNull();
+    });
+
+    it('locks a completed row read-only with every option disabled', async () => {
+      await buildRow(uploadedTask('complete'));
 
       expect(select().readonly()).toBe(true);
       expect(optionState()).toEqual({ pending: true, in_progress: true, submitted: true });
       expect(byTestId('mentee-tasks-status-hint-row_uploaded')?.classList.contains('sr-only')).toBe(true);
+    });
+
+    it('locks a submitted row once it is past due', async () => {
+      vi.setSystemTime(afterDue);
+      await buildRow({ ...uploadedTask(), dueDate: '2026-09-30T00:00:00Z' });
+
+      expect(select().readonly()).toBe(true);
+      expect(optionState()).toEqual({ pending: true, in_progress: true, submitted: true });
     });
 
     it('labels the select by its sr-only name and the hint', async () => {

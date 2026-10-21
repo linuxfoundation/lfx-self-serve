@@ -38,8 +38,10 @@ import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
  * assistive technology.
  *
  * File actions go through `MentorshipTaskFileService`. A task that needs a file shows Upload until one is
- * stored, and Submitted stays disabled until then. A stored file can be downloaded; it can be replaced
- * until the reviewer completes the task, and removed only before the task is submitted, as upstream allows.
+ * stored, and Submitted stays disabled until then. Upstream marks the task submitted with every upload, and
+ * the refresh that follows carries the new status. A submitted task can go back to In Progress until the
+ * reviewer completes it. A stored file can be downloaded; it can be replaced until the reviewer completes
+ * the task, and removed only while the task is not submitted, as upstream allows.
  * Once a task is past due (the end of its due date's UTC day), Submitted and every file change are closed.
  * The row re-reads the clock whenever the due date changes and again at its cutoff, so a page left open
  * across it locks without a reload.
