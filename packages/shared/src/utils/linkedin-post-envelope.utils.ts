@@ -113,7 +113,8 @@ export function isLinkedinEnvelope(value: unknown): value is LinkedinEnvelope {
   )
     return false;
   if (
-    !['first_run_setup', 'saved_profile'].includes(String(value['profile_source'])) ||
+    typeof value['profile_source'] !== 'string' ||
+    !['first_run_setup', 'saved_profile'].includes(value['profile_source']) ||
     !isLinkedinProfile(value['profile']) ||
     value['profile_markdown'] !== renderLinkedinProfileMarkdown(value['profile'])
   )
