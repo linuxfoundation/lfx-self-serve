@@ -168,6 +168,8 @@ function buildOrgsRouter(): Router {
   // lfx-self-serve-ops#894 — person detail for openers that carry only an LF username (Board/Committee/Key Contact/Access).
   router.get('/:orgUid/lens/people/by-username/:username/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetailByUsername(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
+  // Company addresses for a person key; split from `/detail` so the drawer never waits on the address view.
+  router.get('/:orgUid/lens/people/:personKey/company-emails', (req, res, next) => orgLensPeopleController.getCompanyEmails(req, res, next));
 
   // Spec 025 — People → Org Lens Access tab (list + manager-only role change / remove).
   router.get('/:orgUid/lens/access/users', (req, res, next) => orgLensAccessController.getUsers(req, res, next));

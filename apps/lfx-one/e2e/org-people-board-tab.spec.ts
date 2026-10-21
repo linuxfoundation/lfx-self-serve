@@ -368,8 +368,8 @@ test.describe('Org People → Board tab', () => {
     expect(personDetailCalls).toBe(0);
   });
 
-  // Board rows have no personKey: the username-keyed detail is requested first (activity is not flag-gated). When it answers
-  // null (no single roster person) the only address source left is company-emails; Jordan carries a username so only the OFF flag can stop it.
+  // Board rows have no personKey: the username-keyed detail and company-emails are requested together, and only the
+  // company-emails request is flag-gated (activity is not). Jordan carries a username, so only the OFF flag can stop it.
   test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
     await stubAccountContext(page);
@@ -389,7 +389,7 @@ test.describe('Org People → Board tab', () => {
     await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
     await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 
-    // Wait for the null answer to land (Events turns not-available) before asserting the address fallback never fired.
+    // Wait for the null answer to land (Events turns not-available) before asserting the address lookup never fired.
     await expect.poll(() => detailCalls).toBeGreaterThan(0);
     await page.getByTestId('person-detail-drawer-tab-events').click();
     await expect(page.getByTestId('person-detail-drawer-detail-unavailable')).toBeVisible();
@@ -407,7 +407,7 @@ test.describe('Org People → Board tab', () => {
   test('renders each company-email state from its own response', async ({ page }) => {
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await stubAccountContext(page);
-    // A null answer from the username-keyed detail (no single roster person) leaves company-emails as the address source.
+    // The username-keyed detail answers null (no single roster person); addresses come from company-emails either way.
     await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: 'null' })
     );

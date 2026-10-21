@@ -105,6 +105,37 @@ export class OrgLensPeopleController {
   }
 
   /**
+   * GET /api/orgs/:orgUid/lens/people/:personKey/company-emails — company-affiliated addresses for a
+   * person key, served apart from `/detail` so the drawer renders activity without waiting on the
+   * slower address read.
+   */
+  public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const personKey = req.params['personKey'];
+    const operation = 'get_org_lens_people_company_emails';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertPersonKey(personKey, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
+
+      const result = await this.service.getCompanyEmails(req, orgUid, personKey);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        person_key: personKey,
+        company_email_count: result.companyEmails.length,
+        company_emails_status: result.companyEmailsStatus,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/orgs/:orgUid/lens/people/by-username/:username/company-emails — company-affiliated
    * addresses for the governance surfaces, keyed on LF username and never on an address.
    */
