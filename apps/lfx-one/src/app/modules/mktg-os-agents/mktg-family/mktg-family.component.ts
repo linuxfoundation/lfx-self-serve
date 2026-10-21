@@ -12,13 +12,14 @@ import { isMktgKitFamilyLive } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
 import { map } from 'rxjs';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
 import { MktgFamilyExportActionsComponent } from '../components/mktg-family-export-actions/mktg-family-export-actions.component';
 import { MktgFamilyDetailsComponent } from '../components/mktg-family-details/mktg-family-details.component';
 
 @Component({
   selector: 'lfx-mktg-family',
-  imports: [DatePipe, RouterLink, ButtonComponent, MktgKitStatusComponent, MktgFamilyExportActionsComponent, MktgFamilyDetailsComponent],
+  imports: [DatePipe, RouterLink, ButtonComponent, MktgKitStatusComponent, MktgFamilyExportActionsComponent, MktgFamilyDetailsComponent, PageHeaderComponent],
   providers: [MktgKitService],
   templateUrl: './mktg-family.component.html',
 })

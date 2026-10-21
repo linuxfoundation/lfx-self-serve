@@ -38,6 +38,7 @@ import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@shared/services/account-context.service';
@@ -53,6 +54,7 @@ import { TrainingEmployeesDrawerComponent } from './components/training-employee
 @Component({
   selector: 'lfx-org-training',
   imports: [
+    PageHeaderComponent,
     SkeletonModule,
     CardComponent,
     CardTabsBarComponent,

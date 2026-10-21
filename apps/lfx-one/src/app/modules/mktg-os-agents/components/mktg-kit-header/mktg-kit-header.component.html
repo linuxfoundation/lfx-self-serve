@@ -2,16 +2,16 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Match the Family header's 800px content threshold: laptop host minus gutters leaves ~60px headroom. -->
-<header
+<div
   class="grid grid-cols-1 items-end gap-6"
   [class]="withDescription() ? '@[800px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]' : ''"
   data-testid="mktg-kit-header">
-  <div class="flex min-w-0 flex-col gap-1" data-testid="mktg-kit-title-block">
-    <p class="text-sm uppercase tracking-widest text-gray-500">{{ labels.title }}</p>
-    <h1 class="text-3xl font-bold text-gray-900" [attr.data-testid]="titleTestId()">{{ projectName() }}</h1>
-    @if (withDescription()) {
-      <p class="text-sm text-gray-500">{{ labels.description }}</p>
-    }
-  </div>
+  <lfx-page-header
+    class="min-w-0"
+    data-testid="mktg-kit-title-block"
+    [eyebrow]="labels.title"
+    [title]="projectName()"
+    [description]="withDescription() ? labels.description : null"
+    [titleTestId]="titleTestId()" />
   <ng-content />
-</header>
+</div>

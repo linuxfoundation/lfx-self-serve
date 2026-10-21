@@ -42,6 +42,7 @@ import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, fina
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-votes-dashboard',
@@ -55,6 +56,7 @@ import { VotesTableComponent } from '../components/votes-table/votes-table.compo
     EmptyStateComponent,
     SkeletonModule,
     StatCardGridComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',

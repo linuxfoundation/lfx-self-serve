@@ -2,16 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-groups-page">
-  <header class="flex flex-col gap-2" data-testid="org-groups-header">
-    <h1 class="font-display font-light text-2xl" data-testid="org-groups-title">
-      @if (contentVisible() && companyName()) {
-        {{ committeeLabel.plural }} &mdash; {{ companyName() }}
-      } @else {
-        {{ committeeLabel.plural }}
-      }
-    </h1>
-    <p class="text-sm text-gray-500" data-testid="org-groups-subtitle">Where your employees hold seats across Linux Foundation projects.</p>
-  </header>
+  <lfx-page-header
+    [title]="contentVisible() && companyName() ? committeeLabel.plural + ' — ' + companyName() : committeeLabel.plural"
+    description="Where your employees hold seats across Linux Foundation projects."
+    titleTestId="org-groups-title"
+    descriptionTestId="org-groups-subtitle"
+    data-testid="org-groups-header" />
 
   @if (pageState(); as state) {
     <lfx-org-lens-empty-state

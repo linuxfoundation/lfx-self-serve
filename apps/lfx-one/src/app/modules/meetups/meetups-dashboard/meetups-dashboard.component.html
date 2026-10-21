@@ -4,14 +4,12 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="meetups-dashboard">
   <div class="flex flex-col gap-6">
     <!-- Page Header -->
-    <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mt-3">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="meetups-page-title">My Meetups</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="meetups-description">
-          Community meetups you're registered for, plus upcoming meetups from Open Community Groups.
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center gap-6">
+    <lfx-page-header
+      title="My Meetups"
+      description="Community meetups you're registered for, plus upcoming meetups from Open Community Groups."
+      titleTestId="meetups-page-title"
+      descriptionTestId="meetups-description">
+      <div pageHeaderActions class="flex flex-wrap items-center gap-6">
         <span
           class="flex items-center gap-1.5 text-sm text-gray-600 cursor-help"
           tabindex="0"
@@ -35,7 +33,7 @@
           rel="noopener noreferrer"
           data-testid="meetups-discover-button" />
       </div>
-    </div>
+    </lfx-page-header>
 
     <!-- Meetups Card: tabs + search + list all in one -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="meetups-main-card">

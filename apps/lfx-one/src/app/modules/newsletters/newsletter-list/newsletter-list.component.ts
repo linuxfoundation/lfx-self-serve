@@ -38,6 +38,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, forkJoin, from, map, mergeMap, of, switchMap, take } from 'rxjs';
 
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
 
@@ -55,6 +56,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
     SkeletonModule,
     TooltipModule,
     NewsletterPreviewDrawerComponent,
+    PageHeaderComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './newsletter-list.component.html',

@@ -25,16 +25,12 @@
     </div>
   } @else {
     <!-- Page Header -->
-    <header class="flex flex-col gap-2" data-testid="org-training-header">
-      <h1 class="font-display font-light text-2xl" data-testid="org-training-title">
-        @if (companyName()) {
-          Training &amp; Certifications &mdash; {{ companyName() }}
-        } @else {
-          Training &amp; Certifications
-        }
-      </h1>
-      <p class="text-sm text-gray-500" data-testid="org-training-subtitle">Training enrollments and certifications across your organization.</p>
-    </header>
+    <lfx-page-header
+      [title]="companyName() ? 'Training & Certifications — ' + companyName() : 'Training & Certifications'"
+      description="Training enrollments and certifications across your organization."
+      titleTestId="org-training-title"
+      descriptionTestId="org-training-subtitle"
+      data-testid="org-training-header" />
 
     <!-- Stat Strip -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-training-stats">

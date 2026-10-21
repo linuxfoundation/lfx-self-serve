@@ -31,6 +31,7 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { HttpErrorResponse } from '@angular/common/http';
 import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observable, of, switchMap, take, tap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-account-settings',
@@ -49,6 +50,7 @@ import { BehaviorSubject, catchError, filter, finalize, forkJoin, map, Observabl
     TooltipModule,
     DynamicDialogModule,
     InsightsTokensComponent,
+    PageHeaderComponent,
   ],
   providers: [ConfirmationService, MessageService, DialogService],
   templateUrl: './account-settings.component.html',

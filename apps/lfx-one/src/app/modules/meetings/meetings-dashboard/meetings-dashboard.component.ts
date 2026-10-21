@@ -13,6 +13,7 @@ import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullc
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
 import {
@@ -99,6 +100,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
     FullCalendarComponent,
     SkeletonModule,
     MeetingCreateMenuComponent,
+    PageHeaderComponent,
   ],
   providers: [DialogService],
   templateUrl: './meetings-dashboard.component.html',

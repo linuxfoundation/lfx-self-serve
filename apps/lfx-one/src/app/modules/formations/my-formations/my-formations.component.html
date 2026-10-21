@@ -3,14 +3,14 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="my-formations-container">
   <!-- Page Header -->
-  <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-    <div>
-      <h1 class="font-display font-light text-2xl" data-testid="my-formations-title">My Formations</h1>
-      <p class="mt-1 text-sm text-gray-500" data-testid="my-formations-description">
-        Formations you're invited to, and any with checklist items assigned to you, across all foundations and projects.
-      </p>
-    </div>
+  <lfx-page-header
+    class="mb-6"
+    title="My Formations"
+    description="Formations you're invited to, and any with checklist items assigned to you, across all foundations and projects."
+    titleTestId="my-formations-title"
+    descriptionTestId="my-formations-description">
     <lfx-button
+      pageHeaderActions
       label="Propose a project"
       icon="fa-light fa-plus"
       severity="primary"
@@ -18,7 +18,7 @@
       routerLink="/formations/propose"
       styleClass="shrink-0"
       data-testid="my-formations-propose-project" />
-  </div>
+  </lfx-page-header>
 
   <lfx-formation-page-tabs
     class="block mb-6"

@@ -10,7 +10,7 @@
 }
 
 @if (!loading()) {
-  <lfx-card header="Permissions">
+  <lfx-card>
     @if (users().length > 0) {
       <div class="mb-4" role="group" aria-label="Filter by role" data-testid="settings-permissions-role-filter">
         <lfx-filter-pills [options]="roleFilterOptions" [selectedFilter]="selectedRole() ?? ''" (filterChange)="onRoleFilterToggle($event)" />

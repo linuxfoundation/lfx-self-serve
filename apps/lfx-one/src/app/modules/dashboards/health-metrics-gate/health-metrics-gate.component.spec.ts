@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { NgClass } from '@angular/common';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -66,7 +67,7 @@ describe('HealthMetricsGateComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsGateComponent, {
-        set: { imports: [NgClass, PopoverModule, RouterLink, RouterLinkActive, RouterOutlet, LegacyStubComponent] },
+        set: { imports: [NgClass, PageHeaderComponent, PopoverModule, RouterLink, RouterLinkActive, RouterOutlet, LegacyStubComponent] },
       })
       .compileComponents();
 
@@ -216,9 +217,9 @@ describe('HealthMetricsGateComponent', () => {
     impersonating.set(true);
     await render(signal(true));
 
-    const header = fixture.nativeElement.querySelector('header');
-    expect(header.className).toContain('lg:top-[36px]');
-    expect(header.className).not.toContain('lg:top-0');
+    const header = query('health-metrics-sticky-header');
+    expect(header?.className).toContain('lg:top-[36px]');
+    expect(header?.className).not.toContain('lg:top-0');
   });
 
   describe('project selector', () => {

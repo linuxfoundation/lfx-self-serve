@@ -21,6 +21,7 @@ import { debounceTime, map, tap } from 'rxjs';
 
 import { FormationPageTabsComponent } from '../components/formation-page-tabs/formation-page-tabs.component';
 import { ProjectApplicationsPanelComponent } from '../components/project-applications-panel/project-applications-panel.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Me-lens "My Formations" page (#2753) — one row per live formation the caller is invited to (a
@@ -54,6 +55,7 @@ import { ProjectApplicationsPanelComponent } from '../components/project-applica
     RouterLink,
     TableComponent,
     TagComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './my-formations.component.html',
   styleUrl: './my-formations.component.scss',

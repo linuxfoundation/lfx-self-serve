@@ -37,6 +37,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-documents-dashboard',
@@ -55,6 +56,7 @@ import { DocumentFormComponent } from '@components/document-form/document-form.c
     EmptyStateComponent,
     SkeletonModule,
     TooltipModule,
+    PageHeaderComponent,
   ],
   // NOTE: Do NOT provide MessageService here. It's already provided at root and a single
   // instance must back the global <p-toast /> in app.component.html. A local provider

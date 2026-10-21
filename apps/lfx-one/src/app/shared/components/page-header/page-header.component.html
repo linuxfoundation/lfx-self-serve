@@ -1,0 +1,19 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<header class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+  <div class="flex min-w-0 flex-[1_1_20rem] flex-col gap-1">
+    @if (eyebrow(); as eyebrow) {
+      <p class="text-xs font-medium uppercase tracking-widest text-gray-500" data-testid="page-header-eyebrow">{{ eyebrow }}</p>
+    }
+    <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      <h1 class="min-w-0 break-words font-display text-2xl font-light text-gray-900" [attr.data-testid]="titleId()">{{ title() }}</h1>
+      <ng-content select="[pageHeaderTitleSuffix]" />
+    </div>
+    @if (description(); as description) {
+      <p class="text-sm text-gray-500" [attr.data-testid]="descriptionId()">{{ description }}</p>
+    }
+    <div class="text-sm text-gray-500 empty:hidden"><ng-content select="[pageHeaderDescription]" /></div>
+  </div>
+  <div class="flex min-w-0 flex-wrap items-center gap-3 empty:hidden"><ng-content select="[pageHeaderActions]" /></div>
+</header>

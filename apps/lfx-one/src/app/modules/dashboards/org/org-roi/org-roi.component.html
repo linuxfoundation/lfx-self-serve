@@ -2,20 +2,18 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-roi-page">
-  <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between" data-testid="org-roi-header">
-    <div class="flex flex-col gap-2">
-      <h1 class="font-display font-light text-2xl" data-testid="org-roi-title">ROI Metrics</h1>
-      <p class="text-sm text-gray-500" data-testid="org-roi-subtitle">
-        A modelled view of what your organization invested in open source and what came back.
-        @if (windowLabel()) {
-          <span data-testid="org-roi-window">Covering {{ windowLabel() }}.</span>
-        }
-      </p>
-    </div>
+  <lfx-page-header title="ROI Metrics" titleTestId="org-roi-title" data-testid="org-roi-header">
+    <span pageHeaderDescription data-testid="org-roi-subtitle">
+      A modelled view of what your organization invested in open source and what came back.
+      @if (windowLabel()) {
+        <span data-testid="org-roi-window">Covering {{ windowLabel() }}.</span>
+      }
+    </span>
     <!-- Shown on the empty state too: the drawer holds the only method control, and coverage is
          method-scoped, so hiding it there would strand a viewer on a method that has no rows. -->
     @if (canChooseMethod()) {
       <button
+        pageHeaderActions
         type="button"
         (click)="drawerVisible.set(true)"
         class="inline-flex items-center gap-2 self-start rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 sm:self-auto"
@@ -24,7 +22,7 @@
         Model assumptions
       </button>
     }
-  </header>
+  </lfx-page-header>
 
   @if (pageState(); as state) {
     <lfx-org-lens-empty-state

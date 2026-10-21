@@ -18,6 +18,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { Popover, PopoverModule } from 'primeng/popover';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, Observable, of, pairwise, startWith, Subject, switchMap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { HealthMetricsComponent } from '../health-metrics/health-metrics.component';
 import { HealthMetricsChromeService } from './health-metrics-chrome.service';
@@ -58,7 +59,7 @@ import type { HealthMetricsProjectListState, HealthMetricsProjectOption, HealthM
  */
 @Component({
   selector: 'lfx-health-metrics-gate',
-  imports: [NgClass, PopoverModule, RouterLink, RouterLinkActive, RouterOutlet, HealthMetricsComponent],
+  imports: [NgClass, PopoverModule, RouterLink, RouterLinkActive, RouterOutlet, HealthMetricsComponent, PageHeaderComponent],
   providers: [HealthMetricsChromeService],
   templateUrl: './health-metrics-gate.component.html',
   styleUrl: './health-metrics-gate.component.scss',
