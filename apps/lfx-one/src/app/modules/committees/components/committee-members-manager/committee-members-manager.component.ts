@@ -242,13 +242,17 @@ export class CommitteeMembersManagerComponent implements OnInit {
     this.emitMemberUpdates();
   }
 
-  /** Collect CSV members into the same pending state as Add with details; only Update Group writes them. */
+  /**
+   * Collect CSV members into the same pending state as Add with details; only Done (create wizard)
+   * or Update Group (edit wizard) writes them. The create wizard reaches this step only after the
+   * group exists, so both flows have a resolved group to validate and dedupe against.
+   */
   public openImportMembersDialog(): void {
     const committee = this.committee();
     const committeeId = this.committeeId();
     // The route identifier can be a vanity slug; pin its resolved UUID separately for API calls.
     const committeeUid = committee?.uid;
-    if (!this.isEditMode() || !committeeId || !committeeUid || this.mutationsDisabled()) {
+    if (!committeeId || !committeeUid || this.mutationsDisabled()) {
       return;
     }
     if (committeeId !== committeeUid && committee?.sso_group_name?.toLowerCase() !== committeeId.toLowerCase()) {
@@ -405,7 +409,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   private openCollectImportDialog(committeeId: string, committeeUid: string, invites: CommitteeInvite[]): void {
     const committee = this.committee();
-    if (!this.isEditMode() || committee?.uid !== committeeUid || this.committeeId() !== committeeId || this.mutationsDisabled()) {
+    if (committee?.uid !== committeeUid || this.committeeId() !== committeeId || this.mutationsDisabled()) {
       return;
     }
     const data: MemberImportDialogData = {

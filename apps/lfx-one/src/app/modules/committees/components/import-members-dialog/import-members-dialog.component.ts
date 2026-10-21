@@ -53,8 +53,8 @@ import { catchError, from, map, mergeMap, Observable, of, switchMap } from 'rxjs
  * apply. Each row keeps its own outcome; Retry resubmits failed rows only, and Close returns the
  * cumulative added/conflict counts so the roster refreshes. Never resolves organizations, creates
  * invitations, or changes permissions.
- * In collect-only mode, confirmation returns validated member requests to the edit wizard instead
- * of writing them; the wizard saves them with Update Group.
+ * In collect-only mode, confirmation returns validated member requests to the create or edit wizard
+ * instead of writing them; the wizard saves them with Done or Update Group.
  */
 @Component({
   selector: 'lfx-import-members-dialog',
