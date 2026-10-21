@@ -457,9 +457,7 @@ const AI_ERROR_DETAIL_LIMIT = 500;
  *
  * `message` carries the proxy's own response body, so a catch that calls
  * `logger.warning(…, { err: error })` records what the proxy actually said — that body is the whole
- * point of #3996. Not every catch reaches its logger: the three `aiChat` stages that regenerate
- * keywords, negative keywords and callouts return first when the request is aborted, by which point
- * nobody is waiting for the answer anyway.
+ * point of #3996.
  * `summary` carries only our own sentence and the HTTP status, and is what the streaming stages
  * yield to the browser: an upstream body can hold credentials, internal hostnames or a stack, and
  * the redaction below cannot be relied on to catch those — a proxy that echoes the key truncated,

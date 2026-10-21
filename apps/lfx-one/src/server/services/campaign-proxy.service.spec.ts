@@ -2454,11 +2454,28 @@ describe('CampaignProxyService streaming AI failures', () => {
     return new CampaignProxyService();
   }
 
-  async function errorEvent(service: CampaignProxyService): Promise<string> {
+  /**
+   * Drains an SSE generator and returns its `error` event's payload — the exact string the browser
+   * is handed. Takes the generator rather than the service so both `aiChatStream` callers can be
+   * driven through it: a helper pinned to one of them is how the refine stage shipped with logging
+   * and no test (#4044).
+   */
+  async function errorEvent(gen: AsyncGenerator<{ type: string; data: unknown }>): Promise<string> {
     const events: { type: string; data: unknown }[] = [];
-    const gen = service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] }, new AbortController().signal);
-    for await (const e of gen as AsyncGenerator<{ type: string; data: unknown }>) events.push(e);
+    for await (const e of gen) events.push(e);
     return String(events.find((e) => e.type === 'error')?.data ?? '');
+  }
+
+  function briefStream(service: CampaignProxyService): AsyncGenerator<{ type: string; data: unknown }> {
+    return service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] }, new AbortController().signal);
+  }
+
+  function refineStream(service: CampaignProxyService): AsyncGenerator<{ type: string; data: unknown }> {
+    return service.streamRefinedBrief(
+      req,
+      { currentCopy: { headlines: ['Attend KubeCon EU 2026'] }, currentKeywords: [], feedback: 'Make the headlines shorter.', platforms: ['google-ads'] },
+      new AbortController().signal
+    );
   }
 
   /** The `err` handed to `logger.warning` under `operation`, as the message the log line will carry. */
@@ -2470,7 +2487,7 @@ describe('CampaignProxyService streaming AI failures', () => {
   it('puts the proxy’s response body in the server log on a failed streaming request', async () => {
     const service = stubAi({ ok: false, status: 401, text: 'Invalid proxy credential for host litellm.example.test' });
 
-    const browserMessage = await errorEvent(service);
+    const browserMessage = await errorEvent(briefStream(service));
 
     // The host and the word "credential" are the whole point: a bare `(401)` names neither, and
     // naming them is what turns a multi-day diagnosis into a one-line read. This stage logged
@@ -2484,7 +2501,7 @@ describe('CampaignProxyService streaming AI failures', () => {
   it('keeps the proxy’s body out of the SSE event even when it holds a credential', async () => {
     const service = stubAi({ ok: false, status: 403, text: 'rejected Authorization: Bearer sk-live-abc+123' }, 'sk-live-abc+123');
 
-    const browserMessage = await errorEvent(service);
+    const browserMessage = await errorEvent(briefStream(service));
 
     expect(browserMessage).toBe('Ad copy generation failed: AI streaming request failed (403)');
     expect(browserMessage).not.toContain('sk-live-abc+123');
@@ -2502,7 +2519,7 @@ describe('CampaignProxyService streaming AI failures', () => {
       text: 'rejected Authorization: Bearer sk-live-abc+123',
     });
 
-    await errorEvent(service);
+    await errorEvent(briefStream(service));
 
     // `aiChat` and `aiChatStream` share one helper precisely so this cannot drift again — the
     // asymmetry between them is what #3996 was. Extraction is non-fatal, so this stage logs and
@@ -2513,7 +2530,7 @@ describe('CampaignProxyService streaming AI failures', () => {
   it('bounds the body rather than putting a whole error page in one log line', async () => {
     const service = stubAi({ ok: false, status: 502, text: `<html>${'x'.repeat(900)}</html>` });
 
-    await errorEvent(service);
+    await errorEvent(briefStream(service));
 
     // A LiteLLM 502 can be a full HTML page. Unbounded, it lands whole in `Error.message` and so in
     // a single log line; the count is kept so the reader knows the body was longer than shown.
@@ -2527,6 +2544,20 @@ describe('CampaignProxyService streaming AI failures', () => {
 
     // Not `failed (200)`. The old collapsed condition described a success as a failure, which is
     // the sentence that sends the next reader looking for a 200-level error.
-    expect(await errorEvent(service)).toBe('Ad copy generation failed: AI streaming request returned no response body (200)');
+    expect(await errorEvent(briefStream(service))).toBe('Ad copy generation failed: AI streaming request returned no response body (200)');
+  });
+
+  it('applies the same split to the other aiChatStream caller, the refine stage', async () => {
+    const service = stubAi({ ok: false, status: 401, text: 'Invalid proxy credential for host litellm.example.test' });
+
+    const browserMessage = await errorEvent(refineStream(service));
+
+    // `streamRefinedBrief` is the second — and last — `aiChatStream` caller, and like the copy
+    // stage it logged nothing at all before #3996. The parity this PR is about is only real if
+    // both callers are pinned: one tested caller and one untested one is the same asymmetry
+    // between `aiChat` and `aiChatStream` that #3996 set out to remove.
+    expect(loggedMessage('campaign_refine_copy')).toBe('AI streaming request failed (401): Invalid proxy credential for host litellm.example.test');
+    expect(browserMessage).toBe('Brief refinement failed: AI streaming request failed (401)');
+    expect(browserMessage).not.toContain('litellm.example.test');
   });
 });
