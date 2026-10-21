@@ -86,6 +86,44 @@ silently changing bytes. `readNewestRevisionRef` deliberately retains newest
 identity for export freshness comparison, so an approved export can be out of
 date when a newer Draft exists.
 
+### Family exports
+
+Family exports have their own scope under `/api/mktg-agents/slides-export/family`:
+`POST /start` selects each catalog member's approved current, `POST /result` polls
+that immutable selection using an owner token, and `GET /last` reports the last
+family deck and its approved-current freshness. Freshness reads approved summaries
+in parallel. Revisions with content-sha metadata need no body read for this lookup;
+historical revisions without it are hydrated by the normal listing path. Export start
+explicitly loads and integrity-checks each selected approved body for composition;
+last-export lookup does not perform that additional export-body load.
+All require project writer access;
+every family route, including last-export reads, is blocked during impersonation. Members without approval are
+listed as skipped; a family with none is refused with 409 (`FAMILY_NOTHING_APPROVED`).
+An approved asset that cannot be composed is refused with `FAMILY_ASSET_UNREADABLE`;
+FAQ groups are flattened to answered `{q, a}` entries, omitting unanswered rows and
+refusing an FAQ with no exportable answers before calling Guild. Storage failures
+are not misreported as missing approval. The deployed exporter supports framework, kit,
+boilerplates and FAQ; the kit's full book and tokens provide branding.
+
+Family records use `slides-exports/{project}/families/{familyId}/{time}-{sha}.json`,
+separate from document records, with the deck id/link, mode/date and each member's
+revision id, number and content hash. Update uses only the stored family's last deck
+id; Create makes a new deck. Polling keeps the originally selected revisions even
+if approval moves, and the server finishes polling when the browser leaves.
+Freshness compares exact approved member/ref sets, including lost or newly gained
+approvals and restored older revisions. A new Draft alone does not stale a family
+export. No personal identity is written into export records.
+
+The Family page eagerly checks last export independently of its document-list read.
+A failed check disables export rather than guessing Create. Download PDF composes
+the existing approved framework print and kit book, in exporter order, using the
+family print body class and each rendering's named page size. Boilerplates and FAQ
+are provisionally omitted from PDF because no print layouts exist; the UI says so.
+Slides still exports those approved assets. Neither export changes the on-screen
+asset rendering or grants Google Drive access.
+
+### Asset approval UI
+
 Approval and the board's approval attribution live on the document Asset view.
 Standalone results are Draft previews with Open in Documents: an available
 canonical receipt key selects its exact revision; otherwise the document default

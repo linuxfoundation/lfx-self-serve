@@ -472,6 +472,7 @@ describe('MktgDocumentStoreService', () => {
       const detail = await service.getDocument(req, PROJECT, BRAND_KIT, 'living');
       expect(detail?.revisions).toHaveLength(1);
       expect(detail?.approvedCurrent).toBeNull();
+      expect(await service.readApprovedCurrentSummary(req, PROJECT, BRAND_KIT, 'living')).toBeNull();
       expect(await service.readLatest(req, SPEC, PROJECT, { withSidecar })).toBeNull();
       await expect(service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).rejects.toMatchObject({ code: 'MKTG_ASSET_NOT_APPROVED' });
     });
@@ -487,6 +488,18 @@ describe('MktgDocumentStoreService', () => {
         approvedCurrent: { revisionId: first.id, number: 1 },
       });
       expect(await service.readNewestRevisionRef(req, PROJECT, BRAND_KIT, 'living')).toMatchObject({ id: second.id, number: 2 });
+    });
+
+    it.each(['missing', 'historical-corrupt'])('distinguishes %s approved current from absent approval with other revisions still readable', async (fault) => {
+      const { first } = await twoRevisions();
+      await service.approveRevision(req, PROJECT, BRAND_KIT, 'living', first.id);
+      if (fault === 'missing') store.objects.delete(first.key);
+      else store.objects.set(first.key, { ...storedObject(first.key), body: 'corrupt', metadata: {} });
+      const failure = { statusCode: 502, code: 'MKTG_APPROVED_REVISION_UNREADABLE' };
+      store.reads = [];
+      await expect(service.readApprovedCurrentSummary(req, PROJECT, BRAND_KIT, 'living')).rejects.toMatchObject(failure);
+      expect(store.reads.filter((read) => read === key)).toHaveLength(1);
+      await expect(service.readExportRevision(req, PROJECT, BRAND_KIT, 'living', {})).rejects.toMatchObject(failure);
     });
 
     it('continues newest-is-current generation when no revision has ever been approved', async () => {
