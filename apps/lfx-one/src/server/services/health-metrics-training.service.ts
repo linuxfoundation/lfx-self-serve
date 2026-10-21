@@ -194,7 +194,8 @@ export class HealthMetricsTrainingService {
         SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
-        SELECT *, TRUE AS is_page_row
+        -- Named columns, so the badge's scope_courses_count rides only on the totals, not every page row.
+        SELECT course_key, course_name, delivery_type, is_free, has_purchase_coverage, enrollment_count, revenue_usd, sort_rank, TRUE AS is_page_row
         FROM matched
         -- course_key breaks any tie, and NULLS LAST pins placement against the session's null ordering.
         ORDER BY sort_rank ASC NULLS LAST, course_key ASC

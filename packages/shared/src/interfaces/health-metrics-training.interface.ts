@@ -136,7 +136,7 @@ export interface HealthMetricsTrainingQueryParams {
   trnPage?: number | null;
 }
 
-/** One page of the courses with enrollments in a period, cut by delivery type and a name search. */
+/** One page of every course ever enrolled in, ranked by the period, cut by delivery type and a name search. */
 export interface HealthMetricsTrainingCoursesQuery {
   foundationSlug: string;
   range: HealthMetricsL2Range;

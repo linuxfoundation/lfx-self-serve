@@ -335,6 +335,24 @@ describe('HealthMetricsTrainingService.getCourses', () => {
     });
   });
 
+  // MAX over no courses is NULL: a foundation never enrolled in reads as 0, the empty state, not as unmeasured.
+  it('reads a foundation with no course ever enrolled in as a zero scope', async () => {
+    execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: null, TOTAL_RECORDS: 0, IS_PAGE_ROW: null, COURSE_KEY: null, COURSE_NAME: null }] });
+
+    await expect(new HealthMetricsTrainingService().getCourses(req, QUERY)).resolves.toEqual({ rows: [], totalRecords: 0, scopeTotal: 0 });
+  });
+
+  it('keeps the badge count off the page rows', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    await new HealthMetricsTrainingService().getCourses(req, QUERY);
+
+    const [sql] = execute.mock.calls[0];
+    const page = sql.slice(sql.indexOf('page AS'), sql.indexOf('SELECT totals.*')).replace(/--.*$/gm, '');
+    expect(page).not.toContain('scope_courses_count');
+    expect(page).not.toContain('SELECT *');
+  });
+
   it('still reports the totals for a page past the end', async () => {
     execute.mockResolvedValue({ rows: [{ SCOPE_TOTAL: 40, TOTAL_RECORDS: 12, IS_PAGE_ROW: null, COURSE_KEY: null, COURSE_NAME: null }] });
 
