@@ -61,9 +61,15 @@ export class MeetingInviteResendService {
           this.setResending(uid, false);
           this.messageService.add({ severity: 'success', summary: 'Success', detail: `Invitation resent to ${registrant.email || label}` });
         },
-        error: (error: { error?: { message?: string } }) => {
+        error: (error: { error?: { error?: unknown } }) => {
           this.setResending(uid, false);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: error?.error?.message || 'Failed to resend invitation. Please try again.' });
+          // The BFF error envelope is `{ error: string, code }`, so the reason sits at `error.error.error`.
+          const reason = error?.error?.error;
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: typeof reason === 'string' && reason.trim() ? reason : 'Failed to resend invitation. Please try again.',
+          });
         },
       });
   }
