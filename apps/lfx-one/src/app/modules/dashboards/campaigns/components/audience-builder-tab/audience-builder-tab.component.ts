@@ -13,6 +13,8 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
 import {
   AUDIENCE_ATTACH_MAX_LIST_IDS,
   AUDIENCE_BUILD_MODES,
+  AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH,
+  AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
   AUDIENCE_SIGNAL_INFO,
@@ -30,6 +32,7 @@ import type {
   AudienceComposedList,
   AudienceComposeUnattachedEvent,
   AudienceBuildMode,
+  AudienceStandardSuppressionToggle,
   AudienceCustomPreset,
   AudienceDiscoveredEvent,
   AudienceDiscoveredList,
@@ -284,8 +287,21 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly registrantsEdition = computed(() => {
     const name = this.qaEventName();
-    return /\b(19|20)\d{2}\b/.test(name) ? name : '';
+    return /\b(19|20)\d{2}\b/.test(name) && name.length <= AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH ? name : '';
   });
+  /**
+   * The edition the loaded suppression rows were requested for. The registrants row describes this
+   * edition, so attach and compose send it rather than whatever the edition is by the time of the
+   * click.
+   */
+  private readonly loadedRegistrantsEdition = signal('');
+  /**
+   * Whether a compose-partial's suppression is the project's shared standard list: that one is
+   * reused by every email, so the banner must never call it an orphan to delete.
+   */
+  protected readonly partialSuppressionShared = computed(
+    () => this.composePartial()?.suppression?.name?.startsWith(AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX) ?? false
+  );
   /** Capabilities have answered; until then the tab is locked but says it is checking. */
   protected readonly capabilitiesKnown = computed(() => this.capabilities() !== null || this.capabilitiesFailed());
   protected readonly hasDiscovered = signal(false);
@@ -625,7 +641,7 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly registrantsToCreate = computed(() => {
     const row = this.suppressionLists().find((list) => list.category === 'current_registrants' && list.willCreate && list.listId === '');
-    return row !== undefined && this.suppression().has(row.key) ? this.registrantsEdition() : '';
+    return row !== undefined && this.suppression().has(row.key) ? this.loadedRegistrantsEdition() : '';
   });
 
   /** Ids of the resolved standard rows: what the project's standing standard list stands for. */
@@ -1153,12 +1169,18 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
-    // Two inputs share this control (Event Audience and Discover). A control writes typed text
+    // Two inputs share this control (the Build tab's event-page field and Discover). A control writes typed text
     // back to the OTHER views only on setValue, so without this the second box showed empty
     // while its button acted on the url typed in the first.
     this.eventUrlControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
       this.eventUrlControl.setValue(value, { emitEvent: false });
     });
+
+    // The edition gains its year only once the brief's dates arrive; rows loaded before then lack
+    // the current-registrants row, so they are reloaded for the edition attach will now send.
+    toObservable(this.registrantsEdition)
+      .pipe(distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.reconcileRegistrantsEdition());
 
     this.existingSearchControl.valueChanges
       .pipe(
@@ -1447,7 +1469,7 @@ export class AudienceBuilderTabComponent {
   }
 
   /** Ticks or unticks every resolved standard row at once: the grid shows them as one entry. */
-  protected onToggleStandardSuppression(change: { keys: readonly string[]; selected: boolean }): void {
+  protected onToggleStandardSuppression(change: AudienceStandardSuppressionToggle): void {
     const rows = new Map(this.suppressionLists().map((list) => [list.key, list]));
     const next = new Map(this.suppression());
     change.keys.forEach((key) => {
@@ -1614,12 +1636,8 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onSetMode(mode: AudienceBuildMode): void {
+    // The two panels' URL inputs are kept in step by the constructor's valueChanges mirror.
     this.mode.set(mode);
-    // The Build and Reuse panels both bind eventUrlControl, and a user-originated edit in one never
-    // writes back to the other (Reactive Forms skips the view that made the change, and the hidden
-    // panel stays mounted). Re-writing the value from the model updates every bound input, so the
-    // panel being shown cannot display a stale URL while Discover submits the newer one.
-    this.eventUrlControl.setValue(this.eventUrlControl.value, { emitEvent: false });
   }
 
   /** "Or use an existing list": the list joins Include in any mode, ready to attach or compose. */
@@ -2142,7 +2160,7 @@ export class AudienceBuilderTabComponent {
   /** The scope the no-discovery suppression rows should have: the planned event's, else portfolio-wide. */
   private plannedSuppressionScope(): string {
     const event = this.plannedEvent();
-    return event ? `${event.brandShort ?? ''}|${event.eventName ?? ''}` : '';
+    return event ? `${event.brandShort ?? ''}|${event.eventName ?? ''}|${this.registrantsEdition()}` : '';
   }
 
   /**
@@ -2162,8 +2180,9 @@ export class AudienceBuilderTabComponent {
   private loadSuppression(brandShort: string, eventName: string, previousKeys: ReadonlySet<string> | null = null): void {
     this.suppressionLoading.set(true);
     const run = this.runGeneration;
+    const edition = this.registrantsEdition();
     this.campaignService
-      .getAudienceSuppressionLists(this.projectSlug(), brandShort, eventName, this.registrantsEdition())
+      .getAudienceSuppressionLists(this.projectSlug(), brandShort, eventName, edition)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (lists) => {
@@ -2171,6 +2190,7 @@ export class AudienceBuilderTabComponent {
             return;
           }
           this.suppressionLists.set(lists);
+          this.loadedRegistrantsEdition.set(edition);
           lists.forEach((l) => this.loadedSuppressionKeys.add(l.key));
           this.fillCreatedSuppressionIds(lists);
           this.suppressionFailed.set(false);
@@ -2182,6 +2202,9 @@ export class AudienceBuilderTabComponent {
             this.seedSuppression(lists);
           }
           this.reconcileSuppressionScope();
+          // The edition can gain its year after this load went out (the brief's dates arrive
+          // asynchronously); the rows must describe the edition attach will send.
+          this.reconcileRegistrantsEdition();
         },
         error: () => {
           if (run !== this.runGeneration) {
@@ -2223,7 +2246,10 @@ export class AudienceBuilderTabComponent {
    */
   private fillCreatedSuppressionIds(lists: readonly AudienceSuppressionList[]): void {
     const current = this.suppression();
-    const filled = lists.filter((list) => list.listId !== '' && current.get(list.key) === '');
+    // A ticked registrants row also takes the id of a DIFFERENT edition's list after a reload.
+    const filled = lists.filter(
+      (list) => current.has(list.key) && current.get(list.key) !== list.listId && (current.get(list.key) === '' || list.category === 'current_registrants')
+    );
     if (filled.length === 0) {
       return;
     }
@@ -2234,7 +2260,21 @@ export class AudienceBuilderTabComponent {
 
   /** After an attach or compose created the registrants list, reload the rows so it shows its id and link. */
   private refreshCreatedSuppressionRows(created: boolean): void {
-    if (!created || this.suppressionLoading()) {
+    if (created) {
+      this.reloadSuppressionRows();
+    }
+  }
+
+  /** Reloads the rows when the edition they were requested for is no longer the current one. */
+  private reconcileRegistrantsEdition(): void {
+    if (this.suppressionSeeded() && this.loadedRegistrantsEdition() !== this.registrantsEdition()) {
+      this.reloadSuppressionRows();
+    }
+  }
+
+  /** Reloads the current scope's rows, keeping every tick and pre-ticking only rows it adds. */
+  private reloadSuppressionRows(): void {
+    if (this.suppressionLoading()) {
       return;
     }
     const event = this.identity() ?? this.plannedEvent();
@@ -2536,6 +2576,7 @@ export class AudienceBuilderTabComponent {
     this.exclusion.set(new Map());
     // The next run's suppression rows are pre-ticked afresh.
     this.suppressionSeeded.set(false);
+    this.loadedRegistrantsEdition.set('');
     this.composeResult.set(null);
     this.composePartial.set(null);
     this.composeError.set(null);

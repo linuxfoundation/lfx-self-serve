@@ -3304,7 +3304,7 @@ export const AUDIENCE_CUSTOM_CREATABLE_SIGNALS: readonly AudienceSignal[] = [
   'lf_newsletter_opt_in',
 ] as const;
 
-/** The Audience tab's three modes, in the legacy builder's order. */
+/** The Audience tab's two modes: build a new list, or use lists that already exist. */
 export const AUDIENCE_BUILD_MODES: readonly { mode: AudienceBuildMode; label: string }[] = [
   { mode: 'build', label: 'Build a new audience' },
   { mode: 'reuse', label: 'Use existing lists' },
@@ -3444,6 +3444,15 @@ export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
 
 /** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
 export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
+
+/** The longest current-registrants edition name campaign-service accepts (its `MaxLength`). */
+export const AUDIENCE_REGISTRANTS_EVENT_MAX_LENGTH = 200;
+
+/**
+ * The name prefix of the project's standing standard suppression list, which every email in the
+ * project reuses: the UI must never call it an orphan to delete.
+ */
+export const AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX = 'LFX Standard Suppressions - ';
 
 /**
  * Resource bounds on the Google creative and bidding strings the create route normalises.

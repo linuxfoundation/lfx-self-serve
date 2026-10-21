@@ -113,7 +113,7 @@
     </div>
   }
 
-  <!-- === How to set the audience (the legacy builder's three modes) === -->
+  <!-- === How to set the audience: build a new list, or use existing lists === -->
   <section
     class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4"
     aria-label="Choose how to set the send audience"
@@ -427,7 +427,14 @@
             @if (attached.standardSuppression; as standing) {
               Excluding the standard suppressions through the shared list
               @if (standing.hubspotUrl) {
-                <a [href]="standing.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{ standing.name }}</a>
+                <a
+                  [href]="standing.hubspotUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-blue-600 hover:underline"
+                  data-testid="campaigns-audience-attach-standard-suppression-link"
+                  >{{ standing.name }}</a
+                >
               } @else {
                 <span>{{ standing.name }}</span>
               }
@@ -894,10 +901,10 @@
                   rel="noopener noreferrer"
                   class="text-xs text-blue-600 hover:underline"
                   data-testid="campaigns-audience-compose-result-suppression-link">
-                  {{ suppression.name }} (combined suppression)
+                  {{ suppression.name }} (standard suppressions, shared)
                 </a>
               } @else {
-                <span class="text-xs text-gray-900">{{ suppression.name }} (combined suppression)</span>
+                <span class="text-xs text-gray-900">{{ suppression.name }} (standard suppressions, shared)</span>
               }
             }
             <p class="text-xs text-gray-600">Built from {{ result.sourceListIds.length }} list(s). Run QA below before scheduling the send.</p>
@@ -961,7 +968,11 @@
             -->
             @if (partial.suppression?.listId ? partial.suppression : null; as suppression) {
               <p class="text-xs text-gray-700">
-                A combined suppression list was already created and is now orphaned. Delete it or reuse it before composing again:
+                @if (partialSuppressionShared()) {
+                  This is the project's shared standard suppression list. Other emails use it, so keep it:
+                } @else {
+                  A combined suppression list was already created and is now orphaned. Delete it or reuse it before composing again:
+                }
                 @if (suppression.hubspotUrl) {
                   <a
                     [href]="suppression.hubspotUrl"
@@ -984,7 +995,7 @@
             -->
             @if (partial.suppressionName; as suppressionName) {
               <p class="text-xs text-gray-700" data-testid="campaigns-audience-compose-partial-suppression-name">
-                A combined suppression list may have been created under the name
+                A suppression list may have been created under the name
                 <span class="font-medium">{{ suppressionName }}</span
                 >, but HubSpot did not confirm it. Search the portal for that name before composing again.
               </p>

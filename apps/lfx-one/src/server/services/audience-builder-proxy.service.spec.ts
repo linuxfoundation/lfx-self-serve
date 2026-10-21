@@ -100,6 +100,52 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     await expect(service.getSuppressionLists(req, 'tlf', 'LF', 'Synthetic Summit')).rejects.toThrow(/lists/);
   });
 
+  it('asks for the registrants row only with an edition, and maps will_create', async () => {
+    proxyRequest.mockResolvedValue({
+      lists: [
+        {
+          key: 'current_registrants',
+          label: 'Current registrants',
+          list_id: '',
+          name: 'S 2026 - Current Registrants',
+          category: 'current_registrants',
+          hubspot_url: '',
+          will_create: true,
+        },
+        {
+          key: 'lf_events_gdpr',
+          label: 'GDPR',
+          list_id: '201',
+          name: 'GDPR',
+          category: 'standard',
+          hubspot_url: 'https://app.hubspot.com/l/201',
+          will_create: false,
+        },
+      ],
+    });
+
+    const lists = await service.getSuppressionLists(req, 'tlf', '', '', 'Synthetic Summit 2026');
+    expect(proxyRequest.mock.calls.at(-1)?.[4]).toEqual({ registrants_event: 'Synthetic Summit 2026' });
+    expect(lists[0].willCreate).toBe(true);
+    expect(lists[1], 'a false will_create is left out, not carried as false').not.toHaveProperty('willCreate');
+
+    await service.getSuppressionLists(req, 'tlf', '', '');
+    expect(proxyRequest.mock.calls.at(-1)?.[4], 'an empty edition is a filter matching nothing, so it is omitted').toEqual({});
+  });
+
+  it('forwards the registrants edition on compose', async () => {
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '900', name: 'Master', hubspot_url: 'https://app.hubspot.com/l/1' },
+      source_list_ids: ['1'],
+      recorded: false,
+    });
+
+    await service.composeMaster(req, 'tlf', { listIds: ['1'], excludeListIds: ['201'], currentRegistrantsEvent: 'Synthetic Summit 2026' });
+
+    const [, , , , , body] = proxyRequest.mock.calls.at(-1) ?? [];
+    expect(body).toMatchObject({ compose: { current_registrants_event: 'Synthetic Summit 2026' } });
+  });
+
   // A 2xx compose means the master EXISTS, so an unusable reply is a do-not-retry partial, never a
   // plain error: the client lets an operator retry a plain error, and a retry composes a second
   // master list (the orphaned duplicates of the blank-portal-id incident).

@@ -5614,12 +5614,12 @@ export interface AudienceCardBucket {
 }
 
 /**
- * How a suppression list was found, which is also its priority order in the UI.
+ * How a suppression list was found, which is also its order in the UI.
  *
- * `event_specific` outranks `brand` outranks `standard`: a per-event suppression list carried
- * over from a prior edition already bundles that event's current-registrant and unsubscribe
- * exclusions, so it is the highest-value pick. The generic portfolio-wide lists are offered but
- * never assumed.
+ * `current_registrants` comes first (the edition's own registrants are the exclusion a
+ * registration push most needs), then `event_specific` (carried over from a prior edition),
+ * `brand`, and `standard`: the portfolio-wide hygiene lists, shown as one entry because they are
+ * applied through the project's one shared standard suppression list.
  */
 export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific' | 'current_registrants';
 
@@ -5781,14 +5781,14 @@ export interface AudienceComposeUnattachedEvent {
 /**
  * Result of composing a master list.
  *
- * `suppression` is the single "Combined Suppression" list created FIRST and then applied as one
- * shared NOT_IN_LIST exclusion inside every inclusion branch — never the individual
- * GDPR/opt-out lists repeated per branch. It is absent when no exclusions were selected.
+ * `suppression` is the project's standing standard suppression list, which the master excludes
+ * directly beside every other selected suppression. It is reused across composes, never created
+ * per compose, and absent unless every resolved standard list was selected.
  *
- * This operation is NOT idempotent: it performs up to two real HubSpot creates. A partial
- * failure (suppression created, master failed) is reported as an error that still carries
- * `suppression`, so an operator can be linked to the orphan rather than left to find it. Do not
- * offer a bare retry on failure.
+ * This operation is NOT idempotent: the master is a real HubSpot create. An unconfirmed master
+ * create is reported as a partial error carrying the master's name. (Older deployments could
+ * also report a combined suppression list created before a failed master.) Do not offer a bare
+ * retry on failure.
  */
 export interface AudienceComposeMasterResult {
   master: AudienceComposedList;
@@ -6130,7 +6130,13 @@ export interface AudienceCustomRequest {
   name?: string;
 }
 
-/** How the Audience tab builds the send audience — the legacy builder's three modes. */
+/** The suppression grid's standard-entry toggle: tick or untick these standard row keys together. */
+export interface AudienceStandardSuppressionToggle {
+  keys: readonly string[];
+  selected: boolean;
+}
+
+/** How the Audience tab sets the send audience: build a new list, or use existing lists. */
 export type AudienceBuildMode = 'build' | 'reuse';
 
 /** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
