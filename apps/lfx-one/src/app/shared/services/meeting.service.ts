@@ -48,7 +48,7 @@ import {
   PresignAttachmentRequest,
   PresignAttachmentResponse,
   PublicMeetingOccurrencesResponse,
-  PublicMeetingProject,
+  PublicMeetingResponse,
   PublicMeetingRegistrationResponse,
   PublicPastMeetingResponse,
   PublicProjectMeetingsResponse,
@@ -287,10 +287,10 @@ export class MeetingService {
    * The password gates private/restricted meetings server-side; it travels in a request header so
    * it never appears in the request URL (which Datadog RUM records with trackResources).
    */
-  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: PublicMeetingProject }> {
+  public getPublicMeeting(id: string, password: string | null): Observable<PublicMeetingResponse> {
     const headers = password ? new HttpHeaders({ [MEETING_PASSWORD_HEADER]: password }) : undefined;
 
-    return this.http.get<{ meeting: Meeting; project: PublicMeetingProject }>(`/public/api/meetings/${id}`, { headers }).pipe(
+    return this.http.get<PublicMeetingResponse>(`/public/api/meetings/${id}`, { headers }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
         return throwError(() => error);

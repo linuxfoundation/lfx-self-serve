@@ -68,6 +68,7 @@ import {
   PublicMeetingOccurrencesResponse,
   PublicMeetingParentProject,
   PublicMeetingProject,
+  PublicMeetingResponse,
   PublicPastMeetingResponse,
   TagSeverity,
   User,
@@ -261,6 +262,14 @@ export class MeetingJoinComponent implements OnInit {
   // time-based fallback for non-hyphenated URLs where past-ness is only knowable from the clock.
   protected loadedViaPastMeetingId = signal(false);
   protected pastMeetingFullAccess = signal(false);
+  // Mirrors pastMeetingFullAccess for the live/upcoming meeting path — false whenever a private
+  // meeting was only reached via its shared password link (anonymous or guest), gating agenda,
+  // materials, and date/time from both unauthenticated and guest-only viewers.
+  protected liveMeetingFullAccess = signal(false);
+  // Server-computed join-window result for the live/upcoming meeting path when not full access —
+  // the anonymous/guest response strips start_time/early_join_time_minutes, so the client can't run
+  // its own canJoinMeeting() timing check; this substitutes the server's isWithinJoinWindow() result.
+  protected liveMeetingCanJoin = signal(false);
   // Set when the meeting fetch settles with an error that doesn't navigate away (e.g. a 5xx or
   // network failure) — 404/403/400 already redirect to /meetings/not-found, so this only covers
   // the terminal, non-navigating case where the skeleton would otherwise spin forever (GH-2041).
@@ -304,6 +313,9 @@ export class MeetingJoinComponent implements OnInit {
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
   protected isPastMeeting: Signal<boolean>;
+  // Gates agenda, materials, and date/time rendering for both the past-meeting and live-meeting
+  // paths — picks whichever full-access flag matches how the current meeting() was loaded.
+  protected canViewMeetingDetails = computed(() => (this.loadedViaPastMeetingId() ? this.pastMeetingFullAccess() : this.liveMeetingFullAccess()));
   protected pastMeetingSummary: Signal<PastMeetingSummary | null>;
   protected hasSummaryContent: Signal<boolean>;
   protected summaryAwaitingApproval: Signal<boolean>;
@@ -436,6 +448,8 @@ export class MeetingJoinComponent implements OnInit {
     if (transferredMeeting) {
       this.loadedViaPastMeetingId.set(transferredMeeting.loadedViaPastMeetingId);
       this.pastMeetingFullAccess.set(transferredMeeting.pastMeetingFullAccess);
+      this.liveMeetingFullAccess.set(transferredMeeting.liveMeetingFullAccess ?? false);
+      this.liveMeetingCanJoin.set(transferredMeeting.liveMeetingCanJoin ?? false);
       if (transferredMeeting.meetingLoadFailed) {
         this.meetingLoadFailed.set(true);
         // Seed `meetingRouteId` here too — otherwise the first hydration emission (route id vs.
@@ -567,8 +581,11 @@ export class MeetingJoinComponent implements OnInit {
     const meeting = this.meeting();
     const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.id);
 
-    if (meeting.password) {
-      meetingUrl.searchParams.set('password', meeting.password);
+    // meeting.password is stripped from the anonymous/guest response — fall back to the password
+    // this client already validated against the server (query param or composer nav state).
+    const password = meeting.password || this.password();
+    if (password) {
+      meetingUrl.searchParams.set('password', password);
     }
     this.clipboard.copy(meetingUrl.toString());
     this.messageService.add({
@@ -946,10 +963,17 @@ export class MeetingJoinComponent implements OnInit {
           // would otherwise flip to the upcoming/default view and cancel the past-meeting's
           // summary/recording/attachments/participant streams before the 404 fallback resolves.
           result$ = this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
-            tap(() => {
+            tap((res: PublicMeetingResponse) => {
               this.loadedViaPastMeetingId.set(false);
               this.pastMeetingFullAccess.set(false);
+              this.liveMeetingFullAccess.set(res.full_access);
+              this.liveMeetingCanJoin.set(res.can_join);
             }),
+            map((res: PublicMeetingResponse) => ({
+              // Preserve the legacy join-page view model without claiming a complete Meeting at the HTTP boundary.
+              meeting: res.meeting as Meeting,
+              project: res.project,
+            })),
             catchError((error) => {
               if (error.status === 404) {
                 return this.meetingService.getPublicPastMeeting(meetingId).pipe(
@@ -1000,6 +1024,8 @@ export class MeetingJoinComponent implements OnInit {
             meeting: res,
             loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
             pastMeetingFullAccess: this.pastMeetingFullAccess(),
+            liveMeetingFullAccess: this.liveMeetingFullAccess(),
+            liveMeetingCanJoin: this.liveMeetingCanJoin(),
             meetingLoadFailed: false,
           });
         }
@@ -1025,6 +1051,8 @@ export class MeetingJoinComponent implements OnInit {
         meeting: null,
         loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
         pastMeetingFullAccess: this.pastMeetingFullAccess(),
+        liveMeetingFullAccess: this.liveMeetingFullAccess(),
+        liveMeetingCanJoin: this.liveMeetingCanJoin(),
         meetingLoadFailed: true,
       });
     }
@@ -1295,8 +1323,11 @@ export class MeetingJoinComponent implements OnInit {
       const meeting = this.meeting();
       const params = new URLSearchParams();
 
-      if (meeting.password) {
-        params.set('password', meeting.password);
+      // meeting.password is stripped from the anonymous/guest response — fall back to the password
+      // this client already validated against the server (query param or composer nav state).
+      const password = meeting.password || this.password();
+      if (password) {
+        params.set('password', password);
       }
       const queryString = params.toString();
       return queryString ? `${environment.urls.home}/meetings/${meeting.id}?${queryString}` : `${environment.urls.home}/meetings/${meeting.id}`;
@@ -1307,6 +1338,9 @@ export class MeetingJoinComponent implements OnInit {
     return computed(() => {
       // Hyphenated occurrence-ID URL expresses "view as past" intent — never show Join UI.
       if (this.loadedViaPastMeetingId()) return false;
+      // Anonymous/guest responses strip the timing fields canJoinMeeting() needs — use the
+      // server-computed can_join instead of running the (always-false) client-side timing check.
+      if (!this.liveMeetingFullAccess()) return this.liveMeetingCanJoin();
       return canJoinMeeting(this.meeting(), this.currentOccurrence());
     });
   }
@@ -1391,7 +1425,9 @@ export class MeetingJoinComponent implements OnInit {
   private fetchJoinUrl(meeting: Meeting, email: string): Observable<string | undefined> {
     this.isLoadingJoinUrl.set(true);
 
-    return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email }).pipe(
+    // meeting.password is stripped from the anonymous/guest response — fall back to the password
+    // this client already validated against the server (query param or composer nav state).
+    return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password || this.password(), { email }).pipe(
       map((res) => {
         this.isLoadingJoinUrl.set(false);
         if (res.link) {

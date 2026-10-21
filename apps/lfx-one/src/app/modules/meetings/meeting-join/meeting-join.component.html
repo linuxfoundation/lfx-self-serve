@@ -594,7 +594,7 @@
               }
             </div>
 
-            @if (!(isPastMeeting() && !pastMeetingFullAccess())) {
+            @if (canViewMeetingDetails()) {
               <!-- Divider -->
               <hr class="border-gray-200 my-4" />
 
@@ -752,7 +752,7 @@
                   </div>
                 </div>
 
-                @if (isPastMeeting() && !pastMeetingFullAccess()) {
+                @if (!canViewMeetingDetails()) {
                   <div class="bg-amber-50 border border-amber-300 rounded px-3 py-3 flex items-start gap-3">
                     <i class="fa-light fa-lock text-amber-600 text-base mt-0.5"></i>
                     <div>
@@ -811,6 +811,23 @@
                     [href]="'/login?returnTo=' + returnTo()">
                   </lfx-button>
                 </div>
+
+                @if (!canViewMeetingDetails()) {
+                  <div class="bg-amber-50 border border-amber-300 rounded px-3 py-3 flex items-start gap-3">
+                    <i class="fa-light fa-lock text-amber-600 text-base mt-0.5"></i>
+                    <div>
+                      <p class="font-semibold text-sm text-amber-900">This is a private meeting</p>
+                      <p class="text-xs text-gray-600">
+                        Meeting details, recordings, and summaries are only available to meeting participants and committee members.
+                        @if (!isPastMeeting()) {
+                          Sign in or join as a guest below if you have the meeting password.
+                        } @else {
+                          Sign in if you believe you should have access.
+                        }
+                      </p>
+                    </div>
+                  </div>
+                }
 
                 @if (!isPastMeeting()) {
                   <!-- OR Divider -->
