@@ -1,21 +1,42 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, model, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
-import { MaterialsChangedEvent, MeetingAttachment, PastMeetingAttachment, PendingAttachment, PresignAttachmentResponse } from '@lfx-one/shared/interfaces';
-import { generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
+import {
+  AttachmentScope,
+  MaterialsChangedEvent,
+  MeetingAttachment,
+  MeetingAttachmentUploadResult,
+  MeetingOccurrence,
+  PastMeetingAttachment,
+  PendingAttachment,
+  PresignAttachmentResponse,
+  UpdateMeetingAttachmentRequest,
+} from '@lfx-one/shared/interfaces';
+import {
+  applyAttachmentScopeOverrides,
+  filterAttachmentsForOccurrence,
+  generateAcceptString,
+  getAcceptedFileTypesDisplay,
+  getAttachmentScope,
+  getMimeTypeDisplayName,
+  isFileTypeAllowed,
+} from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, from, map, mergeMap, of, skip, switchMap, take, tap, toArray } from 'rxjs';
+import { catchError, from, map, mergeMap, Observable, of, skip, switchMap, take, tap, toArray } from 'rxjs';
+
+import { AttachmentScopeBadgeComponent } from '../attachment-scope-badge/attachment-scope-badge.component';
 
 @Component({
   selector: 'lfx-meeting-materials-drawer',
-  imports: [DrawerModule, FileUploadComponent, ButtonComponent],
+  imports: [DatePipe, DrawerModule, FileUploadComponent, ButtonComponent, AttachmentScopeBadgeComponent],
   templateUrl: './meeting-materials-drawer.component.html',
   styleUrl: './meeting-materials-drawer.component.scss',
 })
@@ -29,6 +50,16 @@ export class MeetingMaterialsDrawerComponent {
   public readonly meetingId = input<string>();
   /** Composite meeting_and_occurrence_id of a past meeting. When set, all API calls target the past meeting attachments endpoint. */
   public readonly pastMeetingId = input<string>();
+  /**
+   * The occurrence being managed. Set by the parent for an upcoming recurring meeting, where each attachment is for
+   * one occurrence or the whole series: it decides what is listed and shows the scope labels. Null otherwise.
+   */
+  public readonly occurrence = input<MeetingOccurrence | null>(null);
+  /**
+   * Whether attachments can be scoped to {@link occurrence} (upcoming and not cancelled). When false the labels
+   * still show, but the picker and the per-item switch are withheld because the service would reject the scope.
+   */
+  public readonly canScopeToOccurrence = input<boolean>(false);
   public visible = model<boolean>(false);
   /** Emits deleted UIDs and newly created attachments so callers can apply optimistic UI updates without waiting for NATS propagation to the query service. */
   public readonly materialsChanged = output<MaterialsChangedEvent>();
@@ -45,11 +76,42 @@ export class MeetingMaterialsDrawerComponent {
   public pendingDeletions = signal<Set<string>>(new Set());
   public newLinkTitle = signal('');
   public newLinkUrl = signal('');
+  /** Scope applied to the files and links added in this session. Defaults to the whole series, which is what an attachment was before scoping existed. */
+  public newItemScope = signal<AttachmentScope>('series');
+  /** Scope changes staged on existing attachments, keyed by uid; applied on save like deletions. Only holds entries that differ from the saved scope. */
+  public pendingScopes = signal<Map<string, AttachmentScope>>(new Map());
 
   // === Computed Signals ===
-  public readonly fileAttachments = computed(() => this.existingAttachments().filter((a) => a.type === 'file'));
-  public readonly linkAttachments = computed(() => this.existingAttachments().filter((a) => a.type === 'link'));
   private readonly isPastMode = computed(() => !!this.pastMeetingId());
+  /** True when attachments carry a scope worth showing: an upcoming recurring meeting with the managed occurrence known. */
+  public readonly showScopes = computed(() => !this.isPastMode() && !!this.occurrence()?.occurrence_id);
+  /**
+   * Name shared by this drawer's two scope radios. Native radios group by name across the whole document and the
+   * meetings list renders a drawer per card (several per recurring meeting), so it is unique per meeting and occurrence.
+   */
+  public readonly scopeRadioName = computed(() => `materials-scope-${this.meetingId() ?? ''}-${this.occurrence()?.occurrence_id ?? ''}`);
+  /** True when this drawer can offer "this occurrence" vs "all occurrences". */
+  public readonly canScope = computed(() => this.showScopes() && this.canScopeToOccurrence());
+  /**
+   * What is listed for management: series-wide attachments plus the ones for the managed occurrence.
+   * Attachments scoped to other dates are not this occurrence's to manage, so they stay out of view.
+   */
+  private readonly listedAttachments = computed(() =>
+    this.isPastMode() ? this.existingAttachments() : filterAttachmentsForOccurrence(this.existingAttachments(), this.occurrence()?.occurrence_id)
+  );
+  public readonly fileAttachments = computed(() => this.listedAttachments().filter((a) => a.type === 'file'));
+  public readonly linkAttachments = computed(() => this.listedAttachments().filter((a) => a.type === 'link'));
+  /** What each listed attachment's scope will be once staged changes are saved, keyed by uid. */
+  public readonly effectiveScopes = computed(() => {
+    const pending = this.pendingScopes();
+    return new Map(this.listedAttachments().map((attachment) => [attachment.uid, pending.get(attachment.uid) ?? getAttachmentScope(attachment)] as const));
+  });
+  public readonly hasPendingChanges = computed(() => this.pendingAttachments().length > 0 || this.pendingDeletions().size > 0 || this.pendingScopes().size > 0);
+  /** Occurrence fields for a new attachment: its scope when "this occurrence" is chosen, otherwise nothing so it applies to all. */
+  private readonly newItemOccurrence = computed(() => {
+    const occurrenceId = this.occurrence()?.occurrence_id;
+    return this.canScope() && this.newItemScope() === 'occurrence' && occurrenceId ? { occurrence_id: occurrenceId } : {};
+  });
 
   // Lazy load attachments when drawer opens
   private readonly attachments$ = toObservable(this.visible).pipe(
@@ -82,9 +144,14 @@ export class MeetingMaterialsDrawerComponent {
       return load$;
     }),
     tap((attachments) => {
-      this.existingAttachments.set(attachments as MeetingAttachment[]);
+      // A live meeting's read can still show a scope that was just changed (the query service indexes asynchronously), so
+      // overlay the changes saved in this session. A past meeting has no scopes.
+      const loaded = attachments as MeetingAttachment[];
+      this.existingAttachments.set(this.isPastMode() ? loaded : applyAttachmentScopeOverrides(loaded, this.meetingService.attachmentScopeOverrides()));
       this.pendingAttachments.set([]);
       this.pendingDeletions.set(new Set());
+      this.pendingScopes.set(new Map());
+      this.newItemScope.set('series');
       this.newLinkTitle.set('');
       this.newLinkUrl.set('');
     })
@@ -128,6 +195,7 @@ export class MeetingMaterialsDrawerComponent {
           mimeType: file.type,
           uploading: false,
           uploaded: false,
+          ...this.newItemOccurrence(),
         };
 
         return pendingAttachment;
@@ -157,6 +225,32 @@ export class MeetingMaterialsDrawerComponent {
     });
   }
 
+  public setNewItemScope(scope: AttachmentScope): void {
+    this.newItemScope.set(scope);
+  }
+
+  /** The scope an existing attachment will have once staged changes are saved. */
+  public effectiveScope(attachment: MeetingAttachment): AttachmentScope {
+    return this.pendingScopes().get(attachment.uid) ?? getAttachmentScope(attachment);
+  }
+
+  /** Stages flipping an existing attachment between this occurrence and all occurrences; flipping back clears the staged change. */
+  public toggleScope(attachment: MeetingAttachment): void {
+    // A save has already read the staged changes, so one made now would be overwritten or never sent.
+    if (this.saving()) return;
+    const saved = getAttachmentScope(attachment);
+    const next: AttachmentScope = this.effectiveScope(attachment) === 'series' ? 'occurrence' : 'series';
+    this.pendingScopes.update((current) => {
+      const updated = new Map(current);
+      if (next === saved) {
+        updated.delete(attachment.uid);
+      } else {
+        updated.set(attachment.uid, next);
+      }
+      return updated;
+    });
+  }
+
   public addLink(): void {
     const title = this.newLinkTitle().trim();
     const url = this.newLinkUrl().trim();
@@ -169,9 +263,9 @@ export class MeetingMaterialsDrawerComponent {
       this.saving.set(false);
       return;
     }
-    const create$ = isPast
+    const create$: Observable<MeetingAttachment | PastMeetingAttachment> = isPast
       ? this.meetingService.createPastMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url })
-      : this.meetingService.createMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url });
+      : this.meetingService.createMeetingAttachment(id, { type: 'link', category: 'Other', name: title, link: url, ...this.newItemOccurrence() });
 
     create$.pipe(take(1)).subscribe({
       next: (attachment) => {
@@ -218,10 +312,26 @@ export class MeetingMaterialsDrawerComponent {
           )
         : of([] as { uid: string; ok: boolean }[]);
 
+    // Scope changes on attachments that are also being deleted are moot, and one created from the meeting
+    // description cannot be scoped, so both are skipped.
+    const scopeChanges = this.canScope()
+      ? Array.from(this.pendingScopes()).filter(
+          ([uid]) => !this.pendingDeletions().has(uid) && this.existingAttachments().find((a) => a.uid === uid)?.source !== 'description'
+        )
+      : [];
+    const scope$ =
+      scopeChanges.length > 0
+        ? from(scopeChanges).pipe(
+            mergeMap(([uid, scope]) => this.updateAttachmentScope(id, uid, scope)),
+            toArray()
+          )
+        : of([] as { uid: string; ok: boolean; scope: AttachmentScope }[]);
+
     delete$
       .pipe(
-        switchMap((deleteResults) => {
-          if (uploads.length === 0) return of({ deleteResults, uploadResults: [] as (object | null)[] });
+        switchMap((deleteResults) => scope$.pipe(map((scopeResults) => ({ deleteResults, scopeResults })))),
+        switchMap(({ deleteResults, scopeResults }) => {
+          if (uploads.length === 0) return of({ deleteResults, scopeResults, uploadResults: [] as MeetingAttachmentUploadResult[] });
           return from(uploads).pipe(
             mergeMap((attachment) =>
               (isPast
@@ -234,22 +344,30 @@ export class MeetingMaterialsDrawerComponent {
                     name: attachment.fileName,
                     file_size: attachment.fileSize,
                     file_type: attachment.mimeType,
+                    // The scope the file was queued with, not whatever the picker says now.
+                    ...(attachment.occurrence_id && { occurrence_id: attachment.occurrence_id }),
                   })
-              ).pipe(catchError(() => of(null)))
+              ).pipe(
+                map((result): MeetingAttachmentUploadResult => ({ id: attachment.id, result })),
+                catchError(() => of<MeetingAttachmentUploadResult>({ id: attachment.id, result: null }))
+              )
             ),
             toArray(),
-            map((uploadResults) => ({ deleteResults, uploadResults }))
+            map((uploadResults) => ({ deleteResults, scopeResults, uploadResults }))
           );
         }),
         take(1)
       )
       .subscribe({
-        next: ({ deleteResults, uploadResults }) => {
+        next: ({ deleteResults, scopeResults, uploadResults }) => {
           this.saving.set(false);
           const successfullyDeletedUids = deleteResults.filter((r) => r.ok).map((r) => r.uid);
-          const hasPartialFailure = deleteResults.some((r) => !r.ok) || uploadResults.some((r) => r === null);
+          this.applySavedScopes(scopeResults.filter((r) => r.ok));
+          this.clearSavedUploadsAndDeletions(uploadResults, successfullyDeletedUids, isPast ? undefined : id);
+          const hasPartialFailure = deleteResults.some((r) => !r.ok) || scopeResults.some((r) => !r.ok) || uploadResults.some((r) => r.result === null);
           const addedAttachments: PastMeetingAttachment[] = isPast
             ? uploadResults
+                .map((r) => r.result)
                 .filter((r): r is PresignAttachmentResponse => r !== null)
                 .map((r) => ({
                   uid: r.uid,
@@ -287,6 +405,99 @@ export class MeetingMaterialsDrawerComponent {
   }
 
   // === Private Helpers ===
+  /**
+   * Saves a staged scope change. The update replaces the attachment, so the body carries its existing fields
+   * and only `occurrence_id` differs: set to scope it to the managed occurrence, omitted to apply to all.
+   */
+  private updateAttachmentScope(meetingId: string, uid: string, scope: AttachmentScope): Observable<{ uid: string; ok: boolean; scope: AttachmentScope }> {
+    const attachment = this.existingAttachments().find((a) => a.uid === uid);
+    const occurrenceId = this.occurrence()?.occurrence_id;
+    if (!attachment || (scope === 'occurrence' && !occurrenceId)) {
+      return of({ uid, ok: false, scope });
+    }
+
+    const body: UpdateMeetingAttachmentRequest = {
+      type: attachment.type,
+      // The index stores an uncategorised attachment as "", which the update rejects, so fall back on empty as well as missing.
+      category: attachment.category || 'Other',
+      name: attachment.name,
+      ...(attachment.description && { description: attachment.description }),
+      ...(attachment.type === 'link' && attachment.link && { link: attachment.link }),
+      ...(scope === 'occurrence' && occurrenceId && { occurrence_id: occurrenceId }),
+    };
+
+    return this.meetingService.updateMeetingAttachment(meetingId, uid, body).pipe(
+      map(() => ({ uid, ok: true, scope })),
+      catchError((error: unknown) => {
+        console.error('Failed to update attachment scope', { uid, error });
+        return of({ uid, ok: false, scope });
+      })
+    );
+  }
+
+  /**
+   * Drops what a save already did from the staged state, so a retry after a partial failure resends only what failed:
+   * an upload that went through would otherwise be uploaded again as a duplicate, and a delete that went through
+   * would be refused as not found on every retry.
+   */
+  private clearSavedUploadsAndDeletions(uploadResults: MeetingAttachmentUploadResult[], deletedUids: string[], meetingId?: string): void {
+    const uploaded = uploadResults.filter((r): r is MeetingAttachmentUploadResult & { result: PresignAttachmentResponse } => r.result !== null);
+    if (uploaded.length > 0) {
+      const uploadedIds = new Set(uploaded.map((r) => r.id));
+      this.pendingAttachments.update((current) => current.filter((a) => !uploadedIds.has(a.id)));
+      // A live meeting's drawer does not reload after a save, so list what saved or it would be in neither list until reopened.
+      // (A past meeting's list is refreshed by its parent.)
+      if (meetingId) {
+        this.existingAttachments.update((current) => [...current, ...uploaded.map((r) => this.toMeetingAttachment(r.result, meetingId))]);
+      }
+    }
+    if (deletedUids.length > 0) {
+      this.existingAttachments.update((current) => current.filter((a) => !deletedUids.includes(a.uid)));
+      this.pendingDeletions.update((current) => new Set([...current].filter((uid) => !deletedUids.includes(uid))));
+      // A staged scope change on a deleted attachment would otherwise be retried against a record that no longer exists.
+      this.pendingScopes.update((current) => new Map([...current].filter(([uid]) => !deletedUids.includes(uid))));
+    }
+  }
+
+  private toMeetingAttachment(upload: PresignAttachmentResponse, meetingId: string): MeetingAttachment {
+    return {
+      uid: upload.uid,
+      meeting_id: upload.meeting_id ?? meetingId,
+      type: upload.type,
+      name: upload.name,
+      category: upload.category,
+      file_name: upload.file_name,
+      file_size: upload.file_size,
+      file_upload_status: upload.file_upload_status,
+      file_content_type: upload.file_content_type,
+      created_at: upload.created_at,
+      created_by: upload.created_by,
+      occurrence_id: upload.occurrence_id,
+    };
+  }
+
+  /** Reflects scope changes that saved, so the list shows them now and a retry after a partial failure does not resend them. */
+  private applySavedScopes(saved: { uid: string; scope: AttachmentScope }[]): void {
+    if (saved.length === 0) return;
+    const occurrenceId = this.occurrence()?.occurrence_id;
+    const scopeByUid = new Map(saved.map((r) => [r.uid, r.scope]));
+    // Tell every card and page showing this meeting's materials now, rather than leaving them on the old scope until a
+    // refetch catches up with the query service.
+    this.meetingService.recordAttachmentScopeChanges(saved.map((r) => ({ uid: r.uid, occurrence_id: r.scope === 'occurrence' ? occurrenceId : undefined })));
+    this.existingAttachments.update((current) =>
+      current.map((a) => {
+        const scope = scopeByUid.get(a.uid);
+        if (!scope) return a;
+        return { ...a, occurrence_id: scope === 'occurrence' ? occurrenceId : undefined };
+      })
+    );
+    this.pendingScopes.update((current) => {
+      const updated = new Map(current);
+      saved.forEach((r) => updated.delete(r.uid));
+      return updated;
+    });
+  }
+
   private validateFile(file: File): string | null {
     if (file.size > MAX_FILE_SIZE_BYTES) {
       return `File "${file.name}" is too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.`;

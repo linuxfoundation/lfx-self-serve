@@ -36,6 +36,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     getMeetingJoinUrl: vi.fn(),
     getMeetingRegistrantsByUsername: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
+    uploadMeetingAttachment: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -92,7 +93,11 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   isSameOccurrenceId: (await import('../../../../../packages/shared/src/utils/rsvp-calculator.util')).isSameOccurrenceId,
 }));
 
-vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
+vi.mock('../helpers/validation.helper', () => ({
+  validateUidParameter: vi.fn(() => true),
+  // Same contract as the real helper: a string value, or undefined for a missing or repeated key.
+  getStringQueryParam: vi.fn((req: Request, name: string) => (typeof req.query[name] === 'string' ? (req.query[name] as string) : undefined)),
+}));
 vi.mock('../helpers/meeting.helper', () => ({
   addInvitedStatusToMeeting: vi.fn(),
   applyHostKeyVisibility: vi.fn(),
@@ -1484,6 +1489,47 @@ describe('MeetingController', () => {
 
       expect(next).toHaveBeenCalledWith(failure);
       expect(res.status).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('uploadMeetingAttachment', () => {
+    function buildUploadReq(query: Record<string, string> = {}): Request {
+      return buildReq({
+        params: { uid: MEETING_ID },
+        query: { name: 'notes.pdf', file_size: '4', file_type: 'application/pdf', ...query },
+        body: Buffer.from('data'),
+        path: `/meetings/${MEETING_ID}/attachments/upload`,
+      });
+    }
+
+    beforeEach(() => {
+      meetingSvc.uploadMeetingAttachment.mockResolvedValue({ uid: 'attachment-1' });
+    });
+
+    it('scopes the upload to the occurrence named in the query', async () => {
+      await controller.uploadMeetingAttachment(buildUploadReq({ occurrence_id: '1893456000' }), buildRes(), next);
+
+      expect(meetingSvc.uploadMeetingAttachment).toHaveBeenCalledWith(
+        expect.anything(),
+        MEETING_ID,
+        expect.any(Buffer),
+        expect.objectContaining({ name: 'notes.pdf', occurrence_id: '1893456000' })
+      );
+    });
+
+    it('ignores a repeated occurrence_id rather than forwarding an array', async () => {
+      const req = buildUploadReq();
+      req.query['occurrence_id'] = ['1893456000', '1894060800'];
+
+      await controller.uploadMeetingAttachment(req, buildRes(), next);
+
+      expect(meetingSvc.uploadMeetingAttachment.mock.calls[0][3]).not.toHaveProperty('occurrence_id');
+    });
+
+    it('leaves the upload series-wide when no occurrence is named', async () => {
+      await controller.uploadMeetingAttachment(buildUploadReq(), buildRes(), next);
+
+      expect(meetingSvc.uploadMeetingAttachment.mock.calls[0][3]).not.toHaveProperty('occurrence_id');
     });
   });
 });
