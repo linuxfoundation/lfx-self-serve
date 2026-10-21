@@ -15,7 +15,7 @@ import {
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
+import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
@@ -30,6 +30,7 @@ import type {
   CreatePollQuestion,
   CreateVoteRequest,
   CursorWalkOutcome,
+  MyVoteResponse,
   MyVotesQuickFilter,
   PollCommentPrompt,
   PollCommentResult,
@@ -44,6 +45,7 @@ import type {
   VoteResultsQuestion,
   VoteResultsResponse,
   VoteRowParticipation,
+  VoterResultsState,
 } from '../interfaces/poll.interface';
 
 /** Active votes with a deadline strictly after now and within the rolling seven-day window. */
@@ -735,4 +737,85 @@ export function compareVotesByRecency(a: Vote, b: Vote): number {
  */
 export function votePermalinkPath(voteUid: string): string {
   return `/votes/${encodeURIComponent(voteUid)}`;
+}
+
+/**
+ * Voter-side results panel for a viewer without write access — the single copy of the rules the results drawer and the
+ * vote detail page share. A removed voter is `access_denied`; a settled, error-free, empty my-response is a viewer who was
+ * never invited (`not_participant`), so a deep link to a closed vote can never route a stranger to final results. A failed
+ * my-response call must not collapse into `not_participant` — callers render their error state for it instead.
+ * @param vote - The loaded vote, or null while loading
+ * @param myResponse - The viewer's vote_response row (null when absent or not loaded yet)
+ * @param myResponseLoading - Whether the my-response request is still in flight
+ * @param myResponseError - Whether the last my-response request failed (non-404)
+ * @param listResponseStatus - `response_status` decorated on the list row the caller opened from, if any (wins over the vote's own)
+ */
+export function resolveVoterResultsState(
+  vote: Vote | null,
+  myResponse: MyVoteResponse | null,
+  myResponseLoading: boolean,
+  myResponseError: boolean,
+  listResponseStatus?: VoteResponseStatus
+): VoterResultsState {
+  if (!vote) return 'not_voted';
+  if (myResponse?.voter_removed) return 'access_denied';
+  if (!myResponseLoading && !myResponseError && !myResponse) return 'not_participant';
+  const decoratedResponseStatus = listResponseStatus ?? vote.response_status;
+  const submitted = myResponse?.vote_status === IndexedVoteResponseStatus.RESPONDED || decoratedResponseStatus === VoteResponseStatus.RESPONDED;
+  if (vote.status === PollStatus.ENDED) return 'closed';
+  if (submitted) return 'submitted';
+  return 'not_voted';
+}
+
+/**
+ * Whether a viewer without write access may request a vote's results: only after it ended, and only with a settled,
+ * successful my-response row for this same vote that wasn't removed. Every input is checked against `voteId` so a stale
+ * vote or response from the previously opened vote can never authorize the next vote's request.
+ * @param voteId - The vote the caller is about to fetch results for
+ * @param vote - The loaded vote
+ * @param myResponse - The viewer's vote_response row
+ * @param myResponseLoading - Whether the my-response request is still in flight
+ * @param myResponseError - Whether the last my-response request failed (non-404)
+ */
+export function canVoterFetchVoteResults(
+  voteId: string,
+  vote: Vote | null,
+  myResponse: MyVoteResponse | null,
+  myResponseLoading: boolean,
+  myResponseError: boolean
+): boolean {
+  return (
+    vote?.uid === voteId &&
+    vote.status === PollStatus.ENDED &&
+    myResponse?.vote_uid === voteId &&
+    !myResponse.voter_removed &&
+    !myResponseLoading &&
+    !myResponseError
+  );
+}
+
+/**
+ * Copy for the vote detail page's "Visibility at a glance" card — describes who sees what today (managers see live
+ * totals and comments; voters see their own response, and totals and comments only after close), never a new rule.
+ * @param audience - `creator` for a project or committee writer, `voter` for everyone else
+ * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting
+ * @param isActive - Whether the vote is still open
+ */
+export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnonymous: boolean, isActive: boolean): string[] {
+  const rules: string[] = [];
+  if (audience === 'creator') {
+    rules.push(
+      isActive ? 'As a manager, you can follow live totals and comments while the vote is open.' : 'As a manager, you can see the final totals and comments.'
+    );
+    rules.push(isActive ? 'Voters see only their own response until the vote closes.' : 'Invited voters now see the final totals and comments.');
+  } else {
+    rules.push(
+      isActive ? 'You see only your own response. Totals and comments stay hidden until the vote closes.' : 'Invited voters see the final totals and comments.'
+    );
+  }
+  rules.push('No one sees how another voter voted on this page.');
+  rules.push(
+    pseudoAnonymous ? 'Pseudo-anonymous ballot: results are shown without voter names.' : 'Named ballot: each ballot is recorded against the voter who cast it.'
+  );
+  return rules;
 }

@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
-import { meetingWriteAccessState, probeCommitteeWriters, resolveSurveyCommitteeCandidates } from './write-access.util';
+import { meetingWriteAccessState, probeCommitteeWriters, resolveSurveyCommitteeCandidates, resolveVoteCanManage } from './write-access.util';
 
 describe('meetingWriteAccessState', () => {
   it('grants access for a project writer or meeting coordinator', () => {
@@ -122,5 +122,55 @@ describe('probeCommitteeWriters', () => {
 
     expect(await firstValueFrom(probeCommitteeWriters([], fetch))).toEqual({ writer: false, transientFailure: false });
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveVoteCanManage', () => {
+  const vote = { project_slug: 'synthetic-project', project_uid: 'project-uid', committee_uid: 'committee-uid' };
+
+  it('grants a project writer without probing the committee', async () => {
+    const getProjectStrict = vi.fn().mockReturnValue(of({ writer: true }));
+    const fetchCommittee = vi.fn();
+
+    await expect(firstValueFrom(resolveVoteCanManage(vote, getProjectStrict, fetchCommittee))).resolves.toBe(true);
+    expect(getProjectStrict).toHaveBeenCalledWith('synthetic-project');
+    expect(fetchCommittee).not.toHaveBeenCalled();
+  });
+
+  it('grants a committee writer who is not a project writer', async () => {
+    const getProjectStrict = vi.fn().mockReturnValue(of({ writer: false }));
+    const fetchCommittee = vi.fn().mockReturnValue(of({ writer: true }));
+
+    await expect(firstValueFrom(resolveVoteCanManage(vote, getProjectStrict, fetchCommittee))).resolves.toBe(true);
+    expect(fetchCommittee).toHaveBeenCalledWith('committee-uid');
+  });
+
+  it('falls back to the voter view when both checks fail, logging the project failure', async () => {
+    const error = new HttpErrorResponse({ status: 500 });
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const getProjectStrict = vi.fn().mockReturnValue(throwError(() => error));
+    const fetchCommittee = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    try {
+      await expect(firstValueFrom(resolveVoteCanManage(vote, getProjectStrict, fetchCommittee))).resolves.toBe(false);
+      expect(logError).toHaveBeenCalledWith('Failed to check project write access for vote', error);
+    } finally {
+      logError.mockRestore();
+    }
+  });
+
+  it('probes only the committee when the vote carries no project', async () => {
+    const getProjectStrict = vi.fn();
+    const fetchCommittee = vi.fn().mockReturnValue(of({ writer: true }));
+
+    await expect(firstValueFrom(resolveVoteCanManage({ committee_uid: 'committee-uid' } as never, getProjectStrict, fetchCommittee))).resolves.toBe(true);
+    expect(getProjectStrict).not.toHaveBeenCalled();
+  });
+
+  it('is not a manager without a project or committee to check', async () => {
+    const getProjectStrict = vi.fn();
+    const fetchCommittee = vi.fn();
+
+    await expect(firstValueFrom(resolveVoteCanManage({} as never, getProjectStrict, fetchCommittee))).resolves.toBe(false);
+    expect(fetchCommittee).not.toHaveBeenCalled();
   });
 });

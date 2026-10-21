@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Committee, CommitteeWriterProbeResult, EntityWithProject, Project, SurveyCommittee } from '@lfx-one/shared/interfaces';
-import { catchError, concatMap, from, map, Observable, of, reduce, takeWhile } from 'rxjs';
+import type { Committee, CommitteeWriterProbeResult, EntityWithProject, Project, SurveyCommittee, Vote } from '@lfx-one/shared/interfaces';
+import { catchError, concatMap, from, map, Observable, of, reduce, switchMap, takeWhile } from 'rxjs';
 
 import { isTransientHttpError } from './http-error.utils';
 
@@ -91,5 +91,35 @@ export function probeCommitteeWriters(
       }),
       { writer: false, transientFailure: false }
     )
+  );
+}
+
+/**
+ * Whether the viewer manages a vote: project writer first, then committee writer — the same order writerGuard uses.
+ * Shared by the vote permalink and the vote detail page so both pick the manager view the same way, from write access
+ * and never from the lens. A failed check is "not a manager" (the voter view), never an error: the vote itself already loaded.
+ */
+export function resolveVoteCanManage(
+  vote: Pick<Vote, 'project_slug' | 'project_uid' | 'committee_uid'>,
+  getProjectStrict: (slugOrUid: string) => Observable<Pick<Project, 'writer'>>,
+  fetchCommittee: (uid: string) => Observable<Pick<Committee, 'writer'> | null>
+): Observable<boolean> {
+  const projectSlugOrUid = resolveEntityWriteSlug(vote, null);
+  const isProjectWriter$ = projectSlugOrUid
+    ? getProjectStrict(projectSlugOrUid).pipe(
+        map((project) => project.writer === true),
+        catchError((error) => {
+          console.error('Failed to check project write access for vote', error);
+          return of(false);
+        })
+      )
+    : of(false);
+
+  return isProjectWriter$.pipe(
+    switchMap((isProjectWriter) => {
+      if (isProjectWriter) return of(true);
+      // probeCommitteeWriters catches per-committee failures, so this never errors.
+      return probeCommitteeWriters(vote.committee_uid ? [vote.committee_uid] : [], fetchCommittee).pipe(map((result) => result.writer));
+    })
   );
 }

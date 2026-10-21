@@ -4,12 +4,12 @@
 import { isPlatformBrowser, LowerCasePipe } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
-import { MY_VOTES_STATS_WINDOW_DAYS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
+import { MY_VOTES_STATS_WINDOW_DAYS, VOTE_DETAIL_PAGE_DEFAULT, VOTE_DETAIL_PAGE_FLAG, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
 import {
   Committee,
   MyVotesQuickFilter,
@@ -31,6 +31,7 @@ import {
   resolveCursorWalkOutcome,
 } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -69,6 +70,8 @@ export class VotesDashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly router = inject(Router);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // === Inputs ===
   /** Set by VotePermalinkComponent (`/votes/:id`): the drawer to open once for the linked vote. Null on the routed dashboard. */
@@ -82,6 +85,8 @@ export class VotesDashboardComponent {
   protected readonly voteLabel = VOTE_LABEL.singular;
   protected readonly voteLabelPlural = VOTE_LABEL.plural;
   private readonly viewerTimezone = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+  /** Vote detail page (#3913): when on, opening a vote from the list navigates to /votes/:id instead of opening a drawer. */
+  private readonly voteDetailPageEnabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(VOTE_DETAIL_PAGE_FLAG, VOTE_DETAIL_PAGE_DEFAULT);
 
   // === Subjects ===
   // refresh$ triggers count re-fetch (manual refresh, project change)
@@ -242,6 +247,7 @@ export class VotesDashboardComponent {
   }
 
   protected onViewVote(voteId: string): void {
+    if (this.openVoteDetailPage(voteId, null)) return;
     this.selectedVoteId.set(voteId);
 
     // Look up the picked vote synchronously — selectedListVote() hasn't re-derived yet.
@@ -258,6 +264,7 @@ export class VotesDashboardComponent {
   }
 
   protected onViewResults(voteId: string): void {
+    if (this.openVoteDetailPage(voteId, 'results')) return;
     this.selectedVoteId.set(voteId);
     this.castDrawerVisible.set(false);
     this.resultsDrawerVisible.set(true);
@@ -331,6 +338,17 @@ export class VotesDashboardComponent {
     this.pageTokens = [];
     this.currentFirst.set(0);
     this.filters.set(state);
+  }
+
+  /**
+   * With the vote detail page on, a vote opened from the list navigates to its page (the page opens the cast drawer
+   * itself for a voter awaiting a ballot). The dashboard embedded by the permalink never navigates — it only exists
+   * while the flag is off, and its drawers are the permalink's whole job. Returns whether it navigated.
+   */
+  private openVoteDetailPage(voteId: string, tab: 'results' | null): boolean {
+    if (!this.voteDetailPageEnabled() || this.permalinkTarget()) return false;
+    void this.router.navigate(['/votes', voteId], tab ? { queryParams: { tab } } : {});
+    return true;
   }
 
   private buildFilters(): string[] {

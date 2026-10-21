@@ -1,0 +1,75 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { isPlatformBrowser, NgClass } from '@angular/common';
+import { Component, computed, inject, input, output, PLATFORM_ID, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
+import { TagComponent } from '@components/tag/tag.component';
+import { PollStatus, PollType } from '@lfx-one/shared/enums';
+import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
+import { Vote, VoteDetailTab, VoteDetailTabOption } from '@lfx-one/shared/interfaces';
+import { formatVoteDeadline, getUserTimezone, normalizePollStatus } from '@lfx-one/shared/utils';
+import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
+import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+
+/**
+ * Header card of the vote detail page (#3913): back link, title, status / group / method / privacy tags, close date,
+ * invited voters, the page actions and the pill tab strip. Presentational — the page owns access, state and navigation.
+ */
+@Component({
+  selector: 'lfx-vote-detail-header',
+  imports: [NgClass, ButtonComponent, CardComponent, TagComponent, PollStatusLabelPipe, PollStatusSeverityPipe],
+  templateUrl: './vote-detail-header.component.html',
+})
+export class VoteDetailHeaderComponent {
+  // === Services ===
+  private readonly platformId = inject(PLATFORM_ID);
+
+  // === Inputs ===
+  public readonly vote = input.required<Vote>();
+  public readonly audience = input<'voter' | 'creator'>('voter');
+  public readonly activeTab = input.required<VoteDetailTab>();
+  public readonly tabs = input.required<readonly VoteDetailTabOption[]>();
+  /** Active vote awaiting the viewer's ballot — shows Cast vote. */
+  public readonly canCastVote = input<boolean>(false);
+
+  // === Outputs ===
+  public readonly tabChange = output<VoteDetailTab>();
+  public readonly sendReminder = output<void>();
+  public readonly castVote = output<void>();
+  public readonly viewResults = output<void>();
+  public readonly back = output<void>();
+
+  // Resolved once per browser session — SSR has no `Intl` zone, so the close date falls back to UTC there.
+  private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
+
+  // === Computed Signals ===
+  protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ACTIVE);
+  protected readonly canSendReminder: Signal<boolean> = computed(() => this.audience() === 'creator' && this.isActive());
+  protected readonly methodLabel: Signal<string> = computed(() => {
+    const pollType = this.vote().poll_type ?? PollType.GENERIC;
+    return VOTE_METHOD_LABELS[pollType] || pollType;
+  });
+  protected readonly privacyLabel: Signal<string> = computed(() => (this.vote().pseudo_anonymity ? 'Pseudo-anonymous ballot' : 'Named ballot'));
+  protected readonly closeDateText: Signal<string> = this.initCloseDateText();
+  protected readonly invitedText: Signal<string | null> = this.initInvitedText();
+
+  // === Private Initializers ===
+  private initCloseDateText(): Signal<string> {
+    return computed(() => {
+      const vote = this.vote();
+      if (!vote.end_time) return '';
+      const deadline = formatVoteDeadline(vote.end_time, this.viewerTimezone);
+      return normalizePollStatus(vote.status) === PollStatus.ENDED ? `Closed ${deadline}` : `Closes ${deadline}`;
+    });
+  }
+
+  private initInvitedText(): Signal<string | null> {
+    return computed(() => {
+      const invited = this.vote().total_voting_request_invitations;
+      if (invited === undefined || invited === null) return null;
+      return `${invited} invited ${invited === 1 ? 'voter' : 'voters'}`;
+    });
+  }
+}
