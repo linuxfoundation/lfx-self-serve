@@ -589,7 +589,9 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
+    // The occurrence being shown, not the series' current one: an explicit `occurrenceInput` (the meeting modal pins one) wins
+    // over the next occurrence, and the registration to resend has to fit what the card displays.
+    this.inviteResend.resendOwn(this.meeting().id, (this.occurrence() ?? this.currentOccurrence())?.occurrence_id);
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {

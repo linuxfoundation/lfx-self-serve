@@ -51,6 +51,8 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   selectPrimaryPastMeetingSummary: vi.fn(),
   // Exercise the actual occurrence resolver with the real roster/page-walk path.
   selectApplicableRsvp: (await vi.importActual<typeof RsvpCalculator>('@lfx-one/shared/utils/rsvp-calculator.util')).selectApplicableRsvp,
+  // The real unit-normalising comparison: a registrant row and the client can hold the same occurrence in seconds vs milliseconds.
+  isSameOccurrenceId: (await vi.importActual<typeof RsvpCalculator>('@lfx-one/shared/utils/rsvp-calculator.util')).isSameOccurrenceId,
 }));
 vi.mock('../helpers/poll-endpoint.helper', () => ({
   pollEndpoint: vi.fn(async ({ pollFn }: { pollFn: () => Promise<boolean> }) => {
@@ -600,6 +602,11 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
 describe('MeetingService.resendMeetingInvitationSelf', () => {
   let service: MeetingService;
 
+  // Real occurrence ids are epoch timestamps (Unix seconds from Zoom/ITX), a week apart; the comparison parses them as such.
+  const OCC_A = '1893456000';
+  const OCC_B = '1894060800';
+  const OCC_C = '1894665600';
+
   const registrantRow = (uid: string, type: 'direct' | 'committee', occurrenceId: string | null = null): MeetingRegistrant =>
     ({ uid, type, occurrence_id: occurrenceId }) as MeetingRegistrant;
 
@@ -617,56 +624,71 @@ describe('MeetingService.resendMeetingInvitationSelf', () => {
 
   describe('choosing the registration for the viewed occurrence', () => {
     it('sends a series-wide committee row when the direct row is scoped to a different occurrence', async () => {
-      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', 'occ-a'), registrantRow('reg-committee-series', 'committee')], 'occ-b');
+      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', OCC_A), registrantRow('reg-committee-series', 'committee')], OCC_B);
 
       expect(registrantId).toBe('reg-committee-series');
       expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/mtg-1/registrants/reg-committee-series/self_resend');
     });
 
+    it.each([
+      ['a registrant row in milliseconds, viewed in seconds', '1893456000000', '1893456000'],
+      ['a registrant row in seconds, viewed in milliseconds', '1893456000', '1893456000000'],
+      ['the same unit on both sides', '1893456000', '1893456000'],
+    ])('matches the scoped row across occurrence id units: %s', async (_label, rowOccurrenceId, viewedOccurrenceId) => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-direct-series', 'direct'), registrantRow('reg-committee-scoped', 'committee', rowOccurrenceId)],
+        viewedOccurrenceId
+      );
+
+      expect(registrantId).toBe('reg-committee-scoped');
+    });
+
+    it('does not match a row scoped to a different instant, whatever the units', async () => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-direct-series', 'direct'), registrantRow('reg-committee-other', 'committee', '1894060800000')],
+        '1893456000'
+      );
+
+      expect(registrantId).toBe('reg-direct-series');
+    });
+
     it('prefers the row scoped to the viewed occurrence over a series-wide row', async () => {
-      const registrantId = await resendTarget([registrantRow('reg-series', 'direct'), registrantRow('reg-scoped-b', 'committee', 'occ-b')], 'occ-b');
+      const registrantId = await resendTarget([registrantRow('reg-series', 'direct'), registrantRow('reg-scoped-b', 'committee', OCC_B)], OCC_B);
 
       expect(registrantId).toBe('reg-scoped-b');
     });
 
     it('prefers a direct row over a committee row within the rows that fit', async () => {
       const registrantId = await resendTarget(
-        [
-          registrantRow('reg-committee-b', 'committee', 'occ-b'),
-          registrantRow('reg-direct-b', 'direct', 'occ-b'),
-          registrantRow('reg-direct-series', 'direct'),
-        ],
-        'occ-b'
+        [registrantRow('reg-committee-b', 'committee', OCC_B), registrantRow('reg-direct-b', 'direct', OCC_B), registrantRow('reg-direct-series', 'direct')],
+        OCC_B
       );
 
       expect(registrantId).toBe('reg-direct-b');
     });
 
     it('prefers a series-wide row when no occurrence is given', async () => {
-      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', 'occ-a'), registrantRow('reg-committee-series', 'committee')]);
+      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', OCC_A), registrantRow('reg-committee-series', 'committee')]);
 
       expect(registrantId).toBe('reg-committee-series');
     });
 
     it.each([undefined, ''])('treats an occurrence of %j as none', async (occurrenceId) => {
-      const registrantId = await resendTarget([registrantRow('reg-scoped-a', 'direct', 'occ-a'), registrantRow('reg-series', 'direct')], occurrenceId);
+      const registrantId = await resendTarget([registrantRow('reg-scoped-a', 'direct', OCC_A), registrantRow('reg-series', 'direct')], occurrenceId);
 
       expect(registrantId).toBe('reg-series');
     });
 
     it('still resends, to the direct row, when no row fits the viewed occurrence', async () => {
-      const registrantId = await resendTarget(
-        [registrantRow('reg-committee-a', 'committee', 'occ-a'), registrantRow('reg-direct-c', 'direct', 'occ-c')],
-        'occ-b'
-      );
+      const registrantId = await resendTarget([registrantRow('reg-committee-a', 'committee', OCC_A), registrantRow('reg-direct-c', 'direct', OCC_C)], OCC_B);
 
       expect(registrantId).toBe('reg-direct-c');
     });
 
     it('falls back to the first row when none fits and none is direct', async () => {
       const registrantId = await resendTarget(
-        [registrantRow('reg-committee-a', 'committee', 'occ-a'), registrantRow('reg-committee-c', 'committee', 'occ-c')],
-        'occ-b'
+        [registrantRow('reg-committee-a', 'committee', OCC_A), registrantRow('reg-committee-c', 'committee', OCC_C)],
+        OCC_B
       );
 
       expect(registrantId).toBe('reg-committee-a');

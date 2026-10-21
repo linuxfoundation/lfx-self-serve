@@ -545,7 +545,7 @@ describe('MeetingCardComponent — remove myself', () => {
 
   async function mount(
     meeting: Meeting = INVITEE,
-    options: { authenticated?: boolean; past?: boolean; fetchedRsvp?: MeetingRsvp } = {}
+    options: { authenticated?: boolean; past?: boolean; fetchedRsvp?: MeetingRsvp; pinned?: MeetingOccurrence } = {}
   ): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
       providers: [
@@ -594,6 +594,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
     fixture.componentRef.setInput('pastMeeting', options.past ?? false);
+    if (options.pinned) fixture.componentRef.setInput('occurrenceInput', options.pinned);
     fixture.detectChanges();
     await TestBed.inject(ApplicationRef).whenStable();
     if (options.fetchedRsvp) rsvpButtons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance;
@@ -840,6 +841,30 @@ describe('MeetingCardComponent — remove myself', () => {
     component.resendInvite();
 
     expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-next');
+  });
+
+  it('resends for an explicitly pinned occurrence rather than the series next one', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const nextStart = new Date(Date.now() + 7 * DAY).toISOString();
+    const pinnedStart = new Date(Date.now() + 14 * DAY).toISOString();
+    const pinned = { occurrence_id: 'occ-pinned', start_time: pinnedStart, duration: 60 } as MeetingOccurrence;
+    const component = await mount(
+      {
+        ...INVITEE,
+        occurrences: [
+          { occurrence_id: 'occ-next', start_time: nextStart, duration: 60 },
+          { occurrence_id: 'occ-pinned', start_time: pinnedStart, duration: 60 },
+        ],
+      } as Meeting,
+      { pinned }
+    );
+
+    // The series' own pick is the earlier occurrence; the card shows the pinned one, and that is what must be sent.
+    expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
+    expect(component.occurrence()?.occurrence_id).toBe('occ-pinned');
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-pinned');
   });
 
   it('ignores a second click while a resend is in flight', async () => {

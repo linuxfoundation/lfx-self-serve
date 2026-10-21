@@ -47,6 +47,7 @@ import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
   isMeetingAttendeeListShared,
+  isSameOccurrenceId,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
@@ -2413,7 +2414,8 @@ export class MeetingService {
    * Chooses which of the caller's own registrant rows to resend an invitation to.
    * A row can be scoped to one occurrence (`occurrence_id`) or cover the whole series (none), and the invitation the
    * meeting service sends is for that row's scope, so the row has to fit what the caller is looking at:
-   *  1. a row scoped to the occurrence being viewed, then
+   *  1. a row scoped to the occurrence being viewed (compared with `isSameOccurrenceId`, since the id the client holds
+   *     is in Unix seconds from Zoom/ITX while an indexed row may carry milliseconds, and `===` would miss it), then
    *  2. a series-wide row, which covers every occurrence including the one being viewed, then
    *  3. any row, when none fits (or no occurrence was given): the caller still gets an invitation rather than an error.
    * Within the chosen group a direct row beats a committee-derived one. Past that the order is whatever the lookup
@@ -2421,7 +2423,7 @@ export class MeetingService {
    * either sends the same person the same kind of message.
    */
   private static pickRegistrantToResend(registrants: MeetingRegistrant[], occurrenceId: string | undefined): MeetingRegistrant {
-    const scopedToViewed = occurrenceId ? registrants.filter((row) => row.occurrence_id === occurrenceId) : [];
+    const scopedToViewed = occurrenceId ? registrants.filter((row) => isSameOccurrenceId(row.occurrence_id, occurrenceId)) : [];
     const seriesWide = registrants.filter((row) => !row.occurrence_id);
     const candidates = [scopedToViewed, seriesWide, registrants].find((group) => group.length > 0) ?? registrants;
 

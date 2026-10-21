@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
@@ -67,14 +68,12 @@ export class MeetingInviteResendService {
             summary: 'Invitation Sent',
             detail: 'We sent the meeting invitation to your email.',
           }),
-        error: (error: unknown) => {
-          const fallback = 'Unable to resend the invitation. Please try again.';
+        error: (error: unknown) =>
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback,
-          });
-        },
+            detail: this.describeOwnResendFailure(error),
+          }),
       });
   }
 
@@ -120,6 +119,21 @@ export class MeetingInviteResendService {
           });
         },
       });
+  }
+
+  /**
+   * Toast copy for a failed own-resend.
+   * A 429 is the per-user limit: retrying right away cannot work, so say to wait, in fixed words rather than the
+   * server's. A server-written validation reason is shown as is. Anything else gets generic copy, since an upstream
+   * status line is not something to put on screen.
+   */
+  private describeOwnResendFailure(error: unknown): string {
+    if (error instanceof HttpErrorResponse && error.status === 429) {
+      return 'You have resent your invitation too many times. Please try again later.';
+    }
+
+    const fallback = 'Unable to resend the invitation. Please try again.';
+    return isBffValidationError(error) ? extractErrorMessage(error, fallback) : fallback;
   }
 
   private setResendingOwn(meetingUid: string, resending: boolean): void {

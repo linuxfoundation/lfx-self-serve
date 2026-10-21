@@ -185,6 +185,28 @@ describe('MeetingInviteResendService', () => {
       expect(service.isResendingOwn(MEETING_UID)).toBe(false);
     });
 
+    it('tells the viewer to wait when the per-user limit answers 429, in fixed words rather than the server detail', () => {
+      resendMyMeetingInvitation.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 429, error: { code: 'RATE_LIMITED', error: 'limiter detail that should not be shown' } }))
+      );
+
+      service.resendOwn(MEETING_UID);
+
+      expect(messageAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: 'You have resent your invitation too many times. Please try again later.' })
+      );
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: expect.stringContaining('limiter detail') }));
+      expect(service.isResendingOwn(MEETING_UID)).toBe(false);
+    });
+
+    it('does not mistake a 429 for the generic failure copy', () => {
+      resendMyMeetingInvitation.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 429 })));
+
+      service.resendOwn(MEETING_UID);
+
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ detail: 'Unable to resend the invitation. Please try again.' }));
+    });
+
     it.each([403, 404, 500])('shows generic copy for a %s rather than the upstream detail, and lets the viewer retry', (status) => {
       resendMyMeetingInvitation.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: { code: 'ERROR', error: 'upstream detail' } })));
 
