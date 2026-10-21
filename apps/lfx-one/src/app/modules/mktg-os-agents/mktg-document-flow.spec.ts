@@ -8,8 +8,23 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { NavigationEnd, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { FOUNDATION_MESSAGE_INTAKE, FOUNDATION_MESSAGE_CONTRACT_ID, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
-import { MktgGenerateRequest, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
+import {
+  FOUNDATION_MESSAGE_CONTRACT_ID,
+  FOUNDATION_MESSAGE_INTAKE,
+  BRAND_KIT_INTAKE,
+  BRAND_KIT_CONTRACT_ID,
+  MKTG_AGENT_INTAKES,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_RUN_POLL,
+} from '@lfx-one/shared/constants';
+import {
+  MktgGenerateRequest,
+  MktgDependencyDocument,
+  MktgRunResultResponse,
+  MktgRevisionResponse,
+  MktgRevisionSummary,
+  ProjectContext,
+} from '@lfx-one/shared/interfaces';
 import { findMktgRunIntake } from '@lfx-one/shared/utils/mktg-document-store.utils';
 import { returningRunFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-returning-run.fixture';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
@@ -19,6 +34,10 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
+import { noQuestionsActivityPayloads } from '@lfx-one/shared/utils/__fixtures__/mktg-run-activity.no-questions';
 import { MessageService } from 'primeng/api';
 import { filter, firstValueFrom, of, take } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -70,6 +89,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     intake,
     answers: { project_name: project.name, github_url: 'https://github.com/synthetic-org/synthetic-orbit', business_outcome: 'Grow adoption' },
   };
+  let dependencies: Record<string, MktgDependencyDocument | null>;
   let harness: RouterTestingHarness;
   let http: HttpTestingController;
   let router: Router;
@@ -87,6 +107,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
   };
 
   beforeEach(async () => {
+    dependencies = {};
     window.localStorage.clear();
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const activeContext = signal<ProjectContext | null>(project);
@@ -105,11 +126,15 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
         provideHttpClientTesting(),
         provideNoopAnimations(),
         MessageService,
+        provideMktgSlidesExportStub({ last: vi.fn(() => of({ last: null, latestRevision: null })), start: vi.fn(), poll: vi.fn() }),
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? '') } },
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-owner' }), impersonating: signal(false) } },
         { provide: ProjectService, useValue: { getProject: () => of({ ...project, writer: true }) } },
         { provide: MktgAnswerMemoryService, useValue: { load: () => ({}), remember: vi.fn() } },
-        { provide: MktgDependencyService, useValue: { resolveDependencies: () => of({}), resolveBrandKit: () => of(null), notifyDocumentsChanged: vi.fn() } },
+        {
+          provide: MktgDependencyService,
+          useValue: { resolveDependencies: () => of(dependencies), resolveBrandKit: () => of(null), notifyDocumentsChanged: vi.fn() },
+        },
       ],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
@@ -298,6 +323,74 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     await settle();
   });
 
+  it.each(['project', 'foundation'])('keeps the %s intake reachable when a returned attempt fails after checking', async (lens) => {
+    const frameworkType = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === FOUNDATION_MESSAGE_INTAKE.agentId);
+    if (!frameworkType) throw new Error('Missing registered framework fixture');
+    const req: MktgGenerateRequest = { ...request, agentId: FOUNDATION_MESSAGE_INTAKE.agentId, intake: FOUNDATION_MESSAGE_INTAKE };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    // Local progress is stale; only the server knows this attempt failed yet.
+    attempts.save({
+      request: req,
+      state: 'writing',
+      attempt: {
+        session: { agentId: req.agentId, sessionId: 'synthetic-failed-session', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+        runId: 'b'.repeat(64),
+      },
+      updatedAt: new Date().toISOString(),
+    });
+    const failure = 'Synthetic failure after checking: provide the missing evidence.';
+    const failedDetail = {
+      project: project.uid,
+      type: frameworkType,
+      documentId: 'living',
+      revisions: [],
+      runs: [
+        {
+          project: project.uid,
+          agentKey: frameworkType.agentKey,
+          documentId: 'living',
+          runId: 'b'.repeat(64),
+          state: 'failed',
+          startedAt: '2026-10-20T10:00:00Z',
+          failureText: failure,
+        },
+      ],
+    };
+    const view = await harness.navigateByUrl(
+      `/${lens}/mktg-os-agents/documents/${frameworkType.agentKey}/living?run=${'b'.repeat(64)}`,
+      MktgDocumentViewComponent
+    );
+    await settle();
+    http.expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`)).flush(failedDetail);
+    await settle();
+    const navigate = vi.spyOn(router, 'navigate');
+    const landed = navigation();
+    // Drive the real action; the old anchor becomes an LFX button in D2a.
+    Reflect.apply(view['onOpenIntake'], view, [new MouseEvent('click')]);
+    await landed;
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(attempts.load(project.uid, req.agentId)?.state).toBe('writing');
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    const activity = buildMktgRunActivity(noQuestionsActivityPayloads('checked'));
+    expect(activity.some((step) => step.kind === 'checking')).toBe(true);
+    http.expectOne(req.intake.endpoints.result).flush({ status: 'failed', failureText: failure, activity });
+    await settle();
+    expect(attempts.load(project.uid, req.agentId)?.state).toBe('failed');
+    expect(router.url).toContain(`/${lens}/mktg-os-agents/${req.agentId}?`);
+    expect(router.url).not.toContain('/documents/');
+    expect(query('mktg-agent-run-form')).not.toBeNull();
+    expect(query('mktg-agent-run-error')?.textContent).toContain(failure);
+    // A metadata refresh may already be in flight when the document route is left.
+    for (const read of http.match((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`))) {
+      if (!read.cancelled) read.flush(failedDetail);
+    }
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    http.expectNone((candidate) => candidate.method === 'POST');
+  });
+
   it.each(['project', 'foundation'])('consumes one prepared generation on the %s mount and opens its exact receipt revision', async (lens) => {
     const token = TestBed.inject(MktgRunAttemptService).prepare(request);
     await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${type.agentKey}/living?generation=${token}`, MktgDocumentViewComponent);
@@ -342,6 +435,31 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     http.expectNone(intake.endpoints.generate);
   });
 
+  it.each(['project', 'foundation'])('restores saved intake on the %s document route without any automatic Generate', async (lens) => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.save({ request, state: 'failed', requiresReattachment: true, updatedAt: new Date().toISOString() });
+    const token = attempts.prepare(request, true);
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${type.agentKey}/living?generation=${token}`, MktgDocumentViewComponent);
+    await settle();
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/documents/${type.agentKey}/living`))
+      .flush({ code: 'MKTG_DOCUMENT_NOT_FOUND' }, { status: 404, statusText: 'Not found' });
+    await settle();
+    expect(query('mktg-document-view-restored-intake')?.textContent).toContain('Reattach');
+    expect(query('mktg-document-view-run')).toBeNull();
+    http.expectNone(intake.endpoints.generate);
+    http.expectNone(intake.endpoints.result);
+    const returned = navigation();
+    query('mktg-document-view-run-again')?.click();
+    await returned;
+    await settle();
+    expect(query('mktg-agent-run-form')).not.toBeNull();
+    expect(query('mktg-agent-run-error')?.textContent).toContain('Reattach');
+    expect(attempts.load(project.uid, intake.agentId)?.request.answers).toEqual(request.answers);
+    http.expectNone(intake.endpoints.generate);
+    http.expectNone(intake.endpoints.result);
+  });
+
   it.each(['project', 'foundation'])('Run again reaches the intake, not a child of Documents, on the %s mount', async (lens) => {
     await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${type.agentKey}/living`, MktgDocumentViewComponent);
     await settle();
@@ -384,6 +502,201 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
     expect(navigate).toHaveBeenCalledTimes(calls);
   });
+
+  it.each(['project', 'foundation'])('restores the answered writing stretch and logs a safe re-check failure on the %s intake route', async (lens) => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const ownedRequest = { ...request, agentId: FOUNDATION_MESSAGE_INTAKE.agentId, intake: FOUNDATION_MESSAGE_INTAKE };
+    attempts.save({
+      request: ownedRequest,
+      state: 'writing',
+      attempt: {
+        session: { agentId: ownedRequest.agentId, sessionId: 'synthetic-session', ownerToken: 'SYNTHETIC_PRIVATE_PROOF' },
+        runId: 'b'.repeat(64),
+        priorVersion: 0,
+      },
+      answered: {
+        questionsId: 'synthetic-answered-block',
+        questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
+        answers: [{ key: 'goal', text: 'Adoption', origin: 'accepted' }],
+      },
+      updatedAt: new Date().toISOString(),
+    });
+    const token = attempts.prepare(ownedRequest, true);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const component = await harness.navigateByUrl(`/${lens}/mktg-os-agents/${ownedRequest.agentId}?questions=${token}`, MktgAgentRunComponent);
+      await settle();
+      expect(component['writingStretch']()).toBe(true);
+      expect(component['activityTitle']()).toBe('Checking recorded run progress…');
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      http.expectOne(ownedRequest.intake.endpoints.result).flush({}, { status: 400, statusText: 'Synthetic invalid request' });
+      await settle();
+      expect(log).toHaveBeenCalledWith('Failed to re-check Marketing OS run', { status: 400 });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('SYNTHETIC_PRIVATE_PROOF');
+      expect(component['phase']()).toBe('form');
+      http.expectNone((candidate) => candidate.method === 'POST');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it.each(['project', 'foundation'])('hands an earlier receipt-less ready result to storing on the %s asset route without Generate', async (lens) => {
+    const kitType = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+    if (!kitType) throw new Error('Missing registered kit fixture');
+    dependencies[FOUNDATION_MESSAGE_INTAKE.agentId] = {
+      agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+      source: 'server',
+      version: 1,
+      document: '# Synthetic framework',
+      sidecar: {
+        contract: 'messaging-document-output/v1',
+        fields: { 'md.tagline': { value: 'Open, together', source: 'Synthetic source', status: 'approved' } },
+      },
+    };
+    const component = await harness.navigateByUrl(`/${lens}/mktg-os-agents/${BRAND_KIT_INTAKE.agentId}`, MktgAgentRunComponent);
+    await settle();
+    component['intakeForm'].patchValue({ project_name: project.name, website_url: 'https://synthetic.example' });
+    await settle();
+    component['onSubmit']();
+    await settle();
+    http.expectOne(BRAND_KIT_INTAKE.endpoints.generate).flush({ sessionId: 'synthetic-ready-session', ownerToken: 'synthetic-proof', runId: 'b'.repeat(64) });
+    await settle();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    const ready: MktgRunResultResponse = { status: 'ready', version: 1, documentMarkdown: '# Synthetic early kit', brandKit: brandKitTestRevision() };
+    const landed = navigation();
+    http.expectOne(BRAND_KIT_INTAKE.endpoints.result).flush(ready);
+    await landed;
+    await settle();
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/documents/${kitType.agentKey}/living`))
+      .flush({ project: project.uid, type: kitType, documentId: 'living', revisions: [], runs: [] });
+    await settle();
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    http.expectOne(BRAND_KIT_INTAKE.endpoints.result).flush(ready);
+    await settle();
+    expect(query('mktg-document-view-run-steps')?.textContent).toContain('Saving');
+    expect(router.url).not.toContain('revision=');
+    expect(TestBed.inject(MktgAgentRunService).loadRun(project.uid, BRAND_KIT_INTAKE.agentId)?.versions).toHaveLength(1);
+    http.expectNone(BRAND_KIT_INTAKE.endpoints.generate);
+  });
+
+  it.each(['project', 'foundation'])(
+    'keeps Brand Kit research and uncertain writing on the %s run route until checking transfers its existing attempt',
+    async (lens) => {
+      const kitType = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === BRAND_KIT_INTAKE.agentId);
+      if (!kitType) throw new Error('Missing synthetic Brand Kit type');
+      dependencies[FOUNDATION_MESSAGE_INTAKE.agentId] = {
+        agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+        source: 'server',
+        version: 1,
+        document: '# Synthetic framework',
+        sidecar: {
+          contract: 'messaging-document-output/v1',
+          fields: { 'md.tagline': { value: 'Open, together', source: 'Synthetic source', status: 'approved' } },
+        },
+      };
+      const component = await harness.navigateByUrl(`/${lens}/mktg-os-agents/${BRAND_KIT_INTAKE.agentId}`, MktgAgentRunComponent);
+      await settle();
+      component['intakeForm'].patchValue({ project_name: project.name, website_url: 'https://synthetic.example' });
+      await settle();
+      component['onSubmit']();
+      await settle();
+      http.expectOne(BRAND_KIT_INTAKE.endpoints.generate).flush({ sessionId: 'synthetic-kit-session', ownerToken: 'synthetic-proof', runId: 'b'.repeat(64) });
+      await settle();
+      expect(router.url).not.toContain('/documents/');
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      const research = buildMktgRunActivity(noQuestionsActivityPayloads('research', true));
+      expect(research.some((step) => step.kind === 'writing')).toBe(false);
+      http.expectOne(BRAND_KIT_INTAKE.endpoints.result).flush({ status: 'pending', activity: research });
+      await settle();
+      expect(query('mktg-agent-run-page')?.textContent).toContain(research.find((step) => step.kind === 'search')?.label);
+      for (const phase of ['between-rounds', 'writing'] as const) {
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+        const activity = buildMktgRunActivity(noQuestionsActivityPayloads(phase, true));
+        expect(activity.some((step) => step.kind === 'writing' || step.kind === 'checking')).toBe(false);
+        http.expectOne(BRAND_KIT_INTAKE.endpoints.result).flush({ status: 'pending', activity });
+        await settle();
+        expect(router.url).not.toContain('/documents/');
+        expect(component['writingStretch']()).toBe(false);
+      }
+      const landed = navigation();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      const writing = buildMktgRunActivity(noQuestionsActivityPayloads('checked', true));
+      expect(writing.some((step) => step.kind === 'checking')).toBe(true);
+      const writingStep = writing.find((step) => step.kind === 'writing');
+      if (!writingStep) throw new Error('Real activity producer did not emit no-questions writing');
+      http.expectOne(BRAND_KIT_INTAKE.endpoints.result).flush({ status: 'pending', activity: writing });
+      await landed;
+      await settle();
+      http
+        .expectOne((candidate) => candidate.url.endsWith(`/documents/${kitType.agentKey}/living`))
+        .flush({
+          project: project.uid,
+          type: kitType,
+          documentId: 'living',
+          revisions: [],
+          runs: [
+            {
+              project: project.uid,
+              agentKey: kitType.agentKey,
+              documentId: 'living',
+              runId: 'b'.repeat(64),
+              state: 'writing',
+              startedAt: writingStep.startedAt,
+            },
+          ],
+        });
+      await settle();
+      expect(query('mktg-document-view-run')).not.toBeNull();
+      http.expectNone((candidate) => candidate.method === 'POST');
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      const ready = navigation();
+      const kit = brandKitTestRevision();
+      http.expectOne(BRAND_KIT_INTAKE.endpoints.result).flush({
+        status: 'ready',
+        version: 1,
+        documentMarkdown: '# Synthetic kit',
+        activity: buildMktgRunActivity(noQuestionsActivityPayloads('checked', true)),
+        brandKit: kit,
+        persistence: {
+          project: project.uid,
+          version: 1,
+          s3_key: 'synthetic-kit.md',
+          content_sha256: 'a'.repeat(64),
+          document_location: { agent_key: kitType.agentKey, document_id: 'living', revision_id: revisionId },
+        },
+      });
+      await ready;
+      await settle();
+      http
+        .expectOne((candidate) => candidate.url.endsWith(`/revisions/${revisionId}`))
+        .flush({
+          ...stored,
+          type: kitType,
+          revisions: [{ ...revision, format: 'json' }],
+          revision: { ...revision, format: 'json' },
+          markdown: JSON.stringify(kit.kit),
+          sidecar: {
+            contract: BRAND_KIT_CONTRACT_ID,
+            project_name: kit.projectName,
+            project: project.uid,
+            version: kit.version,
+            mode: kit.mode,
+            kit: kit.kit,
+            chapters: kit.chapters,
+            report: kit.report,
+            inputs: { website_url: kit.websiteUrl },
+            generated_at: kit.generatedAt,
+            agent: { agent_version: kit.agentVersion },
+          },
+        });
+      await settle();
+      expect(query('mktg-document-view-brand-kit')).not.toBeNull();
+      expect(router.url).toContain('revision=' + revisionId);
+      http.expectNone((candidate) => candidate.method === 'POST');
+    }
+  );
 
   it.each(
     MKTG_DOCUMENT_TYPES.filter((candidate) => !!findMktgRunIntake(candidate.agentKey)?.endpoints.answers).flatMap((target) =>

@@ -13,6 +13,7 @@ import {
   FOUNDATION_MESSAGE_READ_REASONS,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
+  MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
   MKTG_README_SKIP_NOTES,
 } from '@lfx-one/shared/constants';
@@ -270,6 +271,117 @@ describe('MktgAgentRunComponent', () => {
       }
       await fixture.whenStable();
     };
+
+    it('does not prepare or navigate an asset handoff while the effective subject is missing', async () => {
+      await configure('browser', target.agentId);
+      userSignal.set(null);
+      await fixture.whenStable();
+      await fill();
+      const prepare = vi.spyOn(TestBed.inject(MktgRunAttemptService), 'prepare');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+      navigate.mockClear();
+      component['onSubmit']();
+      await fixture.whenStable();
+      expect(prepare).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-error')?.textContent).toContain('Sign in');
+    });
+
+    const accepted = () => {
+      const request: MktgGenerateRequest = {
+        agentId: target.agentId,
+        projectUid: PROJECT_1.uid,
+        intake: target,
+        answers: component['intakeForm'].getRawValue(),
+      };
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      attempts.save({
+        request,
+        state: 'writing',
+        attempt: { session: { agentId: target.agentId, sessionId: 'synthetic-check-session', ownerToken: 'synthetic-check-proof' }, priorVersion: 0 },
+        updatedAt: new Date().toISOString(),
+      });
+      component['activeRequest'] = request;
+      component['phase'].set('running');
+      return { request, attempts };
+    };
+    const checking: MktgGenerateProgress = {
+      type: 'activity',
+      activity: [{ id: 'synthetic-check', kind: 'checking', label: 'Checking the synthetic asset', status: 'running', startedAt: '2026-10-20T10:00:00Z' }],
+    };
+
+    it.each(['cancelled', 'rejected'] as const)('clears a terminal failure after checking navigation was %s', async (outcome) => {
+      await configure('browser', target.agentId);
+      await fill();
+      const { attempts } = accepted();
+      let finish: ((opened: boolean) => void) | undefined;
+      let fail: ((error: Error) => void) | undefined;
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+          })
+      );
+      const discard = vi.spyOn(attempts, 'discard');
+      component['onProgress'](checking, PROJECT_1.uid);
+      const token = component['navigation']()?.generation;
+      expect(token).toBeTruthy();
+      expect(component['navigating']()).toBe(true);
+      if (!finish || !fail) throw new Error('Expected deferred navigation');
+      if (outcome === 'cancelled') finish(false);
+      else fail(new Error('Synthetic navigation rejection'));
+      await fixture.whenStable();
+      expect(component['navigation']()).not.toBeNull();
+      component['onProgress']({ type: 'failed', failureText: 'Synthetic terminal failure' }, PROJECT_1.uid);
+      await fixture.whenStable();
+      expect(discard).toHaveBeenCalledWith(token);
+      expect(attempts.consume(token ?? '', PROJECT_1.uid, target.agentId)).toBeNull();
+      expect(component['navigation']()).toBeNull();
+      expect(component['navigating']()).toBe(false);
+      expect(component['phase']()).toBe('form');
+      expect(component['submitDisabled']()).toBe(false);
+      expect(query('mktg-agent-run-error')?.textContent).toContain('Synthetic terminal failure');
+      component['onRetryHandoff']();
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
+    it('coalesces repeated checking and completed receipts while navigation is still unresolved', async () => {
+      await configure('browser', target.agentId);
+      await fill();
+      const { request } = accepted();
+      let finish: ((opened: boolean) => void) | undefined;
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          })
+      );
+      component['onProgress'](checking, PROJECT_1.uid);
+      const destination = component['navigation']();
+      expect(destination?.generation).toBeTruthy();
+      component['onProgress'](checking, PROJECT_1.uid);
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === target.agentId);
+      if (!type) throw new Error('Missing registered document type');
+      const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
+      run.agentId = target.agentId;
+      run.versions[0].documentLocation = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+      component['onProgress']({ type: 'document', run }, PROJECT_1.uid);
+      component['onProgress']({ type: 'persisted', run }, PROJECT_1.uid);
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(component['navigation']()).toBe(destination);
+      if (!finish) throw new Error('Expected deferred navigation');
+      finish(true);
+      await fixture.whenStable();
+      expect(component['navigation']()).toBeNull();
+      expect(component['navigating']()).toBe(false);
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
 
     it('retries a failed navigation only, never Generate, and keeps the form instead of a result/feedback section', async () => {
       await configure('browser', target.agentId);
