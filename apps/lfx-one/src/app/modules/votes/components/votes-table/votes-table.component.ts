@@ -431,7 +431,10 @@ export class VotesTableComponent {
               summary: 'Success',
               detail: `${this.voteLabel.singular} deadline extended successfully`,
             });
-            this.refresh.emit();
+            // No refresh.emit() here (per @cursor, GH-3823 review) — extendedDeadlines already applies the
+            // new deadline to this row locally, and voteExtended() already tells the host. A full refresh
+            // would force a lazy host's dashboard back to page 1, which is an unnecessary and disruptive
+            // reload for a change the table has already reflected.
           },
           error: (error) => {
             this.messageService.add({

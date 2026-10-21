@@ -26,7 +26,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, filter, finalize, of, shareReplay, startWith, Subject, switchMap, takeUntil } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWith, Subject, switchMap, takeUntil } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-cast-drawer',
@@ -82,7 +82,6 @@ export class VoteCastDrawerComponent {
   private lastBuiltPollType: PollType | null = null;
 
   // === Shared Observables ===
-  private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
   private readonly cancelSubmit$ = new Subject<void>();
 
@@ -234,17 +233,48 @@ export class VoteCastDrawerComponent {
   }
 
   // === Private Initializers ===
+  /** Mirrors vote-results-drawer's initVote() (per @copilot-pull-request-reviewer, GH-3823 review): keying
+   *  off voteId alone meant a manager who extended a vote's deadline while this drawer was closed, then
+   *  reopened it on the same vote, saw the stale pre-extension deadline — voteId never changed, so the
+   *  cached getVote() response was neither re-fetched nor bypassed. Keying off id/visible/listVote together
+   *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps this in step with
+   *  the results drawer. */
   private initVote(): Signal<Vote | null> {
+    let prevId: string | null = null;
+    let prevDeadlineKey: string | null = null;
+
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), listVote: this.listVote() }));
+
     return toSignal(
-      this.voteId$.pipe(
-        switchMap((id) => {
+      toObservable(selection).pipe(
+        distinctUntilChanged(
+          (prev, curr) =>
+            prev.id === curr.id &&
+            prev.visible === curr.visible &&
+            prev.listVote?.end_time === curr.listVote?.end_time &&
+            prev.listVote?.end_time_timezone === curr.listVote?.end_time_timezone
+        ),
+        switchMap(({ id, visible, listVote }) => {
           if (!id) {
             this.loadingVote.set(false);
+            prevId = null;
+            prevDeadlineKey = null;
             return of(null);
           }
+          if (!visible) {
+            this.loadingVote.set(false);
+            return EMPTY;
+          }
+
+          const deadlineKey = `${listVote?.end_time ?? ''}|${listVote?.end_time_timezone ?? ''}`;
+          const selectionChanged = prevId !== null && prevId !== id;
+          const deadlineChanged = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          const skipCache = selectionChanged || deadlineChanged;
+          prevId = id;
+          prevDeadlineKey = deadlineKey;
+
           this.loadingVote.set(true);
-          const listVote = this.listVote();
-          return this.voteService.getVote(id).pipe(
+          return this.voteService.getVote(id, { skipCache }).pipe(
             catchError(() => of(listVote)),
             finalize(() => this.loadingVote.set(false)),
             startWith(listVote)

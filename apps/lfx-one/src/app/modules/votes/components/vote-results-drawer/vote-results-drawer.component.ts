@@ -205,17 +205,29 @@ export class VoteResultsDrawerComponent {
 
           // getVoteDetail caches responses for a short TTL — without this, re-fetching the same open
           // vote right after its deadline changed could still echo back the pre-extension cached
-          // response instead of the fresh one (per @copilot-pull-request-reviewer).
+          // response instead of the fresh one (per @copilot-pull-request-reviewer). Re-selecting a
+          // different vote also bypasses the cache: switching A -> B -> A within the TTL must not let
+          // A's cached pre-extension entry (populated while B was being viewed) win over a deadline
+          // change that happened while A was off-screen — only an unchanged same-vote reopen still
+          // reuses the cache (per @copilot-pull-request-reviewer).
           const deadlineKey = `${listVote?.end_time ?? ''}|${listVote?.end_time_timezone ?? ''}`;
-          const skipCache = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          const selectionChanged = prevId !== null && prevId !== id;
+          const deadlineChanged = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          const skipCache = selectionChanged || deadlineChanged;
           prevId = id;
           prevDeadlineKey = deadlineKey;
-
-          this.loadingVoteDetails.set(true);
 
           // Falls back to the last vote we actually loaded for this same id when listVote is null,
           // rather than wiping the drawer with startWith(null) (per @cursor).
           const fallback = listVote ?? (lastVoteId === id ? lastVote : null);
+
+          // Skip the loading flag when fresh-enough data is already available via the fallback (e.g. an
+          // extend while this drawer stayed open) — otherwise the drawer flashes to its skeleton state for
+          // the fetch's duration even though startWith(fallback) below renders the current vote immediately
+          // (per @cursor).
+          if (!fallback) {
+            this.loadingVoteDetails.set(true);
+          }
 
           return this.voteService.getVote(id, { skipCache }).pipe(
             tap((v) => {
