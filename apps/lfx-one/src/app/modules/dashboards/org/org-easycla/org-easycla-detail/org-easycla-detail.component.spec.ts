@@ -1401,12 +1401,6 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    /**
-     * The list is requested here since #2364, and that is the point: it is what decides between
-     * this preview and an agreement the organization already holds. What must not survive is
-     * either row-shaped empty state — `notFound` or `cannotPreview` firing over a preview would
-     * tell a signatory the agreement they are about to sign does not exist.
-     */
     it('does not mark the preview View only, since anyone may start signing it', async () => {
       const fixture = await render(previewing());
 
@@ -1415,6 +1409,12 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-view-only-reason')).toBeNull();
     });
 
+    /**
+     * The list is requested here since #2364, and that is the point: it is what decides between
+     * this preview and an agreement the organization already holds. What must not survive is
+     * either row-shaped empty state — `notFound` or `cannotPreview` firing over a preview would
+     * tell a signatory the agreement they are about to sign does not exist.
+     */
     it('asks for the list, yet settles on the preview rather than an empty state', async () => {
       const fixture = await render(previewing());
 
@@ -1936,9 +1936,6 @@ describe('OrgEasyclaDetailComponent', () => {
     });
   });
 
-  /**
-   * Why the open tab holds nothing on an agreement nobody has signed, when signing is what fills it.
-   */
   describe('the View only marker', () => {
     it('marks a signed CCLA the viewer is not a CLA Manager of, and says who can change it', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: false })] }));
@@ -1993,6 +1990,9 @@ describe('OrgEasyclaDetailComponent', () => {
     });
   });
 
+  /**
+   * Why the open tab holds nothing on an agreement nobody has signed, when signing is what fills it.
+   */
   describe('the tabs signing is what fills', () => {
     const notStarted = { status: 'not-started' as const, signed: false, signedOn: undefined };
 
@@ -3980,12 +3980,12 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
   it('marks the CCLA View only as soon as the viewer removes themselves, before the list catches up', async () => {
     const fixture = await render();
-    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void };
+    const component = fixture.componentInstance;
     expect(byTestId(fixture, 'org-easycla-detail-view-only')).toBeNull();
 
     TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
     getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] }));
-    component.onRosterChanged();
+    component['onRosterChanged']();
     fixture.detectChanges();
     await fixture.whenStable();
 
