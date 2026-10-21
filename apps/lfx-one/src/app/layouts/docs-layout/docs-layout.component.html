@@ -50,14 +50,7 @@
       <router-outlet />
     </div>
 
-    <!-- App footer — constrained to the 1024px docs content width -->
-    <lfx-footer class="mx-auto mt-auto w-full max-w-[1024px] p-8"></lfx-footer>
-    <a
-      href="#"
-      (click)="openCookieSettings($event)"
-      class="block mx-auto w-full max-w-[1024px] px-8 pb-8 -mt-6 text-xs text-gray-700 hover:underline"
-      data-testid="docs-shell-footer-cookie-settings">
-      Cookie settings
-    </a>
+    <!-- App footer — full width of the content area, matching the main layout -->
+    <lfx-app-footer class="block mt-auto px-5 md:ml-8 md:px-8" data-testid="docs-shell-footer"></lfx-app-footer>
   </main>
 </div>
