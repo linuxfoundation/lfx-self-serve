@@ -639,9 +639,10 @@ describe('MktgDocumentStoreService', () => {
 
       const receipt = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
-      expect(receipt?.s3_key).toBe(`brand-kit/${PROJECT}/${generated.content_sha256}.md`);
+      expect(store.objects.has(`brand-kit/${PROJECT}/${generated.content_sha256}.md`)).toBe(true);
       const keys = revisionKeys();
       expect(keys).toHaveLength(1);
+      expect(receipt?.s3_key).toBe(keys[0]);
       expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/brand-kit/living/000001-[0-9a-f]{64}\\.json$`));
       // Content-addressed by the record's own bytes.
       expect(keys[0]).toContain(sha(store.objects.get(keys[0])?.body ?? ''));
@@ -1047,12 +1048,14 @@ describe('MktgDocumentStoreService', () => {
       expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: null });
     });
 
-    it('omits a corrupt document without failing other documents in the project', async () => {
+    it('keeps navigation best-effort but strictly rejects unreadable family documents, not missing ones', async () => {
+      await expect(service.listDocuments(req, PROJECT, [BRAND_KIT.agentKey])).resolves.toMatchObject({ project: PROJECT });
       await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
       const run = await service.recordGeneration(req, LINKEDIN, PROJECT, envelope('# Run'), 'run');
       const pointer = store.objects.get(`documents/${PROJECT}/brand-kit/living/current.json`);
       if (!pointer) throw new Error('Expected synthetic pointer to exist');
       pointer.body = 'not json';
+      await expect(service.listDocuments(req, PROJECT, [BRAND_KIT.agentKey])).rejects.toBeInstanceOf(MicroserviceError);
       const listed = await service.listDocuments(req, PROJECT);
       expect(listed.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents).toEqual([]);
       expect(listed.groups.find((group) => group.type.agentKey === 'linkedin-post')?.documents[0].documentId).toBe(run.record.documentId);

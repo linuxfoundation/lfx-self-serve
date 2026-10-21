@@ -152,8 +152,8 @@ export class MktgDocumentStoreService {
     const type = findMktgDocumentType(agentKey);
     if (!type) return receipt;
     try {
-      await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
-      return receipt;
+      const revision = await this.recordGeneration(req, type, receipt.project, envelope, sessionId);
+      return { ...receipt, s3_key: revision.key };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_record', 'Revision write failed — returning the document without a receipt; retried on next poll', {
         agent: type.agentKey,
@@ -335,18 +335,20 @@ export class MktgDocumentStoreService {
   }
 
   /** Navigation uses metadata, with bounded body fallback for historical writers. */
-  public async listDocuments(req: Request, project: string, strictAgentKey?: string): Promise<MktgDocumentsResponse> {
+  public async listDocuments(req: Request, project: string, strictAgentKey?: string | readonly string[]): Promise<MktgDocumentsResponse> {
     const prefix = buildMktgDocumentProjectPrefix(project);
     const listed = await this.objectStore.listObjects(req, 'marketing-os-artifacts', prefix);
     const groups: MktgDocumentGroup[] = [];
     for (const type of MKTG_DOCUMENT_TYPES) {
-      const ids = new Set(
+      const strict = typeof strictAgentKey === 'string' ? type.agentKey === strictAgentKey : strictAgentKey?.includes(type.agentKey);
+      const listedIds = new Set(
         listed.flatMap((object) => {
           const entry = parseMktgRevisionKey(object.key, prefix);
           if (!entry || entry.agentKey !== type.agentKey) return [];
           return [entry.documentId];
         })
       );
+      const ids = new Set(listedIds);
       if (type.kind === 'living') ids.add(MKTG_LIVING_DOCUMENT_ID);
       const documents: MktgDocumentGroup['documents'] = [];
       const documentIds = [...ids];
@@ -357,20 +359,21 @@ export class MktgDocumentStoreService {
           documentIds.slice(offset, offset + MKTG_DOCUMENT_READ_CONCURRENCY).map((id) =>
             this.getDocument(req, project, type, id, 1).catch((err: unknown) => {
               // Access failures must still fail the request, not masquerade as missing documents.
-              if (type.agentKey === strictAgentKey || !(err instanceof MicroserviceError) || err.statusCode < 500) throw err;
+              if (strict || !(err instanceof MicroserviceError) || err.statusCode < 500) throw err;
               logger.warning(req, 'mktg_document_store_list', 'Document unreadable — omitting', { project, documentId: id, err });
               return null;
             })
           )
         );
-        for (const detail of details) {
+        for (const [index, detail] of details.entries()) {
           if (!detail) {
-            if (type.agentKey === strictAgentKey) throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
+            if (strict && (typeof strictAgentKey === 'string' || listedIds.has(documentIds[offset + index])))
+              throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
             continue;
           }
           const current = detail.revisions.find((revision) => revision.latest);
           if (!current) {
-            if (type.agentKey === strictAgentKey) throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
+            if (strict) throw new MicroserviceError('A listed document is unreadable.', 503, 'MKTG_DOCUMENT_UNREADABLE');
             logger.warning(req, 'mktg_document_store_list', 'Current revision is missing — omitting document', {
               project,
               agent: type.agentKey,
