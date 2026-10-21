@@ -2397,9 +2397,9 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
  * its sibling `aiChat` carried the proxy's body. A 401 from the LiteLLM proxy therefore reached
  * the operator as a bare status, and took days to attribute (#3996).
  *
- * These assert on the SSE `error` event rather than on the thrown message, because that event is
- * what the copy-generation routes actually deliver — a message that is legible only inside the
- * service is not the fix this ticket asked for.
+ * Each case asserts on **both** sinks, because the fix is a split and either half alone is the bug
+ * back again: the proxy's body must reach `logger.warning`, which is where the operator reads it,
+ * and must not reach the SSE `error` event, which is what the browser is handed.
  */
 describe('CampaignProxyService streaming AI failures', () => {
   const originalEnv = { ...process.env };
@@ -2415,13 +2415,18 @@ describe('CampaignProxyService streaming AI failures', () => {
    * The streaming call is told apart from every other AI call by `stream: true` in its own request
    * body — the one property only `aiChatStream` sets. Matching on call order instead would pin the
    * wrong request the moment a stage was added before the copy stage.
+   *
+   * `chatResponse` fails the non-streaming calls instead, which is how the `aiChat` half of the
+   * shared helper is reached — the extraction stage is the first `aiChat` caller in `streamBrief`.
    */
   function stubAi(
     streamResponse: { ok: boolean; status: number; text?: string; body?: ReadableStream<Uint8Array> | null },
-    apiKey = 'test-key'
+    apiKey = 'test-key',
+    chatResponse?: { ok: boolean; status: number; text: string }
   ): CampaignProxyService {
     process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
     process.env['AI_API_KEY'] = apiKey;
+    logger.warning.mockClear();
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: { body?: string }) => {
@@ -2433,6 +2438,9 @@ describe('CampaignProxyService streaming AI failures', () => {
             json: async () => ({}),
             body: streamResponse.body ?? null,
           };
+        }
+        if (chatResponse) {
+          return { ok: chatResponse.ok, status: chatResponse.status, text: async () => chatResponse.text, json: async () => ({}), body: null };
         }
         return {
           ok: true,
@@ -2453,26 +2461,65 @@ describe('CampaignProxyService streaming AI failures', () => {
     return String(events.find((e) => e.type === 'error')?.data ?? '');
   }
 
-  it('surfaces the proxy’s response body on a failed streaming request', async () => {
+  /** The `err` handed to `logger.warning` under `operation`, as the message the log line will carry. */
+  function loggedMessage(operation: string): string {
+    const call = logger.warning.mock.calls.find((c: unknown[]) => c[1] === operation);
+    return String((call?.[3] as { err?: Error } | undefined)?.err?.message ?? '');
+  }
+
+  it('puts the proxy’s response body in the server log on a failed streaming request', async () => {
     const service = stubAi({ ok: false, status: 401, text: 'Invalid proxy credential for host litellm.example.test' });
 
+    const browserMessage = await errorEvent(service);
+
     // The host and the word "credential" are the whole point: a bare `(401)` names neither, and
-    // naming them is what turns a multi-day diagnosis into a one-line read.
-    expect(await errorEvent(service)).toBe(
-      'Ad copy generation failed: AI streaming request failed (401): Invalid proxy credential for host litellm.example.test'
-    );
+    // naming them is what turns a multi-day diagnosis into a one-line read. This stage logged
+    // nothing whatsoever before the fix, so the body had nowhere to land.
+    expect(loggedMessage('campaign_brief_copy')).toBe('AI streaming request failed (401): Invalid proxy credential for host litellm.example.test');
+
+    // …and the browser gets the status without the upstream's prose.
+    expect(browserMessage).toBe('Ad copy generation failed: AI streaming request failed (401)');
   });
 
-  it('keeps AI_API_KEY out of the message when the proxy echoes it back', async () => {
+  it('keeps the proxy’s body out of the SSE event even when it holds a credential', async () => {
     const service = stubAi({ ok: false, status: 403, text: 'rejected Authorization: Bearer sk-live-abc+123' }, 'sk-live-abc+123');
 
-    const message = await errorEvent(service);
+    const browserMessage = await errorEvent(service);
 
-    // The key travels in the `Authorization` header, and this message reaches both the server log
-    // and the browser over SSE. `+` is in the key on purpose — a regex-based redaction would read
-    // it as a quantifier and leave the key in place.
-    expect(message).not.toContain('sk-live-abc+123');
-    expect(message).toBe('Ad copy generation failed: AI streaming request failed (403): rejected Authorization: Bearer [redacted]');
+    expect(browserMessage).toBe('Ad copy generation failed: AI streaming request failed (403)');
+    expect(browserMessage).not.toContain('sk-live-abc+123');
+
+    // The key travels in the `Authorization` header, so a proxy that echoes the request back puts
+    // it in the body — and the body still goes to the log. `+` is in the key on purpose: a
+    // regex-based redaction would read it as a quantifier and leave the key in place.
+    expect(loggedMessage('campaign_brief_copy')).toBe('AI streaming request failed (403): rejected Authorization: Bearer [redacted]');
+  });
+
+  it('redacts the key on the non-streaming sibling too', async () => {
+    const service = stubAi({ ok: true, status: 200, body: null }, 'sk-live-abc+123', {
+      ok: false,
+      status: 403,
+      text: 'rejected Authorization: Bearer sk-live-abc+123',
+    });
+
+    await errorEvent(service);
+
+    // `aiChat` and `aiChatStream` share one helper precisely so this cannot drift again — the
+    // asymmetry between them is what #3996 was. Extraction is non-fatal, so this stage logs and
+    // the brief continues.
+    expect(loggedMessage('campaign_brief_extract')).toBe('AI request failed (403): rejected Authorization: Bearer [redacted]');
+  });
+
+  it('bounds the body rather than putting a whole error page in one log line', async () => {
+    const service = stubAi({ ok: false, status: 502, text: `<html>${'x'.repeat(900)}</html>` });
+
+    await errorEvent(service);
+
+    // A LiteLLM 502 can be a full HTML page. Unbounded, it lands whole in `Error.message` and so in
+    // a single log line; the count is kept so the reader knows the body was longer than shown.
+    const logged = loggedMessage('campaign_brief_copy');
+    expect(logged.startsWith('AI streaming request failed (502): <html>xxx')).toBe(true);
+    expect(logged.endsWith(' [truncated, 913 chars]')).toBe(true);
   });
 
   it('reports a successful response with no body as its own condition', async () => {
