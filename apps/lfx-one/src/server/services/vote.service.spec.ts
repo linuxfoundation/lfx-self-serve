@@ -230,6 +230,22 @@ describe('VoteService', () => {
     });
   });
 
+  describe('extendVote', () => {
+    it('encodes the uid in the POST /extend path', async () => {
+      const data = { end_time: '2026-09-01T23:59:00.000Z', end_time_timezone: 'America/New_York' };
+
+      await service.extendVote(req, HOSTILE_UID, data);
+
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes/abc%2Fdef/extend', 'POST', undefined, data);
+    });
+
+    it('rejects a dot-segment uid without proxying', async () => {
+      await expect(service.extendVote(req, '..', { end_time: 'x', end_time_timezone: 'UTC' })).rejects.toThrow(ServiceValidationError);
+
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
   describe('deleteVote', () => {
     it('encodes the uid in the DELETE path', async () => {
       proxyRequest.mockResolvedValue(undefined);

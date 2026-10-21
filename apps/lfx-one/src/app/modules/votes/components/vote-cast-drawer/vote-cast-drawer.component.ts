@@ -26,7 +26,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, filter, finalize, of, shareReplay, startWith, Subject, switchMap, takeUntil } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-cast-drawer',
@@ -82,7 +82,6 @@ export class VoteCastDrawerComponent {
   private lastBuiltPollType: PollType | null = null;
 
   // === Shared Observables ===
-  private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
   // Emits on drawer dismissal (close button OR ESC OR overlay click — all flip visible to false).
   private readonly cancelSubmit$ = new Subject<void>();
 
@@ -234,20 +233,82 @@ export class VoteCastDrawerComponent {
   }
 
   // === Private Initializers ===
+  /** Mirrors vote-results-drawer's initVote() (per @copilot-pull-request-reviewer, GH-3823 review): keying
+   *  off voteId alone meant a manager who extended a vote's deadline while this drawer was closed, then
+   *  reopened it on the same vote, saw the stale pre-extension deadline — voteId never changed, so the
+   *  cached getVote() response was neither re-fetched nor bypassed. Keying off id/visible/listVote together
+   *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps this in step with
+   *  the results drawer.
+   *  Also mirrors the results drawer's last-loaded fallback and skip-loading-flag behavior (per @cursor,
+   *  GH-3823 review): a deadline change on the open vote re-runs this stream, and startWith(listVote) alone
+   *  would seed it with whatever the caller's list row currently holds — if that row is a stale/partial
+   *  summary object (or the list hasn't produced one yet), poll_questions drops out and rebuildForm() wipes
+   *  the ballot the voter was filling in. Falling back to the last fetched detail for the same vote (instead
+   *  of the raw listVote) and only flipping loadingVote when no fallback exists keeps the ballot intact. */
   private initVote(): Signal<Vote | null> {
+    let prevId: string | null = null;
+    let prevDeadlineKey: string | null = null;
+    let lastVoteId: string | null = null;
+    let lastVote: Vote | null = null;
+
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), listVote: this.listVote() }));
+
     return toSignal(
-      this.voteId$.pipe(
-        switchMap((id) => {
+      toObservable(selection).pipe(
+        distinctUntilChanged(
+          (prev, curr) =>
+            prev.id === curr.id &&
+            prev.visible === curr.visible &&
+            prev.listVote?.end_time === curr.listVote?.end_time &&
+            prev.listVote?.end_time_timezone === curr.listVote?.end_time_timezone
+        ),
+        switchMap(({ id, visible, listVote }) => {
           if (!id) {
             this.loadingVote.set(false);
+            prevId = null;
+            prevDeadlineKey = null;
+            lastVoteId = null;
+            lastVote = null;
             return of(null);
           }
-          this.loadingVote.set(true);
-          const listVote = this.listVote();
-          return this.voteService.getVote(id).pipe(
-            catchError(() => of(listVote)),
+          if (!visible) {
+            this.loadingVote.set(false);
+            return EMPTY;
+          }
+
+          const deadlineKey = `${listVote?.end_time ?? ''}|${listVote?.end_time_timezone ?? ''}`;
+          const selectionChanged = prevId !== null && prevId !== id;
+          const deadlineChanged = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          const skipCache = selectionChanged || deadlineChanged;
+          prevId = id;
+          prevDeadlineKey = deadlineKey;
+
+          // Prefer the last fetched full detail over listVote (per @cursor, GH-3823 review): a deadline
+          // change re-runs this stream with the caller's list row already carrying the new end_time, but
+          // that row can be a partial summary missing poll_questions. Falling back to listVote only when no
+          // full detail has been fetched yet for this vote keeps rebuildForm() from wiping the ballot.
+          // When both exist, overlay listVote's deadline fields onto the cached detail (per @greptile-apps
+          // and @copilot-pull-request-reviewer, GH-3823 review): listVote is the caller's source of truth for
+          // an in-flight deadline extension, so keeping lastVote wholesale would show the voter the
+          // pre-extension end_time if the detail refetch below then fails and catchError falls back to this
+          // same value.
+          const lastDetail = lastVoteId === id ? lastVote : null;
+          let fallback = lastDetail ?? listVote;
+          if (lastDetail && listVote) {
+            fallback = { ...lastDetail, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
+          }
+          if (!fallback) {
+            this.loadingVote.set(true);
+          }
+
+          return this.voteService.getVote(id, { skipCache }).pipe(
+            tap((v) => {
+              lastVoteId = id;
+              lastVote = v;
+            }),
+            catchError(() => of(fallback)),
             finalize(() => this.loadingVote.set(false)),
-            startWith(listVote)
+            startWith(fallback)
           );
         })
       ),

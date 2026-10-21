@@ -12,7 +12,8 @@
       [editQueryParamsFallback]="editVoteQueryParams()"
       (viewResults)="viewVoteResults($event)"
       (viewVote)="viewVoteResults($event)"
-      (refresh)="refreshVotes()">
+      (refresh)="refreshVotes()"
+      (voteExtended)="onVoteExtended($event)">
       @if (canEdit()) {
         <lfx-button
           tableActions

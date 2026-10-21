@@ -11,7 +11,7 @@ import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponse
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -662,7 +662,13 @@ describe('VotesTableComponent — row More menu', () => {
             }),
         },
       ],
-    }).compileComponents();
+    })
+      // DialogService is a component-level provider (see the "deliberately not here" comment on
+      // VotesTableComponent) — it must be overridden on the component itself, not the TestBed root.
+      .overrideComponent(VotesTableComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: openDialog } }] },
+      })
+      .compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
     table = fixture.componentInstance;
     fixture.componentRef.setInput('votes', ROWS);
@@ -993,11 +999,11 @@ describe('VotesTableComponent — row More menu', () => {
   });
 
   it.each([
-    { hasPMOAccess: true, writer: false, uid: 'active' },
-    { hasPMOAccess: true, writer: undefined, uid: 'active' },
-    { hasPMOAccess: false, writer: false, uid: 'active' },
-    { hasPMOAccess: true, writer: true, uid: 'ended' },
-  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid }) => {
+    { hasPMOAccess: true, writer: false, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
+    { hasPMOAccess: true, writer: undefined, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
+    { hasPMOAccess: false, writer: false, uid: 'active', expectedLabels: ['Copy link'] },
+    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Clone'] },
+  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid, expectedLabels }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
     fixture.componentRef.setInput(
       'votes',
@@ -1011,7 +1017,7 @@ describe('VotesTableComponent — row More menu', () => {
     // Asserting the absence of the reminder, not of Clone: Clone follows project access (#3781) and
     // is expected in every case here that has it, including the ended vote — a vote that has closed
     // can still be cloned into a new one.
-    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(hasPMOAccess ? ['Copy link', 'Clone'] : ['Copy link']);
+    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(expectedLabels);
   });
 
   it('exposes menu semantics and expands only the row whose menu is open', async () => {
@@ -1232,5 +1238,147 @@ describe('VotesTableComponent — participation progress', () => {
     for (const cell of cells) {
       expect(`${cell.textContent} ${cell.getAttribute('aria-label') ?? ''}`).not.toMatch(/quorum|approv|winn|passed/i);
     }
+  });
+});
+
+describe('VotesTableComponent — Extend deadline', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let extendVote: ReturnType<typeof vi.fn>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let onClose: Subject<{ end_time: string; end_time_timezone: string } | undefined>;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
+  const extendButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-extend-deadline-${uid}"] button`);
+
+  beforeEach(async () => {
+    extendVote = vi.fn().mockReturnValue(of(vote('active')));
+    onClose = new Subject();
+    dialogOpen = vi.fn().mockReturnValue({ onClose });
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { extendVote } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    })
+      // DialogService is a component-level provider (see the "deliberately not here" comment on
+      // VotesTableComponent) — it must be overridden on the component itself, not the TestBed root.
+      .overrideComponent(VotesTableComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: dialogOpen } }] },
+      })
+      .compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('shows the button only for a manager on an active vote', async () => {
+    await settle();
+    expect(extendButton('active')).not.toBeNull();
+    expect(extendButton('ended')).toBeNull();
+    expect(extendButton('draft')).toBeNull();
+  });
+
+  it('hides the button for a non-manager viewer', async () => {
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
+    );
+    await settle();
+    expect(extendButton('active')).toBeNull();
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uO-ES @copilot-pull-request-reviewer): the button was previously
+  // gated on project-level hasPMOAccess() rather than the vote's own writer flag — a committee-only
+  // writer without project access couldn't extend their own vote's deadline, even though they could
+  // already "Send reminder" on the same row (toggleRowActionMenu() already used vote.writer there).
+  it('shows the button for a writable vote even without project access', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', false);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: true } : row))
+    );
+    await settle();
+    expect(extendButton('active')).not.toBeNull();
+  });
+
+  it('hides the button for a non-writable vote even with project access', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
+    );
+    await settle();
+    expect(extendButton('active')).toBeNull();
+  });
+
+  it('opens the dialog seeded with the vote name/current deadline and extends on confirm', async () => {
+    await settle();
+
+    extendButton('active')!.click();
+    await settle();
+
+    expect(dialogOpen).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        data: expect.objectContaining({ voteName: 'Board active', currentEndTime: '2026-10-12T12:00:00Z' }),
+      })
+    );
+
+    const result = { end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' };
+    onClose.next(result);
+    await settle();
+
+    expect(extendVote).toHaveBeenCalledWith('active', result);
+  });
+
+  it('does nothing when the dialog is dismissed without a result', async () => {
+    await settle();
+
+    extendButton('active')!.click();
+    onClose.next(undefined);
+    await settle();
+
+    expect(extendVote).not.toHaveBeenCalled();
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uAB0b @greptile-apps, PRRT_kwDOPMiRQ86uAElJ @copilot-pull-request-reviewer):
+  // the eviction effect only cleared a saved override on an exact end_time match, so a second extension
+  // (e.g. by another manager) landing in a refresh before the first eviction never matched and the
+  // table kept showing — and reseeding the dialog from — the stale, older deadline. Pins the fix:
+  // eviction now compares timestamps (>=) so a later deadline evicts the override too.
+  it('evicts a stale override once a refresh shows a later deadline, not just an exact match', async () => {
+    extendVote.mockReturnValue(of(vote('active', { end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' })));
+    await settle();
+
+    extendButton('active')!.click();
+    await settle();
+    onClose.next({ end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' });
+    await settle();
+
+    // A second, later extension lands in the row before this client's own refresh ever matches exactly.
+    fixture.componentRef.setInput('votes', [vote('active', { end_time: '2026-12-01T23:59:00.000Z', end_time_timezone: 'UTC', writer: true })]);
+    await settle();
+
+    extendButton('active')!.click();
+    await settle();
+
+    expect(dialogOpen).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ data: expect.objectContaining({ currentEndTime: '2026-12-01T23:59:00.000Z' }) })
+    );
   });
 });

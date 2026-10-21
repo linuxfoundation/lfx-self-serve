@@ -18,6 +18,7 @@ import {
   CreateVoteResponseRequest,
   EnableVoteRequest,
   EnableVoteResponse,
+  ExtendVoteRequest,
   MyVoteResponse,
   MyVotesApiResponse,
   MyVotesResponse,
@@ -165,8 +166,8 @@ export class VoteService {
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(map((response) => response.data));
   }
 
-  public getVote(voteUid: string): Observable<Vote> {
-    return this.getVoteDetail(voteUid).pipe(tap((vote) => this.vote.set(vote)));
+  public getVote(voteUid: string, options?: { skipCache?: boolean }): Observable<Vote> {
+    return this.getVoteDetail(voteUid, options).pipe(tap((vote) => this.vote.set(vote)));
   }
 
   /** Tap-free vote fetch for writerGuard's entity probe and vote-manage's context fallback (getVote's signal write would leak state). */
@@ -280,6 +281,17 @@ export class VoteService {
 
   public deleteVote(voteUid: string): Observable<void> {
     return this.http.delete<void>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(
+      take(1),
+      tap(() => this.voteDetailCache.delete(voteUid))
+    );
+  }
+
+  /**
+   * Extends an active vote's deadline via the dedicated extend_vote upstream endpoint — unlike
+   * `updateVote`, this is permitted while the vote is active (see `ExtendVoteRequest`).
+   */
+  public extendVote(voteUid: string, data: ExtendVoteRequest): Observable<Vote> {
+    return this.http.post<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/extend`, data).pipe(
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );

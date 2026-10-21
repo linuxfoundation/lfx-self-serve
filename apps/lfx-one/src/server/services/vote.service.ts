@@ -14,6 +14,7 @@ import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
   EnableVoteResponse,
+  ExtendVoteRequest,
   IndexedVote,
   IndexedVoteResponse,
   MyVoteResponse,
@@ -387,6 +388,26 @@ export class VoteService {
     logger.debug(req, 'update_vote', 'Updating vote payload', sanitizedPayload);
 
     const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'PUT', undefined, voteData);
+
+    return vote;
+  }
+
+  /**
+   * Extends a vote's deadline via the dedicated extend_vote upstream endpoint — unlike updateVote,
+   * this is permitted on an active vote (see linuxfoundation/lfx-v2-voting-service's extend_vote design).
+   */
+  public async extendVote(req: Request, voteUid: string, data: ExtendVoteRequest): Promise<Vote> {
+    const sanitizedPayload = logger.sanitize({ data });
+    logger.debug(req, 'extend_vote', 'Extending vote deadline', { vote_uid: voteUid, ...sanitizedPayload });
+
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(
+      req,
+      'LFX_V2_SERVICE',
+      `/votes/${this.encodeVoteUid(voteUid)}/extend`,
+      'POST',
+      undefined,
+      data
+    );
 
     return vote;
   }

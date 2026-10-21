@@ -505,7 +505,8 @@
               [canEdit]="canEdit()"
               [votes]="votes()"
               [votesLoading]="votesLoading()"
-              (refresh)="onVotesRefreshed()" />
+              (refresh)="onVotesRefreshed()"
+              (voteExtended)="onVoteExtended($event)" />
           }
         }
         @case ('meetings') {

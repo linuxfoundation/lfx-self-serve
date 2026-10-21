@@ -248,6 +248,12 @@ export class CommitteeViewComponent {
   public surveysLoading = signal<boolean>(true);
   private readonly votesRefresh = signal(0);
   private readonly surveysRefresh = signal(0);
+  // Confirmed deadline from committee-votes' voteExtended output, held until rawVotes() reflects a
+  // deadline at least as new (self-healing, mirrors votes-table's own extendedDeadlines overlay) — this
+  // must live here rather than in CommitteeVotesComponent because @switch destroys that component on
+  // every tab switch, which previously dropped the override and let the stale pre-extension deadline
+  // reappear once the user returned to the Votes tab (per @audigregorie, GH-3823 review).
+  private readonly extendedVoteOverrides = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
   public joiningOrLeaving = signal(false);
   // Blocks the join/apply CTA while the org-prefetch is running and while the dialog
   // is open (signal stays true until .finally() resolves when the dialog closes) so a
@@ -284,7 +290,17 @@ export class CommitteeViewComponent {
   public applications: Signal<CommitteeJoinApplication[]> = this.initializeApplications();
   // Pre-fetched so tab badge counts are available before the user visits each tab. The child
   // components receive these as inputs and emit refresh outputs to trigger re-fetches here.
-  public votes: Signal<Vote[]> = this.initVotes();
+  private readonly rawVotes: Signal<Vote[]> = this.initVotes();
+  // Overlays extendedVoteOverrides onto rawVotes so the extension survives committee-votes being
+  // destroyed/recreated on tab switches (per @audigregorie, GH-3823 review).
+  public votes: Signal<Vote[]> = computed(() => {
+    const overrides = this.extendedVoteOverrides();
+    if (overrides.size === 0) return this.rawVotes();
+    return this.rawVotes().map((vote) => {
+      const override = overrides.get(vote.uid);
+      return override ? { ...vote, ...override } : vote;
+    });
+  });
   public surveys: Signal<Survey[]> = this.initSurveys();
   // Feature flag: engagement metrics UI (LFXV2-1705). Defaults false, so SSR and an unreachable
   // LaunchDarkly both fail closed — flag off means zero engagement UI and zero engagement fetches.
@@ -538,6 +554,28 @@ export class CommitteeViewComponent {
   public constructor() {
     this.initAutoSelectInitialTab();
 
+    // Self-healing eviction for extendedVoteOverrides (mirrors votes-table's own extendedDeadlines
+    // pattern): once rawVotes() reflects a deadline at least as new as the override, drop it rather
+    // than keep shadowing a now-accurate search-index row indefinitely.
+    toObservable(this.rawVotes)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((votes) => {
+        const overrides = this.extendedVoteOverrides();
+        if (overrides.size === 0) return;
+        const next = new Map(overrides);
+        let changed = false;
+        for (const vote of votes) {
+          const override = next.get(vote.uid);
+          if (override && new Date(vote.end_time).getTime() >= new Date(override.end_time).getTime()) {
+            next.delete(vote.uid);
+            changed = true;
+          }
+        }
+        if (changed) {
+          this.extendedVoteOverrides.set(next);
+        }
+      });
+
     // Populate the shared invitation cache once in the browser so a direct landing on an invited
     // group (e.g. via the email link) can surface the Accept/Decline banner. Browser-only: the
     // banner is an interactive surface and the list is per-user.
@@ -656,6 +694,13 @@ export class CommitteeViewComponent {
 
   public onVotesRefreshed(): void {
     this.votesRefresh.update((v) => v + 1);
+  }
+
+  /** committee-votes' voteExtended output (relayed from votes-table) — held in parent-owned state so the
+   *  confirmed deadline survives the Votes tab being destroyed/recreated on tab switches (per
+   *  @audigregorie, GH-3823 review). */
+  public onVoteExtended(vote: Vote): void {
+    this.extendedVoteOverrides.update((map) => new Map(map).set(vote.uid, { end_time: vote.end_time, end_time_timezone: vote.end_time_timezone }));
   }
 
   public onSurveysRefreshed(): void {

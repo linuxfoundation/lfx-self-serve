@@ -7,6 +7,7 @@ import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
   EnableVoteRequest,
+  ExtendVoteRequest,
   SendVoteReminderRequest,
   UpdateVoteRequest,
 } from '@lfx-one/shared/interfaces';
@@ -251,6 +252,56 @@ export class VoteController {
         vote_uid: uid,
         project_uid: vote.project_uid,
         name: vote.name,
+      });
+
+      res.json(vote);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /votes/:uid/extend
+   */
+  public async extendVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const data: ExtendVoteRequest = req.body;
+    const startTime = logger.startOperation(req, 'extend_vote', { vote_uid: uid });
+
+    try {
+      const validationContext = { operation: 'extend_vote', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(uid, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequestBody(data, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequiredParameter(data.end_time, 'end_time', req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequiredParameter(data.end_time_timezone, 'end_time_timezone', req, next, validationContext)) {
+        return;
+      }
+
+      if (typeof data.end_time !== 'string') {
+        next(ServiceValidationError.forField('end_time', 'end_time must be a string', validationContext));
+        return;
+      }
+
+      if (typeof data.end_time_timezone !== 'string') {
+        next(ServiceValidationError.forField('end_time_timezone', 'end_time_timezone must be a string', validationContext));
+        return;
+      }
+
+      const vote = await this.voteService.extendVote(req, uid, data);
+
+      logger.success(req, 'extend_vote', startTime, {
+        vote_uid: uid,
+        end_time: vote.end_time,
       });
 
       res.json(vote);

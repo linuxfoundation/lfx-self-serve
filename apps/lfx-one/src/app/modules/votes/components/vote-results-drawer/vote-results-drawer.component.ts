@@ -101,7 +101,6 @@ export class VoteResultsDrawerComponent {
   protected readonly myResponseError = signal<boolean>(false);
   /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
-
   // === Shared Observables ===
   private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
 
@@ -160,21 +159,84 @@ export class VoteResultsDrawerComponent {
 
   // === Private Initializers ===
   private initVote(): Signal<Vote | null> {
+    // Keys off visible() (not just voteId$) the way initMyResponse() does (per @cursor) — reopening the same
+    // voteId after an extend-triggered cache eviction otherwise never re-fetches, since toObservable only
+    // emits on value changes, and visible() flips on every open/close cycle.
+    // Also keys off listVote()'s own deadline fields (per @cursor): a manager can extend a vote's deadline
+    // from the underlying table row while this drawer stays open on the same vote, and neither voteId nor
+    // visible() flips in that case — only the caller's listVote input changes once it re-fetches.
+    // Reads id/visible/listVote through one computed() snapshot — not three independently-emitting
+    // toObservable() streams combined with combineLatest — so a single update (e.g. reopening the mounted
+    // drawer on a different vote) can never pair the new id with the previous vote's stale listVote before
+    // its own change propagates (per @copilot-pull-request-reviewer).
+    let prevId: string | null = null;
+    let prevDeadlineKey: string | null = null;
+    // Last vote payload actually served to the template, keyed by id — used as the fallback/startWith
+    // value when listVote drops to null while the same vote stays open (per @cursor): the parent's list
+    // temporarily losing the row (a pagination reset, a failed refetch) must not flash the drawer blank.
+    let lastVoteId: string | null = null;
+    let lastVote: Vote | null = null;
+
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), listVote: this.listVote() }));
+
     return toSignal(
-      this.voteId$.pipe(
-        switchMap((id) => {
+      toObservable(selection).pipe(
+        distinctUntilChanged(
+          (prev, curr) =>
+            prev.id === curr.id &&
+            prev.visible === curr.visible &&
+            prev.listVote?.end_time === curr.listVote?.end_time &&
+            prev.listVote?.end_time_timezone === curr.listVote?.end_time_timezone
+        ),
+        switchMap(({ id, visible, listVote }) => {
           if (!id) {
             this.loadingVoteDetails.set(false);
+            prevId = null;
+            prevDeadlineKey = null;
+            lastVoteId = null;
+            lastVote = null;
             return of(null);
           }
+          if (!visible) {
+            // Closing — keep the already-loaded vote instead of firing a redundant fetch during the close animation (per @copilot-pull-request-reviewer / @greptile-apps).
+            this.loadingVoteDetails.set(false);
+            return EMPTY;
+          }
 
-          this.loadingVoteDetails.set(true);
-          const listVote = this.listVote();
+          // getVoteDetail caches responses for a short TTL — without this, re-fetching the same open
+          // vote right after its deadline changed could still echo back the pre-extension cached
+          // response instead of the fresh one (per @copilot-pull-request-reviewer). Re-selecting a
+          // different vote also bypasses the cache: switching A -> B -> A within the TTL must not let
+          // A's cached pre-extension entry (populated while B was being viewed) win over a deadline
+          // change that happened while A was off-screen — only an unchanged same-vote reopen still
+          // reuses the cache (per @copilot-pull-request-reviewer).
+          const deadlineKey = `${listVote?.end_time ?? ''}|${listVote?.end_time_timezone ?? ''}`;
+          const selectionChanged = prevId !== null && prevId !== id;
+          const deadlineChanged = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          const skipCache = selectionChanged || deadlineChanged;
+          prevId = id;
+          prevDeadlineKey = deadlineKey;
 
-          return this.voteService.getVote(id).pipe(
-            catchError(() => of(listVote)),
+          // Falls back to the last vote we actually loaded for this same id when listVote is null,
+          // rather than wiping the drawer with startWith(null) (per @cursor).
+          const fallback = listVote ?? (lastVoteId === id ? lastVote : null);
+
+          // Skip the loading flag when fresh-enough data is already available via the fallback (e.g. an
+          // extend while this drawer stayed open) — otherwise the drawer flashes to its skeleton state for
+          // the fetch's duration even though startWith(fallback) below renders the current vote immediately
+          // (per @cursor).
+          if (!fallback) {
+            this.loadingVoteDetails.set(true);
+          }
+
+          return this.voteService.getVote(id, { skipCache }).pipe(
+            tap((v) => {
+              lastVoteId = id;
+              lastVote = v;
+            }),
+            catchError(() => of(fallback)),
             finalize(() => this.loadingVoteDetails.set(false)),
-            startWith(listVote)
+            startWith(fallback)
           );
         })
       ),

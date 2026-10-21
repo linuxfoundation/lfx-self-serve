@@ -973,6 +973,19 @@ export interface UpdateVoteRequest {
   winning_threshold_percentage?: number;
 }
 
+/**
+ * Request body for extending a vote/poll's deadline
+ * @description Proxies to the dedicated extend_vote upstream endpoint (POST /votes/{uid}/extend),
+ * which — unlike updateVote — is permitted on an active vote. Both fields are required upstream.
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface ExtendVoteRequest {
+  /** New poll end/deadline timestamp in RFC3339/ISO format. Must be later than the vote's current end_time. */
+  end_time: string;
+  /** IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") — ITX honors end_time exactly as sent in this timezone. */
+  end_time_timezone: string;
+}
+
 /** Per-rank distribution row for a ranked-choice question (drawer-side projection of RankedChoiceVoteResult.rank_counts). */
 export interface RankCountDistribution {
   rank: number;
