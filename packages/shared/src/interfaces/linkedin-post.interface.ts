@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MktgRunSessionResponse } from './mktg-run.interface';
+import type { MktgPendingDocumentRun, MktgRunResultResponse, MktgRunSessionResponse } from './mktg-run.interface';
 
 /** Per-user posting identity, in the live linkedin-post-output/v1 contract. */
 export interface LinkedinProfile {
@@ -59,6 +59,18 @@ export interface LinkedinGeneration extends MktgRunSessionResponse {
   answers?: Record<string, string>;
   source: { label: string; words: number; fetched: boolean };
 }
+export interface LinkedinPendingRun extends MktgPendingDocumentRun {
+  answeredQuestionsId?: string;
+  source: LinkedinGeneration['source'];
+}
+export interface LinkedinResult extends MktgRunResultResponse {
+  questionsProject?: string;
+  envelope?: LinkedinEnvelope;
+  profileSaved?: boolean;
+  /** LFX-only link metadata persisted alongside the options. */
+  answers?: Record<string, string>;
+}
+
 export interface LinkedinQuestionItem {
   id: string;
   question: string;

@@ -684,17 +684,32 @@ export const ICP_INTAKE: MktgAgentIntake = {
   persistsDocument: true,
 };
 
-/**
- * Batch intake registry, keyed by catalog agent id. The run-page shell renders
- * whatever is registered here — a second agent's form (e.g. the Message
- * Foundation intake, wi-mf-lfx-selfserve) slots in as a new entry.
- */
+/** Dedicated per-user profile and source intake; no project dependencies or feedback round. */
+export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
+  agentId: 'linkedin-post',
+  oneOffDocument: true,
+  formTitleAction: 'Draft',
+  documentName: 'LinkedIn post',
+  intro: 'Three post options in your voice, from pasted text, a link or a file.',
+  batchPreamble: [],
+  fields: [],
+  sections: [],
+  endpoints: {
+    generate: '/api/mktg-agents/linkedin-post/generate',
+    result: '/api/mktg-agents/linkedin-post/result',
+    answers: '/api/mktg-agents/linkedin-post/answers',
+  },
+  persistsDocument: true,
+};
+
+/** Batch intake registry keyed by catalog agent id; dedicated surfaces declare oneOffDocument. */
 export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BRAND_KIT_INTAKE.agentId]: BRAND_KIT_INTAKE,
   [FOUNDATION_MESSAGE_INTAKE.agentId]: FOUNDATION_MESSAGE_INTAKE,
   [BOILERPLATES_INTAKE.agentId]: BOILERPLATES_INTAKE,
   [ICP_INTAKE.agentId]: ICP_INTAKE,
   [FAQ_INTAKE.agentId]: FAQ_INTAKE,
+  [LINKEDIN_POST_INTAKE.agentId]: LINKEDIN_POST_INTAKE,
 };
 
 /** Max recursion depth when scanning event payloads for envelope candidates (all Marketing OS contracts). */
@@ -822,6 +837,8 @@ export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
 
 /** localStorage key prefix for stored runs; full key is `<prefix>:<projectUid>:<agentId>`. */
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
+/** Pending LinkedIn capabilities; namespace/shape converged with the in-flight AEO/GEO intake. */
+export const MKTG_PENDING_DOCUMENT_STORAGE_PREFIX = 'lfx-mktg-pending-document';
 
 /**
  * TTL for browser-persisted runs. A stored run carries the session's

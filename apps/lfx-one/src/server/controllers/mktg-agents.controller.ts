@@ -12,6 +12,7 @@ import {
   FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE,
   FOUNDATION_MESSAGE_READ_REASONS,
   MKTG_AGENTS,
+  MKTG_AGENT_INTAKES,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
 import {
@@ -134,6 +135,12 @@ export class MktgAgentsController {
           path: req.path,
         })
       );
+      return;
+    }
+
+    // Dedicated one-off forms own project authorization; generic chat cannot bypass it.
+    if (MKTG_AGENT_INTAKES[agent.id]?.oneOffDocument) {
+      next(ServiceValidationError.forField('agentId', 'Use the dedicated project-authorized form for this agent.'));
       return;
     }
 

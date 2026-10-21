@@ -31,6 +31,7 @@ vi.mock('./logger.service', () => ({
 
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -108,6 +109,133 @@ describe('ObjectStoreService', () => {
 
   afterEach(async () => {
     await rm(localDir, { recursive: true, force: true });
+  });
+
+  it('uses the main conditional API for private creates/replacements without logging the key', async () => {
+    let exists = false;
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof GetObjectCommand) {
+        if (!exists) throw buildNotFoundError();
+        return { Body: { transformToString: async () => 'first' }, ETag: 'observed-version' };
+      }
+      if (command instanceof PutObjectCommand) exists = true;
+      return {};
+    });
+    const key = 'profiles/opaque/current.json';
+    await service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+      body: Buffer.from('first'),
+      contentType: 'application/json',
+      cacheControl: 'private',
+    });
+    await service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+      body: Buffer.from('second'),
+      contentType: 'application/json',
+      cacheControl: 'private',
+    });
+    const puts = sendMock.mock.calls.map(([command]) => command).filter((command) => command instanceof PutObjectCommand);
+    expect(puts.map((command) => command.input.Body)).toEqual([Buffer.from('first'), Buffer.from('second')]);
+    expect(puts.map((command) => command.input.Key)).toEqual([key, key]);
+    expect(puts[0].input).toMatchObject({ IfNoneMatch: '*' });
+    expect(puts[1].input).toMatchObject({ IfMatch: 'observed-version' });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+  });
+
+  it('refuses a contended private write without retrying over a concurrent save', async () => {
+    const key = 'profiles/opaque/current.json';
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof GetObjectCommand) return { Body: { transformToString: async () => 'first' }, ETag: 'observed-version' };
+      if (command instanceof PutObjectCommand) throw { $metadata: { httpStatusCode: 412 } };
+      return {};
+    });
+    await expect(
+      service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+        body: Buffer.from('second'),
+        contentType: 'application/json',
+        cacheControl: 'private',
+      })
+    ).rejects.toMatchObject({ code: 'OBJECT_STORE_REPLACE_FAILED' });
+    const puts = sendMock.mock.calls.map(([command]) => command).filter((command) => command instanceof PutObjectCommand);
+    expect(puts).toHaveLength(1);
+    expect(puts[0].input).toMatchObject({ IfMatch: 'observed-version' });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain(key);
+  });
+
+  it('reads private objects without logging keys, response bodies or provider error messages', async () => {
+    const key = 'profiles/private-subject-hash/current.json';
+    sendMock.mockResolvedValueOnce({ Body: { transformToString: async () => 'Private body' }, Metadata: {} });
+    expect(await service.getPrivateObject(buildReq(), 'marketing-os-artifacts', key)).toMatchObject({ body: 'Private body' });
+    sendMock.mockRejectedValueOnce(Object.assign(new Error(`PRIVATE_PROVIDER_MESSAGE ${key}`), { name: 'AccessDenied', $metadata: { httpStatusCode: 403 } }));
+    await expect(service.getPrivateObject(buildReq(), 'marketing-os-artifacts', key)).rejects.toMatchObject({ code: 'OBJECT_STORE_PRIVATE_READ_FAILED' });
+    const logs = JSON.stringify([vi.mocked(logger.debug).mock.calls, vi.mocked(logger.warning).mock.calls, vi.mocked(logger.startOperation).mock.calls]);
+    expect(logs).not.toContain(key);
+    expect(logs).not.toContain('Private body');
+    expect(logs).not.toContain('PRIVATE_PROVIDER_MESSAGE');
+    expect(logs).toContain('AccessDenied');
+  });
+  it('creates private state only if absent, classifying contention without leaking its key', async () => {
+    const key = 'profiles/private-subject-hash/current.json';
+    const input = { body: Buffer.from('{}'), contentType: 'application/json', cacheControl: 'private' };
+    sendMock.mockResolvedValue({});
+    expect(await service.putPrivateObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, input)).toBe(true);
+    expect(sendMock.mock.calls.at(-1)?.[0].input).toMatchObject({ IfNoneMatch: '*' });
+    sendMock.mockRejectedValue({ $metadata: { httpStatusCode: 412 } });
+    expect(await service.putPrivateObjectIfAbsent(buildReq(), 'marketing-os-artifacts', key, input)).toBe(false);
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+  });
+
+  it('deletes the current S3 key using only the deployed DeleteObject grant, without version operations or key logging', async () => {
+    const key = 'profiles/private-subject-hash/current.json';
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof DeleteObjectCommand) return { DeleteMarker: true, VersionId: 'synthetic-marker' };
+      throw new Error('Unexpected S3 operation');
+    });
+    await service.deletePrivateObject(buildReq(), 'marketing-os-artifacts', key);
+    expect(sendMock).toHaveBeenCalledOnce();
+    expect(sendMock.mock.calls[0][0].input).toEqual({ Bucket: 'marketing-os-artifacts-test', Key: key });
+    expect(JSON.stringify(vi.mocked(logger.debug).mock.calls)).not.toContain(key);
+    expect(JSON.stringify(vi.mocked(logger.startOperation).mock.calls)).not.toContain(key);
+  });
+
+  it('treats a confirmed missing bucket as an idempotent current-object deletion, but not a denied deletion', async () => {
+    sendMock.mockRejectedValueOnce(Object.assign(new Error('Missing bucket'), { name: 'NoSuchBucket', $metadata: { httpStatusCode: 404 } }));
+    await expect(service.deletePrivateObject(buildReq(), 'marketing-os-artifacts', 'profiles/opaque/current.json')).resolves.toBeUndefined();
+    const key = 'profiles/private-subject-hash/current.json';
+    sendMock.mockRejectedValueOnce(
+      Object.assign(new Error(`Denied ${key}`), { name: 'AccessDenied', Code: 'AccessDenied', $metadata: { httpStatusCode: 403 } })
+    );
+    await expect(service.deletePrivateObject(buildReq(), 'marketing-os-artifacts', key)).rejects.toMatchObject({ code: 'OBJECT_STORE_DELETE_FAILED' });
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'object_store_delete', 'Private object storage operation failed', {
+      storage_failure: { name: 'AccessDenied', code: 'AccessDenied', httpStatusCode: 403 },
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain(key);
+  });
+
+  it.each([
+    { name: 'AccessDenied', Code: 'AccessDenied', status: 403 },
+    { name: 'NoSuchBucket', code: 'NoSuchBucket', status: 404 },
+    { name: 'NotImplemented', Code: 'NotImplemented', status: 501 },
+    { name: 'SlowDown', code: 'SlowDown', status: 503 },
+    { name: 'AccessDenied', status: 403 },
+  ])('keeps $name storage failures diagnosable without logging private messages/keys', async (failure) => {
+    const key = 'profiles/private-subject-hash/current.json';
+    const error = Object.assign(new Error(`Private object ${key}`), failure, { $metadata: { httpStatusCode: failure.status } });
+    sendMock.mockImplementation(async (command) => {
+      if (command instanceof GetObjectCommand) throw buildNotFoundError();
+      if (command instanceof PutObjectCommand) throw error;
+      return {};
+    });
+    await expect(
+      service.putMutableObject(buildReq(), 'marketing-os-artifacts', key, {
+        body: Buffer.from('private'),
+        contentType: 'application/json',
+        cacheControl: 'private',
+      })
+    ).rejects.toMatchObject({ code: 'OBJECT_STORE_REPLACE_FAILED' });
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'object_store_replace', 'Private object storage operation failed', {
+      storage_failure: { name: failure.name, code: failure.Code ?? failure.code, httpStatusCode: failure.status },
+    });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain(key);
   });
 
   describe('ensureBucket', () => {

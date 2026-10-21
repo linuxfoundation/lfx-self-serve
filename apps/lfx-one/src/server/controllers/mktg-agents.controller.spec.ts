@@ -39,6 +39,7 @@ const faqMocks = vi.hoisted(() => ({
   startGeneration: vi.fn(),
   sendAnswers: vi.fn(),
 }));
+const guildMocks = vi.hoisted(() => ({ createSession: vi.fn(), sendFollowUp: vi.fn() }));
 const sourceTextMocks = vi.hoisted(() => ({
   readFile: vi.fn(),
 }));
@@ -66,7 +67,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const foundationMessage = await vi.importActual('../../../../../packages/shared/src/constants/foundation-message.constants');
   const boilerplates = await vi.importActual('../../../../../packages/shared/src/constants/boilerplates.constants');
   const faq = await vi.importActual('../../../../../packages/shared/src/constants/faq.constants');
-  return { ...agents, ...brandKit, ...artifact, ...foundationMessage, ...boilerplates, ...faq };
+  const run = await vi.importActual('../../../../../packages/shared/src/constants/mktg-run.constants');
+  return { ...agents, ...brandKit, ...artifact, ...foundationMessage, ...boilerplates, ...faq, ...run };
 });
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -83,7 +85,10 @@ vi.mock('../services/mktg-source-text.service', () => ({
   },
 }));
 vi.mock('../services/guild.service', () => ({
-  GuildService: class {},
+  GuildService: class {
+    public createSession = guildMocks.createSession;
+    public sendFollowUp = guildMocks.sendFollowUp;
+  },
 }));
 vi.mock('../services/brand-kit.service', () => ({
   BrandKitService: class {
@@ -133,6 +138,7 @@ vi.mock('../utils/auth-helper', () => authMocks);
 vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
+import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
@@ -196,6 +202,23 @@ describe('MktgAgentsController', () => {
     tokenMocks.verifySessionOwnerToken.mockReturnValue(true);
     controller = new MktgAgentsController();
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
+  });
+
+  it.each([undefined, 'existing-session'])('rejects dedicated one-off chat for a non-writer (session %s)', async (sessionId) => {
+    const dedicated = Object.values(MKTG_AGENT_INTAKES).filter((intake) => intake.oneOffDocument);
+    expect(dedicated.length).toBeGreaterThan(0);
+    projectMocks.getProjectById.mockResolvedValue({ uid: 'project-one', writer: false });
+    for (const intake of dedicated) {
+      next.mockClear();
+      const res = buildRes();
+      await controller.chat(buildIcpReq('/api/mktg-agents/chat', { agentId: intake.agentId, message: 'Synthetic request', sessionId }), res, next);
+      expect(next.mock.calls[0]?.[0]).toMatchObject({
+        statusCode: 400,
+        validationErrors: [expect.objectContaining({ field: 'agentId', message: 'Use the dedicated project-authorized form for this agent.' })],
+      });
+    }
+    expect(guildMocks.createSession).not.toHaveBeenCalled();
+    expect(guildMocks.sendFollowUp).not.toHaveBeenCalled();
   });
 
   describe('storedBrandKit (GET /api/mktg-agents/brand-kit/stored)', () => {

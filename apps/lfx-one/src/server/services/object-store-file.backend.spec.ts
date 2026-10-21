@@ -5,8 +5,9 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { OBJECT_STORE_FILE_METADATA_SUFFIX } from '../constants';
 import { ServiceValidationError } from '../errors';
 import { FileObjectStoreBackend } from './object-store-file.backend';
 
@@ -43,6 +44,68 @@ describe('FileObjectStoreBackend', () => {
     await expect(backend.putObject('current.json', input)).rejects.toMatchObject({ statusCode: 412 });
     await rm(join(root, 'current.json.lock.partial'), { recursive: true });
     await expect(backend.putObject('current.json', input)).resolves.toBeUndefined();
+  });
+
+  it('deletes the current body and metadata, prunes empty folders but preserves the store root', async () => {
+    const key = 'profiles/one/current.json';
+    await backend.putObject(key, { body: Buffer.from('Private profile'), contentType: 'application/json', cacheControl: 'private, no-store' });
+    expect((await stat(join(root, `${key}${OBJECT_STORE_FILE_METADATA_SUFFIX}`))).isFile()).toBe(true);
+    await backend.deleteObject(key);
+    expect(await backend.getObject(key)).toBeNull();
+    await expect(stat(join(root, key))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, `${key}${OBJECT_STORE_FILE_METADATA_SUFFIX}`))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'profiles'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await backend.readiness()).toBe(true);
+    await backend.deleteObject(key);
+    await expect(backend.deleteObject('../outside')).rejects.toBeInstanceOf(ServiceValidationError);
+  });
+
+  it('refuses deletion while a conditional writer holds the same per-key lock', async () => {
+    const key = 'profiles/one/current.json';
+    const input = { body: Buffer.from('first'), contentType: 'application/json', cacheControl: 'private', metadata: { version: '1' } };
+    await backend.putObject(key, input);
+    const stored = await backend.getObject(key);
+    if (!stored?.etag) throw new Error('Expected the stored test object to have a conditional token');
+    const other = new FileObjectStoreBackend(root);
+    let compared: (() => void) | undefined;
+    let resume: (() => void) | undefined;
+    const comparisonStarted = new Promise<void>((resolve) => {
+      compared = resolve;
+    });
+    const comparisonReleased = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    vi.spyOn(other, 'getObject').mockImplementationOnce(async (requestedKey) => {
+      compared?.();
+      await comparisonReleased;
+      return backend.getObject(requestedKey);
+    });
+    const writing = other.putObject(key, { ...input, body: Buffer.from('second'), metadata: { version: '2' }, ifMatch: stored.etag });
+    try {
+      await comparisonStarted;
+      expect((await stat(join(root, `${key}.lock.partial`))).isDirectory()).toBe(true);
+      await expect(backend.deleteObject(key)).rejects.toMatchObject({ statusCode: 412 });
+      expect(await backend.getObject(key)).toMatchObject({ body: 'first', metadata: { version: '1' } });
+    } finally {
+      resume?.();
+      await writing;
+    }
+    expect(await backend.getObject(key)).toMatchObject({ body: 'second', metadata: { version: '2' } });
+    await backend.deleteObject(key);
+    expect(await backend.getObject(key)).toBeNull();
+    await expect(stat(join(root, `${key}${OBJECT_STORE_FILE_METADATA_SUFFIX}`))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(root, 'profiles'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await backend.readiness()).toBe(true);
+  });
+
+  it('stops empty-folder pruning at a parent with a nonempty sibling folder', async () => {
+    const input = { body: Buffer.from('Private profile'), contentType: 'application/json', cacheControl: 'private, no-store' };
+    await backend.putObject('profiles/one/current.json', input);
+    await backend.putObject('profiles/two/current.json', input);
+    await backend.deleteObject('profiles/one/current.json');
+    await expect(stat(join(root, 'profiles/one'))).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(join(root, 'profiles'))).isDirectory()).toBe(true);
+    expect(await backend.getObject('profiles/two/current.json')).toMatchObject({ body: 'Private profile' });
   });
 
   describe('bucket (folder) lifecycle', () => {

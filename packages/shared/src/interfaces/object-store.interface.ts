@@ -95,3 +95,9 @@ export interface ObjectStoreBackend {
   getObject(key: string): Promise<ObjectStoreReadResult | null>;
   listObjects(prefix: string): Promise<ObjectStoreListEntry[]>;
 }
+
+/** Current-object deletion capability, additive to the base storage contract. */
+export interface ErasableObjectStoreBackend extends ObjectStoreBackend {
+  /** Idempotently remove the current object (and local metadata). Versioned S3 retains noncurrent versions under its lifecycle policy. */
+  deleteObject(key: string): Promise<void>;
+}
