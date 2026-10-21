@@ -12,6 +12,7 @@ import {
   LINKEDIN_FILE_TYPES_LABEL,
   LINKEDIN_POST_INTAKE,
   LINKEDIN_PROFILE_MAX_FIELD_CHARS,
+  LINKEDIN_SOURCE_MAX_BYTES,
   MKTG_KIT_FAMILIES,
 } from '@lfx-one/shared/constants';
 import { LinkedinEnvelope, LinkedinResult, ProjectContext } from '@lfx-one/shared/interfaces';
@@ -161,6 +162,16 @@ describe('LinkedIn profile and post surface', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-selected-file"]')).toBeNull();
     await component['onDraft']();
     expect(component['error']()).toContain('Choose a text file');
+    expect(api.start).not.toHaveBeenCalled();
+  });
+  it.each(['missing', 'oversized'])('uses the configured byte limit for a %s file without reading or starting a run', async (kind) => {
+    const component = (await stored()).componentInstance;
+    component['onSource']('file');
+    if (kind === 'oversized') component['file'].set(new File([new Uint8Array(LINKEDIN_SOURCE_MAX_BYTES + 1)], 'synthetic.txt'));
+    const read = (component['readFile'] = vi.fn());
+    await component['onDraft']();
+    expect(component['error']()).toBe(`Choose a text file up to ${LINKEDIN_SOURCE_MAX_BYTES.toLocaleString('en-US')} bytes.`);
+    expect(read).not.toHaveBeenCalled();
     expect(api.start).not.toHaveBeenCalled();
   });
   it('opens explicit profile-edit navigation before recovering an unfinished run, resuming on cancel', async () => {
