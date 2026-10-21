@@ -283,7 +283,11 @@ export class VoteCastDrawerComponent {
           prevId = id;
           prevDeadlineKey = deadlineKey;
 
-          const fallback = listVote ?? (lastVoteId === id ? lastVote : null);
+          // Prefer the last fetched full detail over listVote (per @cursor, GH-3823 review): a deadline
+          // change re-runs this stream with the caller's list row already carrying the new end_time, but
+          // that row can be a partial summary missing poll_questions. Falling back to listVote only when no
+          // full detail has been fetched yet for this vote keeps rebuildForm() from wiping the ballot.
+          const fallback = (lastVoteId === id ? lastVote : null) ?? listVote;
           if (!fallback) {
             this.loadingVote.set(true);
           }

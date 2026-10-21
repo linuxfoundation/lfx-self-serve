@@ -37,26 +37,27 @@ export class CommitteeVotesComponent {
   // Outputs
   /** Emitted when a vote is deleted so the parent can re-fetch and update the tab badge count. */
   public readonly refresh = output<void>();
+  /** Relays votes-table's voteExtended output to committee-view, which holds the override in
+   *  parent-owned state — this component (and any local override it held) is destroyed/recreated on
+   *  every tab switch, which previously dropped the confirmed deadline (per @audigregorie, GH-3823
+   *  review). */
+  public readonly voteExtended = output<Vote>();
 
   // State
   public creating = signal(false);
   public resultsDrawerVisible = model<boolean>(false);
   public selectedVoteId = signal<string | null>(null);
-  // Confirmed deadline from votes-table's voteExtended output, held until votes() reflects a deadline at
-  // least as new (self-healing, mirrors votes-table's own extendedDeadlines overlay) — a stale search-index
-  // refresh otherwise leaves the open results drawer showing the pre-extension deadline indefinitely (per
-  // @greptile-apps, GH-3823 review).
-  private readonly extendedVoteOverride = signal<Vote | null>(null);
 
   // Data
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
   // Edit-link fallback: every row here belongs to this committee, so its committee_uid admits
   // committee writers through writerGuard even when the indexed row omits the field (GH-1568).
   public editVoteQueryParams: Signal<Record<string, string>> = this.createVoteQueryParams;
-  // Keeps the open drawer's listVote fed with the latest row data (e.g. an extended deadline) once
-  // the parent re-fetches after refresh.emit() — derived from id + votes() so it naturally re-evaluates
-  // on every votes() update and falls back to null once the id is cleared or the row leaves the list,
-  // instead of the one-time snapshot an effect()-driven write would leave stale (per @cursor).
+  // Keeps the open drawer's listVote fed with the latest row data (e.g. an extended deadline) —
+  // derived from id + votes() so it naturally re-evaluates on every votes() update (including
+  // committee-view's extendedVoteOverrides overlay, applied synchronously on voteExtended) and falls
+  // back to null once the id is cleared or the row leaves the list, instead of the one-time snapshot an
+  // effect()-driven write would leave stale (per @cursor).
   public selectedVote: Signal<Vote | null> = this.initSelectedVote();
 
   public viewVoteResults(voteUid: string): void {
@@ -70,9 +71,11 @@ export class CommitteeVotesComponent {
   }
 
   /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
-   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps). */
+   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps).
+   *  Relayed to committee-view rather than held locally so the override survives this component being
+   *  destroyed/recreated on tab switches (per @audigregorie, GH-3823 review). */
   protected onVoteExtended(vote: Vote): void {
-    this.extendedVoteOverride.set(vote);
+    this.voteExtended.emit(vote);
   }
 
   protected onCreateVote(): void {
@@ -107,12 +110,7 @@ export class CommitteeVotesComponent {
     return computed(() => {
       const id = this.selectedVoteId();
       if (!id) return null;
-      const row = this.votes().find((v) => v.uid === id) || null;
-      const override = this.extendedVoteOverride();
-      if (override?.uid === id && (!row || new Date(row.end_time).getTime() < new Date(override.end_time).getTime())) {
-        return { ...(row ?? override), ...override };
-      }
-      return row;
+      return this.votes().find((v) => v.uid === id) || null;
     });
   }
 }
