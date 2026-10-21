@@ -214,6 +214,10 @@ describe('GuildService.getHistory — trigger_message parsing', () => {
       expect(await triggerText({ data: '```json {"text":"obj"} ```' })).toBe('obj');
     });
 
+    it('closes the block at the first ``` after the fence, not a later one', async () => {
+      expect(await triggerText('```json {"text":"first"} ``` trailing ```')).toBe('first');
+    });
+
     it('falls through to the plain-text fallback for an empty fenced block', async () => {
       expect(await triggerText('```json```')).toBe('```json```');
     });

@@ -743,6 +743,16 @@ describe('MktgAgentsController', () => {
       expect(icpMocks.startGeneration).not.toHaveBeenCalled();
     });
 
+    it('measures the trimmed feedback, so one exactly at the cap starts a generation', async () => {
+      icpMocks.startGeneration.mockResolvedValue({ sessionId: 'sess-icp', readme: { fetched: true, source: 'repository' } });
+      const feedback = `  ${'f'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS)}\n`;
+
+      await controller.generateIcp(buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), feedback, priorVersion: 1 }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(icpMocks.startGeneration).toHaveBeenCalledWith(expect.anything(), expect.anything(), { feedback, priorVersion: 1 }, 'icp');
+    });
+
     it('rejects feedback without a prior version so a first document is never finalized as v2', async () => {
       await controller.generateIcp(buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), feedback: 'Sharpen persona two.' }), buildRes(), next);
 
