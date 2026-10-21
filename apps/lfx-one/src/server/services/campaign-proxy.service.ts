@@ -446,6 +446,28 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
 // ---------------------------------------------------------------------------
 
 /**
+ * The proxy's own words on a failed AI request, as a ready-to-append message suffix.
+ *
+ * Shared by both callers rather than written twice, because written twice is exactly how
+ * `aiChatStream` came to drop the body while `aiChat` kept it (#3996). The next person to change
+ * one changes both.
+ *
+ * `.catch` keeps a failed body read from replacing the status that actually matters — a torn
+ * connection on the error body would otherwise throw over the top of the error being reported.
+ *
+ * The key is stripped because `AI_API_KEY` travels in the `Authorization` header and a proxy is
+ * free to echo the request back in its error payload. These messages do not stay inside the
+ * service: every `aiChat` caller hands the error to `logger.warning`, and the copy stage yields
+ * the streaming one to the browser as an SSE `error` event. `split`/`join` rather than a regex, so
+ * a key holding regex metacharacters needs no escaping.
+ */
+async function aiErrorDetail(response: Response, apiKey: string): Promise<string> {
+  const text = await response.text().catch(() => '');
+  if (!text) return '';
+  return `: ${apiKey ? text.split(apiKey).join('[redacted]') : text}`;
+}
+
+/**
  * One chat completion through the LiteLLM proxy.
  */
 async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?: AbortSignal, maxTokens = 4096): Promise<string> {
@@ -474,8 +496,7 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`AI request failed (${response.status}): ${text}`);
+    throw new Error(`AI request failed (${response.status})${await aiErrorDetail(response, aiApiKey)}`);
   }
 
   const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
@@ -510,8 +531,14 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
   });
 
-  if (!response.ok || !response.body) {
-    throw new Error(`AI streaming request failed (${response.status})`);
+  // Split from the null-body case below rather than left as one condition. Collapsed, a 200 with
+  // no body threw `AI streaming request failed (200)` — a sentence that contradicts itself and
+  // sends the next reader hunting for a 200-level error that does not exist.
+  if (!response.ok) {
+    throw new Error(`AI streaming request failed (${response.status})${await aiErrorDetail(response, aiApiKey)}`);
+  }
+  if (!response.body) {
+    throw new Error(`AI streaming request returned no response body (${response.status})`);
   }
 
   const reader = response.body.getReader();

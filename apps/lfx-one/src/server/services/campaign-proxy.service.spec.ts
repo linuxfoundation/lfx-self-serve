@@ -2391,3 +2391,95 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     expect(result.found).toBe(false);
   });
 });
+
+/**
+ * `aiChatStream` used to throw `AI streaming request failed (${status})` and nothing else, while
+ * its sibling `aiChat` carried the proxy's body. A 401 from the LiteLLM proxy therefore reached
+ * the operator as a bare status, and took days to attribute (#3996).
+ *
+ * These assert on the SSE `error` event rather than on the thrown message, because that event is
+ * what the copy-generation routes actually deliver — a message that is legible only inside the
+ * service is not the fix this ticket asked for.
+ */
+describe('CampaignProxyService streaming AI failures', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...originalEnv };
+  });
+
+  const EXTRACTION = JSON.stringify({ name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026' });
+
+  /**
+   * The streaming call is told apart from every other AI call by `stream: true` in its own request
+   * body — the one property only `aiChatStream` sets. Matching on call order instead would pin the
+   * wrong request the moment a stage was added before the copy stage.
+   */
+  function stubAi(
+    streamResponse: { ok: boolean; status: number; text?: string; body?: ReadableStream<Uint8Array> | null },
+    apiKey = 'test-key'
+  ): CampaignProxyService {
+    process.env['AI_PROXY_URL'] = 'https://ai.example.test/v1/chat';
+    process.env['AI_API_KEY'] = apiKey;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: { body?: string }) => {
+        if (String(init?.body ?? '').includes('"stream":true')) {
+          return {
+            ok: streamResponse.ok,
+            status: streamResponse.status,
+            text: async () => streamResponse.text ?? '',
+            json: async () => ({}),
+            body: streamResponse.body ?? null,
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => EXTRACTION,
+          json: async () => ({ choices: [{ message: { content: EXTRACTION } }] }),
+          body: null,
+        };
+      })
+    );
+    return new CampaignProxyService();
+  }
+
+  async function errorEvent(service: CampaignProxyService): Promise<string> {
+    const events: { type: string; data: unknown }[] = [];
+    const gen = service.streamBrief(req, { url: 'https://events.example.com/kubecon-eu-2026', platforms: ['google-ads'] }, new AbortController().signal);
+    for await (const e of gen as AsyncGenerator<{ type: string; data: unknown }>) events.push(e);
+    return String(events.find((e) => e.type === 'error')?.data ?? '');
+  }
+
+  it('surfaces the proxy’s response body on a failed streaming request', async () => {
+    const service = stubAi({ ok: false, status: 401, text: 'Invalid proxy credential for host litellm.example.test' });
+
+    // The host and the word "credential" are the whole point: a bare `(401)` names neither, and
+    // naming them is what turns a multi-day diagnosis into a one-line read.
+    expect(await errorEvent(service)).toBe(
+      'Ad copy generation failed: AI streaming request failed (401): Invalid proxy credential for host litellm.example.test'
+    );
+  });
+
+  it('keeps AI_API_KEY out of the message when the proxy echoes it back', async () => {
+    const service = stubAi({ ok: false, status: 403, text: 'rejected Authorization: Bearer sk-live-abc+123' }, 'sk-live-abc+123');
+
+    const message = await errorEvent(service);
+
+    // The key travels in the `Authorization` header, and this message reaches both the server log
+    // and the browser over SSE. `+` is in the key on purpose — a regex-based redaction would read
+    // it as a quantifier and leave the key in place.
+    expect(message).not.toContain('sk-live-abc+123');
+    expect(message).toBe('Ad copy generation failed: AI streaming request failed (403): rejected Authorization: Bearer [redacted]');
+  });
+
+  it('reports a successful response with no body as its own condition', async () => {
+    const service = stubAi({ ok: true, status: 200, body: null });
+
+    // Not `failed (200)`. The old collapsed condition described a success as a failure, which is
+    // the sentence that sends the next reader looking for a 200-level error.
+    expect(await errorEvent(service)).toBe('Ad copy generation failed: AI streaming request returned no response body (200)');
+  });
+});
