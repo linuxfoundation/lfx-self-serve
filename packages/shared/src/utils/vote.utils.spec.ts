@@ -1006,7 +1006,7 @@ describe('voter results helpers', () => {
 
     it('tells managers they see live totals while voters wait for close', () => {
       expect(getVoteVisibilityRules('creator', false, false)).toEqual([
-        'As a manager, you can follow live totals and comments while the vote is open.',
+        'As a manager, you can follow live totals and comments until the vote closes.',
         'Voters see only their own response until the vote closes.',
         'No one sees how another voter voted on this page.',
         'Named ballot: each ballot is recorded against the voter who cast it.',

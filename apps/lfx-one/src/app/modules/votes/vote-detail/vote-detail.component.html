@@ -61,8 +61,8 @@
                       <div class="flex items-center justify-between gap-3">
                         <h2 class="text-base font-semibold text-gray-900">Results</h2>
                         <lfx-tag
-                          [value]="isVoteClosed() ? 'Final results' : 'Voting in progress'"
-                          [severity]="isVoteClosed() ? 'secondary' : 'success'"
+                          [value]="resultsStatusTag().value"
+                          [severity]="resultsStatusTag().severity"
                           data-testid="vote-detail-overview-results-status" />
                       </div>
                       <ng-container [ngTemplateOutlet]="resultsBody" />
@@ -154,7 +154,7 @@
                         <p-skeleton width="100%" height="4rem" />
                       </div>
                     } @else if (voteResultsError()) {
-                      <p class="text-sm text-red-700" data-testid="vote-detail-comments-error">Couldn't load comments. Please try again.</p>
+                      <p class="text-sm text-red-700" data-testid="vote-detail-comments-error">Couldn't load comments. Try reloading this page.</p>
                     } @else {
                       <lfx-vote-comment-results [commentResults]="commentResults()" [(pageState)]="commentPaginatorState" />
                     }
@@ -182,7 +182,7 @@
           }
         </div>
       } @else if (voteResultsError()) {
-        <p class="text-sm text-red-700" data-testid="vote-detail-results-error">Couldn't load results. Please try again.</p>
+        <p class="text-sm text-red-700" data-testid="vote-detail-results-error">Couldn't load results. Try reloading this page.</p>
       } @else {
         @if (audience() === 'voter' && myResponse()?.vote_status === 'responded' && !voteData.pseudo_anonymity) {
           <p class="text-sm text-gray-700" data-testid="vote-detail-you-voted">You voted on this motion.</p>

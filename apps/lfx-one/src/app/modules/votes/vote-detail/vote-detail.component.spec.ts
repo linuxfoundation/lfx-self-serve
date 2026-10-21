@@ -241,7 +241,7 @@ describe('VoteDetailComponent', () => {
       voteService.getVoteResults.mockReturnValue(httpError(500));
       const fixture = await setup();
 
-      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-error')?.textContent?.trim()).toBe("Couldn't load results. Try reloading this page.");
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
       // No results means no count — never "0 invited voters have not responded yet".
       expect(testId(fixture, 'vote-detail-overview-callout')).not.toBeNull();
@@ -273,6 +273,15 @@ describe('VoteDetailComponent', () => {
       const callout = testId(fixture, 'vote-detail-overview-callout')?.textContent ?? '';
       expect(callout).toContain('This vote is a draft');
       expect(callout).not.toContain('This vote is closed');
+      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Not open yet', severity: 'secondary' });
+    });
+
+    it('tags an open vote as in progress', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ACTIVE })));
+      const fixture = await setup();
+
+      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Voting in progress', severity: 'success' });
     });
 
     it('keeps the closed copy for an ended vote', async () => {
@@ -282,6 +291,7 @@ describe('VoteDetailComponent', () => {
 
       expect(read<StatCardItem[]>(fixture, 'summaryCards')[3]).toMatchObject({ label: 'Did not vote', subLine: 'Voting is closed' });
       expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('This vote is closed');
+      expect(read(fixture, 'resultsStatusTag')).toEqual({ value: 'Final results', severity: 'secondary' });
     });
   });
 

@@ -155,6 +155,8 @@ export class VoteDetailComponent {
     () => !this.voteResultsError() && (!!this.vote()?.allow_abstain || this.participationStats().abstainedVoters > 0)
   );
   protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
+  /** Overview results tag — a draft reads "Not open yet", never "Voting in progress". */
+  protected readonly resultsStatusTag: Signal<{ value: string; severity: 'success' | 'secondary' }> = this.initResultsStatusTag();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = computed(() => buildRankedQuestionViews(this.voteResults()));
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
@@ -380,6 +382,14 @@ export class VoteDetailComponent {
       // Treat 100% participation as finalized even if the vote hasn't formally ended (same rule as the drawer).
       const stats = this.participationStats();
       return stats.eligibleVoters > 0 && stats.participationRate >= 100;
+    });
+  }
+
+  private initResultsStatusTag(): Signal<{ value: string; severity: 'success' | 'secondary' }> {
+    return computed(() => {
+      if (this.isVoteClosed()) return { value: 'Final results', severity: 'secondary' };
+      if (this.isActive()) return { value: 'Voting in progress', severity: 'success' };
+      return { value: 'Not open yet', severity: 'secondary' };
     });
   }
 

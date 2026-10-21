@@ -805,7 +805,7 @@ export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnon
   const rules: string[] = [];
   if (audience === 'creator') {
     rules.push(
-      isClosed ? 'As a manager, you can see the final totals and comments.' : 'As a manager, you can follow live totals and comments while the vote is open.'
+      isClosed ? 'As a manager, you can see the final totals and comments.' : 'As a manager, you can follow live totals and comments until the vote closes.'
     );
     rules.push(isClosed ? 'Invited voters now see the final totals and comments.' : 'Voters see only their own response until the vote closes.');
   } else {

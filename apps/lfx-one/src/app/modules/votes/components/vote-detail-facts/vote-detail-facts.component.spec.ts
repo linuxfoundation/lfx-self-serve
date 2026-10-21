@@ -98,5 +98,6 @@ describe('VoteDetailFactsComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-close"] dt').textContent.trim()).toBe('Closes');
     expect(rules()).toEqual(getVoteVisibilityRules('creator', false, false));
     expect(rules()).not.toContain('Invited voters now see the final totals and comments.');
+    expect(rules().join(' ')).not.toContain('while the vote is open');
   });
 });
