@@ -79,6 +79,17 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
     });
   });
 
+  describe('the scope radio group', () => {
+    it('is named per meeting and occurrence so drawers on one page do not share a group', async () => {
+      const first = (await mount({ occurrence })).component.scopeRadioName();
+      TestBed.resetTestingModule();
+      const second = (await mount({ occurrence: { ...occurrence, occurrence_id: OTHER_OCCURRENCE_ID } })).component.scopeRadioName();
+
+      expect(first).toBe(`materials-scope-m1-${OCCURRENCE_ID}`);
+      expect(second).toBe(`materials-scope-m1-${OTHER_OCCURRENCE_ID}`);
+    });
+  });
+
   describe('what is listed', () => {
     const series = attachment({ uid: 'series' });
     const mine = attachment({ uid: 'mine', occurrence_id: OCCURRENCE_ID });

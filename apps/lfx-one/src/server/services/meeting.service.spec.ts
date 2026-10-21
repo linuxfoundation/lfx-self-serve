@@ -4,6 +4,7 @@
 import type {
   CreateMeetingRegistrantRequest,
   Meeting,
+  MeetingAttachment,
   MeetingRegistrant,
   MeetingRsvp,
   MeetingUserInfo,
@@ -610,6 +611,34 @@ describe('MeetingService.getMeetingRegistrantsByEmail', () => {
 
     const [, , , , query] = proxyRequest.mock.calls[0];
     expect(query.page_size).toBe(1000);
+  });
+});
+
+describe('MeetingService.getMeetingAttachments', () => {
+  let service: MeetingService;
+
+  const attachmentRecord = (id: string) => ({ id: `v1_meeting_attachment:${id}`, data: { uid: id, meeting_id: 'meeting-1' } as MeetingAttachment });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it("follows page_token so an occurrence's attachments on a later page are not lost", async () => {
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [attachmentRecord('other-date')], page_token: 'next' })
+      .mockResolvedValueOnce({ resources: [attachmentRecord('this-date')] });
+
+    const result = await service.getMeetingAttachments(req, 'meeting-1');
+
+    expect(result.map((a) => a.uid)).toEqual(['other-date', 'this-date']);
+    expect(proxyRequest.mock.calls[1][4]).toEqual({ type: 'v1_meeting_attachment', parent: 'meeting:meeting-1', page_token: 'next' });
+  });
+
+  it('rejects instead of returning a truncated list when a later page fails', async () => {
+    proxyRequest.mockResolvedValueOnce({ resources: [attachmentRecord('a')], page_token: 'next' }).mockRejectedValueOnce(new Error('query service down'));
+
+    await expect(service.getMeetingAttachments(req, 'meeting-1')).rejects.toThrow('query service down');
   });
 });
 

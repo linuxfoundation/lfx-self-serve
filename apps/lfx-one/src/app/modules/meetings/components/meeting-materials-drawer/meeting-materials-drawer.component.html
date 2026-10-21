@@ -43,7 +43,7 @@
               data-testid="scope-option-occurrence">
               <input
                 type="radio"
-                name="materials-scope"
+                [name]="scopeRadioName()"
                 class="sr-only"
                 [checked]="newItemScope() === 'occurrence'"
                 [disabled]="saving()"
@@ -57,7 +57,7 @@
               data-testid="scope-option-series">
               <input
                 type="radio"
-                name="materials-scope"
+                [name]="scopeRadioName()"
                 class="sr-only"
                 [checked]="newItemScope() === 'series'"
                 [disabled]="saving()"

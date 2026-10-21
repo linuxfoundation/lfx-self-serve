@@ -1951,15 +1951,17 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_attachments', 'Fetching meeting attachments', { meeting_id: meetingUid, query_params: params });
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(
+    // Every page is read: attachments are filtered per occurrence in the browser, so a list cut off after the first
+    // page could hide an occurrence's materials behind other dates' ones. A partial list would do the same.
+    return fetchAllQueryResources<MeetingAttachment>(
       req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
-
-    return resources.map((resource) => resource.data);
   }
 
   /**

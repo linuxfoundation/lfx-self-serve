@@ -89,6 +89,11 @@ export class MeetingMaterialsDrawerComponent {
   private readonly isPastMode = computed(() => !!this.pastMeetingId());
   /** True when attachments carry a scope worth showing: an upcoming recurring meeting with the managed occurrence known. */
   public readonly showScopes = computed(() => !this.isPastMode() && !!this.occurrence()?.occurrence_id);
+  /**
+   * Name shared by this drawer's two scope radios. Native radios group by name across the whole document and the
+   * meetings list renders a drawer per card (several per recurring meeting), so it is unique per meeting and occurrence.
+   */
+  public readonly scopeRadioName = computed(() => `materials-scope-${this.meetingId() ?? ''}-${this.occurrence()?.occurrence_id ?? ''}`);
   /** True when this drawer can offer "this occurrence" vs "all occurrences". */
   public readonly canScope = computed(() => this.showScopes() && this.canScopeToOccurrence());
   /**
