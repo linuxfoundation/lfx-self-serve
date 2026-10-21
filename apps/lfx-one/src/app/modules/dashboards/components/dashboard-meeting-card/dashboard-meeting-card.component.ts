@@ -19,6 +19,7 @@ import {
   MeetingTypeBadge,
   PastMeetingRecording,
   resolveOccurrenceRecurrence,
+  resolveShownOccurrenceId,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -123,15 +124,18 @@ export class DashboardMeetingCardComponent {
   }
 
   public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id, this.occurrence()?.occurrence_id);
+    // The date this card shows: the occurrence input when given, else the next occurrence it resolves from the meeting
+    // itself (Groups Overview passes only the meeting), so the registration that fits what is on screen is chosen.
+    this.inviteResend.resendOwn(this.meeting().id, resolveShownOccurrenceId(this.meeting(), this.occurrence()));
   }
 
   // Resending goes to the viewer's own registrant row, so it is offered only where one exists: signed in, upcoming,
-  // invited and not since removed, and — for an organizer, whose access does not depend on an invitation — only with a
-  // registration of their own. Same rule as the meeting card's "Remove Myself". `my_registrant_ids` is authoritative where
-  // the feed provides it. The removal marker is read because the cached meetings feed keeps answering `invited: true`
-  // for a while after the viewer removes themselves elsewhere (query-service indexing lag), which would offer a resend
-  // for a registration that no longer exists.
+  // invited and not since removed, and with an active registration. `my_registrant_ids` is authoritative for every
+  // viewer where the feed provides it, an empty list meaning no active registration (`invited` is derived from access
+  // grants and can be true without one); only when it is absent does `invited` stand in. Same rule as the meeting card's
+  // "Remove Myself". The removal marker is read because the cached meetings feed keeps answering `invited: true` for a
+  // while after the viewer removes themselves elsewhere (query-service indexing lag), which would offer a resend for a
+  // registration that no longer exists.
   private initCanResendInvite(): Signal<boolean> {
     return computed(() => {
       const meeting = this.meeting();
@@ -139,7 +143,7 @@ export class DashboardMeetingCardComponent {
         return false;
       }
       const registrantIds = meeting.my_registrant_ids;
-      return !meeting.organizer || (registrantIds ? registrantIds.length > 0 : true);
+      return registrantIds ? registrantIds.length > 0 : true;
     });
   }
 

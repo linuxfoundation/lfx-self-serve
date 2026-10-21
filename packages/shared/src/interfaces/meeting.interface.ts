@@ -2305,14 +2305,3 @@ export interface MeetingCreateMenuRow {
  * column, where hanging the whole panel off to one side reads as belonging to something else.
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
-
-/** Which occurrence(s) a meeting's ICS calendar download covers (GH-3505). */
-export type MeetingCalendarScope = 'occurrence' | 'series';
-
-/** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
-export interface VEventExtras {
-  /** Agenda/body text. Falls back to the title when omitted, matching prior behavior. */
-  description?: string;
-  /** Join link, appended to DESCRIPTION and set as the ICS URL property (GH-3505). */
-  joinUrl?: string;
-}

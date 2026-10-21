@@ -74,6 +74,16 @@ beforeEach(() => {
 const post = (path: string) =>
   fetch(`${baseUrl}/api/meetings/${MEETING_UID}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
 
+describe('meetings router — removed per-meeting calendar download', () => {
+  it('no longer serves GET /:uid/calendar.ics, and no handler is reached for it', async () => {
+    const res = await fetch(`${baseUrl}/api/meetings/${MEETING_UID}/calendar.ics?scope=series`);
+
+    expect(res.status).toBe(404);
+    expect(selfHandler).not.toHaveBeenCalled();
+    expect(organizerHandler).not.toHaveBeenCalled();
+  });
+});
+
 describe('meetings router — resend invitation routes', () => {
   it('routes the self path to the self handler, not the organizer handler', async () => {
     const res = await post('/registrants/self/resend');

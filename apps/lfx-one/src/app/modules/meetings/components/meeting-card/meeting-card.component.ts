@@ -299,8 +299,11 @@ export class MeetingCardComponent implements OnInit {
   });
   // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
-  // Resending goes to the viewer's own registrant row, so it is offered under the same rule as removing it.
-  public readonly canResendInvite: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // Resending goes to the viewer's own registrant row, so it needs one that really exists. `isRegisteredAttendee` is not
+  // enough for a non-organizer: `invited` is derived from access grants and can be true while the feed's
+  // `my_registrant_ids` is `[]` (no active registration), which would offer a resend that 404s. So a supplied list is
+  // honored for every viewer, except right after registering here, when the feed has not caught up yet.
+  public readonly canResendInvite: Signal<boolean> = computed(() => this.isRegisteredAttendee() && (this.optimisticInvited() || this.hasOwnRegistration()));
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );

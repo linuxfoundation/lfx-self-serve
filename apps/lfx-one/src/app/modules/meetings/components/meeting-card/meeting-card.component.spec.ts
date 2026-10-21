@@ -890,6 +890,29 @@ describe('MeetingCardComponent — remove myself', () => {
     expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-pinned');
   });
 
+  it('does not offer a resend to a non-organizer whose feed shows no active registration, even though invited is true', async () => {
+    const component = await mount({ ...INVITEE, my_registrant_ids: [] } as Meeting);
+
+    expect(component.canResendInvite()).toBe(false);
+  });
+
+  it('offers a resend to a non-organizer whose feed lists an active registration', async () => {
+    const component = await mount({ ...INVITEE, my_registrant_ids: ['reg-1'] } as Meeting);
+
+    expect(component.canResendInvite()).toBe(true);
+  });
+
+  it('offers a resend right after registering here, before the feed lists the new registration', async () => {
+    const component = await mount({ ...INVITEE, visibility: 'public', my_registrant_ids: [] } as Meeting);
+    expect(component.canResendInvite()).toBe(false);
+
+    component.registerForMeeting();
+    registrationClose$.next({ registered: true });
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.canResendInvite()).toBe(true);
+  });
+
   it('ignores a second click while a resend is in flight', async () => {
     const pending$ = new Subject<{ message: string }>();
     resendMyMeetingInvitation.mockReturnValue(pending$);

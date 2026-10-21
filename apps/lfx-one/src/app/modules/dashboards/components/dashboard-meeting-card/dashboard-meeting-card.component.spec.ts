@@ -203,8 +203,54 @@ describe('DashboardMeetingCardComponent', () => {
 
       fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
-      expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', undefined);
+      // A one-time meeting has no occurrences to tell apart, so no occurrence is named.
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', null);
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    });
+
+    describe('when only the meeting is passed, as on Groups Overview', () => {
+      const NEXT_START = '2030-03-07T15:00:00Z';
+      const recurring = { recurrence: { type: 'weekly' } } as unknown as Partial<Meeting>;
+
+      it('names the occurrence of the date the card shows, found in the meeting occurrences', async () => {
+        await render(
+          buildMeeting({
+            ...recurring,
+            invited: true,
+            next_occurrence_start_time: NEXT_START,
+            occurrences: [
+              { occurrence_id: 'occ-earlier', start_time: '2030-02-28T15:00:00Z', duration: 60 },
+              { occurrence_id: 'occ-next', start_time: NEXT_START, duration: 60 },
+            ] as Meeting['occurrences'],
+          }),
+          { authenticated: true }
+        );
+
+        fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-next');
+      });
+
+      it("falls back to the shown start's Unix seconds when the list has no matching occurrence", async () => {
+        await render(buildMeeting({ ...recurring, invited: true, next_occurrence_start_time: NEXT_START }), { authenticated: true });
+
+        fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', String(Date.parse(NEXT_START) / 1000));
+      });
+    });
+
+    it('does not offer the action to a non-organizer whose feed shows no active registration, even though invited is true', async () => {
+      await render(buildMeeting({ invited: true, my_registrant_ids: [] }), { authenticated: true });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+    });
+
+    it('offers the action to a non-organizer whose feed lists an active registration', async () => {
+      await render(buildMeeting({ invited: true, my_registrant_ids: ['reg-1'] }), { authenticated: true });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(true);
     });
 
     it('resends for the occurrence the card is showing, so the matching registration is chosen', async () => {
