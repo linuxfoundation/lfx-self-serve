@@ -191,7 +191,7 @@ describe('MktgAgentRunComponent', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         { provide: PLATFORM_ID, useValue: platformId },
-        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ agentId }) } } },
+        { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ agentId }) }, queryParamMap: of(convertToParamMap({})) } },
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
@@ -212,11 +212,13 @@ describe('MktgAgentRunComponent', () => {
     await fixture.whenStable();
   };
 
-  it('returns Back to agents to the grid route, preserving project scope', async () => {
-    await configure();
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-    component['onBack']();
-    expect(navigate).toHaveBeenCalledWith(['..', 'agents'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+  it('shows fixed Kit and Family parents instead of a separate back arrow', async () => {
+    await configure('browser', 'foundation-setup');
+    const breadcrumb: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="mktg-breadcrumb"]');
+    expect(breadcrumb?.textContent).toContain('kit');
+    expect(breadcrumb?.textContent).toContain('Positioning & brand');
+    expect(breadcrumb?.querySelectorAll('a')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-agent-run-back-button"]')).toBeNull();
   });
 
   for (const agentId of ['not-catalogued', MKTG_AGENTS.find((agent) => agent.status === 'coming-soon')?.id ?? 'not-catalogued']) {
@@ -224,7 +226,7 @@ describe('MktgAgentRunComponent', () => {
       const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
       try {
         await configure('browser', agentId);
-        expect(navigate).toHaveBeenCalledWith(['..', 'agents'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+        expect(navigate).toHaveBeenCalledWith(['..', 'agents'], expect.objectContaining({ queryParamsHandling: 'preserve', replaceUrl: true }));
       } finally {
         navigate.mockRestore();
       }

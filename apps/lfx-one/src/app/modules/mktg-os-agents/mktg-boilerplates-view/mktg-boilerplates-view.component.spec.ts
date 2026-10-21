@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { PLATFORM_ID } from '@angular/core';
+import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ProjectContextService } from '@services/project-context.service';
 import { MktgBoilerplatesAsset } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -36,15 +39,18 @@ describe('MktgBoilerplatesViewComponent', () => {
   const host = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const query = (testId: string): HTMLElement | null => host().querySelector(`[data-testid="${testId}"]`);
 
-  const render = async (asset: MktgBoilerplatesAsset = ASSET, platformId: 'browser' | 'server' = 'browser'): Promise<void> => {
+  const render = async (asset: MktgBoilerplatesAsset = ASSET, platformId: 'browser' | 'server' = 'browser', url = '/'): Promise<void> => {
     messageService = { add: vi.fn() };
     await TestBed.configureTestingModule({
       imports: [MktgBoilerplatesViewComponent],
       providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
         { provide: PLATFORM_ID, useValue: platformId },
         { provide: MessageService, useValue: messageService },
       ],
     }).compileComponents();
+    await TestBed.inject(Router).navigateByUrl(url);
     fixture = TestBed.createComponent(MktgBoilerplatesViewComponent);
     fixture.componentRef.setInput('projectName', 'TestOrbit');
     fixture.componentRef.setInput('asset', asset);
@@ -55,6 +61,44 @@ describe('MktgBoilerplatesViewComponent', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('loads its URL tab and pushes one history entry per user switch', async () => {
+    await render(ASSET, 'browser', '/?project=synthetic&profile=edit&tab=sources');
+    expect(query('mktg-boilerplates-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+    const push = vi.spyOn(TestBed.inject(Location), 'go');
+    query('mktg-boilerplates-view-tab-boilerplates')?.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).not.toContain('tab=');
+    expect(TestBed.inject(Router).url).toContain('profile=edit');
+    expect(push).toHaveBeenCalledTimes(1);
+    push.mockRestore();
+  });
+
+  it.each(['tab', 'shortcut'])('focuses the opened panel after delayed navigation from a %s', async (action) => {
+    await render({ ...ASSET, mode: 'check', checks: { ...ASSET.checks, findings: ['Review the synthetic draft.'] } });
+    const router = TestBed.inject(Router);
+    const navigate = router.navigate.bind(router);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = vi.spyOn(router, 'navigate').mockImplementationOnce(async (...args) => {
+      await gate;
+      return navigate(...args);
+    });
+    query('mktg-boilerplates-view-tab-boilerplates')?.focus();
+    const before = document.activeElement;
+    query(action === 'tab' ? 'mktg-boilerplates-view-tab-sources' : 'mktg-boilerplates-view-reviewer-sources')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-boilerplates-view-panel-sources')).toBeNull();
+    expect(document.activeElement).toBe(before);
+    release();
+    await pending.mock.results[0]?.value;
+    await fixture.whenStable();
+    const panel = query('mktg-boilerplates-view-panel-sources');
+    expect(document.activeElement).toBe(panel);
+    expect(panel?.getAttribute('tabindex')).toBe('-1');
   });
 
   it('heads the page with the project’s boilerplates, the version and how it was made', async () => {
@@ -130,10 +174,12 @@ describe('MktgBoilerplatesViewComponent', () => {
     tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
     await fixture.whenStable();
     expect(query('mktg-boilerplates-view-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(query('mktg-boilerplates-view-tab-sources'));
 
     tablist.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home' }));
     await fixture.whenStable();
     expect(query('mktg-boilerplates-view-tab-boilerplates')?.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(query('mktg-boilerplates-view-tab-boilerplates'));
   });
 
   it('copies a length’s text and says so for a moment', async () => {

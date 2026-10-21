@@ -13,7 +13,7 @@ import {
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import type { FaqEnvelope, MktgFrameworkAsset, MktgRevisionResponse, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
+import type { BoilerplatesEnvelope, FaqEnvelope, MktgFrameworkAsset, MktgRevisionResponse, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, Page } from '@playwright/test';
@@ -49,7 +49,7 @@ export const ASSET_PROJECT: Project = {
 };
 
 /** Header/approval scenarios reuse main's canonical FAQ envelope, not a second FAQ contract fixture. */
-export function nativeAssetRevisionResponse(key: 'faq', unreadable = false): MktgRevisionResponse {
+export function nativeAssetRevisionResponse(key: 'faq' | 'boilerplates', unreadable = false): MktgRevisionResponse {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
   if (!type) throw new Error('Missing document type');
   const revision: MktgRevisionSummary = {
@@ -66,7 +66,10 @@ export function nativeAssetRevisionResponse(key: 'faq', unreadable = false): Mkt
     latest: true,
     approval: null,
   };
-  const native = JSON.parse(readFileSync(resolve(__dirname, '../../../../packages/shared/src/utils/__fixtures__/faq-envelope.json'), 'utf8')) as FaqEnvelope;
+  const fixtureName = key === 'faq' ? 'faq-envelope.json' : 'boilerplates.envelope.json';
+  const native = JSON.parse(readFileSync(resolve(__dirname, '../../../../packages/shared/src/utils/__fixtures__', fixtureName), 'utf8')) as
+    | FaqEnvelope
+    | BoilerplatesEnvelope;
   return {
     project: ASSET_PROJECT.uid,
     type,
@@ -243,10 +246,10 @@ export async function openDraftAssetRun(page: Page, receipt = true): Promise<str
   return revisionId;
 }
 
-/** Stub the FAQ reads; cookie suppression precedes every navigation. */
+/** Stub native asset reads; cookie suppression precedes every navigation. */
 export async function openAssetDocument(
   page: Page,
-  key: 'faq',
+  key: 'faq' | 'boilerplates',
   status = 200,
   writer = true,
   unreadable = false,

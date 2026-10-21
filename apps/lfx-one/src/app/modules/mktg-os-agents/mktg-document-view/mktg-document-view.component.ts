@@ -17,7 +17,6 @@ import {
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
-  MKTG_KIT_FAMILIES,
   MKTG_KIT_FRAMEWORK_KEY,
 } from '@lfx-one/shared/constants';
 import {
@@ -25,8 +24,6 @@ import {
   MktgBoilerplatesAsset,
   MktgFaqAsset,
   MktgFrameworkAsset,
-  MktgKitAsset,
-  MktgKitFamily,
   MktgRevisionResponse,
   MktgRevisionRow,
   MktgRevisionSummary,
@@ -41,6 +38,9 @@ import {
   foundationMessageAssetOfRevision,
   isMktgSlidesExportAgentKey,
   mktgAssetHeaderMetadata,
+  mktgKitCrumbsFor,
+  mktgKitRootPath,
+  mktgRunRouteFor,
   parseMktgLegacyRevisionId,
   normalizeLinkedinShareLink,
   readBrandKitRevision,
@@ -55,6 +55,7 @@ import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
+import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
@@ -89,6 +90,7 @@ import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-down
     NgTemplateOutlet,
     MktgAssetMetaComponent,
     MktgDownstreamComponent,
+    MktgBreadcrumbComponent,
     ButtonComponent,
     RouterLink,
     BrandKitWebViewComponent,
@@ -121,8 +123,6 @@ export class MktgDocumentViewComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  // Explicit parent target works for both project and foundation route hosts.
-  protected readonly documentsRoute = this.route.parent;
   protected readonly frameworkKey = MKTG_KIT_FRAMEWORK_KEY;
 
   protected readonly linkForm = new FormGroup({ share_link: new FormControl('', { nonNullable: true }) });
@@ -165,11 +165,13 @@ export class MktgDocumentViewComponent {
   protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
   protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
-  protected readonly kitBreadcrumb: Signal<{ family: MktgKitFamily; asset: MktgKitAsset; living: boolean } | null> = this.initKitBreadcrumb();
   protected readonly generatingLabel = computed(
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
+  protected readonly crumbs = computed(() =>
+    mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), this.view()?.type.itemLabel ?? 'Document')
+  );
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -243,10 +245,10 @@ export class MktgDocumentViewComponent {
     return view && !this.loading() ? mktgAssetHeaderMetadata(view) : null;
   });
   protected readonly runAgainLink = computed(() => {
-    const id = this.view()?.type.catalogAgentId;
-    return this.hasAssetView() && id ? ['../../../', id] : undefined;
+    const key = this.view()?.type.agentKey;
+    return key ? mktgRunRouteFor(key, mktgKitRootPath(this.router.url)) : undefined;
   });
-  protected readonly runAgainParams = computed(() => ({ project: this.projectContext.activeContext()?.slug ?? '' }));
+  protected readonly runAgainParams = computed(() => ({ project: this.projectContext.activeContext()?.slug ?? null }));
   protected readonly approvedView: Signal<MktgApprovedRevisionState> = this.initApprovedView();
   protected readonly approvedVersion = computed(() => this.approvedView().revision?.revision.number ?? null);
   protected readonly approvedFramework = computed(() => {
@@ -641,15 +643,6 @@ export class MktgDocumentViewComponent {
     return computed(() => {
       const view = this.view();
       return view?.type.agentKey === LINKEDIN_POST_INTAKE.agentId ? readLinkedinDocumentContent(view.linkedinPost, true) : null;
-    });
-  }
-
-  private initKitBreadcrumb(): Signal<{ family: MktgKitFamily; asset: MktgKitAsset; living: boolean } | null> {
-    return computed(() => {
-      const type = this.view()?.type;
-      const family = MKTG_KIT_FAMILIES.find((candidate) => candidate.assets.some((asset) => asset.agentKey === type?.agentKey));
-      const asset = family?.assets.find((candidate) => candidate.agentKey === type?.agentKey);
-      return type && family && asset ? { family, asset, living: type.kind === 'living' } : null;
     });
   }
 

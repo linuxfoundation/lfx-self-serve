@@ -60,7 +60,7 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
     await openDocuments(page, DOCUMENT_VIEW_URL);
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
-    await page.getByTestId('mktg-document-crumb-kit').click();
+    await page.getByTestId('mktg-breadcrumb-link-0').click();
     await expect(page).toHaveURL(`/project/mktg-os-agents?project=${DOCUMENT_PROJECT.slug}`);
     // Enter via the fifth tab, then select the type to exercise content-ready scrolling.
     await page.getByTestId('mktg-kit-tab-documents').click();
@@ -130,7 +130,7 @@ test.describe('Marketing OS Documents structure', () => {
       if (!actions) throw new Error('Revision actions must be rendered before measuring their column');
       expect(actions.width).toBeGreaterThan(40);
       expect(actions.width).toBeLessThanOrEqual(64);
-      await page.getByTestId('mktg-document-crumb-kit').click();
+      await page.getByTestId('mktg-breadcrumb-link-0').click();
       await expect(page).toHaveURL(`/project/mktg-os-agents?project=${DOCUMENT_PROJECT.slug}`);
       // Keep the Kit URL assertion, then exercise the real tab → type-pick scroll path.
       await page.getByTestId('mktg-kit-tab-documents').click();

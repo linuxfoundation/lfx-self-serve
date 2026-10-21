@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ProjectContextService } from '@services/project-context.service';
+import { provideRouter, Router } from '@angular/router';
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -147,11 +150,69 @@ describe('MktgFrameworkViewComponent', () => {
     };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [{ provide: MktgPrintService, useValue: printer }, provideMktgSlidesExportStub(slidesExport)],
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
+        { provide: MktgPrintService, useValue: printer },
+        provideMktgSlidesExportStub(slidesExport),
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  it('reads shared tab URLs and pushes switches without dropping project or edit state', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?project=synthetic&profile=edit&tab=icps');
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-tab-icps')?.getAttribute('aria-selected')).toBe('true');
+    const navigate = vi.spyOn(router, 'navigate');
+    const push = vi.spyOn(TestBed.inject(Location), 'go');
+    await tab('message-house');
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { tab: 'message-house', project: 'synthetic' }, queryParamsHandling: 'merge' })
+    );
+    expect(router.url).toContain('project=synthetic');
+    expect(router.url).toContain('profile=edit');
+    expect(router.url).toContain('tab=message-house');
+    expect(push).toHaveBeenCalledTimes(1);
+    push.mockRestore();
+    await router.navigateByUrl('/?tab=unknown');
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-tab-framework')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('focuses the opened panel start only after routed content renders', async () => {
+    host.asset.set(ASSET);
+    host.state.set('ready');
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigate = router.navigate.bind(router);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = vi.spyOn(router, 'navigate').mockImplementationOnce(async (...args) => {
+      await gate;
+      return navigate(...args);
+    });
+    query('mktg-framework-view-tab-framework')?.focus();
+    const before = document.activeElement;
+    query('mktg-framework-view-tab-icps')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-framework-view-panel-icps')).toBeNull();
+    expect(document.activeElement).toBe(before);
+    release();
+    await pending.mock.results[0]?.value;
+    await fixture.whenStable();
+    const panel = query('mktg-framework-view-panel-icps');
+    expect(panel).not.toBeNull();
+    expect(document.activeElement).toBe(panel);
+    expect(panel?.getAttribute('tabindex')).toBe('-1');
   });
 
   it('shows a real approval without a duplicate Draft mode and preserves export wiring', async () => {
@@ -415,7 +476,7 @@ describe('MktgFrameworkViewComponent', () => {
     expect(printer.print).toHaveBeenCalledWith(FOUNDATION_MESSAGE_PRINT_BODY_CLASS, 'Montserrat');
   });
 
-  it('opens the Sources tab from the reviewer note and moves keyboard focus onto that tab', async () => {
+  it('opens Sources from the reviewer note and focuses its panel start', async () => {
     host.asset.set(ASSET);
     host.state.set('ready');
     await fixture.whenStable();
@@ -423,10 +484,8 @@ describe('MktgFrameworkViewComponent', () => {
 
     query('mktg-framework-view-notes-sources')?.click();
     await fixture.whenStable();
-    await new Promise((resolve) => setTimeout(resolve));
-
     expect(query('mktg-framework-view-panel-sources')).not.toBeNull();
-    expect(document.activeElement).toBe(query('mktg-framework-view-tab-sources'));
+    expect(document.activeElement).toBe(query('mktg-framework-view-panel-sources'));
     element().remove();
   });
 });

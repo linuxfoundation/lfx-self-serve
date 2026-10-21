@@ -65,6 +65,8 @@ import {
   buildMktgDocumentProjectPrefix,
   findMktgDocumentStatus,
   mktgAssetHeaderFallback,
+  mktgKitCrumbsFor,
+  mktgKitRootPath,
   mktgAgentDocumentName,
   mktgJsonAttachmentUsable,
   parseMktgRevisionKey,
@@ -81,6 +83,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
+import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
 import { LinkedinPostRunComponent } from '../components/linkedin-post-run/linkedin-post-run.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
@@ -109,6 +112,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
   imports: [
     LinkedinPostRunComponent,
     NgClass,
+    MktgBreadcrumbComponent,
     NgTemplateOutlet,
     ReactiveFormsModule,
     ButtonComponent,
@@ -316,6 +320,10 @@ export class MktgAgentRunComponent {
   private readonly intakeValue = toSignal(this.intakeForm.valueChanges, { initialValue: this.intakeForm.getRawValue() });
 
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name || 'Your Project');
+  protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
+  protected readonly crumbs = computed(() =>
+    mktgKitCrumbsFor(this.agent?.id ?? '', this.projectName(), mktgKitRootPath(this.router.url), this.agent?.name ?? 'Agent')
+  );
   protected readonly formTitle = computed(() => `${this.intake?.formTitleAction} the ${this.projectName()} ${this.intake?.documentName}`);
   protected readonly docTitle = computed(() => `${this.projectName()} ${this.intake?.documentName}`);
   protected readonly submitLabel = computed(() => `Generate ${this.intake?.documentName}`);
@@ -626,7 +634,7 @@ export class MktgAgentRunComponent {
     });
     // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+      this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
       return;
     }
     if (this.intake.oneOffDocument) {
@@ -681,10 +689,6 @@ export class MktgAgentRunComponent {
   }
 
   // === Protected methods ===
-  protected onBack(): void {
-    this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
-  }
-
   /** Only a canonical receipt key can identify this run's revision; never infer it from content. */
   protected onOpenDocuments(): void {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === this.documentsAgentKey);
