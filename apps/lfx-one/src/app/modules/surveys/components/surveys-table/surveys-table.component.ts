@@ -268,6 +268,9 @@ export class SurveysTableComponent {
 
   private initRowsBeforeStatusFilter(): Signal<SurveyTableRow[]> {
     return computed(() => {
+      // displayStatus depends on the current time (a cutoff can pass while the page is open). Reading the tab
+      // re-evaluates it on every tab change, as it did when this lived in filteredSurveys.
+      this.statusTab();
       // Precompute displayStatus once per row so the template, filter, and sort
       // all agree on cutoff/case-normalized status (matches what the badge pipe shows).
       // Also stamp the per-row edit link: canonical commands derive from the SURVEY's owning

@@ -30,6 +30,7 @@ describe('NewsletterListComponent — status counts on tabs', () => {
     listOptOuts: ReturnType<typeof vi.fn>;
     getStatusCounts: ReturnType<typeof vi.fn>;
     deleteNewsletter: ReturnType<typeof vi.fn>;
+    deleteOptOut: ReturnType<typeof vi.fn>;
     getAnalytics: ReturnType<typeof vi.fn>;
   };
   let projectUid: ReturnType<typeof signal<string>>;
@@ -41,6 +42,7 @@ describe('NewsletterListComponent — status counts on tabs', () => {
       listOptOuts: vi.fn(() => of({ opt_outs: [] })),
       getStatusCounts: vi.fn(() => statusCounts),
       deleteNewsletter: vi.fn(() => of(undefined)),
+      deleteOptOut: vi.fn(() => of(undefined)),
       getAnalytics: vi.fn(() => of({})),
     };
     await TestBed.configureTestingModule({
@@ -118,6 +120,46 @@ describe('NewsletterListComponent — status counts on tabs', () => {
     expect(service.deleteNewsletter).toHaveBeenCalledWith('project-1', 'draft-1');
     expect(service.getStatusCounts).toHaveBeenCalledTimes(2);
     expect(labels()[0]).toBe('Drafts (2)');
+  });
+
+  it('drops a count refresh from a mutation that finishes after switching project', async () => {
+    await render();
+    const projectB = new Subject<NewsletterStatusCounts>();
+    service.getStatusCounts.mockImplementation((uid: string) => (uid === 'project-2' ? projectB : of(counts())));
+    const removal = new Subject<void>();
+    service.deleteOptOut.mockReturnValue(removal);
+
+    // Remove an opt-out in project A, then switch to B before the removal finishes.
+    fixture.componentInstance['runRemoveOptOut']('project-1', { id: 'o1', email: 'someone@acme-motors.example', unsubscribed_at: '2026-01-01T00:00:00Z' });
+    projectUid.set('project-2');
+    await settle();
+    expect(service.getStatusCounts).toHaveBeenLastCalledWith('project-2');
+
+    removal.next();
+    removal.complete();
+    await settle();
+    // A's refresh must not start (it would supersede B's pending request) ...
+    expect(service.getStatusCounts.mock.calls.map((call) => call[0])).toEqual(['project-1', 'project-2']);
+
+    // ... so B's response still lands.
+    projectB.next(counts({ draft: 7 }));
+    projectB.complete();
+    await settle();
+    expect(labels()[0]).toBe('Drafts (7)');
+  });
+
+  it('ignores a late counts response for a project that is no longer active', async () => {
+    const projectA = new Subject<NewsletterStatusCounts>();
+    await render(projectA);
+    service.getStatusCounts.mockReturnValue(of(counts({ draft: 7 })));
+
+    projectUid.set('project-2');
+    await settle();
+    expect(labels()[0]).toBe('Drafts (7)');
+
+    projectA.next(counts({ draft: 99 }));
+    await settle();
+    expect(labels()[0]).toBe('Drafts (7)');
   });
 
   it('lets the latest counts request win over a slower earlier one', async () => {

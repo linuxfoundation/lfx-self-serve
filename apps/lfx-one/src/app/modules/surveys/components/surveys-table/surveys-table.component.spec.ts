@@ -234,6 +234,21 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
       expect(tabLabels()).toEqual(['All (1)', 'Open', 'Closed']);
     });
 
+    it('re-evaluates the time-based status when the tab changes, so a passed cutoff shows under Closed', () => {
+      vi.useRealTimers();
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+      vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+      render([survey('timed', ['a'], { survey_status: SurveyStatus.SENT, survey_cutoff_date: '2026-06-15T00:00:00Z' })]);
+      expect(tabLabels()).toEqual(['All (1)', 'Open (1)', 'Closed']);
+
+      // The cutoff passes while the page stays open; a tab change must pick that up for rows and counts.
+      vi.setSystemTime(new Date('2026-07-01T00:00:00Z'));
+      fixture.nativeElement.querySelector('[data-testid="filter-pill-closed"]').click();
+      fixture.detectChanges();
+      expect(tabLabels()).toEqual(['All (1)', 'Open', 'Closed (1)']);
+      expect(fixture.componentInstance['filteredSurveys']().map((row) => row.uid)).toEqual(['timed']);
+    });
+
     it('hides counts while loading', () => {
       render(mixed(), { loading: true });
       expect(tabLabels()).toEqual(['All', 'Open', 'Closed']);

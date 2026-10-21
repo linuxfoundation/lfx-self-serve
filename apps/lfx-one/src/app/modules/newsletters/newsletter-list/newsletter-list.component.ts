@@ -440,8 +440,11 @@ export class NewsletterListComponent {
   }
 
   // Counts are per project, not per tab, so they load on project change and after any
-  // mutation that moves a row between tabs. A newer request supersedes an older one.
+  // mutation that moves a row between tabs. A newer request supersedes an older one. A mutation that
+  // finishes after the user switched project must not refresh the old project's counts: it would
+  // supersede the new project's request, so it is dropped here and again when its response lands.
   private loadStatusCounts(uid: string): void {
+    if (!uid || uid !== this.projectUid()) return;
     const generation = ++this.statusCountsGeneration;
     this.newsletterService
       .getStatusCounts(uid)
@@ -450,7 +453,7 @@ export class NewsletterListComponent {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((counts) => {
-        if (generation === this.statusCountsGeneration) this.statusCounts.set(counts);
+        if (generation === this.statusCountsGeneration && uid === this.projectUid()) this.statusCounts.set(counts);
       });
   }
 

@@ -191,9 +191,11 @@ export class MyFormationsComponent {
   // Counts follow the search but not the selected stage pill, so each pill shows what it would list. The
   // pill ids are the sub-stage keys, so a new queue sub-stage picks up its count with no change here.
   // A row with a `null` sub_stage is counted only under "All", matching the filter below.
+  // A 'partial' response can be missing whole formations (see MyFormationWorkResponse), so its rows still
+  // render but their totals would read as exact, including a false "(0)". Counts wait for 'complete'.
   private initStageTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
-      if (this.loading()) return this.baseStageTabOptions;
+      if (this.loading() || this.formationWork()?.state !== 'complete') return this.baseStageTabOptions;
       const term = this.searchTerm().trim().toLowerCase();
       const rows = term ? this.rows().filter((row) => row.project_name.toLowerCase().includes(term)) : this.rows();
       return this.baseStageTabOptions.map((option) => {

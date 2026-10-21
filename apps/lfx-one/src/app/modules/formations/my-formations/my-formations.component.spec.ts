@@ -200,6 +200,19 @@ describe('MyFormationsComponent (#2753)', () => {
     expect(pillText('exploratory')).toContain('Exploratory (1)');
   });
 
+  it('keeps plain pill labels for a partial response, whose totals may be missing formations', async () => {
+    const { fixture } = await render({
+      formations: [formation({ formation_uid: 'engaged-1', sub_stage: 'engaged', sub_stage_raw: 'Formation - Engaged' })],
+      items: [],
+      state: 'partial',
+    });
+
+    expect(rowIds(fixture)).toEqual(['my-formations-row-engaged-1']);
+    for (const id of ['all', 'exploratory', 'engaged', 'on_hold']) {
+      expect(byTestId(fixture, `filter-pill-${id}`)?.textContent).not.toMatch(/\(\d+\)/);
+    }
+  });
+
   it('filters rows by the stage tab, showing an unmapped-stage row only under All', async () => {
     const { fixture } = await render(
       complete([
