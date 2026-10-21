@@ -160,20 +160,20 @@ describe('MembersNpsComponent', () => {
   });
 
   it('marks a wave below the rate floor in red and warns a rising score on a falling rate is unproven', async () => {
-    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 45, 0.55), quarter('2026-04-01', 'Q2 26', 60, 0.38)] }));
+    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 45, 0.55), quarter('2026-04-01', 'Q2 26', 60, 0.33)] }));
 
     const [line, bars] = fixture.componentInstance['chartData']().datasets as ChartDataset<'line'>[];
     expect(line.pointBackgroundColor).toEqual([lfxColors.amber[600], lfxColors.red[600]]);
     expect(bars.backgroundColor).toEqual([lfxColors.blue[300], lfxColors.amber[300]]);
     expect(text('members-nps-trend-note')).toBe(
-      'The score is up 15 points while the response rate fell from 55% to 38%. A rising score on a shrinking sample usually means the unhappy members stopped replying — treat this as unproven, not as improvement.'
+      'The score is up 15 points while the response rate fell from 55% to 33%. A rising score on a shrinking sample usually means the unhappy members stopped replying — treat this as unproven, not as improvement.'
     );
   });
 
   it('warns that a rate below the floor makes neither the score nor its trend a foundation-wide signal', async () => {
-    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 60, 0.36), quarter('2026-04-01', 'Q2 26', 55, 0.35)] }));
+    await render(response({ trend: [quarter('2025-10-01', 'Q4 25', 60, 0.32), quarter('2026-04-01', 'Q2 26', 55, 0.3)] }));
 
-    expect(text('members-nps-trend-note')).toBe('Response rate is 35% — below the 40% floor, so neither the score nor its trend is a foundation-wide signal.');
+    expect(text('members-nps-trend-note')).toBe('Response rate is 30% — below the 35% floor, so neither the score nor its trend is a foundation-wide signal.');
   });
 
   it('leaves out the trend for a single wave', async () => {

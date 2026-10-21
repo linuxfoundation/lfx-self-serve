@@ -698,6 +698,8 @@ describe('buildHealthMetricsMembersBoardSummary', () => {
       latestPctLabel: '82%',
       latestCaption: 'Last board meeting · below the ~100% this should be',
       isBelowExpectedLevel: true,
+      latestTone: 'critical',
+      latestTextClass: 'text-red-600',
       otherCohortLabel: 'Voting members',
       otherCohortPctLabel: '65%',
       attendedInvitedLabel: '9 / 11',
@@ -715,6 +717,26 @@ describe('buildHealthMetricsMembersBoardSummary', () => {
       otherCohortPctLabel: '—',
       neverAttendedCount: 0,
     });
+  });
+
+  // The view flags both cohorts at 90%; the rules hold voting members to the 50% a voting group needs.
+  it('judges each cohort against its own rule rather than the view flag', () => {
+    expect(buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: 0.95 }), null)).toMatchObject({
+      isBelowExpectedLevel: false,
+      latestTone: 'ok',
+      latestTextClass: 'text-gray-900',
+    });
+    expect(buildHealthMetricsMembersBoardSummary('voting_members', boardCohort({ latestAttendancePct: 0.42 }), null)).toMatchObject({
+      latestCaption: 'Last voting meeting · below the 50% a voting group needs',
+      isBelowExpectedLevel: true,
+      latestTone: 'low',
+      latestTextClass: 'text-amber-600',
+    });
+  });
+
+  it('falls back to the view flag only when the latest share is missing', () => {
+    const flagged = buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: null }), null);
+    expect(flagged).toMatchObject({ isBelowExpectedLevel: true, latestTone: 'critical' });
   });
 
   it('clamps a share recorded above the invited count to 100%, as the table and chart do', () => {
@@ -746,17 +768,20 @@ describe('buildHealthMetricsMembersBoardSummary', () => {
 describe('buildHealthMetricsMembersBoardMeetingRows', () => {
   it('renders a meeting with its rate bar tone', () => {
     expect(
-      buildHealthMetricsMembersBoardMeetingRows([
-        {
-          meetingId: 'm-1',
-          committeeName: 'Acme Board',
-          meetingDate: '2026-09-18',
-          attendedCount: 4,
-          invitedCount: 11,
-          attendancePct: 0.3636,
-          isLatestMeeting: false,
-        },
-      ])
+      buildHealthMetricsMembersBoardMeetingRows(
+        [
+          {
+            meetingId: 'm-1',
+            committeeName: 'Acme Board',
+            meetingDate: '2026-09-18',
+            attendedCount: 4,
+            invitedCount: 11,
+            attendancePct: 0.3636,
+            isLatestMeeting: false,
+          },
+        ],
+        'voting_members'
+      )
     ).toEqual([
       {
         meetingId: 'm-1',
@@ -770,10 +795,26 @@ describe('buildHealthMetricsMembersBoardMeetingRows', () => {
     ]);
   });
 
+  it('holds board meetings to the board rule: red below 90%, blue at or above it', () => {
+    const meeting = (meetingId: string, attendancePct: number): HealthMetricsMembersBoardMeeting => ({
+      meetingId,
+      committeeName: 'Acme Board',
+      meetingDate: '2026-09-18',
+      attendedCount: null,
+      invitedCount: null,
+      attendancePct,
+      isLatestMeeting: false,
+    });
+    const rows = buildHealthMetricsMembersBoardMeetingRows([meeting('m-1', 0.85), meeting('m-2', 0.9)], 'board');
+    expect(rows.map((row) => row.rateFillClass)).toEqual(['bg-red-500', 'bg-blue-500']);
+    expect(buildHealthMetricsMembersBoardMeetingRows([meeting('m-3', 0.85)], 'voting_members')[0].rateFillClass).toBe('bg-blue-500');
+  });
+
   it('dashes missing figures and greys an unmeasured rate', () => {
-    const [row] = buildHealthMetricsMembersBoardMeetingRows([
-      { meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: 5, attendancePct: null, isLatestMeeting: false },
-    ]);
+    const [row] = buildHealthMetricsMembersBoardMeetingRows(
+      [{ meetingId: 'm-2', committeeName: null, meetingDate: null, attendedCount: null, invitedCount: 5, attendancePct: null, isLatestMeeting: false }],
+      'board'
+    );
     expect(row).toMatchObject({ committeeName: '—', dateLabel: '—', attendedLabel: '—', ratePct: null, rateLabel: '—', rateFillClass: 'bg-gray-300' });
   });
 });
@@ -821,7 +862,7 @@ describe('buildHealthMetricsMembersBoardNote', () => {
 
   it('falls back to the latest share only when below the expected level', () => {
     expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0 }))).toBe('82% attended');
-    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0, isBelowExpectedLevel: false }))).toBe('');
+    expect(buildHealthMetricsMembersBoardNote(boardCohort({ neverAttendedCount: 0, latestAttendancePct: 0.95 }))).toBe('');
     expect(buildHealthMetricsMembersBoardNote(null)).toBe('');
   });
 });
@@ -916,7 +957,10 @@ describe('members nps', () => {
   });
 
   it('marks a below-floor rate as low confidence without the flag, and an unscored audience as neither', () => {
-    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: 0.39 }))).toMatchObject({ isLowConfidence: true, lowSampleNote: null });
+    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: 0.34 }))).toMatchObject({
+      isLowConfidence: true,
+      lowSampleNote: 'Only 18 of 26 responded (34%). Below the confidence threshold, so read this score with caution.',
+    });
     expect(buildHealthMetricsMembersNpsSummary(audience({ npsScore: null, responseRatePct: 0.2, isSampleTooSmall: true }))).toMatchObject({
       isUnscored: true,
       isLowConfidence: false,
@@ -925,6 +969,16 @@ describe('members nps', () => {
       caption: 'Not enough responses to report a score',
       lowSampleNote: null,
     });
+  });
+
+  // The view's flag sits at 40%; the rules put the floor at 35%, so the flag counts only without a rate.
+  it('judges the sample from the rate, reading the view flag only when the rate is missing', () => {
+    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: 0.39, isSampleTooSmall: true }))).toMatchObject({
+      isLowConfidence: false,
+      isRateBelowFloor: false,
+      lowSampleNote: null,
+    });
+    expect(buildHealthMetricsMembersNpsSummary(audience({ responseRatePct: null, isSampleTooSmall: true }))).toMatchObject({ isLowConfidence: true });
   });
 
   it('keeps the singular reply and dashes a missing audience', () => {
@@ -964,8 +1018,8 @@ describe('members nps', () => {
     expect(
       buildHealthMetricsMembersNpsTrend([
         quarter('2025-07-01', 54, 0.71),
-        quarter('2025-10-01', 61, 0.62, true),
-        quarter('2026-01-01', 70, 0.39),
+        quarter('2025-10-01', 61, null, true),
+        quarter('2026-01-01', 70, 0.34),
         quarter('2026-04-01', 80, 0.21, true),
         quarter('2026-07-01', null, 0.1, true),
       ])
@@ -987,8 +1041,8 @@ describe('members nps', () => {
         score: 61,
         scoreLabel: '+61',
         scoreDescription: '+61 (low response)',
-        ratePct: 62,
-        rateLabel: '62%',
+        ratePct: null,
+        rateLabel: '—',
         isRateBelowFloor: false,
         isLowConfidence: true,
       },
@@ -998,8 +1052,8 @@ describe('members nps', () => {
         score: 70,
         scoreLabel: '+70',
         scoreDescription: '+70 (low response)',
-        ratePct: 39,
-        rateLabel: '39%',
+        ratePct: 34,
+        rateLabel: '34%',
         isRateBelowFloor: true,
         isLowConfidence: true,
       },
@@ -1039,7 +1093,7 @@ describe('members nps', () => {
   });
 
   it('flags a rising score whose last reportable rate is below the floor', () => {
-    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.41), quarter('2025-07-01', 51, 0.39)]);
+    const points = buildHealthMetricsMembersNpsTrend([quarter('2025-01-01', 50, 0.36), quarter('2025-07-01', 51, 0.34)]);
     expect(buildHealthMetricsMembersNpsTrendNote(points)).toMatchObject({ kind: 'diverging', scoreChangeLabel: '1 point' });
   });
 

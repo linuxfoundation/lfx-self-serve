@@ -232,6 +232,18 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(board.querySelector('[data-testid="engagement-attendance-bar-label"]')?.textContent?.trim()).toBe('70%');
   });
 
+  // A board must sit near full attendance, so 70% is red there while it is fine for any other type.
+  it('holds the Board row to the board rule and every other type to the general one', async () => {
+    await render();
+
+    const fill = (label: string): HTMLElement =>
+      fixture.nativeElement.querySelector(
+        `[data-testid="engagement-meeting-participation-row-${label}"] [data-testid="engagement-attendance-bar-track"] > div`
+      ) as HTMLElement;
+    expect(fill('Board').classList).toContain('bg-red-500');
+    expect(fill('Marketing').classList).toContain('bg-blue-500');
+  });
+
   // The server can emit a present roll-up row whose cells are all unmeasured; none may read as zero.
   it('renders every cell of an unmeasured roll-up as an em dash, in both modes', async () => {
     const base = participationRow();

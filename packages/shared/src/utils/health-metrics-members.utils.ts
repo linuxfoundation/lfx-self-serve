@@ -5,7 +5,10 @@ import { getYearForRange } from '../constants/dashboard-metrics.constants';
 import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_MEMBERS_AT_RISK_BUCKET_LABELS,
+  HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
+  HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES,
+  HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BRIDGE_STEP_LABELS,
   HEALTH_METRICS_MEMBERS_CHURN_HIGH_RATE_PCT,
@@ -351,7 +354,8 @@ export function buildHealthMetricsMembersBoardSummary(
   selected: HealthMetricsMembersBoardCohortSummary | null,
   other: HealthMetricsMembersBoardCohortSummary | null
 ): HealthMetricsMembersBoardSummaryView {
-  const isBelowExpectedLevel = selected?.isBelowExpectedLevel === true;
+  const isBelowExpectedLevel = isHealthMetricsMembersBoardBelowLevel(cohort, selected);
+  const latestTone = isBelowExpectedLevel ? HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].tone : 'ok';
   const neverAttendedCount = Math.max(0, selected?.neverAttendedCount ?? 0);
   const noun = HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[cohort];
   const attended = selected?.latestAttendedCount ?? null;
@@ -360,8 +364,10 @@ export function buildHealthMetricsMembersBoardSummary(
   return {
     meetingsLabel: meetings === null ? '—' : `${pluralize(meetings, 'meeting')} in range`,
     latestPctLabel: formatPct(selected?.latestAttendancePct ?? null),
-    latestCaption: `Last ${noun}${isBelowExpectedLevel ? ' · below the ~100% this should be' : ''}`,
+    latestCaption: `Last ${noun}${isBelowExpectedLevel ? ` · ${HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS[cohort]}` : ''}`,
     isBelowExpectedLevel,
+    latestTone,
+    latestTextClass: HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS[latestTone],
     otherCohortLabel: HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS.find((option) => option.id !== cohort)?.label ?? '',
     otherCohortPctLabel: formatPct(other?.latestAttendancePct ?? null),
     attendedInvitedLabel: attended === null || invited === null ? '—' : `${formatCount(attended)} / ${formatCount(invited)}`,
@@ -370,8 +376,24 @@ export function buildHealthMetricsMembersBoardSummary(
   };
 }
 
-/** Meeting rows; the rate bar takes the Engagement attendance tones. */
-export function buildHealthMetricsMembersBoardMeetingRows(rows: HealthMetricsMembersBoardMeeting[]): HealthMetricsMembersBoardMeetingRowView[] {
+/**
+ * Whether the latest meeting is below the cohort's rule. The view's flag draws one 90% line for both
+ * cohorts, so it is read only when the share is missing.
+ */
+export function isHealthMetricsMembersBoardBelowLevel(
+  cohort: HealthMetricsMembersBoardCohort,
+  summary: HealthMetricsMembersBoardCohortSummary | null
+): boolean {
+  const share = summary?.latestAttendancePct ?? null;
+  return share === null ? summary?.isBelowExpectedLevel === true : share < HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].threshold;
+}
+
+/** Meeting rows; the rate bar takes the Engagement attendance tones under the cohort's rule. */
+export function buildHealthMetricsMembersBoardMeetingRows(
+  rows: HealthMetricsMembersBoardMeeting[],
+  cohort: HealthMetricsMembersBoardCohort
+): HealthMetricsMembersBoardMeetingRowView[] {
+  const rule = HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort];
   return rows.map((row) => {
     const ratePct = toWholePct(row.attendancePct);
     return {
@@ -381,7 +403,7 @@ export function buildHealthMetricsMembersBoardMeetingRows(rows: HealthMetricsMem
       attendedLabel: row.attendedCount === null || row.invitedCount === null ? '—' : `${formatCount(row.attendedCount)} / ${formatCount(row.invitedCount)}`,
       ratePct,
       rateLabel: ratePct === null ? '—' : `${ratePct}%`,
-      rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct)],
+      rateFillClass: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[resolveHealthMetricsEngagementAttendanceTone(row.attendancePct, rule)],
     };
   });
 }
@@ -407,7 +429,7 @@ export function buildHealthMetricsMembersBoardNote(board: HealthMetricsMembersBo
   if (!board) return '';
   const never = board.neverAttendedCount ?? 0;
   if (never > 0) return `${pluralize(never, 'seat')} unused`;
-  if (board.isBelowExpectedLevel === true && board.latestAttendancePct !== null) return `${formatPct(board.latestAttendancePct)} attended`;
+  if (isHealthMetricsMembersBoardBelowLevel('board', board) && board.latestAttendancePct !== null) return `${formatPct(board.latestAttendancePct)} attended`;
   return '';
 }
 
@@ -423,14 +445,15 @@ export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembe
   const responses = audience?.responsesCount ?? null;
   const ratePct = toWholePct(audience?.responseRatePct ?? null);
   const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
-  const isSampleTooSmall = audience?.isSampleTooSmall === true;
+  // The view's flag sits at 40%, so it stands in only when the rate itself is missing.
+  const isSampleTooSmall = ratePct === null ? audience?.isSampleTooSmall === true : isRateBelowFloor;
   const change = isUnscored ? null : (audience?.scoreChangePp ?? null);
   const respondedLabel = responses === null || recipients === null ? '—' : `${formatCount(responses)} of ${formatCount(recipients)}`;
   const rateLabel = ratePct === null ? '—' : `${ratePct}%`;
 
   return {
     isUnscored,
-    isLowConfidence: !isUnscored && (isSampleTooSmall || isRateBelowFloor),
+    isLowConfidence: !isUnscored && isSampleTooSmall,
     scoreLabel: isUnscored ? '—' : formatSignedScore(audience?.npsScore ?? null),
     changeLabel: change === null ? null : `${formatSignedScore(change)}pp`,
     changeDirection: directionOf(change),
@@ -485,7 +508,7 @@ export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNps
     const score = quarter.npsScore;
     const ratePct = toWholePct(quarter.responseRatePct);
     const isRateBelowFloor = ratePct !== null && ratePct < HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT;
-    const isLowConfidence = score !== null && (quarter.isSampleTooSmall || isRateBelowFloor);
+    const isLowConfidence = score !== null && (ratePct === null ? quarter.isSampleTooSmall === true : isRateBelowFloor);
     const scoreLabel = score === null ? '—' : formatSignedScore(score);
     return {
       quarterStartDate: quarter.quarterStartDate,
