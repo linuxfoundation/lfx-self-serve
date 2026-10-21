@@ -35,6 +35,7 @@ import type {
   CampaignPlatform,
   CampaignProximityTarget,
   CampaignSitelink,
+  CampaignStructuredSnippet,
   CampaignSSEEventType,
   CampaignMonitorConnections,
   CampaignServiceAccountMonitor,
@@ -90,8 +91,13 @@ import {
   GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES,
   GOOGLE_ADS_MAX_SITELINK_TEXT_RUNES,
   GOOGLE_ADS_MAX_SITELINKS,
+  GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES,
+  GOOGLE_ADS_MAX_SNIPPET_VALUES,
+  GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_ADS_MICROS_PER_UNIT,
   GOOGLE_ADS_MIN_BID_MODIFIER,
+  GOOGLE_ADS_MIN_SNIPPET_VALUES,
   GOOGLE_ADS_RADIUS_UNITS,
   GOOGLE_ADS_SCHEDULE_DAYS,
   GOOGLE_ADS_SCHEDULE_MINUTES,
@@ -1255,6 +1261,48 @@ export class CampaignController {
           const seen = new Set<string>();
           for (const [index, callout] of callouts.entries()) {
             const refusal = this.googleCalloutRefusal(callout, index, seen);
+            if (refusal) {
+              refuse(refusal);
+              return;
+            }
+          }
+        }
+      }
+
+      // Structured snippets LAST of the three, as `validateAssetPlan` runs `validateStructuredSnippets`
+      // after `validateCallouts`: JSON decode, the Search-only fence, the cap, then each entry in
+      // `validateStructuredSnippets`' order, first bad one wins. Each would otherwise fail in Go as
+      // the opaque "platform campaign creation failed".
+      const rawSnippets = body?.structuredSnippets;
+      if (cutoverOn && platforms.includes('google-ads') && rawSnippets !== undefined && rawSnippets !== null) {
+        const refuse = (message: string): void =>
+          next(ServiceValidationError.forField('structuredSnippets', message, { operation: 'campaign_create', service: 'campaign_controller' }));
+        // The Go decode into `[]googleAdsStructuredSnippetConfig` refuses a non-list, a non-object
+        // entry, a non-string header or a `values` that is not a list of strings. A null entry or
+        // field decodes to blanks, which the entry checks refuse.
+        if (!Array.isArray(rawSnippets) || !rawSnippets.every((entry) => this.isStructuredSnippetShape(entry))) {
+          refuse('Google Ads structured snippets must be a list of objects with a header and a list of values.');
+          return;
+        }
+        const googleChannel = (configEnvelope['googleAdsConfig'] as { channel?: unknown } | undefined)?.channel;
+        if (rawSnippets.length > 0 && typeof googleChannel === 'string') {
+          // REFUSED by name, not withheld: `validateAssetPlan` fails the whole create on any channel
+          // but Search, counting every entry. The UI never sends this.
+          if (!(GOOGLE_CHANNELS_WITH_AD_EXTENSIONS as readonly string[]).includes(googleChannel)) {
+            refuse(
+              `Google Ads only accepts structured snippets on Search campaigns, not on ${GOOGLE_CAMPAIGN_CHANNEL_LABELS[googleChannel as GoogleCampaignChannel] ?? googleChannel} campaigns. Remove the snippets or pick Search, then create again.`
+            );
+            return;
+          }
+          if (rawSnippets.length > GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS) {
+            refuse(
+              `Google Ads accepts at most ${GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS} structured snippets on one campaign, and this one has ${rawSnippets.length}. Remove some and create again.`
+            );
+            return;
+          }
+          const seenHeaders = new Set<string>();
+          for (const [index, snippet] of this.googleStructuredSnippetList(rawSnippets).entries()) {
+            const refusal = this.googleStructuredSnippetRefusal(snippet, index, seenHeaders);
             if (refusal) {
               refuse(refusal);
               return;
@@ -4542,6 +4590,8 @@ export class CampaignController {
     const callouts = this.googleCallouts(body);
     // Normalized only, as the callouts are — `createCampaign` names every sitelink refusal first.
     const sitelinks = this.googleSitelinks(body);
+    // Normalized only, as the two above are — `createCampaign` names every snippet refusal first.
+    const structuredSnippets = this.googleStructuredSnippets(body);
 
     return {
       budget,
@@ -4576,6 +4626,7 @@ export class CampaignController {
       ...searchLanguages,
       ...callouts,
       ...sitelinks,
+      ...structuredSnippets,
     };
   }
 
@@ -4639,6 +4690,97 @@ export class CampaignController {
   }
 
   /**
+   * The Search campaign's structured snippets, spread-ready, or `{}` when the request names none.
+   *
+   * Search only, as {@link googleCallouts}: `createCampaign` refuses snippets on any other channel by
+   * name, and every per-entry refusal, before this is dispatched. Sent as trimmed — blanks and
+   * case-folded repeats among the values are left in place for upstream to collapse, as it would
+   * collapse them anyway and dropping them here would make the dispatched list disagree with the one
+   * this app judged.
+   */
+  private googleStructuredSnippets(body: CampaignCreateRequest): { structuredSnippets?: CampaignStructuredSnippet[] } {
+    const clean = this.googleStructuredSnippetList(body?.structuredSnippets);
+    return clean.length > 0 ? { structuredSnippets: clean } : {};
+  }
+
+  /**
+   * Whether one raw snippet entry survives the Go decode into `googleAdsStructuredSnippetConfig`: an
+   * object (or null, which decodes to a blank snippet) whose `header` is absent, null or text and
+   * whose `values` is absent, null or a list of text.
+   */
+  private isStructuredSnippetShape(entry: unknown): boolean {
+    if (entry === null) return true;
+    if (typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const fields = entry as Record<string, unknown>;
+    const { header, values } = fields;
+    if (!(header === undefined || header === null || typeof header === 'string')) return false;
+    if (values === undefined || values === null) return true;
+    return Array.isArray(values) && values.every((v) => typeof v === 'string');
+  }
+
+  /**
+   * The snippet list as judged and dispatched: header and each value trimmed with Go's rules as
+   * `validateStructuredSnippets` trims them, an absent or null field read as blank or empty. Nothing
+   * is dropped, so a blank header is refused by name and the value walk sees exactly what upstream's
+   * does. Callers have checked the shape with {@link isStructuredSnippetShape}.
+   */
+  private googleStructuredSnippetList(raw: unknown): CampaignStructuredSnippet[] {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry) => {
+      const fields = (entry ?? {}) as Record<string, unknown>;
+      const header = typeof fields['header'] === 'string' ? googleAdsTrimSpace(fields['header']) : '';
+      const rawValues = Array.isArray(fields['values']) ? (fields['values'] as unknown[]) : [];
+      const values = rawValues.filter((v): v is string => typeof v === 'string').map((v) => googleAdsTrimSpace(v));
+      return { header, values };
+    });
+  }
+
+  /**
+   * Why upstream would refuse one entry of a trimmed snippet list, or `null` when it would not.
+   *
+   * `validateStructuredSnippets`' per-entry branches in order: header blank, header over 25 runes,
+   * then a header repeat keyed on Go's `strings.ToLower` (`seenHeaders` carries those keys across
+   * entries). Then the values, in ITS loop's order: a blank value is skipped, an over-long one is
+   * refused, a case-folded repeat is skipped — so an over-long value that merely repeats an earlier
+   * one is still refused, because the bound is checked before the repeat is collapsed. Only what
+   * survives that loop is counted against the minimum and the maximum. The echo is cut short: the
+   * header comes from an unvalidated body.
+   */
+  private googleStructuredSnippetRefusal(snippet: CampaignStructuredSnippet, index: number, seenHeaders: Set<string>): string | null {
+    const { header, values } = snippet;
+    if (header === '') {
+      return `Google Ads structured snippet ${index + 1} has no header. Fill it in or remove the snippet, then create again.`;
+    }
+    const shown = googleAdsEchoed(header);
+    const headerRunes = [...header].length;
+    if (headerRunes > GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES) {
+      return `Google Ads accepts structured snippet headers of at most ${GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES} characters, and ${shown} has ${headerRunes}. Shorten it and create again.`;
+    }
+    const headerKey = googleAdsToLower(header);
+    if (seenHeaders.has(headerKey)) {
+      return `Google Ads serves one line per structured snippet header and this campaign lists ${shown} twice, so the second would be dropped. Merge them into one snippet and create again.`;
+    }
+    seenHeaders.add(headerKey);
+
+    const distinct = new Set<string>();
+    for (const value of values) {
+      if (value === '') continue;
+      const valueRunes = [...value].length;
+      if (valueRunes > GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES) {
+        return `Google Ads accepts structured snippet values of at most ${GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES} characters, and one under ${shown} has ${valueRunes}. Shorten it and create again.`;
+      }
+      distinct.add(googleAdsToLower(value));
+    }
+    if (distinct.size < GOOGLE_ADS_MIN_SNIPPET_VALUES) {
+      return `Google Ads needs at least ${GOOGLE_ADS_MIN_SNIPPET_VALUES} different values under the structured snippet header ${shown}, and this one has ${distinct.size} — blanks and repeats do not count. Add more and create again.`;
+    }
+    if (distinct.size > GOOGLE_ADS_MAX_SNIPPET_VALUES) {
+      return `Google Ads accepts at most ${GOOGLE_ADS_MAX_SNIPPET_VALUES} values under one structured snippet header, and ${shown} has ${distinct.size}. Remove some and create again.`;
+    }
+    return null;
+  }
+
+  /**
    * The first Google creative or bidding field that breaks a resource bound, or null when none does.
    *
    * Walks the raw body rather than the normalised output, because the allocation this bounds happens
@@ -4647,7 +4789,7 @@ export class CampaignController {
    * before it is sent, and upstream trims again, so measuring the raw length would refuse a short
    * value padded with whitespace that upstream accepts. Shape-only, like everything else on this
    * road: a non-string entry is left for the normalisers to drop and is not counted — except for the
-   * three lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
+   * four lists of objects handled by `nestedStringFields` at the end, whose entries are legitimately
    * objects, so the strings inside them are measured rather than skipped.
    *
    * Names the offending field in the refusal so an operator who somehow reaches it is told which one,
@@ -4693,7 +4835,7 @@ export class CampaignController {
       }
     }
 
-    // Three request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
+    // Four request fields are lists of OBJECTS, and the loop above measures only the string ENTRIES
     // of a list — an object entry is left for the normalisers, so the strings nested inside it are
     // never reached by `boundableEntries`. They are bounded here instead, each at the limit upstream
     // already refuses it past: the sitelink URL at its byte limit, which no longer trimmed string can
@@ -4701,11 +4843,23 @@ export class CampaignController {
     // because `deviceBidModifiers` is the second list-of-objects to need this and a third bespoke
     // copy is how the two drift apart.
     //
-    // `sitelinks` is the only one of the three that is not already a `candidates` key, so its list
-    // length is checked here. For the other two the check above has already refused an over-long
-    // list with the same field and message, which is why this one re-states rather than contradicts.
+    // `sitelinks` and `structuredSnippets` are the two that are not already `candidates` keys, so
+    // their list lengths are checked here. For the other two the check above has already refused an
+    // over-long list with the same field and message, which is why this one re-states rather than
+    // contradicts.
+    //
+    // `structuredSnippets.values` is a nested list of STRINGS rather than a string, which is why a
+    // named field is measured either way below. Its own caps — ten snippets, ten values, 25 runes
+    // each — are the refusals an operator can act on, but they sit behind `cutoverOn`, the
+    // `google-ads` platform and a resolvable `googleAdsConfig.channel`, all of which are read out of
+    // `createConfigEnvelope`'s output and so are decided AFTER the normalisation this bounds. A body
+    // that resolves none of them still reaches `googleStructuredSnippetList`, which allocates a
+    // fresh object and a fresh trimmed string per value as it walks. That is the same reason the geo
+    // lists and schedules are listed above, and the same reason the `callouts` and `sitelinks`
+    // siblings are bounded here rather than left to their own caps.
     const nestedStringFields: readonly (readonly [string, readonly string[]])[] = [
       ['sitelinks', ['text', 'description1', 'description2', 'finalUrl']],
+      ['structuredSnippets', ['header', 'values']],
       ['adSchedules', ['dayOfWeek']],
       ['deviceBidModifiers', ['device']],
     ];
@@ -4720,6 +4874,19 @@ export class CampaignController {
         for (const name of names) {
           const value = (entry as Record<string, unknown>)[name];
           const max = name === 'finalUrl' ? GOOGLE_ADS_MAX_FINAL_URL_BYTES : MAX_GOOGLE_CREATIVE_FIELD_LENGTH;
+          // A nested list is bounded on both axes, as the top-level loop bounds a list of strings:
+          // its length first, then each string in it. Measured with the same `max` as a plain field,
+          // so one named field cannot be bounded two different ways depending on how it is shaped.
+          if (Array.isArray(value)) {
+            if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
+              return { field: `${key}.${name}`, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+            }
+            const long = value.find((nested) => typeof nested === 'string' && this.boundedLength(nested) > max);
+            if (long !== undefined) {
+              return { field: `${key}.${name}`, message: `an entry exceeds the maximum length of ${max}` };
+            }
+            continue;
+          }
           if (typeof value === 'string' && this.boundedLength(value) > max) {
             return { field: `${key}.${name}`, message: `a value exceeds the maximum length of ${max}` };
           }

@@ -1941,6 +1941,51 @@ export const GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES = 35;
 export const GOOGLE_ADS_MAX_FINAL_URL_BYTES = 2084;
 
 /**
+ * Upstream's own bound on a Google Ads structured-snippet list (`assets.go`'s
+ * `maxStructuredSnippets`), checked on the raw slice before any entry is inspected — the same shape
+ * as {@link GOOGLE_ADS_MAX_CALLOUTS}, at half the count.
+ */
+export const GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS = 10;
+
+/**
+ * Upstream's per-snippet header bound (`assets.go`'s `maxSnippetHeaderRunes`), in RUNES.
+ *
+ * Count it with the spread (`[...header].length`), never `.length` — see
+ * {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} for why a UTF-16 count over-refuses here.
+ *
+ * The LENGTH is all that is bounded. Google also requires the header to be one of its predefined
+ * ones, but that list is PER LOCALE — "Brands" in English, "Marcas" in Spanish — so upstream
+ * validates the header's shape and not its membership, and this mirror does the same. A hardcoded
+ * English list would refuse every correct non-English header, and refusing a create Google would
+ * have accepted is the more expensive error. Same reasoning as the numeric geo-target constant ids.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES = 25;
+
+/**
+ * Upstream's per-value bound (`assets.go`'s `maxSnippetValueRunes`), in RUNES, applied to each value
+ * separately rather than to their total.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES = 25;
+
+/**
+ * How many values upstream requires on a snippet (`assets.go`'s `minSnippetValues`), counted AFTER
+ * blanks are dropped and case-folded repeats are collapsed.
+ *
+ * The order matters and is upstream's own: "three values of which two are the same renders as two,
+ * which is below what Google accepts". So a snippet listing `Go`, `go` and `Rust` is refused for
+ * having two values, not for repeating one — and a guard that counted the raw list would report it
+ * as acceptable and let the create fail upstream as the opaque "platform campaign creation failed".
+ */
+export const GOOGLE_ADS_MIN_SNIPPET_VALUES = 3;
+
+/**
+ * Upstream's ceiling on one snippet's values (`assets.go`'s `maxSnippetValues`), counted on the same
+ * de-duplicated list as {@link GOOGLE_ADS_MIN_SNIPPET_VALUES} — so a list over the ceiling only
+ * because it repeats a value is NOT refused.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_VALUES = 10;
+
+/**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
  *
  * Shared rather than inlined at the guard because the guard's whole purpose is to compute the

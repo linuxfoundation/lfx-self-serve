@@ -389,9 +389,10 @@ export const MENTORSHIP_MENTEE_TASKS_APPLICATION_EMPTY = 'No tasks for this appl
 // ---------------------------------------------------------------------------
 
 /**
- * The only statuses a mentee can request: `pending → in_progress` and `in_progress → submitted`.
- * `incomplete` and `complete` are reviewer-only, and anything else is a 409 upstream. The BFF never
- * sends `file` (upload is a coming-soon toast), so the stored file satisfies upstream's file check.
+ * The only statuses a mentee can request: `pending → in_progress`, `in_progress → submitted` and
+ * `submitted → in_progress` (until the reviewer completes the task). `incomplete` and `complete` are
+ * reviewer-only, and anything else is a 409 upstream. The BFF never sends `file`: uploading a file marks
+ * the task submitted on its own, and the stored file satisfies upstream's file check on a status change.
  */
 export const MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES: readonly MentorshipMenteeUpdatableTaskStatus[] = ['in_progress', 'submitted'];
 export const MENTORSHIP_MENTEE_TASK_STATUS_TOAST_LIFE = 5000;
@@ -427,7 +428,7 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<numbe
  * deadline, so the BFF checks the task's own `due_date` (the end of that UTC day) before forwarding.
  */
 export const MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE = 'TASK_PAST_DUE';
-export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted.';
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted or reopened.';
 /** The same 400 code, on a file upload or removal after the due date. */
 export const MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE = 'The due date for this task has passed, so its file can no longer change.';
 
@@ -450,7 +451,8 @@ export const MENTORSHIP_MENTEE_TASK_FILE_NAME_HEADER = 'X-File-Name';
 export const MENTORSHIP_MENTEE_TASK_FILE_TOO_LARGE_MESSAGE = 'The file is larger than 20 MB.';
 export const MENTORSHIP_MENTEE_TASK_FILE_TYPE_MESSAGE = 'Upload a PDF, DOC, DOCX or plain-text file.';
 export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_SUMMARY = 'File uploaded';
-export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_DETAIL = 'Your file has been saved.';
+/** Upstream marks the task submitted with every upload. */
+export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_SUCCESS_DETAIL = 'Your file has been saved and the task marked as submitted.';
 export const MENTORSHIP_MENTEE_TASK_FILE_UPLOAD_ERROR_SUMMARY = 'Could not upload file';
 export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_SUCCESS_SUMMARY = 'File removed';
 export const MENTORSHIP_MENTEE_TASK_FILE_REMOVE_SUCCESS_DETAIL = 'Your file has been removed.';
@@ -483,7 +485,8 @@ export const MENTORSHIP_MENTEE_TASK_FILE_STALE_STATUSES: readonly number[] = [40
 export const MENTORSHIP_MENTEE_TASK_HINT_FILE_REQUIRED = 'This task needs a file before it can be submitted. Upload one first.';
 export const MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE = 'The due date has passed, so this task can no longer be submitted.';
 export const MENTORSHIP_MENTEE_TASK_HINT_START_FIRST = 'Start the task before submitting it.';
-export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Submitted tasks can only be changed by your mentor.';
+export const MENTORSHIP_MENTEE_TASK_HINT_LOCKED = 'Completed tasks can only be changed by your mentor.';
+export const MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE = 'The due date has passed, so this submission can no longer be reopened.';
 
 // ---------------------------------------------------------------------------
 // Profile tab constants

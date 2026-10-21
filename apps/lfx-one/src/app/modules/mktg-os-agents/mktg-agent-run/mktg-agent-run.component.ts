@@ -13,6 +13,7 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MessageComponent } from '@components/message/message.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
+  LINKEDIN_POST_INTAKE,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
   MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX,
@@ -81,6 +82,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
+import { LinkedinPostRunComponent } from '../components/linkedin-post-run/linkedin-post-run.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
@@ -105,6 +107,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 @Component({
   selector: 'lfx-mktg-agent-run',
   imports: [
+    LinkedinPostRunComponent,
     NgClass,
     NgTemplateOutlet,
     ReactiveFormsModule,
@@ -166,6 +169,7 @@ export class MktgAgentRunComponent {
   // === Catalog lookups (route param is stable for the component's lifetime) ===
   protected readonly agent: MktgAgent | null = this.resolveAgent();
   protected readonly intake: MktgAgentIntake | null = this.agent ? (MKTG_AGENT_INTAKES[this.agent.id] ?? null) : null;
+  protected readonly linkedinIntake = LINKEDIN_POST_INTAKE;
   /**
    * What gates this run (dec-agent-dependency-gating): the catalog
    * dependency ids PLUS the intake's REQUIRED attachments (the Brand Kit's
@@ -624,6 +628,9 @@ export class MktgAgentRunComponent {
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
       this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
       return;
+    }
+    if (this.intake.oneOffDocument) {
+      return; // The dedicated surface owns profile, source intake and one-off output.
     }
     // Stored runs + LFX prefill read browser state (localStorage, HTTP-backed
     // project detail), and the project selector reuses this component on a

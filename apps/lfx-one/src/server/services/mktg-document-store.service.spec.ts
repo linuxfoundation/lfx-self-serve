@@ -47,12 +47,15 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/linkedin-post.constants')),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMocks }));
 vi.mock('./project.service', () => ({
@@ -106,6 +109,19 @@ vi.mock('./object-store.service', () => ({
       store.clock += 1000;
       store.objects.set(key, { body: input.body.toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date(store.clock) });
       return true;
+    }
+    public async putPrivateObjectIfAbsent(
+      _req: unknown,
+      _purpose: string,
+      key: string,
+      input: { body: Buffer; metadata: Record<string, string> }
+    ): Promise<boolean> {
+      if (store.objects.has(key)) return false;
+      store.objects.set(key, { body: input.body.toString(), metadata: input.metadata, lastModified: new Date() });
+      return true;
+    }
+    public async putMutableObject(_req: unknown, _purpose: string, key: string, input: { body: Buffer; metadata: Record<string, string> }): Promise<void> {
+      store.objects.set(key, { body: input.body.toString(), metadata: input.metadata, lastModified: new Date() });
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
       if (store.failListsMatching?.test(prefix)) {
@@ -1381,6 +1397,98 @@ describe('MktgDocumentStoreService', () => {
       ]);
       expect(first.id).toBe(second.id);
       expect((await service.getDocument(req, PROJECT, LINKEDIN, first.record.documentId))?.revisions).toHaveLength(1);
+    });
+
+    it('returns stored LinkedIn card sidecars and LFX link answers after a fresh reader loads the run', async () => {
+      const markdown = '# LinkedIn post options\n\nOriginal [LINK]\n';
+      const generated = {
+        ...envelope(markdown),
+        options: [1, 2, 3].map((number) => ({
+          number,
+          label: `Angle ${number}`,
+          text: `Original ${number} [LINK]`,
+          word_count: 3,
+          hashtags: ['#Code', '#Release', '#Community'],
+          tagging_suggestions: ['Example project'],
+        })),
+        answers: { share_link: 'https://public.example/shared' },
+      };
+      const written = await service.recordGeneration(req, LINKEDIN, PROJECT, generated, 'session-link');
+      const reloaded = new MktgDocumentStoreService();
+      const response = await reloaded.getRevision(req, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id);
+      expect(response?.markdown).toBe(markdown);
+      expect(response?.linkedinPost).toMatchObject({ options: generated.options, answers: generated.answers });
+      expect(response?.markdown).not.toContain('https://public.example/shared');
+      expect(store.objects.get(written.key)?.metadata['author-id']).toBe('auth0|not-the-lfid');
+      expect(JSON.stringify([...store.objects.values()])).not.toContain('The writer');
+      expect(response?.linkedinPost).toMatchObject({ author: { name: 'The writer' }, isAuthor: true });
+      expect(directoryMocks.getUserInfo).toHaveBeenCalledExactlyOnceWith(req, 'auth0|not-the-lfid');
+      expect(JSON.stringify(response)).not.toContain('auth0|not-the-lfid');
+      const originalBytes = store.objects.get(written.key)?.body;
+      await service.saveLinkedinShareLink(req, PROJECT, reloaded.runDocumentId('session-link'), 'https://public.example/edited');
+      const updated = await new MktgDocumentStoreService().getRevision(req, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id);
+      expect(updated?.linkedinPost?.answers['share_link']).toBe('https://public.example/edited');
+      expect(updated?.revisions).toHaveLength(1);
+      expect(store.objects.get(written.key)?.body).toBe(originalBytes);
+      expect(updated?.revision.contentSha256).toBe(response?.revision.contentSha256);
+      await service.recordGeneration(req, LINKEDIN, PROJECT, generated, 'session-link');
+      expect((await service.getRevision(req, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost?.answers['share_link']).toBe(
+        'https://public.example/edited'
+      );
+      const viewer = { oidc: { user: { sub: 'auth0|viewer' } } } as unknown as Request;
+      expect((await service.getRevision(viewer, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost).toMatchObject({
+        isAuthor: false,
+      });
+      directoryMocks.getUserInfo.mockRejectedValueOnce(new Error('Synthetic directory outage'));
+      const unavailable = { ...req } as Request;
+      for (let index = 0; index < 2; index++) {
+        expect((await service.getRevision(unavailable, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost).toMatchObject({
+          author: { name: null },
+          isAuthor: true,
+        });
+      }
+      expect(loggerMocks.warning.mock.calls.filter((call) => call[1] === 'mktg_document_store_author')).toHaveLength(1);
+      directoryMocks.getUserInfo.mockResolvedValue({ success: true, username: 'not-a-display-name', data: {} });
+      expect(
+        (await service.getRevision({ ...req } as Request, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost?.author
+      ).toEqual({ name: null });
+      const saved = store.objects.get(written.key);
+      if (!saved) throw new Error('Expected stored test revision');
+      delete saved.metadata['author-id'];
+      expect((await service.getRevision(req, PROJECT, LINKEDIN, reloaded.runDocumentId('session-link'), written.id))?.linkedinPost).not.toHaveProperty(
+        'author'
+      );
+    });
+    it('seeds a late supplied link without freezing an omitted answer or overwriting a later explicit edit', async () => {
+      const generated = {
+        ...envelope('# Post [LINK]'),
+        options: [1, 2, 3].map((number) => ({
+          number,
+          label: `Angle ${number}`,
+          text: 'Post [LINK]',
+          word_count: 2,
+          hashtags: ['#Code', '#Release', '#Community'],
+          tagging_suggestions: ['Example project'],
+        })),
+      };
+      const written = await service.recordGeneration(req, LINKEDIN, PROJECT, generated, 'late-answers');
+      const bytes = store.objects.get(written.key)?.body;
+      const id = service.runDocumentId('late-answers');
+      expect(written.record.bundle.sidecar).not.toHaveProperty('answers');
+      await service.saveLinkedinShareLink(req, PROJECT, id, 'https://public.example/late', true);
+      expect((await service.getRevision(req, PROJECT, LINKEDIN, id, written.id))?.linkedinPost?.answers['share_link']).toBe('https://public.example/late');
+      await service.saveLinkedinShareLink(req, PROJECT, id, 'https://public.example/edited');
+      await service.saveLinkedinShareLink(req, PROJECT, id, 'https://public.example/late', true);
+      const result = await service.getRevision(req, PROJECT, LINKEDIN, id, written.id);
+      expect(result?.linkedinPost?.answers['share_link']).toBe('https://public.example/edited');
+      expect(result?.revisions).toHaveLength(1);
+      expect(store.objects.get(written.key)?.body).toBe(bytes);
+    });
+
+    it('fails closed without an effective subject and refuses editing a missing run', async () => {
+      await expect(service.recordGeneration({} as Request, LINKEDIN, PROJECT, envelope('# Post'), 'session-a')).rejects.toMatchObject({ statusCode: 401 });
+      expect(store.objects.size).toBe(0);
+      await expect(service.saveLinkedinShareLink(req, PROJECT, service.runDocumentId('missing'), '')).rejects.toMatchObject({ statusCode: 404 });
     });
     it('stores every run as its own document with a single revision that is never updated', async () => {
       await service.recordGeneration(req, LINKEDIN, PROJECT, envelope('# Post A\n'), 'session-a');

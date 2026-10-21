@@ -112,23 +112,25 @@ export class FileObjectStoreBackend implements ErasableObjectStoreBackend {
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
     const bodyPath = this.resolveKey(key);
     const lock = `${bodyPath}.lock${OBJECT_STORE_FILE_PARTIAL_SUFFIX}`;
-    try {
-      await mkdir(dirname(bodyPath), { recursive: true });
-    } catch (error) {
-      if (isNestedKeyCollision(error)) {
-        throw ServiceValidationError.forField('key', `Object key collides with a stored object: "${key}"`, { operation: 'object_store_put_object' });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await mkdir(dirname(bodyPath), { recursive: true });
+      } catch (error) {
+        if (isNestedKeyCollision(error)) {
+          throw ServiceValidationError.forField('key', `Object key collides with a stored object: "${key}"`, { operation: 'object_store_put_object' });
+        }
+        throw error;
       }
-      throw error;
-    }
-    try {
-      // mkdir is exclusive across backend instances AND processes. Never steal a
-      // lock: a crashed local writer needs operator recovery, not a lost update.
-      await mkdir(lock);
-    } catch (error) {
-      if (fsErrorCode(error) === 'EEXIST') {
-        throw new PreconditionFailedError('An object write is already in flight');
+      try {
+        // Exclusive across instances/processes; never steal an abandoned lock.
+        await mkdir(lock);
+        break;
+      } catch (error) {
+        // A delete may prune the empty parent between the two mkdir calls.
+        if (fsErrorCode(error) === 'ENOENT' && attempt === 0) continue;
+        if (fsErrorCode(error) === 'EEXIST') throw new PreconditionFailedError('An object write is already in flight');
+        throw error;
       }
-      throw error;
     }
     try {
       if (input.ifMatch || input.ifNoneMatch) {

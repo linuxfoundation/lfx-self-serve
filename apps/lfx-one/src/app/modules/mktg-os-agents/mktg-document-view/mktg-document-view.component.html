@@ -6,27 +6,73 @@
   <div class="flex flex-col gap-5 mt-3">
     <!-- Top bar: back to Documents, the document, and which revision this is -->
     <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
-      <a
-        routerLink="documents"
-        [relativeTo]="documentsRoute"
-        [queryParams]="{ type: view()?.type?.agentKey ?? null, revision: null }"
-        queryParamsHandling="merge"
-        class="font-semibold text-blue-600 hover:text-blue-800"
-        data-testid="mktg-document-view-back-link"
-        >← Documents</a
-      >
-      <span class="text-gray-400" aria-hidden="true">/</span>
+      @if (kitBreadcrumb(); as crumb) {
+        <nav aria-label="Breadcrumb" class="min-w-0 text-sm text-gray-500">
+          <a
+            [routerLink]="['.']"
+            [relativeTo]="documentsRoute"
+            [queryParams]="{ project: projectSlug(), type: null, revision: null }"
+            queryParamsHandling="merge"
+            class="text-blue-700 hover:underline"
+            data-testid="mktg-document-crumb-kit"
+            >{{ projectName() }} kit</a
+          >
+          <span aria-hidden="true"> › </span>
+          <a
+            [routerLink]="['families', crumb.family.id]"
+            [relativeTo]="documentsRoute"
+            [queryParams]="{ project: projectSlug(), type: null, revision: null }"
+            queryParamsHandling="merge"
+            class="text-blue-700 hover:underline"
+            data-testid="mktg-document-crumb-family"
+            >{{ crumb.family.name }}</a
+          >
+          @if (crumb.living) {
+            <span aria-hidden="true"> › </span><span aria-current="page">{{ crumb.asset.label }}</span>
+          }
+        </nav>
+      } @else {
+        <a
+          routerLink="documents"
+          [relativeTo]="documentsRoute"
+          [queryParams]="{ project: projectSlug(), type: view()?.type?.agentKey ?? null, revision: null }"
+          queryParamsHandling="merge"
+          class="font-semibold text-blue-600 hover:text-blue-800"
+          data-testid="mktg-document-view-back-link"
+          >← Documents</a
+        >
+        <span class="text-gray-400" aria-hidden="true">/</span>
+      }
       <div class="flex min-w-0 flex-col gap-1">
-        <h1 class="text-base font-semibold text-gray-900" data-testid="mktg-document-view-title">{{ title() }}</h1>
+        <h1 class="text-base font-semibold text-gray-900" [class.break-words]="isLinkedinDocument()" data-testid="mktg-document-view-title">{{ title() }}</h1>
         @if (header(); as meta) {
-          @if (hasAssetMetadata()) {
+          @if (!isLinkedinDocument() && hasAssetMetadata()) {
             <lfx-mktg-asset-meta [metadata]="meta" prefix="mktg-document-view" />
           }
         }
       </div>
       <div class="grow"></div>
-      @if (view(); as current) {
-        @if (!hasAssetView() && current.revision.format !== 'json') {
+      @if (linkedinContent(); as content) {
+        @if (content.author; as author) {
+          <span class="text-sm text-gray-500" data-testid="mktg-linkedin-document-author">
+            {{ content.isAuthor ? 'Writing as' : 'Drafted by' }} {{ author.name || 'name unavailable' }}
+            @if (view()?.revision?.createdAt; as storedAt) {
+              · <span data-testid="mktg-linkedin-document-date">{{ storedAt | date: 'd MMM y' }}</span>
+            }
+            @if (content.isAuthor) {
+              ·
+              <button
+                type="button"
+                class="text-blue-600 hover:underline focus-visible:ring-2 focus-visible:ring-blue-600"
+                (click)="onEditProfile()"
+                data-testid="mktg-linkedin-document-edit-profile">
+                Edit profile
+              </button>
+            }
+          </span>
+        }
+      } @else if (view(); as current) {
+        @if (!isLinkedinDocument() && !hasAssetView() && current.revision.format !== 'json') {
           <span class="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600" data-testid="mktg-document-view-revision-chip">
             Revision {{ current.revision.number }} of {{ current.revisions.length }}
             @if (current.revision.latest) {
@@ -51,6 +97,65 @@
       <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-document-view-loading">
         Loading the document…
       </div>
+    } @else if (linkedinContent(); as content) {
+      <section aria-label="LinkedIn post options" data-testid="mktg-document-view-document" class="flex min-w-0 flex-col gap-5">
+        <section class="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-gray-700">
+          @if (content.source; as source) {
+            <p class="min-w-0 grow break-words text-sm" data-testid="mktg-linkedin-document-source">
+              <span class="font-semibold">Drafted from</span> {{ source.label }} · {{ source.fetched ? 'fetched' : 'provided' }}
+              @if (source.words) {
+                · {{ source.words }} words
+              }
+            </p>
+          }
+          <lfx-button label="Draft another post" [text]="true" (onClick)="onDraftAnother()" data-testid="mktg-linkedin-draft-another" />
+          <p class="text-sm text-gray-500">A new draft is a new run, stored under LinkedIn posts.</p>
+          <div class="flex w-full flex-wrap items-center gap-3">
+            <label for="linkedin-document-share-link" class="font-semibold">Link to share</label>
+            <lfx-input-text
+              [form]="linkForm"
+              control="share_link"
+              inputId="linkedin-document-share-link"
+              type="url"
+              [readonly]="!editingLink() || savingLink()"
+              [maxlength]="maxShareLinkChars"
+              describedBy="linkedin-document-share-hint"
+              placeholder="No link saved"
+              styleClass="w-full min-h-10"
+              class="min-w-0 grow"
+              data-testid="mktg-linkedin-share-link" />
+            @if (editingLink()) {
+              <lfx-button label="Save link" [disabled]="savingLink()" [loading]="savingLink()" (onClick)="onSaveLink()" data-testid="mktg-linkedin-save-link" />
+              <lfx-button label="Cancel" [text]="true" [disabled]="savingLink()" (onClick)="onCancelLink()" data-testid="mktg-linkedin-cancel-link" />
+            } @else {
+              <lfx-button label="Edit link" [text]="true" (onClick)="onEditLink()" data-testid="mktg-linkedin-edit-link" />
+            }
+            <p id="linkedin-document-share-hint" class="text-sm text-gray-500">{{ shareLinkHint }}</p>
+            @if (linkError()) {
+              <p role="alert" class="w-full text-sm text-red-700" data-testid="mktg-linkedin-share-error">{{ linkError() }}</p>
+            }
+          </div>
+        </section>
+        <h2 class="text-lg font-bold">Three options</h2>
+        <lfx-linkedin-post-options
+          [options]="content.options"
+          [shareLink]="content.answers[shareLinkAnswerKey]"
+          [notes]="content.notes"
+          [addLinkDisabled]="savingLink()"
+          (addLink)="onEditLink()" />
+      </section>
+    } @else if (isLinkedinDocument() && view(); as current) {
+      <!-- Older one-off posts stay readable without inheriting kit-asset approval chrome. -->
+      <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
+        @if (current.revision.format === 'json') {
+          <lfx-message
+            severity="error"
+            [text]="'This revision could not be displayed. Revision ' + current.revision.number + '.'"
+            data-testid="mktg-document-view-unreadable-json" />
+        } @else {
+          <lfx-markdown-renderer [content]="current.markdown" [headingLevelOffset]="1" />
+        }
+      </article>
     } @else if (view(); as current) {
       <ng-template #approveActions>
         @if (runAgainLink(); as link) {

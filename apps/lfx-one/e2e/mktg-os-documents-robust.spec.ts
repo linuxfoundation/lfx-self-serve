@@ -43,7 +43,10 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(page.getByTestId('mktg-documents-empty-living')).toBeVisible();
     await page.unroute(/\/api\/mktg-agents\/documents\?/);
     await openDocuments(page, DOCUMENT_VIEW_URL);
-    await page.getByTestId('mktg-document-view-back-link').click();
+    await page.getByTestId('mktg-document-crumb-kit').click();
+    await expect(page).toHaveURL(DOCUMENTS_URL.replace('/documents', ''));
+    // The kit crumb returns to the scoped kit; reopen Documents for its table checks.
+    await openDocuments(page);
     await expect(page.getByTestId('mktg-documents-revisions').locator('th[scope="col"]')).toHaveCount(5);
     await expect(page.getByTestId('mktg-documents-page').locator('main, aside')).toHaveCount(0);
   });
@@ -109,7 +112,10 @@ test.describe('Marketing OS Documents structure', () => {
       if (!actions) throw new Error('Revision actions must be rendered before measuring their column');
       expect(actions.width).toBeGreaterThan(40);
       expect(actions.width).toBeLessThanOrEqual(64);
-      await page.getByTestId('mktg-document-view-back-link').click();
+      await page.getByTestId('mktg-document-crumb-kit').click();
+      await expect(page).toHaveURL(DOCUMENTS_URL.replace('/documents', ''));
+      // Keep the Documents layout assertions after checking the scoped kit destination.
+      await openDocuments(page);
       await expect(page).toHaveURL(new RegExp(DOCUMENTS_URL.split('?')[0]));
       await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
       await expect(page.getByTestId('mktg-documents-page').locator('main')).toHaveCount(0);
