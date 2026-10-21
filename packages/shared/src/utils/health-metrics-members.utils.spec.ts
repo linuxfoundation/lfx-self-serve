@@ -737,6 +737,17 @@ describe('buildHealthMetricsMembersBoardSummary', () => {
   it('falls back to the view flag only when the latest share is missing', () => {
     const flagged = buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: null }), null);
     expect(flagged).toMatchObject({ isBelowExpectedLevel: true, latestTone: 'critical' });
+    // The flag is the board's 90% line, so it says nothing about a voting group's 50% one.
+    const voting = buildHealthMetricsMembersBoardSummary('voting_members', boardCohort({ latestAttendancePct: null }), null);
+    expect(voting).toMatchObject({ isBelowExpectedLevel: false, latestTone: 'ok', latestCaption: 'Last voting meeting' });
+  });
+
+  it('judges the whole percent the hero shows, so a share reading 90% is not below the board rule', () => {
+    expect(buildHealthMetricsMembersBoardSummary('board', boardCohort({ latestAttendancePct: 26 / 29 }), null)).toMatchObject({
+      latestPctLabel: '90%',
+      isBelowExpectedLevel: false,
+      latestTone: 'ok',
+    });
   });
 
   it('clamps a share recorded above the invited count to 100%, as the table and chart do', () => {

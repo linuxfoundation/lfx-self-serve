@@ -90,7 +90,8 @@ export function resolveHealthMetricsEngagementAttendanceTone(
     return 'empty';
   }
 
-  return fraction < rule.threshold ? rule.tone : 'ok';
+  // Judged on the whole percent the label shows, so a bar reading "90%" is never red under a 90% rule.
+  return Math.round(fraction * 100) < Math.round(rule.threshold * 100) ? rule.tone : 'ok';
 }
 
 /**

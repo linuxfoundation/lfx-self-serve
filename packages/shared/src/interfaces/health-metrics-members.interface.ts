@@ -587,7 +587,7 @@ export interface HealthMetricsMembersNpsQuery {
   audience: string | null;
 }
 
-/** One audience surveyed in the period; `isSampleTooSmall` marks a score that rests on too few replies. */
+/** One audience surveyed in the period; `isSampleTooSmall` is the view's 40% response-rate line, read only without a rate. */
 export interface HealthMetricsMembersNpsAudience {
   audience: string;
   npsScore: number | null;

@@ -102,10 +102,12 @@ export class EngagementMeetingParticipationComponent {
   // once per row per response instead of on every change-detection pass.
   protected readonly rowViews = computed<HealthMetricsEngagementParticipationRowView[]>(() => {
     const range = this.chrome.selectedRange();
+    const rules = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES;
     return this.response().rows.map((row) => ({
       row,
       period: selectHealthMetricsEngagementParticipationPeriod(row, range),
-      attendanceRule: HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES[row.group ?? ''] ?? HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
+      // Own keys only: a group named like an Object.prototype member must not pick up a non-rule.
+      attendanceRule: row.group !== null && Object.hasOwn(rules, row.group) ? rules[row.group] : HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
     }));
   });
 

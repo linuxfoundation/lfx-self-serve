@@ -133,6 +133,13 @@ describe('resolveHealthMetricsEngagementAttendanceTone', () => {
     expect(resolveHealthMetricsEngagementAttendanceTone(0.9, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('ok');
     expect(resolveHealthMetricsEngagementAttendanceTone(0, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('empty');
   });
+
+  // 26 of 29 reads "90%", so it must not be red under a 90% rule; 0.494 reads "49%" and stays amber.
+  it('judges the whole percent the label shows, not the raw share', () => {
+    expect(resolveHealthMetricsEngagementAttendanceTone(26 / 29, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.496)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.494)).toBe('low');
+  });
 });
 
 describe('buildHealthMetricsEngagementSubNavItems', () => {

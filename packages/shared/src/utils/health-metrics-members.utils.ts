@@ -377,15 +377,16 @@ export function buildHealthMetricsMembersBoardSummary(
 }
 
 /**
- * Whether the latest meeting is below the cohort's rule. The view's flag draws one 90% line for both
- * cohorts, so it is read only when the share is missing.
+ * Whether the latest meeting is below the cohort's rule, on the whole percent shown. The view's flag
+ * draws the board's 90% line for both cohorts, so it stands in only for a board share that is missing.
  */
 export function isHealthMetricsMembersBoardBelowLevel(
   cohort: HealthMetricsMembersBoardCohort,
   summary: HealthMetricsMembersBoardCohortSummary | null
 ): boolean {
-  const share = summary?.latestAttendancePct ?? null;
-  return share === null ? summary?.isBelowExpectedLevel === true : share < HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].threshold;
+  const pct = toWholePct(summary?.latestAttendancePct ?? null);
+  if (pct === null) return cohort === 'board' && summary?.isBelowExpectedLevel === true;
+  return pct < Math.round(HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES[cohort].threshold * 100);
 }
 
 /** Meeting rows; the rate bar takes the Engagement attendance tones under the cohort's rule. */
@@ -438,7 +439,7 @@ export function buildHealthMetricsMembersNpsAudienceOptions(audiences: HealthMet
   return audiences.map((audience) => ({ id: audience.audience, label: audience.audience }));
 }
 
-/** The NPS hero, banner and footer for one audience; a flagged sample keeps its score, marked as low confidence. */
+/** The NPS hero, banner and footer for one audience; a sample below the rate floor keeps its score, marked as low confidence. */
 export function buildHealthMetricsMembersNpsSummary(audience: HealthMetricsMembersNpsAudience | null): HealthMetricsMembersNpsSummaryView {
   const isUnscored = !audience || audience.npsScore === null;
   const recipients = audience?.recipientsCount ?? null;
@@ -502,7 +503,7 @@ export function buildHealthMetricsMembersNpsSegments(audience: HealthMetricsMemb
   });
 }
 
-/** Trend points, oldest first; a flagged or below-floor wave keeps its score, marked as low confidence. */
+/** Trend points, oldest first; a below-floor wave, or a flagged one with no rate, keeps its score as low confidence. */
 export function buildHealthMetricsMembersNpsTrend(trend: HealthMetricsMembersNpsQuarter[]): HealthMetricsMembersNpsTrendPointView[] {
   return trend.map((quarter) => {
     const score = quarter.npsScore;
