@@ -622,12 +622,16 @@ export class VotesDashboardComponent {
             // `closingOnly`/`nowMs` additionally gate insertion under the Closing Soon quick filter —
             // the lazy table doesn't locally re-filter returned rows, so a newly created vote outside
             // the rolling seven-day window must never be inserted while that filter is active.
+            // `searchName`/`group` likewise gate insertion under the free-text search box and the
+            // Group dropdown — same reasoning, the lazy table never locally re-filters inserted rows.
             map((votes) =>
               this.voteService.mergeRecentlyCreatedVotes(filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes), {
                 projectUid: project.uid,
                 statusFilter: filterState.status,
                 closingOnly: this.managementClosingOnly(),
                 nowMs: Date.now(),
+                searchName: searchName || undefined,
+                group: filterState.group || undefined,
                 isFirstPage: pageIndex === 0,
               })
             ),

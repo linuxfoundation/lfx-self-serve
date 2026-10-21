@@ -474,17 +474,15 @@ export class VoteManageComponent {
     } else {
       const createRequest = buildCreateVoteRequest(formValue, projectUid);
       // Speculative create (GH-2826 Design A): the create fired at dialog-open; confirmSpeculativeVote chains
-      // the enable onto it (grace-hint echo) and the service marks the vote opened so the mark survives navigation.
-      // takeUntilDestroyed: a late settlement must not toast/navigate from a dead component.
+      // the enable onto it (grace-hint echo) and marks the vote opened/created service-side (GH-4007) so
+      // both marks survive navigation. takeUntilDestroyed below only guards this component's own
+      // toast/navigate reaction — the marking itself already happened inside the service's own subscription.
       this.voteService
         .confirmSpeculativeVote(createRequest)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: ({ vote, opened }) => {
+          next: ({ opened }) => {
             this.submitting.set(false);
-            // Carries the new vote (including a clone, GH-4007) so the list shows it immediately
-            // instead of waiting on the search index to catch up.
-            this.voteService.markVoteCreated(vote, opened);
             if (opened) {
               this.messageService.add({
                 severity: 'success',

@@ -315,7 +315,7 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.confirmingOpenVote()).toBe(true);
     });
 
-    it('accept chains onto the speculation: success toast + navigate, and the service (not the component) marks the vote opened', async () => {
+    it('accept chains onto the speculation: success toast + navigate, and the service (not the component) marks the vote opened/created', async () => {
       const router = TestBed.inject(Router);
       const fixture = await submitFromValidForm();
 
@@ -326,12 +326,11 @@ describe('VoteManageComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
       expect(router.navigate).toHaveBeenCalledWith(['/votes']);
       expect(fixture.componentInstance.submitting()).toBe(false);
-      // markVoteOpened moved into the service's confirm chain (it must survive navigation).
+      // markVoteOpened and markVoteCreated both moved into the service's confirm chain (GH-4007
+      // round 2: marking from the component's own subscriber drops the carrier on fast navigation).
       expect(voteServiceMock.markVoteOpened).not.toHaveBeenCalled();
+      expect(voteServiceMock.markVoteCreated).not.toHaveBeenCalled();
       expect(voteServiceMock.discardSpeculativeVote).not.toHaveBeenCalled();
-      // Carries the confirmed vote to the recently-created list so it renders immediately,
-      // instead of waiting on the search index (GH-4007).
-      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(unenrichedVote(), true);
     });
 
     it('accept with opened: false warns and navigates — the draft residue is intentional, no delete', async () => {
@@ -555,8 +554,10 @@ describe('VoteManageComponent', () => {
 
     // GH-4007: a cloned vote previously went missing from the votes list until a manual page
     // reload, because the search index hadn't caught up yet. Clone shares submitVote()'s create
-    // path exactly, so confirming creation must mark the new vote the same way a plain create does.
-    it('marks the newly created vote so the cloned vote appears in the list immediately (GH-4007)', async () => {
+    // path exactly, so confirming creation marks the new vote the same way a plain create does —
+    // now inside the service's own confirm chain (see vote.service.spec.ts), so this component test
+    // only needs to verify the clone flow reaches confirmSpeculativeVote, not the marking itself.
+    it('reaches confirmSpeculativeVote for the cloned vote so it gets marked created the same way a plain create does (GH-4007)', async () => {
       const SOURCE_PROJECT_UID = 'source-project-uid';
       const createdVote = { uid: 'new-cloned-vote-uid', project_uid: SOURCE_PROJECT_UID } as unknown as Vote;
       voteServiceMock.confirmSpeculativeVote.mockReturnValue(of({ vote: createdVote, opened: true }));
@@ -584,7 +585,8 @@ describe('VoteManageComponent', () => {
       fixture.componentInstance.onSubmit();
       (capturedConfirmation as Confirmation | null)?.accept?.();
 
-      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(createdVote, true);
+      expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledTimes(1);
+      expect(fixture.componentInstance.submitting()).toBe(false);
     });
 
     // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): fail closed rather than silently trusting the clone's own

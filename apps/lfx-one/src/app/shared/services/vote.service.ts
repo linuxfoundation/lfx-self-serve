@@ -235,6 +235,11 @@ export class VoteService {
       ),
       tap({
         next: ({ vote, opened }) => {
+          // Service-subscribed (see confirm$.subscribe below) so this survives navigation away from
+          // the dialog, same reasoning as markVoteOpened above (GH-4007 dealako/cursor[bot]: marking
+          // from the component's own `next` handler under takeUntilDestroyed drops the carrier if the
+          // user navigates away before this settles).
+          this.markVoteCreated(vote, opened);
           if (opened) {
             this.markVoteOpened(vote.uid);
           }
@@ -439,6 +444,9 @@ export class VoteService {
    * - `closingOnly`/`nowMs` keep a carried vote out of the Closing Soon quick filter unless it
    *   actually falls inside that rolling window (same `isVoteClosingSoon` check the fetched rows
    *   are already subject to server-side).
+   * - `searchName`/`group` mirror the same free-text search and Group dropdown the fetch itself is
+   *   scoped to (dealako, GH-4007 round 2) — without these a carried vote would insert into a page
+   *   the user has filtered to a different search term or committee, one the fetched rows all honor.
    * - `isFirstPage` (default `true`) limits insertion to the first page of a paginated fetch so the
    *   same optimistic row isn't prepended to every page.
    *
@@ -457,10 +465,12 @@ export class VoteService {
       statusFilter?: PollStatus | null;
       closingOnly?: boolean;
       nowMs?: number;
+      searchName?: string;
+      group?: string;
       isFirstPage?: boolean;
     } = {}
   ): Vote[] {
-    const { projectUid, committeeUid, statusFilter, closingOnly, nowMs = Date.now(), isFirstPage = true } = options;
+    const { projectUid, committeeUid, statusFilter, closingOnly, nowMs = Date.now(), searchName, group, isFirstPage = true } = options;
     const recentlyCreated = this.getLiveRecentlyCreatedVotes();
     if (recentlyCreated.size === 0) {
       return votes;
@@ -489,6 +499,8 @@ export class VoteService {
       if (committeeUid !== undefined && vote.committee_uid !== committeeUid) continue;
       if (statusFilter != null && vote.status !== statusFilter) continue;
       if (closingOnly && !isVoteClosingSoon(vote, nowMs)) continue;
+      if (searchName && !vote.name.toLowerCase().includes(searchName.toLowerCase())) continue;
+      if (group && vote.committee_name !== group) continue;
       missing.push(vote);
     }
 

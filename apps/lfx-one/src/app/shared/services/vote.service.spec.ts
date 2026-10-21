@@ -393,6 +393,44 @@ describe('VoteService', () => {
       expect(merged.map((v) => v.uid)).toEqual(['other']);
     });
 
+    // GH-4007 round 2 (dealako): inserted rows previously ignored the free-text search box and the
+    // Group dropdown, so a carried vote could appear on a page the user had filtered away from.
+    it('does not insert a carried vote whose name does not match the active search term', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Board decision' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { searchName: 'budget' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote whose name matches the active search term, case-insensitively', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Approve the Budget' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { searchName: 'budget' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote scoped to a different Group', () => {
+      const created = buildVote({ uid: 'new-vote', committee_name: 'Technical Steering Committee' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { group: 'Marketing Committee' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote scoped to the matching Group', () => {
+      const created = buildVote({ uid: 'new-vote', committee_name: 'Technical Steering Committee' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { group: 'Technical Steering Committee' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
     it('does not insert a carried vote whose status does not match the active status filter', () => {
       const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
       service.markVoteCreated(created, false);
@@ -547,6 +585,33 @@ describe('VoteService', () => {
       // The service (not the component) marks the vote opened so the carrier survives navigation.
       expect(service.getLiveRecentlyOpenedVotes().has('vote-1')).toBe(true);
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
+    });
+
+    // GH-4007 round 2 (dealako): markVoteCreated previously fired from the component's own `next`
+    // handler, so a user navigating away before confirm$ settled dropped the carrier. Moved into this
+    // same service-subscribed tap as markVoteOpened so both survive navigation identically.
+    it('marks the vote created inside the service-owned confirm chain, not just opened', () => {
+      http.post.mockReturnValue(of(createResponse(buildVote())));
+      http.put.mockReturnValue(of({ uid: 'vote-1', status: PollStatus.ACTIVE }));
+
+      service.beginSpeculativeCreate(request);
+      service.confirmSpeculativeVote(request).subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['vote-1', 'other']);
+      expect(merged[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('marks the vote created with its pre-enable status when the enable call fails (opened: false)', () => {
+      http.post.mockReturnValue(of(createResponse(buildVote())));
+      http.put.mockReturnValue(throwError(() => new Error('enable failed')));
+
+      service.beginSpeculativeCreate(request);
+      service.confirmSpeculativeVote(request).subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['vote-1', 'other']);
+      expect(merged[0].status).toBe(buildVote().status);
     });
 
     it('confirm before the create resolves waits for the uid, then enables — one PUT, no duplicate POST', () => {
