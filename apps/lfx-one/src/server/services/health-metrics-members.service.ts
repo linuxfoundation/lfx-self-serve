@@ -795,7 +795,7 @@ export class HealthMetricsMembersService {
         FROM ${MEMBERSHIP_CHURNED_MEMBERS_VIEW} lost
         LEFT JOIN movements
           ON movements.account_id = lost.account_id
-          AND movements.movement_type = IFF(lost.churn_type = 'Downgrade', 'downgrade', 'churned')
+          AND movements.movement_type = IFF(LOWER(lost.churn_type) = 'downgrade', 'downgrade', 'churned')
         WHERE lost.foundation_slug = ?
           AND lost.year = ?
           -- Rows the mapper cannot show must not count, or the total and the page window drift apart.

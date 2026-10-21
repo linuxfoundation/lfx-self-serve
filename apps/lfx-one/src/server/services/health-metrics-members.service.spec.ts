@@ -1395,7 +1395,7 @@ describe('HealthMetricsMembersService.getChurnDepartures', () => {
     expect(movements).toContain('COALESCE(lapsed_date, movement_date) AS lapsed_date');
     expect(movements).toContain("AND movement_type IN ('churned', 'downgrade')");
     expect(movements).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY account_id, movement_type ORDER BY movement_date DESC NULLS LAST) = 1');
-    expect(sql).toContain("AND movements.movement_type = IFF(lost.churn_type = 'Downgrade', 'downgrade', 'churned')");
+    expect(sql).toContain("AND movements.movement_type = IFF(LOWER(lost.churn_type) = 'downgrade', 'downgrade', 'churned')");
   });
 
   it('clamps an oversized page and offset before interpolating them', async () => {
