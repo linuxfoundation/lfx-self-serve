@@ -20,6 +20,7 @@ import {
   ORG_CLA_MANAGERS_COPY,
   ORG_CLA_NOT_STARTED_COPY,
   ORG_CLA_SIGN_SELECTION_STATE,
+  ORG_CLA_VIEW_ONLY_COPY,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
 } from '@lfx-one/shared/constants';
@@ -1406,6 +1407,14 @@ describe('OrgEasyclaDetailComponent', () => {
      * either row-shaped empty state — `notFound` or `cannotPreview` firing over a preview would
      * tell a signatory the agreement they are about to sign does not exist.
      */
+    it('does not mark the preview View only, since anyone may start signing it', async () => {
+      const fixture = await render(previewing());
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-view-only')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-view-only-reason')).toBeNull();
+    });
+
     it('asks for the list, yet settles on the preview rather than an empty state', async () => {
       const fixture = await render(previewing());
 
@@ -1930,6 +1939,60 @@ describe('OrgEasyclaDetailComponent', () => {
   /**
    * Why the open tab holds nothing on an agreement nobody has signed, when signing is what fills it.
    */
+  describe('the View only marker', () => {
+    it('marks a signed CCLA the viewer is not a CLA Manager of, and says who can change it', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: false })] }));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-view-only')?.textContent?.trim()).toBe(ORG_CLA_VIEW_ONLY_COPY.label);
+      expect(byTestId(fixture, 'org-easycla-detail-view-only-reason')?.textContent).toContain(ORG_CLA_VIEW_ONLY_COPY.reason);
+      expect(byTestId(fixture, 'org-easycla-detail-view-only-managers-link')?.textContent?.trim()).toBe(ORG_CLA_VIEW_ONLY_COPY.managersLink);
+    });
+
+    it('opens the CLA Managers tab from the explanation and moves focus to it', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: false })] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-view-only-managers-link')?.click();
+      fixture.detectChanges();
+
+      const managersTab = byTestId(fixture, 'org-easycla-detail-tab-managers');
+      expect(managersTab?.getAttribute('aria-selected')).toBe('true');
+      expect(document.activeElement).toBe(managersTab);
+    });
+
+    it('keeps the marker on every tab, since it sits in the header', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: false })] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-tab-approval')?.click();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-detail-view-only')).not.toBeNull();
+    });
+
+    it('leaves a CCLA the viewer manages unmarked', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ viewerIsClaManager: true })] }));
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-view-only')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-view-only-reason')).toBeNull();
+    });
+
+    it('leaves an unsigned agreement unmarked', async () => {
+      getClaGroups.mockReturnValue(
+        of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'not-started', signed: false, signedOn: undefined, viewerIsClaManager: false })] })
+      );
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-detail-view-only')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-view-only-reason')).toBeNull();
+    });
+  });
+
   describe('the tabs signing is what fills', () => {
     const notStarted = { status: 'not-started' as const, signed: false, signedOn: undefined };
 
@@ -3913,6 +3976,20 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
     expect(component.claGroup()?.viewerIsClaManager).toBe(false);
     expect(autoEclaSwitch(fixture)?.disabled).toBe(true);
+  });
+
+  it('marks the CCLA View only as soon as the viewer removes themselves, before the list catches up', async () => {
+    const fixture = await render();
+    const component = fixture.componentInstance as unknown as { onRosterChanged: () => void };
+    expect(byTestId(fixture, 'org-easycla-detail-view-only')).toBeNull();
+
+    TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+    getClaGroups.mockReturnValueOnce(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ viewerIsClaManager: true })] }));
+    component.onRosterChanged();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(byTestId(fixture, 'org-easycla-detail-view-only')).not.toBeNull();
   });
 
   it('keeps the controls withdrawn when a self-removal lands after the panel closed and an earlier re-read still naming the viewer lands after it', async () => {

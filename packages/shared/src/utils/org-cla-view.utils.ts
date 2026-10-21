@@ -30,6 +30,10 @@ export function orgClaOpenLabel(group: Pick<OrgClaGroup, 'claGroupName' | 'signi
   return signingEntityName ? `Open ${claGroupName}, ${signingEntityName}` : `Open ${claGroupName}`;
 }
 
+export function orgClaIsViewOnly(group: Pick<OrgClaGroup, 'signed' | 'viewerIsClaManager'>): boolean {
+  return group.signed === true && group.viewerIsClaManager !== true;
+}
+
 /**
  * Coverage chips for one row, each saying whether it stands for a list worth opening.
  *
