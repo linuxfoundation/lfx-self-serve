@@ -33,6 +33,9 @@ function envelope(): LinkedinEnvelope {
   };
 }
 describe('LinkedIn envelope validation', () => {
+  it.each(['saved_profile', 'first_run_setup'])('rejects array-valued profile_source %j without string coercion', (source) => {
+    expect(isLinkedinEnvelope({ ...envelope(), profile_source: [source] })).toBe(false);
+  });
   it('accepts additive research provenance without weakening known render fields', () => {
     const original = envelope();
     expect(

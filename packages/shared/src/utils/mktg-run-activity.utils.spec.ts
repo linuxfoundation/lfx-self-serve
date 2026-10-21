@@ -24,6 +24,23 @@ const afterAnswers = events.findIndex(
 const labels = (activity: MktgRunActivity[]): string[] => activity.map((step) => step.label);
 
 describe('buildMktgRunActivity — the live feed from a real session', () => {
+  it('reuses the generic phases with LinkedIn-specific writing/checking labels after its gap round', () => {
+    const activity = buildMktgRunActivity([
+      JSON.stringify({
+        type: 'agent_notification_message',
+        created_at: '2026-10-19T10:00:00Z',
+        content: { type: 'text', data: 'LINKEDIN POST — QUESTIONS (linkedin-post-questions/v1)' },
+      }),
+      JSON.stringify({ type: 'llm_start', created_at: '2026-10-19T10:00:01Z' }),
+      JSON.stringify({
+        type: 'llm_done',
+        created_at: '2026-10-19T10:00:02Z',
+        body: JSON.stringify({ type: 'tool_use', id: 'check-1', name: 'finalize_linkedin_post' }),
+      }),
+    ]);
+    expect(labels(activity)).toEqual(['Writing three post options', 'Checking the post options']);
+    expect(activity.map((step) => step.status)).toEqual(['done', 'running']);
+  });
   it('reads the research in order, in plain sentences, ending with the questions', () => {
     const activity = buildMktgRunActivity(payloads(afterAnswers));
 

@@ -13,6 +13,7 @@
 // deletion or anonymization request could require removing must never be
 // inside the hashed bytes, or removing it would drop the revision.
 
+import type { LinkedinDocumentContent } from './linkedin-post.interface';
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
 
 /**
@@ -257,6 +258,8 @@ export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
    * inputs record from it.
    */
   sidecar: Record<string, unknown> | null;
+  /** Validated read-only LinkedIn cards and LFX-side link/provenance metadata. */
+  linkedinPost?: LinkedinDocumentContent;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */
@@ -272,6 +275,8 @@ export interface MktgRestoreRevisionResponse extends MktgDocumentDetailResponse 
 
 /** A stored revision read back, integrity-checked. */
 export interface MktgStoredRevision {
+  /** Server-only object metadata; never returned by the document HTTP projection. */
+  authorId?: string;
   id: string;
   key: string;
   record: MktgRevisionRecord;

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LINKEDIN_QUESTIONS_CONTRACT, LINKEDIN_FINALIZE_TOOL } from './linkedin-post.constants';
 import type { MktgRunActivityKind, MktgRunActivityPhaseDefinition } from '../interfaces';
 import { BOILERPLATES_FINALIZE_TOOL, BOILERPLATES_QUESTIONS_CONTRACT_ID } from './boilerplates.constants';
 import { BRAND_KIT_FINALIZE_TOOL, BRAND_KIT_INSPECT_LOGOS_TOOL, BRAND_KIT_QUESTIONS_CONTRACT_ID } from './brand-kit.constants';
@@ -40,6 +41,7 @@ export const MKTG_RUN_ACTIVITY_TOOLS = {
   finalizeBrandKit: BRAND_KIT_FINALIZE_TOOL,
   finalizeBoilerplates: BOILERPLATES_FINALIZE_TOOL,
   finalizeFaq: FAQ_FINALIZE_TOOL,
+  finalizeLinkedinPost: LINKEDIN_FINALIZE_TOOL,
   inspectLogos: BRAND_KIT_INSPECT_LOGOS_TOOL,
 } as const;
 
@@ -52,6 +54,7 @@ export const MKTG_RUN_ACTIVITY_FINALIZE_TOOLS: readonly string[] = [
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBrandKit,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeBoilerplates,
   MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq,
+  MKTG_RUN_ACTIVITY_TOOLS.finalizeLinkedinPost,
 ];
 
 /**
@@ -86,6 +89,8 @@ export const MKTG_RUN_ACTIVITY_LABELS = {
   writingBoilerplates: 'Writing the boilerplates',
   checkingFaq: 'Checking the FAQ',
   writingFaq: 'Writing the FAQ',
+  checkingLinkedinPost: 'Checking the post options',
+  writingLinkedinPost: 'Writing three post options',
 } as const;
 
 /** Platform task statuses that mean the tool finished, and those that mean it did not. */
@@ -121,6 +126,7 @@ export const MKTG_RUN_ACTIVITY_QUESTIONS_MARKERS: readonly string[] = [
   BRAND_KIT_QUESTIONS_CONTRACT_ID,
   BOILERPLATES_QUESTIONS_CONTRACT_ID,
   FAQ_QUESTIONS_CONTRACT_ID,
+  LINKEDIN_QUESTIONS_CONTRACT,
 ];
 
 /**

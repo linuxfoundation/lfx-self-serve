@@ -4,6 +4,7 @@
 import {
   BucketLocationConstraint,
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -13,7 +14,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
+import { ErasableObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
 
 import { PreconditionFailedError } from '../errors';
 
@@ -24,7 +25,7 @@ import { PreconditionFailedError } from '../errors';
  * the service orchestrates and logs the same way whichever backend serves a
  * purpose. Deployed environments always run on this backend.
  */
-export class S3ObjectStoreBackend implements ObjectStoreBackend {
+export class S3ObjectStoreBackend implements ErasableObjectStoreBackend {
   public readonly kind = 's3' as const;
 
   public constructor(
@@ -112,6 +113,17 @@ export class S3ObjectStoreBackend implements ObjectStoreBackend {
       if (status === 412 || status === 409) {
         throw new PreconditionFailedError();
       }
+      throw error;
+    }
+  }
+
+  public async deleteObject(key: string): Promise<void> {
+    try {
+      // Uses the deployed DeleteObject grant, never version-specific operations.
+      await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    } catch (error) {
+      // A fresh/missing bucket or key contains no current profile to delete.
+      if (isConfirmedNotFound(error)) return;
       throw error;
     }
   }

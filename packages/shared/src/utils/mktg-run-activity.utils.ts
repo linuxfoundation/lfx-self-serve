@@ -37,6 +37,7 @@ import {
   MKTG_RUN_QUESTION_CHIP_TRAILING_STOPWORDS,
   MKTG_RUN_QUESTION_CHIP_WORDS,
 } from '../constants/mktg-run-activity.constants';
+import { LINKEDIN_QUESTIONS_CONTRACT } from '../constants/linkedin-post.constants';
 import { BOILERPLATES_QUESTIONS_CONTRACT_ID } from '../constants/boilerplates.constants';
 import { BRAND_KIT_QUESTIONS_CONTRACT_ID } from '../constants/brand-kit.constants';
 import { FAQ_QUESTIONS_CONTRACT_ID } from '../constants/faq.constants';
@@ -217,6 +218,7 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
   const identifyBrandKit = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBrandKit, MKTG_RUN_ACTIVITY_LABELS.writingBrandKit);
   const identifyBoilerplates = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingBoilerplates, MKTG_RUN_ACTIVITY_LABELS.writingBoilerplates);
   const identifyFaq = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingFaq, MKTG_RUN_ACTIVITY_LABELS.writingFaq);
+  const identifyLinkedin = (): void => identify(MKTG_RUN_ACTIVITY_LABELS.checkingLinkedinPost, MKTG_RUN_ACTIVITY_LABELS.writingLinkedinPost);
   /** Local-tool steps still open: done once any later event arrives. */
   const openLocal: Step[] = [];
 
@@ -267,6 +269,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
             identifyBoilerplates();
           } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeFaq) {
             identifyFaq();
+          } else if (tool === MKTG_RUN_ACTIVITY_TOOLS.finalizeLinkedinPost) {
+            identifyLinkedin();
           }
           if (questionsAt >= 0 && !firstFinalizeAfterQuestions) {
             firstFinalizeAfterQuestions = createdAt;
@@ -293,6 +297,8 @@ export function buildMktgRunActivity(payloads: string[]): MktgRunActivity[] {
         identifyBoilerplates();
       } else if (content.includes(FAQ_QUESTIONS_CONTRACT_ID)) {
         identifyFaq();
+      } else if (content.includes(LINKEDIN_QUESTIONS_CONTRACT)) {
+        identifyLinkedin();
       }
     }
   }

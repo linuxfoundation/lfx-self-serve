@@ -620,8 +620,22 @@ export interface MktgRunResultBody {
   project?: string;
 }
 
+/** Browser-local capability for resuming a pending one-off document; never placed in a URL. */
+export interface MktgPendingDocumentRun {
+  /** Optional LFX-side answers needed to resume the pending document. */
+  answers?: Record<string, string>;
+  agentId: string;
+  projectUid: string;
+  documentId: string;
+  sessionId: string;
+  ownerToken: string;
+  savedAt: string;
+}
+
 /** Response of an agent's `generate` endpoint — the session to poll. */
 export interface MktgRunSessionResponse {
+  /** Stable destination for a one-off run's document, returned before storage. */
+  documentId?: string;
   /** Guild session id running the one-shot form-mode generation. */
   sessionId: string;
   /** Opaque creator-binding token; required to fetch the result. */
@@ -949,6 +963,8 @@ export interface MktgRunActivityPhaseDefinition {
  * new entry to the shared registry.
  */
 export interface MktgAgentIntake {
+  /** Dedicated one-off intake; no generic feedback/regeneration UI. */
+  oneOffDocument?: boolean;
   /** Catalog agent id this intake belongs to. */
   agentId: string;
   /** Verb opening the form title, e.g. `Develop` → "Develop the Foo Brand Kit". */
