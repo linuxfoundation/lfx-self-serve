@@ -51,6 +51,7 @@ import {
   MENTORSHIP_MENTEE_TASK_HINT_LOCKED,
   MENTORSHIP_MENTEE_TASK_HINT_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_HINT_START_FIRST,
+  MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
   MENTORSHIP_MENTEE_UPDATABLE_TASK_STATUSES,
@@ -1550,9 +1551,10 @@ export function isMentorshipMentorTaskReviewDecision(value: unknown): value is M
 }
 
 /**
- * Status dropdown state for one task row. A mentee can only move `pending → in_progress` and
- * `in_progress → submitted`, so the current option stays enabled, the legal next move is enabled
- * and every other option is disabled. A submitted (or complete) task is locked. `submitted` is also
+ * Status dropdown state for one task row. A mentee can only move `pending → in_progress`,
+ * `in_progress → submitted` and `submitted → in_progress`, so the current option stays enabled, the
+ * legal moves are enabled and every other option is disabled. A complete task is locked, and so is a
+ * submitted one once it is past due, since reopening it could never be undone. `submitted` is also
  * disabled while the task requires a file that is not uploaded yet, since upstream refuses that move,
  * and once the task is past due, when a pending task can still be started. The hint explains a
  * disabled forward move or a locked row; only the past-due and file-required hints show on screen,
@@ -1563,8 +1565,15 @@ export function getMentorshipMenteeTaskStatusOptions(task: MentorshipMenteeTaskV
   const withDisabled = (isDisabled: (value: MentorshipMenteeTaskStatus) => boolean): MentorshipMenteeTaskStatusOptionsState['options'] =>
     MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS.map((option) => ({ ...option, disabled: isDisabled(option.value) }));
 
-  if (status === 'submitted') {
+  // `fileLocked` is set from the stored status, so it tells a reviewer-completed task from a submitted one.
+  if (task.fileLocked) {
     return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_LOCKED, hintVisible: false };
+  }
+  if (status === 'submitted') {
+    if (task.pastDue) {
+      return { options: withDisabled(() => true), locked: true, hint: MENTORSHIP_MENTEE_TASK_HINT_SUBMITTED_PAST_DUE, hintVisible: false };
+    }
+    return { options: withDisabled((value) => value === 'pending'), locked: false, hint: null, hintVisible: false };
   }
   if (task.pastDue) {
     const blocked = (value: MentorshipMenteeTaskStatus): boolean => value === 'submitted' || (status === 'in_progress' && value === 'pending');
