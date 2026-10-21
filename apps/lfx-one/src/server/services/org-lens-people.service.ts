@@ -226,21 +226,38 @@ export class OrgLensPeopleService {
 
   /**
    * Detail for openers that carry only an LF username (Board/Committee/Key Contact/Access; lfx-self-serve-ops#894).
-   * Resolves the username against the account's cached warehouse roster (ORG_PEOPLE_ALL, a table — not the address
-   * view) and fails closed: null when no roster row, or more than one person key, carries it.
+   * Resolves the username with a keyed read of the account's warehouse roster (ORG_PEOPLE_ALL, a table — not the
+   * address view), cached per username digest. Fails closed: null when no roster row, or more than one person key,
+   * carries the username.
    */
   public async getEmployeeDetailByUsername(req: Request, accountId: string, username: string): Promise<OrgAllEmployeeDetail | null> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return null;
     }
-    const { rows } = await this.getAllEmployeesInternal(accountId);
-    const personKeys = new Set(rows.filter((row) => row.lfUsername === normalizedUsername).map((row) => row.personKey));
-    if (personKeys.size !== 1) {
-      return null;
-    }
-    const [personKey] = personKeys;
-    return this.getEmployeeDetail(req, accountId, personKey);
+    // Hashed so the raw identifier is never a `:`-delimited cache-key segment.
+    const usernameDigest = createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
+    const { personKey } = await withOrgCache(
+      accountId,
+      `people-username:${usernameDigest}:person-key`,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      () => this.fetchPersonKeyByUsername(accountId, normalizedUsername),
+      isPersonKeyLookup
+    );
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey) : null;
+  }
+
+  /** The one roster person key carrying the username; null when none or several do (the HAVING guard fails closed). */
+  private async fetchPersonKeyByUsername(accountId: string, username: string): Promise<{ personKey: string | null }> {
+    const query = `
+      SELECT MIN(PERSON_KEY) AS PERSON_KEY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ORG_PEOPLE_ALL
+      WHERE ACCOUNT_ID = ? AND LOWER(TRIM(LF_USERNAME)) = ?
+      GROUP BY ACCOUNT_ID
+      HAVING COUNT(DISTINCT PERSON_KEY) = 1
+    `;
+    const result = await this.snowflakeService.execute<{ PERSON_KEY: string | null }>(query, [accountId, username]);
+    return { personKey: result.rows[0]?.PERSON_KEY ?? null };
   }
 
   /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
@@ -730,6 +747,12 @@ function isEmployeeActivityRaw(value: unknown): boolean {
 /** Failed lookups are never cached: a transient warehouse error must not hide addresses for the full TTL. `unavailable` is a stable property and is cacheable. */
 function isCacheableCompanyEmails(value: OrgPersonCompanyEmailsResponse): boolean {
   return value.companyEmailsStatus !== 'failed';
+}
+
+/** Cached username → person-key lookups: a key, or a stable `null` when no single roster person carries the username. */
+function isPersonKeyLookup(value: unknown): boolean {
+  const lookup = value as { personKey?: unknown } | null;
+  return !!lookup && (lookup.personKey === null || typeof lookup.personKey === 'string');
 }
 
 /** Reject legacy/failed cache entries; unavailable identities cannot carry addresses. */

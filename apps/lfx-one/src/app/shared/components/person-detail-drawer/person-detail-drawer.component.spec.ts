@@ -17,7 +17,7 @@ import { PersonDetailDrawerComponent } from './person-detail-drawer.component';
 describe('PersonDetailDrawerComponent company email transitions', () => {
   let fixture: ComponentFixture<PersonDetailDrawerComponent>;
   let drawer: PersonDetailDrawerService;
-  let response: Subject<OrgAllEmployeeDetail | OrgPersonCompanyEmailsResponse>;
+  let response: Subject<OrgAllEmployeeDetail | OrgPersonCompanyEmailsResponse | null>;
   let httpGet: ReturnType<typeof vi.fn>;
   const selectedAccount = signal({ uid: 'org-1' });
   const featureEnabled = signal(true);
@@ -264,7 +264,7 @@ describe('PersonDetailDrawerComponent company email transitions', () => {
     httpGet.mockImplementation((url: string) => (url.endsWith('/company-emails') ? emails : response));
     drawer.open(person);
     await render();
-    response.error(new HttpErrorResponse({ status: 404 }));
+    response.next(null);
     await render();
     expect(httpGet).toHaveBeenLastCalledWith('/api/orgs/org-1/lens/people/by-username/first-person/company-emails');
     expect(drawer.loading()).toBe(true);
@@ -280,7 +280,7 @@ describe('PersonDetailDrawerComponent company email transitions', () => {
     featureEnabled.set(false);
     drawer.open(person);
     await render();
-    response.error(new HttpErrorResponse({ status: 404 }));
+    response.next(null);
     await render();
     expect(httpGet).toHaveBeenCalledOnce();
     expect(drawer.error()).toBe(false);

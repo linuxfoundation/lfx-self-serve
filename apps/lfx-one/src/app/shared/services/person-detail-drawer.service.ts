@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants';
@@ -55,25 +55,23 @@ export class PersonDetailDrawerService {
           return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'unavailable', error: false });
         }
         const people = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people`;
-        return this.http.get<OrgAllEmployeeDetail>(`${people}/${lookup}/detail`).pipe(
-          // Only a resolved lookup may expose addresses; an older replica may return addresses without a status.
-          map((detail) => ({
-            request,
-            detail,
-            companyEmails: detail.companyEmailsStatus === 'resolved' ? detail.companyEmails : [],
-            companyEmailsStatus: detail.companyEmailsStatus,
-            error: false,
-          })),
-          catchError((err: unknown) => {
-            // A 404 on a username opener means no single roster person: only the flag-gated address lookup remains.
-            if (personKey || !username || !(err instanceof HttpErrorResponse) || err.status !== 404) {
-              return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: true });
+        return this.http.get<OrgAllEmployeeDetail | null>(`${people}/${lookup}/detail`).pipe(
+          switchMap((detail) => {
+            if (detail) {
+              // Only a resolved lookup may expose addresses; an older replica may return addresses without a status.
+              return of({
+                request,
+                detail,
+                companyEmails: detail.companyEmailsStatus === 'resolved' ? detail.companyEmails : [],
+                companyEmailsStatus: detail.companyEmailsStatus,
+                error: false,
+              });
             }
-            if (!companyEmailFeatureEnabled) {
+            // `null`: the username matched no single roster person, so only the flag-gated address lookup remains.
+            if (!username || !companyEmailFeatureEnabled) {
               return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'unavailable', error: false });
             }
-            const url = `${people}/by-username/${encodeURIComponent(username)}/company-emails`;
-            return this.http.get<OrgPersonCompanyEmailsResponse>(url).pipe(
+            return this.http.get<OrgPersonCompanyEmailsResponse>(`${people}/by-username/${encodeURIComponent(username)}/company-emails`).pipe(
               map((response) => ({
                 request,
                 detail: null,
@@ -87,6 +85,10 @@ export class PersonDetailDrawerService {
                 return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: false });
               })
             );
+          }),
+          catchError((err: unknown) => {
+            console.error('Failed to load person detail:', err);
+            return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: true });
           })
         );
       })

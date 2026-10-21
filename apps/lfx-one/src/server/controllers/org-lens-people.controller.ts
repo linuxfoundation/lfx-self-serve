@@ -6,7 +6,7 @@ import type { OrgContributorTimeRange, ReassignCommitteeMemberBody } from '@lfx-
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -133,7 +133,11 @@ export class OrgLensPeopleController {
     }
   }
 
-  /** GET /api/orgs/:orgUid/lens/people/by-username/:username/detail — activity for openers that carry only an LF username. */
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail — activity for openers that carry only an LF username.
+   * A username with no single roster person is answered `null` (200), not 404: the miss is routine, and the error
+   * handler would log the username-bearing path at WARN on every such drawer open.
+   */
   public async getEmployeeDetailByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];
     const username = req.params['username'];
@@ -145,18 +149,15 @@ export class OrgLensPeopleController {
       const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
 
       const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username);
-      if (!response) {
-        // No single roster person carries this username; the drawer falls back to the address lookup.
-        throw new ResourceNotFoundError('Person', undefined, { operation, service: 'org_lens_people' });
-      }
 
       logger.success(req, operation, startTime, {
         org_uid: orgUid,
-        board_seats: response.boardSeats.length,
-        committee_seats: response.committeeSeats.length,
-        code_rows: response.code.length,
-        event_rows: response.events.length,
-        training_rows: response.training.length,
+        resolved: response !== null,
+        board_seats: response?.boardSeats.length ?? 0,
+        committee_seats: response?.committeeSeats.length ?? 0,
+        code_rows: response?.code.length ?? 0,
+        event_rows: response?.events.length ?? 0,
+        training_rows: response?.training.length ?? 0,
       });
 
       res.setHeader('Cache-Control', 'no-store');
