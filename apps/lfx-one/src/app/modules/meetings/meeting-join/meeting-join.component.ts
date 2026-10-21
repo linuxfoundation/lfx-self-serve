@@ -95,6 +95,7 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { extractErrorMessage, isBffValidationError } from '@shared/utils/http-error.utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { PlausibleService } from '@services/plausible.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -128,7 +129,6 @@ import {
   timer,
 } from 'rxjs';
 
-import { AddToCalendarComponent } from '../components/add-to-calendar/add-to-calendar.component';
 import { CancelOccurrenceConfirmationComponent } from '../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
 import { AttachmentScopeBadgeComponent } from '../components/attachment-scope-badge/attachment-scope-badge.component';
@@ -145,7 +145,6 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     DatePipe,
     NgClass,
     ReactiveFormsModule,
-    AddToCalendarComponent,
     ButtonComponent,
     CardComponent,
     TagComponent,
@@ -180,6 +179,7 @@ export class MeetingJoinComponent implements OnInit {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
+  private readonly inviteResend = inject(MeetingInviteResendService);
   protected readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly projectContextService = inject(ProjectContextService);
@@ -311,6 +311,7 @@ export class MeetingJoinComponent implements OnInit {
   // id in the service, so a page that stays mounted across meetings never carries one meeting's removal to another.
   private optimisticLeft = computed(() => this.meetingService.removedRegistrationMeetingIds().has(this.meeting()?.id ?? ''));
   public leavingMeeting = signal(false);
+  public resendingInvite = computed(() => this.inviteResend.isResendingOwn(this.meeting()?.id));
   private readonly optimisticDeletedUids = signal(new Set<string>());
   private readonly optimisticAddedAttachments = signal<PastMeetingAttachment[]>([]);
   public emailError: Signal<boolean>;
@@ -438,6 +439,7 @@ export class MeetingJoinComponent implements OnInit {
   public isInvited: Signal<boolean>;
   public effectivelyInvited: Signal<boolean>;
   public canLeaveMeeting: Signal<boolean>;
+  public canResendInvite: Signal<boolean>;
   // Matches the BFF roster gate: an invitee sees the other guests only when the organizer shares them.
   protected attendeeListShared = computed(() => isMeetingAttendeeListShared(this.meeting()));
   protected canViewGuests = computed(() => !!this.meeting()?.organizer || (this.effectivelyInvited() && this.attendeeListShared()));
@@ -567,6 +569,8 @@ export class MeetingJoinComponent implements OnInit {
     this.isInvited = this.initializeIsInvited();
     this.effectivelyInvited = computed(() => (this.isInvited() && !this.optimisticLeft()) || this.optimisticInvited());
     this.canLeaveMeeting = computed(() => this.effectivelyInvited());
+    // Resending goes to the viewer's own registrant row, so it is offered under the same rule as removing it.
+    this.canResendInvite = computed(() => this.canLeaveMeeting());
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
     this.canRespondAsOrganizer = this.initializeCanRespondAsOrganizer();
     this.currentUserRsvp = this.initializeCurrentUserRsvp();
@@ -830,6 +834,10 @@ export class MeetingJoinComponent implements OnInit {
       accept: () => this.leaveMeeting(),
       reject: () => this.leaveSource.set('meeting-join'),
     });
+  }
+
+  public resendInvite(): void {
+    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
   }
 
   /** Sets foundation context via ProjectContextService and opens /foundation/overview in a new tab. */

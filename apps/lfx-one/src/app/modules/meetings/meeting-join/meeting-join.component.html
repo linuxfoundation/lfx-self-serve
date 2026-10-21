@@ -449,7 +449,6 @@
                     <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id" (rsvpChanged)="onRsvpChanged($event)">
                     </lfx-rsvp-button-group>
                   }
-                  <lfx-add-to-calendar [meeting]="meeting()" [currentOccurrence]="currentOccurrence()"></lfx-add-to-calendar>
                   <lfx-meeting-rsvp-details
                     [meeting]="meeting()"
                     [project]="project()"
@@ -464,6 +463,19 @@
                     borderColor="border-gray-200"
                     (addClicked)="showRegistrants.set(true)">
                   </lfx-meeting-rsvp-details>
+                  @if (canResendInvite()) {
+                    <lfx-button
+                      class="w-full"
+                      styleClass="w-full"
+                      icon="fa-light fa-paper-plane"
+                      label="Resend Invite"
+                      size="small"
+                      severity="secondary"
+                      [loading]="resendingInvite()"
+                      (onClick)="resendInvite()"
+                      data-testid="resend-invite-organizer-button">
+                    </lfx-button>
+                  }
                   @if (canLeaveMeeting()) {
                     <lfx-button
                       class="w-full"
@@ -488,7 +500,19 @@
                           <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
                         }
                       }
-                      <lfx-add-to-calendar [meeting]="meeting()" [currentOccurrence]="currentOccurrence()"></lfx-add-to-calendar>
+                      @if (canResendInvite()) {
+                        <lfx-button
+                          class="w-full"
+                          styleClass="w-full"
+                          icon="fa-light fa-paper-plane"
+                          label="Resend Invite"
+                          size="small"
+                          severity="secondary"
+                          [loading]="resendingInvite()"
+                          (onClick)="resendInvite()"
+                          data-testid="resend-invite-button">
+                        </lfx-button>
+                      }
                       @if (canLeaveMeeting()) {
                         <lfx-button
                           class="w-full"

@@ -524,6 +524,29 @@ describe('MeetingCardComponent — invitee panels', () => {
     expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
+
+  describe("the viewer's own invite actions", () => {
+    it('puts Resend Invite and Remove Myself side by side in one row, like Guests and See Meeting Details', async () => {
+      const card = await render(INVITED);
+
+      const row = card.querySelector('[data-testid="own-invite-actions"]');
+      expect(row).not.toBeNull();
+      expect(row?.querySelector('[data-testid="resend-invite-button"]')).not.toBeNull();
+      expect(row?.querySelector('[data-testid="leave-meeting-button"]')).not.toBeNull();
+      // Same parent, so they sit on one line instead of stacking.
+      expect(card.querySelector('[data-testid="resend-invite-button"]')?.parentElement).toBe(
+        card.querySelector('[data-testid="leave-meeting-button"]')?.parentElement
+      );
+    });
+
+    it('shows neither button, and no empty row, to someone who is not a registered attendee', async () => {
+      const card = await render({ ...INVITED, invited: false } as Meeting);
+
+      expect(card.querySelector('[data-testid="own-invite-actions"]')).toBeNull();
+      expect(card.querySelector('[data-testid="resend-invite-button"]')).toBeNull();
+      expect(card.querySelector('[data-testid="leave-meeting-button"]')).toBeNull();
+    });
+  });
 });
 
 /**
@@ -537,6 +560,7 @@ describe('MeetingCardComponent — remove myself', () => {
   let toastAdd: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let resendMyMeetingInvitation: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let registrationClose$: Subject<{ registered: boolean }>;
   let rsvpButtons: RsvpButtonGroupComponent | undefined;
@@ -544,7 +568,7 @@ describe('MeetingCardComponent — remove myself', () => {
 
   async function mount(
     meeting: Meeting = INVITEE,
-    options: { authenticated?: boolean; past?: boolean; fetchedRsvp?: MeetingRsvp } = {}
+    options: { authenticated?: boolean; past?: boolean; fetchedRsvp?: MeetingRsvp; pinned?: MeetingOccurrence } = {}
   ): Promise<MeetingCardComponent> {
     TestBed.configureTestingModule({
       providers: [
@@ -565,6 +589,7 @@ describe('MeetingCardComponent — remove myself', () => {
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: (id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id))),
             removeMyMeetingRegistration,
+            resendMyMeetingInvitation,
             getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
             getPastMeetingSummary: vi.fn().mockReturnValue(of(null)),
             getPastMeetingTranscript: vi.fn().mockReturnValue(of(null)),
@@ -592,6 +617,7 @@ describe('MeetingCardComponent — remove myself', () => {
     const fixture = TestBed.createComponent(MeetingCardComponent);
     fixture.componentRef.setInput('meetingInput', meeting);
     fixture.componentRef.setInput('pastMeeting', options.past ?? false);
+    if (options.pinned) fixture.componentRef.setInput('occurrenceInput', options.pinned);
     fixture.detectChanges();
     await TestBed.inject(ApplicationRef).whenStable();
     if (options.fetchedRsvp) rsvpButtons = fixture.debugElement.query(By.directive(RsvpButtonGroupComponent)).componentInstance;
@@ -604,6 +630,7 @@ describe('MeetingCardComponent — remove myself', () => {
     toastAdd = vi.fn();
     confirm = vi.fn();
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
+    resendMyMeetingInvitation = vi.fn().mockReturnValue(of({ message: 'Invitation resent successfully' }));
     removedIds = signal<ReadonlySet<string>>(new Set());
     registrationClose$ = new Subject<{ registered: boolean }>();
     rsvpButtons = undefined;
@@ -801,6 +828,126 @@ describe('MeetingCardComponent — remove myself', () => {
 
     expect(component.canLeaveMeeting()).toBe(true);
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to remove you from this meeting. Please try again.' }));
+  });
+
+  it('offers a resend only while the viewer is a registered attendee', async () => {
+    expect((await mount()).canResendInvite()).toBe(true);
+  });
+
+  it.each([
+    ['not invited', { ...INVITEE, invited: false }, {}],
+    ['a past meeting', INVITEE, { past: true }],
+    ['signed out', INVITEE, { authenticated: false }],
+    ['an organizer without a registration of their own', { ...INVITEE, organizer: true, my_registrant_ids: [] }, {}],
+  ] as const)('does not offer a resend when %s', async (_label, meeting, options) => {
+    const component = await mount(meeting as Meeting, options);
+
+    expect(component.canResendInvite()).toBe(false);
+  });
+
+  it('resends without asking for confirmation and tells the viewer it was sent', async () => {
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', undefined);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('resends for the occurrence the card is showing, so the matching registration is chosen', async () => {
+    const nextStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const component = await mount({ ...INVITEE, occurrences: [{ occurrence_id: 'occ-next', start_time: nextStart, duration: 60 }] } as Meeting);
+
+    expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-next');
+  });
+
+  it('resends for an explicitly pinned occurrence rather than the series next one', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const nextStart = new Date(Date.now() + 7 * DAY).toISOString();
+    const pinnedStart = new Date(Date.now() + 14 * DAY).toISOString();
+    const pinned = { occurrence_id: 'occ-pinned', start_time: pinnedStart, duration: 60 } as MeetingOccurrence;
+    const component = await mount(
+      {
+        ...INVITEE,
+        occurrences: [
+          { occurrence_id: 'occ-next', start_time: nextStart, duration: 60 },
+          { occurrence_id: 'occ-pinned', start_time: pinnedStart, duration: 60 },
+        ],
+      } as Meeting,
+      { pinned }
+    );
+
+    // The series' own pick is the earlier occurrence; the card shows the pinned one, and that is what must be sent.
+    expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
+    expect(component.occurrence()?.occurrence_id).toBe('occ-pinned');
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-pinned');
+  });
+
+  it('does not offer a resend to a non-organizer whose feed shows no active registration, even though invited is true', async () => {
+    const component = await mount({ ...INVITEE, my_registrant_ids: [] } as Meeting);
+
+    expect(component.canResendInvite()).toBe(false);
+  });
+
+  it('offers a resend to a non-organizer whose feed lists an active registration', async () => {
+    const component = await mount({ ...INVITEE, my_registrant_ids: ['reg-1'] } as Meeting);
+
+    expect(component.canResendInvite()).toBe(true);
+  });
+
+  it('offers a resend right after registering here, before the feed lists the new registration', async () => {
+    const component = await mount({ ...INVITEE, visibility: 'public', my_registrant_ids: [] } as Meeting);
+    expect(component.canResendInvite()).toBe(false);
+
+    component.registerForMeeting();
+    registrationClose$.next({ registered: true });
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(component.canResendInvite()).toBe(true);
+  });
+
+  it('ignores a second click while a resend is in flight', async () => {
+    const pending$ = new Subject<{ message: string }>();
+    resendMyMeetingInvitation.mockReturnValue(pending$);
+    const component = await mount();
+
+    component.resendInvite();
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+    expect(component.resendingInvite()).toBe(true);
+    pending$.next({ message: 'ok' });
+    pending$.complete();
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('shows the BFF message when it rejected the resend itself, such as a validation failure', async () => {
+    resendMyMeetingInvitation.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Unable to determine your identity' } }))
+    );
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Unable to determine your identity') }));
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it.each([403, 404, 500])('shows generic copy for a %s and lets the viewer retry', async (status) => {
+    resendMyMeetingInvitation.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: { code: 'ERROR', error: 'upstream detail' } })));
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' }));
+    expect(component.resendingInvite()).toBe(false);
   });
 
   it.each([true, false])('preserves only live-registration confirmations after a leave/rejoin attempt (success=%s)', async (success) => {
