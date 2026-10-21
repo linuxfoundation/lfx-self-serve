@@ -122,6 +122,7 @@ export * from './campaign-audience.utils';
 export * from './meta-ad-set.utils';
 export * from './mktg-asset.utils';
 export * from './mktg-kit.utils';
+export * from './mktg-rebuild.utils';
 export * from './linkedin-post.utils';
 export * from './linkedin-post-envelope.utils';
 export * from './linkedin-post-presentation.utils';

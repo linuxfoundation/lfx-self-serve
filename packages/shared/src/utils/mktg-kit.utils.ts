@@ -28,11 +28,12 @@ export function describeMktgKitAsset(row: Pick<MktgKitAssetRow, 'state' | 'versi
  * approvedCurrent identifies an approved revision by revisionId/number.
  * Only valid approval metadata yields Approved; absent or malformed metadata retains Draft.
  * A current pointer or revisionCount never implies approval. updatedAt remains the listing's
- * only date. Needs rebuild awaits real framework-to-downstream staleness metadata;
+ * only date. Needs rebuild uses the server's current-revision provenance projection;
  * one-off runs never go stale, and timestamps alone never establish staleness.
  */
 export function resolveMktgKitLivingState(document: MktgDocumentListItem | null): Pick<MktgKitAssetRow, 'state' | 'version'> {
   if (!document) return { state: 'missing', version: null };
+  if (document.needsRebuild) return { state: 'needs-rebuild', version: mktgKitCurrentVersion(document) };
   const approved = document.approvedCurrent;
   if (
     approved &&

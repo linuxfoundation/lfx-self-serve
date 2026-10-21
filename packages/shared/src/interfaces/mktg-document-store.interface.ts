@@ -13,6 +13,7 @@
 // deletion or anonymization request could require removing must never be
 // inside the hashed bytes, or removing it would drop the revision.
 
+import type { MktgRebuildStaleness, MktgRevisionRef } from './mktg-rebuild.interface';
 import type { LinkedinDocumentContent } from './linkedin-post.interface';
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
 import type { Member360Envelope } from './member-360.interface';
@@ -199,6 +200,8 @@ export interface MktgRevisionSummary {
   /** Whether the revision's content is a Markdown document or a JSON asset. */
   format: MktgRevisionFormat;
   commentCount: number;
+  /** Server-owned captured input identity, read from summary metadata without loading the body. */
+  upstreamFramework?: MktgRevisionRef | null;
   /** Current, not necessarily newest (kept for existing consumers). */
   latest: boolean;
   approval: MktgRevisionApproval | null;
@@ -216,6 +219,11 @@ export interface MktgDocumentListItem {
   latestRevisionId: string;
   approvedCurrent: MktgApprovedCurrent | null;
   currentRevisionNumber?: number;
+  /** Current content hash from summary metadata; absent for old API producers. */
+  contentSha256?: string;
+  upstreamFramework?: MktgRevisionRef | null;
+  /** Server-only policy projection: clients render this value, never infer it from dates. */
+  needsRebuild?: MktgRebuildStaleness | null;
   /** When the current revision was stored (not when it was made current). */
   updatedAt: string | null;
   /** When the first revision was stored (the run date of a one-off run). */
@@ -233,6 +241,8 @@ export interface MktgDocumentGroup {
 export interface MktgDocumentsResponse {
   project: string;
   groups: MktgDocumentGroup[];
+  /** Approved-current framework identity for the Downstream card and rebuild precondition. */
+  approvedFramework?: MktgRevisionRef | null;
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId?project=<uid>`: the document and its revisions, newest first. */
