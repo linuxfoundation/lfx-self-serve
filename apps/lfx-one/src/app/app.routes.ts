@@ -703,6 +703,8 @@ export const routes: Routes = [
         // link change. Same auth, title and `pathMatch` as the permalink, so access never depends on
         // the flag. No `data.lens` and no `lensRedirectGuard`: opening a vote keeps the lens the user
         // came from while the URL stays /votes/:id. Access is decided in the component, as below.
+        // SSR always matches this entry (the guard defers to the browser), so a flag-off hard load
+        // paints the stored lens on the server and switches to Me once the permalink entry matches.
         path: 'votes/:id',
         pathMatch: 'full',
         title: VOTE_LABEL.singular,

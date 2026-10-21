@@ -214,6 +214,36 @@ describe('VoteDetailComponent', () => {
       expect(voteService.getVoteResults).not.toHaveBeenCalled();
       expect(testId(fixture, 'vote-detail-voter-not-participant')).not.toBeNull();
     });
+
+    it('shows the participation error, not results, when my-response fails on a closed vote', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getMyVoteResponse.mockReturnValue(httpError(500));
+      const fixture = await setup();
+
+      expect(voteService.getVoteResults).not.toHaveBeenCalled();
+      expect(read(fixture, 'showsResults')).toBe(false);
+      expect(testId(fixture, 'vote-detail-voter-my-response-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-results')).toBeNull();
+    });
+
+    it('shows the access-denied panel to a removed voter and never fetches results', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      voteService.getMyVoteResponse.mockReturnValue(of(makeResponse(IndexedVoteResponseStatus.RESPONDED, { voter_removed: true })));
+      const fixture = await setup();
+
+      expect(voteService.getVoteResults).not.toHaveBeenCalled();
+      expect(read(fixture, 'voterState')).toBe('access_denied');
+      expect(testId(fixture, 'vote-detail-voter-access-denied')).not.toBeNull();
+    });
+
+    it('shows the results error to a manager when the results fetch fails, never the empty state', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getVoteResults.mockReturnValue(httpError(500));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+    });
   });
 
   describe('actions', () => {

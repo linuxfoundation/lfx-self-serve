@@ -16,7 +16,9 @@ import { FeatureFlagService } from '../services/feature-flag.service';
  *
  * SSR always matches the page entry, like the other flag guards defer to the browser: the page renders only
  * the vote fetch outcome on the server (HTTP 404, or the same skeleton the permalink paints), so a flag-off
- * browser falling through to the permalink after hydration looks identical.
+ * browser falling through to the permalink after hydration paints the same outlet. The layout lens can still
+ * change: the page entry declares no `data.lens`, so the server keeps the viewer's stored lens, and with the flag
+ * off the permalink entry switches it to Me in the browser.
  *
  * In the browser, a locally pinned override decides first (non-production builds only); with no answer from
  * LaunchDarkly (unready, timed out) this returns {@link VOTE_DETAIL_PAGE_DEFAULT}, the same fallback the votes
