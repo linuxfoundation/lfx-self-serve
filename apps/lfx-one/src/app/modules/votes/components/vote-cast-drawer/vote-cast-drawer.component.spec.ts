@@ -8,7 +8,7 @@ import { PollStatus } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { Subject, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from './vote-cast-drawer.component';
@@ -145,6 +145,48 @@ describe('VoteCastDrawerComponent — always-visible header (GH-2350)', () => {
     expect(el('vote-cast-drawer-title')?.textContent?.trim()).toBe('Vote Details');
     expect(el('vote-cast-drawer-close')).toBeTruthy();
     expect(el('vote-cast-drawer-error')).toBeTruthy();
+  });
+});
+
+/**
+ * GH-3823 review (PRRT_kwDOPMiRQ86uw_wC @greptile-apps "Ballot keeps the old deadline",
+ * PRRT_kwDOPMiRQ86uxHEw @copilot-pull-request-reviewer): initVote()'s fallback preferred the last
+ * fetched full detail over listVote wholesale (to avoid wiping an in-progress ballot — see the
+ * initVote() doc comment), but that meant a just-extended deadline on listVote was discarded in
+ * favor of the cached detail's pre-extension end_time whenever the refetch that should have
+ * picked up the extension then failed. Pins the fix: the fallback keeps the cached detail's
+ * questions/answers but overlays listVote's end_time/end_time_timezone onto it.
+ */
+describe('VoteCastDrawerComponent — deadline fallback (GH-3823 review)', () => {
+  it('shows the newer listVote deadline, not the stale cached detail, when a deadline-change refetch fails', async () => {
+    const detail = { ...VOTE, end_time: '2026-01-01T00:00:00Z' };
+    const extendedList = { ...VOTE, end_time: '2026-02-01T00:00:00Z' };
+
+    const getVoteFn = vi
+      .fn()
+      .mockReturnValueOnce(of(detail))
+      .mockReturnValueOnce(throwError(() => new Error('500')));
+    await setup(getVoteFn);
+
+    fixture.componentRef.setInput('voteId', VOTE.uid);
+    fixture.componentRef.setInput('listVote', detail);
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['vote']()?.end_time).toBe(detail.end_time);
+
+    // Deadline extended while the drawer stays open; the deadline-change refetch (skipCache) fails.
+    fixture.componentRef.setInput('listVote', extendedList);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getVoteFn).toHaveBeenCalledTimes(2);
+    expect(getVoteFn).toHaveBeenLastCalledWith(VOTE.uid, { skipCache: true });
+    // Regression: shows the NEW deadline from listVote, not the stale cached detail's end_time,
+    // while still keeping the full ballot detail (poll_questions) from the cached fetch.
+    expect(fixture.componentInstance['vote']()?.end_time).toBe(extendedList.end_time);
+    expect(fixture.componentInstance['vote']()?.poll_questions).toEqual(detail.poll_questions);
   });
 });
 

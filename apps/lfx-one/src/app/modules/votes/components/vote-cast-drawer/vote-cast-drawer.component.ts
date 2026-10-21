@@ -287,7 +287,16 @@ export class VoteCastDrawerComponent {
           // change re-runs this stream with the caller's list row already carrying the new end_time, but
           // that row can be a partial summary missing poll_questions. Falling back to listVote only when no
           // full detail has been fetched yet for this vote keeps rebuildForm() from wiping the ballot.
-          const fallback = (lastVoteId === id ? lastVote : null) ?? listVote;
+          // When both exist, overlay listVote's deadline fields onto the cached detail (per @greptile-apps
+          // and @copilot-pull-request-reviewer, GH-3823 review): listVote is the caller's source of truth for
+          // an in-flight deadline extension, so keeping lastVote wholesale would show the voter the
+          // pre-extension end_time if the detail refetch below then fails and catchError falls back to this
+          // same value.
+          const lastDetail = lastVoteId === id ? lastVote : null;
+          let fallback = lastDetail ?? listVote;
+          if (lastDetail && listVote) {
+            fallback = { ...lastDetail, end_time: listVote.end_time, end_time_timezone: listVote.end_time_timezone };
+          }
           if (!fallback) {
             this.loadingVote.set(true);
           }
