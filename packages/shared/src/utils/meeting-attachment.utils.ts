@@ -1,20 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AttachmentScope, Meeting, MeetingOccurrence } from '../interfaces';
+import { AttachmentScope, Meeting, MeetingOccurrence, OccurrenceScopedAttachment } from '../interfaces';
 import { isMeetingOccurrenceCancelled, isOccurrencePast } from './meeting.utils';
 import { isSameOccurrenceId } from './rsvp-calculator.util';
-
-/** Minimal attachment shape the scope helpers need, so they serve both meeting and past meeting attachments. */
-interface ScopedAttachment {
-  occurrence_id?: string;
-}
 
 /**
  * Which occurrences an attachment applies to.
  * @description An attachment with no `occurrence_id` applies to every occurrence of the meeting.
  */
-export function getAttachmentScope(attachment: ScopedAttachment): AttachmentScope {
+export function getAttachmentScope(attachment: OccurrenceScopedAttachment): AttachmentScope {
   return attachment.occurrence_id ? 'occurrence' : 'series';
 }
 
@@ -25,7 +20,7 @@ export function getAttachmentScope(attachment: ScopedAttachment): AttachmentScop
  * Occurrence IDs are compared as instants because the same occurrence is a unix-seconds string in one place
  * and a millisecond one in another.
  */
-export function filterAttachmentsForOccurrence<T extends ScopedAttachment>(attachments: T[], occurrenceId: string | null | undefined): T[] {
+export function filterAttachmentsForOccurrence<T extends OccurrenceScopedAttachment>(attachments: T[], occurrenceId: string | null | undefined): T[] {
   return attachments.filter((attachment) => !attachment.occurrence_id || isSameOccurrenceId(attachment.occurrence_id, occurrenceId));
 }
 

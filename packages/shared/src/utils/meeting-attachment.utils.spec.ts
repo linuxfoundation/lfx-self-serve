@@ -7,7 +7,8 @@ import '@angular/compiler';
 
 import { describe, expect, it } from 'vitest';
 
-import { MeetingOccurrence } from '../interfaces';
+import { RecurrenceType } from '../enums';
+import { Meeting, MeetingOccurrence } from '../interfaces';
 import { canScopeAttachmentToOccurrence, filterAttachmentsForOccurrence, getAttachmentScope } from './meeting-attachment.utils';
 
 const FUTURE_START = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -15,7 +16,14 @@ const FUTURE_ID = String(Math.floor(FUTURE_START.getTime() / 1000));
 const OTHER_ID = String(Math.floor(FUTURE_START.getTime() / 1000) + 7 * 24 * 60 * 60);
 
 function occurrence(partial: Partial<MeetingOccurrence> = {}): MeetingOccurrence {
-  return { occurrence_id: FUTURE_ID, start_time: FUTURE_START.toISOString(), duration: 60, ...partial } as MeetingOccurrence;
+  return { occurrence_id: FUTURE_ID, start_time: FUTURE_START.toISOString(), duration: 60, ...partial };
+}
+
+type AttachmentMeeting = Pick<Meeting, 'recurrence' | 'cancelled_occurrences'>;
+
+/** A weekly recurring meeting unless a test overrides it. */
+function meeting(partial: Partial<AttachmentMeeting> = {}): AttachmentMeeting {
+  return { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1 }, ...partial };
 }
 
 describe('getAttachmentScope', () => {
@@ -53,14 +61,14 @@ describe('filterAttachmentsForOccurrence', () => {
 });
 
 describe('canScopeAttachmentToOccurrence', () => {
-  const recurring = { recurrence: { type: 2 } } as never;
+  const recurring = meeting();
 
   it('allows an upcoming occurrence of a recurring meeting', () => {
     expect(canScopeAttachmentToOccurrence(recurring, occurrence())).toBe(true);
   });
 
   it('rejects a meeting that does not recur', () => {
-    expect(canScopeAttachmentToOccurrence({ recurrence: undefined } as never, occurrence())).toBe(false);
+    expect(canScopeAttachmentToOccurrence(meeting({ recurrence: undefined }), occurrence())).toBe(false);
   });
 
   it('rejects a missing occurrence', () => {
@@ -69,7 +77,7 @@ describe('canScopeAttachmentToOccurrence', () => {
 
   it('rejects a cancelled occurrence', () => {
     expect(canScopeAttachmentToOccurrence(recurring, occurrence({ status: 'cancel' }))).toBe(false);
-    expect(canScopeAttachmentToOccurrence({ recurrence: { type: 2 }, cancelled_occurrences: [FUTURE_ID] } as never, occurrence())).toBe(false);
+    expect(canScopeAttachmentToOccurrence(meeting({ cancelled_occurrences: [FUTURE_ID] }), occurrence())).toBe(false);
   });
 
   it('rejects an occurrence that already happened', () => {

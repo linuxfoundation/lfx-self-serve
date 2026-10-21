@@ -47,7 +47,6 @@ import {
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
-  AttachmentScope,
   MaterialsChangedEvent,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
@@ -339,11 +338,16 @@ export class MeetingJoinComponent implements OnInit {
   );
   // Materials carry a scope worth showing only on an upcoming recurring meeting, where each is for one date or the series.
   protected showAttachmentScopes = computed(() => !this.pastMeetingFullAccess() && !!this.meeting()?.recurrence);
-  // The occurrence the materials drawer manages, or null when materials cannot be scoped to it (not recurring, cancelled, or past).
-  protected scopableOccurrence = computed(() => {
+  // Each listed attachment's scope, keyed by uid, so the template reads a value instead of calling a method per row.
+  protected attachmentScopes = computed(
+    () => new Map(this.currentAttachments().map((attachment) => [attachment.uid, getAttachmentScope(attachment as MeetingAttachment)] as const))
+  );
+  // The occurrence the materials drawer manages: the one this page shows, for an upcoming recurring meeting.
+  protected attachmentOccurrence = computed(() => (this.showAttachmentScopes() && !this.loadedViaPastMeetingId() ? this.currentOccurrence() : null));
+  // False once the shown occurrence is cancelled or past, where the service would reject a scope.
+  protected canScopeToOccurrence = computed(() => {
     const meeting = this.meeting();
-    const occurrence = this.currentOccurrence();
-    return meeting && !this.loadedViaPastMeetingId() && canScopeAttachmentToOccurrence(meeting, occurrence) ? occurrence : null;
+    return !!meeting && !!this.attachmentOccurrence() && canScopeAttachmentToOccurrence(meeting, this.currentOccurrence());
   });
   protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
   protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
@@ -862,10 +866,6 @@ export class MeetingJoinComponent implements OnInit {
       dismissableMask: true,
       data: { pastMeetingUid: getPastMeetingResourceId(meeting), meetingTitle: meeting.title },
     });
-  }
-
-  protected attachmentScope(attachment: MeetingAttachment | PastMeetingAttachment): AttachmentScope {
-    return getAttachmentScope(attachment as MeetingAttachment);
   }
 
   private initializeAutoJoin(): void {

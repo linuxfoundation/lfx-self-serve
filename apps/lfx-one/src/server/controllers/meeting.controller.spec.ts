@@ -93,7 +93,11 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   isSameOccurrenceId: (await import('../../../../../packages/shared/src/utils/rsvp-calculator.util')).isSameOccurrenceId,
 }));
 
-vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
+vi.mock('../helpers/validation.helper', () => ({
+  validateUidParameter: vi.fn(() => true),
+  // Same contract as the real helper: a string value, or undefined for a missing or repeated key.
+  getStringQueryParam: vi.fn((req: Request, name: string) => (typeof req.query[name] === 'string' ? (req.query[name] as string) : undefined)),
+}));
 vi.mock('../helpers/meeting.helper', () => ({
   addInvitedStatusToMeeting: vi.fn(),
   applyHostKeyVisibility: vi.fn(),
@@ -1511,6 +1515,15 @@ describe('MeetingController', () => {
         expect.any(Buffer),
         expect.objectContaining({ name: 'notes.pdf', occurrence_id: '1893456000' })
       );
+    });
+
+    it('ignores a repeated occurrence_id rather than forwarding an array', async () => {
+      const req = buildUploadReq();
+      req.query['occurrence_id'] = ['1893456000', '1894060800'];
+
+      await controller.uploadMeetingAttachment(req, buildRes(), next);
+
+      expect(meetingSvc.uploadMeetingAttachment.mock.calls[0][3]).not.toHaveProperty('occurrence_id');
     });
 
     it('leaves the upload series-wide when no occurrence is named', async () => {

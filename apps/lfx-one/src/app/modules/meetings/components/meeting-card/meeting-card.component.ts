@@ -228,11 +228,12 @@ export class MeetingCardComponent implements OnInit {
   public readonly seriesAttachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = computed(() =>
     this.attachments().filter((attachment) => getAttachmentScope(attachment as MeetingAttachment) === 'series')
   );
-  /** The occurrence the materials drawer manages, or null when materials cannot be scoped to it (not recurring, cancelled, or already past). */
-  public readonly scopableOccurrence: Signal<MeetingOccurrence | null> = computed(() => {
-    const occurrence = this.occurrence();
-    return !this.pastMeeting() && canScopeAttachmentToOccurrence(this.meeting() as Meeting, occurrence) ? occurrence : null;
-  });
+  /** The occurrence the materials drawer manages: the one this card shows, for an upcoming recurring meeting. */
+  public readonly attachmentOccurrence: Signal<MeetingOccurrence | null> = computed(() => (this.showAttachmentScopes() ? this.occurrence() : null));
+  /** False once the shown occurrence is cancelled or already past, where the service would reject a scope. */
+  public readonly canScopeToOccurrence: Signal<boolean> = computed(
+    () => this.showAttachmentScopes() && canScopeAttachmentToOccurrence(this.meeting() as Meeting, this.occurrence())
+  );
   public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
   public readonly meetingTypeBadge: Signal<{
     severity: TagSeverity;

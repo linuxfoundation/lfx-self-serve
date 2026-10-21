@@ -664,7 +664,7 @@
                                   <div class="flex items-center gap-2">
                                     <span class="text-xs uppercase tracking-wide text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{{ fileType.label }}</span>
                                     @if (showAttachmentScopes()) {
-                                      <lfx-attachment-scope-badge [scope]="attachmentScope(attachment)"></lfx-attachment-scope-badge>
+                                      <lfx-attachment-scope-badge [scope]="attachmentScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
                                     }
                                     @if (attachment.updated_at || attachment.created_at) {
                                       <span class="text-xs text-gray-400">{{ attachment.updated_at || attachment.created_at | date: 'MMM d, yyyy' }}</span>
@@ -703,7 +703,7 @@
                                   attachment.name
                                 }}</span>
                                 @if (showAttachmentScopes()) {
-                                  <lfx-attachment-scope-badge [scope]="attachmentScope(attachment)"></lfx-attachment-scope-badge>
+                                  <lfx-attachment-scope-badge [scope]="attachmentScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
                                 }
                                 <a
                                   [href]="attachment.link"
@@ -912,7 +912,8 @@
           [(visible)]="materialsDrawerVisible"
           [meetingId]="loadedViaPastMeetingId() ? undefined : meeting().id"
           [pastMeetingId]="pastMeetingResourceId()"
-          [occurrence]="scopableOccurrence()"
+          [occurrence]="attachmentOccurrence()"
+          [canScopeToOccurrence]="canScopeToOccurrence()"
           (materialsChanged)="onMaterialsChanged($event)">
         </lfx-meeting-materials-drawer>
       }

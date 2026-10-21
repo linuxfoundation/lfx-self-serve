@@ -40,6 +40,7 @@
               type="button"
               role="radio"
               [attr.aria-checked]="newItemScope() === 'occurrence'"
+              [disabled]="saving()"
               (click)="setNewItemScope('occurrence')"
               class="flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors"
               [class]="newItemScope() === 'occurrence' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
@@ -51,6 +52,7 @@
               type="button"
               role="radio"
               [attr.aria-checked]="newItemScope() === 'series'"
+              [disabled]="saving()"
               (click)="setNewItemScope('series')"
               class="flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors"
               [class]="newItemScope() === 'series' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
@@ -119,19 +121,21 @@
                     <span class="text-sm truncate" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'">
                       {{ attachment.name }}
                     </span>
-                    @if (canScope() && !pendingDeletions().has(attachment.uid)) {
+                    @if (showScopes() && !pendingDeletions().has(attachment.uid)) {
                       <div class="flex items-center gap-2 mt-0.5" [attr.data-testid]="'scope-row-' + attachment.uid">
-                        <lfx-attachment-scope-badge [scope]="effectiveScope(attachment)"></lfx-attachment-scope-badge>
+                        <lfx-attachment-scope-badge [scope]="effectiveScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
                         @if (pendingScopes().has(attachment.uid)) {
-                          <span class="text-[10px] text-amber-600" data-testid="scope-unsaved">Unsaved</span>
+                          <span class="text-xs text-amber-600" data-testid="scope-unsaved">Unsaved</span>
                         }
-                        <button
-                          type="button"
-                          class="text-xs text-blue-500 hover:text-blue-700 transition-colors"
-                          (click)="toggleScope(attachment)"
-                          [attr.data-testid]="'toggle-scope-' + attachment.uid">
-                          {{ effectiveScope(attachment) === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
-                        </button>
+                        @if (canScope() && attachment.source !== 'description') {
+                          <button
+                            type="button"
+                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                            (click)="toggleScope(attachment)"
+                            [attr.data-testid]="'toggle-scope-' + attachment.uid">
+                            {{ (effectiveScopes().get(attachment.uid) ?? 'series') === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
+                          </button>
+                        }
                       </div>
                     }
                   </div>
@@ -205,19 +209,21 @@
                     @if (attachment.link) {
                       <span class="text-xs text-gray-400 truncate">{{ attachment.link }}</span>
                     }
-                    @if (canScope() && !pendingDeletions().has(attachment.uid)) {
+                    @if (showScopes() && !pendingDeletions().has(attachment.uid)) {
                       <div class="flex items-center gap-2 mt-0.5" [attr.data-testid]="'scope-row-' + attachment.uid">
-                        <lfx-attachment-scope-badge [scope]="effectiveScope(attachment)"></lfx-attachment-scope-badge>
+                        <lfx-attachment-scope-badge [scope]="effectiveScopes().get(attachment.uid) ?? 'series'"></lfx-attachment-scope-badge>
                         @if (pendingScopes().has(attachment.uid)) {
-                          <span class="text-[10px] text-amber-600" data-testid="scope-unsaved">Unsaved</span>
+                          <span class="text-xs text-amber-600" data-testid="scope-unsaved">Unsaved</span>
                         }
-                        <button
-                          type="button"
-                          class="text-xs text-blue-500 hover:text-blue-700 transition-colors"
-                          (click)="toggleScope(attachment)"
-                          [attr.data-testid]="'toggle-scope-' + attachment.uid">
-                          {{ effectiveScope(attachment) === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
-                        </button>
+                        @if (canScope() && attachment.source !== 'description') {
+                          <button
+                            type="button"
+                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                            (click)="toggleScope(attachment)"
+                            [attr.data-testid]="'toggle-scope-' + attachment.uid">
+                            {{ (effectiveScopes().get(attachment.uid) ?? 'series') === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
+                          </button>
+                        }
                       </div>
                     }
                   </div>

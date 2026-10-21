@@ -568,7 +568,8 @@
         [(visible)]="materialsDrawerVisible"
         [meetingId]="pastMeeting() ? undefined : meeting().id"
         [pastMeetingId]="pastMeeting() ? pastMeetingResourceId() : undefined"
-        [occurrence]="scopableOccurrence()"
+        [occurrence]="attachmentOccurrence()"
+        [canScopeToOccurrence]="canScopeToOccurrence()"
         (materialsChanged)="onMaterialsChanged()"
         data-testid="meeting-materials-drawer-card">
       </lfx-meeting-materials-drawer>

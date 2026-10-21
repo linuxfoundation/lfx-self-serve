@@ -29,6 +29,8 @@ export interface MeetingAttachment {
   meeting_id: string;
   /** Occurrence this attachment is scoped to (unix start time). Absent means it applies to every occurrence of the meeting */
   occurrence_id?: string;
+  /** Where the attachment came from. 'description' marks a link lifted from the meeting description, which always applies to every occurrence and cannot be scoped */
+  source?: string;
   /** Attachment type: 'file' for uploaded files, 'link' for external URLs */
   type: 'file' | 'link';
   /** Category of the attachment */
@@ -278,3 +280,12 @@ export interface PendingAttachment {
  * - `series`: every occurrence of the meeting
  */
 export type AttachmentScope = 'occurrence' | 'series';
+
+/**
+ * The part of an attachment that says which occurrence it is scoped to
+ * @description Shared by meeting and past meeting attachments so the scope helpers serve both; an empty or missing `occurrence_id` means every occurrence.
+ */
+export interface OccurrenceScopedAttachment {
+  /** Occurrence the attachment is scoped to (unix start time) */
+  occurrence_id?: string;
+}
