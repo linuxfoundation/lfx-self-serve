@@ -9,6 +9,7 @@ import { Member360Controller } from '../controllers/member-360.controller';
 import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
+import type { MktgRebuildController } from '../controllers/mktg-rebuild.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
@@ -85,6 +86,23 @@ router.post(
 
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
 router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));
+
+let rebuild: MktgRebuildController | undefined;
+function rebuildRoute(method: keyof MktgRebuildController): RequestHandler {
+  return (req, res, next): void => {
+    void import('../controllers/mktg-rebuild.controller')
+      .then(({ MktgRebuildController }) => {
+        rebuild ??= new MktgRebuildController();
+        return rebuild[method](req, res, next);
+      })
+      .catch(next);
+  };
+}
+
+// Every chain endpoint can persist a Draft/turn and is a writer operation.
+router.post('/rebuild/start', blockDuringImpersonation, rebuildRoute('start'));
+router.post('/rebuild/advance', blockDuringImpersonation, rebuildRoute('advance'));
+router.post('/rebuild/result', blockDuringImpersonation, rebuildRoute('result'));
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));

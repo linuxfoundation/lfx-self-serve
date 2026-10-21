@@ -92,6 +92,33 @@ canonical receipt key selects its exact revision; otherwise the document default
 opens. Receipt keys retained in memory never expand persisted run schemas, and
 content hashes never infer revision identity or approval.
 
+## Framework provenance and rebuilds
+
+Downstream generation captures the approved current framework's exact revision ID,
+number and content SHA before creating its Guild session. The capture is accepted
+only when the submitted framework content matches the integrity-checked stored
+content. A private, immutable project/agent/session capture is committed before the
+session capability is returned; a failed write fails the generation request. The
+result writer copies this server-owned `upstreamFramework` into the dependent
+sidecar, not the content bytes. It removes any agent-supplied value of that field.
+Historical sessions and mismatched submitted content retain unknown provenance.
+A run-page generation also retains unknown provenance if project entitlement or
+framework reads cannot be verified, rather than changing its existing start
+behavior. Rebuilds pass an expected identity and fail those checks instead.
+
+New revision HEAD metadata also carries this small reference. The project listing
+projects `needsRebuild` using each dependent's **current** summary and the framework's
+**approved current** summary, without adding revision-body reads. Only boilerplates,
+FAQ and brand kit are eligible. An ID or content-hash mismatch marks them; revision
+numbers are display-only. Missing assets remain Missing; unknown provenance,
+Draft frameworks, historical noncurrent approvals and one-off runs never mark.
+The Kit, Family and framework Downstream card consume this same server projection.
+Existing historical summary fallbacks remain unchanged.
+
+The [rebuild chain](./mktg-rebuild.md) runs only stale downstream agents, preserving
+approved selection through the existing CAS writer. Family Slides-export freshness
+belongs to the separate family-export flow, not this projection.
+
 ## Reads and attribution
 
 Listings provide IDs, sequence and time; bounded metadata-only HEAD requests
