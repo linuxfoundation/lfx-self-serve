@@ -1,13 +1,29 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Exact px sizes per design review: 12px/18px text, 16px top / 20px bottom padding (the 14px root makes text-xs / pt-4 / pb-5 undershoot). -->
 <footer class="pt-[16px] pb-[20px] text-center text-gray-400" data-testid="app-footer">
   <p class="text-[12px] leading-[18px]">
     Copyright © {{ year }} The Linux Foundation®. All rights reserved. The Linux Foundation has registered trademarks and uses trademarks. For more information,
-    including terms of use, <a [href]="links.platformUsage" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-500">Platform Usage</a>,
-    <a [href]="links.privacyPolicy" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-500">Privacy Policy</a>, and
-    <a [href]="links.trademarkUsage" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-500">Trademark Usage</a>, please see our
-    <a [href]="links.policies" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-500">Policies</a> page, or manage your
+    including terms of use,
+    <a [href]="links.platformUsage" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-500" data-testid="app-footer-platform-usage-link"
+      >Platform Usage</a
+    >,
+    <a [href]="links.privacyPolicy" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-500" data-testid="app-footer-privacy-policy-link"
+      >Privacy Policy</a
+    >, and
+    <a
+      [href]="links.trademarkUsage"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="underline hover:text-gray-500"
+      data-testid="app-footer-trademark-usage-link"
+      >Trademark Usage</a
+    >, please see our
+    <a [href]="links.policies" target="_blank" rel="noopener noreferrer" class="underline hover:text-gray-500" data-testid="app-footer-policies-link"
+      >Policies</a
+    >
+    page, or manage your
     <button
       type="button"
       (click)="openCookieSettings()"
