@@ -189,11 +189,12 @@ their existing partial-result behavior, and internal strict member callers canno
 be downgraded by the flag.
 
 The Members-tab CSV import requests strict member and invitation snapshots. The
-Edit Group CSV import requests a strict invitation snapshot before opening its
-collect-only preview. If any requested page still fails after the helper's retry
-policy, the request fails and the existing import error handler blocks the
-preview so the manager can try again. This guarantees successful pagination,
-not immediate search-index consistency or an atomic snapshot across requests.
+Edit Group member manager requires a strict roster load, reconciles locally staged
+member changes onto that complete roster, and requests a strict invitation snapshot
+before opening its collect-only preview. If any requested page still fails after
+the helper's retry policy, the request fails and the existing member-load or import
+error guard blocks the preview. This guarantees successful pagination, not immediate
+search-index consistency or an atomic snapshot across requests.
 
 ### Bound multi-request dashboard sources
 

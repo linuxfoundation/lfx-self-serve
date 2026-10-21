@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -13,10 +14,12 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { Committee, CommitteeMember, PersonaType, Project, StagedCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CommitteeManageComponent } from './committee-manage.component';
+import { CommitteeMembersManagerComponent } from '../components/committee-members-manager/committee-members-manager.component';
 
 // Regression coverage for the committee edit context-correction flow (GH-1566): an edit payload
 // must select the COMMITTEE's project/tier (not the cookie-restored last-visited project), the
@@ -330,13 +333,20 @@ describe('CommitteeManageComponent', () => {
       createCommitteeMember = vi.fn().mockReturnValue(of(createdMember));
       revokeCommitteeInvite = vi.fn().mockReturnValue(of(undefined));
       TestBed.overrideProvider(CommitteeService, {
-        useValue: { getCommittee, updateCommittee, createCommitteeMember, revokeCommitteeInvite, getCommitteeMembers: vi.fn().mockReturnValue(of([])) },
+        useValue: {
+          getCommittee,
+          updateCommittee,
+          createCommitteeMember,
+          revokeCommitteeInvite,
+          getCommitteeMembers: vi.fn().mockReturnValue(of([])),
+          getCommitteeInvites: vi.fn().mockReturnValue(of([])),
+        },
       });
       // Render the real staging child so partial-save pruning and retry exercise the parent/child contract.
       TestBed.overrideComponent(CommitteeManageComponent, {
         set: {
           template: `<lfx-committee-members-manager [committeeId]="committeeId()" [memberUpdates]="memberUpdates()"
-            [submitting]="submitting()" (memberUpdatesChange)="onMemberUpdatesChange($event)" />`,
+            [isEditMode]="isEditMode()" [submitting]="submitting()" (memberUpdatesChange)="onMemberUpdatesChange($event)" />`,
         },
       });
     });
@@ -349,6 +359,102 @@ describe('CommitteeManageComponent', () => {
       await fixture.whenStable();
       return component;
     }
+
+    it.each(['example-group', 'EXAMPLE-GROUP'])('imports and saves from slug %s using one pinned UUID for every write', async (slug) => {
+      const uid = '00000000-0000-4000-8000-000000000001';
+      const group = { ...enrichedCommittee(), uid, sso_group_name: 'example-group' };
+      const groupResponse = new Subject<Committee>();
+      const dialogClose = new Subject<StagedCommitteeMemberRequest[]>();
+      const dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
+      const updateCommitteeMember = vi.fn().mockReturnValue(of(createdMember));
+      const deleteCommitteeMember = vi.fn().mockReturnValue(of(undefined));
+      const createCommitteeInvite = vi.fn().mockReturnValue(of({ uid: 'new-invite' }));
+      const getCommitteeInvites = vi.fn().mockReturnValue(of([{ uid: 'pending-invite', invitee_email: 'new@example.com', status: 'pending' }]));
+      getCommittee.mockReturnValue(of(group));
+      updateCommittee.mockReturnValue(groupResponse);
+      TestBed.overrideProvider(ActivatedRoute, {
+        useValue: {
+          paramMap: of(convertToParamMap({ id: slug })),
+          queryParamMap: queryParamMap$.asObservable(),
+          snapshot: { paramMap: convertToParamMap({ id: slug }), queryParamMap: convertToParamMap({}) },
+        },
+      });
+      TestBed.overrideProvider(CommitteeService, {
+        useValue: {
+          getCommittee,
+          updateCommittee,
+          createCommitteeMember,
+          updateCommitteeMember,
+          deleteCommitteeMember,
+          createCommitteeInvite,
+          revokeCommitteeInvite,
+          getCommitteeInvites,
+          getCommitteeMembers: vi.fn().mockReturnValue(of([])),
+        },
+      });
+      TestBed.overrideComponent(CommitteeMembersManagerComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: dialogService }] },
+      });
+      const fixture = TestBed.createComponent(CommitteeManageComponent);
+      const component = fixture.componentInstance;
+      await fixture.whenStable();
+      const manager: CommitteeMembersManagerComponent = fixture.debugElement.query(By.directive(CommitteeMembersManagerComponent)).componentInstance;
+      manager.openImportMembersDialog();
+      expect(dialogService.open).toHaveBeenCalledTimes(1);
+      expect(getCommitteeInvites.mock.calls[0][0]).toBe(uid);
+      dialogClose.next([{ email: 'new@example.com', createOptions: { skipNotification: true } }]);
+      expect(component.memberUpdates().toAdd).toEqual([expect.objectContaining({ email: 'new@example.com', pendingInviteUids: ['pending-invite'] })]);
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      component.memberUpdates.update((pending) => ({
+        ...pending,
+        toUpdate: [{ uid: 'changed-member', changes: { email: 'changed@example.com', first_name: 'Changed' } }],
+        toDelete: ['deleted-member'],
+        toInvite: [{ invitee_email: 'invited@example.com' }],
+      }));
+      component.onSubmitAll();
+      expect(updateCommittee).toHaveBeenCalledExactlyOnceWith(uid, expect.any(Object));
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      // Route changes during the group update must not retarget its member or cleanup writes.
+      component.committeeId.set('another-group');
+      groupResponse.next(group);
+      groupResponse.complete();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(uid, expect.objectContaining({ email: 'new@example.com' }), { skipNotification: true });
+      expect(updateCommitteeMember).toHaveBeenCalledExactlyOnceWith(uid, 'changed-member', { email: 'changed@example.com', first_name: 'Changed' });
+      expect(deleteCommitteeMember).toHaveBeenCalledExactlyOnceWith(uid, 'deleted-member');
+      expect(createCommitteeInvite).toHaveBeenCalledExactlyOnceWith(uid, { invitee_email: 'invited@example.com' });
+      expect(revokeCommitteeInvite).toHaveBeenCalledExactlyOnceWith(uid, 'pending-invite');
+      expect(navigate).toHaveBeenCalledWith(['/groups']);
+    });
+
+    it('uses the resolved UUID for the earlier edit-step submit too', async () => {
+      getCommittee.mockReturnValue(of({ ...enrichedCommittee(), sso_group_name: 'example-group' }));
+      const component = await setupPending([]);
+      component.committeeId.set('EXAMPLE-GROUP');
+      component.onSubmit();
+      expect(updateCommittee).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, expect.any(Object));
+      expect(createCommittee).not.toHaveBeenCalled();
+    });
+
+    it.each(['onSubmit', 'onSubmitAll'] as const)('blocks %s while the loaded group does not match the route', async (submit) => {
+      const component = await setupPending([{ email: 'new@example.com' }]);
+      component.committeeId.set('another-group');
+      component[submit]();
+      expect(updateCommittee).not.toHaveBeenCalled();
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(createCommittee).not.toHaveBeenCalled();
+      expect(component.memberUpdates().toAdd).toHaveLength(1);
+      expect(component.submitting()).toBe(false);
+    });
+
+    it('keeps the new-group UUID when finishing the create wizard', async () => {
+      const component = await setupPending([{ email: createdMember.email }]);
+      component.mode.set('create');
+      component.committeeId.set('new-group-uid');
+      component.onDone();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith('new-group-uid', { email: createdMember.email }, undefined);
+      expect(updateCommittee).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/groups']);
+    });
 
     it.each([true, false])('passes notification suppression %s separately from the native member body', async (skipNotification) => {
       const component = await setupPending([{ email: createdMember.email, createOptions: { skipNotification }, pendingInviteUids: ['invite-1'] }]);

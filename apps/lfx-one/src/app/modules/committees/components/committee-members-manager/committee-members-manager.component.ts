@@ -151,6 +151,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   // Complex computed signals (using private initializers)
   public readonly filteredMembers = this.initFilteredMembers();
+  private readonly importedInviteUidsByEmail = this.initImportedInviteUidsByEmail();
 
   // Form instances
   public searchForm: FormGroup;
@@ -433,12 +434,17 @@ export class CommitteeMembersManagerComponent implements OnInit {
           .map(({ uid, invitee_email: inviteeEmail }) => ({ uid, invitee_email: inviteeEmail }))
       );
       const seen = new Set(this.membersWithState().map((member) => (member.email ?? '').trim().toLowerCase()));
+      const additions: CommitteeMemberWithState[] = [];
       for (const member of members) {
         const email = member.email.trim().toLowerCase();
         if (!seen.has(email)) {
           seen.add(email);
-          this.handleAddMemberResult({ ...member, email });
+          additions.push(this.createPendingMember({ ...member, email }));
         }
+      }
+      if (additions.length > 0) {
+        this.membersWithState.update((current) => [...current, ...additions]);
+        this.emitMemberUpdates();
       }
     });
   }
@@ -515,18 +521,23 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   private handleAddMemberResult(memberData: StagedCommitteeMemberRequest): void {
+    this.membersWithState.update((members) => [...members, this.createPendingMember(memberData)]);
+    this.emitMemberUpdates();
+  }
+
+  private createPendingMember(memberData: StagedCommitteeMemberRequest): CommitteeMemberWithState {
     // Build complete CommitteeMember object from the form data
     const newMemberData: CommitteeMember = {
       ...this.memberFieldsFromRequest(memberData),
       uid: '',
-      committee_uid: this.committeeId() || '',
+      committee_uid: this.committee()?.uid || this.committeeId() || '',
       committee_name: this.committee()?.name || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     // Create new member with temporary ID for immediate UI updates
-    const newMember: CommitteeMemberWithState = {
+    return {
       ...newMemberData,
       state: 'new' as CommitteeMemberState,
       tempId: generateTempId(),
@@ -534,12 +545,22 @@ export class CommitteeMembersManagerComponent implements OnInit {
       createOptions: memberData.createOptions,
       pendingInviteUids: memberData.pendingInviteUids,
     };
+  }
 
-    // Add to local state for immediate UI feedback
-    this.membersWithState.update((members) => [...members, newMember]);
-
-    // Emit updated member updates
-    this.emitMemberUpdates();
+  private initImportedInviteUidsByEmail() {
+    return computed(() => {
+      const byEmail = new Map<string, string[]>();
+      for (const invite of this.importInvites() ?? []) {
+        if (!invite.uid) {
+          continue;
+        }
+        const email = (invite.invitee_email ?? '').trim().toLowerCase();
+        const uids = byEmail.get(email) ?? [];
+        uids.push(invite.uid);
+        byEmail.set(email, uids);
+      }
+      return byEmail;
+    });
   }
 
   private initFilteredMembers() {
@@ -620,19 +641,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       };
     });
 
-    const added: CommitteeMemberWithState[] = pending.toAdd.map((request) => ({
-      ...this.memberFieldsFromRequest(request),
-      uid: '',
-      committee_uid: this.committeeId() || '',
-      committee_name: this.committee()?.name || '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      state: 'new' as CommitteeMemberState,
-      tempId: generateTempId(),
-      originalData: undefined,
-      createOptions: request.createOptions,
-      pendingInviteUids: request.pendingInviteUids,
-    }));
+    const added = pending.toAdd.map((request) => this.createPendingMember(request));
 
     return [...reconciled, ...added];
   }
@@ -710,7 +719,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
     this.membersLoadFailed.set(false);
     this.committeeService
-      .getCommitteeMembers(committeeId)
+      .getCommitteeMembers(committeeId, new HttpParams().set('require_complete', 'true'))
       .pipe(
         take(1),
         catchError((error) => {
@@ -777,10 +786,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       return member.pendingInviteUids;
     }
     const email = member.email.trim().toLowerCase();
-    return invites
-      .filter((invite) => (invite.invitee_email ?? '').trim().toLowerCase() === email)
-      .map((invite) => invite.uid)
-      .filter(Boolean);
+    return [...(this.importedInviteUidsByEmail().get(email) ?? [])];
   }
 
   private stripMetadata(member: CommitteeMemberWithState): CreateCommitteeMemberRequest {

@@ -239,6 +239,11 @@ export class CommitteeManageComponent {
   }
 
   public onSubmit(): void {
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (this.isEditMode() && !committeeUid) {
+      return;
+    }
+
     // Mark all form controls as touched to show validation errors
     Object.keys(this.form.controls).forEach((key) => {
       const control = this.form.get(key);
@@ -269,9 +274,9 @@ export class CommitteeManageComponent {
 
     const committeeData = this.cleanFormData(formValue);
 
-    if (this.isEditMode() && this.committeeId()) {
-      // Update existing committee
-      this.committeeService.updateCommittee(this.committeeId()!, committeeData).subscribe({
+    if (this.isEditMode() && committeeUid) {
+      // Update existing committee using its resolved UUID, never the route slug.
+      this.committeeService.updateCommittee(committeeUid, committeeData).subscribe({
         next: () => this.handleCommitteeSuccess('updated'),
         error: (err: HttpErrorResponse) => this.handleCommitteeError('update', err),
       });
@@ -285,6 +290,11 @@ export class CommitteeManageComponent {
   }
 
   public onDone(): void {
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (!committeeUid) {
+      return;
+    }
+
     // Create mode - process member changes then navigate
     this.submitting.set(true);
 
@@ -298,7 +308,7 @@ export class CommitteeManageComponent {
     // flushMemberUpdates() wraps every operation in its own catchError, so this can only ever
     // emit a results array and complete — never error. Failures surface through the results
     // array (see showMemberOperationToast's partial-failure branch), not here.
-    this.flushMemberUpdates()
+    this.flushMemberUpdates(committeeUid)
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe((results) => {
         this.showMemberOperationToast(results);
@@ -321,7 +331,8 @@ export class CommitteeManageComponent {
 
   public onSubmitAll(): void {
     // Edit mode only - save the committee, then flush member/invite changes once it lands
-    if (!this.isEditMode()) {
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (!this.isEditMode() || !committeeUid) {
       return;
     }
 
@@ -356,14 +367,14 @@ export class CommitteeManageComponent {
     const committeeData = this.cleanFormData(formValue);
 
     // Prepare committee update
-    const updateCommittee$ = this.committeeService.updateCommittee(this.committeeId()!, committeeData);
+    const updateCommittee$ = this.committeeService.updateCommittee(committeeUid, committeeData);
 
     // Invite creation snapshots committee_name/organization_required server-side at POST time, so
     // the committee update must land before invites flush — otherwise a race can bake stale
     // committee metadata into an invite. Sequence rather than run them in parallel.
     updateCommittee$
       .pipe(
-        switchMap((committee) => this.flushMemberUpdates().pipe(map((members) => ({ committee, members })))),
+        switchMap((committee) => this.flushMemberUpdates(committeeUid).pipe(map((members) => ({ committee, members })))),
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
@@ -752,6 +763,23 @@ export class CommitteeManageComponent {
     }
   }
 
+  /** Resolve once per save so every write uses the same group UUID, even after a slug change. */
+  private resolveCommitteeWriteUid(): string | null {
+    const routeId = this.committeeId();
+    if (!this.isEditMode()) {
+      return routeId;
+    }
+    const committee = this.committee();
+    if (!routeId || !committee?.uid) {
+      return null;
+    }
+    const normalizedId = routeId.toLowerCase();
+    if (normalizedId !== committee.uid.toLowerCase() && normalizedId !== committee.sso_group_name?.toLowerCase()) {
+      return null;
+    }
+    return committee.uid;
+  }
+
   private buildMemberOperations(committeeId: string, memberUpdates: MemberPendingChanges) {
     const operations: ReturnType<typeof this.createMemberOperation>[] = [];
 
@@ -815,8 +843,7 @@ export class CommitteeManageComponent {
    * (LFXV2-2606) — run with the same bounded concurrency as the immediate-send invite path
    * (COMMITTEE_INVITE_CONCURRENCY), after the member mutations finish.
    */
-  private flushMemberUpdates(): Observable<MemberOperationResult[]> {
-    const committeeId = this.committeeId()!;
+  private flushMemberUpdates(committeeId: string): Observable<MemberOperationResult[]> {
     const memberUpdates = this.memberUpdates();
 
     const memberOperations = this.buildMemberOperations(committeeId, memberUpdates);

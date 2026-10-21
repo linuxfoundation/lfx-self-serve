@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpParams } from '@angular/common/http';
+import { HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
@@ -16,7 +16,7 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of, Subject } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
@@ -56,12 +56,12 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
   };
   let updates: MemberPendingChanges[];
 
-  async function setup(inputs: Record<string, unknown> = {}): Promise<void> {
+  async function setup(inputs: Record<string, unknown> = {}, membersResponse: Observable<CommitteeMember[]> = of([EXISTING])): Promise<void> {
     dialogClose = new Subject();
     dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
     committeeService = {
       getCommittee: vi.fn(() => of(GROUP)),
-      getCommitteeMembers: vi.fn(() => of([EXISTING])),
+      getCommitteeMembers: vi.fn(() => membersResponse),
       createCommitteeMember: vi.fn(),
       getCommitteeInvites: vi.fn().mockReturnValue(of([])),
     };
@@ -181,6 +181,70 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     dialogClose.next(undefined);
     expect(updates).toEqual([]);
     expect(component.memberCount()).toBe(1);
+  });
+
+  it('requires complete member pagination and preserves staged changes when the snapshot fails', async () => {
+    const membersResponse = new Subject<CommitteeMember[]>();
+    const pending: MemberPendingChanges = { toAdd: [REQUEST], toUpdate: [], toDelete: [], toInvite: [] };
+    await setup({ memberUpdates: pending }, membersResponse);
+    expect(committeeService.getCommitteeMembers).toHaveBeenCalledExactlyOnceWith(GROUP.uid, expect.any(HttpParams));
+    expect(committeeService.getCommitteeMembers.mock.calls[0][1].get('require_complete')).toBe('true');
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      // The strict BFF rejects the whole response when a later page exhausts retries.
+      membersResponse.error(new HttpErrorResponse({ status: 503 }));
+      await fixture.whenStable();
+      expect(component.membersLoadFailed()).toBe(true);
+      expect(component.mutationsDisabled()).toBe(true);
+      expect(component.memberUpdates()).toEqual(pending);
+      expect(component.membersWithState()).toEqual([expect.objectContaining({ email: REQUEST.email, state: 'new' })]);
+      component.openImportMembersDialog();
+      expect(dialogService.open).not.toHaveBeenCalled();
+      expect(committeeService.getCommitteeInvites).not.toHaveBeenCalled();
+      expect(updates).toEqual([]);
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it('stages 500 CSV rows in one emission with indexed invitation matches and retained options', async () => {
+    await setup({ memberUpdates: { toAdd: [REQUEST], toUpdate: [], toDelete: [], toInvite: [] } });
+    const members = Array.from({ length: 500 }, (_, index) => ({
+      ...REQUEST,
+      email: ` PERSON${index}@EXAMPLE.COM `,
+      createOptions: { skipNotification: index % 2 === 0 },
+    }));
+    committeeService.getCommitteeInvites.mockReturnValue(
+      of(
+        members.flatMap((member, index) => [
+          { uid: `invite-${index}-a`, invitee_email: member.email, status: 'pending' },
+          { uid: `invite-${index}-b`, invitee_email: member.email.trim().toLowerCase(), status: 'pending' },
+        ])
+      )
+    );
+    component.openImportMembersDialog();
+    dialogClose.next(members);
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].toAdd).toHaveLength(501);
+    expect(
+      new Set(
+        component
+          .membersWithState()
+          .filter((member) => member.state === 'new')
+          .map((member) => member.tempId)
+      ).size
+    ).toBe(501);
+    for (let index = 0; index < 500; index++) {
+      expect(updates[0].toAdd[index + 1]).toMatchObject({
+        email: `person${index}@example.com`,
+        first_name: REQUEST.first_name,
+        organization: { name: 'Example Org', website: 'https://org.example' },
+        createOptions: { skipNotification: index % 2 === 0 },
+        pendingInviteUids: [`invite-${index}-a`, `invite-${index}-b`],
+      });
+    }
+    expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
   });
 
   it.each(['loading', 'committeeLoading', 'membersLoadFailed', 'committeeLoadFailed'] as const)('blocks import while %s', async (state) => {
