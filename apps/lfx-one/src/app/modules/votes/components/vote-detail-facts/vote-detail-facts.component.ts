@@ -37,9 +37,9 @@ export class VoteDetailFactsComponent {
   private readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
 
   // === Computed Signals ===
-  protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ACTIVE);
   protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote().status) === PollStatus.ENDED);
-  protected readonly openedText: Signal<string> = computed(() => {
+  /** `creation_time` — for a draft opened later this is when it was saved, so the row reads "Created", not "Opened". */
+  protected readonly createdText: Signal<string> = computed(() => {
     const created = this.vote().creation_time;
     return created ? formatVoteDeadline(created, this.viewerTimezone) : '—';
   });
@@ -69,6 +69,6 @@ export class VoteDetailFactsComponent {
     return `Optional · ${prompts} ${prompts === 1 ? 'prompt' : 'prompts'}`;
   });
   protected readonly visibilityRules: Signal<string[]> = computed(() =>
-    getVoteVisibilityRules(this.audience(), !!this.vote().pseudo_anonymity, this.isActive())
+    getVoteVisibilityRules(this.audience(), !!this.vote().pseudo_anonymity, this.isEnded())
   );
 }

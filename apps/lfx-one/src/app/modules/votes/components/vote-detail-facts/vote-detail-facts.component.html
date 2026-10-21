@@ -10,9 +10,9 @@
           <dt class="text-gray-500">Group</dt>
           <dd class="text-right font-medium text-gray-900">{{ vote().committee_name || '—' }}</dd>
         </div>
-        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-opened">
-          <dt class="text-gray-500">Opened</dt>
-          <dd class="text-right font-medium text-gray-900">{{ openedText() }}</dd>
+        <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-created">
+          <dt class="text-gray-500">Created</dt>
+          <dd class="text-right font-medium text-gray-900">{{ createdText() }}</dd>
         </div>
         <div class="flex items-start justify-between gap-4 py-2" data-testid="vote-detail-facts-close">
           <dt class="text-gray-500">{{ isEnded() ? 'Closed' : 'Closes' }}</dt>

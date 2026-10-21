@@ -799,18 +799,18 @@ export function canVoterFetchVoteResults(
  * totals and comments; voters see their own response, and totals and comments only after close), never a new rule.
  * @param audience - `creator` for a project or committee writer, `voter` for everyone else
  * @param pseudoAnonymous - The vote's `pseudo_anonymity` setting
- * @param isActive - Whether the vote is still open
+ * @param isClosed - Whether the vote has ended. A draft is not closed: it gets the same not-yet-final copy as an open vote.
  */
-export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnonymous: boolean, isActive: boolean): string[] {
+export function getVoteVisibilityRules(audience: 'voter' | 'creator', pseudoAnonymous: boolean, isClosed: boolean): string[] {
   const rules: string[] = [];
   if (audience === 'creator') {
     rules.push(
-      isActive ? 'As a manager, you can follow live totals and comments while the vote is open.' : 'As a manager, you can see the final totals and comments.'
+      isClosed ? 'As a manager, you can see the final totals and comments.' : 'As a manager, you can follow live totals and comments while the vote is open.'
     );
-    rules.push(isActive ? 'Voters see only their own response until the vote closes.' : 'Invited voters now see the final totals and comments.');
+    rules.push(isClosed ? 'Invited voters now see the final totals and comments.' : 'Voters see only their own response until the vote closes.');
   } else {
     rules.push(
-      isActive ? 'You see only your own response. Totals and comments stay hidden until the vote closes.' : 'Invited voters see the final totals and comments.'
+      isClosed ? 'Invited voters see the final totals and comments.' : 'You see only your own response. Totals and comments stay hidden until the vote closes.'
     );
   }
   rules.push('No one sees how another voter voted on this page.');

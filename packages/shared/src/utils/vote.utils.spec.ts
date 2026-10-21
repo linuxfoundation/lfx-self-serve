@@ -998,14 +998,14 @@ describe('voter results helpers', () => {
       ['creator', false],
       ['voter', true],
       ['voter', false],
-    ])('describes the %s view (active: %s) without exposing other ballots', (audience, isActive) => {
-      const rules = getVoteVisibilityRules(audience, false, isActive);
+    ])('describes the %s view (closed: %s) without exposing other ballots', (audience, isClosed) => {
+      const rules = getVoteVisibilityRules(audience, false, isClosed);
       expect(rules.length).toBeGreaterThan(0);
       expect(rules).toContain('No one sees how another voter voted on this page.');
     });
 
     it('tells managers they see live totals while voters wait for close', () => {
-      expect(getVoteVisibilityRules('creator', false, true)).toEqual([
+      expect(getVoteVisibilityRules('creator', false, false)).toEqual([
         'As a manager, you can follow live totals and comments while the vote is open.',
         'Voters see only their own response until the vote closes.',
         'No one sees how another voter voted on this page.',
@@ -1014,16 +1014,16 @@ describe('voter results helpers', () => {
     });
 
     it('tells voters totals are hidden until close and shared with invited voters after', () => {
-      expect(getVoteVisibilityRules('voter', false, true)[0]).toBe('You see only your own response. Totals and comments stay hidden until the vote closes.');
-      expect(getVoteVisibilityRules('voter', false, false)[0]).toBe('Invited voters see the final totals and comments.');
-      expect(getVoteVisibilityRules('creator', false, false)[1]).toBe('Invited voters now see the final totals and comments.');
+      expect(getVoteVisibilityRules('voter', false, false)[0]).toBe('You see only your own response. Totals and comments stay hidden until the vote closes.');
+      expect(getVoteVisibilityRules('voter', false, true)[0]).toBe('Invited voters see the final totals and comments.');
+      expect(getVoteVisibilityRules('creator', false, true)[1]).toBe('Invited voters now see the final totals and comments.');
     });
 
     it('names the ballot privacy for named and pseudo-anonymous votes', () => {
       for (const audience of ['voter', 'creator'] as const) {
-        for (const isActive of [true, false]) {
-          expect(getVoteVisibilityRules(audience, true, isActive).at(-1)).toBe('Pseudo-anonymous ballot: results are shown without voter names.');
-          expect(getVoteVisibilityRules(audience, false, isActive).at(-1)).toBe('Named ballot: each ballot is recorded against the voter who cast it.');
+        for (const isClosed of [true, false]) {
+          expect(getVoteVisibilityRules(audience, true, isClosed).at(-1)).toBe('Pseudo-anonymous ballot: results are shown without voter names.');
+          expect(getVoteVisibilityRules(audience, false, isClosed).at(-1)).toBe('Named ballot: each ballot is recorded against the voter who cast it.');
         }
       }
     });

@@ -7,13 +7,13 @@ import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
 import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
-import { MyVoteResponse, Project, ServerRequestContext, Vote, VoteDetailState, VoteResultsResponse } from '@lfx-one/shared/interfaces';
+import { MyVoteResponse, Project, ServerRequestContext, StatCardItem, Vote, VoteDetailState, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
 import { VoteService } from '@services/vote.service';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, Observable, of, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteReminderDialogComponent } from '../components/vote-reminder-dialog/vote-reminder-dialog.component';
@@ -243,6 +243,45 @@ describe('VoteDetailComponent', () => {
 
       expect(testId(fixture, 'vote-detail-results-error')).not.toBeNull();
       expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+      // No results means no count — never "0 invited voters have not responded yet".
+      expect(testId(fixture, 'vote-detail-overview-callout')).not.toBeNull();
+      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
+    });
+
+    it('shows the not-responded count only once the results have loaded', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      const results = new Subject<VoteResultsResponse>();
+      voteService.getVoteResults.mockReturnValue(results);
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-overview-callout-count')).toBeNull();
+
+      results.next(makeResults());
+      TestBed.tick();
+      expect(testId(fixture, 'vote-detail-overview-callout-count')?.textContent?.trim()).toBe('1 invited voter has not responded yet');
+    });
+  });
+
+  describe('draft vote', () => {
+    it('never tells a manager a draft is closed', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.DISABLED })));
+      const fixture = await setup();
+
+      const notVotedCard = read<StatCardItem[]>(fixture, 'summaryCards')[3];
+      expect(notVotedCard).toMatchObject({ label: 'Not voted yet', subLine: 'Voting not open yet' });
+      const callout = testId(fixture, 'vote-detail-overview-callout')?.textContent ?? '';
+      expect(callout).toContain('This vote is a draft');
+      expect(callout).not.toContain('This vote is closed');
+    });
+
+    it('keeps the closed copy for an ended vote', async () => {
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.fetchVote.mockReturnValue(of(makeVote({ status: PollStatus.ENDED })));
+      const fixture = await setup();
+
+      expect(read<StatCardItem[]>(fixture, 'summaryCards')[3]).toMatchObject({ label: 'Did not vote', subLine: 'Voting is closed' });
+      expect(testId(fixture, 'vote-detail-overview-callout')?.textContent).toContain('This vote is closed');
     });
   });
 

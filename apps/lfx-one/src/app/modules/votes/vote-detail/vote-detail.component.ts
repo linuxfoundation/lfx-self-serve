@@ -146,6 +146,8 @@ export class VoteDetailComponent {
   );
   protected readonly canCastVote: Signal<boolean> = computed(() => this.isAwaitingBallot(this.vote(), this.myResponse()));
   protected readonly isActive: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ACTIVE);
+  /** Formally ended. A draft (`disabled`) is neither active nor ended, so "closed" copy keys on this, never on `!isActive`. */
+  protected readonly isEnded: Signal<boolean> = computed(() => normalizePollStatus(this.vote()?.status) === PollStatus.ENDED);
   protected readonly isGenericPoll: Signal<boolean> = computed(() => (this.vote()?.poll_type ?? PollType.GENERIC) === PollType.GENERIC);
   protected readonly participationStats: Signal<VoteParticipationStats> = computed(() => computeVoteParticipationStats(this.voteResults()));
   /** Abstain UI follows the data, not just the flag (same rule as the results drawer). */
@@ -437,8 +439,7 @@ export class VoteDetailComponent {
         },
         {
           value: loaded ? this.notVotedCount() : dash,
-          label: this.isActive() ? 'Not voted yet' : 'Did not vote',
-          subLine: this.isActive() ? 'Eligible for a reminder' : 'Voting is closed',
+          ...this.notVotedCardText(),
           icon: 'fa-light fa-clock',
           iconContainerClass: 'bg-amber-100 text-amber-600',
         },
@@ -462,6 +463,13 @@ export class VoteDetailComponent {
   }
 
   // === Private Helpers ===
+  /** Open, ended or draft — a draft hasn't opened for voting, so it reads neither as reminder-ready nor as closed. */
+  private notVotedCardText(): Pick<StatCardItem, 'label' | 'subLine'> {
+    if (this.isActive()) return { label: 'Not voted yet', subLine: 'Eligible for a reminder' };
+    if (this.isEnded()) return { label: 'Did not vote', subLine: 'Voting is closed' };
+    return { label: 'Not voted yet', subLine: 'Voting not open yet' };
+  }
+
   private responsesSubLine(eligibleVoters: number, abstained: number): string {
     const base = `of ${eligibleVoters} invited`;
     if (abstained === 0) return base;

@@ -105,16 +105,22 @@
                     [ngClass]="isActive() ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-gray-200 bg-gray-50 text-gray-800'"
                     data-testid="vote-detail-overview-callout">
                     @if (isActive()) {
-                      <p class="text-sm font-semibold">
-                        {{ notVotedCount() }} invited {{ notVotedCount() === 1 ? 'voter has' : 'voters have' }} not responded yet
-                      </p>
+                      <!-- The count waits for results: before they load (or if they fail) it would read as zero. -->
+                      @if (voteResults()) {
+                        <p class="text-sm font-semibold" data-testid="vote-detail-overview-callout-count">
+                          {{ notVotedCount() }} invited {{ notVotedCount() === 1 ? 'voter has' : 'voters have' }} not responded yet
+                        </p>
+                      }
                       <p class="text-sm">
                         As a manager, you can follow live results and send a reminder to voters who haven't voted. Final results are shared with voters after
                         the vote closes.
                       </p>
-                    } @else {
+                    } @else if (isEnded()) {
                       <p class="text-sm font-semibold">This vote is closed</p>
                       <p class="text-sm">Final results are available to you and to every invited voter.</p>
+                    } @else {
+                      <p class="text-sm font-semibold">This vote is a draft</p>
+                      <p class="text-sm">It hasn't been opened for voting yet, so there are no responses to show.</p>
                     }
                   </div>
                 }

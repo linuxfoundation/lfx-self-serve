@@ -53,7 +53,8 @@ describe('VoteDetailFactsComponent', () => {
     render(makeVote());
 
     expect(value('group')).toBe('Synthetic Steering Committee');
-    expect(value('opened')).not.toBe('—');
+    expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-created"] dt').textContent.trim()).toBe('Created');
+    expect(value('created')).not.toBe('—');
     expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-close"] dt').textContent.trim()).toBe('Closes');
     expect(value('method')).toBe('Ranked Choice (Condorcet IRV)');
     expect(value('electorate')).toBe('12 invited voters');
@@ -82,12 +83,20 @@ describe('VoteDetailFactsComponent', () => {
   it('shows the voter visibility copy', () => {
     render(makeVote());
 
-    expect(rules()).toEqual(getVoteVisibilityRules('voter', false, true));
+    expect(rules()).toEqual(getVoteVisibilityRules('voter', false, false));
   });
 
   it('shows the manager visibility copy for a closed pseudo-anonymous vote', () => {
     render(makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true }), 'creator');
 
-    expect(rules()).toEqual(getVoteVisibilityRules('creator', true, false));
+    expect(rules()).toEqual(getVoteVisibilityRules('creator', true, true));
+  });
+
+  it('never describes a draft as closed', () => {
+    render(makeVote({ status: PollStatus.DISABLED }), 'creator');
+
+    expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-close"] dt').textContent.trim()).toBe('Closes');
+    expect(rules()).toEqual(getVoteVisibilityRules('creator', false, false));
+    expect(rules()).not.toContain('Invited voters now see the final totals and comments.');
   });
 });
