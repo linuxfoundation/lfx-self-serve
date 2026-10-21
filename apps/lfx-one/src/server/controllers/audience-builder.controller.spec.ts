@@ -354,6 +354,17 @@ describe('getSuppressionLists', () => {
     expect(proxyMethods.getSuppressionLists).toHaveBeenCalledWith(expect.anything(), 'tlf', '', '', '');
     expect(res.json).toHaveBeenCalledWith([]);
   });
+
+  it('passes the registrants edition through, and drops one over the limit rather than truncating it', async () => {
+    proxyMethods.getSuppressionLists.mockResolvedValue([]);
+
+    await controller.getSuppressionLists(buildReq({}, { registrantsEvent: ' Synthetic Summit 2026 ' }), buildRes(), next);
+    expect(proxyMethods.getSuppressionLists).toHaveBeenLastCalledWith(expect.anything(), 'tlf', '', '', 'Synthetic Summit 2026');
+
+    // A truncated edition would look up a list attach can never create, so no row is asked for.
+    await controller.getSuppressionLists(buildReq({}, { registrantsEvent: 'x'.repeat(201) }), buildRes(), next);
+    expect(proxyMethods.getSuppressionLists).toHaveBeenLastCalledWith(expect.anything(), 'tlf', '', '', '');
+  });
 });
 
 describe('getLastSent', () => {
@@ -599,6 +610,32 @@ describe('composeMaster payload', () => {
     expect(proxyMethods.composeMaster, 'a mistyped name was dropped and the create proceeded').not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
   });
+
+  // Refused, not dropped: dropping it would compose without the registrants exclusion the operator ticked.
+  it.each([
+    ['a non-string', { nested: 'Synthetic Summit 2026' }],
+    ['an over-long edition', 'x'.repeat(201)],
+  ])('refuses %s currentRegistrantsEvent', async (_label, value) => {
+    const next = vi.fn();
+    await controller.composeMaster(buildReq({ listIds: ['101'], excludeListIds: ['201'], currentRegistrantsEvent: value }), buildRes(), next);
+
+    expect(proxyMethods.composeMaster).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'currentRegistrantsEvent' }]);
+  });
+
+  it('forwards a trimmed registrants edition, and leaves a blank one out', async () => {
+    proxyMethods.composeMaster.mockResolvedValue({ master: { listId: '1', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: [] });
+
+    await controller.composeMaster(
+      buildReq({ listIds: ['101'], excludeListIds: ['201'], currentRegistrantsEvent: ' Synthetic Summit 2026 ' }),
+      buildRes(),
+      vi.fn()
+    );
+    expect(proxyMethods.composeMaster.mock.calls.at(-1)?.[2]).toMatchObject({ currentRegistrantsEvent: 'Synthetic Summit 2026' });
+
+    await controller.composeMaster(buildReq({ listIds: ['101'], excludeListIds: ['201'], currentRegistrantsEvent: '   ' }), buildRes(), vi.fn());
+    expect(proxyMethods.composeMaster.mock.calls.at(-1)?.[2]).not.toHaveProperty('currentRegistrantsEvent');
+  });
 });
 
 describe('attachExisting', () => {
@@ -616,6 +653,38 @@ describe('attachExisting', () => {
     await controller.attachExisting(buildReq({ briefId: 'brief-1', masterListId: '  ' }), buildRes(), next2);
     expect(nextError(next2).toResponse()['errors']).toMatchObject([{ field: 'masterListId' }]);
     expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a non-string', 42],
+    ['an over-long edition', 'x'.repeat(201)],
+  ])('refuses %s currentRegistrantsEvent', async (_label, value) => {
+    await controller.attachExisting(
+      buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'], currentRegistrantsEvent: value }),
+      buildRes(),
+      next
+    );
+
+    expect(proxyMethods.attachExisting).not.toHaveBeenCalled();
+    expect(nextError(next).toResponse()['errors']).toMatchObject([{ field: 'currentRegistrantsEvent' }]);
+  });
+
+  it('forwards a trimmed registrants edition on attach, and leaves a blank one out', async () => {
+    proxyMethods.attachExisting.mockResolvedValue(attached);
+
+    await controller.attachExisting(
+      buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'], currentRegistrantsEvent: ' Synthetic Summit 2026 ' }),
+      buildRes(),
+      vi.fn()
+    );
+    expect(proxyMethods.attachExisting.mock.calls.at(-1)?.[2]).toMatchObject({ currentRegistrantsEvent: 'Synthetic Summit 2026' });
+
+    await controller.attachExisting(
+      buildReq({ briefId: 'brief-1', masterListId: '501', suppressionListIds: ['201'], currentRegistrantsEvent: '' }),
+      buildRes(),
+      vi.fn()
+    );
+    expect(proxyMethods.attachExisting.mock.calls.at(-1)?.[2]).not.toHaveProperty('currentRegistrantsEvent');
   });
 
   it('refuses a blank suppression id rather than attaching with less suppression', async () => {

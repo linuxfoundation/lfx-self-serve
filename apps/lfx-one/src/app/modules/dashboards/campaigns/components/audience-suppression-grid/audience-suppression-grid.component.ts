@@ -3,7 +3,7 @@
 
 import { Component, computed, input, output, signal } from '@angular/core';
 
-import type { AudienceSuppressionCategory, AudienceSuppressionList } from '@lfx-one/shared/interfaces';
+import type { AudienceStandardSuppressionToggle, AudienceSuppressionCategory, AudienceSuppressionList } from '@lfx-one/shared/interfaces';
 
 /**
  * The exclusion picker: current registrants, event-specific, brand, then portfolio-wide hygiene.
@@ -44,7 +44,7 @@ export class AudienceSuppressionGridComponent {
   /** Emits the row KEY, not the list id — see `selectedKeys`. */
   public readonly toggleList = output<string>();
   /** Emits the resolved standard row keys to tick (all of them) or untick (none of them). */
-  public readonly toggleStandard = output<{ keys: readonly string[]; selected: boolean }>();
+  public readonly toggleStandard = output<AudienceStandardSuppressionToggle>();
 
   // === WritableSignals ===
   protected readonly standardExpanded = signal(false);

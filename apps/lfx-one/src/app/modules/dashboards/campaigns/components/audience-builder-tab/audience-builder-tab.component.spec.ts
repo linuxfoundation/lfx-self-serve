@@ -1755,7 +1755,7 @@ describe('AudienceBuilderTabComponent', () => {
       expect(block?.querySelector('[data-testid="campaigns-audience-compose-result-master-name"]')?.textContent?.trim()).toBe(
         '26Q1 - SYN - Synthetic Summit 2026 - Master'
       );
-      expect(block?.textContent).toContain('Combined Suppression (combined suppression)');
+      expect(block?.textContent).toContain('Combined Suppression (standard suppressions, shared)');
     });
 
     it('will not compose with nothing selected', async () => {
@@ -1784,6 +1784,57 @@ describe('AudienceBuilderTabComponent', () => {
       expect(block, 'a partial compose failure was reported as a plain error').not.toBeNull();
       expect(block?.textContent).toContain('Combined Suppression');
       expect((host().textContent ?? '').toLowerCase(), 'a retry was offered for a non-idempotent write').not.toContain('retry');
+    });
+
+    it('never calls the shared standard suppression list an orphan to delete', async () => {
+      // On a current deployment a partial's `suppression` is the project's standing list, which
+      // every email reuses; "delete it" would remove the hygiene exclusions from all of them.
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      const partial: AudienceComposeMasterPartial = {
+        suppression: { listId: '31763', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/31763' },
+        error: 'The audience could not be recorded.',
+      };
+      composeAudienceMaster.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502, error: partial })));
+      click('campaigns-audience-compose');
+
+      const text = host().querySelector('[data-testid="campaigns-audience-compose-partial"]')?.textContent ?? '';
+      expect(text).toContain('shared standard suppression list');
+      expect(text).not.toContain('orphaned');
+    });
+
+    it('asks the compose to create the ticked current-registrants list', async () => {
+      getAudienceSuppressionLists.mockReturnValue(
+        of([
+          {
+            key: 'lf_events_gdpr',
+            label: 'LF Events GDPR',
+            listId: '201',
+            name: 'LF Events - GDPR Suppression',
+            size: 5000,
+            category: 'standard',
+            hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+          },
+          {
+            key: 'current_registrants',
+            label: 'Current registrants - Synthetic Summit 2026',
+            listId: '',
+            name: 'Synthetic Summit 2026 - Current Registrants',
+            category: 'current_registrants',
+            hubspotUrl: '',
+            willCreate: true,
+          },
+        ])
+      );
+      await renderWithDiscovery();
+      click('audience-card-grid-toggle-101');
+      composeAudienceMaster.mockReturnValue(of({ master: { listId: '5', name: 'm', size: 1, hubspotUrl: 'u' }, sourceListIds: ['101'] }));
+
+      click('campaigns-audience-compose');
+
+      const request = composeAudienceMaster.mock.calls.at(-1)?.[1];
+      expect(request?.excludeListIds, 'a list that does not exist yet has no id to send').toEqual(['201']);
+      expect(request?.currentRegistrantsEvent).toBe('Synthetic Summit 2026');
     });
 
     it('surfaces an UNCONFIRMED create by name, with no portal link to offer', async () => {
@@ -3010,6 +3061,43 @@ describe('AudienceBuilderTabComponent', () => {
       expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
     });
 
+    it("takes the edition's year from the brief's dates when the event has none of its own", async () => {
+      await render();
+      fixture.componentRef.setInput('briefEventName', 'Synthetic Summit');
+      fixture.componentRef.setInput('briefEventDates', 'September 10-11, 2026');
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit', brandShort: 'SYN', eventDates: [] });
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit', 'Synthetic Summit 2026');
+    });
+
+    it("never borrows the brief's year for a different event, and asks for no registrants row without one", async () => {
+      await render();
+      fixture.componentRef.setInput('briefEventName', 'Another Conference');
+      fixture.componentRef.setInput('briefEventDates', 'September 10-11, 2026');
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit', brandShort: 'SYN', eventDates: [] });
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit', '');
+    });
+
+    it("reloads the rows when the brief's dates give the edition its year after the first load", async () => {
+      await render();
+      fixture.componentRef.setInput('briefEventName', 'Synthetic Summit');
+      builder().eventPlanned.emit({ eventName: 'Synthetic Summit', brandShort: 'SYN', eventDates: [] });
+      builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
+      fixture.detectChanges();
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit', '');
+
+      fixture.componentRef.setInput('briefEventDates', 'September 10-11, 2026');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit', 'Synthetic Summit 2026');
+    });
+
     it('loads the planned scope once a portfolio-wide load already on the wire settles', async () => {
       await render();
       const generic = new Subject<AudienceSuppressionList[]>();
@@ -3071,13 +3159,15 @@ describe('AudienceBuilderTabComponent', () => {
       getAudienceSuppressionLists.mockReturnValueOnce(throwError(() => new Error('down')));
       builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
       fixture.detectChanges();
-      const callsAfterFailure = getAudienceSuppressionLists.mock.calls.length;
 
       builder().created.emit({ listId: '8888', name: 'Busan', hubspotUrl: 'https://app.hubspot.com/x/8888' });
       fixture.detectChanges();
 
-      expect(getAudienceSuppressionLists.mock.calls.length, 'the failed scope is loaded again').toBe(callsAfterFailure + 1);
+      // Retried at the latest on the next trigger (the edition gaining its year can retry sooner).
+      const plannedLoads = getAudienceSuppressionLists.mock.calls.filter((call) => call[1] === 'SYN');
+      expect(plannedLoads.length, 'the failed scope is loaded again').toBeGreaterThanOrEqual(2);
       expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
+      expect((fixture.componentInstance as unknown as { suppressionFailed(): boolean }).suppressionFailed()).toBe(false);
     });
 
     it('keeps a row the operator unticked unticked when a failed rescope is retried', async () => {
