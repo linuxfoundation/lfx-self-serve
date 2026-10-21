@@ -490,6 +490,21 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getDocument).toHaveBeenCalled();
   });
 
+  it('ends a failed run with the agent message and Run again, never reading a stored result', async () => {
+    run.isPending.mockReturnValue(true);
+    const message = 'No entitled project was found for this session.';
+    run.waitForStored.mockReturnValue(of({ status: 'failed', message }));
+    await render('/documents/member-360/run-0123456789abcdef01234567?revision=obsolete');
+    expect(query('mktg-document-view-error')?.textContent).toContain(message);
+    expect(query('member-360-run-again')?.textContent?.trim()).toBe('Run again');
+    expect(query('member-360-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/member-360');
+    expect(query('mktg-document-view-retry')).toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
+    expect(query('mktg-run-activity-title')).toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(store.getRevision).not.toHaveBeenCalled();
+  });
+
   it('keeps a questions turn open with the feed instead of an error or stored result', async () => {
     run.isPending.mockReturnValue(true);
     run.waitForStored.mockReturnValue(of({ status: 'needs_input' }));

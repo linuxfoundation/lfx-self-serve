@@ -52,6 +52,9 @@ export const CATEGORY_SCORE_KEYS = Object.fromEntries(CATEGORY_KEYS.map((k) => [
 >;
 export const MEMBER_360_COMPARISON_UNAVAILABLE = 'MEMBER_360_COMPARISON_UNAVAILABLE';
 export const MEMBER_360_INVALID_RESULT = 'MEMBER_360_INVALID_RESULT';
+export const MEMBER_360_FAILURE_MESSAGE_MAX_CHARS = 600;
+export const MEMBER_360_FAILURE_MESSAGE = 'The run ended without a Member 360 result.';
+export const MEMBER_360_STOPPED_MESSAGE = 'The agent stopped before producing a result.';
 export const MEMBER_360_CONTRACT_ID = 'member-360-output/v1';
 export const MEMBER_360_FINALIZE_TOOL = 'finalize_member_360';
 export const MEMBER_360_QUESTIONS_MARKER = 'member-360-questions/v1';

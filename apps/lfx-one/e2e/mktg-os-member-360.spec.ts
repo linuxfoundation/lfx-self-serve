@@ -114,6 +114,32 @@ test('Generate lands on the document and stays generating until the run is store
   await page.screenshot({ path: info.outputPath('generated-document.png'), fullPage: true });
 });
 
+test('a finished refusal ends generating, shows the agent message and offers Run again', async ({ page }, info) => {
+  await setupMember360(page); // Includes suppressCookieBanner(page).
+  let polls = 0;
+  const message = 'No entitled project was found for this session. I cannot run Member 360.';
+  await page.route('**/api/mktg-agents/member-360/generate', (route) =>
+    json(route, { sessionId: 'synthetic-session', ownerToken: 'synthetic-token', documentId: MEMBER_360_DOCUMENT_ID })
+  );
+  await page.route('**/api/mktg-agents/member-360/result', (route) => {
+    polls++;
+    return json(route, { status: 'failed', message });
+  });
+  await openMember360(page);
+  await page.getByTestId('member-360-run').getByRole('button').click();
+  await expect(page.getByTestId('mktg-document-view-error')).toContainText(message);
+  await expect(page.getByTestId('mktg-run-activity')).toHaveCount(0);
+  await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
+  await expect(page.getByTestId('member-360-result')).toHaveCount(0);
+  expect(polls).toBe(1);
+  await page.screenshot({ path: info.outputPath('terminal-refusal.png'), fullPage: true });
+  await page.getByTestId('member-360-run-again').click();
+  await expect(page.getByTestId('member-360-run-page')).toBeVisible();
+  await expect(page.getByTestId('member-360-run').getByRole('button')).toBeEnabled();
+  expect(polls).toBe(1);
+  await page.screenshot({ path: info.outputPath('run-again-intake.png'), fullPage: true });
+});
+
 test('a questions turn keeps the document open with the feed and an unsupported-answer notice', async ({ page }, info) => {
   await setupMember360(page); // Includes suppressCookieBanner(page).
   await page.route('**/api/mktg-agents/member-360/generate', (route) =>
