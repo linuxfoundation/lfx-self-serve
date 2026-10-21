@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- abstainedRate is the share of all responses cast; choice percentages use the same denominator. -->
+<!-- abstainedRate is the share of all responses cast (generic choice percentages share that denominator; ranked tallies exclude abstentions). -->
 @if (variant() === 'live') {
   <div class="flex flex-col gap-1.5" [attr.data-testid]="testId()">
     <div class="flex items-center justify-between text-sm">

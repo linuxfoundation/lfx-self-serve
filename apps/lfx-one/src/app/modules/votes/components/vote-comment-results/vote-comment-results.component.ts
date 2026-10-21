@@ -10,7 +10,7 @@ import { splitIntoParagraphs } from '@lfx-one/shared/utils';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { PaginatorModule, PaginatorState } from 'primeng/paginator';
 
-/** Paginated comment-results list, one block per prompt. Page state is a model so the host can keep it across its own re-renders (e.g. a drawer that destroys its content when hidden). */
+/** Paginated comment-results list, one block per prompt. Page state is a model so the host can keep it when this component is destroyed and recreated (e.g. a drawer swapping in its loading skeleton on reopen). */
 @Component({
   selector: 'lfx-vote-comment-results',
   imports: [DatePipe, ExpandableTextComponent, LinkifyPipe, PaginatorModule],

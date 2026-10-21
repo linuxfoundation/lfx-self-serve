@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatDate } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { PollCommentResponse, PollCommentResult } from '@lfx-one/shared/interfaces';
@@ -52,7 +53,8 @@ describe('VoteCommentResultsComponent', () => {
     expect(text).toContain('Synthetic prompt p1');
     expect(text).toContain('Synthetic p1 comment 01');
     expect(text).toContain('Synthetic Voter 1');
-    expect(text).toContain('Jan 31, 2026');
+    // DatePipe formats in local time; derive the expectation the same way so the spec passes in any timezone.
+    expect(text).toContain(formatDate(first.vote_creation_time, 'MMM d, y', 'en-US'));
     expect(text).toContain('(Abstained)');
     expect(el.querySelector('lfx-expandable-text.comment-text')).toBeTruthy();
   });

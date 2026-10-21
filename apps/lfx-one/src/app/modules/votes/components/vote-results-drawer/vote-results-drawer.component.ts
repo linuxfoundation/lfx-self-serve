@@ -99,7 +99,8 @@ export class VoteResultsDrawerComponent {
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
   /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. Owned here (bound two-way into
-   *  lfx-vote-comment-results) so the comment page survives the drawer destroying its content when hidden. */
+   *  lfx-vote-comment-results) so the comment page survives the results branch being torn down — e.g. a voter reopen swaps in the
+   *  loading skeleton while my-response reloads, which destroys and recreates lfx-vote-comment-results. */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
   // === Shared Observables ===
   private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));

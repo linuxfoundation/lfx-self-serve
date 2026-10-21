@@ -740,7 +740,7 @@ describe('VoteResultsDrawerComponent — rendered results', () => {
       expect(byTestId('vote-results-comments-paginator-p3')).toBeNull();
       expect(textOf('vote-results-comments-truncated-p1')).toBe(squash('Showing the 30 most recent of 40 responses.'));
       expect(byTestId('vote-results-comments-truncated-p3')).toBeNull();
-      // Comment cards keep the slate-50 fade class from the drawer stylesheet.
+      // Comment cards keep the class the slate-50 fade rule (now in the comment-results stylesheet) targets.
       expect(byTestId('vote-results-comments')?.querySelector('lfx-expandable-text.comment-text')).toBeTruthy();
     });
 
@@ -752,6 +752,8 @@ describe('VoteResultsDrawerComponent — rendered results', () => {
       fixture.detectChanges();
       expect(textOf('vote-results-comments')).toContain(squash('Synthetic p1 comment 26'));
       expect(textOf('vote-results-comments')).not.toContain(squash('Synthetic p1 comment 01'));
+      // The page lives in the drawer (two-way pageState binding), so it outlives any teardown of the comment-results child.
+      expect(fixture.componentInstance['commentPaginatorState']().get('p1')).toEqual({ first: 25, rows: 25 });
 
       fixture.componentRef.setInput('visible', false);
       await fixture.whenStable();
