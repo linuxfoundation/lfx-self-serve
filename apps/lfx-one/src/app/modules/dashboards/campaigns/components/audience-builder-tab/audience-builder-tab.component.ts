@@ -18,6 +18,7 @@ import {
   AUDIENCE_STANDARD_SUPPRESSION_NAME_PREFIX,
   AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH,
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
+  AUDIENCE_OPT_IN_SIGNALS,
   AUDIENCE_SIGNAL_INFO,
   AUDIENCE_SIGNAL_ORDER,
   AUDIENCE_STEP_ORDER,
@@ -50,6 +51,7 @@ import type {
   AudienceReadinessNotice,
   AudienceMasterListBrief,
   AudiencePendingReuseAttach,
+  AudienceOptInLookup,
   AudiencePreviewCount,
   AudienceSignal,
   AudienceStartOverAction,
@@ -407,6 +409,8 @@ export class AudienceBuilderTabComponent {
    */
   private searchSeq = 0;
   private existingSearchSeq = 0;
+  /** Bumped per opt-in lookup, so a superseded one's reply is dropped. */
+  private optInSeq = 0;
   /** The brand|event the no-discovery suppression rows were loaded for; '' is portfolio-wide. */
   private suppressionScope = '';
   /**
@@ -510,6 +514,8 @@ export class AudienceBuilderTabComponent {
   private readonly pendingReuseAttach = signal<AudiencePendingReuseAttach | null>(null);
   /** The "combine into a master list" disclosure is open. Direct use is the default action. */
   protected readonly composeOpen = signal(false);
+  /** The existing opt-in lists an event draft joins to Include. See `lookUpOptIns`. */
+  protected readonly optIns = signal<AudienceOptInLookup>(EMPTY_OPT_INS);
   /**
    * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
    * selection rather than on its master list id.
@@ -2057,8 +2063,9 @@ export class AudienceBuilderTabComponent {
   }
 
   /**
-   * The legacy "Event Audience": a regional-expansion audience the model plans from the event page
-   * itself (the service reads it), so no discovery is needed first. It is drafted into the custom
+   * The event audience the model plans from the event page itself (the service reads it), so no
+   * discovery is needed first. Not location-scoped unless the operator asks: the host city and
+   * country are an explicit choice, never the default. It is drafted into the custom
    * builder, so the same review, property checks, preview and confirmation apply.
    */
   protected onGenerateEventPlan(confirmed = false): void {
@@ -2079,12 +2086,13 @@ export class AudienceBuilderTabComponent {
       this.resetRunState(false);
     }
     this.mode.set('build');
+    this.lookUpOptIns(url);
     this.customPreset.set({
       version: ++this.customPresetVersion,
       eventUrl: url,
       request:
-        'Regional expansion audience for this event: mailable contacts in its host city and country, contacts who registered for any event held there, ' +
-        "education enrollees there limited to the brand's own courses, and visitors of the event page.",
+        "Event audience, not limited to any location: this event's own past registrants (its earlier editions only, never other events in the same place), " +
+        "education enrollees limited to the brand's own courses, and visitors of the event page.",
     });
   }
 
@@ -2154,6 +2162,13 @@ export class AudienceBuilderTabComponent {
   protected onReadinessAction(action: AudienceReadinessAction): void {
     if (action === 'retry-audience-read') this.retryAudienceRead.emit();
     else this.retryBrief.emit();
+  }
+
+  /** An opt-in list the lookup found but did not add (one per signal is added). */
+  protected onAddOptIn(list: AudienceDiscoveredList): void {
+    if (this.selectionLocked()) return;
+    this.add(list.listId, list.name);
+    this.ensureSuppressionLoaded();
   }
 
   /** Compose creates real HubSpot lists, so the first click asks; only the confirmation composes. */
@@ -3184,6 +3199,7 @@ export class AudienceBuilderTabComponent {
     // Invalidate every in-flight reply from the previous run BEFORE clearing the state they
     // would otherwise repopulate.
     this.runGeneration += 1;
+    this.optIns.set(EMPTY_OPT_INS);
     this.composing.set(false);
     this.previewing.set(false);
     // `searching` belongs here with its siblings. Guarding onSearch's ERROR handler on the run
@@ -3294,6 +3310,73 @@ export class AudienceBuilderTabComponent {
     return known === included ? 'Reach (at most)' : `Known sizes (${known} of ${included} lists)`;
   }
 
+  /**
+   * Finds the portal's existing opt-in lists for the event and adds them to Include beside the
+   * drafted list. Opt-ins are subscription types spread over many portal-specific properties, so
+   * a filter for them would be a guess into a production list; discovery already classifies the
+   * lists the portal keeps for them. Read-only: discovery creates nothing.
+   *
+   * Only the opt-in buckets are taken from the result. Identity, the discovered grid and the reuse
+   * lookups belong to the Use existing lists tab, and filling them here would switch its steps on.
+   * The largest list per signal is added; any others are offered, since a brand often keeps older
+   * variants that should not all join the send by default.
+   */
+  private lookUpOptIns(eventUrl: string): void {
+    const run = this.runGeneration;
+    const seq = ++this.optInSeq;
+    const current = (): boolean => run === this.runGeneration && seq === this.optInSeq;
+    this.optIns.set({ ...EMPTY_OPT_INS, status: 'loading' });
+    let result: AudienceDiscoveryResult | null = null;
+    // Settled on `done` or on completion, whichever comes first: the stream may end either way.
+    const settle = (): void => {
+      if (!current() || this.optIns().status !== 'loading') return;
+      if (result === null) this.optIns.set({ ...EMPTY_OPT_INS, status: 'failed' });
+      else this.applyOptIns(result);
+    };
+    this.campaignService
+      .discoverAudience(this.projectSlug(), { eventUrl })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (event: SSEEvent<AudienceDiscoverySSEEventType>) => {
+          if (!current()) return;
+          if (event.type === 'discovered') {
+            result = event.data as AudienceDiscoveryResult;
+          } else if (event.type === 'done') {
+            settle();
+          } else if (event.type === 'error' || event.type === 'shutdown') {
+            this.optIns.set({ ...EMPTY_OPT_INS, status: 'failed' });
+          }
+        },
+        error: () => {
+          if (current() && this.optIns().status === 'loading') this.optIns.set({ ...EMPTY_OPT_INS, status: 'failed' });
+        },
+        complete: settle,
+      });
+  }
+
+  private applyOptIns(result: AudienceDiscoveryResult): void {
+    const added: AudienceDiscoveredList[] = [];
+    const others: AudienceDiscoveredList[] = [];
+    const missing: AudienceOptInLookup['missing'] = [];
+    for (const signal of AUDIENCE_OPT_IN_SIGNALS) {
+      const lists = result.lists.filter((list) => list.signal === signal).sort((a, b) => (b.size ?? -1) - (a.size ?? -1));
+      if (lists.length === 0) {
+        missing.push(signal);
+        continue;
+      }
+      added.push(lists[0]);
+      others.push(...lists.slice(1));
+    }
+    // A locked selection (a compose already ran) is not changed behind the operator's back: the
+    // lists are still shown, to add by hand once it is unlocked.
+    const locked = this.selectionLocked();
+    if (!locked) {
+      added.forEach((list) => this.add(list.listId, list.name));
+      if (added.length > 0) this.ensureSuppressionLoaded();
+    }
+    this.optIns.set({ status: 'done', added: locked ? [] : added, others: locked ? [...added, ...others] : others, missing });
+  }
+
   /** Scrolls to (or focuses) an element by test id once the view has rendered the change that shows it. */
   private scrollTo(testId: string, focus = false): void {
     if (!isPlatformBrowser(this.platformId)) return;
@@ -3307,6 +3390,8 @@ export class AudienceBuilderTabComponent {
     );
   }
 }
+
+const EMPTY_OPT_INS: AudienceOptInLookup = { status: 'idle', added: [], others: [], missing: [] };
 
 /** Appends the year of the event's first date to a name that has none ("… Japan" → "… Japan 2026"). */
 function withEventYear(name: string, dates: readonly string[]): string {
