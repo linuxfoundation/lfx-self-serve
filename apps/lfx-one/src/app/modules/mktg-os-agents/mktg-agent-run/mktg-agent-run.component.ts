@@ -1529,6 +1529,20 @@ export class MktgAgentRunComponent {
 
   /** One handler for the generate stream and the answers stream: they emit the same events. */
   private onProgress(progress: MktgGenerateProgress, projectUid: string): void {
+    if (progress.type === 'restored') {
+      if (
+        this.projectContext.activeContextUid() !== projectUid ||
+        progress.pending.request.projectUid !== projectUid ||
+        progress.pending.request.agentId !== this.agent?.id
+      )
+        return;
+      this.intakeForm.patchValue(progress.pending.request.answers);
+      this.writingStretch.set(false);
+      this.clearQuestions();
+      this.errorText.set(progress.message);
+      this.phase.set('form');
+      return;
+    }
     if (progress.type === 'submitted') {
       this.stage.set(1);
       return;
@@ -1553,6 +1567,11 @@ export class MktgAgentRunComponent {
         this.run.set(progress.run);
       }
       this.dependencyService.notifyDocumentsChanged(projectUid);
+      return;
+    }
+    if (progress.type === 'failed') {
+      this.errorText.set(progress.failureText);
+      this.phase.set('form');
       return;
     }
     if (progress.type === 'refused') {

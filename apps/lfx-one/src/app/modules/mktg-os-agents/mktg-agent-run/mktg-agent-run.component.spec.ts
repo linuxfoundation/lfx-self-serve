@@ -231,6 +231,42 @@ describe('MktgAgentRunComponent', () => {
     });
   }
 
+  it('restores an intake-only transport signal to the form, never a document or automatic submission', async () => {
+    await configure();
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    component['onProgress'](
+      {
+        type: 'restored',
+        message: 'Your intake was restored. Reattach uploaded files and press Generate explicitly.',
+        pending: {
+          request: { agentId: SHELL_AGENT.id, projectUid: PROJECT_1.uid, intake: SHELL_INTAKE, answers: { project_name: 'Recovered synthetic project' } },
+          state: 'failed',
+          updatedAt: new Date().toISOString(),
+          requiresReattachment: true,
+        },
+      },
+      PROJECT_1.uid
+    );
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component['phase']()).toBe('form');
+    expect(component['intakeForm'].get('project_name')?.value).toBe('Recovered synthetic project');
+    expect(query('mktg-agent-run-error')?.textContent).toContain('Reattach uploaded files');
+    expect(query('mktg-agent-run-error')?.textContent).toContain('press Generate explicitly');
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it('shows a runtime-ended failure as an intake error without treating it as a document', async () => {
+    await configure();
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    component['onProgress']({ type: 'failed', failureText: 'Synthetic runtime rejection.' }, PROJECT_1.uid);
+    await fixture.whenStable();
+    expect(component['phase']()).toBe('form');
+    expect(query('mktg-agent-run-error')?.textContent).toContain('Synthetic runtime rejection.');
+  });
+
   describe('LFX prefill — applied (fromLfx) vs available (lfxMissing)', () => {
     beforeEach(async () => configure());
 

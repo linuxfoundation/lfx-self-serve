@@ -17,7 +17,7 @@ import type { BrandKitRevision } from './brand-kit.interface';
 import type { FaqChecks, FaqContent, FaqMode, FaqReport } from './faq.interface';
 import type { FoundationMessageChecks, FoundationMessageContent, FoundationMessageMode, FoundationMessageReport } from './foundation-message.interface';
 import type { MktgSessionInfo } from './mktg-chat.interface';
-import type { MktgDocumentPersistLocation } from './mktg-document-store.interface';
+import type { MktgDocumentLocation, MktgDocumentPersistLocation } from './mktg-document-store.interface';
 
 /**
  * How a single intake field is rendered on the run page: one line, several
@@ -594,10 +594,9 @@ export interface MktgRunGenerateBody {
   /** Logo files, for intakes with a logo-files section (the Brand Kit). */
   logoFiles?: MktgIntakeLogoFile[];
   /**
-   * LFX project uid the run belongs to, for intakes that declare
-   * {@link MktgAgentIntake.submitsProject}: the agent receives it with the
-   * form for its own LFX lookups. Never the storage partition — the result
-   * endpoint resolves that server-side from {@link MktgRunResultBody.project}.
+   * LFX project uid sent for every intake. The BFF resolves the writer grant
+   * and canonical uid for the durable run scope; agents with LFX lookups use
+   * that same resolved project.
    */
   project?: string;
 }
@@ -637,6 +636,8 @@ export interface MktgPendingDocumentRun {
 export interface MktgRunSessionResponse {
   /** Stable destination for a one-off run's document, returned before storage. */
   documentId?: string;
+  /** Public opaque run selector, not a Guild session id or capability. */
+  runId?: string;
   /** Guild session id running the one-shot form-mode generation. */
   sessionId: string;
   /** Opaque creator-binding token; required to fetch the result. */
@@ -688,6 +689,10 @@ export interface MktgRunAnswer {
  * the body like every session write: only the session's creator may answer.
  */
 export interface MktgRunAnswersBody {
+  /** Writer-resolved run scope for durable continuation; optional for legacy owner-only calls. */
+  project?: string;
+  /** Questions block being answered; accepted answers renew the recorded run budget. */
+  questionsId?: string;
   /** Guild session id the questions came from. */
   sessionId: string;
   /** Creator-binding owner token returned by the generate endpoint. */
@@ -1016,11 +1021,6 @@ export interface MktgAgentIntake {
    */
   persistsDocument?: boolean;
   /**
-   * The generate body carries the run's LFX project uid
-   * ({@link MktgRunGenerateBody.project}) for the agent's own LFX lookups.
-   */
-  submitsProject?: boolean;
-  /**
    * Follow-ups (edit-inputs resubmit, feedback regeneration) go through the
    * agent's generate endpoint as a full resubmit (`feedback` + `priorVersion`
    * in the body, fresh Guild session) instead of a chat follow-up on the
@@ -1072,6 +1072,9 @@ export interface MktgAgentIntake {
 
 /** One generated document version for an agent run. */
 export interface MktgRunVersion {
+  /** Bounded content digest plus separate session/version keys; JSON assets may share empty Markdown. */
+  source?: { sessionId: string; version: number; identity: string; payloadDigest?: string };
+  documentLocation?: MktgDocumentLocation;
   /** 1-based version number; regeneration produces v+1. */
   version: number;
   /** The generated document (Markdown) returned by the agent; '' for an agent that writes an asset instead. */
@@ -1132,6 +1135,8 @@ export type MktgAnswerMemory = Record<string, MktgRememberedAnswer>;
  * `savedAt`) are pruned on load rather than left at rest indefinitely.
  */
 export interface MktgStoredAgentRun {
+  /** Exact public run selector, retained with private creator history. */
+  runId?: string;
   /** Catalog agent id. */
   agentId: string;
   /** LFX project uid the run belongs to. */
@@ -1156,6 +1161,8 @@ export interface MktgStoredAgentRun {
  * version the session will not produce.
  */
 export interface MktgRunAttempt {
+  /** Exact public run selected by this accepted submission. */
+  runId?: string;
   /** The Guild session whose result endpoint the document poll queries. */
   session: MktgSessionInfo;
   /** Version the polled envelope must exceed; 0 on a fresh session. */
@@ -1213,11 +1220,36 @@ export interface MktgRunQuestionsPending {
  */
 export type MktgGenerateProgress =
   | { type: 'submitted' }
+  | { type: 'restored'; pending: MktgPendingGeneration; message: string }
+  | { type: 'failed'; failureText: string }
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'questions'; pending: MktgRunQuestionsPending }
   | { type: 'refused'; reply: string }
   | { type: 'document'; run: MktgStoredAgentRun }
   | { type: 'persisted'; run: MktgStoredAgentRun | null };
+
+/** Subject/project/agent-bound client attempt, retained BEFORE the first POST and through accepted answers. */
+export interface MktgPendingGeneration {
+  request: MktgGenerateRequest;
+  state: 'draft' | 'writing' | 'questions' | 'failed';
+  /** Uploaded bytes are memory-only; a restored intake needs its files reattached. */
+  requiresReattachment?: boolean;
+  attempt?: MktgRunAttempt;
+  pendingQuestions?: MktgRunQuestionsPending;
+  answered?: { questions: MktgRunQuestion[]; answers: MktgRunAnswer[]; questionsId: string };
+  updatedAt: string;
+}
+
+/** Storage carries intake/context only, never uploaded document/logo bytes or serialized intake config. */
+export interface MktgStoredPendingGeneration extends Omit<MktgPendingGeneration, 'request'> {
+  request: Pick<MktgGenerateRequest, 'agentId' | 'projectUid' | 'answers' | 'feedback'>;
+}
+
+/** In-memory navigation handoff; this is not a session capability and is never serialized into a URL. */
+export interface MktgPreparedGeneration {
+  subject: string;
+  pending: MktgPendingGeneration;
+}
 
 /** Request to generate (or regenerate) an agent document from intake answers. */
 export interface MktgGenerateRequest {
