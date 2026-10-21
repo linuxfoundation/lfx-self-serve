@@ -15,10 +15,18 @@
     } @else {
       <i class="fa-light fa-eye shrink-0 text-sm" aria-hidden="true"></i>
       <!-- One line at every width: the banner height is a fixed layout offset, so lower-priority text drops out and the email truncates instead of wrapping. -->
-      <span class="min-w-0 truncate" [title]="userService.user()?.email ?? ''"
+      <span class="min-w-0 truncate" [pTooltip]="userService.user()?.email" tooltipEvent="both" tooltipPosition="bottom" tabindex="0" role="note"
         ><span class="hidden sm:inline">Viewing as </span><strong>{{ userService.user()?.email }}</strong></span
       >
-      <span class="hidden shrink-0 text-black/60 md:inline">— by {{ userService.impersonator()?.name }}</span>
+      <span
+        class="hidden min-w-0 truncate text-black/60 md:inline"
+        [pTooltip]="userService.impersonator()?.name"
+        tooltipEvent="both"
+        tooltipPosition="bottom"
+        tabindex="0"
+        role="note"
+        >— by {{ userService.impersonator()?.name }}</span
+      >
     }
     <!-- Short labels below sm leave the email room to show; the full labels return from sm up. -->
     <div class="ml-2 flex shrink-0 items-center gap-2 sm:ml-4">

@@ -217,7 +217,7 @@ describe('HealthMetricsGateComponent', () => {
     await render(signal(true));
 
     const header = fixture.nativeElement.querySelector('header');
-    expect(header.className).toContain('lg:top-12');
+    expect(header.className).toContain('lg:top-[36px]');
     expect(header.className).not.toContain('lg:top-0');
   });
 
