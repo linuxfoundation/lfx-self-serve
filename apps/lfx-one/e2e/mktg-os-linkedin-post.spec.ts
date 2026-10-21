@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { LINKEDIN_API } from '@lfx-one/shared/constants';
+import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
 import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils/linkedin-post.utils';
 import {
@@ -25,6 +25,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.route(`**${LINKEDIN_API}/result`, (route) =>
       json(route, {
         status: 'ready',
+        persistence: { project: 'synthetic-project', s3_key: 'synthetic/post.md' },
         profileSaved: false,
         envelope: {
           ...linkedinEnvelope(),
@@ -211,7 +212,7 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-run-questions-next').getByRole('button').click();
     const send = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/answers`));
     await page.getByTestId('mktg-run-questions-send').getByRole('button').click();
-    expect((await send).postDataJSON()).toMatchObject({ sessionId: 'synthetic-session', questionsId: 'a'.repeat(64) });
+    expect((await send).postDataJSON()).toMatchObject({ sessionId: 'synthetic-session-1', questionsId: 'a'.repeat(64) });
     await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
     expect(generates).toBe(1);
     await expect(page.getByTestId('mktg-linkedin-questions')).toHaveCount(0);
@@ -350,7 +351,9 @@ test.describe('Marketing OS LinkedIn posts', () => {
       const link = page.getByTestId('mktg-linkedin-share-link').locator('input');
       const draft = page.getByTestId('mktg-linkedin-draft').getByRole('button');
       await url.fill('https://public.example/post-a');
+      const first = page.waitForResponse((response) => response.url().endsWith(`${LINKEDIN_API}/generate`));
       await draft.click();
+      const runA = await (await first).json();
       await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
       if (priorFailure) {
         await link.fill('https://public.example/explicit-a');
@@ -363,14 +366,27 @@ test.describe('Marketing OS LinkedIn posts', () => {
       await url.fill('https://public.example/post-b');
       await expect(link).toHaveValue('https://public.example/post-b');
       await expect(page.getByTestId('mktg-linkedin-share-link-1')).toHaveAttribute('href', 'https://public.example/post-a');
-      const next = page.waitForRequest((request) => request.url().endsWith(`${LINKEDIN_API}/generate`));
+      const next = page.waitForResponse((response) => response.url().endsWith(`${LINKEDIN_API}/generate`));
       await draft.click();
-      expect((await next).postDataJSON().answers).toMatchObject({ content_url: 'https://public.example/post-b', share_link: 'https://public.example/post-b' });
+      const responseB = await next;
+      const runB = await responseB.json();
+      expect(responseB.request().postDataJSON().answers).toMatchObject({
+        content_url: 'https://public.example/post-b',
+        share_link: 'https://public.example/post-b',
+      });
+      expect(runB.sessionId).not.toBe(runA.sessionId);
+      expect(runB.documentId).not.toBe(runA.documentId);
       await expect(page.getByTestId('mktg-linkedin-option')).toHaveCount(3, { timeout: LINKEDIN_RUN_TIMEOUT });
       expect(patches).toEqual(priorFailure ? ['https://public.example/explicit-a'] : []);
       await expect(page.getByTestId('mktg-linkedin-share-link-1')).toHaveAttribute('href', 'https://public.example/post-b');
       await page.getByTestId('mktg-linkedin-copy-1').getByRole('button', { name: 'Copy post', exact: true }).click();
       expect(await page.evaluate(() => sessionStorage.getItem('linkedin-test-copy'))).toContain('https://public.example/post-b');
+      const documents = await page.evaluate(
+        async (urls) => Promise.all(urls.map(async (url) => (await fetch(url)).json())),
+        [runA.documentId, runB.documentId].map((id) => `${MKTG_DOCUMENTS_API_PATH}/${LINKEDIN_POST_INTAKE.agentId}/${id}`)
+      );
+      expect(documents[0]).toMatchObject({ documentId: runA.documentId, linkedinPost: { answers: { share_link: 'https://public.example/post-a' } } });
+      expect(documents[1]).toMatchObject({ documentId: runB.documentId, linkedinPost: { answers: { share_link: 'https://public.example/post-b' } } });
       await page.screenshot({ path: info.outputPath(`new-draft-after-${priorFailure ? 'failed-explicit-save' : 'auto-prefill'}.png`), fullPage: true });
     });
 

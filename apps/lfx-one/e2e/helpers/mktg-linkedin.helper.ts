@@ -11,6 +11,7 @@ import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
+import { waitForHydration } from './meeting-composer-guests.helper';
 
 export const LINKEDIN_RUN_TIMEOUT = 20000;
 export const LINKEDIN_TEST_PROJECT = { uid: 'p0000000-0000-0000-0000-00000000a116', slug: 'linkedin-e2e', name: 'Example post project' };
@@ -67,9 +68,8 @@ export async function setupLinkedin(
   const events = LINKEDIN_RECORDED_PROGRESS.map((event, index) =>
     JSON.stringify({ ...event, created_at: new Date(Date.now() - 10000 + index * 1000).toISOString() })
   );
-  let answered = false;
-  let polls = 0;
-  let shareLink = '';
+  let generation = 0;
+  const runs = new Map<string, { documentId: string; shareLink: string; answered: boolean; polls: number }>();
   mockProjects[project.slug] = {
     ...project,
     description: 'Synthetic project for post drafting.',
@@ -115,26 +115,35 @@ export async function setupLinkedin(
   });
   await page.route(`**${LINKEDIN_API}/generate`, (route) => {
     const supplied = route.request().postDataJSON().answers?.share_link;
-    shareLink = typeof supplied === 'string' ? supplied : '';
+    const sessionId = `synthetic-session-${++generation}`;
+    const run = {
+      documentId: `run-${generation.toString(16).padStart(24, '0')}`,
+      shareLink: typeof supplied === 'string' ? supplied : '',
+      answered: false,
+      polls: 0,
+    };
+    runs.set(sessionId, run);
     return json(route, {
-      sessionId: 'synthetic-session',
-      ownerToken: 'synthetic-owner-token',
-      documentId: 'run-0123456789abcdef01234567',
+      sessionId,
+      ownerToken: `synthetic-owner-token-${generation}`,
+      documentId: run.documentId,
       source: { label: 'example release', words: 50, fetched: true },
-      answers: { share_link: shareLink },
+      answers: { share_link: run.shareLink },
     });
   });
   await page.route(`**${LINKEDIN_API}/answers`, (route) => {
     const body = route.request().postDataJSON();
-    expect(body.sessionId).toBe('synthetic-session');
+    const run = runs.get(body.sessionId);
+    if (!run) return json(route, { error: 'Unknown synthetic session' }, 404);
     expect(body.questionsId).toBe('a'.repeat(64));
-    answered = true;
+    run.answered = true;
     return json(route, { success: true });
   });
   await page.route(`**${LINKEDIN_API}/result`, (route) => {
-    polls++;
-    if (options.live && polls === 1) return json(route, { status: 'pending', activity: linkedinRunActivity(events) });
-    if (options.questions && !answered && turn)
+    const run = runs.get(route.request().postDataJSON().sessionId);
+    if (!run) return json(route, { error: 'Unknown synthetic session' }, 404);
+    if (options.live && ++run.polls === 1) return json(route, { status: 'pending', activity: linkedinRunActivity(events) });
+    if (options.questions && !run.answered && turn)
       return json(route, {
         status: 'questions',
         questions: linkedinRunQuestions(turn),
@@ -148,12 +157,14 @@ export async function setupLinkedin(
       activity: linkedinRunActivity(events, true),
       persistence: { project: project.uid, content_sha256: output.content_sha256, s3_key: 'synthetic/document.md', version: output.version },
       profileSaved: true,
-      answers: { share_link: shareLink },
+      answers: { share_link: run.shareLink },
     });
   });
   await page.route(`**${LINKEDIN_API}/documents/*/share-link`, (route) => {
-    shareLink = route.request().postDataJSON().share_link;
-    return json(route, { share_link: shareLink });
+    const run = [...runs.values()].find((run) => run.documentId === new URL(route.request().url()).pathname.split('/').at(-2));
+    if (!run) return json(route, { error: 'Unknown synthetic document' }, 404);
+    run.shareLink = route.request().postDataJSON().share_link;
+    return json(route, { share_link: run.shareLink });
   });
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
   if (!type) throw new Error('LinkedIn document type is not registered');
@@ -174,7 +185,7 @@ export async function setupLinkedin(
   const document: MktgRevisionResponse = {
     project: project.uid,
     type,
-    documentId: 'run-0123456789abcdef01234567',
+    documentId: '',
     revisions: [revision],
     revision,
     approval: null,
@@ -182,19 +193,22 @@ export async function setupLinkedin(
     markdown: output.document_markdown,
     sidecar: null,
   };
-  await page.route('**/api/mktg-agents/documents/linkedin-post/**', (route) =>
-    json(route, {
+  await page.route('**/api/mktg-agents/documents/linkedin-post/**', (route) => {
+    const run = [...runs.values()].find((run) => run.documentId === new URL(route.request().url()).pathname.split('/')[5]);
+    if (!run) return json(route, { error: 'Unknown synthetic document' }, 404);
+    return json(route, {
       ...document,
+      documentId: run.documentId,
       linkedinPost: {
         author: { name: options.author?.name === undefined ? 'Example author' : options.author.name },
         isAuthor: options.author?.isAuthor ?? true,
         options: output.options,
         notes: output.notes,
-        answers: { share_link: shareLink },
+        answers: { share_link: run.shareLink },
         source: { label: 'example release', words: 50, fetched: true },
       },
-    })
-  );
+    });
+  });
   await seedLinkedinContext(page);
 }
 export async function seedLinkedinContext(page: Page): Promise<void> {
@@ -224,8 +238,12 @@ export async function stubLinkedinClipboard(page: Page): Promise<void> {
 
 export async function openLinkedin(page: Page): Promise<void> {
   await suppressCookieBanner(page);
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const personaReady = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/user/personas');
+  await Promise.all([page.goto('/', { waitUntil: 'domcontentloaded' }), personaReady]);
   await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('sidebar')).toBeAttached({ timeout: LINKEDIN_RUN_TIMEOUT });
+  await expect(page.getByTestId('dashboard-loading')).toHaveCount(0, { timeout: LINKEDIN_RUN_TIMEOUT });
+  await waitForHydration(page);
   await seedLinkedinContext(page);
   await page.evaluate((url) => {
     history.pushState({}, '', url);
