@@ -35,6 +35,7 @@ import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from './org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
@@ -66,6 +67,7 @@ export class OrgEasyclaComponent {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
+  private readonly selfRemovals = inject(OrgClaSelfRemovalsService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -222,7 +224,16 @@ export class OrgEasyclaComponent {
    */
   protected readonly claListReady = computed(() => !!this.claData() && this.claDataIsForSelectedOrg() && !this.claLoadingState() && !this.fetchError());
 
-  protected readonly claGroups: Signal<OrgClaGroup[]> = computed(() => this.claData()?.claGroups ?? []);
+  /**
+   * The rows as the viewer now stands on them. A row they have removed themselves from as CLA
+   * Manager reads as off the list, as it does on the detail header, because EasyCLA can go on
+   * listing them for a while and the card would otherwise drop its View only marker on return.
+   */
+  protected readonly claGroups: Signal<OrgClaGroup[]> = computed(() => {
+    const data = this.claData();
+    if (!data) return [];
+    return data.claGroups.map((group) => (this.selfRemovals.removed(data.orgUid, group.id) ? { ...group, viewerIsClaManager: false } : group));
+  });
   protected readonly filteredClaGroups: Signal<OrgClaGroup[]> = this.initFilteredClaGroups();
 
   // ── Paging (client-side; the upstream list is unpaged) ────────────────────

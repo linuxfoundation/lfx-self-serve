@@ -212,7 +212,7 @@ A control you cannot use is usually disabled or absent. On a corporate CLA marke
 | Change the Approval List     | **Add entries**, edit, and delete are absent. If a change is still refused, an error says the sentence below.                                                                                                                       | `Only a CLA manager named on this CLA can change its approval list.`     |
 | Invalidate an acknowledgment | **Invalidate** is absent. If a change is still refused, an error says the sentence below.                                                                                                                                           | `Only a CLA manager named on this CLA can invalidate acknowledgments`    |
 
-A CLA Manager who was added or removed in the last 30 minutes can see these disagree with the list, and with the **View only** label, until access catches up. Reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](#who-can-see-easycla-and-who-can-change-a-corporate-cla).
+The **View only** label follows the CLA Manager list. A CLA Manager who was added or removed in the last 30 minutes can see these controls disagree with the list until access catches up. Reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
 ## What does Self Serve leave to DocuSign?
 

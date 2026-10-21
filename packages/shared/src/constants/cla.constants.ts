@@ -525,6 +525,11 @@ export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
  */
 export const ORG_CLA_AUTO_ECLA_LOCKED_HINT = 'Only CLA Managers can change this setting.';
 
+/**
+ * Copy for the "View only" marker on a signed CCLA the viewer is not a CLA Manager of (#3852).
+ * `label` is the pill on both the card and the detail header; `reason` and `managersLink` appear
+ * on the detail page only.
+ */
 export const ORG_CLA_VIEW_ONLY_COPY = {
   label: 'View only',
   reason: 'Only the CLA Managers named on this CLA can change it.',

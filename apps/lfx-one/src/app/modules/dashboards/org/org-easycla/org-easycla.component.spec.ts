@@ -16,6 +16,7 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgClaSelfRemovalsService } from '@shared/services/org-cla-self-removals.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
@@ -828,6 +829,49 @@ describe('OrgEasyclaComponent', () => {
 
       expect(openDialog).toHaveBeenCalledOnce();
       expect(openDialog.mock.calls[0][1].data.projects).toEqual([{ projectName: 'Fathom' }, { projectName: 'Gantry' }, { projectName: 'Halyard' }]);
+    });
+
+    // A self-removal recorded on the detail page must reach the card too, because EasyCLA can go on
+    // listing the viewer as a CLA Manager after the removal and the card would drop the marker the
+    // detail header still shows.
+    describe('after the viewer removed themselves as CLA Manager', () => {
+      it('marks the row they left View only even while EasyCLA still lists them', async () => {
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ id: 'left', viewerIsClaManager: true })] }));
+
+        const fixture = await render();
+        TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'left');
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-card-view-only')?.textContent?.trim()).toBe('View only');
+      });
+
+      it('leaves a row they still manage unmarked', async () => {
+        getClaGroups.mockReturnValue(
+          of({
+            orgUid: SELECTED_ACCOUNT.uid,
+            claGroups: [claGroup({ id: 'left', viewerIsClaManager: true }), claGroup({ id: 'kept', viewerIsClaManager: true })],
+          })
+        );
+
+        const fixture = await render();
+        TestBed.inject(OrgClaSelfRemovalsService).record(SELECTED_ACCOUNT.uid, 'left');
+        fixture.detectChanges();
+
+        const cards = allByTestId(fixture, 'org-easycla-card');
+        expect(cards).toHaveLength(2);
+        expect(cards[0].querySelector('[data-testid="org-easycla-card-view-only"]')).not.toBeNull();
+        expect(cards[1].querySelector('[data-testid="org-easycla-card-view-only"]')).toBeNull();
+      });
+
+      it('does not carry a removal at one organization over to another', async () => {
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ id: 'left', viewerIsClaManager: true })] }));
+
+        const fixture = await render();
+        TestBed.inject(OrgClaSelfRemovalsService).record('another-org-uid', 'left');
+        fixture.detectChanges();
+
+        expect(byTestId(fixture, 'org-easycla-card-view-only')).toBeNull();
+      });
     });
 
     it('fetches once for the selected organization', async () => {

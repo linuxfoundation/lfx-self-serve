@@ -30,6 +30,13 @@ export function orgClaOpenLabel(group: Pick<OrgClaGroup, 'claGroupName' | 'signi
   return signingEntityName ? `Open ${claGroupName}, ${signingEntityName}` : `Open ${claGroupName}`;
 }
 
+/**
+ * A signed CCLA the viewer is not a CLA Manager of (#3852).
+ *
+ * `signed` is required, not redundant: the signing preview (`orgClaPreviewGroup`) also carries
+ * `viewerIsClaManager: false`, yet anyone may start signing it, so dropping the check would mark
+ * the preview view only.
+ */
 export function orgClaIsViewOnly(group: Pick<OrgClaGroup, 'signed' | 'viewerIsClaManager'>): boolean {
   return group.signed === true && group.viewerIsClaManager !== true;
 }
