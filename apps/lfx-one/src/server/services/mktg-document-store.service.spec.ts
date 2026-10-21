@@ -281,6 +281,31 @@ describe('MktgDocumentStoreService', () => {
     read.mockRestore();
   });
 
+  it.each(['synthetic-creator', null])('keeps generated attribution %s separate from the visiting writer authorization', async (creatorSubject) => {
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } } });
+    const attributed = new MktgDocumentStoreService({ creatorSubject });
+    const receipt = await attributed.persistGeneration(visitor, SPEC, envelope('# Synthetic attributed asset'), PROJECT, 'attributed-session');
+    if (!receipt) throw new Error('Expected a synthetic revision receipt');
+    expect(storedObject(receipt.s3_key).metadata['author-id']).toBe(creatorSubject ?? undefined);
+    expect(projectMocks.getProjectById).toHaveBeenCalledWith(visitor, PROJECT, true);
+    expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+  });
+
+  it('does not cross attribution between concurrent generations under the same visiting request', async () => {
+    const visitor = Object.assign({}, req, { oidc: { ...req.oidc, user: { ...req.oidc.user, sub: 'synthetic-visitor' } } });
+    const receipts = await Promise.all(
+      ['synthetic-creator-a', 'synthetic-creator-b'].map((creatorSubject) =>
+        new MktgDocumentStoreService({ creatorSubject }).persistGeneration(visitor, SPEC, envelope(`# ${creatorSubject}`), PROJECT, creatorSubject)
+      )
+    );
+    const authors = receipts.map((receipt) => {
+      if (!receipt) throw new Error('Expected both synthetic revision receipts');
+      return storedObject(receipt.s3_key).metadata['author-id'];
+    });
+    expect(authors.sort()).toEqual(['synthetic-creator-a', 'synthetic-creator-b']);
+    expect(visitor.oidc.user.sub).toBe('synthetic-visitor');
+  });
+
   describe('captured framework provenance', () => {
     async function approvedFramework() {
       const generated = jsonEnvelope('Synthetic framework');
