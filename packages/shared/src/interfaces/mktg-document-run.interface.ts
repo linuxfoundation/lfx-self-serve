@@ -54,7 +54,7 @@ export interface MktgStartedRunRecord {
   /** Private initiating subject; absent legacy records are unknown, never the reconciling visitor. */
   creatorSubject?: string | null;
   startedAt: string;
-  /** Prior draft hint; result services validate current-turn finalization before completion. */
+  /** Generate-path prior-draft hint (chat records 0); completion uses current-turn finalization and receipts. */
   priorVersion: number;
   /** Delivered turn identity; a duplicate ACK cannot reopen that attempt. */
   attemptId?: string;
