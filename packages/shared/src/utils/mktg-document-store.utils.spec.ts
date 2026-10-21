@@ -21,6 +21,7 @@ import {
   findMktgDocumentType,
   mktgDocumentLocationOfReceipt,
   mktgRunProgress,
+  findMktgRunIntake,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from './mktg-document-store.utils';
@@ -50,6 +51,10 @@ describe('mktg-document-store utils', () => {
     expect(mktgRunProgress(run)).toMatchObject({ runId: SHA, state: 'questions' });
     expect(mktgRunProgress(run)).not.toHaveProperty('sessionId');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
+  });
+  it('derives run membership from the active catalog and registered intake', () => {
+    expect(findMktgRunIntake(BRAND_KIT.agentKey)?.agentId).toBe(BRAND_KIT.catalogAgentId);
+    expect(findMktgRunIntake('not-a-registered-agent')).toBeUndefined();
   });
   it('normalizes only the exact snake-case receipt location for UI readers', () => {
     expect(

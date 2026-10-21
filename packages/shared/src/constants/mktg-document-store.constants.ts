@@ -8,13 +8,37 @@
 
 import type { MktgArtifactIntakeMode } from '../interfaces/mktg-artifact.interface';
 import type { MktgDocumentType } from '../interfaces/mktg-document-store.interface';
+import type { MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
 import { MKTG_AGENTS } from './mktg-os-agents.constants';
-import { MKTG_AGENT_INTAKES } from './mktg-run.constants';
+import { MKTG_AGENT_INTAKES, MKTG_RUN_POLL } from './mktg-run.constants';
 
 /** BFF base path of the Documents area: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 
+/** Private session-keyed starts. Key enumeration is full; HEAD/GET/Guild discovery uses the bounded newest-mtime window. */
+export const MKTG_STARTED_RUN_PREFIX = 'document-runs';
+/** Only automatic timer reads skip older entries; not a discovery or retention limit. */
+export const MKTG_STARTED_RUN_POLL_WINDOW_MS = 6 * MKTG_RUN_POLL.timeoutMs;
+/** Bounded HEAD/GET workers; filter by agent after the body read, before Guild. */
+export const MKTG_STARTED_RUN_READ_CONCURRENCY = 4;
+export const MKTG_STARTED_RUN_DISCOVERY_LIMIT = 128;
+export const MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT = 256;
+/** Do not memoize S3's still-current write second; all local writes invalidate the cache too. */
+export const MKTG_STARTED_RUN_CACHE_STABLE_MS = 2000;
+/** Base64 encoding this UTF-8 snapshot stays below the total object-metadata budget. */
+export const MKTG_STARTED_RUN_FAILURE_BYTES = 768;
 export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
+export const MKTG_STARTED_RUN_ID_REGEX = /^[0-9a-f]{64}$/;
+export const MKTG_STARTED_RUN_ATTEMPT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+/** Metadata within one attempt advances only; explicit retries have a newer retry-at. */
+export const MKTG_STARTED_RUN_STATE_ORDER: Record<MktgStoredDocumentRunState, number> = {
+  writing: 0,
+  questions: 1,
+  storing: 2,
+  failed: 3,
+  superseded: 4,
+  completed: 5,
+};
 
 /** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */
 export const MKTG_DOCUMENT_STORE_KEY_PREFIX = 'documents';

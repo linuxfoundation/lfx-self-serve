@@ -48,9 +48,31 @@ export interface MktgStartedRunRecord {
   startedAt: string;
   /** Prior draft hint; result services validate current-turn finalization before completion. */
   priorVersion: number;
+  /** Delivered turn identity; a duplicate ACK cannot reopen that attempt. */
+  attemptId?: string;
   state: MktgStoredDocumentRunState;
+  /** Retry/answers-continuation budget origin; does not change the original Started label. */
+  retryAt?: string;
+  /** Latest questions block answered on this session; a different block is a new human pause. */
+  answeredQuestionsId?: string;
   /** Bounded agent reply or server-authored reason (deadline / storage exhausted); detail may refresh the full reply. */
   failureText?: string;
+  /** Separate bounded retries once a valid asset is ready but its revision write has not landed. */
+  persistRetries?: number;
+  /** Prior attempt's revision cannot complete a renewed same-session turn. */
+  priorRevisionId?: string;
   /** Exact persisted result after recording this session through the existing generation path. */
   result: MktgDocumentLocation | null;
+}
+
+/** Private fetched started-run record and the exact bytes used for metadata-only refreshes. */
+export interface MktgStoredStartedRun {
+  key: string;
+  body: string;
+  record: MktgStartedRunRecord;
+}
+
+/** The Documents transport's retry body, scoped by its document/run route; no generation is started. */
+export interface MktgRetryDocumentRunRequest {
+  project: string;
 }
