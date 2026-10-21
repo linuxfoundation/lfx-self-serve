@@ -351,7 +351,7 @@ describe('getSuppressionLists', () => {
 
     await controller.getSuppressionLists(buildReq({}, {}), res, next);
 
-    expect(proxyMethods.getSuppressionLists).toHaveBeenCalledWith(expect.anything(), 'tlf', '', '');
+    expect(proxyMethods.getSuppressionLists).toHaveBeenCalledWith(expect.anything(), 'tlf', '', '', '');
     expect(res.json).toHaveBeenCalledWith([]);
   });
 });

@@ -322,6 +322,8 @@
           [active]="selectedEmailTab() === 'audience'"
           [briefId]="emailBriefId()"
           [initialEventUrl]="emailBriefOutput()?.eventDetails?.registrationUrl ?? ''"
+          [briefEventName]="emailBriefOutput()?.eventDetails?.name ?? ''"
+          [briefEventDates]="emailBriefOutput()?.eventDetails?.dates ?? ''"
           [eventKey]="emailEventKey()"
           [audienceReadFailed]="emailAudienceReadFailed()"
           [audienceReadPending]="emailAudienceReadPending() || emailBriefResolving()"
