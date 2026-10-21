@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES } from '@lfx-one/shared/constants';
-import express, { NextFunction, Request, Response, Router } from 'express';
+import express, { NextFunction, Request, RequestHandler, Response, Router } from 'express';
 
+import type { LinkedinPostController } from '../controllers/linkedin-post.controller';
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
@@ -29,7 +30,37 @@ function handleDocumentFileParseError(err: unknown, req: Request, _res: Response
   next(err);
 }
 
+// Keep dedicated form dependencies out of unrelated Marketing OS route startup.
+let linkedin: LinkedinPostController | undefined;
+function linkedinRoute(method: keyof LinkedinPostController): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    void import('../controllers/linkedin-post.controller')
+      .then(({ LinkedinPostController }) => {
+        linkedin ??= new LinkedinPostController();
+        return linkedin[method](req, res, next);
+      })
+      .catch(next);
+  };
+}
+
 const router = Router();
+router.get('/linkedin-post/profile', linkedinRoute('getProfile'));
+router.put('/linkedin-post/profile', blockDuringImpersonation, linkedinRoute('saveProfile'));
+router.delete('/linkedin-post/profile', blockDuringImpersonation, linkedinRoute('deleteProfile'));
+router.post(
+  '/linkedin-post/generate',
+  (req, res, next) => {
+    if (req.body?.setup !== undefined) {
+      blockDuringImpersonation(req, res, next);
+      return;
+    }
+    next();
+  },
+  linkedinRoute('generate')
+);
+router.post('/linkedin-post/result', linkedinRoute('result'));
+router.post('/linkedin-post/answers', linkedinRoute('answer'));
+router.patch('/linkedin-post/documents/:documentId/share-link', blockDuringImpersonation, linkedinRoute('saveShareLink'));
 const mktgAgentsController = new MktgAgentsController();
 const mktgDocumentsController = new MktgDocumentsController();
 const mktgSlidesExportController = new MktgSlidesExportController();
