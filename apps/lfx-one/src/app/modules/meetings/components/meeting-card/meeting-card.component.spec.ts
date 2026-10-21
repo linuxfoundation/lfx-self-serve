@@ -524,6 +524,29 @@ describe('MeetingCardComponent — invitee panels', () => {
     expect(card.querySelector('lfx-rsvp-button-group')).not.toBeNull();
     expect(card.querySelector('lfx-meeting-invitee-attendees')).toBeNull();
   });
+
+  describe("the viewer's own invite actions", () => {
+    it('puts Resend Invite and Remove Myself side by side in one row, like Guests and See Meeting Details', async () => {
+      const card = await render(INVITED);
+
+      const row = card.querySelector('[data-testid="own-invite-actions"]');
+      expect(row).not.toBeNull();
+      expect(row?.querySelector('[data-testid="resend-invite-button"]')).not.toBeNull();
+      expect(row?.querySelector('[data-testid="leave-meeting-button"]')).not.toBeNull();
+      // Same parent, so they sit on one line instead of stacking.
+      expect(card.querySelector('[data-testid="resend-invite-button"]')?.parentElement).toBe(
+        card.querySelector('[data-testid="leave-meeting-button"]')?.parentElement
+      );
+    });
+
+    it('shows neither button, and no empty row, to someone who is not a registered attendee', async () => {
+      const card = await render({ ...INVITED, invited: false } as Meeting);
+
+      expect(card.querySelector('[data-testid="own-invite-actions"]')).toBeNull();
+      expect(card.querySelector('[data-testid="resend-invite-button"]')).toBeNull();
+      expect(card.querySelector('[data-testid="leave-meeting-button"]')).toBeNull();
+    });
+  });
 });
 
 /**

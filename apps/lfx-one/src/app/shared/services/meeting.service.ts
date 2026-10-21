@@ -30,7 +30,6 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
-  MeetingCalendarScope,
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -353,20 +352,6 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
-  }
-
-  /**
-   * Builds the "Download .ics" URL for a meeting (GH-3505). Returns a plain URL (no HTTP call
-   * here) — the browser downloads the file natively via an anchor/`window.open` target, and the
-   * server resolves authorization and the join link itself.
-   */
-  public getMeetingCalendarIcsUrl(meetingId: string, options: { scope: MeetingCalendarScope; occurrenceId?: string }): string {
-    let params = new HttpParams().set('scope', options.scope);
-    if (options.occurrenceId) {
-      params = params.set('occurrenceId', options.occurrenceId);
-    }
-
-    return `/api/meetings/${encodeURIComponent(meetingId)}/calendar.ics?${params.toString()}`;
   }
 
   public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {

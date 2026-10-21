@@ -499,34 +499,35 @@
             </lfx-button>
           }
         </div>
-        @if (canResendInvite()) {
-          <div class="mt-2">
-            <lfx-button
-              class="w-full"
-              styleClass="w-full"
-              icon="fa-light fa-paper-plane"
-              label="Resend Invite"
-              size="small"
-              severity="secondary"
-              data-testid="resend-invite-button"
-              [loading]="resendingInvite()"
-              (onClick)="resendInvite()">
-            </lfx-button>
-          </div>
-        }
-        @if (canLeaveMeeting()) {
-          <div class="mt-2">
-            <lfx-button
-              class="w-full"
-              styleClass="w-full"
-              icon="fa-light fa-user-xmark"
-              label="Remove Myself"
-              size="small"
-              severity="secondary"
-              data-testid="leave-meeting-button"
-              [loading]="leavingMeeting()"
-              (onClick)="confirmLeaveMeeting()">
-            </lfx-button>
+        <!-- Viewer's own actions, side by side like Guests / See Meeting Details; a lone button fills the row -->
+        @if (canResendInvite() || canLeaveMeeting()) {
+          <div class="flex gap-2 mt-2" data-testid="own-invite-actions">
+            @if (canResendInvite()) {
+              <lfx-button
+                class="w-full"
+                styleClass="w-full"
+                icon="fa-light fa-paper-plane"
+                label="Resend Invite"
+                size="small"
+                severity="secondary"
+                data-testid="resend-invite-button"
+                [loading]="resendingInvite()"
+                (onClick)="resendInvite()">
+              </lfx-button>
+            }
+            @if (canLeaveMeeting()) {
+              <lfx-button
+                class="w-full"
+                styleClass="w-full"
+                icon="fa-light fa-user-xmark"
+                label="Remove Myself"
+                size="small"
+                severity="secondary"
+                data-testid="leave-meeting-button"
+                [loading]="leavingMeeting()"
+                (onClick)="confirmLeaveMeeting()">
+              </lfx-button>
+            }
           </div>
         }
       </div>

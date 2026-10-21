@@ -129,7 +129,6 @@ import {
   timer,
 } from 'rxjs';
 
-import { AddToCalendarComponent } from '../components/add-to-calendar/add-to-calendar.component';
 import { CancelOccurrenceConfirmationComponent } from '../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
 import { AttachmentScopeBadgeComponent } from '../components/attachment-scope-badge/attachment-scope-badge.component';
@@ -146,7 +145,6 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     DatePipe,
     NgClass,
     ReactiveFormsModule,
-    AddToCalendarComponent,
     ButtonComponent,
     CardComponent,
     TagComponent,

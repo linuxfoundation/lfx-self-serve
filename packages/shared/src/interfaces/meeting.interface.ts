@@ -2306,17 +2306,7 @@ export interface MeetingCreateMenuRow {
  */
 export type MeetingCreateMenuAlign = 'right' | 'center';
 
-/** Common fields needed to build a calendar deep link for "Add to calendar" (GH-3505). */
-export interface CalendarLinkEvent {
-  title: string;
-  /** ISO start time. */
-  startIso: string;
-  durationMinutes: number;
-  description?: string;
-  joinUrl?: string;
-}
-
-/** Which occurrence(s) an "Add to calendar" download/deep-link covers (GH-3505). */
+/** Which occurrence(s) a meeting's ICS calendar download covers (GH-3505). */
 export type MeetingCalendarScope = 'occurrence' | 'series';
 
 /** Optional per-event extras for the server's ICS `buildVEvent` beyond the title/time fields every caller has. */
