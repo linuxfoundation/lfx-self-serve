@@ -386,7 +386,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-started-runs')?.textContent).toContain('Started');
     expect(query('mktg-documents-pending-document')).not.toBeNull();
     expect(query('mktg-documents-empty-living')).toBeNull();
-    expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain('generation=' + 'b'.repeat(64));
+    expect(query('mktg-documents-open-started-' + 'b'.repeat(64))?.getAttribute('href')).toContain('run=' + 'b'.repeat(64));
     if (state === 'questions') expect(query('mktg-documents-started-runs')?.textContent).toContain('Waiting for your answers');
     if (state === 'failed') {
       vi.advanceTimersByTime(2 * MKTG_RUN_POLL.intervalMs);
