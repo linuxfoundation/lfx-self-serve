@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
@@ -214,7 +216,49 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     fixture.detectChanges();
 
     expect(service.getVote).toHaveBeenCalledTimes(1);
-    expect(service.getVote).toHaveBeenCalledWith(vote.uid);
+    expect(service.getVote).toHaveBeenCalledWith(vote.uid, { skipCache: true });
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uWkkK @copilot-pull-request-reviewer "stale cache on deadline
+  // change"): getVote()/getVoteDetail() share a short-TTL request cache, so the re-fetch above could
+  // still echo the pre-extension response if it landed within that TTL. Pins the fix against the real
+  // VoteService (not the mock above): a deadline-change re-fetch passes skipCache so it always hits
+  // the network, while a plain reopen on the same deadline still reuses the cached in-flight response.
+  it('bypasses the real VoteService cache when the open listVote input gets an extended deadline', async () => {
+    const vote = makeVote(PollStatus.ACTIVE);
+    vote.end_time = '2026-01-01T00:00:00Z';
+
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
+    }).compileComponents();
+    const httpMock = TestBed.inject(HttpTestingController);
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', vote.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('listVote', vote);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const firstReq = httpMock.expectOne(`/api/votes/${vote.uid}`);
+    firstReq.flush(vote);
+    httpMock.expectOne((req) => req.url.includes('/my-response')).flush(null);
+
+    const extended = { ...vote, end_time: '2026-02-01T00:00:00Z' };
+    fixture.componentRef.setInput('listVote', extended);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // A second real HTTP request — not the cached first response — proves skipCache worked.
+    // (initMyResponse only keys off voteId/audience/visible, so it does not re-fire here.)
+    const secondReq = httpMock.expectOne(`/api/votes/${vote.uid}`);
+    secondReq.flush(extended);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['vote']()).toEqual(extended);
+    httpMock.verify();
   });
 
   it('does not re-fetch when listVote is replaced without a deadline change', async () => {

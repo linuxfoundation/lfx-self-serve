@@ -165,18 +165,23 @@ export class VoteResultsDrawerComponent {
     // Also keys off listVote()'s own deadline fields (per @cursor): a manager can extend a vote's deadline
     // from the underlying table row while this drawer stays open on the same vote, and neither voteId nor
     // visible() flips in that case — only the caller's listVote input changes once it re-fetches.
+    let prevId: string | null = null;
+    let prevDeadlineKey: string | null = null;
+
     return toSignal(
       combineLatest([this.voteId$, toObservable(this.visible), toObservable(this.listVote)]).pipe(
         distinctUntilChanged(
-          ([prevId, prevVisible, prevListVote], [id, visible, listVote]) =>
-            prevId === id &&
+          ([prevVId, prevVisible, prevListVote], [id, visible, listVote]) =>
+            prevVId === id &&
             prevVisible === visible &&
             prevListVote?.end_time === listVote?.end_time &&
             prevListVote?.end_time_timezone === listVote?.end_time_timezone
         ),
-        switchMap(([id, visible]) => {
+        switchMap(([id, visible, listVote]) => {
           if (!id) {
             this.loadingVoteDetails.set(false);
+            prevId = null;
+            prevDeadlineKey = null;
             return of(null);
           }
           if (!visible) {
@@ -185,10 +190,17 @@ export class VoteResultsDrawerComponent {
             return EMPTY;
           }
 
-          this.loadingVoteDetails.set(true);
-          const listVote = this.listVote();
+          // getVoteDetail caches responses for a short TTL — without this, re-fetching the same open
+          // vote right after its deadline changed could still echo back the pre-extension cached
+          // response instead of the fresh one (per @copilot-pull-request-reviewer).
+          const deadlineKey = `${listVote?.end_time ?? ''}|${listVote?.end_time_timezone ?? ''}`;
+          const skipCache = prevId === id && prevDeadlineKey !== null && prevDeadlineKey !== deadlineKey;
+          prevId = id;
+          prevDeadlineKey = deadlineKey;
 
-          return this.voteService.getVote(id).pipe(
+          this.loadingVoteDetails.set(true);
+
+          return this.voteService.getVote(id, { skipCache }).pipe(
             catchError(() => of(listVote)),
             finalize(() => this.loadingVoteDetails.set(false)),
             startWith(listVote)
