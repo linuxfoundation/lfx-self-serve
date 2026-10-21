@@ -48,7 +48,8 @@ import { MentorProfileEditDrawerService } from './mentor-profile-edit-drawer.ser
  * Program requests are live: picking a program sends the request at once, and Withdraw (shown only
  * on pending rows) confirms and withdraws at once. An open invitation is answered the same way: Accept at
  * once, Decline after a confirmation. All leave the toasts to their services and the refresh to
- * `MentorshipMentorService`, whose revision signal makes the list re-read after a write.
+ * `MentorshipMentorService`, whose revision signal makes the list re-read after a write. An accepted
+ * invitation also emits `invitationAccepted`, since the membership can add a row to the host's history.
  *
  * Save sends only the introduction and skills the mentor changed (see `buildMentorshipMentorProfileUpdate`),
  * checked by the rules register uses, and emits `saved` with the response so the host can show it in place.
@@ -74,6 +75,8 @@ export class MentorProfileEditDrawerComponent {
 
   /** Emits the saved profile once the update succeeds, just before the drawer closes. */
   public readonly saved = output<MentorshipMentorProfileUpdateResponse>();
+  /** Emits the invitation id once an Accept succeeds. */
+  public readonly invitationAccepted = output<string>();
 
   protected readonly title = MENTORSHIP_MENTOR_PROFILE_EDIT_LABEL;
   protected readonly saveLabel = MENTORSHIP_MENTOR_PROFILE_SAVE_LABEL;
@@ -107,6 +110,7 @@ export class MentorProfileEditDrawerComponent {
   protected readonly requesting = signal(false);
   protected readonly withdrawingId = this.withdrawService.withdrawingId;
   protected readonly respondingInvitationId = this.invitationService.respondingId;
+  protected readonly respondingDecision = this.invitationService.respondingDecision;
 
   private readonly requestsState = this.initRequests();
   protected readonly requests = computed(() => this.requestsState().requests);
@@ -123,6 +127,8 @@ export class MentorProfileEditDrawerComponent {
       });
 
     this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => this.errorMessage.set(''));
+
+    this.invitationService.accepted$.pipe(takeUntilDestroyed()).subscribe((invitationId) => this.invitationAccepted.emit(invitationId));
   }
 
   protected onAddProgram(program: MentorshipMentorOpenProgram): void {

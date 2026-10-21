@@ -7,6 +7,7 @@ import { FormGroup } from '@angular/forms';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import {
+  MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgram,
   MentorshipMentorProfileDetails,
   MentorshipMentorProfileUpdateRequest,
@@ -73,6 +74,7 @@ class StubProgramsSectionComponent {
   readonly withdrawingId = input<string | null>(null);
   readonly invitations = input<MentorshipMentorProgramInvitation[]>([]);
   readonly respondingInvitationId = input<string | null>(null);
+  readonly respondingDecision = input<MentorshipMentorInviteDecision | null>(null);
   readonly requestsLoading = input(false);
   readonly requestsFailed = input(false);
   readonly add = output<MentorshipMentorOpenProgram>();
@@ -127,6 +129,8 @@ describe('MentorProfileEditDrawerComponent', () => {
   let acceptInvitation: ReturnType<typeof vi.fn>;
   let confirmDecline: ReturnType<typeof vi.fn>;
   let respondingId: ReturnType<typeof signal<string | null>>;
+  let respondingDecision: ReturnType<typeof signal<MentorshipMentorInviteDecision | null>>;
+  let accepted$: Subject<string>;
   let saving: ReturnType<typeof signal<boolean>>;
   let save: ReturnType<typeof vi.fn<(body: MentorshipMentorProfileUpdateRequest) => Observable<MentorshipMentorProfileUpdateResponse>>>;
   let saveErrorMessage: ReturnType<typeof vi.fn<(err: unknown) => string>>;
@@ -159,6 +163,8 @@ describe('MentorProfileEditDrawerComponent', () => {
     acceptInvitation = vi.fn();
     confirmDecline = vi.fn();
     respondingId = signal<string | null>(null);
+    respondingDecision = signal<MentorshipMentorInviteDecision | null>(null);
+    accepted$ = new Subject<string>();
     saving = signal(false);
     save = vi.fn(() => of(SAVED));
     saveErrorMessage = vi.fn(() => 'Could not save.');
@@ -194,7 +200,15 @@ describe('MentorProfileEditDrawerComponent', () => {
       })
       // The withdraw service is provided by the drawer itself; its confirm and toasts have their own spec.
       .overrideProvider(MentorRequestWithdrawService, { useValue: { confirmWithdraw, withdrawingId: withdrawingId.asReadonly() } })
-      .overrideProvider(MentorInvitationRespondService, { useValue: { accept: acceptInvitation, confirmDecline, respondingId: respondingId.asReadonly() } })
+      .overrideProvider(MentorInvitationRespondService, {
+        useValue: {
+          accept: acceptInvitation,
+          confirmDecline,
+          respondingId: respondingId.asReadonly(),
+          respondingDecision: respondingDecision.asReadonly(),
+          accepted$: accepted$.asObservable(),
+        },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(MentorProfileEditDrawerComponent);
@@ -467,8 +481,19 @@ describe('MentorProfileEditDrawerComponent', () => {
     expect(confirmDecline).toHaveBeenCalledWith('member-3');
 
     respondingId.set('member-2');
+    respondingDecision.set('accept');
     await settle();
 
     expect(section().respondingInvitationId()).toBe('member-2');
+    expect(section().respondingDecision()).toBe('accept');
+  });
+
+  it('emits invitationAccepted for each accepted invitation, so the page can refresh its history', () => {
+    const accepted: string[] = [];
+    comp.invitationAccepted.subscribe((id) => accepted.push(id));
+
+    accepted$.next('member-2');
+
+    expect(accepted).toEqual(['member-2']);
   });
 });

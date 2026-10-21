@@ -461,12 +461,21 @@ describe('MentorProgramsSectionComponent', () => {
     expect(declined).toEqual(['member_1']);
   });
 
-  it('marks the invitation being answered as loading and disables every Accept and Decline meanwhile', () => {
+  it.each([
+    ['accept', 'decline'],
+    ['decline', 'accept'],
+  ] as const)('shows the loading state only on the %s button pressed, and disables every Accept and Decline meanwhile', (decision, other) => {
     fixture.componentRef.setInput('invitations', [invitation, { id: 'member_2', programId: 'mp_other', programName: 'Other' }]);
     fixture.componentRef.setInput('respondingInvitationId', 'member_1');
+    fixture.componentRef.setInput('respondingDecision', decision);
     fixture.detectChanges();
 
-    expect(element().querySelector('[data-testid="mentorship-mentor-invitation-accept-member_1"]')?.getAttribute('data-loading')).toBe('true');
+    const loading = (action: string) =>
+      element()
+        .querySelector('[data-testid="mentorship-mentor-invitation-' + action + '-member_1"]')
+        ?.getAttribute('data-loading');
+    expect(loading(decision)).toBe('true');
+    expect(loading(other)).not.toBe('true');
     for (const id of ['member_1', 'member_2']) {
       expect(invitationButton('accept', id)?.disabled).toBe(true);
       expect(invitationButton('decline', id)?.disabled).toBe(true);

@@ -83,6 +83,7 @@ describe('MentorInvitationRespondService', () => {
 
     service.accept(INVITATION_ID);
     expect(service.respondingId()).toBe(INVITATION_ID);
+    expect(service.respondingDecision()).toBe('accept');
 
     service.accept('another-invitation');
     service.confirmDecline('another-invitation');
@@ -92,6 +93,29 @@ describe('MentorInvitationRespondService', () => {
     pending.next();
     pending.complete();
     expect(service.respondingId()).toBeNull();
+    expect(service.respondingDecision()).toBeNull();
+  });
+
+  it('reports the decline being sent while it is in flight', () => {
+    respondToMentorInvitation.mockReturnValueOnce(new Subject<void>());
+
+    service.confirmDecline(INVITATION_ID);
+    confirmDialog();
+
+    expect(service.respondingDecision()).toBe('decline');
+  });
+
+  it('emits accepted$ after a successful accept only, not after a decline or a failure', () => {
+    const accepted: string[] = [];
+    service.accepted$.subscribe((id) => accepted.push(id));
+
+    service.confirmDecline('declined-invitation');
+    confirmDialog();
+    respondToMentorInvitation.mockReturnValueOnce(throwError(() => httpError(500)));
+    service.accept('failed-invitation');
+    service.accept(INVITATION_ID);
+
+    expect(accepted).toEqual([INVITATION_ID]);
   });
 
   it.each([404, 409])('shows the stale copy for a %i and re-reads the requests', (status) => {

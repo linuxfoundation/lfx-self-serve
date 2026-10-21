@@ -30,6 +30,7 @@ import {
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
 } from '@lfx-one/shared/constants';
 import {
+  MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgram,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
@@ -90,8 +91,10 @@ export class MentorProgramsSectionComponent {
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
   /** The mentor's open invitations: listed with Accept and Decline, and their programs disabled in the picker, since upstream refuses a request for them. */
   public readonly invitations = input<MentorshipMentorProgramInvitation[]>([]);
-  /** The invitation being answered, or `null`. Its buttons show a loading state meanwhile, and every invitation's buttons are disabled. */
+  /** The invitation being answered, or `null`. Every invitation's buttons are disabled meanwhile. */
   public readonly respondingInvitationId = input<string | null>(null);
+  /** The answer being sent for `respondingInvitationId`, so only the button pressed shows a loading state. */
+  public readonly respondingDecision = input<MentorshipMentorInviteDecision | null>(null);
   /** True while the parent is still reading the requests: the select waits, since it cannot yet tell which programs are requested. */
   public readonly requestsLoading = input(false);
   /** True when the parent could not read the requests: shows the failure and its Retry instead of the list. */

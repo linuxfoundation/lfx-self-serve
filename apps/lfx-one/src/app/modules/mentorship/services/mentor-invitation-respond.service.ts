@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import {
   MENTORSHIP_IMPERSONATION_READ_ONLY_ERROR_CODE,
@@ -19,10 +19,10 @@ import {
   MENTORSHIP_MENTOR_REQUEST_TOAST_LIFE,
   MENTORSHIP_MENTOR_WITHDRAW_CANCEL_LABEL,
 } from '@lfx-one/shared/constants';
-import { MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
+import { MentorshipMentorInvitationResponse, MentorshipMentorInviteDecision } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { finalize } from 'rxjs';
+import { finalize, Subject } from 'rxjs';
 
 /**
  * Accept or decline for a mentor's open invitation, by its id. Provided per view alongside
@@ -33,7 +33,8 @@ import { finalize } from 'rxjs';
  * A success toasts and leaves the refresh to `MentorshipMentorService`, which drops the cached
  * requests. A failure that means the view is out of date (see
  * `MENTORSHIP_MENTOR_INVITATION_STALE_ERROR_MESSAGES`) toasts that copy and re-reads the list; the
- * impersonation guard's 403 shows the server's message and re-reads nothing.
+ * impersonation guard's 403 shows the server's message and re-reads nothing. A successful accept also
+ * emits on `accepted$`, since the accepted membership can change what the view around the drawer shows.
  */
 @Injectable()
 export class MentorInvitationRespondService {
@@ -41,14 +42,19 @@ export class MentorInvitationRespondService {
   private readonly messageService = inject(MessageService);
   private readonly mentorService = inject(MentorshipMentorService);
 
-  private readonly respondingIdSignal = signal<string | null>(null);
+  private readonly respondingSignal = signal<MentorshipMentorInvitationResponse | null>(null);
+  private readonly acceptedSubject = new Subject<string>();
 
   /** The invitation being answered, or `null`. Views disable the Accept and Decline buttons while set. */
-  public readonly respondingId = this.respondingIdSignal.asReadonly();
+  public readonly respondingId = computed(() => this.respondingSignal()?.invitationId ?? null);
+  /** The answer being sent, or `null`, so a view can show the loading state on the button that was pressed. */
+  public readonly respondingDecision = computed(() => this.respondingSignal()?.decision ?? null);
+  /** Emits the id of each invitation accepted. */
+  public readonly accepted$ = this.acceptedSubject.asObservable();
 
   /** Accepts at once. Ignored while another answer is in flight. */
   public accept(invitationId: string): void {
-    if (this.respondingIdSignal()) {
+    if (this.respondingSignal()) {
       return;
     }
     this.respond(invitationId, 'accept');
@@ -56,7 +62,7 @@ export class MentorInvitationRespondService {
 
   /** Asks the mentor to confirm, then declines. Ignored while another answer is in flight. */
   public confirmDecline(invitationId: string): void {
-    if (this.respondingIdSignal()) {
+    if (this.respondingSignal()) {
       return;
     }
 
@@ -73,10 +79,10 @@ export class MentorInvitationRespondService {
   }
 
   private respond(invitationId: string, decision: MentorshipMentorInviteDecision): void {
-    this.respondingIdSignal.set(invitationId);
+    this.respondingSignal.set({ invitationId, decision });
     this.mentorService
       .respondToMentorInvitation(invitationId, decision)
-      .pipe(finalize(() => this.respondingIdSignal.set(null)))
+      .pipe(finalize(() => this.respondingSignal.set(null)))
       .subscribe({
         next: () => {
           const accepted = decision === 'accept';
@@ -86,6 +92,9 @@ export class MentorInvitationRespondService {
             detail: accepted ? MENTORSHIP_MENTOR_INVITATION_ACCEPT_SUCCESS_DETAIL : MENTORSHIP_MENTOR_INVITATION_DECLINE_SUCCESS_DETAIL,
             life: MENTORSHIP_MENTOR_REQUEST_TOAST_LIFE,
           });
+          if (accepted) {
+            this.acceptedSubject.next(invitationId);
+          }
         },
         error: (err: HttpErrorResponse) => this.showError(err),
       });

@@ -245,6 +245,12 @@ export interface MentorshipMentorTaskReviewRequest {
 /** What an invited mentor does with the invitation, on `/mentorship/mentor/invites` or in the profile edit drawer. */
 export type MentorshipMentorInviteDecision = 'accept' | 'decline';
 
+/** An answer to one of the mentor's invitations, by its id, as the profile edit drawer sends it. */
+export interface MentorshipMentorInvitationResponse {
+  invitationId: string;
+  decision: MentorshipMentorInviteDecision;
+}
+
 /** Body of `POST /api/mentorship/mentor/invites/accept|decline`: the signed token from the invite email. */
 export interface MentorshipMentorInviteResponseRequest {
   token: string;
