@@ -68,7 +68,14 @@ describe('ObjectStoreService', () => {
   /** Scratch root for the file-backed store — never the app folder's default `.object-store`. */
   let localDir: string;
 
-  beforeEach(async () => {
+  async function useLocalDir(): Promise<void> {
+    if (!localDir) {
+      localDir = await mkdtemp(join(tmpdir(), 'lfx-object-store-spec-'));
+    }
+    process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
+  }
+
+  beforeEach(() => {
     vi.clearAllMocks();
     process.env = { ...ORIGINAL_ENV };
     delete process.env['S3_ENDPOINT_URL'];
@@ -78,7 +85,7 @@ describe('ObjectStoreService', () => {
     process.env['S3_BUCKET'] = 'avatars-bucket';
     process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'] = 'marketing-os-artifacts-test';
     process.env['AWS_REGION'] = 'us-west-2';
-    localDir = await mkdtemp(join(tmpdir(), 'lfx-object-store-spec-'));
+    localDir = '';
     service = new ObjectStoreService();
   });
 
@@ -108,7 +115,13 @@ describe('ObjectStoreService', () => {
   });
 
   afterEach(async () => {
-    await rm(localDir, { recursive: true, force: true });
+    try {
+      if (localDir) {
+        await rm(localDir, { recursive: true, force: true });
+      }
+    } finally {
+      process.env = { ...ORIGINAL_ENV };
+    }
   });
 
   it('uses the main conditional API for private creates/replacements without logging the key', async () => {
@@ -315,7 +328,7 @@ describe('ObjectStoreService', () => {
 
     it('serves the private marketing-os-artifacts purpose from the file-backed store when its bucket env var is unset — no S3 client, no S3 call', async () => {
       delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
-      process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
+      await useLocalDir();
 
       await service.ensureBucket('marketing-os-artifacts');
 
@@ -326,7 +339,7 @@ describe('ObjectStoreService', () => {
 
     it('keeps S3_BUCKET REQUIRED for the public avatars purpose even outside production — a CDN URL must never point at a file on disk', async () => {
       delete process.env['S3_BUCKET'];
-      process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
+      await useLocalDir();
 
       await expect(service.ensureBucket()).rejects.toThrow('S3_BUCKET environment variable is required');
       expect(sendMock).not.toHaveBeenCalled();
@@ -336,7 +349,7 @@ describe('ObjectStoreService', () => {
     it('keeps the bucket env var REQUIRED under NODE_ENV=production — deployed environments never fall back to disk', async () => {
       delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
       process.env['NODE_ENV'] = 'production';
-      process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
+      await useLocalDir();
 
       await expect(service.ensureBucket('marketing-os-artifacts')).rejects.toThrow('MARKETING_OS_ARTIFACTS_S3_BUCKET environment variable is required');
       expect(sendMock).not.toHaveBeenCalled();
@@ -345,7 +358,7 @@ describe('ObjectStoreService', () => {
 
     it('selects the backend per purpose — a configured avatars bucket stays on S3 while an unconfigured artifacts purpose uses the folder', async () => {
       delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
-      process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
+      await useLocalDir();
       sendMock.mockResolvedValueOnce({});
 
       await service.ensureBucket();
@@ -748,7 +761,6 @@ describe('ObjectStoreService', () => {
       delete process.env['S3_BUCKET'];
       delete process.env['MARKETING_OS_ARTIFACTS_S3_BUCKET'];
       delete process.env['AWS_REGION'];
-      process.env['OBJECT_STORE_LOCAL_DIR'] = localDir;
     });
 
     it('defaults the store root to .object-store under the working directory (the app folder) and says so at INFO', async () => {
@@ -770,6 +782,7 @@ describe('ObjectStoreService', () => {
     });
 
     it('needs no AWS_REGION and no S3 client at all', async () => {
+      await useLocalDir();
       await service.ensureBucket('marketing-os-artifacts');
       await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private');
 
@@ -778,12 +791,14 @@ describe('ObjectStoreService', () => {
     });
 
     it('reports readiness false before the first write and true once the folder exists', async () => {
+      await useLocalDir();
       await expect(service.readiness('marketing-os-artifacts')).resolves.toBe(false);
       await service.ensureBucket('marketing-os-artifacts');
       await expect(service.readiness('marketing-os-artifacts')).resolves.toBe(true);
     });
 
     it('persists a document with its metadata and restores it through list + get, exactly like S3', async () => {
+      await useLocalDir();
       const written = await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', {
         version: '2',
         'intake-mode': 'form',
@@ -805,6 +820,7 @@ describe('ObjectStoreService', () => {
     });
 
     it('survives a server restart: a fresh service instance reads what the previous one stored', async () => {
+      await useLocalDir();
       await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', { version: '1' });
 
       const restarted = new ObjectStoreService();
@@ -817,6 +833,7 @@ describe('ObjectStoreService', () => {
     });
 
     it('keeps the content-addressed no-op and the strictly-newer metadata refresh', async () => {
+      await useLocalDir();
       await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', { version: '1' });
 
       const repeat = await service.putContentAddressedObject(buildReq(), 'marketing-os-artifacts', key, body, 'text/markdown; charset=utf-8', 'private', {
@@ -839,6 +856,7 @@ describe('ObjectStoreService', () => {
     });
 
     it('lists a prefix that was never written as empty and reads a missing key as null — without a WARN', async () => {
+      await useLocalDir();
       await expect(service.listObjects(buildReq(), 'marketing-os-artifacts', 'icp/nothing-here/')).resolves.toEqual([]);
       await expect(service.getObject(buildReq(), 'marketing-os-artifacts', 'icp/nothing-here/abc.md')).resolves.toBeNull();
       expect(logger.warning).not.toHaveBeenCalled();
@@ -846,6 +864,7 @@ describe('ObjectStoreService', () => {
     });
 
     it('never serves the public avatars purpose: with CDN_URL_PREFIX set and no S3_BUCKET, uploads fail instead of storing a URL that points at nothing', async () => {
+      await useLocalDir();
       process.env['CDN_URL_PREFIX'] = 'https://cdn.example.com';
 
       await expect(service.uploadProfilePicture(buildReq(), 'User1', Buffer.from('img'), 'image/png')).rejects.toThrow(
