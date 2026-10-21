@@ -4,7 +4,7 @@
 import type { z } from 'zod';
 import type { envelopeSchema, tabsSchema, memberRankingRowSchema } from '../server/member-360-schema.utils';
 import type { formInputSchema, trackerSchema, priorRunSchema } from '../server/member-360.utils';
-import type { MktgRunSessionResponse } from './mktg-run.interface';
+import type { MktgRunActivity, MktgRunSessionResponse } from './mktg-run.interface';
 import type { CATEGORY_KEYS } from '../constants/member-360.constants';
 export type Member360Envelope = z.infer<typeof envelopeSchema>;
 export type Member360Tabs = z.infer<typeof tabsSchema>;
@@ -40,6 +40,8 @@ export interface Member360PendingRun {
 }
 export interface Member360Result {
   status: 'pending' | 'ready' | 'needs_input';
+  /** Plain activity sentences from trusted session events while the run is pending. */
+  activity?: MktgRunActivity[];
   documentId?: string;
   stored?: boolean;
 }

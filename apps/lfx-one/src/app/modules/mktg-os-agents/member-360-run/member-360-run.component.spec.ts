@@ -69,14 +69,38 @@ describe('Member360RunComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('No Member 360 runs yet.');
     expect(button().disabled).toBe(false);
     expect(fixture.nativeElement.querySelector('main')).toBeNull();
+    const breadcrumb = fixture.nativeElement.querySelector('[data-testid="member-360-breadcrumb"]');
+    expect(breadcrumb.textContent).toMatch(/Sample Foundation kit.*Member & sponsor kit.*Member 360/s);
+    expect(breadcrumb.querySelectorAll('li:not([aria-hidden])')).toHaveLength(3);
+    expect(breadcrumb.querySelector('a')?.getAttribute('data-testid')).toBe('member-360-back');
+    const intake = fixture.nativeElement.querySelector('[data-testid="member-360-intake"]');
+    expect(intake.querySelector('[data-testid="member-360-run"]')).not.toBeNull();
+    expect(intake.textContent).toContain('Sources this run will use');
   });
   it('names the comparison run and displays its real stored date', async () => {
     documents.listDocuments.mockReturnValue(
       of({ project: 'sample-project', groups: [{ type: member360DocumentType(), documents: [MEMBER_360_STORED_DOCUMENT] }] })
     );
     await render();
-    expect(fixture.nativeElement.querySelector('[data-testid="member-360-last-run"]').textContent).toContain('last run Q3 2026, 1 Oct');
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-last-run"]').textContent).toContain('Last run Q3 2026, 1 Oct');
     expect(fixture.nativeElement.querySelector('[data-testid="member-360-compare"]').textContent).toContain('Previous run: Q3 2026 (1 Oct)');
+  });
+  it('keeps duplicate filenames distinct and preserves focus after removing the middle file', async () => {
+    await render();
+    const chooser = fixture.nativeElement.querySelector('lfx-file-upload');
+    await fixture.componentInstance['upload']([1, 2, 3].map(() => new File([`company\n${SYNTHETIC_ORG_NAME}`], 'repeat.csv')));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('lfx-file-upload')).toBe(chooser);
+    expect(document.activeElement).toBe(chooser.querySelector('button'));
+    const uploads = fixture.componentInstance.form.controls.trackers.value;
+    expect(new Set(uploads.map((upload) => upload.id)).size).toBe(3);
+    const retained: HTMLButtonElement = fixture.nativeElement.querySelector(`[data-testid="member-360-remove-${uploads[2].id}"] button`);
+    retained.focus();
+    fixture.componentInstance['remove'](uploads[1].id);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector(`[data-testid="member-360-remove-${uploads[2].id}"] button`)).toBe(retained);
+    expect(document.activeElement).toBe(retained);
   });
   it('explains an unavailable comparison instead of a generic server error', async () => {
     run.generate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MEMBER_360_COMPARISON_UNAVAILABLE' } })));
@@ -85,6 +109,24 @@ describe('Member360RunComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Turn off comparison or retry.');
+  });
+  it('sends raw tracker bytes and project scope for entitled server parsing', () => {
+    TestBed.overrideProvider(Member360Service, { useFactory: () => new Member360Service() });
+    const api = TestBed.inject(Member360Service),
+      http = TestBed.inject(HttpTestingController);
+    const file = new File([`company\n${SYNTHETIC_ORG_NAME}`], 'tracker.csv', { type: 'text/csv' });
+    const tracker = { filename: file.name, rows: [{ company: SYNTHETIC_ORG_NAME }] };
+    let received: unknown;
+    api.parseTracker('sample-project', file).subscribe((value) => {
+      received = value;
+    });
+    const request = http.expectOne('/api/mktg-agents/member-360/tracker?project=sample-project');
+    expect(request.request.headers.get('X-File-Name')).toBe('tracker.csv');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.headers.get('Content-Type')).toBe('application/octet-stream');
+    expect(request.request.body).toBe(file);
+    request.flush(tracker);
+    expect(received).toEqual(tracker);
   });
   it('shows the specific tracker validation reason from the BFF', async () => {
     run.parseTracker.mockReturnValueOnce(
@@ -137,6 +179,15 @@ describe('Member360RunComponent', () => {
     expect(api.isPending('sample-project', 'run-0123456789abcdef01234567')).toBe(true);
     expect(navigate).not.toHaveBeenCalled();
     sessionStorage.clear();
+  });
+  it('reports a submission failure and allows retry', async () => {
+    run.generate.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await render();
+    button().click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('could not be started');
+    expect(button().disabled).toBe(false);
   });
   it('does not silently discard a failed history lookup when comparing', async () => {
     documents.listDocuments.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
