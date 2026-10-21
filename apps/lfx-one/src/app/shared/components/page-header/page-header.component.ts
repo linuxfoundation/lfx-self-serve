@@ -15,7 +15,8 @@ import { Component, computed, input } from '@angular/core';
 @Component({
   selector: 'lfx-page-header',
   templateUrl: './page-header.component.html',
-  host: { class: 'block' },
+  // A static `title="…"` also lands on the host as the native attribute; clear it so hovering the header shows no tooltip.
+  host: { class: 'block', '[attr.title]': 'null' },
 })
 export class PageHeaderComponent {
   public readonly title = input.required<string>();

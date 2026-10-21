@@ -51,6 +51,7 @@ describe('PageHeaderComponent', () => {
     await fixture.whenStable();
     const element: HTMLElement = fixture.nativeElement;
     expect(element.querySelector('h1')?.parentElement?.querySelector('[data-testid="suffix"]')).not.toBeNull();
+    expect(element.querySelector('lfx-page-header')?.hasAttribute('title')).toBe(false);
     expect(element.querySelector('[data-testid="rich-description"]')?.parentElement?.classList).toContain('text-sm');
     expect(element.querySelector('[data-testid="action"]')?.parentElement?.classList).toContain('gap-3');
   });
