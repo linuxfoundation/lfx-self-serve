@@ -68,9 +68,13 @@ describe('sanitizeAnalyticsUrl', () => {
     expect(sanitizeAnalyticsUrl(`../b?password=${SECRET}`, `${ORIGIN}/a/c`)).toBe('/b');
   });
 
-  it('cuts an unparseable URL at the first ? or #', () => {
-    expect(sanitizeAnalyticsUrl(`http://[bad/meetings?password=${SECRET}`)).toBe('http://[bad/meetings');
-    expect(sanitizeAnalyticsUrl(`http://[bad/meetings#${SECRET}?x`)).toBe('http://[bad/meetings');
+  it('drops an unparseable URL rather than retaining its raw fallback', () => {
+    expect(sanitizeAnalyticsUrl(`http://[bad/meetings?password=${SECRET}`)).toBe('');
+    expect(sanitizeAnalyticsUrl(`http://[bad/meetings#${SECRET}?x`)).toBe('');
+  });
+
+  it.each([`http://user:${SECRET}@[bad/x`, `//user:${SECRET}@[bad/x?password=${SECRET}#${SECRET}`])('drops credentials from an unparseable URL: %s', (url) => {
+    expect(sanitizeAnalyticsUrl(url)).toBe('');
   });
 
   it('returns an empty string for an empty referrer', () => {
@@ -87,9 +91,16 @@ describe('sanitizeAnalyticsPath', () => {
     expect(sanitizeAnalyticsPath(`${ORIGIN}/meetings/abc?password=${SECRET}`)).toBe('/meetings/abc');
   });
 
-  it('cuts an unparseable URL at the first ? or #', () => {
-    expect(sanitizeAnalyticsPath(`http://[bad/meetings?password=${SECRET}`)).toBe('http://[bad/meetings');
+  it('drops an unparseable URL rather than retaining its raw fallback', () => {
+    expect(sanitizeAnalyticsPath(`http://[bad/meetings?password=${SECRET}`)).toBe('');
   });
+
+  it.each([`http://user:${SECRET}@[bad/x`, `//user:${SECRET}@[bad/x?password=${SECRET}#${SECRET}`])(
+    'drops credentials from an unparseable path input: %s',
+    (url) => {
+      expect(sanitizeAnalyticsPath(url)).toBe('');
+    }
+  );
 
   it('returns an empty string for empty input', () => {
     expect(sanitizeAnalyticsPath('')).toBe('');
@@ -132,6 +143,14 @@ describe('buildSegmentPageEvent', () => {
     expect(event).toHaveProperty('search', '');
   });
 
+  it('keeps unparseable page metadata explicitly empty', () => {
+    const malformed = `http://user:${SECRET}@[bad/x?password=${SECRET}#${SECRET}`;
+    const event = buildSegmentPageEvent(malformed, malformed, 't', malformed);
+
+    expect(event).toEqual({ name: 'Home', path: '', url: '', search: '', title: 't', referrer: '' });
+    expect(JSON.stringify(event)).not.toContain(SECRET);
+  });
+
   it('uses an empty search when the href cannot be parsed', () => {
     expect(buildSegmentPageEvent('/x', `http://[bad/x?utm_source=y&password=${SECRET}`, 't', '').search).toBe('');
   });
@@ -169,6 +188,18 @@ describe('sanitizeSegmentEvent', () => {
     sanitizeSegmentEvent(event);
 
     expect(event.properties).toEqual(sanitizedPage);
+    expect(JSON.stringify(event)).not.toContain(SECRET);
+  });
+
+  it('drops malformed credential-bearing URLs from context and properties', () => {
+    const malformed = `http://user:${SECRET}@[bad/x?password=${SECRET}#${SECRET}`;
+    const page = { url: malformed, path: malformed, referrer: malformed };
+    const event: SegmentEvent = { type: 'page', messageId: 'msg-1', context: { page: { ...page } }, properties: { ...page } };
+
+    sanitizeSegmentEvent(event);
+
+    expect(event.context?.page).toEqual({ url: '', path: '', referrer: '' });
+    expect(event.properties).toEqual({ url: '', path: '', referrer: '' });
     expect(JSON.stringify(event)).not.toContain(SECRET);
   });
 

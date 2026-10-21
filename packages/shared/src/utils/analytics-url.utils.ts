@@ -14,11 +14,6 @@ import type { SegmentEvent, SegmentPageEvent } from '../interfaces/segment.inter
  * secret keys) keeps future secret parameters from failing open.
  */
 
-/** Strip everything from the first `?` or `#` — the fallback when a URL cannot be parsed. */
-function stripQueryAndHash(url: string): string {
-  return url.split(/[?#]/)[0];
-}
-
 /** Allowlisted query string of a URL, or an empty string when the URL cannot be parsed. */
 function sanitizeUrlSearch(url: string): string {
   try {
@@ -58,7 +53,7 @@ export function sanitizeAnalyticsSearch(search: string): string {
 /**
  * Sanitize a URL for analytics: keep origin + pathname and allowlisted query params, drop the hash
  * and any userinfo. Absolute input stays absolute; relative input stays relative (resolved against
- * `base` when given). Unparseable input is cut at the first `?` or `#`.
+ * `base` when given). Unparseable input is dropped so malformed credentials cannot leak.
  */
 export function sanitizeAnalyticsUrl(url: string, base?: string): string {
   if (!url) {
@@ -78,12 +73,12 @@ export function sanitizeAnalyticsUrl(url: string, base?: string): string {
     absolute.hash = '';
     return absolute.href;
   } catch {
-    return stripQueryAndHash(url);
+    return '';
   }
 }
 
 /**
- * Reduce a URL (absolute or relative) to its pathname. Unparseable input is cut at the first `?` or `#`.
+ * Reduce a URL (absolute or relative) to its pathname. Unparseable input is dropped.
  */
 export function sanitizeAnalyticsPath(url: string, base?: string): string {
   if (!url) {
@@ -93,7 +88,7 @@ export function sanitizeAnalyticsPath(url: string, base?: string): string {
   try {
     return new URL(url, base ?? ANALYTICS_URL_PARSE_BASE).pathname;
   } catch {
-    return stripQueryAndHash(url);
+    return '';
   }
 }
 
