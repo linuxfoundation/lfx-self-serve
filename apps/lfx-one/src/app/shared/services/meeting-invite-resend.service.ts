@@ -41,12 +41,13 @@ export class MeetingInviteResendService {
   }
 
   /**
-   * Resends the meeting invitation to the signed-in user's own registration. No confirmation: it only emails the
+   * Resends the meeting invitation to the signed-in user's own registration, for the occurrence being viewed when the
+   * surface has one (registrations can be scoped to a single occurrence). No confirmation: it only emails the
    * caller, and a second click while one is in flight is ignored. The server's own reason is shown only when it
    * rejected the request itself (a validation error); any other failure gets generic copy, since an upstream
    * status line is not something to put on screen.
    */
-  public resendOwn(meetingUid: string): void {
+  public resendOwn(meetingUid: string, occurrenceId?: string | null): void {
     if (!meetingUid || this.isResendingOwn(meetingUid)) {
       return;
     }
@@ -54,7 +55,7 @@ export class MeetingInviteResendService {
     this.setResendingOwn(meetingUid, true);
 
     this.meetingService
-      .resendMyMeetingInvitation(meetingUid)
+      .resendMyMeetingInvitation(meetingUid, occurrenceId)
       .pipe(
         take(1),
         finalize(() => this.setResendingOwn(meetingUid, false))

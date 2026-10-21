@@ -811,7 +811,7 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id);
+    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
   }
 
   /** Sets foundation context via ProjectContextService and opens /foundation/overview in a new tab. */

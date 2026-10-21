@@ -118,10 +118,16 @@ describe('MeetingInviteResendService', () => {
     it("resends to the viewer's own registration, keyed by meeting only, and shows a success toast", () => {
       service.resendOwn(MEETING_UID);
 
-      expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_UID);
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_UID, undefined);
       expect(resendMeetingInvitation).not.toHaveBeenCalled();
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
       expect(service.isResendingOwn(MEETING_UID)).toBe(false);
+    });
+
+    it('passes the occurrence being viewed through to the request', () => {
+      service.resendOwn(MEETING_UID, '1700000000');
+
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_UID, '1700000000');
     });
 
     it('does not ask for confirmation', () => {

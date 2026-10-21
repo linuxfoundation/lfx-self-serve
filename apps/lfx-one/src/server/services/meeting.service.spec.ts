@@ -599,11 +599,77 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
 describe('MeetingService.resendMeetingInvitationSelf', () => {
   let service: MeetingService;
 
-  const registrantRow = (uid: string, type: 'direct' | 'committee'): MeetingRegistrant => ({ uid, type }) as MeetingRegistrant;
+  const registrantRow = (uid: string, type: 'direct' | 'committee', occurrenceId: string | null = null): MeetingRegistrant =>
+    ({ uid, type, occurrence_id: occurrenceId }) as MeetingRegistrant;
+
+  const resendTarget = (rows: MeetingRegistrant[], occurrenceId?: string): Promise<string> => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce(rows);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    return service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', occurrenceId);
+  };
 
   beforeEach(() => {
     proxyRequest.mockReset();
     service = new MeetingService();
+  });
+
+  describe('choosing the registration for the viewed occurrence', () => {
+    it('sends a series-wide committee row when the direct row is scoped to a different occurrence', async () => {
+      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', 'occ-a'), registrantRow('reg-committee-series', 'committee')], 'occ-b');
+
+      expect(registrantId).toBe('reg-committee-series');
+      expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/mtg-1/registrants/reg-committee-series/self_resend');
+    });
+
+    it('prefers the row scoped to the viewed occurrence over a series-wide row', async () => {
+      const registrantId = await resendTarget([registrantRow('reg-series', 'direct'), registrantRow('reg-scoped-b', 'committee', 'occ-b')], 'occ-b');
+
+      expect(registrantId).toBe('reg-scoped-b');
+    });
+
+    it('prefers a direct row over a committee row within the rows that fit', async () => {
+      const registrantId = await resendTarget(
+        [
+          registrantRow('reg-committee-b', 'committee', 'occ-b'),
+          registrantRow('reg-direct-b', 'direct', 'occ-b'),
+          registrantRow('reg-direct-series', 'direct'),
+        ],
+        'occ-b'
+      );
+
+      expect(registrantId).toBe('reg-direct-b');
+    });
+
+    it('prefers a series-wide row when no occurrence is given', async () => {
+      const registrantId = await resendTarget([registrantRow('reg-direct-a', 'direct', 'occ-a'), registrantRow('reg-committee-series', 'committee')]);
+
+      expect(registrantId).toBe('reg-committee-series');
+    });
+
+    it.each([undefined, ''])('treats an occurrence of %j as none', async (occurrenceId) => {
+      const registrantId = await resendTarget([registrantRow('reg-scoped-a', 'direct', 'occ-a'), registrantRow('reg-series', 'direct')], occurrenceId);
+
+      expect(registrantId).toBe('reg-series');
+    });
+
+    it('still resends, to the direct row, when no row fits the viewed occurrence', async () => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-committee-a', 'committee', 'occ-a'), registrantRow('reg-direct-c', 'direct', 'occ-c')],
+        'occ-b'
+      );
+
+      expect(registrantId).toBe('reg-direct-c');
+    });
+
+    it('falls back to the first row when none fits and none is direct', async () => {
+      const registrantId = await resendTarget(
+        [registrantRow('reg-committee-a', 'committee', 'occ-a'), registrantRow('reg-committee-c', 'committee', 'occ-c')],
+        'occ-b'
+      );
+
+      expect(registrantId).toBe('reg-committee-a');
+    });
   });
 
   it('posts to the self_resend endpoint for the caller registrant and returns its id', async () => {

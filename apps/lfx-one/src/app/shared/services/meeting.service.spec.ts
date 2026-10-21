@@ -243,6 +243,18 @@ describe('MeetingService.resendMyMeetingInvitation', () => {
     expect(post.mock.calls[0][1]).toEqual({});
   });
 
+  it('sends the occurrence being viewed so the server picks the registration that fits it', () => {
+    service.resendMyMeetingInvitation(MEETING_UID, '1700000000').subscribe();
+
+    expect(post.mock.calls[0][1]).toEqual({ occurrence_id: '1700000000' });
+  });
+
+  it.each([[undefined], [null], ['']])('sends an empty body when the occurrence is %j', (occurrenceId) => {
+    service.resendMyMeetingInvitation(MEETING_UID, occurrenceId).subscribe();
+
+    expect(post.mock.calls[0][1]).toEqual({});
+  });
+
   it('encodes the meeting id into the path', () => {
     service.resendMyMeetingInvitation('a/b?c').subscribe();
 

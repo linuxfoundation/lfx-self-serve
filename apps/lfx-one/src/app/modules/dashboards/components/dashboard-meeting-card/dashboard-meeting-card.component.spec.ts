@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
@@ -49,14 +49,16 @@ describe('DashboardMeetingCardComponent', () => {
   let getPastMeetingRecording: ReturnType<typeof vi.fn>;
   let resendMyMeetingInvitation: ReturnType<typeof vi.fn>;
   let toastAdd: ReturnType<typeof vi.fn>;
+  let removedIds: WritableSignal<ReadonlySet<string>>;
 
   const render = async (
     meeting: Meeting,
-    options?: { occurrence?: MeetingOccurrence | null; pastMeeting?: boolean; authenticated?: boolean }
+    options?: { occurrence?: MeetingOccurrence | null; pastMeeting?: boolean; authenticated?: boolean; removedMeetingIds?: string[] }
   ): Promise<void> => {
     getPastMeetingRecording = vi.fn(() => of(null));
     resendMyMeetingInvitation = vi.fn(() => of({ message: 'Invitation resent successfully' }));
     toastAdd = vi.fn();
+    removedIds = signal<ReadonlySet<string>>(new Set(options?.removedMeetingIds ?? []));
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [DashboardMeetingCardComponent],
@@ -76,7 +78,12 @@ describe('DashboardMeetingCardComponent', () => {
         },
         {
           provide: MeetingService,
-          useValue: { getPublicMeetingJoinUrl: vi.fn(() => of(null)), getPastMeetingRecording, resendMyMeetingInvitation },
+          useValue: {
+            getPublicMeetingJoinUrl: vi.fn(() => of(null)),
+            getPastMeetingRecording,
+            resendMyMeetingInvitation,
+            removedRegistrationMeetingIds: removedIds,
+          },
         },
         { provide: MessageService, useValue: { add: toastAdd } },
       ],
@@ -196,8 +203,43 @@ describe('DashboardMeetingCardComponent', () => {
 
       fixture.nativeElement.querySelector(RESEND_BUTTON).click();
 
-      expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1');
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', undefined);
       expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    });
+
+    it('resends for the occurrence the card is showing, so the matching registration is chosen', async () => {
+      await render(buildMeeting({ invited: true }), {
+        authenticated: true,
+        occurrence: { occurrence_id: 'occ-b', start_time: '2026-10-08T15:00:00Z', duration: 45 },
+      });
+
+      fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-b');
+    });
+
+    it('does not offer the action when the viewer already removed themselves, even if the cached feed still says invited', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true, removedMeetingIds: ['meeting-1'] });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+    });
+
+    it('stops offering the action as soon as the viewer removes themselves elsewhere', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).not.toBeNull();
+
+      removedIds.update((ids) => new Set(ids).add('meeting-1'));
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+    });
+
+    it('still offers the action for a different meeting the viewer has not removed themselves from', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true, removedMeetingIds: ['meeting-2'] });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(true);
     });
 
     it('disables the button while a resend is in flight and ignores a second click', async () => {

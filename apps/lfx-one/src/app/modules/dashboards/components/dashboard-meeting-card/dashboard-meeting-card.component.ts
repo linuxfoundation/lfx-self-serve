@@ -123,16 +123,19 @@ export class DashboardMeetingCardComponent {
   }
 
   public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id);
+    this.inviteResend.resendOwn(this.meeting().id, this.occurrence()?.occurrence_id);
   }
 
   // Resending goes to the viewer's own registrant row, so it is offered only where one exists: signed in, upcoming,
-  // invited, and — for an organizer, whose access does not depend on an invitation — only with a registration of their own.
-  // Same rule as the meeting card's "Remove Myself". `my_registrant_ids` is authoritative where the feed provides it.
+  // invited and not since removed, and — for an organizer, whose access does not depend on an invitation — only with a
+  // registration of their own. Same rule as the meeting card's "Remove Myself". `my_registrant_ids` is authoritative where
+  // the feed provides it. The removal marker is read because the cached meetings feed keeps answering `invited: true`
+  // for a while after the viewer removes themselves elsewhere (query-service indexing lag), which would offer a resend
+  // for a registration that no longer exists.
   private initCanResendInvite(): Signal<boolean> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!this.userService.authenticated() || this.pastMeeting() || !meeting.invited) {
+      if (!this.userService.authenticated() || this.pastMeeting() || !meeting.invited || this.meetingService.removedRegistrationMeetingIds().has(meeting.id)) {
         return false;
       }
       const registrantIds = meeting.my_registrant_ids;

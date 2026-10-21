@@ -1505,10 +1505,40 @@ describe('MeetingController', () => {
       await controller.resendMyMeetingInvitation(req, res, next);
 
       expect(next).not.toHaveBeenCalled();
-      expect(meetingSvc.resendMeetingInvitationSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
+      expect(meetingSvc.resendMeetingInvitationSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN, undefined);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ message: 'Invitation resent successfully' });
     });
+
+    it('forwards the occurrence the caller is viewing, trimmed, so the matching registration is chosen', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+      const req = buildReq({ body: { occurrence_id: '  1700000000  ' } });
+
+      await controller.resendMyMeetingInvitation(req, buildRes(), next);
+
+      expect(meetingSvc.resendMeetingInvitationSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN, '1700000000');
+      expect(logger.success).toHaveBeenCalledWith(
+        req,
+        'resend_my_meeting_invitation',
+        expect.anything(),
+        expect.objectContaining({ occurrence_id: '1700000000' })
+      );
+    });
+
+    it.each([[undefined], [''], ['   '], [42], [{ id: 'x' }], [['occ-1']], [null]])(
+      'treats a body occurrence_id of %j as absent rather than refusing the request',
+      async (occurrenceId) => {
+        vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+        const req = buildReq({ body: { occurrence_id: occurrenceId } });
+        const res = buildRes();
+
+        await controller.resendMyMeetingInvitation(req, res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(meetingSvc.resendMeetingInvitationSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN, undefined);
+        expect(res.status).toHaveBeenCalledWith(200);
+      }
+    );
 
     it("logs the registrant ID on success without the user's username or email", async () => {
       vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
@@ -1516,7 +1546,14 @@ describe('MeetingController', () => {
 
       await controller.resendMyMeetingInvitation(req, buildRes(), next);
 
-      expect(logger.success).toHaveBeenCalledWith(req, 'resend_my_meeting_invitation', expect.anything(), { meeting_id: MEETING_ID, registrant_id: 'reg-1' });
+      expect(logger.success).toHaveBeenCalledWith(req, 'resend_my_meeting_invitation', expect.anything(), {
+        meeting_id: MEETING_ID,
+        registrant_id: 'reg-1',
+        occurrence_id: undefined,
+      });
+      const logged = vi.mocked(logger.success).mock.calls[0][3];
+      expect(logged).not.toHaveProperty('username');
+      expect(logged).not.toHaveProperty('email');
     });
 
     it('rejects a caller whose identity cannot be resolved, without touching the service', async () => {

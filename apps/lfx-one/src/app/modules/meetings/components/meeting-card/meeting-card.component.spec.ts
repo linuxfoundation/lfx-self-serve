@@ -823,9 +823,19 @@ describe('MeetingCardComponent — remove myself', () => {
     component.resendInvite();
 
     expect(confirm).not.toHaveBeenCalled();
-    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1');
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', undefined);
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
     expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('resends for the occurrence the card is showing, so the matching registration is chosen', async () => {
+    const nextStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const component = await mount({ ...INVITEE, occurrences: [{ occurrence_id: 'occ-next', start_time: nextStart, duration: 60 }] } as Meeting);
+
+    expect(component.currentOccurrence()?.occurrence_id).toBe('occ-next');
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-next');
   });
 
   it('ignores a second click while a resend is in flight', async () => {

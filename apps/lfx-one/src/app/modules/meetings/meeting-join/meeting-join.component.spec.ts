@@ -1303,8 +1303,24 @@ describe('MeetingJoinComponent', () => {
         expect(button).not.toBeNull();
         fixture.componentInstance.resendInvite();
 
-        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID);
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, undefined);
         expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('resends for the occurrence the page is showing, so the matching registration is chosen', async () => {
+        const nextStart = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const fixture = await createFixture(
+          buildMeeting({
+            organizer: false,
+            invited: true,
+            occurrences: [{ occurrence_id: 'occ-next', start_time: nextStart, duration: 60 }] as Meeting['occurrences'],
+          })
+        );
+
+        expect(fixture.componentInstance.currentOccurrence()?.occurrence_id).toBe('occ-next');
+        fixture.componentInstance.resendInvite();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID, 'occ-next');
       });
 
       it('offers the action to an invited organizer in their own slot', async () => {

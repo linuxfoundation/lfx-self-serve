@@ -1247,7 +1247,9 @@ export class MeetingController {
    * @description Resends the meeting invitation to the authenticated user's own registrant record. The registrant
    * is resolved server-side and the resend runs under the user's own token; the M2M token is used only for the
    * registrant lookup, after the caller's identity has been resolved from their session. Upstream verifies the
-   * registrant belongs to the caller.
+   * registrant belongs to the caller. The optional body `occurrence_id` names the occurrence the caller is viewing,
+   * so the registrant row that fits it is chosen; it only ever picks among the caller's own rows, so anything but a
+   * non-empty string is treated as absent rather than refused.
    */
   public async resendMyMeetingInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -1278,12 +1280,16 @@ export class MeetingController {
         return;
       }
 
+      const bodyOccurrenceId: unknown = req.body?.occurrence_id;
+      const occurrenceId = typeof bodyOccurrenceId === 'string' && bodyOccurrenceId.trim() ? bodyOccurrenceId.trim() : undefined;
+
       const m2mToken = await generateM2MToken(req);
-      const registrantId = await this.meetingService.resendMeetingInvitationSelf(req, uid, userEmail, username, m2mToken);
+      const registrantId = await this.meetingService.resendMeetingInvitationSelf(req, uid, userEmail, username, m2mToken, occurrenceId);
 
       logger.success(req, 'resend_my_meeting_invitation', startTime, {
         meeting_id: uid,
         registrant_id: registrantId,
+        occurrence_id: occurrenceId,
       });
 
       res.status(200).json({ message: 'Invitation resent successfully' });

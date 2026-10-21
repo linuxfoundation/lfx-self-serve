@@ -820,9 +820,15 @@ export class MeetingService {
     );
   }
 
-  /** Resends the invitation to the signed-in user's own registration; the server resolves which registrant that is. */
-  public resendMyMeetingInvitation(meetingUid: string): Observable<{ message: string }> {
-    return this.http.post<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self/resend`, {}).pipe(
+  /**
+   * Resends the invitation to the signed-in user's own registration; the server resolves which registrant that is.
+   * Pass the occurrence being viewed so the server picks the registration that fits it: a person's registrations can
+   * be scoped to one occurrence or cover the whole series.
+   */
+  public resendMyMeetingInvitation(meetingUid: string, occurrenceId?: string | null): Observable<{ message: string }> {
+    const body = occurrenceId ? { occurrence_id: occurrenceId } : {};
+
+    return this.http.post<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self/resend`, body).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to resend meeting invitation to current user for meeting ${meetingUid}:`, error);

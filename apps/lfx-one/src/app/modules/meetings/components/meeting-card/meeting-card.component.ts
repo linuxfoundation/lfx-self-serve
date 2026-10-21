@@ -552,7 +552,7 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public resendInvite(): void {
-    this.inviteResend.resendOwn(this.meeting().id);
+    this.inviteResend.resendOwn(this.meeting().id, this.currentOccurrence()?.occurrence_id);
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {

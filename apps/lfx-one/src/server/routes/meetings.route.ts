@@ -4,7 +4,7 @@
 import express, { Router } from 'express';
 
 import { MeetingController } from '../controllers/meeting.controller';
-import { aiRateLimiter } from '../middleware/rate-limit.middleware';
+import { aiRateLimiter, selfResendInviteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -54,7 +54,8 @@ router.delete('/:uid/registrants/self', (req, res, next) => meetingController.re
 
 // POST /meetings/:uid/registrants/self/resend - resend the invitation to the authenticated user's own registrant record.
 // Must stay above the `:registrantId/resend` route below, which would otherwise match `self` as a registrant ID.
-router.post('/:uid/registrants/self/resend', (req, res, next) => meetingController.resendMyMeetingInvitation(req, res, next));
+// Every call emails the caller, so it carries a per-user limiter on top of the global /api one.
+router.post('/:uid/registrants/self/resend', selfResendInviteRateLimiter, (req, res, next) => meetingController.resendMyMeetingInvitation(req, res, next));
 
 // DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
 router.delete('/:uid/registrants', (req, res, next) => meetingController.deleteMeetingRegistrants(req, res, next));
