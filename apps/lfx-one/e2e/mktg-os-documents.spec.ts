@@ -94,7 +94,7 @@ test.describe('Marketing OS current revisions', () => {
     const summary = page.getByTestId('mktg-document-view-history-bar-summary');
     await expect(summary).toBeVisible();
     expect(await summary.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-    await page.getByTestId('mktg-document-view-back-link').focus();
+    await page.getByTestId('mktg-document-crumb-family').focus();
     await page.keyboard.press('Tab');
     await expect(summary).toBeFocused();
     await expect(page.getByRole('tooltip')).toHaveText(`You're viewing v7 · 13 Oct · ${name} · v9 is current`);
