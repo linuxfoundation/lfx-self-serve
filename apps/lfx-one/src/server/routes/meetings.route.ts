@@ -52,6 +52,10 @@ router.put('/:uid/registrants', (req, res, next) => meetingController.updateMeet
 // DELETE /meetings/:uid/registrants/self - remove the authenticated user as a registrant
 router.delete('/:uid/registrants/self', (req, res, next) => meetingController.removeMyMeetingRegistration(req, res, next));
 
+// POST /meetings/:uid/registrants/self/resend - resend the invitation to the authenticated user's own registrant record.
+// Must stay above the `:registrantId/resend` route below, which would otherwise match `self` as a registrant ID.
+router.post('/:uid/registrants/self/resend', (req, res, next) => meetingController.resendMyMeetingInvitation(req, res, next));
+
 // DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
 router.delete('/:uid/registrants', (req, res, next) => meetingController.deleteMeetingRegistrants(req, res, next));
 

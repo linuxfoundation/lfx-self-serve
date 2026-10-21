@@ -22,6 +22,7 @@ import {
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -34,6 +35,7 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 })
 export class DashboardMeetingCardComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly inviteResend = inject(MeetingInviteResendService);
   private readonly userService = inject(UserService);
   private readonly platformId = inject(PLATFORM_ID);
 
@@ -84,6 +86,8 @@ export class DashboardMeetingCardComponent {
   public readonly meetingDetailHref: Signal<string> = this.initMeetingDetailHref();
   public readonly meetingDetailClipboardUrl: Signal<string> = this.initMeetingDetailClipboardUrl();
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
+  public readonly canResendInvite: Signal<boolean> = this.initCanResendInvite();
+  public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // New signals for the Figma card design
   public readonly meetingDay: Signal<string> = this.initMeetingDay();
@@ -116,6 +120,24 @@ export class DashboardMeetingCardComponent {
     );
 
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
+  }
+
+  public resendInvite(): void {
+    this.inviteResend.resendOwn(this.meeting().id);
+  }
+
+  // Resending goes to the viewer's own registrant row, so it is offered only where one exists: signed in, upcoming,
+  // invited, and — for an organizer, whose access does not depend on an invitation — only with a registration of their own.
+  // Same rule as the meeting card's "Remove Myself". `my_registrant_ids` is authoritative where the feed provides it.
+  private initCanResendInvite(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!this.userService.authenticated() || this.pastMeeting() || !meeting.invited) {
+        return false;
+      }
+      const registrantIds = meeting.my_registrant_ids;
+      return !meeting.organizer || (registrantIds ? registrantIds.length > 0 : true);
+    });
   }
 
   private initMeetingTypeInfo(): Signal<MeetingTypeBadge | null> {

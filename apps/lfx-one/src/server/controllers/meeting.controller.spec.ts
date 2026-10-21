@@ -27,6 +27,7 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     getMeetingRsvps: vi.fn(),
     getMeetingRegistrantsForUser: vi.fn(),
     removeMeetingRegistrantSelf: vi.fn(),
+    resendMeetingInvitationSelf: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
     deleteMeetingRegistrant: vi.fn(),
@@ -1481,6 +1482,58 @@ describe('MeetingController', () => {
       const res = buildRes();
 
       await controller.removeMyMeetingRegistration(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(failure);
+      expect(res.status).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resendMyMeetingInvitation', () => {
+    beforeEach(() => {
+      generateM2MTokenMock.mockResolvedValue(M2M_TOKEN);
+      meetingSvc.resendMeetingInvitationSelf.mockResolvedValue('reg-1');
+    });
+
+    it('ignores client-supplied identity and IDs and answers 200', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+      const req = buildReq({
+        body: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
+        query: { email: 'other@example.com', username: 'other', registrant_id: 'reg-other' },
+      });
+      const res = buildRes();
+
+      await controller.resendMyMeetingInvitation(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(meetingSvc.resendMeetingInvitationSelf).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'alice', M2M_TOKEN);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Invitation resent successfully' });
+    });
+
+    it("logs the registrant ID on success without the user's username or email", async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValueOnce('alice');
+      const req = buildReq();
+
+      await controller.resendMyMeetingInvitation(req, buildRes(), next);
+
+      expect(logger.success).toHaveBeenCalledWith(req, 'resend_my_meeting_invitation', expect.anything(), { meeting_id: MEETING_ID, registrant_id: 'reg-1' });
+    });
+
+    it('rejects a caller whose identity cannot be resolved, without touching the service', async () => {
+      vi.mocked(getEffectiveEmail).mockReturnValueOnce('');
+
+      await controller.resendMyMeetingInvitation(buildReq(), buildRes(), next);
+
+      expect(meetingSvc.resendMeetingInvitationSelf).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(FakeValidationError));
+    });
+
+    it('passes service failures to the error handler', async () => {
+      const failure = new FakeMicroserviceError('forbidden', 403, 'FORBIDDEN');
+      meetingSvc.resendMeetingInvitationSelf.mockRejectedValue(failure);
+      const res = buildRes();
+
+      await controller.resendMyMeetingInvitation(buildReq(), res, next);
 
       expect(next).toHaveBeenCalledWith(failure);
       expect(res.status).not.toHaveBeenCalled();

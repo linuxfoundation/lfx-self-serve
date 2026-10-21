@@ -1304,6 +1304,48 @@ export class MeetingService {
   }
 
   /**
+   * Resends the meeting invitation to the authenticated user's own registrant record using their own bearer token.
+   * The caller's registrant is resolved server-side (by email or username) so the client never needs a registrant UID;
+   * upstream re-verifies ownership and returns 403 for anyone else's record, so the M2M token is used only for the lookup.
+   * A person can hold several rows for one meeting (a direct row plus rows from committees), and each would send its own
+   * email to the same address, so the invite is resent once, preferring the direct row over a committee-derived one.
+   * @returns the ID of the registrant the invitation was resent to
+   */
+  public async resendMeetingInvitationSelf(
+    req: Request,
+    meetingUid: string,
+    email: string | undefined,
+    username: string | undefined,
+    m2mToken: string
+  ): Promise<string> {
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
+
+    if (registrants.length === 0) {
+      throw new ResourceNotFoundError('Meeting registration', meetingUid, {
+        operation: 'resend_meeting_invitation_self',
+        service: 'meeting_service',
+      });
+    }
+
+    const registrant = registrants.find((row) => row.type === 'direct') ?? registrants[0];
+
+    logger.debug(req, 'resend_meeting_invitation_self', 'Resending meeting invitation to the authenticated user', {
+      meeting_id: meetingUid,
+      registrant_id: registrant.uid,
+      registrant_count: registrants.length,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrant.uid)}/self_resend`,
+      'POST'
+    );
+
+    return registrant.uid;
+  }
+
+  /**
    * Fetches meeting join URL by meeting UID
    */
   public async getMeetingJoinUrl(req: Request, meetingUid: string, email?: string): Promise<MeetingJoinURL> {

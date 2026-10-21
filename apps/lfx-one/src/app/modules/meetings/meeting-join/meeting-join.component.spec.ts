@@ -61,6 +61,7 @@ describe('MeetingJoinComponent', () => {
   let getPastMeetingTranscript: ReturnType<typeof vi.fn>;
   let getPublicMeetingOccurrences: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let resendMyMeetingInvitation: ReturnType<typeof vi.fn>;
   let getPublicMeetingJoinUrl: ReturnType<typeof vi.fn>;
   let getMeetingRsvpForCurrentUser: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
@@ -139,6 +140,7 @@ describe('MeetingJoinComponent', () => {
     getPublicMeetingOccurrences = vi.fn().mockReturnValue(of({ past: [], future: [] }));
     getPublicMeetingJoinUrl = vi.fn().mockReturnValue(of({ link: undefined }));
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
+    resendMyMeetingInvitation = vi.fn().mockReturnValue(of({ message: 'Invitation resent successfully' }));
     getMeetingRsvpForCurrentUser = vi.fn().mockReturnValue(of(null));
     removedIds = signal<ReadonlySet<string>>(new Set());
     toastAdd = vi.fn();
@@ -175,6 +177,7 @@ describe('MeetingJoinComponent', () => {
             getPublicMeetingJoinUrl,
             getMyMeetingRegistrants,
             removeMyMeetingRegistration,
+            resendMyMeetingInvitation,
             removedRegistrationMeetingIds: removedIds,
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: vi.fn(),
@@ -1287,6 +1290,81 @@ describe('MeetingJoinComponent', () => {
       // `getPublicMeeting` keeps answering `invited: true`, which is the indexing lag the page must outlast.
       expect(fixture.nativeElement.querySelector(REMOVE_BUTTON)).toBeNull();
       expect(fixture.nativeElement.querySelector(REGISTER_BUTTON)).not.toBeNull();
+    });
+
+    describe('resend invite', () => {
+      const RESEND_BUTTON = '[data-testid="resend-invite-button"]';
+      const RESEND_ORGANIZER_BUTTON = '[data-testid="resend-invite-organizer-button"]';
+
+      it('offers the action to a signed-in invitee and resends to their own registration when clicked', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+        const button = fixture.nativeElement.querySelector(RESEND_BUTTON);
+
+        expect(button).not.toBeNull();
+        fixture.componentInstance.resendInvite();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith(MEETING_ID);
+        expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+      });
+
+      it('offers the action to an invited organizer in their own slot', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: true, invited: true }));
+
+        expect(fixture.nativeElement.querySelector(RESEND_ORGANIZER_BUTTON)).not.toBeNull();
+        expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+      });
+
+      it('does not offer the action to a viewer who is not registered', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: false }));
+
+        expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+        expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      });
+
+      it('stops offering the action once the viewer has removed themselves', async () => {
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        await confirmAndAccept(fixture);
+
+        expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+      });
+
+      it('ignores a second click while a resend is in flight', async () => {
+        const pending$ = new Subject<{ message: string }>();
+        resendMyMeetingInvitation.mockReturnValue(pending$);
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.resendInvite();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+        expect(fixture.componentInstance.resendingInvite()).toBe(true);
+        pending$.next({ message: 'ok' });
+        pending$.complete();
+        expect(fixture.componentInstance.resendingInvite()).toBe(false);
+      });
+
+      it('shows the BFF message for a validation failure and generic copy for anything else', async () => {
+        resendMyMeetingInvitation
+          .mockReturnValueOnce(
+            throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Unable to determine your identity' } }))
+          )
+          .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403, error: { code: 'FORBIDDEN', error: 'upstream detail' } })));
+        const fixture = await createFixture(buildMeeting({ organizer: false, invited: true }));
+
+        fixture.componentInstance.resendInvite();
+        fixture.componentInstance.resendInvite();
+
+        expect(toastAdd).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Unable to determine your identity') })
+        );
+        expect(toastAdd).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' })
+        );
+        expect(fixture.componentInstance.resendingInvite()).toBe(false);
+      });
     });
 
     describe('opened from the remove-yourself link in an email or calendar event', () => {

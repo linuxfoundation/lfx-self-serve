@@ -89,6 +89,7 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
+import { ResourceNotFoundError } from '../errors';
 import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 
 const req = {} as unknown as Request;
@@ -592,6 +593,82 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
     proxyRequest.mockRejectedValueOnce(new Error('upstream down'));
 
     await expect(service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toThrow('upstream down');
+  });
+});
+
+describe('MeetingService.resendMeetingInvitationSelf', () => {
+  let service: MeetingService;
+
+  const registrantRow = (uid: string, type: 'direct' | 'committee'): MeetingRegistrant => ({ uid, type }) as MeetingRegistrant;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    service = new MeetingService();
+  });
+
+  it('posts to the self_resend endpoint for the caller registrant and returns its id', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const registrantId = await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(registrantId).toBe('reg-1');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    const [, , path, method] = proxyRequest.mock.calls[0];
+    expect(path).toBe('/itx/meetings/mtg-1/registrants/reg-1/self_resend');
+    expect(method).toBe('POST');
+  });
+
+  it('looks the registrant up under the M2M token but sends the resend without a token override', async () => {
+    const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+
+    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
+    // [req, service, path, method, query, body, headers]: nothing past the method, so upstream sees the user's own token
+    expect(proxyRequest.mock.calls[0].slice(4)).toEqual([]);
+  });
+
+  it('resends once, to the direct row, when the caller also has a committee row', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee'), registrantRow('reg-d', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    const registrantId = await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(registrantId).toBe('reg-d');
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/mtg-1/registrants/reg-d/self_resend');
+  });
+
+  it('falls back to the first row when the caller only has a committee row', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-c', 'committee')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await expect(service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token')).resolves.toBe('reg-c');
+  });
+
+  it('throws not found without calling upstream when the caller has no registration', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([]);
+
+    await expect(service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toBeInstanceOf(ResourceNotFoundError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an upstream failure', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('reg-1', 'direct')]);
+    proxyRequest.mockRejectedValueOnce(new Error('upstream 403'));
+
+    await expect(service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token')).rejects.toThrow('upstream 403');
+  });
+
+  it('encodes a hostile registrant id rather than letting it alter the path', async () => {
+    vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValueOnce([registrantRow('../x?y', 'direct')]);
+    proxyRequest.mockResolvedValueOnce(undefined);
+
+    await service.resendMeetingInvitationSelf(req, 'mtg-1', 'alice@example.com', undefined, 'm2m-token');
+
+    expect(proxyRequest.mock.calls[0][2]).toBe('/itx/meetings/mtg-1/registrants/..%2Fx%3Fy/self_resend');
   });
 });
 

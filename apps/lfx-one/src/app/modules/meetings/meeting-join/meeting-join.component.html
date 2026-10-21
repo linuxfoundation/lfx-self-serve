@@ -464,6 +464,19 @@
                     borderColor="border-gray-200"
                     (addClicked)="showRegistrants.set(true)">
                   </lfx-meeting-rsvp-details>
+                  @if (canResendInvite()) {
+                    <lfx-button
+                      class="w-full"
+                      styleClass="w-full"
+                      icon="fa-light fa-paper-plane"
+                      label="Resend Invite"
+                      size="small"
+                      severity="secondary"
+                      [loading]="resendingInvite()"
+                      (onClick)="resendInvite()"
+                      data-testid="resend-invite-organizer-button">
+                    </lfx-button>
+                  }
                   @if (canLeaveMeeting()) {
                     <lfx-button
                       class="w-full"
@@ -489,6 +502,19 @@
                         }
                       }
                       <lfx-add-to-calendar [meeting]="meeting()" [currentOccurrence]="currentOccurrence()"></lfx-add-to-calendar>
+                      @if (canResendInvite()) {
+                        <lfx-button
+                          class="w-full"
+                          styleClass="w-full"
+                          icon="fa-light fa-paper-plane"
+                          label="Resend Invite"
+                          size="small"
+                          severity="secondary"
+                          [loading]="resendingInvite()"
+                          (onClick)="resendInvite()"
+                          data-testid="resend-invite-button">
+                        </lfx-button>
+                      }
                       @if (canLeaveMeeting()) {
                         <lfx-button
                           class="w-full"

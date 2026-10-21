@@ -534,6 +534,7 @@ describe('MeetingCardComponent — remove myself', () => {
   let toastAdd: ReturnType<typeof vi.fn>;
   let confirm: ReturnType<typeof vi.fn>;
   let removeMyMeetingRegistration: ReturnType<typeof vi.fn>;
+  let resendMyMeetingInvitation: ReturnType<typeof vi.fn>;
   let removedIds: ReturnType<typeof signal<ReadonlySet<string>>>;
   let registrationClose$: Subject<{ registered: boolean }>;
   let rsvpButtons: RsvpButtonGroupComponent | undefined;
@@ -561,6 +562,7 @@ describe('MeetingCardComponent — remove myself', () => {
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: (id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id))),
             removeMyMeetingRegistration,
+            resendMyMeetingInvitation,
             getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
             getPastMeetingSummary: vi.fn().mockReturnValue(of(null)),
             getPastMeetingTranscript: vi.fn().mockReturnValue(of(null)),
@@ -600,6 +602,7 @@ describe('MeetingCardComponent — remove myself', () => {
     toastAdd = vi.fn();
     confirm = vi.fn();
     removeMyMeetingRegistration = vi.fn().mockReturnValue(of({ removed_registrant_ids: [], remaining_registrant_ids: [] }));
+    resendMyMeetingInvitation = vi.fn().mockReturnValue(of({ message: 'Invitation resent successfully' }));
     removedIds = signal<ReadonlySet<string>>(new Set());
     registrationClose$ = new Subject<{ registered: boolean }>();
     rsvpButtons = undefined;
@@ -797,6 +800,69 @@ describe('MeetingCardComponent — remove myself', () => {
 
     expect(component.canLeaveMeeting()).toBe(true);
     expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to remove you from this meeting. Please try again.' }));
+  });
+
+  it('offers a resend only while the viewer is a registered attendee', async () => {
+    expect((await mount()).canResendInvite()).toBe(true);
+  });
+
+  it.each([
+    ['not invited', { ...INVITEE, invited: false }, {}],
+    ['a past meeting', INVITEE, { past: true }],
+    ['signed out', INVITEE, { authenticated: false }],
+    ['an organizer without a registration of their own', { ...INVITEE, organizer: true, my_registrant_ids: [] }, {}],
+  ] as const)('does not offer a resend when %s', async (_label, meeting, options) => {
+    const component = await mount(meeting as Meeting, options);
+
+    expect(component.canResendInvite()).toBe(false);
+  });
+
+  it('resends without asking for confirmation and tells the viewer it was sent', async () => {
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1');
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('ignores a second click while a resend is in flight', async () => {
+    const pending$ = new Subject<{ message: string }>();
+    resendMyMeetingInvitation.mockReturnValue(pending$);
+    const component = await mount();
+
+    component.resendInvite();
+    component.resendInvite();
+
+    expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+    expect(component.resendingInvite()).toBe(true);
+    pending$.next({ message: 'ok' });
+    pending$.complete();
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it('shows the BFF message when it rejected the resend itself, such as a validation failure', async () => {
+    resendMyMeetingInvitation.mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 400, error: { code: 'VALIDATION_ERROR', error: 'Unable to determine your identity' } }))
+    );
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: expect.stringContaining('Unable to determine your identity') }));
+    expect(component.resendingInvite()).toBe(false);
+  });
+
+  it.each([403, 404, 500])('shows generic copy for a %s and lets the viewer retry', async (status) => {
+    resendMyMeetingInvitation.mockReturnValue(throwError(() => new HttpErrorResponse({ status, error: { code: 'ERROR', error: 'upstream detail' } })));
+    const component = await mount();
+
+    component.resendInvite();
+
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'Unable to resend the invitation. Please try again.' }));
+    expect(component.resendingInvite()).toBe(false);
   });
 
   it.each([true, false])('preserves only live-registration confirmations after a leave/rejoin attempt (success=%s)', async (success) => {

@@ -224,6 +224,43 @@ describe('MeetingService.removeMyMeetingRegistration', () => {
   });
 });
 
+describe('MeetingService.resendMyMeetingInvitation', () => {
+  let service: MeetingService;
+  let post: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    post = vi.fn(() => of({ message: 'Invitation resent successfully' }));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { post } }] });
+    service = TestBed.inject(MeetingService);
+  });
+
+  it('posts to the self resend route, with no registrant id from the client', () => {
+    service.resendMyMeetingInvitation(MEETING_UID).subscribe();
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][0]).toBe(`/api/meetings/${MEETING_UID}/registrants/self/resend`);
+    expect(post.mock.calls[0][1]).toEqual({});
+  });
+
+  it('encodes the meeting id into the path', () => {
+    service.resendMyMeetingInvitation('a/b?c').subscribe();
+
+    expect(post.mock.calls[0][0]).toBe('/api/meetings/a%2Fb%3Fc/registrants/self/resend');
+  });
+
+  it('rethrows an upstream failure to the caller', () => {
+    const failure = new Error('nope');
+    post.mockReturnValueOnce(throwError(() => failure));
+    const error = vi.fn();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    service.resendMyMeetingInvitation(MEETING_UID).subscribe({ error });
+
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+});
+
 describe('MeetingService removed-registration state', () => {
   let service: MeetingService;
 

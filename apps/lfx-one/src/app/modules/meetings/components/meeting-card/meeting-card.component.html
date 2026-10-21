@@ -483,6 +483,21 @@
             </lfx-button>
           }
         </div>
+        @if (canResendInvite()) {
+          <div class="mt-2">
+            <lfx-button
+              class="w-full"
+              styleClass="w-full"
+              icon="fa-light fa-paper-plane"
+              label="Resend Invite"
+              size="small"
+              severity="secondary"
+              data-testid="resend-invite-button"
+              [loading]="resendingInvite()"
+              (onClick)="resendInvite()">
+            </lfx-button>
+          </div>
+        }
         @if (canLeaveMeeting()) {
           <div class="mt-2">
             <lfx-button

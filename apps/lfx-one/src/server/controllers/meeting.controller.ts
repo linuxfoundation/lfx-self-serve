@@ -1243,6 +1243,56 @@ export class MeetingController {
   }
 
   /**
+   * POST /meetings/:uid/registrants/self/resend
+   * @description Resends the meeting invitation to the authenticated user's own registrant record. The registrant
+   * is resolved server-side and the resend runs under the user's own token; the M2M token is used only for the
+   * registrant lookup, after the caller's identity has been resolved from their session. Upstream verifies the
+   * registrant belongs to the caller.
+   */
+  public async resendMyMeetingInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+
+    const startTime = logger.startOperation(req, 'resend_my_meeting_invitation', { meeting_id: uid });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'resend_my_meeting_invitation',
+          service: 'meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const userEmail = getEffectiveEmail(req) || undefined;
+      const username = (await getUsernameFromAuth(req)) ?? undefined;
+
+      if (!userEmail && !username) {
+        next(
+          ServiceValidationError.forField('user', 'Unable to determine your identity', {
+            operation: 'resend_my_meeting_invitation',
+            service: 'meeting_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const m2mToken = await generateM2MToken(req);
+      const registrantId = await this.meetingService.resendMeetingInvitationSelf(req, uid, userEmail, username, m2mToken);
+
+      logger.success(req, 'resend_my_meeting_invitation', startTime, {
+        meeting_id: uid,
+        registrant_id: registrantId,
+      });
+
+      res.status(200).json({ message: 'Invitation resent successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * DELETE /meetings/:uid/registrants
    * @description Deletes one or more registrants with partial success support
    */

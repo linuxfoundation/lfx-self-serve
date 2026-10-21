@@ -87,6 +87,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -136,6 +137,7 @@ import { RescheduleOccurrenceDialogComponent } from '../../components/reschedule
 export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
+  private readonly inviteResend = inject(MeetingInviteResendService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -188,6 +190,7 @@ export class MeetingCardComponent implements OnInit {
   /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
   public checkingEditAccess: WritableSignal<boolean> = signal(false);
   public readonly leavingMeeting: WritableSignal<boolean> = signal(false);
+  public readonly resendingInvite: Signal<boolean> = computed(() => this.inviteResend.isResendingOwn(this.meeting().id));
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -259,6 +262,8 @@ export class MeetingCardComponent implements OnInit {
   });
   // Whoever is shown as registered can remove that registration, so the badge and the action share one rule.
   public readonly canLeaveMeeting: Signal<boolean> = computed(() => this.isRegisteredAttendee());
+  // Resending goes to the viewer's own registrant row, so it is offered under the same rule as removing it.
+  public readonly canResendInvite: Signal<boolean> = computed(() => this.isRegisteredAttendee());
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => this.authenticated() && !this.effectivelyInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
@@ -544,6 +549,10 @@ export class MeetingCardComponent implements OnInit {
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => this.leaveMeeting(),
     });
+  }
+
+  public resendInvite(): void {
+    this.inviteResend.resendOwn(this.meeting().id);
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {

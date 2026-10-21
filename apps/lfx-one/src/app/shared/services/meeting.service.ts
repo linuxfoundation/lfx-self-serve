@@ -820,6 +820,17 @@ export class MeetingService {
     );
   }
 
+  /** Resends the invitation to the signed-in user's own registration; the server resolves which registrant that is. */
+  public resendMyMeetingInvitation(meetingUid: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingUid)}/registrants/self/resend`, {}).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to resend meeting invitation to current user for meeting ${meetingUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   public createMeetingRsvp(meetingUid: string, request: CreateMeetingRsvpRequest): Observable<MeetingRsvp> {
     return this.http.post<MeetingRsvp>(`/api/meetings/${meetingUid}/rsvp`, request).pipe(
       take(1),
