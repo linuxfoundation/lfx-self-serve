@@ -89,6 +89,10 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   // the barrel needs the Angular JIT compiler (loaded at the top of this spec) in plain Node.
   isWithinHostKeyWindow: (await import('@lfx-one/shared/utils/meeting-privacy.utils')).isWithinHostKeyWindow,
   getPastMeetingResourceId: (await import('@lfx-one/shared/utils/past-meeting.utils')).getPastMeetingResourceId,
+  // Real too: the can_join tiered-access tests (#3999) assert on the actual join-window math,
+  // including the occurrence-aware and end-buffer cases a stub would make meaningless.
+  canJoinMeeting: (await import('../../../../../packages/shared/src/utils/meeting.utils')).canJoinMeeting,
+  getCurrentOrNextOccurrence: (await import('../../../../../packages/shared/src/utils/meeting.utils')).getCurrentOrNextOccurrence,
 }));
 // The deep-imported shared meeting-privacy module reads HOST_KEY_* from this barrel; stub it so
 // the full constants module graph (which re-imports shared/enums for ArtifactVisibility etc.) doesn't load.
@@ -501,6 +505,7 @@ describe('PublicMeetingController.getMeetingById tiered access (#3999)', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.full_access).toBe(true);
     expect(payload.meeting.id).toBe(MEETING_ID);
+    expect(payload).toHaveProperty('can_join');
   });
 
   it('grants full access to an invited or organizer caller on a private meeting, without requiring a password', async () => {
@@ -515,6 +520,7 @@ describe('PublicMeetingController.getMeetingById tiered access (#3999)', () => {
     expect(payload.full_access).toBe(true);
     // The full-access branch returns the real meeting object untouched — no allowlist projection.
     expect(payload.meeting.id).toBe(MEETING_ID);
+    expect(payload).toHaveProperty('can_join');
   });
 
   it('reduces a password-only guest on a private meeting to the anonymous allowlist, with no description, start_time, password, or occurrences', async () => {
@@ -562,6 +568,52 @@ describe('PublicMeetingController.getMeetingById tiered access (#3999)', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.full_access).toBe(false);
     expect(payload.can_join).toBe(true);
+  });
+
+  it('closes can_join once the meeting has ended, past the 40-minute buffer (#3999 follow-up, per @dealako)', async () => {
+    // Started 3 hours ago with a 30-minute duration — well past start + duration + 40min, which
+    // isWithinJoinWindow (open-ended, start-only) would have missed entirely.
+    meetingSvc.getMeetingById.mockResolvedValue(
+      buildMeeting({
+        visibility: MeetingVisibility.PRIVATE,
+        restricted: true,
+        password: 'pw',
+        start_time: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+        duration: 30,
+      } as Partial<Meeting>)
+    );
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.can_join).toBe(false);
+  });
+
+  it('computes can_join from the current occurrence, not the series start, for a recurring meeting (#3999 follow-up, per @dealako)', async () => {
+    // Series started a week ago (long past its own join window), but the next occurrence is
+    // tomorrow — isWithinJoinWindow (series-start-only) would have left this stuck "joinable"
+    // forever, while the current-occurrence-aware check correctly reports not-yet-joinable.
+    const seriesStart = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+    const nextOccurrenceStart = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
+    meetingSvc.getMeetingById.mockResolvedValue(
+      buildMeeting({
+        visibility: MeetingVisibility.PRIVATE,
+        restricted: true,
+        password: 'pw',
+        start_time: seriesStart,
+        duration: 30,
+        occurrences: [{ occurrence_id: 'occ-next', start_time: nextOccurrenceStart, duration: 30 } as never],
+      } as Partial<Meeting>)
+    );
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.can_join).toBe(false);
   });
 });
 

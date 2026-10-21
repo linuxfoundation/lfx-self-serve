@@ -24,7 +24,7 @@ import {
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
-import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { canJoinMeeting, getCurrentOrNextOccurrence, getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -155,9 +155,11 @@ export class PublicMeetingController {
 
       // Computed once against the full internal meeting (before any field stripping below) so every
       // response branch — including the anonymous/guest one — can tell the client whether the join
-      // window is currently open. Reuses the same check `postMeetingLink` enforces server-side before
-      // issuing a join URL, so this is advisory for UI state only, never a bypass of that gate.
-      const canJoin = this.isWithinJoinWindow(meeting);
+      // window is currently open. Mirrors the full-access client's own canJoinMeeting(meeting,
+      // currentOccurrence) — bounded by the 40-minute end buffer and occurrence-aware for recurring
+      // series — rather than isWithinJoinWindow's open-ended, series-start-only check used to gate
+      // postMeetingLink. This is advisory for UI state only, never a bypass of that gate.
+      const canJoin = canJoinMeeting(meeting, getCurrentOrNextOccurrence(meeting));
 
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
         res.json({

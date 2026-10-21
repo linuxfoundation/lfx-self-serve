@@ -1735,5 +1735,56 @@ describe('MeetingJoinComponent', () => {
       expect(page.querySelector('[data-testid="meeting-description"]')).not.toBeNull();
       expect(page.textContent).not.toContain('This is a private meeting');
     });
+
+    // Per @copilot-pull-request-reviewer on PR #4000: the guest-form-renders assertions above don't
+    // exercise can_join itself — a guest form can render while its Join button stays permanently
+    // disabled. These drive the actual gate the server's can_join (via liveMeetingCanJoin) controls.
+    it('fetches a join URL for a password-only guest when the server reports can_join: true (#3999 follow-up)', async () => {
+      const joinLink = 'https://zoom.us/j/1234567890';
+      authenticated.set(false);
+      getPublicMeetingJoinUrl.mockReturnValue(of({ link: joinLink }));
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, description: 'Secret agenda details' }),
+          project: buildProject(),
+          full_access: false,
+          can_join: true,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.joinForm.patchValue({ name: 'Guest Visitor', email: 'guest@acme-motors.example' });
+      fixture.componentInstance.joinForm.updateValueAndValidity();
+      // The join-URL stream debounces joinForm.statusChanges by 300ms before fetching.
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.canJoinMeeting()).toBe(true);
+      expect(getPublicMeetingJoinUrl).toHaveBeenCalled();
+      expect(fixture.componentInstance.fetchedJoinUrl()).toContain(joinLink);
+    });
+
+    it('never requests a join URL for a password-only guest when the server reports can_join: false (#3999 follow-up)', async () => {
+      authenticated.set(false);
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, description: 'Secret agenda details' }),
+          project: buildProject(),
+          full_access: false,
+          can_join: false,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      fixture.componentInstance.joinForm.patchValue({ email: 'guest@acme-motors.example' });
+      fixture.componentInstance.joinForm.updateValueAndValidity();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(fixture.componentInstance.canJoinMeeting()).toBe(false);
+      expect(getPublicMeetingJoinUrl).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.fetchedJoinUrl()).toBeUndefined();
+    });
   });
 });
