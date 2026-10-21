@@ -252,7 +252,7 @@ export class VotesTableComponent {
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
       items.push({ label: 'Send reminder', icon: 'fa-light fa-envelope', command: () => this.openReminderDialog(vote) });
       items.push({
-        label: 'Reminder mailing list',
+        label: 'Send reminder to mailing list',
         icon: 'fa-light fa-envelopes-bulk',
         tooltipOptions: { tooltipLabel: 'Opens your mail app to send a reminder email to the mailing list', tooltipPosition: 'left' },
         command: () => this.sendMailingListReminder(vote),
