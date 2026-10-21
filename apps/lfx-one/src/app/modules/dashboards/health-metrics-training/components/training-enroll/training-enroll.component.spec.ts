@@ -34,8 +34,8 @@ const PERIOD: HealthMetricsTrainingEnrollmentPeriod = {
   totals: { enrollments: 12000, certifications: 300, revenueUsd: 100000 },
   change: { enrollments: 0.2, certifications: 0, revenueUsd: -0.2 },
   byType: [
-    { deliveryType: 'E-Learning', enrollments: 9000, revenueUsd: 30000 },
-    { deliveryType: 'Certification Exam', enrollments: 3000, revenueUsd: 70000 },
+    { deliveryType: 'E-Learning', isListed: true, enrollments: 9000, revenueUsd: 30000 },
+    { deliveryType: 'Certification Exam', isListed: true, enrollments: 3000, revenueUsd: 70000 },
   ],
 };
 

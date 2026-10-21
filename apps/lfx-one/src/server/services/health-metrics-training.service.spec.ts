@@ -83,11 +83,15 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       { ENROLLMENTS: 3850, CERTIFICATIONS: 620, REVENUE_USD: 100000.5 },
       { ENROLLMENT_COUNT_CHANGE_PCT: 0.1, CERTIFICATIONS_CHANGE_PCT: null, REVENUE_CHANGE_PCT: -0.25 }
     ),
-    row('Certification Exam', { ENROLLMENTS: 950, CERTIFICATIONS: 620, REVENUE_USD: null, SORT_RANK: 2 }, { SORT_RANK_COMPLETED_YEAR: 1 }),
+    row(
+      'Certification Exam',
+      { ENROLLMENTS: 950, CERTIFICATIONS: 620, REVENUE_USD: null, SORT_RANK: 2 },
+      { SORT_RANK_COMPLETED_YEAR: 1, IS_LISTED_DELIVERY_TYPE: true }
+    ),
     row(
       'E-Learning',
       { ENROLLMENTS: 2900, CERTIFICATIONS: 0, REVENUE_USD: 0, SORT_RANK: 1 },
-      { SORT_RANK_COMPLETED_YEAR: 2, ENROLLMENTS_COMPLETED_YEAR: 4100 }
+      { SORT_RANK_COMPLETED_YEAR: 2, ENROLLMENTS_COMPLETED_YEAR: 4100, IS_LISTED_DELIVERY_TYPE: true }
     ),
   ];
 
@@ -120,7 +124,8 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd_${range}`);
       expect(sql).toContain(`sort_rank_${suffix} AS sort_rank_${range}`);
     }
-    for (const column of ['enrollment_count_change_pct', 'certifications_change_pct', 'revenue_change_pct']) expect(sql).toContain(column);
+    for (const column of ['is_listed_delivery_type', 'enrollment_count_change_pct', 'certifications_change_pct', 'revenue_change_pct'])
+      expect(sql).toContain(column);
     expect(sql).not.toMatch(/prev_ytd|baseline/);
   });
 
@@ -149,8 +154,8 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
       totals: { enrollments: 3850, certifications: 620, revenueUsd: 100000.5 },
       change: { enrollments: 0.1, certifications: null, revenueUsd: -0.25 },
       byType: [
-        { deliveryType: 'E-Learning', enrollments: 2900, revenueUsd: 0 },
-        { deliveryType: 'Certification Exam', enrollments: 950, revenueUsd: null },
+        { deliveryType: 'E-Learning', isListed: true, enrollments: 2900, revenueUsd: 0 },
+        { deliveryType: 'Certification Exam', isListed: true, enrollments: 950, revenueUsd: null },
       ],
     });
     expect(enrollment.trend).toEqual([
@@ -170,6 +175,23 @@ describe('HealthMetricsTrainingService.getEnrollment', () => {
     ]);
     expect(periods.COMPLETED_YEAR.change).toBeNull();
     expect(periods.COMPLETED_YEAR_3.change).toBeNull();
+  });
+
+  // MicroCourse and Bundle count in the All row but are not listed; a missing flag reads as not listed.
+  it("reads the model's listed flag for each type", async () => {
+    mockReads(
+      [...summaryRows, row('MicroCourse', { ENROLLMENTS: 40, SORT_RANK: 3 }, { IS_LISTED_DELIVERY_TYPE: false }), row('Bundle', { ENROLLMENTS: 0 })],
+      []
+    );
+
+    const { periods } = await new HealthMetricsTrainingService().getEnrollment(req, { foundationSlug: 'acme' });
+
+    expect(periods.YTD.byType.map((type) => [type.deliveryType, type.isListed])).toEqual([
+      ['E-Learning', true],
+      ['Certification Exam', true],
+      ['MicroCourse', false],
+      ['Bundle', false],
+    ]);
   });
 
   it('ranks a type without a rank last, by name', async () => {
@@ -227,14 +249,16 @@ describe('HealthMetricsTrainingService.getCourses', () => {
     ['COMPLETED_YEAR', 'last_completed_year'],
     ['COMPLETED_YEAR_2', 'prev_completed_year'],
     ['COMPLETED_YEAR_3', '3rd_last_completed_year'],
-  ] as const)('scopes %s to courses with enrollments, ranked by that period', async (range, suffix) => {
+  ] as const)('scopes %s to every course ever enrolled in, ranked by that period', async (range, suffix) => {
     execute.mockResolvedValue({ rows: [] });
 
     await new HealthMetricsTrainingService().getCourses(req, { ...QUERY, range });
 
     const [sql] = execute.mock.calls[0];
     expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.TRAINING_COURSES');
-    expect(sql).toContain(`AND enrollment_count_${suffix} > 0`);
+    expect(sql).toContain('AND has_enrollment_all_time');
+    expect(sql).not.toContain(`enrollment_count_${suffix} > 0`);
+    expect(sql).toContain('SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total');
     expect(sql).toContain('AND _key IS NOT NULL');
     expect(sql).toContain("AND NULLIF(TRIM(course_name), '') IS NOT NULL");
     expect(sql).toContain(`revenue_usd_${suffix} AS revenue_usd`);

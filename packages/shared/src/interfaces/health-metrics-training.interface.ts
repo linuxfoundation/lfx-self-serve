@@ -41,6 +41,8 @@ export interface HealthMetricsTrainingEnrollmentTotals {
 /** One delivery type's figures for the period, as LF Education names it (e.g. `E-Learning`). */
 export interface HealthMetricsTrainingEnrollmentType {
   deliveryType: string;
+  /** PCC's listed types (`is_listed_delivery_type`); MicroCourse and Bundle count in the totals but are not listed. */
+  isListed: boolean;
   enrollments: number | null;
   revenueUsd: number | null;
 }
@@ -162,7 +164,7 @@ export interface HealthMetricsTrainingCourses {
   rows: HealthMetricsTrainingCourse[];
   /** Courses matching the type and search. */
   totalRecords: number;
-  /** Every course with enrollments in the period; `null` when the read was not measured. */
+  /** Every course ever enrolled in (`scope_courses_count`); `null` when the read was not measured. */
   scopeTotal: number | null;
 }
 

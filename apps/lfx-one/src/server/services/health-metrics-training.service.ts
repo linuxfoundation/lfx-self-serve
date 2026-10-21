@@ -44,7 +44,7 @@ export function isSupportedTrainingRange(range: string): range is HealthMetricsL
 }
 
 /** Upper-cased Snowflake keys; each period's columns carry the range as a suffix (e.g. `ENROLLMENTS_YTD`). */
-type SummaryRow = { DELIVERY_TYPE: string } & Record<string, unknown>;
+type SummaryRow = { DELIVERY_TYPE: string; IS_LISTED_DELIVERY_TYPE?: boolean | null } & Record<string, unknown>;
 
 interface YearRow {
   ENROLLMENT_YEAR: number;
@@ -53,7 +53,7 @@ interface YearRow {
 
 /** Totals ride on every row; a page past the end leaves one totals-only row whose course columns are NULL. */
 interface CourseRow {
-  SCOPE_TOTAL: number;
+  SCOPE_TOTAL: number | null;
   TOTAL_RECORDS: number;
   IS_PAGE_ROW: boolean | null;
   COURSE_KEY: string | null;
@@ -109,6 +109,7 @@ export class HealthMetricsTrainingService {
     const summarySql = `
       SELECT
         delivery_type,
+        is_listed_delivery_type,
         ${periodColumns.join(',\n        ')},
         enrollment_count_change_pct,
         certifications_change_pct,
@@ -145,7 +146,7 @@ export class HealthMetricsTrainingService {
     };
   }
 
-  /** One page of the courses with enrollments in the period, ranked by the view, with the totals beside it. */
+  /** One page of every course ever enrolled in, ranked by the view for the period, with the totals beside it. */
   public async getCourses(req: Request, query: HealthMetricsTrainingCoursesQuery): Promise<HealthMetricsTrainingCourses> {
     // The suffix comes from a fixed map keyed by the validated range, never from the request.
     const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
@@ -176,10 +177,12 @@ export class HealthMetricsTrainingService {
           has_purchase_coverage,
           enrollment_count_${suffix} AS enrollment_count,
           revenue_usd_${suffix} AS revenue_usd,
-          sort_rank_${suffix} AS sort_rank
+          sort_rank_${suffix} AS sort_rank,
+          scope_courses_count
         FROM ${TRAINING_COURSES_VIEW}
         WHERE foundation_slug = ?
-          AND enrollment_count_${suffix} > 0
+          -- PCC's list: every course ever enrolled in, so one quiet in the period shows 0 rather than dropping out.
+          AND has_enrollment_all_time
           AND _key IS NOT NULL
           AND NULLIF(TRIM(course_name), '') IS NOT NULL
       ),
@@ -187,7 +190,8 @@ export class HealthMetricsTrainingService {
         SELECT * FROM scoped ${matchClause}
       ),
       totals AS (
-        SELECT (SELECT COUNT(*) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
+        -- The badge is the view's own count, repeated on every row and the same in every period.
+        SELECT (SELECT MAX(scope_courses_count) FROM scoped) AS scope_total, (SELECT COUNT(*) FROM matched) AS total_records
       ),
       page AS (
         SELECT *, TRUE AS is_page_row
@@ -239,6 +243,7 @@ function toPeriod(all: SummaryRow, types: SummaryRow[], range: HealthMetricsL2Ra
     .sort((a, b) => rank(a) - rank(b) || a.DELIVERY_TYPE.localeCompare(b.DELIVERY_TYPE))
     .map((row) => ({
       deliveryType: row.DELIVERY_TYPE,
+      isListed: row.IS_LISTED_DELIVERY_TYPE === true,
       enrollments: toNullableNumber(row[`ENROLLMENTS_${range}`]),
       revenueUsd: toNullableNumber(row[`REVENUE_USD_${range}`]),
     }));
