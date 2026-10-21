@@ -33,9 +33,9 @@ Available scales:
 ## Page headers
 
 - Every main lens page (reached from the Me, Foundation, Project or Org sidebar) opens with `<lfx-page-header>` from `shared/components/page-header/`. Never hand-build a page `h1` and description.
-- Don't restyle it: no font, size or colour classes for the title, and no top margin above it — `main-layout`'s `py-6` is the page's only top spacing. Leave 24px below it (`mb-6` or a parent `gap-6`).
+- Don't restyle it: no font, size or colour classes for the title, and no top margin above it — `main-layout`'s `py-6` is the page's only top spacing. Leave `mb-6` below it (or a parent `gap-6`).
 - Use its slots: `[pageHeaderActions]` for right-side buttons or filters, `[pageHeaderTitleSuffix]` for an inline tag, `[pageHeaderDescription]` (a `<span>`) for description copy with markup.
-- Detail, create and manage pages keep their own headings. Full spec: `docs/architecture/frontend/component-architecture.md` § Page header.
+- Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form still uses the header. Full spec: `docs/architecture/frontend/component-architecture.md` § Page header.
 
 ## Tailwind & PrimeNG wrappers
 

@@ -8,7 +8,7 @@
     titleTestId="marketing-impact-title"
     descriptionTestId="marketing-impact-subtitle">
     @if (hasFoundation() && contextLabel()) {
-      <span pageHeaderDescription class="text-xs text-gray-400" data-testid="marketing-impact-context">{{ contextLabel() }}</span>
+      <span pageHeaderDescription data-testid="marketing-impact-context">{{ contextLabel() }}</span>
     }
     <lfx-select
       pageHeaderActions

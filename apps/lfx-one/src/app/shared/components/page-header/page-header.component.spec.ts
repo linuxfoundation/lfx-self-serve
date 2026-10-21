@@ -36,7 +36,7 @@ describe('PageHeaderComponent', () => {
 
   it('projects the title suffix, rich description and actions into their slots', async () => {
     TestBed.configureTestingModule({ imports: [ProjectedHostComponent] });
-    // Set here here because an inline template this long trips component-max-inline-declarations.
+    // Set here because an inline template this long trips component-max-inline-declarations.
     TestBed.overrideComponent(ProjectedHostComponent, {
       set: {
         imports: [PageHeaderComponent],
@@ -52,6 +52,6 @@ describe('PageHeaderComponent', () => {
     const element: HTMLElement = fixture.nativeElement;
     expect(element.querySelector('h1')?.parentElement?.querySelector('[data-testid="suffix"]')).not.toBeNull();
     expect(element.querySelector('[data-testid="rich-description"]')?.parentElement?.classList).toContain('text-sm');
-    expect(element.querySelector('[data-testid="action"]')?.parentElement?.classList).toContain('shrink-0');
+    expect(element.querySelector('[data-testid="action"]')?.parentElement?.classList).toContain('gap-3');
   });
 });

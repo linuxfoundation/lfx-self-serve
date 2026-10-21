@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+<header class="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
   <div class="flex min-w-0 flex-col gap-1">
     @if (eyebrow(); as eyebrow) {
       <p class="text-xs font-medium uppercase tracking-widest text-gray-500" data-testid="page-header-eyebrow">{{ eyebrow }}</p>
@@ -15,5 +15,5 @@
     }
     <div class="text-sm text-gray-500 empty:hidden"><ng-content select="[pageHeaderDescription]" /></div>
   </div>
-  <div class="flex shrink-0 flex-wrap items-center gap-3 empty:hidden"><ng-content select="[pageHeaderActions]" /></div>
+  <div class="flex min-w-0 flex-wrap items-center gap-3 empty:hidden"><ng-content select="[pageHeaderActions]" /></div>
 </header>

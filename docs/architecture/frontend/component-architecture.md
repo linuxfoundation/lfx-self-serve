@@ -198,12 +198,12 @@ Wraps the `/profile` sub-tree to render tabbed profile pages (overview, edit, af
 Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header>` (`apps/lfx-one/src/app/shared/components/page-header/`), so title, description and spacing look the same everywhere:
 
 - **Title.** It is always an `h1` in Roboto Slab light at `text-2xl`, `text-gray-900`. Pages never restyle it or bump its size per breakpoint.
-- **Description.** The optional `description` input renders Inter `text-sm` in `text-gray-500`, 4px under the title. When the copy needs markup, project a `<span pageHeaderDescription>` instead.
-- **Spacing.** The component has no outer margin. The header sits at the top of the page content, so `MainLayoutComponent`'s `py-6` is the only top spacing. Pages leave 24px below it (`mb-6` or a parent `gap-6`).
-- **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters on the right from `sm` up. `eyebrow` adds an uppercase label above the title (Marketing Kit).
+- **Description.** The optional `description` input renders Inter `text-sm` in `text-gray-500`, `gap-1` under the title. When the copy needs markup, project a `<span pageHeaderDescription>` instead; it renders under the input in the same style, so it can also carry a second line.
+- **Spacing.** The component has no outer margin. The header sits at the top of the page content, so `MainLayoutComponent`'s `py-6` is the only top spacing. Pages leave `mb-6` below it (or a parent `gap-6`; 21px at the 14px root).
+- **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
 - **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
 
-Detail, create and manage pages keep their own headings.
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header.
 
 ### Tab shells: signal state vs. child routes
 
