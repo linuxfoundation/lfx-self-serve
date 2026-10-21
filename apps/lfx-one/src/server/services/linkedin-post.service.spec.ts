@@ -175,7 +175,28 @@ describe('LinkedIn generation', () => {
     expect(document.content_sha256).not.toBe(envelope.content_sha256);
     expect(mocks.persist.mock.calls[0].slice(3)).toEqual(['project-1', 'session-1']);
   });
-
+  it('stores LFX link metadata without replacing the raw envelope or persisted placeholder bytes/hash', async () => {
+    const envelope = fixture();
+    envelope.document_markdown += '\n[LINK]';
+    envelope.content_sha256 = createHash('sha256').update(envelope.document_markdown).digest('hex');
+    const before = JSON.stringify(envelope);
+    mocks.events.mockResolvedValue([finalized(envelope)]);
+    const service = new LinkedinPostService();
+    await service.result(req, 'subject-1', 'session-1', 'project-1');
+    const original = mocks.persist.mock.calls[0][2];
+    expect(original).not.toHaveProperty('answers');
+    expect(mocks.saveLink).not.toHaveBeenCalled();
+    const result = await service.result(req, 'subject-1', 'session-1', 'project-1', { share_link: 'https://public.example/shared' }, 25);
+    const stored = mocks.persist.mock.calls[1][2];
+    expect(JSON.stringify(result.envelope)).toBe(before);
+    expect(stored.document_markdown).toBe(original.document_markdown);
+    expect(stored.content_sha256).toBe(original.content_sha256);
+    expect(stored.document_markdown).toContain('[LINK]');
+    expect(stored.document_markdown).not.toContain('https://public.example/shared');
+    expect(stored.answers).toEqual({ share_link: 'https://public.example/shared' });
+    expect(mocks.saveLink).toHaveBeenCalledWith(req, 'project-1', 'run-0123456789abcdef01234567', 'https://public.example/shared', true);
+    expect(stored.source.words).toBe(25);
+  });
   it('honors the durable initializer absence result without replaying a mutable profile save', async () => {
     mocks.events.mockResolvedValue([finalized(fixture())]);
     mocks.initialize.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
@@ -186,6 +207,18 @@ describe('LinkedIn generation', () => {
     expect(mocks.initialize).toHaveBeenCalledTimes(2);
   });
 
+  it('completes an existing first-run document without auto-saving a profile while impersonating', async () => {
+    mocks.events.mockResolvedValue([finalized(fixture())]);
+    const impersonated = Object.assign({} as Request, { impersonationActive: true });
+    const result = await new LinkedinPostService().result(impersonated, 'subject-1', 'session-1', 'project-1');
+    expect(result.status).toBe('ready');
+    expect(result.persistence).toBeDefined();
+    expect(result.profileSaved).toBe(false);
+    expect(mocks.persist).toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.initialize).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
   it.each(LINKEDIN_RECORDED_CASES)('validates and stores recorded2.0 case $name with additive research', async ({ envelope }) => {
     mocks.events.mockResolvedValue([finalized(envelope)]);
     const result = await new LinkedinPostService().result(req, 'subject-1', 'session-1', 'project-1');

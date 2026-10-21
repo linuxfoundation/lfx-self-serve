@@ -50,6 +50,7 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Gatewaze Host Session](./backend/gw-host-session.md)** - Server-held Gatewaze session, id_token grant, key derivation, flag, BFF proxies and their authorization
 - **[LFX Insights API Tokens](./backend/insights-tokens.md)** - PAT service proxy, server-side LaunchDarkly access flag
 - **[Error Handling](./backend/error-handling-architecture.md)** - Comprehensive error handling patterns
+- **[LinkedIn Post Agent](./backend/mktg-linkedin-post.md)** - Per-user profile lifecycle, source ingestion, one-off documents and privacy boundaries
 
 ### 📦 Shared Package Architecture
 
