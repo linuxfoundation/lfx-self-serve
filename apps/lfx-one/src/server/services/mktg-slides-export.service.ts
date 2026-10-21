@@ -228,7 +228,7 @@ export class MktgSlidesExportService {
   }
 
   /**
-   * Last export and newest readable identity for freshness comparison only.
+   * Last export and approved-current identity for freshness comparison only.
    * Export start selects approved-current bytes; result polling loads the
    * exact revision selected at start even if approval/current has moved.
    */
@@ -239,10 +239,11 @@ export class MktgSlidesExportService {
     agentKey: MktgSlidesExportAgentKey,
     documentId: string
   ): Promise<MktgSlidesExportLastResponse> {
-    const [last, latestRevision] = await Promise.all([
+    const [last, summary] = await Promise.all([
       this.readLastExport(req, project, agentKey, documentId),
-      this.documentStore.readNewestRevisionRef(req, project, type, documentId),
+      this.documentStore.readApprovedCurrentSummary(req, project, type, documentId),
     ]);
+    const latestRevision = summary ? { id: summary.id, number: summary.number, contentSha256: summary.contentSha256 } : null;
     return { last, latestRevision };
   }
 

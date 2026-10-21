@@ -125,7 +125,7 @@
             <span>· {{ previous.exportedAt | date: 'd MMM y, HH:mm' }} · from revision {{ previous.revisionNumber }}</span>
             @if (stale()) {
               <span class="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700" data-testid="mktg-slides-export-stale"
-                >Out of date: the {{ assetLabel() }} has a newer revision</span
+                >Out of date: the {{ assetLabel() }}'s approved revision has changed</span
               >
             }
           </div>

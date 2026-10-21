@@ -166,7 +166,7 @@ describe('MktgSlidesExportComponent', () => {
     expect(query('mktg-slides-export-logo-note')?.textContent).toContain(MKTG_SLIDES_EXPORT_LOGO_NOTES['not-public']);
   });
 
-  it('shows the last export with its date, and marks it out of date when the asset has a newer revision', async () => {
+  it('shows the last export with its date, and marks it out of date when the approved revision has changed', async () => {
     lastResponse = {
       last: record({ revisionNumber: 1, contentSha256: 'b'.repeat(64) }),
       latestRevision: { id: `000002-${SHA}`, number: 2, contentSha256: SHA },
@@ -176,7 +176,7 @@ describe('MktgSlidesExportComponent', () => {
     expect((query('mktg-slides-export-last-link') as HTMLAnchorElement).href).toBe(DECK_LINK);
     expect(query('mktg-slides-export-last')?.textContent).toContain('19 Oct 2026');
     expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
-    expect(query('mktg-slides-export-stale')?.textContent).toContain('the messaging framework has a newer revision');
+    expect(query('mktg-slides-export-stale')?.textContent).toContain("the messaging framework's approved revision has changed");
   });
 
   it('offers Update or Create when a deck exists, and updates the same deck when asked', async () => {

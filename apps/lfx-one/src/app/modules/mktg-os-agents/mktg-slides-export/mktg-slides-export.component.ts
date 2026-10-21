@@ -34,7 +34,7 @@ import { catchError, distinctUntilChanged, Observable, of, startWith, Subject, S
 // Framework and the Brand Kit): the panel under the asset's header that the
 // header's "Export to Google Slides" button drives. It shows the document's
 // last export ("Open the last export", its date, and whether the asset has
-// a newer revision since), asks Update or Create when a deck already exists,
+// different approved-current content), asks Update or Create when a deck exists,
 // shows progress while the exporter works, then the deck (opens in a new
 // tab), its slide count and what was branded — or a plain message with a
 // retry. When the last export cannot be read it says so and offers to check
