@@ -340,6 +340,27 @@ describe('VoteService', () => {
       expect(merged).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
     });
 
+    // GH-4007 round 4 (Copilot/dealako): mergeRecentlyCreatedVotes must run on the RAW fetched rows,
+    // not on a row the opened-overlay has already rebadged to Active — otherwise the eviction check
+    // (`vote.status !== DISABLED`) fires on the optimistic status while the index is still actually
+    // lagging, discarding the carrier before it ever converges for real.
+    it('does not evict the created carrier when the raw row is still Disabled, even if an opened-overlay would rebadge it first', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+      service.markVoteOpened('new-vote');
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+
+      // Correct order: created-merge sees the raw Disabled row and keeps the carrier; the
+      // opened-overlay runs after, on the already-correct Active result.
+      const correctOrder = service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([staleServerRow]));
+      expect(correctOrder).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+
+      // The carrier is still live afterward — a later fetch missing the row still re-inserts it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
     it('keeps inserting inside the TTL window', () => {
       vi.useFakeTimers();
       try {

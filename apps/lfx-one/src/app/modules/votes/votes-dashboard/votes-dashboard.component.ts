@@ -624,8 +624,14 @@ export class VotesDashboardComponent {
             // the rolling seven-day window must never be inserted while that filter is active.
             // `searchName`/`group` likewise gate insertion under the free-text search box and the
             // Group dropdown — same reasoning, the lazy table never locally re-filters inserted rows.
+            //
+            // Runs on the RAW fetched rows, before the opened-overlay above (Copilot/dealako, GH-4007
+            // round 4): the created-carrier's eviction check reads `vote.status`, and if the opened
+            // overlay ran first it would see an already-rebadged Active row and evict the carrier
+            // while the index is still actually lagging — losing the new vote again on the next tab
+            // that skips the overlay (e.g. the server-filtered Active tab).
             map((votes) =>
-              this.voteService.mergeRecentlyCreatedVotes(filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes), {
+              this.voteService.mergeRecentlyCreatedVotes(votes, {
                 projectUid: project.uid,
                 statusFilter: filterState.status,
                 closingOnly: this.managementClosingOnly(),
@@ -635,6 +641,7 @@ export class VotesDashboardComponent {
                 isFirstPage: pageIndex === 0,
               })
             ),
+            map((votes) => (filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes))),
             catchError(() => {
               this.loading.set(false);
               return of([]);
