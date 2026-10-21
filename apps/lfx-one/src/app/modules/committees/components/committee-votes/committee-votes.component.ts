@@ -42,6 +42,11 @@ export class CommitteeVotesComponent {
   public creating = signal(false);
   public resultsDrawerVisible = model<boolean>(false);
   public selectedVoteId = signal<string | null>(null);
+  // Confirmed deadline from votes-table's voteExtended output, held until votes() reflects a deadline at
+  // least as new (self-healing, mirrors votes-table's own extendedDeadlines overlay) — a stale search-index
+  // refresh otherwise leaves the open results drawer showing the pre-extension deadline indefinitely (per
+  // @greptile-apps, GH-3823 review).
+  private readonly extendedVoteOverride = signal<Vote | null>(null);
 
   // Data
   public createVoteQueryParams: Signal<Record<string, string>> = this.initCreateVoteQueryParams();
@@ -62,6 +67,12 @@ export class CommitteeVotesComponent {
   /** votes-table's refresh output, fired after a successful delete — propagates to parent. */
   public refreshVotes(): void {
     this.refresh.emit();
+  }
+
+  /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
+   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps). */
+  protected onVoteExtended(vote: Vote): void {
+    this.extendedVoteOverride.set(vote);
   }
 
   protected onCreateVote(): void {
@@ -96,7 +107,12 @@ export class CommitteeVotesComponent {
     return computed(() => {
       const id = this.selectedVoteId();
       if (!id) return null;
-      return this.votes().find((v) => v.uid === id) || null;
+      const row = this.votes().find((v) => v.uid === id) || null;
+      const override = this.extendedVoteOverride();
+      if (override?.uid === id && (!row || new Date(row.end_time).getTime() < new Date(override.end_time).getTime())) {
+        return { ...(row ?? override), ...override };
+      }
+      return row;
     });
   }
 }

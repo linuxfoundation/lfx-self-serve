@@ -9,7 +9,7 @@ import { provideRouter } from '@angular/router';
 import { PollStatus } from '@lfx-one/shared/enums';
 import { MyVoteResponse, Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
-import { Observable, of, Subject } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteResultsDrawerComponent } from './vote-results-drawer.component';
@@ -288,5 +288,114 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
     fixture.detectChanges();
 
     expect(service.getVote).not.toHaveBeenCalled();
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86us6d4 @cursor "Null listVote clears open drawer"): a parent's list
+  // re-fetch can momentarily drop the selected row (listVote -> null) while voteId/visible stay set, which
+  // used to wipe the already-loaded vote via startWith(null). Pins the fix: initVote() falls back to the
+  // last successfully-loaded vote for the same id while a new request is in flight.
+  it('keeps the last-loaded vote visible when listVote goes null while the drawer stays open', async () => {
+    const vote = makeVote(PollStatus.ACTIVE);
+    const pending = new Subject<Vote>();
+    const service = {
+      getVote: vi.fn(() => of(vote)),
+      getMyVoteResponse: vi.fn(() => of(null)),
+      getVoteResults: vi.fn(() => of(null)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', vote.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('listVote', vote);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['vote']()).toEqual(vote);
+
+    service.getVote.mockReturnValue(pending);
+    fixture.componentRef.setInput('listVote', null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['vote']()).toEqual(vote);
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86us9by @copilot-pull-request-reviewer "independently emitting
+  // observables... pair a newly selected vote B with vote A's previous listVote/deadline"): combineLatest's
+  // three separately-emitting streams could interleave an id change with a stale listVote from the prior
+  // selection. Pins the fix: initVote() observes one computed snapshot of id/visible/listVote together, so
+  // switching straight to vote B (same equal deadline as A) and failing its detail fetch falls back to B's
+  // own listVote row, never A's stale data.
+  it('falls back to the newly selected vote on a failed detail fetch, never the previous selection', async () => {
+    const voteA = makeVote(PollStatus.ACTIVE, 'vote-a');
+    voteA.end_time = '2026-01-01T00:00:00Z';
+    const voteB = makeVote(PollStatus.ACTIVE, 'vote-b');
+    voteB.end_time = '2026-01-01T00:00:00Z';
+    const service = {
+      getVote: vi.fn(() => of(voteA)),
+      getMyVoteResponse: vi.fn(() => of(null)),
+      getVoteResults: vi.fn(() => of(null)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', voteA.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('listVote', voteA);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance['vote']()).toEqual(voteA);
+
+    service.getVote.mockReturnValue(throwError(() => new Error('Synthetic vote-b detail failure')));
+    fixture.componentRef.setInput('voteId', voteB.uid);
+    fixture.componentRef.setInput('listVote', voteB);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['vote']()).toEqual(voteB);
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86us9by @copilot-pull-request-reviewer): with different deadlines, the
+  // old combineLatest could fire a second request off the id-change emission, then another off the
+  // listVote-change emission. Pins the fix: one atomic snapshot issues exactly one detail request when id
+  // and listVote change together.
+  it('issues exactly one detail request when switching to a vote with a different deadline', async () => {
+    const voteA = makeVote(PollStatus.ACTIVE, 'vote-a');
+    voteA.end_time = '2026-01-01T00:00:00Z';
+    const voteB = makeVote(PollStatus.ACTIVE, 'vote-b');
+    voteB.end_time = '2026-03-01T00:00:00Z';
+    const service = {
+      getVote: vi.fn(() => of(voteA)),
+      getMyVoteResponse: vi.fn(() => of(null)),
+      getVoteResults: vi.fn(() => of(null)),
+    };
+    await TestBed.configureTestingModule({
+      imports: [VoteResultsDrawerComponent],
+      providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+    }).compileComponents();
+    fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+    fixture.componentRef.setInput('voteId', voteA.uid);
+    fixture.componentRef.setInput('audience', 'voter');
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('listVote', voteA);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(service.getVote).toHaveBeenCalledTimes(1);
+
+    service.getVote.mockClear();
+    service.getVote.mockReturnValue(of(voteB));
+    fixture.componentRef.setInput('voteId', voteB.uid);
+    fixture.componentRef.setInput('listVote', voteB);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(service.getVote).toHaveBeenCalledTimes(1);
+    expect(fixture.componentInstance['vote']()).toEqual(voteB);
   });
 });

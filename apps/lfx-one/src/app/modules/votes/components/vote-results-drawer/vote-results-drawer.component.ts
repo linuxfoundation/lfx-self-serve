@@ -165,23 +165,36 @@ export class VoteResultsDrawerComponent {
     // Also keys off listVote()'s own deadline fields (per @cursor): a manager can extend a vote's deadline
     // from the underlying table row while this drawer stays open on the same vote, and neither voteId nor
     // visible() flips in that case — only the caller's listVote input changes once it re-fetches.
+    // Reads id/visible/listVote through one computed() snapshot — not three independently-emitting
+    // toObservable() streams combined with combineLatest — so a single update (e.g. reopening the mounted
+    // drawer on a different vote) can never pair the new id with the previous vote's stale listVote before
+    // its own change propagates (per @copilot-pull-request-reviewer).
     let prevId: string | null = null;
     let prevDeadlineKey: string | null = null;
+    // Last vote payload actually served to the template, keyed by id — used as the fallback/startWith
+    // value when listVote drops to null while the same vote stays open (per @cursor): the parent's list
+    // temporarily losing the row (a pagination reset, a failed refetch) must not flash the drawer blank.
+    let lastVoteId: string | null = null;
+    let lastVote: Vote | null = null;
+
+    const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), listVote: this.listVote() }));
 
     return toSignal(
-      combineLatest([this.voteId$, toObservable(this.visible), toObservable(this.listVote)]).pipe(
+      toObservable(selection).pipe(
         distinctUntilChanged(
-          ([prevVId, prevVisible, prevListVote], [id, visible, listVote]) =>
-            prevVId === id &&
-            prevVisible === visible &&
-            prevListVote?.end_time === listVote?.end_time &&
-            prevListVote?.end_time_timezone === listVote?.end_time_timezone
+          (prev, curr) =>
+            prev.id === curr.id &&
+            prev.visible === curr.visible &&
+            prev.listVote?.end_time === curr.listVote?.end_time &&
+            prev.listVote?.end_time_timezone === curr.listVote?.end_time_timezone
         ),
-        switchMap(([id, visible, listVote]) => {
+        switchMap(({ id, visible, listVote }) => {
           if (!id) {
             this.loadingVoteDetails.set(false);
             prevId = null;
             prevDeadlineKey = null;
+            lastVoteId = null;
+            lastVote = null;
             return of(null);
           }
           if (!visible) {
@@ -200,10 +213,18 @@ export class VoteResultsDrawerComponent {
 
           this.loadingVoteDetails.set(true);
 
+          // Falls back to the last vote we actually loaded for this same id when listVote is null,
+          // rather than wiping the drawer with startWith(null) (per @cursor).
+          const fallback = listVote ?? (lastVoteId === id ? lastVote : null);
+
           return this.voteService.getVote(id, { skipCache }).pipe(
-            catchError(() => of(listVote)),
+            tap((v) => {
+              lastVoteId = id;
+              lastVote = v;
+            }),
+            catchError(() => of(fallback)),
             finalize(() => this.loadingVoteDetails.set(false)),
-            startWith(listVote)
+            startWith(fallback)
           );
         })
       ),

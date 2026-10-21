@@ -94,6 +94,10 @@ export class VotesDashboardComponent {
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly castDrawerVisible = signal<boolean>(false);
   protected readonly selectedVoteId = signal<string | null>(null);
+  // Confirmed deadline from votes-table's voteExtended output, held until votes()/myVotes() reflects a
+  // deadline at least as new — a stale search-index refresh otherwise leaves the open results drawer
+  // showing the pre-extension deadline indefinitely (per @greptile-apps, GH-3823 review).
+  private readonly extendedVoteOverride = signal<Vote | null>(null);
   protected readonly rowsPerPage = signal<number>(10);
   protected readonly currentFirst = signal<number>(0);
   protected readonly totalRecords = signal<number>(0);
@@ -276,6 +280,12 @@ export class VotesDashboardComponent {
     this.currentFirst.set(0);
     this.fetch$.next();
     this.refresh$.next();
+  }
+
+  /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
+   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps). */
+  protected onVoteExtended(vote: Vote): void {
+    this.extendedVoteOverride.set(vote);
   }
 
   protected onPageChange(event: { first: number; rows: number }): void {
@@ -660,7 +670,12 @@ export class VotesDashboardComponent {
       const id = this.selectedVoteId();
       if (!id) return null;
       const source = this.isMeLens() ? this.myVotes() : this.votes();
-      return source.find((v) => v.uid === id) || null;
+      const row = source.find((v) => v.uid === id) || null;
+      const override = this.extendedVoteOverride();
+      if (override?.uid === id && (!row || new Date(row.end_time).getTime() < new Date(override.end_time).getTime())) {
+        return { ...(row ?? override), ...override };
+      }
+      return row;
     });
   }
 
