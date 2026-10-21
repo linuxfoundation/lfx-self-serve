@@ -1,64 +1,66 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, formatDate, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, model, output, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, PollType, VoteResponseStatus } from '@lfx-one/shared';
 import {
-  CommentResultPageView,
   MyVoteResponse,
   PollCommentResult,
   RankedQuestionView,
   Vote,
   VoteParticipationStats,
-  VoteResultsOption,
   VoteResultsQuestion,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { VOTE_COMMENT_RESULTS_PAGE_SIZE, VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS } from '@lfx-one/shared/constants';
 import {
+  buildRankedQuestionViews,
+  buildVoteResultsQuestions,
   computeVoteParticipationStats,
   daysUntilInTimezone,
   formatVoteDeadline,
   getUserTimezone,
   getVoteEndedEarlyDetailTooltip,
   isVoteEndedEarly,
-  sortCommentResponsesByRecency,
-  splitIntoParagraphs,
+  mergeCommentResults,
 } from '@lfx-one/shared/utils';
-import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { LongTimezonePipe } from '@pipes/long-timezone.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { VoteDeadlinePipe } from '@pipes/vote-deadline.pipe';
 import { VoteService } from '@services/vote.service';
 import { DrawerModule } from 'primeng/drawer';
-import { PaginatorModule, PaginatorState } from 'primeng/paginator';
+import { PaginatorState } from 'primeng/paginator';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, finalize, of, shareReplay, startWith, switchMap, tap } from 'rxjs';
+
+import { VoteAbstainResultComponent } from '../vote-abstain-result/vote-abstain-result.component';
+import { VoteCommentResultsComponent } from '../vote-comment-results/vote-comment-results.component';
+import { VoteOptionResultsComponent } from '../vote-option-results/vote-option-results.component';
+import { VoteParticipationCardComponent } from '../vote-participation-card/vote-participation-card.component';
+import { VoteRankedQuestionResultsComponent } from '../vote-ranked-question-results/vote-ranked-question-results.component';
 
 @Component({
   selector: 'lfx-vote-results-drawer',
   imports: [
     DrawerModule,
     TagComponent,
-    DatePipe,
-    NgTemplateOutlet,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     SkeletonModule,
-    PaginatorModule,
     ButtonComponent,
     TooltipModule,
-    ExpandableTextComponent,
-    LinkifyPipe,
     VoteDeadlinePipe,
     LongTimezonePipe,
+    VoteParticipationCardComponent,
+    VoteOptionResultsComponent,
+    VoteAbstainResultComponent,
+    VoteRankedQuestionResultsComponent,
+    VoteCommentResultsComponent,
   ],
   templateUrl: './vote-results-drawer.component.html',
   styleUrl: './vote-results-drawer.component.scss',
@@ -84,9 +86,6 @@ export class VoteResultsDrawerComponent {
   // === Outputs ===
   public readonly castVoteRequested = output<string>();
 
-  // === Constants ===
-  protected readonly commentRowsPerPageOptions = VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS;
-
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
@@ -99,7 +98,9 @@ export class VoteResultsDrawerComponent {
   protected readonly myResponseLoading = signal<boolean>(false);
   /** True when the most recent my-response call failed (non-404) — a transient failure must not collapse into not-participant. */
   protected readonly myResponseError = signal<boolean>(false);
-  /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. */
+  /** Per-prompt paginator state ({ first, rows }) for the comment-results lists, keyed by prompt_id. Owned here (bound two-way into
+   *  lfx-vote-comment-results) so the comment page survives the results branch being torn down — e.g. a voter reopen swaps in the
+   *  loading skeleton while my-response reloads, which destroys and recreates lfx-vote-comment-results. */
   protected readonly commentPaginatorState = signal<Map<string, PaginatorState>>(new Map());
   // === Shared Observables ===
   private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
@@ -125,7 +126,6 @@ export class VoteResultsDrawerComponent {
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
   protected readonly rankedQuestions: Signal<RankedQuestionView[]> = this.initRankedQuestions();
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
-  protected readonly paginatedCommentResults: Signal<CommentResultPageView[]> = this.initPaginatedCommentResults();
   protected readonly votingMethodText: Signal<string> = this.initVotingMethodText();
   protected readonly rankedMethodDescription: Signal<string> = this.initRankedMethodDescription();
 
@@ -151,10 +151,6 @@ export class VoteResultsDrawerComponent {
     const id = this.vote()?.uid;
     if (id) this.castVoteRequested.emit(id);
     this.visible.set(false);
-  }
-
-  protected onCommentPageChange(promptId: string, event: PaginatorState): void {
-    this.commentPaginatorState.update((prev) => new Map(prev).set(promptId, { first: event.first ?? 0, rows: event.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE }));
   }
 
   // === Private Initializers ===
@@ -321,153 +317,22 @@ export class VoteResultsDrawerComponent {
   }
 
   private initQuestionsWithResults(): Signal<VoteResultsQuestion[]> {
-    return computed(() => {
-      const results = this.voteResults();
-      const isClosed = this.isVoteClosed();
-
-      if (!results?.poll_results?.length) {
-        return [];
-      }
-
-      return results.poll_results.map((pollResult) => {
-        const choiceVotes = pollResult.generic_choice_votes || [];
-
-        // Per-question choice-vote sum — drives the question model's totalVotes (zero-state detection), not percentages.
-        const totalVotes = choiceVotes.reduce((sum, cv) => sum + cv.vote_count, 0);
-
-        // Build options with vote counts from the results API
-        const optionsWithCounts: VoteResultsOption[] = choiceVotes.map((cv) => ({
-          choiceId: cv.choice_id,
-          text: pollResult.question.choices.find((c) => c.choice_id === cv.choice_id)?.choice_text || cv.choice_id,
-          voteCount: cv.vote_count,
-          percentage: this.computePercentage(cv.percentage, cv.vote_count, results.num_votes_cast || 0),
-          isWinner: false,
-          isTied: false,
-          isLeading: false,
-        }));
-
-        // Determine winner/ties based on max votes
-        const maxVotes = Math.max(...optionsWithCounts.map((o) => o.voteCount), 0);
-        const optionsWithMaxVotes = optionsWithCounts.filter((o) => o.voteCount === maxVotes);
-        const isTied = optionsWithMaxVotes.length > 1 && maxVotes > 0;
-
-        const processedOptions = optionsWithCounts.map((option) => ({
-          ...option,
-          isWinner: isClosed && !isTied && option.voteCount === maxVotes && maxVotes > 0,
-          isTied: isClosed && isTied && option.voteCount === maxVotes,
-          isLeading: option.voteCount === maxVotes && maxVotes > 0,
-        }));
-
-        return {
-          questionId: pollResult.question.question_id,
-          question: pollResult.question.prompt,
-          options: processedOptions,
-          totalVotes,
-        };
-      });
-    });
+    return computed(() => buildVoteResultsQuestions(this.voteResults(), this.isVoteClosed()));
   }
 
   /** Derives the ranked-choice per-question view model — round-summary payload is untyped upstream so detailed visualization is deferred to a placeholder banner. */
   private initRankedQuestions(): Signal<RankedQuestionView[]> {
-    return computed(() => {
-      const results = this.voteResults();
-      if (!results?.poll_results?.length) return [];
-
-      return results.poll_results.map((pr) => {
-        // Choice text: prefer winner_info.poll_choices, fall back to question.choices.
-        const choiceTextById = new Map((pr.ranked_choice_winner_info?.poll_choices ?? pr.question.choices ?? []).map((c) => [c.choice_id, c.choice_text]));
-
-        const choiceDistributions = (pr.ranked_choice_votes ?? []).map((rcv) => {
-          const totalRanked = rcv.rank_counts.reduce((sum, rc) => sum + rc.count, 0);
-          const rankCounts = rcv.rank_counts.map((rc) => ({
-            rank: rc.rank,
-            count: rc.count,
-            percentage: totalRanked > 0 ? Math.round((rc.count / totalRanked) * 100) : 0,
-          }));
-          return {
-            choiceId: rcv.choice_id,
-            choiceText: choiceTextById.get(rcv.choice_id) ?? rcv.choice_id,
-            totalRanked,
-            rankCounts,
-          };
-        });
-
-        return {
-          questionId: pr.question.question_id,
-          prompt: pr.question.prompt,
-          choiceDistributions,
-          hasRoundSummary: !!pr.irv_round_summary || !!pr.meek_stv_round_summary,
-        };
-      });
-    });
+    return computed(() => buildRankedQuestionViews(this.voteResults()));
   }
 
-  /** Prompts come from the vote detail (poll_comment_prompts), not the results payload — the
-   *  results endpoint only reports prompts that have responses, which hid the Comments section
-   *  entirely on zero-response votes. Responses left-join in by prompt_id when present, sorted
-   *  newest-first (pagination slices the already-sorted list, so page 1 always shows the most
-   *  recent comments). If the detail fetch supplied no prompts (e.g. it failed and the list-vote
-   *  fallback lacks them), degrade to the results payload's prompts that have responses. A failed
-   *  results fetch suppresses the section entirely — otherwise each prompt would render "No
-   *  responses yet" and a load failure would masquerade as a genuine zero-response vote. */
+  /** Prompts come from the vote detail and responses left-join in newest-first (see mergeCommentResults). A failed
+   *  results fetch suppresses the section entirely — otherwise each prompt would render "No responses yet" and a
+   *  load failure would masquerade as a genuine zero-response vote. */
   private initCommentResults(): Signal<PollCommentResult[]> {
     return computed(() => {
       if (this.voteResultsError()) return [];
-
-      const commentResults = this.voteResults()?.comment_results ?? [];
-      const detailPrompts = this.vote()?.poll_comment_prompts;
-
-      if (!detailPrompts?.length) {
-        return commentResults.flatMap((cr) => (cr.responses.length > 0 ? [{ ...cr, responses: sortCommentResponsesByRecency(cr.responses) }] : []));
-      }
-
-      const resultsByPromptId = new Map(commentResults.map((cr) => [cr.prompt.prompt_id, cr]));
-
-      return detailPrompts.map((prompt) => {
-        const result = resultsByPromptId.get(prompt.prompt_id);
-        return {
-          prompt,
-          responses: sortCommentResponsesByRecency(result?.responses ?? []),
-          total_responses: result?.total_responses,
-        };
-      });
+      return mergeCommentResults(this.voteResults()?.comment_results ?? [], this.vote()?.poll_comment_prompts);
     });
-  }
-
-  /** Slices each prompt's responses to its current page. The offset is clamped to the last valid
-   *  page so a stale Map entry (e.g. from a previously opened vote with more comments, or after a
-   *  rows-per-page change) can never render an empty page. */
-  private initPaginatedCommentResults(): Signal<CommentResultPageView[]> {
-    return computed(() => {
-      const stateByPrompt = this.commentPaginatorState();
-
-      return this.commentResults().map((cr) => {
-        const totalResponses = cr.responses.length;
-        const state = stateByPrompt.get(cr.prompt.prompt_id);
-        const rows = state?.rows ?? VOTE_COMMENT_RESULTS_PAGE_SIZE;
-        const lastPageFirst = Math.max(0, Math.ceil(totalResponses / rows) - 1) * rows;
-        const first = Math.min(state?.first ?? 0, lastPageFirst);
-
-        return {
-          ...cr,
-          responses: cr.responses.slice(first, first + rows).map((response) => ({
-            ...response,
-            paragraphs: splitIntoParagraphs(response.comment_text),
-          })),
-          totalResponses,
-          first,
-          rows,
-        };
-      });
-    });
-  }
-
-  /** Fallback base is num_votes_cast (all responses cast) so a missing upstream percentage stays on the same denominator upstream uses — not the per-question choice-vote sum. */
-  private computePercentage(apiPercentage: number, voteCount: number, totalResponses: number): number {
-    if (apiPercentage > 0) return apiPercentage;
-    if (totalResponses <= 0) return 0;
-    return Math.round((voteCount / totalResponses) * 100);
   }
 
   private initVotingMethodText(): Signal<string> {
