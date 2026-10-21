@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  LINKEDIN_POST_INTAKE,
   MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION,
   MKTG_ARTIFACT_INTAKE_MODES,
   MKTG_ARTIFACT_PARTITION_REGEX,
@@ -18,6 +17,7 @@ import {
   MKTG_REVISION_STATUS_METADATA_MAX_CHARS,
   MKTG_RUN_DOCUMENT_ID_PREFIX,
 } from '@lfx-one/shared/constants';
+import { LINKEDIN_AGENT_KEY } from '@lfx-one/shared/constants/linkedin-post.constants';
 import {
   LinkedinShareLinkResponse,
   MktgArtifactEnvelope,
@@ -464,7 +464,7 @@ export class MktgDocumentStoreService {
     value: unknown,
     initialize = false
   ): Promise<LinkedinShareLinkResponse> {
-    const type = findMktgDocumentType(LINKEDIN_POST_INTAKE.agentId);
+    const type = findMktgDocumentType(LINKEDIN_AGENT_KEY);
     const detail = type ? await this.getDocument(req, project, type, documentId) : null;
     const summary = detail?.revisions[0];
     const stored = detail && summary ? await this.loadSummaryRevision(req, detail, summary) : null;
@@ -651,7 +651,7 @@ export class MktgDocumentStoreService {
       restoredFromNumber: detail.revisions.find((entry) => entry.id === stored.record.restoredFromId)?.number ?? null,
       status: this.recordStatus(stored.record),
     };
-    const cards = type.agentKey === LINKEDIN_POST_INTAKE.agentId ? readLinkedinDocumentContent(stored.record.bundle.sidecar) : null;
+    const cards = type.agentKey === LINKEDIN_AGENT_KEY ? readLinkedinDocumentContent(stored.record.bundle.sidecar) : null;
     const presentation = cards ? await this.linkedinPresentation.read(req, project, documentId, cards) : null;
     const linkedinPost = presentation
       ? { ...presentation, ...(stored.authorId && selected.author ? { author: selected.author, isAuthor: getEffectiveSub(req) === stored.authorId } : {}) }

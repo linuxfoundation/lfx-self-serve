@@ -123,6 +123,12 @@ describe('LinkedIn generation', () => {
     expect(request.message).not.toContain('forged');
   });
 
+  it('uses the server-stored profile on later runs', async () => {
+    const envelope = fixture();
+    mocks.read.mockResolvedValue(envelope);
+    await new LinkedinPostService().start(req, 'subject-1', {}, undefined, 'linkedin-post');
+    expect(mocks.createSession.mock.calls[0][1].message).toContain('===== BEGIN SAVED PROFILE =====');
+  });
   it('rejects a first run without setup before spending a session', async () => {
     await expect(new LinkedinPostService().start(req, 'subject-1', {}, undefined, 'linkedin-post')).rejects.toThrow('Validation failed for setup');
     expect(mocks.createSession).not.toHaveBeenCalled();
