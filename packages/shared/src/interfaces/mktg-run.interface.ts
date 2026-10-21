@@ -517,29 +517,6 @@ export interface MktgAttachmentChip {
 }
 
 /**
- * The document's review-status chip on the result card — the label as it
- * appears inside the document (`Draft — pre-filled`, `Draft — from your
- * documents`, `ED-reviewed — [name], [date]`, …), with the styling that
- * tells a reviewed document from a draft. Precomputed in the component
- * because the reviewed/draft decision drives the class, and the repo
- * prohibits the conditional a template-side derivation would need.
- */
-export interface MktgDocumentStatusChip {
-  /** The status label verbatim from the document. */
-  label: string;
-  /** Tailwind colour classes for the chip. */
-  chipClass: string;
-}
-
-/** One word-count-locked derivative surfaced as a copyable chip on the result. */
-export interface MktgIntakeDerivativeChip {
-  /** Derivative key in the agent's envelope `derivatives` record. */
-  key: string;
-  /** Human label, e.g. `25-word summary`. */
-  label: string;
-}
-
-/**
  * BFF endpoints backing an agent's validated generation flow. Every agent with
  * an envelope contract exposes a generate/result pair (e.g.
  * `/api/mktg-agents/brand-kit/...`); the result endpoint returns only
@@ -733,20 +710,6 @@ export interface MktgRunQuestionRow {
   controlId: string;
 }
 
-/** One asked-and-answered pair as the result shows it. */
-export interface MktgRunAnsweredQuestionRow {
-  /** The question's key; the `@for` track key. */
-  key: string;
-  /** Short label. */
-  label: string;
-  /** The question itself. */
-  question: string;
-  /** The answer that went back. */
-  answer: string;
-  /** Where the answer came from, in words ("Suggested by the agent", "Edited", "Your answer"). */
-  originLabel: string;
-}
-
 /** Where one question stands in the questions stepper's header. */
 export type MktgRunQuestionChipState = 'current' | 'answered' | 'open';
 
@@ -865,10 +828,9 @@ export interface MktgRunResultResponse {
 }
 
 /**
- * The asset views the run page and the Documents area know how to render,
- * besides a Markdown document: the Messaging Framework's, the
- * Boilerplates' and the FAQ's, all built inside the mktg-os-agents module; a
- * shared asset-view registry is later work.
+ * Structured asset kinds selected by registered intakes on the document route.
+ * The run route owns intake, research and questions, not these result views.
+ * Brand Kit revisions use their own validated renderer on the document route.
  */
 export type MktgAssetViewKind = 'messaging-framework' | 'boilerplates' | 'faq';
 
@@ -1008,8 +970,6 @@ export interface MktgAgentIntake {
    * Brand Kit and the Message Foundation only when the project has them).
    */
   attachments?: MktgIntakeAttachment[];
-  /** Copyable derivative chips shown on the result, when the agent's envelope carries derivatives. */
-  derivativeChips?: MktgIntakeDerivativeChip[];
   /**
    * The agent's result endpoint persists the validated document server-side
    * and reports a {@link MktgRunPersistReceipt} on `ready`
@@ -1033,9 +993,9 @@ export interface MktgAgentIntake {
    * Every submission, the first and every edit-inputs resubmit, is a FRESH
    * generate with no prior version and no feedback: the agent's generate form
    * carries neither (for the Messaging Framework, a redraft from comments and
-   * a check of a hand-edited version are later work). The run page offers no
-   * "Request changes" box, and
-   * the run shell numbers its own versions, since each envelope says version 1.
+   * a check of a hand-edited version are later work). Intake submission carries
+   * no inline feedback; browser history numbers versions independently because
+   * each fresh envelope starts at version 1.
    */
   freshRunPerSubmission?: boolean;
   /** Titled field groups, in display order; without them the fields render as one list. */
@@ -1045,21 +1005,20 @@ export interface MktgAgentIntake {
   /** The optional logo-files section, shown after the fields (the Brand Kit's artwork). */
   logoFiles?: MktgIntakeLogoFilesConfig;
   /**
-   * The page spans the whole viewport width instead of the centred container:
-   * for results laid out as pages (the Brand Kit's book), which need the room.
+   * Removes the run page's centred-container gutters for a wide intake, feed
+   * and questions layout. The document route owns the rendered asset layout.
    */
   fullWidth?: boolean;
   /**
    * The result endpoint reports the agent's live activity
-   * ({@link MktgRunResultResponse.activity}): the run page shows it as a
-   * timeline while the agent works.
+   * ({@link MktgRunResultResponse.activity}): the run page shows the research
+   * timeline and transfers the owned attempt when writing begins.
    */
   liveActivity?: boolean;
   /**
-   * The agent writes a structured asset, not a document: the run lands on
-   * this view — generating state, the feed and the questions while the run
-   * is live, then the rendered asset — instead of the document result card,
-   * and the Documents area renders its revisions with the same view.
+   * Selects the structured renderer on the document route, never a Markdown
+   * fallback. Intake, research and questions stay on the run route; writing
+   * progress and the eventual stored revision belong to the document route.
    */
   assetView?: MktgAssetViewKind;
   /**
@@ -1086,10 +1045,9 @@ export interface MktgRunVersion {
   /** Word-count-locked derivatives from the validated envelope, when the agent's contract defines them. */
   derivatives?: Record<string, string>;
   /**
-   * Outcome of the server-side README fetch that fed THIS version, for agents
-   * whose BFF fetches one. Stored per version because every regeneration
-   * re-fetches: a version generated without a README says so on the result,
-   * and a later version generated with one does not inherit the note.
+   * Outcome of the server-side README fetch that fed this version, retained
+   * per version in transport/cache bookkeeping. The retired Markdown result
+   * surface's README outcome note is not shown or relocated to About.
    */
   readme?: MktgReadmeOutcome;
   /** The questions the agent asked before writing this version, when it asked any. */
@@ -1176,8 +1134,8 @@ export interface MktgRunAttempt {
   readme?: MktgReadmeOutcome;
 }
 
-/** Run-page phase: intake form → staged running → (the agent's questions →) document result. */
-export type MktgRunPhase = 'form' | 'running' | 'questions' | 'result';
+/** Run-page phase: intake → running/live research feed → (questions) → hand-off to the asset page. */
+export type MktgRunPhase = 'form' | 'running' | 'questions';
 
 /**
  * A questions turn waiting for the requester's answers: the session it came
@@ -1278,8 +1236,9 @@ export interface MktgGenerateRequest {
   /** Logo files, for intakes with a logo-files section. */
   logoFiles?: MktgIntakeLogoFile[];
   /**
-   * Feedback on the prior draft; present only for "Request changes"
-   * regenerations. The prior draft's version is NOT part of the request — the
+   * Optional legacy/programmatic follow-up feedback; the current intake UI
+   * has no Request changes form and does not send it. The prior draft's
+   * version is NOT part of the request — the
    * run service derives it from the stored run so the follow-up message's
    * version directive and the result poll gate can never disagree.
    */

@@ -17,7 +17,13 @@ import type { MktgRebuildStaleness, MktgRevisionRef } from './mktg-rebuild.inter
 import type { LinkedinDocumentContent } from './linkedin-post.interface';
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
 import type { Member360Envelope } from './member-360.interface';
-import type { MktgDocumentRunSnapshot } from './mktg-document-run.interface';
+import type { MktgDocumentRunSnapshot, MktgDocumentRunState } from './mktg-document-run.interface';
+import type { MktgAssetViewKind } from './mktg-run.interface';
+
+/** The stored structured views extend registered intake assets with the Brand Kit view. */
+export type MktgDocumentStructuredView = MktgAssetViewKind | 'brand-kit';
+/** Creator-side progress before a validated server row is observed. */
+export type MktgDocumentLocalProgress = Exclude<MktgDocumentRunState, 'questions'> | null;
 
 /**
  * Agent key of a document type — the artifact namespace for the agents that
@@ -94,7 +100,7 @@ export interface MktgDocumentType {
   /** Marketplace catalog agent id, when the agent is in the catalog. */
   catalogAgentId?: string;
   /** Structured stored view when it is not declared by the registered intake. */
-  structuredView?: 'brand-kit' | 'messaging-framework' | 'boilerplates';
+  structuredView?: MktgDocumentStructuredView;
   /** Name of the agent that writes the document, e.g. `Brand Kit Agent`. */
   agentName: string;
   /** Document name for living documents (`Brand Kit`), group name for runs (`LinkedIn posts`). */

@@ -133,26 +133,15 @@
             <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
           }
         }
-        @if (runAgentId()) {
-          <a
-            [routerLink]="[runAgentId()]"
-            [relativeTo]="documentsRoute"
-            (click)="onOpenIntake($event)"
-            [queryParams]="{ revision: null, generation: null, run: null }"
-            queryParamsHandling="merge"
-            class="w-fit text-sm text-blue-600 hover:text-blue-800"
-            data-testid="mktg-document-view-intake-link"
-            >Open the intake form</a
-          >
+        @if (runAgentId() && (state === 'failed' || state === 'questions')) {
+          <lfx-button label="Open the intake form" [text]="true" (onClick)="onOpenIntake()" data-testid="mktg-document-view-intake-link" />
         }
       </section>
     }
     @if (refreshWarning()) {
       <div class="flex flex-wrap items-center gap-2" data-testid="mktg-document-view-refresh-warning">
         <p class="text-xs text-gray-500">{{ refreshWarning() }}</p>
-        <button type="button" class="text-sm text-blue-700 underline" (click)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress">
-          Refresh
-        </button>
+        <lfx-button label="Refresh" [text]="true" (onClick)="onRefreshProgress()" data-testid="mktg-document-view-refresh-progress" />
       </div>
     }
 
@@ -236,7 +225,7 @@
           <a
             [routerLink]="link"
             [queryParams]="runAgainParams()"
-            class="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700"
+            class="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
             data-testid="mktg-document-view-run-again"
             >Run again</a
           >
@@ -324,6 +313,7 @@
               }
             </div>
           }
+          <!-- History precedes the asset headers in DOM, preserving its keyboard summary after Back. -->
           @if (asset(); as framework) {
             <lfx-mktg-framework-view
               [projectName]="projectName()"

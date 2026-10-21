@@ -24,6 +24,7 @@
     }
     <div class="grow"></div>
     <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
+      <ng-content select="[asset-actions]" />
       <lfx-button
         label="Download PDF"
         icon="fa-light fa-file-pdf"
@@ -53,7 +54,6 @@
         ariaLabel="Open the run's report: sources read, failed and gaps"
         data-testid="brand-kit-web-view-report"
         (onClick)="onGoToTab('sources')" />
-      <ng-content select="[asset-actions]" />
     </div>
   </div>
 

@@ -339,11 +339,11 @@ export class MktgAgentRunService {
   }
 
   /**
-   * Follow-up on the run's existing Guild session (edit-inputs resubmit or
-   * "Request changes" regeneration): the full form — always with the
-   * prior-version directive so the agent finalizes as v+1, plus the feedback
-   * paragraph when regenerating — rendered as the agent's batch message and
-   * posted through the chat/session BFF contract.
+   * Follow-up on an existing Guild session: the full form and prior-version
+   * directive, plus optional legacy/programmatic feedback, rendered as the
+   * agent's batch message and posted through the chat/session BFF contract.
+   * The current intake UI has no Request changes form; document revision
+   * workflows own subsequent edits.
    *
    * The stored run's latest version is the single source of truth for BOTH the
    * message's "finalize as version N+1" directive and the result poll's gate —
@@ -658,7 +658,7 @@ export class MktgAgentRunService {
       // always says version 1, so the run numbers its own history instead.
       version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
       document: result.documentMarkdown ?? '',
-      // An agent that writes an asset instead of a document stores it with the version; the run page renders it on the asset view.
+      // Structured output stays on its stored version; the document route owns rendering and exports.
       ...(result.asset && { asset: result.asset }),
       feedback: request.feedback,
       derivatives: result.derivatives,
