@@ -45,6 +45,7 @@ import type {
   HealthMetricsMembersAtRiskMember,
   HealthMetricsMembersAtRiskSummary,
   HealthMetricsMembersBoardCohortSummary,
+  HealthMetricsMembersBoardMeeting,
   HealthMetricsMembersBridge,
   HealthMetricsMembersChurn,
   HealthMetricsMembersChurnTier,
