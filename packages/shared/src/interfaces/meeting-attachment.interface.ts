@@ -272,6 +272,8 @@ export interface PendingAttachment {
   uploaded?: boolean;
   /** Error message if upload failed */
   uploadError?: string;
+  /** Occurrence the file is scoped to, fixed when it was queued so a later change to the scope picker cannot retarget it */
+  occurrence_id?: string;
 }
 
 /**

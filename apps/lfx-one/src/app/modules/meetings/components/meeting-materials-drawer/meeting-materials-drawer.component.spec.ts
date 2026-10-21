@@ -28,6 +28,11 @@ function attachment(partial: Partial<MeetingAttachment>): MeetingAttachment {
   };
 }
 
+/** A small PDF the drawer's file validation accepts. */
+function pdf(name: string): File {
+  return new File(['x'], name, { type: 'application/pdf' });
+}
+
 async function mount(options: { occurrence?: MeetingOccurrence | null; canScope?: boolean; attachments?: MeetingAttachment[]; pastMeetingId?: string } = {}) {
   const meetingService = {
     getMeetingAttachments: vi.fn().mockReturnValue(of(options.attachments ?? [])),
@@ -116,11 +121,25 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
     it('scopes an uploaded file to the managed occurrence when "this occurrence" is chosen', async () => {
       const { component, meetingService } = await mount({ occurrence });
       component.setNewItemScope('occurrence');
-      component.pendingAttachments.set([{ id: 'p1', fileName: 'notes.pdf', file: new File(['x'], 'notes.pdf'), fileSize: 1, mimeType: 'application/pdf' }]);
+      component.onFileSelect({ files: [pdf('notes.pdf')] });
 
       component.onSave();
 
       expect(meetingService.uploadMeetingFile).toHaveBeenCalledWith('m1', expect.any(File), expect.objectContaining({ occurrence_id: OCCURRENCE_ID }));
+    });
+
+    it('keeps the scope a file was queued with when the picker changes afterwards', async () => {
+      const { component, meetingService } = await mount({ occurrence });
+      component.setNewItemScope('occurrence');
+      component.onFileSelect({ files: [pdf('notes.pdf')] });
+      component.setNewItemScope('series');
+      component.onFileSelect({ files: [pdf('agenda.pdf')] });
+
+      component.onSave();
+
+      const scopeByName = new Map(meetingService.uploadMeetingFile.mock.calls.map(([, , presign]) => [presign.name, presign.occurrence_id]));
+      expect(scopeByName.get('notes.pdf')).toBe(OCCURRENCE_ID);
+      expect(scopeByName.get('agenda.pdf')).toBeUndefined();
     });
 
     it('does not scope anything without a scopable occurrence, even if the choice was left on "this occurrence"', async () => {
@@ -270,6 +289,32 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
       expect(meetingService.deleteMeetingAttachment).toHaveBeenCalledTimes(1);
       expect(component.pendingDeletions().size).toBe(0);
       expect(component.linkAttachments().map((a) => a.uid)).toEqual(['other']);
+    });
+
+    it('does not retry a scope change on an attachment that was deleted', async () => {
+      const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'gone' }), attachment({ uid: 'other' })] });
+      meetingService.updateMeetingAttachment.mockReturnValue(throwError(() => new Error('rejected')));
+      component.toggleScope(component.linkAttachments()[0]);
+      component.toggleScope(component.linkAttachments()[1]);
+      component.markForDeletion('gone');
+
+      component.onSave();
+      component.onSave();
+
+      expect(component.pendingScopes().has('gone')).toBe(false);
+      expect(meetingService.updateMeetingAttachment.mock.calls.map(([, uid]) => uid)).toEqual(['other', 'other']);
+    });
+
+    it('lists a file that uploaded when the save only partly succeeded', async () => {
+      const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'series' })] });
+      meetingService.updateMeetingAttachment.mockReturnValue(throwError(() => new Error('rejected')));
+      component.toggleScope(component.linkAttachments()[0]);
+      component.onFileSelect({ files: [pdf('notes.pdf')] });
+
+      component.onSave();
+
+      expect(component.fileAttachments().map((a) => a.uid)).toEqual(['file-1']);
+      expect(component.pendingAttachments()).toEqual([]);
     });
 
     it('keeps a file that failed to upload staged so the retry sends it', async () => {

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DatePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, model, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -39,7 +40,7 @@ interface UploadResult {
 
 @Component({
   selector: 'lfx-meeting-materials-drawer',
-  imports: [DrawerModule, FileUploadComponent, ButtonComponent, AttachmentScopeBadgeComponent],
+  imports: [DatePipe, DrawerModule, FileUploadComponent, ButtonComponent, AttachmentScopeBadgeComponent],
   templateUrl: './meeting-materials-drawer.component.html',
   styleUrl: './meeting-materials-drawer.component.scss',
 })
@@ -90,14 +91,6 @@ export class MeetingMaterialsDrawerComponent {
   public readonly showScopes = computed(() => !this.isPastMode() && !!this.occurrence()?.occurrence_id);
   /** True when this drawer can offer "this occurrence" vs "all occurrences". */
   public readonly canScope = computed(() => this.showScopes() && this.canScopeToOccurrence());
-  public readonly occurrenceLabel = computed(() => {
-    const start = this.occurrence()?.start_time;
-    const date = start ? new Date(start) : null;
-    if (!date || Number.isNaN(date.getTime())) {
-      return '';
-    }
-    return date.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  });
   /**
    * What is listed for management: series-wide attachments plus the ones for the managed occurrence.
    * Attachments scoped to other dates are not this occurrence's to manage, so they stay out of view.
@@ -198,6 +191,7 @@ export class MeetingMaterialsDrawerComponent {
           mimeType: file.type,
           uploading: false,
           uploaded: false,
+          ...this.newItemOccurrence(),
         };
 
         return pendingAttachment;
@@ -294,8 +288,6 @@ export class MeetingMaterialsDrawerComponent {
     }
     const deletions = Array.from(this.pendingDeletions());
     const uploads = this.pendingAttachments().filter((a) => !a.uploading && !a.uploadError && !a.uploaded && a.file);
-    // Read once so a scope picked while the save is running cannot change the scope of uploads already in flight.
-    const newItemOccurrence = this.newItemOccurrence();
 
     // Delete first (parallel), then upload (parallel).
     // Each delete returns {uid, ok} so we can identify which succeeded
@@ -346,7 +338,8 @@ export class MeetingMaterialsDrawerComponent {
                     name: attachment.fileName,
                     file_size: attachment.fileSize,
                     file_type: attachment.mimeType,
-                    ...newItemOccurrence,
+                    // The scope the file was queued with, not whatever the picker says now.
+                    ...(attachment.occurrence_id && { occurrence_id: attachment.occurrence_id }),
                   })
               ).pipe(
                 map((result): UploadResult => ({ id: attachment.id, result })),
@@ -364,7 +357,7 @@ export class MeetingMaterialsDrawerComponent {
           this.saving.set(false);
           const successfullyDeletedUids = deleteResults.filter((r) => r.ok).map((r) => r.uid);
           this.applySavedScopes(scopeResults.filter((r) => r.ok));
-          this.clearSavedUploadsAndDeletions(uploadResults, successfullyDeletedUids);
+          this.clearSavedUploadsAndDeletions(uploadResults, successfullyDeletedUids, isPast ? undefined : id);
           const hasPartialFailure = deleteResults.some((r) => !r.ok) || scopeResults.some((r) => !r.ok) || uploadResults.some((r) => r.result === null);
           const addedAttachments: PastMeetingAttachment[] = isPast
             ? uploadResults
@@ -441,15 +434,40 @@ export class MeetingMaterialsDrawerComponent {
    * an upload that went through would otherwise be uploaded again as a duplicate, and a delete that went through
    * would be refused as not found on every retry.
    */
-  private clearSavedUploadsAndDeletions(uploadResults: UploadResult[], deletedUids: string[]): void {
-    const uploadedIds = new Set(uploadResults.filter((r) => r.result !== null).map((r) => r.id));
-    if (uploadedIds.size > 0) {
+  private clearSavedUploadsAndDeletions(uploadResults: UploadResult[], deletedUids: string[], meetingId?: string): void {
+    const uploaded = uploadResults.filter((r): r is UploadResult & { result: PresignAttachmentResponse } => r.result !== null);
+    if (uploaded.length > 0) {
+      const uploadedIds = new Set(uploaded.map((r) => r.id));
       this.pendingAttachments.update((current) => current.filter((a) => !uploadedIds.has(a.id)));
+      // A live meeting's drawer does not reload after a save, so list what saved or it would be in neither list until reopened.
+      // (A past meeting's list is refreshed by its parent.)
+      if (meetingId) {
+        this.existingAttachments.update((current) => [...current, ...uploaded.map((r) => this.toMeetingAttachment(r.result, meetingId))]);
+      }
     }
     if (deletedUids.length > 0) {
       this.existingAttachments.update((current) => current.filter((a) => !deletedUids.includes(a.uid)));
       this.pendingDeletions.update((current) => new Set([...current].filter((uid) => !deletedUids.includes(uid))));
+      // A staged scope change on a deleted attachment would otherwise be retried against a record that no longer exists.
+      this.pendingScopes.update((current) => new Map([...current].filter(([uid]) => !deletedUids.includes(uid))));
     }
+  }
+
+  private toMeetingAttachment(upload: PresignAttachmentResponse, meetingId: string): MeetingAttachment {
+    return {
+      uid: upload.uid,
+      meeting_id: upload.meeting_id ?? meetingId,
+      type: upload.type,
+      name: upload.name,
+      category: upload.category,
+      file_name: upload.file_name,
+      file_size: upload.file_size,
+      file_upload_status: upload.file_upload_status,
+      file_content_type: upload.file_content_type,
+      created_at: upload.created_at,
+      created_by: upload.created_by,
+      occurrence_id: upload.occurrence_id,
+    };
   }
 
   /** Reflects scope changes that saved, so the list shows them now and a retry after a partial failure does not resend them. */

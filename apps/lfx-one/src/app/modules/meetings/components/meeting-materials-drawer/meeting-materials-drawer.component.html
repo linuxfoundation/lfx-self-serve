@@ -46,7 +46,7 @@
               [class]="newItemScope() === 'occurrence' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
               data-testid="scope-option-occurrence">
               <span class="text-sm font-medium text-gray-900">This occurrence</span>
-              <span class="text-xs text-gray-500">{{ occurrenceLabel() }}</span>
+              <span class="text-xs text-gray-500">{{ occurrence()?.start_time | date: 'EEE, MMM d, h:mm a' }}</span>
             </button>
             <button
               type="button"
@@ -130,7 +130,8 @@
                         @if (canScope() && attachment.source !== 'description') {
                           <button
                             type="button"
-                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors disabled:opacity-50"
+                            [disabled]="saving()"
                             (click)="toggleScope(attachment)"
                             [attr.data-testid]="'toggle-scope-' + attachment.uid">
                             {{ (effectiveScopes().get(attachment.uid) ?? 'series') === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
@@ -218,7 +219,8 @@
                         @if (canScope() && attachment.source !== 'description') {
                           <button
                             type="button"
-                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                            class="text-xs text-blue-500 hover:text-blue-700 transition-colors disabled:opacity-50"
+                            [disabled]="saving()"
                             (click)="toggleScope(attachment)"
                             [attr.data-testid]="'toggle-scope-' + attachment.uid">
                             {{ (effectiveScopes().get(attachment.uid) ?? 'series') === 'series' ? 'Limit to this occurrence' : 'Apply to all occurrences' }}
