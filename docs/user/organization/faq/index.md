@@ -18,7 +18,7 @@ You see EasyCLA for an organization you can open in the Organization lens. If yo
 
 ## What does "View only" mean on a corporate CLA?
 
-**View only** means you can read that signed corporate CLA (CCLA) but cannot change it, because you are not named on its CLA Manager list. It shows on the agreement's card in the EasyCLA list and next to its name at the top of its page, where **See who manages it** opens the **CLA Managers** tab so you can ask one of them. A corporate CLA that names you as a CLA Manager has no label. A role added in the last 30 minutes may not have taken effect yet, so reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
+**View only** means you can read that signed corporate CLA (CCLA) but cannot change it, because you are not named on its CLA Manager list. It shows on the agreement's card in the EasyCLA list and next to its name at the top of its page, where **See who manages it** opens the **CLA Managers** tab so you can ask one of them. A corporate CLA that names you as a CLA Manager has no label. The label follows the CLA Manager list, but a role added in the last 30 minutes may not have unlocked the controls yet, so reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](../easycla/#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
 ## Why do I still have access after I was removed as a CLA Manager?
 
