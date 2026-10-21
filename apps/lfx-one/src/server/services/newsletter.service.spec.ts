@@ -298,6 +298,22 @@ describe('NewsletterService.getNewsletterStatusCounts', () => {
     await expect(service.getNewsletterStatusCounts(req, 'p1')).rejects.toMatchObject({ statusCode: 503 });
   });
 
+  it('does not raise an unhandled rejection when the opt-out 401 lands while the page walk is still pending', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      listNewsletters.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({ newsletters: [] }), 20)));
+      listOptOuts.mockRejectedValue(new MicroserviceError('expired', 401, 'UNAUTHORIZED'));
+
+      await expect(service.getNewsletterStatusCounts(req, 'p1')).rejects.toMatchObject({ statusCode: 401 });
+      // unhandledRejection fires after the microtask queue drains; give it a tick to surface.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
   it('rethrows a 401 from the opt-out read', async () => {
     listNewsletters.mockResolvedValue({ newsletters: [] });
     listOptOuts.mockRejectedValue(new MicroserviceError('expired', 401, 'UNAUTHORIZED'));

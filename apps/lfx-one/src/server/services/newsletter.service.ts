@@ -150,6 +150,9 @@ export class NewsletterService {
         if (statusCode === 401) throw error;
         return null;
       });
+    // Attach a handler now: a 401 can reject this while the page walk is still awaiting upstream, and an
+    // unhandled rejection there would be logged as a spurious error. The final await still sees the rejection.
+    optOutCount.catch(() => undefined);
 
     const counts = { draft: 0, scheduled: 0, sent: 0 };
     let pageToken: string | undefined;
@@ -166,7 +169,7 @@ export class NewsletterService {
         pages += 1;
       } while (pageToken && pages < MAX_STATUS_COUNT_PAGES);
     } catch (error) {
-      // Settle the in-flight opt-out read so a failure there can't surface as an unhandled rejection.
+      // Let the opt-out read settle so a late rejection never races the response.
       await optOutCount.catch(() => undefined);
       throw error;
     }
