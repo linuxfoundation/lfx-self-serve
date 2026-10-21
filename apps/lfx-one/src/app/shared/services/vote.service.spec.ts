@@ -278,7 +278,7 @@ describe('VoteService', () => {
 
     it('prepends a marked vote missing from the fetched page', () => {
       const created = buildVote({ uid: 'new-vote', name: 'Cloned ballot' });
-      service.markVoteCreated(created);
+      service.markVoteCreated(created, false);
 
       const votes = [buildVote({ uid: 'v1' })];
       const merged = service.mergeRecentlyCreatedVotes(votes);
@@ -288,7 +288,7 @@ describe('VoteService', () => {
 
     it('evicts the carried uid once a fetched page already contains it — the server row wins', () => {
       const created = buildVote({ uid: 'new-vote' });
-      service.markVoteCreated(created);
+      service.markVoteCreated(created, false);
 
       const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name' });
       const merged = service.mergeRecentlyCreatedVotes([serverRow]);
@@ -303,7 +303,7 @@ describe('VoteService', () => {
       vi.useFakeTimers();
       try {
         const created = buildVote({ uid: 'new-vote' });
-        service.markVoteCreated(created);
+        service.markVoteCreated(created, false);
         vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS - 1);
 
         const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
@@ -317,7 +317,7 @@ describe('VoteService', () => {
       vi.useFakeTimers();
       try {
         const created = buildVote({ uid: 'new-vote' });
-        service.markVoteCreated(created);
+        service.markVoteCreated(created, false);
         vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
 
         const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
@@ -329,6 +329,103 @@ describe('VoteService', () => {
 
     it('evictRecentlyCreatedVote is a no-op for uids that are not carried', () => {
       expect(() => service.evictRecentlyCreatedVote('never-marked')).not.toThrow();
+    });
+
+    it('normalizes the carried status to Active when the vote was successfully opened', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+
+      expect(merged.find((v) => v.uid === 'new-vote')?.status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('keeps the carried status as-is when the vote was not opened', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+
+      expect(merged.find((v) => v.uid === 'new-vote')?.status).toBe(PollStatus.DISABLED);
+    });
+
+    it('does not insert a carried vote scoped to a different project', () => {
+      const created = buildVote({ uid: 'new-vote', project_uid: 'project-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { projectUid: 'project-b' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote scoped to the matching project', () => {
+      const created = buildVote({ uid: 'new-vote', project_uid: 'project-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { projectUid: 'project-a' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote scoped to a different committee', () => {
+      const created = buildVote({ uid: 'new-vote', committee_uid: 'committee-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { committeeUid: 'committee-b' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('does not insert a carried vote whose status does not match the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote whose status matches the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert on a page other than the first, to avoid duplicating the row across pagination', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { isFirstPage: false });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('still evicts a converged carried uid even on a non-first page', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name' });
+      const merged = service.mergeRecentlyCreatedVotes([serverRow], { isFirstPage: false });
+
+      expect(merged).toEqual([serverRow]);
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { isFirstPage: false });
+      expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+  });
+
+  describe('deleteVote', () => {
+    it('evicts the recently-created carrier so a deleted synthesized draft cannot reappear in the list', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+      http.delete.mockReturnValue(of(undefined));
+
+      service.deleteVote('new-vote').subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
     });
   });
 

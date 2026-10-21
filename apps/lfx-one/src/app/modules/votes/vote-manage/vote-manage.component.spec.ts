@@ -331,7 +331,7 @@ describe('VoteManageComponent', () => {
       expect(voteServiceMock.discardSpeculativeVote).not.toHaveBeenCalled();
       // Carries the confirmed vote to the recently-created list so it renders immediately,
       // instead of waiting on the search index (GH-4007).
-      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(unenrichedVote());
+      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(unenrichedVote(), true);
     });
 
     it('accept with opened: false warns and navigates — the draft residue is intentional, no delete', async () => {
@@ -584,7 +584,7 @@ describe('VoteManageComponent', () => {
       fixture.componentInstance.onSubmit();
       (capturedConfirmation as Confirmation | null)?.accept?.();
 
-      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(createdVote);
+      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(createdVote, true);
     });
 
     // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): fail closed rather than silently trusting the clone's own

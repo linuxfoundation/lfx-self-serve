@@ -283,7 +283,11 @@ export class VoteService {
   public deleteVote(voteUid: string): Observable<void> {
     return this.http.delete<void>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(
       take(1),
-      tap(() => this.voteDetailCache.delete(voteUid))
+      tap(() => {
+        this.voteDetailCache.delete(voteUid);
+        // Otherwise a deleted synthesized draft (GH-4007) keeps reappearing in the list until its TTL expires.
+        this.evictRecentlyCreatedVote(voteUid);
+      })
     );
   }
 
@@ -399,9 +403,15 @@ export class VoteService {
    * short window — the full Vote is carried so the synthesized row renders correctly, not a
    * status-only stub. Reuses RECENTLY_OPENED_VOTE_TTL_MS: same "search index hasn't caught up yet"
    * window the just-opened carrier already assumes.
+   *
+   * `opened` normalizes the stored status: `confirmSpeculativeVote()`'s `vote` field is always the
+   * pre-`enableVote()` create-response snapshot (still Draft/Disabled) regardless of whether the
+   * follow-up enable call succeeded, so a caller passing `opened: true` gets a synthesized row that
+   * already shows Active instead of a stale Draft badge until the index converges.
    */
-  public markVoteCreated(vote: Vote): void {
-    this.recentlyCreatedVotes.update((created) => new Map(created).set(vote.uid, { vote, markedAt: Date.now() }));
+  public markVoteCreated(vote: Vote, opened: boolean): void {
+    const carried = opened ? { ...vote, status: PollStatus.ACTIVE } : vote;
+    this.recentlyCreatedVotes.update((created) => new Map(created).set(vote.uid, { vote: carried, markedAt: Date.now() }));
   }
 
   /** Evicts a carried uid once a fetched row already carries it — the server row is now the source of truth. */
@@ -419,8 +429,20 @@ export class VoteService {
    * prepended so a just-created or cloned vote appears in the list immediately instead of only
    * after the search index converges. Self-healing: once a fetched page already contains the uid,
    * the carried entry is evicted and the server row is used instead.
+   *
+   * `options` scope the insertion to the list actually being rendered:
+   * - `projectUid`/`committeeUid` keep a vote created in one project/committee from leaking into
+   *   another's list — a carried vote only inserts into a page whose scope it matches.
+   * - `statusFilter` keeps a carried vote out of a page filtered to a status it doesn't match
+   *   (e.g. a newly-opened vote must not appear under the Disabled tab).
+   * - `isFirstPage` (default `true`) limits insertion to the first page of a paginated fetch so the
+   *   same optimistic row isn't prepended to every page.
    */
-  public mergeRecentlyCreatedVotes(votes: Vote[]): Vote[] {
+  public mergeRecentlyCreatedVotes(
+    votes: Vote[],
+    options: { projectUid?: string; committeeUid?: string; statusFilter?: PollStatus | null; isFirstPage?: boolean } = {}
+  ): Vote[] {
+    const { projectUid, committeeUid, statusFilter, isFirstPage = true } = options;
     const recentlyCreated = this.getLiveRecentlyCreatedVotes();
     if (recentlyCreated.size === 0) {
       return votes;
@@ -431,9 +453,13 @@ export class VoteService {
     for (const [uid, vote] of recentlyCreated) {
       if (present.has(uid)) {
         this.evictRecentlyCreatedVote(uid);
-      } else {
-        missing.push(vote);
+        continue;
       }
+      if (!isFirstPage) continue;
+      if (projectUid !== undefined && vote.project_uid !== projectUid) continue;
+      if (committeeUid !== undefined && vote.committee_uid !== committeeUid) continue;
+      if (statusFilter != null && vote.status !== statusFilter) continue;
+      missing.push(vote);
     }
 
     return missing.length > 0 ? [...missing, ...votes] : votes;

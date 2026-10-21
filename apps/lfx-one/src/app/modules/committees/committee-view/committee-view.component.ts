@@ -1734,8 +1734,10 @@ export class CommitteeViewComponent {
             // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over
             // stale index rows — same transformation the child component previously applied.
             // mergeRecentlyCreatedVotes (GH-4007) also inserts a just-created/cloned vote that is
-            // missing from the page entirely while the search index catches up.
-            map((votes) => this.voteService.mergeRecentlyCreatedVotes(this.voteService.mergeRecentlyOpenedVotes(votes))),
+            // missing from the page entirely while the search index catches up — scoped to this
+            // committee so a vote created elsewhere can't leak in. getVotesByCommittee is unpaginated
+            // (returns the full list in one call), so isFirstPage defaults true with no duplication risk.
+            map((votes) => this.voteService.mergeRecentlyCreatedVotes(this.voteService.mergeRecentlyOpenedVotes(votes), { committeeUid: committee.uid })),
             catchError(() => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
               return of([]);
