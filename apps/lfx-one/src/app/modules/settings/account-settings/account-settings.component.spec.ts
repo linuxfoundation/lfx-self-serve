@@ -438,12 +438,22 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
   });
 
   // A primary change is blocked when the invite email couldn't be pinned first (#3983); the reason
-  // must reach the user rather than a generic failure.
-  it('shows why a primary change was blocked', async () => {
-    const guidance = "Your primary email wasn't changed. Please try again in a few minutes.";
+  // must reach the user rather than a generic failure, for both the retryable and the rejected case.
+  it.each([
+    ['a retryable 503 advisory', 503, ERROR_CODES.SERVICE_ADVISORY, "Your primary email wasn't changed. Please try again in a few minutes."],
+    [
+      'a rejected-pin 400',
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      "Your primary email wasn't changed. Choose a different address for meeting invitations in Settings.",
+    ],
+  ])('shows why a primary change was blocked by %s', async (_label, status, code, guidance) => {
     const userServiceMock = makeUserServiceMock();
     userServiceMock['setPrimaryEmail'] = vi.fn(() =>
-      throwError(() => new HttpErrorResponse({ status: 503, error: { error: guidance, code: ERROR_CODES.SERVICE_ADVISORY } }))
+      throwError(
+        () =>
+          new HttpErrorResponse({ status, error: { error: guidance, code, errors: [{ field: 'email', message: guidance, code: 'FIELD_VALIDATION_ERROR' }] } })
+      )
     );
     const fixture = await setup(userServiceMock);
 

@@ -171,10 +171,22 @@ describe('ProfileEditDrawerComponent — impersonation read-only (#2399)', () =>
   });
 
   // A primary change blocked because the invite email couldn't be pinned (#3983) toasts the reason.
-  it('toasts the server reason and restores the selection when a primary change is blocked', async () => {
+  it.each([
+    ['a retryable 503 advisory', 503, ERROR_CODES.SERVICE_ADVISORY, "Your primary email wasn't changed. Please try again in a few minutes."],
+    [
+      'a rejected-pin 400',
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      "Your primary email wasn't changed. Choose a different address for meeting invitations in Settings.",
+    ],
+  ])('toasts the server reason and restores the selection when a primary change is blocked by %s', async (_label, status, code, guidance) => {
     await setup({ impersonating: false });
-    const guidance = "Your primary email wasn't changed. Please try again in a few minutes.";
-    setPrimaryEmail.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: guidance, code: ERROR_CODES.SERVICE_ADVISORY } })));
+    setPrimaryEmail.mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({ status, error: { error: guidance, code, errors: [{ field: 'email', message: guidance, code: 'FIELD_VALIDATION_ERROR' }] } })
+      )
+    );
 
     comp.onPrimaryEmailChange('alt@example.com');
     await fixture.whenStable();
