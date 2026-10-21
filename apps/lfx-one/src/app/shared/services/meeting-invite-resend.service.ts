@@ -40,7 +40,8 @@ export class MeetingInviteResendService {
     confirmationService.confirm({
       header: 'Resend invitation',
       message: `Resend the meeting invitation to ${label}?`,
-      icon: 'fa-light fa-paper-plane',
+      // PrimeNG sizes the confirm icon at 2rem (font-size, width and height), which dwarfs this short prompt; scale it down for this dialog only.
+      icon: 'fa-light fa-paper-plane !text-xl !w-auto !h-auto',
       acceptLabel: 'Resend',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-sm',
