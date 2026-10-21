@@ -424,7 +424,7 @@ export interface FilterPillOption {
 }
 
 /** Accent colors a filter pill can take */
-export type FilterPillColor = 'green' | 'red' | 'purple';
+export type FilterPillColor = 'green' | 'red' | 'purple' | 'blue';
 
 /**
  * A single signal row within a dual-signal metric card

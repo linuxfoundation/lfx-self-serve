@@ -20,6 +20,14 @@
       <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="documents-table-card">
         @if (useProjectSource()) {
           <!-- ── PROJECT / FOUNDATION lens ───────────────────────────────────── -->
+          <!-- Source Pills -->
+          <lfx-card-tabs-bar
+            [options]="projectSourceTabOptions()"
+            [selectedFilter]="projectSourceTab()"
+            (filterChange)="onProjectSourceTabChange($event)"
+            data-testid="documents-source-pills">
+          </lfx-card-tabs-bar>
+
           <div class="px-5 pt-4 flex flex-col gap-3">
             <!-- Toolbar -->
             @if (canUpload()) {
@@ -66,7 +74,7 @@
               </nav>
             }
 
-            <!-- Search + Source filter -->
+            <!-- Search -->
             <div class="pb-3 border-b border-gray-100">
               <div class="flex flex-wrap items-center gap-2">
                 <div class="flex-1 min-w-48">
@@ -79,18 +87,6 @@
                     size="small"
                     data-testid="documents-search-input">
                   </lfx-input-text>
-                </div>
-                <div class="w-40 shrink-0 overflow-hidden">
-                  <lfx-select
-                    [form]="filterForm"
-                    control="projectDocumentSource"
-                    size="small"
-                    [options]="projectDocumentSourceOptions"
-                    placeholder="All Sources"
-                    [showClear]="true"
-                    styleClass="w-full"
-                    data-testid="documents-dashboard-source-filter">
-                  </lfx-select>
                 </div>
               </div>
             </div>
