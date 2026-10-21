@@ -3445,9 +3445,27 @@ export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
  *
  * Far above any paste an operator produces, so the invariant the bound above states — a resource
  * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
- * stopped before `createConfigEnvelope` walks it.
+ * stopped before `createConfigEnvelope` walks it. Only the one field named above is measured against
+ * it: every other nested name upstream decodes as a plain `string`, so an array under one of those
+ * is a body upstream refuses outright and has no over-refusal to relax.
  */
 export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
+
+/**
+ * The ceiling on nested entries SUMMED across one list, because per-list ceilings multiply: the
+ * outer list is bounded at {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}, so the bound above on its own
+ * would admit a hundred thousand nested strings for the normalisers to trim and re-allocate one at
+ * a time — the hazard the flat ceiling above names, back at the same order of magnitude.
+ *
+ * Derived rather than chosen, so it cannot refuse what upstream accepts: `validateStructuredSnippets`
+ * refuses more than {@link GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS} snippets on the RAW `len()`, before it
+ * reads a single one, so no body upstream accepts can carry more than that many snippets — and with
+ * each snippet's values bounded above, this product is the most nested entries such a body can hold.
+ * A smaller round number would not be: three snippets of a thousand-line duplicate-heavy paste is a
+ * create upstream takes, and a bound of a few thousand would refuse it, which is the very
+ * over-refusal this file exists to prevent.
+ */
+export const MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL = MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES * GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS;
 
 /**
  * The Google channels this application can ask campaign-service to create, in the order the
