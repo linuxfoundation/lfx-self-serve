@@ -20,11 +20,11 @@ export const DOCUMENT_PROJECT = { uid: 'd0000000-0000-4000-8000-000000000001', s
 export const DOCUMENT_TYPE = livingDocumentType();
 
 function livingDocumentType() {
-  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.kind === 'living');
-  if (!type) throw new Error('Documents fixtures require a living document type in the catalog');
+  const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'icp');
+  if (!type) throw new Error('Markdown fixtures require the catalog ICP document type');
   return type;
 }
-export const DOCUMENTS_URL = `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}`;
+export const DOCUMENTS_URL = `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}&type=${DOCUMENT_TYPE.agentKey}`;
 export const DOCUMENT_VIEW_URL = `/project/mktg-os-agents/documents/${DOCUMENT_TYPE.agentKey}/living?project=${DOCUMENT_PROJECT.slug}`;
 
 export function startedDocumentRun(state: MktgDocumentRunProgress['state'] = 'writing'): MktgDocumentRunProgress {
@@ -35,6 +35,7 @@ export function startedDocumentRun(state: MktgDocumentRunProgress['state'] = 'wr
     runId: 'b'.repeat(64),
     startedAt: '2026-10-19T12:00:00Z',
     state,
+    ...(state === 'failed' && { failureText: 'Synthetic full failure: the requested source is unavailable. Your intake is kept.' }),
   };
 }
 
@@ -150,6 +151,12 @@ export async function setupDocuments(
     const path = url.pathname;
     const status = writer ? (options.status ?? 200) : 403;
     if (status !== 200) return fulfillDocumentJson(route, { code: status === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, status);
+    if (route.request().method() === 'POST' && path.endsWith('/retry')) {
+      const index = detail.runs.findIndex((run) => path.includes(run.runId));
+      if (index < 0) return fulfillDocumentJson(route, { code: 'NOT_FOUND' }, 404);
+      detail.runs[index] = { ...detail.runs[index], state: 'writing', failureText: undefined };
+      return fulfillDocumentJson(route, options.empty ? { ...detail, revisions: [], current: null } : detail);
+    }
     if (route.request().method() === 'POST' && path.endsWith('/restore')) {
       if (options.writeStatus) {
         return fulfillDocumentJson(route, { code: options.writeStatus === 404 ? 'MKTG_DOCUMENT_NOT_FOUND' : 'DENIED' }, options.writeStatus);
@@ -207,7 +214,7 @@ export async function setupDocuments(
       }
       return fulfillDocumentJson(route, { ...detail, revision, markdown });
     }
-    if (path.endsWith('/living')) return fulfillDocumentJson(route, detail);
+    if (path.endsWith('/living')) return fulfillDocumentJson(route, options.empty ? { ...detail, revisions: [], current: null } : detail);
     return fulfillDocumentJson(route, {}, 404);
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });

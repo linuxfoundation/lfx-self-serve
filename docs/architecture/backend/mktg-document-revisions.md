@@ -210,6 +210,13 @@ a warning/manual refresh; healthy reads reset the budget. Questions-only rows do
 not start automatic polling. Unavailable tracking retains missing same-scope
 run rows and suppresses absence claims, without hiding a known stored-current badge.
 
+Document navigation keeps `?generation=` (single-use in-memory prepared intake)
+separate from `?run=` (durable selected run). Only a fresh prepared proof can
+submit Generate; restored intake needs explicit action. Metadata/body failures
+share one bounded read budget and manual refresh, without hiding an acknowledged
+current-pointer write. Structured views come from the document/intake registry;
+malformed structured assets are unsupported, never Markdown fallback. ICP is unchanged.
+
 Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.
 UI models normalize this to their camel-case location. JSON content, sidecars,

@@ -93,6 +93,8 @@ export interface MktgDocumentType {
   kind: MktgDocumentKind;
   /** Marketplace catalog agent id, when the agent is in the catalog. */
   catalogAgentId?: string;
+  /** Structured stored view when it is not declared by the registered intake. */
+  structuredView?: 'brand-kit' | 'messaging-framework' | 'boilerplates';
   /** Name of the agent that writes the document, e.g. `Brand Kit Agent`. */
   agentName: string;
   /** Document name for living documents (`Brand Kit`), group name for runs (`LinkedIn posts`). */
@@ -288,6 +290,12 @@ export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
   linkedinPost?: LinkedinDocumentContent;
   /** Validated structured document type; absent for prose documents. */
   member360?: Member360Envelope;
+}
+
+/** One client read cycle; a metadata success alone cannot clear a failed asset read. */
+export interface MktgDocumentReadCycle {
+  detail: MktgDocumentDetailResponse;
+  view: MktgRevisionResponse | null;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */

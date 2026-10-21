@@ -55,7 +55,7 @@
             </div>
             <a
               [routerLink]="[run.agentKey, run.documentId]"
-              [queryParams]="{ revision: null, generation: run.runId }"
+              [queryParams]="{ revision: null, generation: null, run: run.runId }"
               queryParamsHandling="merge"
               class="font-semibold text-blue-600"
               [attr.data-testid]="'mktg-documents-open-started-' + run.runId"

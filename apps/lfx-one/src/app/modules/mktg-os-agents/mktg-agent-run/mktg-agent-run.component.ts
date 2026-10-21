@@ -75,6 +75,7 @@ import type { FileSelectEvent } from 'primeng/fileupload';
 import { catchError, combineLatest, distinctUntilChanged, EMPTY, filter, map, Observable, of, startWith, Subscription, switchMap } from 'rxjs';
 
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -140,6 +141,7 @@ export class MktgAgentRunComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly runService = inject(MktgAgentRunService);
+  private readonly runAttempts = inject(MktgRunAttemptService);
   private readonly userService = inject(UserService);
 
   // toObservable needs the injection context — created here, subscribed (browser
@@ -1354,6 +1356,42 @@ export class MktgAgentRunComponent {
       if (this.versions().length > 0) {
         this.phase.set('result');
       }
+    }
+
+    // Receiver lands before the handoff producer: a new agent questions round returns to this intake.
+    const token = this.route.snapshot.queryParamMap?.get('questions');
+    const returned = token ? this.runAttempts.consume(token, context.uid, this.agent.id) : null;
+    if (returned?.pending.requiresReattachment) {
+      this.intakeForm.patchValue(returned.pending.request.answers);
+      this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
+    } else if (returned?.pending.pendingQuestions) {
+      this.activeRequest = returned.pending.request;
+      this.intakeForm.patchValue(returned.pending.request.answers);
+      this.documents.set(
+        (returned.pending.request.documents ?? []).map((document, index) => ({
+          ...document,
+          id: `returned-document-${index}`,
+          read: document.kind === 'file',
+          words: (document.text ?? '').split(/\s+/).filter(Boolean).length,
+          truncated: false,
+        }))
+      );
+      this.logoFiles.set(
+        (returned.pending.request.logoFiles ?? []).map((file, index) => ({
+          id: `returned-logo-${index}`,
+          file,
+          badge: file.url ? 'LINK' : (file.name.split('.').at(-1)?.toUpperCase() ?? 'FILE'),
+          status: 'Restored input',
+        }))
+      );
+      this.showQuestions(returned.pending.pendingQuestions);
+    } else if (returned?.pending.attempt) {
+      this.activeRequest = returned.pending.request;
+      this.intakeForm.patchValue(returned.pending.request.answers);
+      this.generationSub = this.runService.resume(returned.pending).subscribe({
+        next: (progress) => this.onProgress(progress, context.uid),
+        error: () => this.errorText.set('The recorded run could not be checked. Your intake is kept; try again.'),
+      });
     }
 
     // LFX prefill — fill only still-empty answers, and mark them "From LFX".
