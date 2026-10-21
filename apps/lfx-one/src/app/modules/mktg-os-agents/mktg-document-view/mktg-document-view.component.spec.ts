@@ -28,7 +28,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
-import { brandKitTestRevision } from '@shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -778,7 +778,7 @@ describe('MktgDocumentViewComponent', () => {
       const action = query('mktg-document-view-run-again');
       const run = query('mktg-document-view-run');
       if (!action || !run) throw new Error('Missing first-run actions');
-      expect(action.getAttribute('href')).toBe('/brand-kit');
+      expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit');
       expect(action.compareDocumentPosition(run) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
       expect(query('brand-kit-web-view-header')).toBeNull();
       expect(!!query('mktg-document-view-intake-link')).toBe(state === 'failed' || state === 'questions');
@@ -938,7 +938,7 @@ describe('MktgDocumentViewComponent', () => {
     );
     await render(`/documents/${key}/living`);
     expect(query('mktg-document-view-unsupported-asset')).not.toBeNull();
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/' + type.catalogAgentId);
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit');
     expect(query('mktg-document-view-document')).toBeNull();
     expect(query('mktg-document-view-revisions')).not.toBeNull();
   });
@@ -955,7 +955,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'icp', 'living', false);
     expect(store.getRevision).toHaveBeenCalledWith('proj-1', 'icp', 'living', LATEST.id, true);
     expect(query('mktg-document-view-title')?.textContent).toContain('TestOrbit ICP');
-    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/' + type.catalogAgentId);
+    expect(query('mktg-document-view-run-again')?.getAttribute('href')).toBe('/mktg-os-agents/' + type.catalogAgentId + '?project=testorbit');
     expect(harness.routeNativeElement?.querySelectorAll('h1')).toHaveLength(1);
     expect(query('mktg-document-view-document')?.querySelector('h2')?.textContent).toBe('Revision 2');
     expect(query('mktg-document-view-revision-chip')?.textContent).toContain('Revision 2 of 2');
@@ -1111,7 +1111,7 @@ describe('MktgDocumentViewComponent', () => {
     const download = query('brand-kit-web-view-download-pdf');
     if (!download) throw new Error('Missing kit download');
     expect(action.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(action.getAttribute('href')).toBe('/brand-kit?project=testorbit');
+    expect(action.getAttribute('href')).toBe('/mktg-os-agents/brand-kit?project=testorbit');
     expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
 
@@ -1136,8 +1136,9 @@ describe('MktgDocumentViewComponent', () => {
     const focusable = Array.from(harness.routeNativeElement?.querySelectorAll<HTMLElement>('a[href], button, [tabindex]') ?? []).filter(
       (element) => element.tabIndex >= 0 && !element.hasAttribute('disabled')
     );
-    const navigationLink = query('mktg-document-crumb-family') ?? query('mktg-document-view-back-link');
-    expect(focusable[focusable.indexOf(navigationLink as HTMLElement) + 1]).toBe(summary);
+    const navigationLink = query('mktg-breadcrumb-link-1');
+    if (!navigationLink) throw new Error('Missing shared parent breadcrumb');
+    expect(focusable[focusable.indexOf(navigationLink) + 1]).toBe(summary);
     const bar = query('mktg-document-view-history-bar');
     for (const token of ['sticky', 'h-[34px]', 'text-[13px]', 'bg-gray-50']) expect(bar?.classList.contains(token)).toBe(true);
     expect(query('mktg-document-view-hash')?.classList.contains('relative')).toBe(true);
@@ -1158,7 +1159,7 @@ describe('MktgDocumentViewComponent', () => {
     if (!exportAction) throw new Error('Missing framework export');
     expect(exportAction.compareDocumentPosition(runAgain) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(runAgain.getAttribute('href')).toBe(
-      '/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit'
+      '/mktg-os-agents/' + MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'foundation-message')?.catalogAgentId + '?project=testorbit'
     );
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
@@ -1775,7 +1776,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-boilerplates-view-title')).toBeNull();
     expect(query('mktg-document-view-version')?.textContent).toContain('v3');
     const runAgain = expectHeaderRunAgain('mktg-boilerplates-view-header', 'mktg-boilerplates-view-actions');
-    expect(runAgain.getAttribute('href')).toBe('/boilerplates?project=testorbit');
+    expect(runAgain.getAttribute('href')).toBe('/mktg-os-agents/boilerplates?project=testorbit');
     expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('TestOrbit is the open release toolkit.');
     expect(query('mktg-boilerplates-view-count-1')?.textContent).toContain('10 / 25 words');
     expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).toContain('@[800px]:col-span-2');

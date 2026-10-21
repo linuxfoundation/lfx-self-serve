@@ -15,6 +15,7 @@ import { expect, Page, Route } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
+import { DATA_LOAD_TIMEOUT } from './mktg-os-assets.helper';
 
 export const DOCUMENT_PROJECT = { uid: 'd0000000-0000-4000-8000-000000000001', slug: 'synthetic-documents', name: 'Synthetic Documents Project', writer: true };
 export const DOCUMENT_TYPE = livingDocumentType();
@@ -224,8 +225,8 @@ export async function setupDocuments(
     return fulfillDocumentJson(route, {}, 404);
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('sidebar')).toBeAttached({ timeout: 20_000 });
-  if ((page.viewportSize()?.width ?? 1024) >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('sidebar')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+  if ((page.viewportSize()?.width ?? 1024) >= 1024) await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   await seedCookies();
 }
 
@@ -236,5 +237,5 @@ export async function openDocuments(page: Page, url = DOCUMENTS_URL): Promise<vo
     dispatchEvent(new PopStateEvent('popstate'));
   }, url);
   const viewingDocument = new URL(url, 'http://localhost').pathname.includes('/documents/');
-  await expect(page.getByTestId(viewingDocument ? 'mktg-document-view-page' : 'mktg-documents-page')).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId(viewingDocument ? 'mktg-document-view-page' : 'mktg-documents-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }

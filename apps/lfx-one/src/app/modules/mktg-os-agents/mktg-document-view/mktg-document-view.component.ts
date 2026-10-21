@@ -1074,13 +1074,14 @@ export class MktgDocumentViewComponent {
     if (progress.type === 'submitted') {
       const runId = this.attempts.load(pending.request.projectUid, pending.request.agentId)?.attempt?.runId ?? '';
       this.handoffRunId.set(runId);
-      if (runId)
+      if (runId) {
         void this.router.navigate([], {
           relativeTo: this.route,
           queryParams: { run: runId, generation: null },
           queryParamsHandling: 'merge',
           replaceUrl: true,
         });
+      }
     }
     if (progress.type === 'activity' && this.localProgress() !== 'storing') {
       this.localProgress.set('writing');
