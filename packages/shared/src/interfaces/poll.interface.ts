@@ -816,10 +816,10 @@ export interface PollCommentResult {
 }
 
 /**
- * Drawer-side view model for a single comment response
+ * Results view model for a single comment response
  * @description PollCommentResponse with `comment_text` pre-split into paragraphs (blank-line
  * separated, single line breaks preserved within a paragraph) so the template can render
- * comment paragraphs directly. Assembled by VoteResultsDrawerComponent.
+ * comment paragraphs directly. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
@@ -827,10 +827,10 @@ export interface CommentResponseView extends PollCommentResponse {
 }
 
 /**
- * Drawer-side view model for one comment prompt's results page
+ * Results view model for one comment prompt's results page
  * @description PollCommentResult with `responses` decorated for display and sliced to the
  * current page; `totalResponses` and `first` keep the pre-slice count and page offset so the
- * paginator can render against the full list. Assembled by VoteResultsDrawerComponent.
+ * paginator can render against the full list. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
 export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
   /** Page-sliced responses with display-ready paragraph splits */
@@ -1046,14 +1046,14 @@ export interface ExtendVoteRequest {
   end_time_timezone: string;
 }
 
-/** Per-rank distribution row for a ranked-choice question (drawer-side projection of RankedChoiceVoteResult.rank_counts). */
+/** Per-rank distribution row for a ranked-choice question (projection of RankedChoiceVoteResult.rank_counts, built by `buildRankedQuestionViews`). */
 export interface RankCountDistribution {
   rank: number;
   count: number;
   percentage: number;
 }
 
-/** Per-choice rank distribution for a ranked-choice question (drawer-side projection of PollQuestionResult.ranked_choice_votes). */
+/** Per-choice rank distribution for a ranked-choice question (projection of PollQuestionResult.ranked_choice_votes, built by `buildRankedQuestionViews`). */
 export interface RankedChoiceDistribution {
   choiceId: string;
   choiceText: string;
@@ -1061,7 +1061,7 @@ export interface RankedChoiceDistribution {
   rankCounts: RankCountDistribution[];
 }
 
-/** Drawer-side view model for a ranked-choice question — projection of PollQuestionResult assembled by VoteResultsDrawerComponent.initRankedQuestions. */
+/** Results view model for a ranked-choice question — projection of PollQuestionResult built by `buildRankedQuestionViews` (vote.utils) and rendered by `lfx-vote-ranked-question-results`. */
 export interface RankedQuestionView {
   questionId: string;
   prompt: string;

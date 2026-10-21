@@ -13,13 +13,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
-import type { Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
+import type { PollCommentResponse, PollCommentResult, PollQuestionResult, Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import { getUserTimezone } from './date-time.utils';
 import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
+  buildRankedQuestionViews,
   buildUpdateVoteRequest,
+  buildVoteResultsQuestions,
   compareVotesByRecency,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
@@ -28,6 +30,7 @@ import {
   mapVoteToCloneFormValue,
   mapVoteToFormValue,
   matchesMyVotesQuickFilter,
+  mergeCommentResults,
   votePermalinkPath,
 } from './vote.utils';
 
@@ -431,6 +434,260 @@ describe('computeVoteParticipationStats', () => {
 
   it('keeps a zero-person electorate at zero in the results drawer', () => {
     expect(computeVoteParticipationStats(results({ num_votes_cast: 0, num_recipients: 0 })).participationRate).toBe(0);
+  });
+});
+
+/** Minimal results fixture for the results view-model builders. */
+function resultsWith(pollResults: PollQuestionResult[], overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
+  return {
+    poll_results: pollResults,
+    comment_results: [],
+    num_recipients: 10,
+    num_votes_cast: 5,
+    num_abstained: 0,
+    poll_end_time: '2025-06-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/** Generic question from [choiceId, voteCount, apiPercentage] tuples; `choices` omits ids listed in `untitled`. */
+function genericQuestion(counts: [string, number, number][], untitled: string[] = []): PollQuestionResult {
+  return {
+    question: {
+      question_id: 'q1',
+      prompt: 'Approve the charter?',
+      type: 'single_choice',
+      choices: counts.filter(([id]) => !untitled.includes(id)).map(([id]) => ({ choice_id: id, choice_text: `Option ${id}` })),
+    },
+    generic_choice_votes: counts.map(([choiceId, voteCount, percentage]) => ({ choice_id: choiceId, vote_count: voteCount, percentage })),
+    ranked_choice_votes: [],
+  };
+}
+
+describe('buildVoteResultsQuestions', () => {
+  it('returns no questions when results are missing or empty', () => {
+    expect(buildVoteResultsQuestions(null, false)).toEqual([]);
+    expect(buildVoteResultsQuestions(resultsWith([]), true)).toEqual([]);
+  });
+
+  it('maps question metadata and sums choice votes into totalVotes', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 3, 60],
+          ['c2', 1, 20],
+        ]),
+      ]),
+      false
+    );
+    expect(question.questionId).toBe('q1');
+    expect(question.question).toBe('Approve the charter?');
+    expect(question.totalVotes).toBe(4);
+    expect(question.options.map((o) => [o.choiceId, o.text, o.voteCount, o.percentage])).toEqual([
+      ['c1', 'Option c1', 3, 60],
+      ['c2', 'Option c2', 1, 20],
+    ]);
+  });
+
+  it('falls back to num_votes_cast for a missing upstream percentage', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith(
+        [
+          genericQuestion([
+            ['c1', 2, 0],
+            ['c2', 1, 0],
+          ]),
+        ],
+        { num_votes_cast: 8 }
+      ),
+      false
+    );
+    expect(question.options.map((o) => o.percentage)).toEqual([25, 13]);
+  });
+
+  it('keeps a zero percentage when no votes were cast', () => {
+    const [question] = buildVoteResultsQuestions(resultsWith([genericQuestion([['c1', 0, 0]])], { num_votes_cast: 0 }), false);
+    expect(question.options[0].percentage).toBe(0);
+  });
+
+  it('falls back to the choice id when the choice text is missing', () => {
+    const [question] = buildVoteResultsQuestions(resultsWith([genericQuestion([['c9', 1, 100]], ['c9'])]), false);
+    expect(question.options[0].text).toBe('c9');
+  });
+
+  it('marks the leading option while live, without winner or tie markers', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 3, 60],
+          ['c2', 1, 20],
+        ]),
+      ]),
+      false
+    );
+    expect(question.options.map((o) => [o.isLeading, o.isWinner, o.isTied])).toEqual([
+      [true, false, false],
+      [false, false, false],
+    ]);
+  });
+
+  it('marks a single winner only when closed', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 3, 60],
+          ['c2', 1, 20],
+        ]),
+      ]),
+      true
+    );
+    expect(question.options.map((o) => [o.isWinner, o.isTied])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
+  });
+
+  it('marks ties only when closed', () => {
+    const tied = resultsWith([
+      genericQuestion([
+        ['c1', 2, 40],
+        ['c2', 2, 40],
+        ['c3', 1, 20],
+      ]),
+    ]);
+    expect(buildVoteResultsQuestions(tied, true)[0].options.map((o) => [o.isWinner, o.isTied])).toEqual([
+      [false, true],
+      [false, true],
+      [false, false],
+    ]);
+    expect(buildVoteResultsQuestions(tied, false)[0].options.every((o) => !o.isTied && !o.isWinner)).toBe(true);
+  });
+
+  it('never marks a winner, tie or leader when every option has zero votes', () => {
+    const [question] = buildVoteResultsQuestions(
+      resultsWith([
+        genericQuestion([
+          ['c1', 0, 0],
+          ['c2', 0, 0],
+        ]),
+      ]),
+      true
+    );
+    expect(question.options.every((o) => !o.isWinner && !o.isTied && !o.isLeading)).toBe(true);
+  });
+});
+
+describe('buildRankedQuestionViews', () => {
+  function rankedQuestion(overrides: Partial<PollQuestionResult> = {}): PollQuestionResult {
+    return {
+      question: {
+        question_id: 'q1',
+        prompt: 'Rank the candidates',
+        type: 'single_choice',
+        choices: [
+          { choice_id: 'c1', choice_text: 'Candidate One' },
+          { choice_id: 'c2', choice_text: 'Candidate Two' },
+        ],
+      },
+      generic_choice_votes: [],
+      ranked_choice_votes: [
+        {
+          choice_id: 'c1',
+          rank_counts: [
+            { rank: 1, count: 3 },
+            { rank: 2, count: 1 },
+          ],
+          condorcet_matrix: [],
+        },
+        { choice_id: 'c2', rank_counts: [], condorcet_matrix: [] },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('returns no questions when results are missing or empty', () => {
+    expect(buildRankedQuestionViews(null)).toEqual([]);
+    expect(buildRankedQuestionViews(resultsWith([]))).toEqual([]);
+  });
+
+  it('derives rank-count percentages against each choice total', () => {
+    const [view] = buildRankedQuestionViews(resultsWith([rankedQuestion()]));
+    expect(view.questionId).toBe('q1');
+    expect(view.prompt).toBe('Rank the candidates');
+    expect(view.choiceDistributions).toEqual([
+      {
+        choiceId: 'c1',
+        choiceText: 'Candidate One',
+        totalRanked: 4,
+        rankCounts: [
+          { rank: 1, count: 3, percentage: 75 },
+          { rank: 2, count: 1, percentage: 25 },
+        ],
+      },
+      { choiceId: 'c2', choiceText: 'Candidate Two', totalRanked: 0, rankCounts: [] },
+    ]);
+  });
+
+  it('prefers winner-info choice text and falls back to the choice id', () => {
+    const [view] = buildRankedQuestionViews(
+      resultsWith([
+        rankedQuestion({
+          ranked_choice_winner_info: { poll_choices: [{ choice_id: 'c1', choice_text: 'Winner-info One' }] } as PollQuestionResult['ranked_choice_winner_info'],
+        }),
+      ])
+    );
+    expect(view.choiceDistributions.map((d) => d.choiceText)).toEqual(['Winner-info One', 'c2']);
+  });
+
+  it('treats missing ranked votes as no distributions', () => {
+    const [view] = buildRankedQuestionViews(
+      resultsWith([rankedQuestion({ ranked_choice_votes: undefined as unknown as PollQuestionResult['ranked_choice_votes'] })])
+    );
+    expect(view.choiceDistributions).toEqual([]);
+  });
+
+  it('flags a round summary for IRV and Meek STV only', () => {
+    const views = buildRankedQuestionViews(
+      resultsWith([rankedQuestion({ irv_round_summary: { rounds: [] } }), rankedQuestion({ meek_stv_round_summary: { rounds: [] } }), rankedQuestion()])
+    );
+    expect(views.map((v) => v.hasRoundSummary)).toEqual([true, true, false]);
+  });
+});
+
+describe('mergeCommentResults', () => {
+  function response(voteId: string, createdAt: string): PollCommentResponse {
+    return { vote_id: voteId, comment_text: `Comment ${voteId}`, vote_creation_time: createdAt, abstained: false };
+  }
+
+  const older = response('r-old', '2025-06-01T00:00:00Z');
+  const newer = response('r-new', '2025-06-02T00:00:00Z');
+  const commentResults: PollCommentResult[] = [
+    { prompt: { prompt_id: 'p1', prompt: 'Results prompt one' }, responses: [older, newer], total_responses: 3 },
+    { prompt: { prompt_id: 'p2', prompt: 'Results prompt two' }, responses: [] },
+  ];
+
+  it('uses the detail prompts, left-joining responses newest-first', () => {
+    const merged = mergeCommentResults(commentResults, [
+      { prompt_id: 'p1', prompt: 'Detail prompt one' },
+      { prompt_id: 'p3', prompt: 'Detail prompt three' },
+    ]);
+    expect(merged).toEqual([
+      { prompt: { prompt_id: 'p1', prompt: 'Detail prompt one' }, responses: [newer, older], total_responses: 3 },
+      { prompt: { prompt_id: 'p3', prompt: 'Detail prompt three' }, responses: [], total_responses: undefined },
+    ]);
+  });
+
+  it('falls back to results prompts that have responses when the detail has no prompts', () => {
+    for (const detailPrompts of [undefined, []]) {
+      expect(mergeCommentResults(commentResults, detailPrompts)).toEqual([
+        { prompt: { prompt_id: 'p1', prompt: 'Results prompt one' }, responses: [newer, older], total_responses: 3 },
+      ]);
+    }
+  });
+
+  it('does not mutate the API payload', () => {
+    mergeCommentResults(commentResults, undefined);
+    expect(commentResults[0].responses).toEqual([older, newer]);
   });
 });
 

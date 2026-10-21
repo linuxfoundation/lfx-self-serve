@@ -6,8 +6,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { PollStatus } from '@lfx-one/shared/enums';
-import { MyVoteResponse, Vote } from '@lfx-one/shared/interfaces';
+import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
+import { MyVoteResponse, PollCommentResponse, PollQuestionResult, Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -397,5 +397,381 @@ describe('VoteResultsDrawerComponent — view-only permalink', () => {
 
     expect(service.getVote).toHaveBeenCalledTimes(1);
     expect(fixture.componentInstance['vote']()).toEqual(voteB);
+  });
+});
+
+// Characterization tests for GH-3912: pin the rendered results (participation, option bars, abstain row,
+// ranked breakdown, comments) so extracting them into reusable components changes nothing visible.
+function makeResultsVote(overrides: Partial<Vote> = {}): Vote {
+  return { ...makeVote(PollStatus.ACTIVE), poll_type: PollType.GENERIC, allow_abstain: true, ...overrides } as Vote;
+}
+
+function makeResults(overrides: Partial<VoteResultsResponse> = {}): VoteResultsResponse {
+  return {
+    poll_results: [],
+    comment_results: [],
+    num_recipients: 10,
+    num_votes_cast: 5,
+    num_abstained: 1,
+    poll_end_time: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/** Builds a generic question from [choiceId, voteCount, apiPercentage] tuples. */
+function makeGenericQuestion(questionId: string, counts: [string, number, number][]): PollQuestionResult {
+  return {
+    question: {
+      question_id: questionId,
+      prompt: `Synthetic question ${questionId}`,
+      type: 'single_choice',
+      choices: counts.map(([choiceId]) => ({ choice_id: choiceId, choice_text: `Synthetic option ${choiceId}` })),
+    },
+    generic_choice_votes: counts.map(([choiceId, voteCount, percentage]) => ({ choice_id: choiceId, vote_count: voteCount, percentage })),
+    ranked_choice_votes: [],
+  };
+}
+
+/** Builds a ranked question from choiceId → [rank, count] pairs. */
+function makeRankedQuestion(questionId: string, choices: Record<string, [number, number][]>, withRoundSummary = false): PollQuestionResult {
+  const choiceIds = Object.keys(choices);
+  return {
+    question: {
+      question_id: questionId,
+      prompt: `Synthetic ranked question ${questionId}`,
+      type: 'single_choice',
+      choices: choiceIds.map((choiceId) => ({ choice_id: choiceId, choice_text: `Synthetic candidate ${choiceId}` })),
+    },
+    generic_choice_votes: [],
+    ranked_choice_votes: choiceIds.map((choiceId) => ({
+      choice_id: choiceId,
+      rank_counts: choices[choiceId].map(([rank, count]) => ({ rank, count })),
+      condorcet_matrix: [],
+    })),
+    irv_round_summary: withRoundSummary ? { rounds: [] } : undefined,
+  };
+}
+
+/** Newest-first synthetic comments: index 1 is the most recent. */
+function makeComments(promptId: string, count: number): PollCommentResponse[] {
+  return Array.from({ length: count }, (_, i) => ({
+    vote_id: `${promptId}-response-${i + 1}`,
+    comment_text: `Synthetic ${promptId} comment ${String(i + 1).padStart(2, '0')}`,
+    user_name: `Synthetic Voter ${i + 1}`,
+    vote_creation_time: new Date(Date.UTC(2026, 0, 31) - i * 60_000).toISOString(),
+    abstained: false,
+  }));
+}
+
+async function setupResultsDrawer(
+  vote: Vote,
+  results: VoteResultsResponse,
+  audience: 'voter' | 'creator' = 'creator',
+  myResponse: MyVoteResponse | null = null
+) {
+  const service = {
+    getVote: vi.fn(() => of(vote)),
+    getMyVoteResponse: vi.fn(() => of(myResponse)),
+    getVoteResults: vi.fn(() => of(results)),
+  };
+  await TestBed.configureTestingModule({
+    imports: [VoteResultsDrawerComponent],
+    providers: [provideNoopAnimations(), provideRouter([]), { provide: VoteService, useValue: service }],
+  }).compileComponents();
+  fixture = TestBed.createComponent(VoteResultsDrawerComponent);
+  fixture.componentRef.setInput('voteId', vote.uid);
+  fixture.componentRef.setInput('audience', audience);
+  fixture.componentRef.setInput('visible', true);
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return service;
+}
+
+function byTestId(testId: string): HTMLElement | null {
+  return document.querySelector(`[data-testid="${testId}"]`);
+}
+
+/** Strips all whitespace: Angular drops inter-element whitespace, so adjacent elements' text runs together. */
+function squash(text: string): string {
+  return text.replace(/\s+/g, '');
+}
+
+function textOf(testId: string): string {
+  return squash(byTestId(testId)?.textContent ?? '');
+}
+
+const RESPONDED_VOTER: MyVoteResponse = { uid: 'response-1', vote_uid: 'vote-1', vote_status: IndexedVoteResponseStatus.RESPONDED };
+
+describe('VoteResultsDrawerComponent — rendered results', () => {
+  it('renders live option bars, the abstain row and the participation card for an active generic vote', async () => {
+    await setupResultsDrawer(
+      makeResultsVote(),
+      makeResults({
+        poll_results: [
+          makeGenericQuestion('q1', [
+            ['c1', 3, 60],
+            ['c2', 1, 20],
+          ]),
+        ],
+      })
+    );
+
+    expect(textOf('vote-results-option-c1')).toContain(squash('Synthetic option c1'));
+    expect(textOf('vote-results-option-c1')).toContain(squash('3 votes · 60%'));
+    expect(textOf('vote-results-option-c2')).toContain(squash('1 vote · 20%'));
+    // Leading option gets the blue bar and bold text; the trailing option stays muted.
+    expect(byTestId('vote-results-option-c1')?.querySelector('.bg-blue-500')).toBeTruthy();
+    expect(byTestId('vote-results-option-c1')?.querySelector('.font-semibold')).toBeTruthy();
+    expect(byTestId('vote-results-option-c2')?.querySelector('.bg-slate-300')).toBeTruthy();
+    expect(byTestId('vote-results-option-c1')?.textContent).not.toContain('Winner');
+
+    expect(textOf('vote-results-option-abstain')).toContain(squash('Abstain'));
+    expect(textOf('vote-results-option-abstain')).toContain(squash('1 abstention · 20%'));
+
+    const participation = textOf('vote-results-participation');
+    expect(participation).toContain(squash('Total Participants 10'));
+    expect(participation).toContain(squash('Total Responses 5'));
+    expect(participation).toContain(squash('Response Rate 50%'));
+    expect(textOf('vote-results-abstained-stat')).toBe(squash('Abstained 1'));
+    expect(byTestId('vote-results-participation')?.querySelector<HTMLElement>('.bg-blue-500')?.style.width).toBe('50%');
+  });
+
+  it('marks the winner on an ended generic vote and keeps the white bar track', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ status: PollStatus.ENDED }),
+      makeResults({
+        num_abstained: 2,
+        poll_results: [
+          makeGenericQuestion('q1', [
+            ['c1', 3, 60],
+            ['c2', 0, 0],
+          ]),
+        ],
+      })
+    );
+
+    expect(textOf('vote-results-option-c1')).toContain(squash('Winner'));
+    expect(textOf('vote-results-option-c1')).toContain(squash('3 votes (60%)'));
+    expect(byTestId('vote-results-option-c1')?.classList).toContain('border-green-300');
+    expect(byTestId('vote-results-option-c1')?.querySelector('.bg-white')).toBeTruthy();
+    expect(textOf('vote-results-option-c2')).not.toContain(squash('Winner'));
+    expect(textOf('vote-results-option-c2')).toContain(squash('0 votes (0%)'));
+
+    expect(textOf('vote-results-option-abstain')).toContain(squash('2 abstentions (40%)'));
+    expect(byTestId('vote-results-option-abstain')?.querySelector('.bg-white')).toBeTruthy();
+    expect(byTestId('vote-results-participation')).toBeTruthy();
+  });
+
+  it('marks tied options on an ended generic vote', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ status: PollStatus.ENDED }),
+      makeResults({
+        poll_results: [
+          makeGenericQuestion('q1', [
+            ['c1', 2, 40],
+            ['c2', 2, 40],
+          ]),
+        ],
+      })
+    );
+
+    expect(textOf('vote-results-option-c1')).toContain(squash('Tied'));
+    expect(textOf('vote-results-option-c2')).toContain(squash('Tied'));
+    expect(textOf('vote-results-option-c1')).not.toContain(squash('Winner'));
+    expect(byTestId('vote-results-option-c1')?.classList).toContain('border-amber-300');
+  });
+
+  it('falls back to num_votes_cast when the API omits a percentage', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ status: PollStatus.ENDED }),
+      makeResults({
+        poll_results: [
+          makeGenericQuestion('q1', [
+            ['c1', 2, 0],
+            ['c2', 2, 0],
+          ]),
+        ],
+      })
+    );
+
+    expect(textOf('vote-results-option-c1')).toContain(squash('2 votes (40%)'));
+  });
+
+  it('renders the voter final results with the slate-100 bar track and voter test ids', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ status: PollStatus.ENDED }),
+      makeResults({
+        poll_results: [
+          makeGenericQuestion('q1', [
+            ['c1', 3, 60],
+            ['c2', 1, 20],
+          ]),
+        ],
+      }),
+      'voter',
+      RESPONDED_VOTER
+    );
+
+    expect(byTestId('vote-results-voter-final')).toBeTruthy();
+    expect(textOf('vote-results-voter-option-c1')).toContain(squash('Winner'));
+    expect(textOf('vote-results-voter-option-c1')).toContain(squash('3 votes (60%)'));
+    expect(byTestId('vote-results-voter-option-c1')?.querySelector('.bg-slate-100')).toBeTruthy();
+    expect(byTestId('vote-results-voter-option-c1')?.querySelector('.bg-white')).toBeNull();
+    expect(textOf('vote-results-voter-option-abstain')).toContain(squash('1 abstention (20%)'));
+    // Voters never see the creator participation card or creator option ids.
+    expect(byTestId('vote-results-participation')).toBeNull();
+    expect(byTestId('vote-results-option-c1')).toBeNull();
+  });
+
+  it('shows "No votes were submitted." to a voter when the closed vote has zero responses', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ status: PollStatus.ENDED, allow_abstain: false }),
+      makeResults({ num_votes_cast: 0, num_abstained: 0, poll_results: [makeGenericQuestion('q1', [['c1', 0, 0]])] }),
+      'voter',
+      RESPONDED_VOTER
+    );
+
+    expect(textOf('vote-results-voter-zero-responses')).toBe(squash('No votes were submitted.'));
+    expect(byTestId('vote-results-voter-option-abstain')).toBeNull();
+  });
+
+  it('renders the creator ranked breakdown with test ids, empty states and the round-summary banner', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ status: PollStatus.ENDED, poll_type: PollType.INSTANT_RUNOFF_VOTE }),
+      makeResults({
+        poll_results: [
+          makeRankedQuestion(
+            'q1',
+            {
+              c1: [
+                [1, 3],
+                [2, 1],
+              ],
+              c2: [],
+            },
+            true
+          ),
+          makeRankedQuestion('q2', {}),
+        ],
+      })
+    );
+
+    expect(textOf('vote-results-ranked-participation')).toContain(squash('Total Participants 10'));
+    expect(textOf('vote-results-ranked-question-q1')).toContain(squash('Synthetic ranked question q1'));
+    const c1 = textOf('vote-results-ranked-choice-c1');
+    expect(c1).toContain(squash('Synthetic candidate c1'));
+    expect(c1).toContain(squash('4 voters'));
+    expect(c1).toContain(squash('Rank 1 3 75%'));
+    expect(c1).toContain(squash('Rank 2 1 25%'));
+    expect(textOf('vote-results-ranked-choice-c2')).toContain(squash('0 voters'));
+    expect(textOf('vote-results-ranked-choice-c2')).toContain(squash('No rankings recorded yet.'));
+    expect(byTestId('vote-results-ranked-rounds-q1')).toBeTruthy();
+    expect(byTestId('vote-results-ranked-rounds-q2')).toBeNull();
+    expect(textOf('vote-results-ranked-question-empty-q2')).toBe(squash('No ranked results recorded yet for this question.'));
+  });
+
+  it('renders the voter ranked breakdown without the creator test ids', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ status: PollStatus.ENDED, poll_type: PollType.INSTANT_RUNOFF_VOTE }),
+      makeResults({
+        poll_results: [
+          makeRankedQuestion(
+            'q1',
+            {
+              c1: [
+                [1, 3],
+                [2, 1],
+              ],
+            },
+            true
+          ),
+        ],
+      }),
+      'voter',
+      RESPONDED_VOTER
+    );
+
+    const ranked = textOf('vote-results-voter-final-ranked');
+    expect(ranked).toContain(squash('Synthetic ranked question q1'));
+    expect(ranked).toContain(squash('Synthetic candidate c1 4 voters'));
+    expect(ranked).toContain(squash('Rank 1 3 75%'));
+    expect(textOf('vote-results-voter-option-abstain')).toContain(squash('1 abstention (20%)'));
+    expect(byTestId('vote-results-ranked-question-q1')).toBeNull();
+    expect(byTestId('vote-results-ranked-choice-c1')).toBeNull();
+    expect(byTestId('vote-results-ranked-rounds-q1')).toBeNull();
+    expect(byTestId('vote-results-ranked-participation')).toBeNull();
+  });
+
+  describe('comments', () => {
+    const commentVote = () =>
+      makeResultsVote({
+        status: PollStatus.ENDED,
+        poll_comment_prompts: [
+          { prompt_id: 'p1', prompt: 'Synthetic prompt one' },
+          { prompt_id: 'p2', prompt: 'Synthetic prompt two' },
+          { prompt_id: 'p3', prompt: 'Synthetic prompt three' },
+        ],
+      });
+    const commentResults = () =>
+      makeResults({
+        poll_results: [makeGenericQuestion('q1', [['c1', 4, 80]])],
+        comment_results: [
+          { prompt: { prompt_id: 'p1', prompt: 'Synthetic prompt one' }, responses: makeComments('p1', 30), total_responses: 40 },
+          {
+            prompt: { prompt_id: 'p3', prompt: 'Synthetic prompt three' },
+            responses: [...makeComments('p3', 1), { ...makeComments('p3', 2)[1], user_name: undefined }],
+          },
+        ],
+      });
+
+    it('renders prompts, empty states, the paginator above the page size and the truncation notice', async () => {
+      await setupResultsDrawer(commentVote(), commentResults());
+
+      const comments = textOf('vote-results-comments');
+      expect(comments).toContain(squash('Synthetic prompt one'));
+      expect(comments).toContain(squash('Synthetic p1 comment 01'));
+      expect(comments).toContain(squash('Synthetic p1 comment 25'));
+      expect(comments).not.toContain(squash('Synthetic p1 comment 26'));
+      expect(comments).toContain(squash('Synthetic Voter 1'));
+      expect(comments).toContain(squash('Anonymous'));
+
+      expect(textOf('vote-results-comments-empty-p2')).toBe(squash('No responses yet.'));
+      expect(byTestId('vote-results-comments-paginator-p1')).toBeTruthy();
+      expect(byTestId('vote-results-comments-paginator-p3')).toBeNull();
+      expect(textOf('vote-results-comments-truncated-p1')).toBe(squash('Showing the 30 most recent of 40 responses.'));
+      expect(byTestId('vote-results-comments-truncated-p3')).toBeNull();
+      // Comment cards keep the slate-50 fade class from the drawer stylesheet.
+      expect(byTestId('vote-results-comments')?.querySelector('lfx-expandable-text.comment-text')).toBeTruthy();
+    });
+
+    it('keeps the comment page across a close and reopen', async () => {
+      await setupResultsDrawer(commentVote(), commentResults());
+
+      byTestId('vote-results-comments-paginator-p1')?.querySelector<HTMLButtonElement>('.p-paginator-next')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(textOf('vote-results-comments')).toContain(squash('Synthetic p1 comment 26'));
+      expect(textOf('vote-results-comments')).not.toContain(squash('Synthetic p1 comment 01'));
+
+      fixture.componentRef.setInput('visible', false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      fixture.componentRef.setInput('visible', true);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(textOf('vote-results-comments')).toContain(squash('Synthetic p1 comment 26'));
+      expect(textOf('vote-results-comments')).not.toContain(squash('Synthetic p1 comment 01'));
+    });
+
+    it('hides comments when the results load fails', async () => {
+      const service = await setupResultsDrawer(commentVote(), commentResults());
+      service.getVoteResults.mockReturnValue(throwError(() => new Error('Synthetic results failure')));
+      fixture.componentRef.setInput('voteId', 'vote-2');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(byTestId('vote-results-comments')).toBeNull();
+    });
   });
 });
