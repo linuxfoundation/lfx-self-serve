@@ -3306,9 +3306,8 @@ export const AUDIENCE_CUSTOM_CREATABLE_SIGNALS: readonly AudienceSignal[] = [
 
 /** The Audience tab's three modes, in the legacy builder's order. */
 export const AUDIENCE_BUILD_MODES: readonly { mode: AudienceBuildMode; label: string }[] = [
-  { mode: 'event', label: 'Event Audience' },
-  { mode: 'custom', label: 'Custom Audience' },
-  { mode: 'reuse', label: 'Reuse or Discover Existing Audience' },
+  { mode: 'build', label: 'Build a new audience' },
+  { mode: 'reuse', label: 'Use existing lists' },
 ] as const;
 
 /** Operators the custom-audience builder offers for an extra property filter, in display order. */

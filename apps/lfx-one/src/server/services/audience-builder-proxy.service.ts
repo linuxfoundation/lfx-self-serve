@@ -103,6 +103,7 @@ interface WireSuppressionList {
   size?: number;
   category: string;
   hubspot_url: string;
+  will_create?: boolean;
 }
 
 interface WireListBrief {
@@ -158,6 +159,7 @@ interface WireComposeMasterResult {
 interface WireAttachExistingResult {
   master: WireComposedList;
   suppression_list_ids: string[];
+  suppression?: WireComposedList;
   audience: WireRecordedAudience;
 }
 
@@ -697,12 +699,19 @@ export class AudienceBuilderProxyService {
     }));
   }
 
-  public async getSuppressionLists(req: Request, projectSlug: string, brandShort: string, eventName: string): Promise<AudienceSuppressionList[]> {
-    // Both params are optional upstream and omitted rather than sent empty: an empty
+  public async getSuppressionLists(
+    req: Request,
+    projectSlug: string,
+    brandShort: string,
+    eventName: string,
+    registrantsEvent = ''
+  ): Promise<AudienceSuppressionList[]> {
+    // Every param is optional upstream and omitted rather than sent empty: an empty
     // `event_name` is a filter that matches nothing, where an absent one means "do not filter".
     const wire = await this.get<{ lists?: WireSuppressionList[] }>(req, projectSlug, 'suppression-lists', {
       ...(brandShort === '' ? {} : { brand_short: brandShort }),
       ...(eventName === '' ? {} : { event_name: eventName }),
+      ...(registrantsEvent === '' ? {} : { registrants_event: registrantsEvent }),
     });
 
     return required(wire.lists, 'lists').map((list) => ({
@@ -713,6 +722,7 @@ export class AudienceBuilderProxyService {
       size: list.size,
       category: list.category as AudienceSuppressionCategory,
       hubspotUrl: httpHref(list.hubspot_url),
+      ...(list.will_create ? { willCreate: true } : {}),
     }));
   }
 
@@ -763,7 +773,8 @@ export class AudienceBuilderProxyService {
   }
 
   /**
-   * Creates the combined suppression list and then the master list, upstream.
+   * Creates the master list upstream, excluding the selected suppressions through the project's
+   * standing suppression lists (found by name and reused, never one per compose).
    *
    * `eventUrl` on the request is dropped deliberately: upstream's compose input takes the
    * REVIEWED naming inputs (`brand_short`, `event_name`, `event_dates`) and no URL, because the
@@ -778,6 +789,7 @@ export class AudienceBuilderProxyService {
       ...(request.brandShort ? { brand_short: request.brandShort } : {}),
       ...(request.eventName ? { event_name: request.eventName } : {}),
       ...(request.eventDates?.length ? { event_dates: request.eventDates } : {}),
+      ...(request.currentRegistrantsEvent ? { current_registrants_event: request.currentRegistrantsEvent } : {}),
       // Forwarded only when set. Sending `brief_id: ''` is NOT the same request: upstream reads a
       // present-but-empty id as an attach that then fails its own brief lookup, turning the
       // exploratory compose the builder is designed for into a 404 — after refusing to create
@@ -973,8 +985,9 @@ export class AudienceBuilderProxyService {
   }
 
   /**
-   * Records EXISTING lists as the brief's send audience. Creates nothing in HubSpot, so unlike
-   * compose it has no partial state and every failure is safe to retry.
+   * Records EXISTING lists as the brief's send audience. Its only creates are the project's standing
+   * standard suppression list and the edition's current-registrants list, both found by name and
+   * reused, so unlike compose it has no partial state and every failure is safe to retry.
    */
   public async attachExisting(req: Request, projectSlug: string, request: AudienceAttachExistingRequest): Promise<AudienceAttachExistingResult> {
     const attach = {
@@ -982,12 +995,14 @@ export class AudienceBuilderProxyService {
       // Exactly one of the two: several include lists go to the send directly, with no master.
       ...(request.includeListIds?.length ? { include_list_ids: request.includeListIds } : { master_list_id: request.masterListId }),
       ...(request.suppressionListIds?.length ? { suppression_list_ids: request.suppressionListIds } : {}),
+      ...(request.currentRegistrantsEvent ? { current_registrants_event: request.currentRegistrantsEvent } : {}),
       ...(request.inclusionSummary ? { inclusion_summary: request.inclusionSummary } : {}),
     };
     const wire = await this.post<WireAttachExistingResult>(req, projectSlug, 'attach-existing', { attach });
     return {
       master: toCreatedList(required(wire.master, 'master'), 'master'),
       suppressionListIds: required(wire.suppression_list_ids, 'suppression_list_ids'),
+      ...(wire.suppression ? { standardSuppression: toCreatedList(wire.suppression, 'suppression') } : {}),
       audience: toRecordedAudience(required(wire.audience, 'audience'), request.briefId),
     };
   }

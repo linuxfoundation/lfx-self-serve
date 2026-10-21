@@ -5621,7 +5621,7 @@ export interface AudienceCardBucket {
  * exclusions, so it is the highest-value pick. The generic portfolio-wide lists are offered but
  * never assumed.
  */
-export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific';
+export type AudienceSuppressionCategory = 'standard' | 'brand' | 'event_specific' | 'current_registrants';
 
 export interface AudienceSuppressionList {
   /** Stable key for the category that resolved this list (e.g. `lf_events_gdpr`). */
@@ -5632,6 +5632,11 @@ export interface AudienceSuppressionList {
   size?: number;
   category: AudienceSuppressionCategory;
   hubspotUrl: string;
+  /**
+   * The list does not exist yet: attach or compose creates it by name when the row is applied.
+   * Only the `current_registrants` row sets it, and such a row has an empty `listId`.
+   */
+  willCreate?: boolean;
 }
 
 /**
@@ -5730,6 +5735,8 @@ export interface AudienceComposeMasterRequest {
   /** ISO dates; the first parseable one supplies the name's `YYQN` segment. */
   eventDates?: string[];
   excludeListIds?: string[];
+  /** Edition (event name with year) whose current registrants the master also excludes. */
+  currentRegistrantsEvent?: string;
   /**
    * Attach the composed master to this brief, as its built send audience.
    *
@@ -5877,6 +5884,11 @@ export interface AudienceAttachExistingRequestBase {
   briefId: string;
   /** Existing lists the send suppresses. At least one: every send keeps a suppression list. */
   suppressionListIds: string[];
+  /**
+   * Edition (event name with year) whose current registrants the send also suppresses, through a
+   * `<edition> - Current Registrants` list campaign-service finds or creates by name.
+   */
+  currentRegistrantsEvent?: string;
   /** Human-readable note recorded on the audience row; upstream derives one when omitted. */
   inclusionSummary?: string;
 }
@@ -5885,6 +5897,11 @@ export interface AudienceAttachExistingRequestBase {
 export interface AudienceAttachExistingResult {
   master: AudienceComposedList;
   suppressionListIds: string[];
+  /**
+   * The project's standing standard suppression list, reused across audiences and recorded in
+   * place of the standard lists. Absent unless every resolved standard list was sent.
+   */
+  standardSuppression?: AudienceComposedList;
   audience: CampaignAudience;
 }
 
@@ -6114,7 +6131,7 @@ export interface AudienceCustomRequest {
 }
 
 /** How the Audience tab builds the send audience — the legacy builder's three modes. */
-export type AudienceBuildMode = 'event' | 'custom' | 'reuse';
+export type AudienceBuildMode = 'build' | 'reuse';
 
 /** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
 export interface AudienceCustomPreset {

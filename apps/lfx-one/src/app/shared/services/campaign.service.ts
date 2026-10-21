@@ -806,16 +806,20 @@ export class CampaignService {
    * and event-specific. Nothing here is pre-applied — the operator chooses, because a wrongly
    * auto-applied exclusion silently shrinks a send.
    *
-   * Both `brandShort` and `eventName` are optional: the portfolio-wide lists are found by fixed
-   * name, so the answer is already useful before discovery has identified the event.
+   * Every filter is optional: the portfolio-wide lists are found by fixed name, so the answer is
+   * already useful before discovery has identified the event. `registrantsEvent` (the edition, with
+   * its year) adds the current-registrants row.
    */
-  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = ''): Observable<AudienceSuppressionList[]> {
+  public getAudienceSuppressionLists(projectSlug: string, brandShort = '', eventName = '', registrantsEvent = ''): Observable<AudienceSuppressionList[]> {
     let params = new HttpParams().set('project', projectSlug);
     if (brandShort !== '') {
       params = params.set('brandShort', brandShort);
     }
     if (eventName !== '') {
       params = params.set('eventName', eventName);
+    }
+    if (registrantsEvent !== '') {
+      params = params.set('registrantsEvent', registrantsEvent);
     }
     return this.http.get<AudienceSuppressionList[]>('/api/campaigns/audience-builder/suppression-lists', { params });
   }

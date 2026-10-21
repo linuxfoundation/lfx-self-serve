@@ -121,8 +121,8 @@
     <div class="flex flex-col gap-1">
       <h4 class="text-sm font-semibold text-gray-900">Audience <span class="text-xs font-normal text-gray-500">— choose how to set the send audience</span></h4>
       <p class="text-xs text-gray-600">
-        Build a segmented audience from the event page, describe a custom audience in your own words, or reuse and discover existing HubSpot lists. Whatever you
-        choose is attached to this email as its send list.
+        Build a new list — from the event page or in your own words — or use lists that already exist in HubSpot. Whatever you choose is attached to this email
+        as its send list.
       </p>
     </div>
     <div class="flex flex-wrap gap-2" role="tablist">
@@ -143,38 +143,38 @@
       }
     </div>
 
-    @if (mode() === 'event') {
+    @if (mode() === 'build') {
       <div class="flex flex-col gap-2" data-testid="campaigns-audience-event-panel">
-        <p class="text-xs text-gray-600">
-          Plans a segmented audience from the event page: contacts in the host city and country, past registrants of events there, education enrollees in the
-          brand's courses, and the event page's visitors. You review the plan before anything is created.
+        <p class="text-xs text-gray-600" data-testid="campaigns-audience-build-panel">
+          Describe the audience below, or start from the event page. Either one drafts the criteria; nothing is created in HubSpot until you preview and
+          confirm.
         </p>
-        <label for="audience-event-plan-url" class="text-xs font-medium text-gray-700">Event / campaign URL</label>
+        <label for="audience-event-plan-url" class="text-xs font-medium text-gray-700">
+          Start from the event page <span class="font-normal text-gray-500">(optional)</span>
+        </label>
         <div class="flex flex-wrap gap-2">
           <input
             id="audience-event-plan-url"
             type="url"
             [formControl]="eventUrlControl"
             placeholder="https://events.linuxfoundation.org/..."
-            class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+            class="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50"
             data-testid="campaigns-audience-event-plan-url" />
           <button
             type="button"
             (click)="onGenerateEventPlan()"
-            [disabled]="degraded() || selectionLocked() || customCreating() || eventUrlControl.value.trim().length === 0"
+            [disabled]="degraded() || selectionLocked() || customCreating() || eventUrlValue().trim().length === 0"
             class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             data-testid="campaigns-audience-event-generate">
-            <i class="fa-light fa-play" aria-hidden="true"></i>
-            Generate audience plan
+            <i class="fa-light fa-wand-magic-sparkles" aria-hidden="true"></i>
+            Draft from event page
           </button>
         </div>
+        <p class="text-xs text-gray-500">
+          Drafts a segmented audience: contacts in the host city and country, past registrants of events there, education enrollees in the brand's courses, and
+          the event page's visitors.
+        </p>
       </div>
-    }
-    @if (mode() === 'custom') {
-      <p class="text-xs text-gray-600" data-testid="campaigns-audience-custom-panel">
-        Describe the audience you need — criteria, geography, and which event(s) it is for. The agent drafts the criteria, finds lists that may already be it,
-        and builds one in HubSpot only after you preview and confirm.
-      </p>
     }
     @if (mode() === 'reuse') {
       <p class="text-xs text-gray-600" data-testid="campaigns-audience-reuse-panel">
@@ -182,7 +182,7 @@
       </p>
     }
 
-    <!-- One builder serves both Event and Custom, so a draft survives switching between them. -->
+    <!-- One builder serves the Build tab, whether the draft came from the event page or a description. -->
     <div [class.hidden]="mode() === 'reuse'" data-testid="campaigns-audience-custom">
       <lfx-audience-custom-builder
         [projectSlug]="projectSlug()"
@@ -265,8 +265,8 @@
             composing() ||
             attachInFlight() ||
             customCreating() ||
-            eventUrlControl.value.trim().length === 0 ||
-            (composeAttempted() && eventUrlControl.value.trim() === composedFor())
+            eventUrlValue().trim().length === 0 ||
+            (composeAttempted() && eventUrlValue().trim() === composedFor())
           "
           class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           data-testid="campaigns-audience-discover">
@@ -424,7 +424,17 @@
             </p>
           }
           <p class="text-xs text-gray-700" data-testid="campaigns-audience-attach-suppression">
-            @if (attached.suppressionListIds.length > 0) {
+            @if (attached.standardSuppression; as standing) {
+              Excluding the standard suppressions through the shared list
+              @if (standing.hubspotUrl) {
+                <a [href]="standing.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">{{ standing.name }}</a>
+              } @else {
+                <span>{{ standing.name }}</span>
+              }
+              @if (attached.suppressionListIds.length > 1) {
+                and {{ attached.suppressionListIds.length - 1 }} more list(s).
+              }
+            } @else if (attached.suppressionListIds.length > 0) {
               Excluding {{ attached.suppressionListIds.length }} list(s).
             } @else {
               No exclusion list is applied.
@@ -492,7 +502,8 @@
         [loading]="suppressionLoading()"
         [failed]="suppressionFailed()"
         [disabled]="selectionLocked()"
-        (toggleList)="onToggleSuppression($event)" />
+        (toggleList)="onToggleSuppression($event)"
+        (toggleStandard)="onToggleStandardSuppression($event)" />
       @if (excludeIds().length > 0) {
         <div class="flex flex-wrap items-center gap-2 text-xs" data-testid="campaigns-audience-suppression-count">
           <button
@@ -591,7 +602,7 @@
           (excludeList)="onExcludeList($event)"
           (createList)="onCreateForSignal($event)" />
 
-        <p class="text-xs text-gray-500">"Create list" opens the Custom Audience builder above, pre-filled for that signal.</p>
+        <p class="text-xs text-gray-500">"Create list" opens the Build a new audience tab above, pre-filled for that signal.</p>
       </lfx-audience-step-card>
     </div>
 

@@ -380,6 +380,31 @@ describe('AudienceBuilderProxyService wire mapping', () => {
     expect(result.suppressionListIds).toEqual(['201']);
   });
 
+  it('maps the standing standard suppression list and forwards the registrants edition', async () => {
+    const req = {} as Request;
+    proxyRequest.mockResolvedValue({
+      master: { list_id: '501', name: 'Prospects', hubspot_url: 'https://app.hubspot.com/l/1' },
+      suppression_list_ids: ['40000', '9001'],
+      suppression: { list_id: '40000', name: 'LFX Standard Suppressions - tlf', hubspot_url: 'https://app.hubspot.com/l/2' },
+      audience: { id: 'aud-4', status: 'built', version: 1, platform_master_list_id: '501' },
+    });
+
+    const result = await service.attachExisting(req, 'tlf', {
+      briefId: 'brief-1',
+      masterListId: '501',
+      suppressionListIds: ['201', '202'],
+      currentRegistrantsEvent: 'Synthetic Summit 2026',
+    });
+
+    const [, , , , , body] = proxyRequest.mock.calls[0];
+    expect(body).toEqual({
+      attach: { brief_id: 'brief-1', master_list_id: '501', suppression_list_ids: ['201', '202'], current_registrants_event: 'Synthetic Summit 2026' },
+    });
+    expect(result.suppressionListIds).toEqual(['40000', '9001']);
+    expect(result.standardSuppression?.listId).toBe('40000');
+    expect(result.standardSuppression?.name).toBe('LFX Standard Suppressions - tlf');
+  });
+
   it('posts several include lists and maps them back onto the audience', async () => {
     const req = {} as Request;
     proxyRequest.mockResolvedValue({

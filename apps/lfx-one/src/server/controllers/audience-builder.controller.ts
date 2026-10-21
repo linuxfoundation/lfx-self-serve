@@ -182,6 +182,25 @@ function invalid(req: Request, operation: string, field: string, message: string
 }
 
 /** One trimmed query param, or `''` when absent or repeated. */
+/** Upstream's `current_registrants_event` MaxLength. */
+const MAX_REGISTRANTS_EVENT_LENGTH = 200;
+const REGISTRANTS_EVENT_MESSAGE = `currentRegistrantsEvent must be a string of at most ${MAX_REGISTRANTS_EVENT_LENGTH} characters when provided`;
+
+/**
+ * The trimmed edition name, '' when omitted or blank, or null when provided but not a string or too
+ * long. A mistyped value is refused rather than dropped: dropping it would send without the
+ * registrants suppression the operator ticked.
+ */
+function registrantsEvent(value: unknown): string | null {
+  if (value === undefined) {
+    return '';
+  }
+  if (typeof value !== 'string' || value.trim().length > MAX_REGISTRANTS_EVENT_LENGTH) {
+    return null;
+  }
+  return value.trim();
+}
+
 function queryString(req: Request, field: string): string {
   const raw = req.query[field];
   return typeof raw === 'string' ? raw.trim() : '';
@@ -399,9 +418,16 @@ export class AudienceBuilderController {
     const startTime = logger.startOperation(req, 'audience_suppression_lists', {});
 
     try {
-      // Both params are optional: the portfolio-wide hygiene lists are found by fixed name, and
-      // the brand and event tiers only add to them. An empty answer is a real answer.
-      const lists = await this.audienceBuilder.getSuppressionLists(req, projectSlug, queryString(req, 'brandShort'), queryString(req, 'eventName'));
+      // Every param is optional: the portfolio-wide hygiene lists are found by fixed name, and
+      // the brand, event and current-registrants tiers only add to them. An empty answer is a
+      // real answer.
+      const lists = await this.audienceBuilder.getSuppressionLists(
+        req,
+        projectSlug,
+        queryString(req, 'brandShort'),
+        queryString(req, 'eventName'),
+        queryString(req, 'registrantsEvent').slice(0, MAX_REGISTRANTS_EVENT_LENGTH)
+      );
 
       logger.success(req, 'audience_suppression_lists', startTime, { count: lists.length });
       res.json(lists);
@@ -549,9 +575,16 @@ export class AudienceBuilderController {
     // silently would compose two real HubSpot lists and leave them ATTACHED TO NOTHING, while the
     // operator watches a success banner — and compose is not idempotent, so the correction costs
     // a second master list.
-    const mistyped = (['name', 'brandShort', 'eventName', 'briefId'] as const).find((field) => body[field] !== undefined && typeof body[field] !== 'string');
+    const mistyped = (['name', 'brandShort', 'eventName', 'briefId', 'currentRegistrantsEvent'] as const).find(
+      (field) => body[field] !== undefined && typeof body[field] !== 'string'
+    );
     if (mistyped) {
       next(invalid(req, 'audience_compose_master', mistyped, `${mistyped} must be a string when provided`));
+      return;
+    }
+    const composeRegistrants = registrantsEvent(body.currentRegistrantsEvent);
+    if (composeRegistrants === null) {
+      next(invalid(req, 'audience_compose_master', 'currentRegistrantsEvent', REGISTRANTS_EVENT_MESSAGE));
       return;
     }
 
@@ -594,6 +627,7 @@ export class AudienceBuilderController {
         ...(typeof body.brandShort === 'string' ? { brandShort: body.brandShort } : {}),
         ...(typeof body.eventName === 'string' ? { eventName: body.eventName } : {}),
         ...(eventDates ? { eventDates } : {}),
+        ...(composeRegistrants ? { currentRegistrantsEvent: composeRegistrants } : {}),
         // Forwarded only when NON-EMPTY. A blank string passes the string check above and would
         // be sent as an attach request naming no brief, which upstream answers with a 404 after
         // refusing to create anything — a worse outcome than the exploratory compose the caller
@@ -705,6 +739,12 @@ export class AudienceBuilderController {
       return;
     }
 
+    const attachRegistrants = registrantsEvent(body.currentRegistrantsEvent);
+    if (attachRegistrants === null) {
+      next(invalid(req, 'audience_attach_existing', 'currentRegistrantsEvent', REGISTRANTS_EVENT_MESSAGE));
+      return;
+    }
+
     const startTime = logger.startOperation(req, 'audience_attach_existing', {
       includes: includeListIds ? includeListIds.length : 1,
       suppressions: suppressionListIds.length,
@@ -715,6 +755,7 @@ export class AudienceBuilderController {
         briefId,
         ...(includeListIds ? { includeListIds } : { masterListId }),
         suppressionListIds,
+        ...(attachRegistrants ? { currentRegistrantsEvent: attachRegistrants } : {}),
         ...(body.inclusionSummary ? { inclusionSummary: body.inclusionSummary } : {}),
       });
       logger.success(req, 'audience_attach_existing', startTime, { masterListId: result.master.listId });

@@ -94,6 +94,9 @@ export class AudienceBuilderTabComponent {
   public readonly active = input(false);
   /** Seeded from the brief's event details when it has them, so the field is rarely empty. */
   public readonly initialEventUrl = input('');
+  /** The brief's event name and scraped dates: a year fallback for an edition discovery returned undated. */
+  public readonly briefEventName = input('');
+  public readonly briefEventDates = input('');
   /**
    * The identity of the event the parent's brief is for (slug, then name, then URL), normalized.
    *
@@ -217,6 +220,12 @@ export class AudienceBuilderTabComponent {
 
   // === Forms ===
   protected readonly eventUrlControl = new FormControl('', { nonNullable: true });
+  /**
+   * The url as a signal. Templates must not read `eventUrlControl.value` directly: this app is
+   * zoneless, so a keystroke did not re-evaluate it and Generate stayed disabled until the field
+   * lost focus (found in the browser test).
+   */
+  protected readonly eventUrlValue = toSignal(this.eventUrlControl.valueChanges, { initialValue: this.eventUrlControl.value });
   /** Optional master list name; blank keeps the derived one. */
   protected readonly masterNameControl = new FormControl('', { nonNullable: true });
   /** "Or use an existing list" — the same typeahead as step 5, available in every mode. */
@@ -239,10 +248,10 @@ export class AudienceBuilderTabComponent {
   /** Bumped by every run reset so the custom builder starts over with it. */
   protected readonly customResetKey = signal(0);
   /**
-   * The legacy builder's three ways to set the audience. Event Audience first, as in legacy: plan
-   * one from the event page. Custom: describe it. Reuse or Discover: find the lists that exist.
+   * The two ways to set the audience. Build: describe a new list, or draft one from the event page
+   * (both fill the same custom builder). Reuse: discover and use the lists that already exist.
    */
-  protected readonly mode = signal<AudienceBuildMode>('event');
+  protected readonly mode = signal<AudienceBuildMode>('build');
   /** Whether the Exclude / Review steps apply: a discovery ran, or a list was chosen any other way. */
   protected readonly showSelection = computed(() => this.hasDiscovered() || this.inclusion().size > 0);
   private readonly existingQuery = toSignal(this.existingSearchControl.valueChanges, { initialValue: '' });
@@ -260,7 +269,22 @@ export class AudienceBuilderTabComponent {
    */
   protected readonly qaEventName = computed(() => {
     const event = this.identity() ?? this.plannedEvent();
-    return event ? withEventYear(event.eventName, event.eventDates) : '';
+    if (!event) {
+      return '';
+    }
+    // Discovery can return no dates (a past event's page), so the brief's own dates are a
+    // fallback -- only for the brief's event, never for a different one being explored.
+    const sameEvent = this.briefEventName().trim().toLowerCase() === event.eventName.trim().toLowerCase();
+    return withEventYear(event.eventName, sameEvent ? [...event.eventDates, this.briefEventDates()] : event.eventDates);
+  });
+  /**
+   * The edition whose current registrants the send suppresses, or '' when its year is unknown:
+   * the registration event records the edition WITH its year, so a name without one would build a
+   * list that matches nobody.
+   */
+  protected readonly registrantsEdition = computed(() => {
+    const name = this.qaEventName();
+    return /\b(19|20)\d{2}\b/.test(name) ? name : '';
   });
   /** Capabilities have answered; until then the tab is locked but says it is checking. */
   protected readonly capabilitiesKnown = computed(() => this.capabilities() !== null || this.capabilitiesFailed());
@@ -589,8 +613,27 @@ export class AudienceBuilderTabComponent {
   /** Ticked row KEYS — what the suppression grid checks against. */
   protected readonly suppressionKeys = computed<ReadonlySet<string>>(() => new Set(this.suppression().keys()));
 
-  /** The resolved list ids behind those rows, de-duplicated. */
-  protected readonly suppressionListIds = computed<ReadonlySet<string>>(() => new Set(this.suppression().values()));
+  /**
+   * The resolved list ids behind those rows, de-duplicated. A ticked current-registrants row whose
+   * list does not exist yet holds '' and is sent as `currentRegistrantsEvent` instead.
+   */
+  protected readonly suppressionListIds = computed<ReadonlySet<string>>(() => new Set([...this.suppression().values()].filter((id) => id !== '')));
+
+  /**
+   * The edition whose current-registrants list attach or compose must CREATE: set only while that
+   * row is ticked and its list does not exist yet. An existing list is ticked by id like any row.
+   */
+  protected readonly registrantsToCreate = computed(() => {
+    const row = this.suppressionLists().find((list) => list.category === 'current_registrants' && list.willCreate && list.listId === '');
+    return row !== undefined && this.suppression().has(row.key) ? this.registrantsEdition() : '';
+  });
+
+  /** Ids of the resolved standard rows: what the project's standing standard list stands for. */
+  private readonly standardRowIds = computed(() =>
+    this.suppressionLists()
+      .filter((list) => list.category === 'standard' && list.listId !== '')
+      .map((list) => list.listId)
+  );
 
   /** Every selected id, so a child can grey out an Add button for a list already in either set. */
   protected readonly selectedIds = computed<ReadonlySet<string>>(() => new Set([...this.inclusion().keys(), ...this.suppression().values()]));
@@ -784,7 +827,10 @@ export class AudienceBuilderTabComponent {
       return [];
     }
     const includes = new Set(this.attachedIncludeIds());
-    return [...new Set(attached.suppressionListIds)].filter((id) => !includes.has(id));
+    // The standing standard list stands for every resolved standard row, so it is compared as them.
+    const standingId = attached.standardSuppression?.listId;
+    const excluded = attached.suppressionListIds.flatMap((id) => (id === standingId ? this.standardRowIds() : [id]));
+    return [...new Set(excluded)].filter((id) => !includes.has(id));
   });
 
   /**
@@ -1107,6 +1153,13 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
+    // Two inputs share this control (Event Audience and Discover). A control writes typed text
+    // back to the OTHER views only on setValue, so without this the second box showed empty
+    // while its button acted on the url typed in the first.
+    this.eventUrlControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      this.eventUrlControl.setValue(value, { emitEvent: false });
+    });
+
     this.existingSearchControl.valueChanges
       .pipe(
         map((value) => value.trim()),
@@ -1244,7 +1297,12 @@ export class AudienceBuilderTabComponent {
     // input: the binding fights the directive and Angular warns it can produce a
     // changed-after-checked error. Every other action here is a plain button, so this is the only
     // control that needs it.
-    toObservable(this.degraded)
+    //
+    // Locked only once the connection is KNOWN to be unusable. "Still checking" also reads as
+    // degraded, and locking then silently swallowed a URL typed in the first seconds -- the box
+    // looked editable and discarded every keystroke (found in the browser test). Typing a URL is
+    // harmless; every action that uses it stays disabled until the check answers.
+    toObservable(computed(() => this.capabilitiesKnown() && this.degraded()))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((degraded) => {
         if (degraded) {
@@ -1381,10 +1439,31 @@ export class AudienceBuilderTabComponent {
     const list = this.suppressionLists().find((candidate) => candidate.key === key);
     // Stored key -> resolved list id: the key is the selection identity, the id is what compose
     // and the conflict check need. An unresolved row cannot reach here (the grid refuses to emit
-    // for an empty list id), so `listId` is always a real id by the time it is stored.
+    // for an empty list id) except the current-registrants row whose list is created on attach,
+    // stored as '' until a reload fills its id in.
     if (list !== undefined) {
       this.toggle(this.suppression, key, list.listId);
     }
+  }
+
+  /** Ticks or unticks every resolved standard row at once: the grid shows them as one entry. */
+  protected onToggleStandardSuppression(change: { keys: readonly string[]; selected: boolean }): void {
+    const rows = new Map(this.suppressionLists().map((list) => [list.key, list]));
+    const next = new Map(this.suppression());
+    change.keys.forEach((key) => {
+      const row = rows.get(key);
+      if (row === undefined || row.listId === '') {
+        return;
+      }
+      // A list already included stays included, as when the rows are seeded.
+      if (change.selected && !this.inclusion().has(row.listId)) {
+        next.set(key, row.listId);
+      } else if (!change.selected) {
+        next.delete(key);
+      }
+    });
+    this.suppression.set(next);
+    this.invalidatePreview();
   }
 
   protected onAddListBrief(list: AudienceListBrief): void {
@@ -1524,7 +1603,7 @@ export class AudienceBuilderTabComponent {
   protected onGenerateEventPlan(): void {
     const url = this.eventUrlControl.value.trim();
     if (url === '' || this.degraded() || this.selectionLocked() || this.customCreating()) return;
-    this.mode.set('event');
+    this.mode.set('build');
     this.customPreset.set({
       version: ++this.customPresetVersion,
       eventUrl: url,
@@ -1536,7 +1615,7 @@ export class AudienceBuilderTabComponent {
 
   protected onSetMode(mode: AudienceBuildMode): void {
     this.mode.set(mode);
-    // The Event and Reuse panels both bind eventUrlControl, and a user-originated edit in one never
+    // The Build and Reuse panels both bind eventUrlControl, and a user-originated edit in one never
     // writes back to the other (Reactive Forms skips the view that made the change, and the hidden
     // panel stays mounted). Re-writing the value from the model updates every bound input, so the
     // panel being shown cannot display a stale URL while Discover submits the newer one.
@@ -1601,8 +1680,8 @@ export class AudienceBuilderTabComponent {
    */
   protected onCreateForSignal(signal: AudienceSignal): void {
     if (this.customCreating()) return;
-    // The builder lives in the Custom view; switching there is what makes the preset visible.
-    this.mode.set('custom');
+    // The builder lives in the Build view; switching there is what makes the preset visible.
+    this.mode.set('build');
     const eventName = this.identity()?.eventName ?? '';
     const editionName = withEventYear(eventName, this.identity()?.eventDates ?? []);
     const brand = this.identity()?.brandShort ?? '';
@@ -1773,6 +1852,7 @@ export class AudienceBuilderTabComponent {
     const dispatchBriefId = this.briefId();
     const dispatchProject = this.projectSlug();
     const dispatchScope = this.audienceScope();
+    const registrantsCreated = this.registrantsToCreate() !== '';
     this.composeBriefId.set(dispatchBriefId);
     this.composeScope.set(dispatchScope);
     this.looseComposedMaster.set(null);
@@ -1787,6 +1867,7 @@ export class AudienceBuilderTabComponent {
       .composeAudienceMaster(this.projectSlug(), {
         listIds: [...this.inclusion().keys()],
         excludeListIds: this.excludeIds(),
+        currentRegistrantsEvent: this.registrantsToCreate() || undefined,
         eventUrl: this.eventUrlControl.value.trim() || undefined,
         brandShort: event?.brandShort,
         eventName: event?.eventName,
@@ -1825,6 +1906,7 @@ export class AudienceBuilderTabComponent {
           // This compose recorded after any earlier attach; see `attachedListId`.
           this.lastWriteWasAttach.set(false);
           this.composing.set(false);
+          this.refreshCreatedSuppressionRows(registrantsCreated);
 
           // Both this emission and the stale one above rely on the parent's `onAudienceComposed`,
           // which accepts a row only when `audience.briefId` is the brief it is addressing now.
@@ -2081,7 +2163,7 @@ export class AudienceBuilderTabComponent {
     this.suppressionLoading.set(true);
     const run = this.runGeneration;
     this.campaignService
-      .getAudienceSuppressionLists(this.projectSlug(), brandShort, eventName)
+      .getAudienceSuppressionLists(this.projectSlug(), brandShort, eventName, this.registrantsEdition())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (lists) => {
@@ -2090,6 +2172,7 @@ export class AudienceBuilderTabComponent {
           }
           this.suppressionLists.set(lists);
           lists.forEach((l) => this.loadedSuppressionKeys.add(l.key));
+          this.fillCreatedSuppressionIds(lists);
           this.suppressionFailed.set(false);
           this.suppressionLoading.set(false);
           if (previousKeys) {
@@ -2128,15 +2211,40 @@ export class AudienceBuilderTabComponent {
 
   private seedSuppressionRows(lists: readonly AudienceSuppressionList[]): void {
     const next = new Map(this.suppression());
-    lists.filter((list) => list.listId !== '' && !this.inclusion().has(list.listId)).forEach((list) => next.set(list.key, list.listId));
+    lists.filter((list) => (list.listId !== '' || list.willCreate) && !this.inclusion().has(list.listId)).forEach((list) => next.set(list.key, list.listId));
     this.suppression.set(next);
     this.suppressionSeeded.set(true);
     this.invalidatePreview();
   }
 
   /**
-   * Records existing lists as this brief's send audience. Nothing is created in HubSpot, so a
-   * failure is safe to retry and there is no partial state to reconcile.
+   * A ticked row stored before its list existed ('' id) takes the id a reload now resolves, so the
+   * recorded exclusions and the ticks keep comparing equal.
+   */
+  private fillCreatedSuppressionIds(lists: readonly AudienceSuppressionList[]): void {
+    const current = this.suppression();
+    const filled = lists.filter((list) => list.listId !== '' && current.get(list.key) === '');
+    if (filled.length === 0) {
+      return;
+    }
+    const next = new Map(current);
+    filled.forEach((list) => next.set(list.key, list.listId));
+    this.suppression.set(next);
+  }
+
+  /** After an attach or compose created the registrants list, reload the rows so it shows its id and link. */
+  private refreshCreatedSuppressionRows(created: boolean): void {
+    if (!created || this.suppressionLoading()) {
+      return;
+    }
+    const event = this.identity() ?? this.plannedEvent();
+    this.loadSuppression(event?.brandShort ?? '', event?.eventName ?? '', new Set(this.loadedSuppressionKeys));
+  }
+
+  /**
+   * Records existing lists as this brief's send audience. The only lists it may create are the
+   * project's standing standard suppression list and the edition's current-registrants list, both
+   * reused by name, so a failure is safe to retry and there is no partial state to reconcile.
    *
    * One list goes up as `masterListId`, several as `includeListIds` -- the send goes to all of them
    * with no master list built. The exclusions are always `extraExclusions` (a past send's own) plus
@@ -2175,7 +2283,13 @@ export class AudienceBuilderTabComponent {
     }
     const run = this.runGeneration;
     const dispatchProject = this.projectSlug();
-    const base = { briefId, suppressionListIds: sentExclusions, ...(summary ? { inclusionSummary: summary } : {}) };
+    const registrants = this.registrantsToCreate();
+    const base = {
+      briefId,
+      suppressionListIds: sentExclusions,
+      ...(registrants ? { currentRegistrantsEvent: registrants } : {}),
+      ...(summary ? { inclusionSummary: summary } : {}),
+    };
     const request: AudienceAttachExistingRequest = includes.length === 1 ? { ...base, masterListId: includes[0] } : { ...base, includeListIds: includes };
     this.attachInFlight.set(true);
     this.attachingId.set(busyId);
@@ -2211,6 +2325,7 @@ export class AudienceBuilderTabComponent {
           this.attachingId.set(null);
           this.attachResult.set(result);
           this.lastWriteWasAttach.set(true);
+          this.refreshCreatedSuppressionRows(registrants !== '');
         },
         error: (httpErr: HttpErrorResponse) => {
           if (run !== this.runGeneration) {

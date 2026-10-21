@@ -181,6 +181,14 @@ describe('AudienceBuilderTabComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Toggles one standard suppression row, opening the collapsed standard entry first. */
+  function toggleStandardRow(key: string): void {
+    if (!host().querySelector(`[data-testid="audience-suppression-grid-toggle-${key}"]`)) {
+      click('audience-suppression-standard-expand');
+    }
+    click(`audience-suppression-grid-toggle-${key}`);
+  }
+
   /** Drives the stream through to a completed discovery. */
   function completeDiscovery(result: AudienceDiscoveryResult = discovered()): void {
     stream.next({ type: 'event', data: EVENT });
@@ -350,7 +358,7 @@ describe('AudienceBuilderTabComponent', () => {
 
       completeDiscovery();
 
-      expect(getAudienceSuppressionLists).toHaveBeenCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(getAudienceSuppressionLists).toHaveBeenCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
       expect(getAudienceLastSent).toHaveBeenCalledWith('tlf', 'Synthetic Summit 2026', 'SYN');
       expect(getAudienceExistingMasterLists).toHaveBeenCalledWith('tlf', 'Synthetic Summit 2026', 'SYN');
     });
@@ -398,7 +406,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-preview-count');
       expect(host().querySelector('[data-testid="campaigns-audience-count"]')?.textContent).toContain('1,200');
 
-      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      toggleStandardRow('lf_events_gdpr');
       expect(host().querySelector('[data-testid="campaigns-audience-count"]'), 'a count survived a selection edit').toBeNull();
     });
 
@@ -834,7 +842,7 @@ describe('AudienceBuilderTabComponent', () => {
 
     it('asks for a tick when a suppression list resolves but none is ticked', async () => {
       await renderWithDiscovery({ briefId: 'brief-1' });
-      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      toggleStandardRow('lf_events_gdpr');
       const tab = fixture.componentInstance as unknown as { attachUnavailableMessage: () => string };
 
       expect(tab.attachUnavailableMessage()).toContain('Select at least one suppression list');
@@ -869,11 +877,11 @@ describe('AudienceBuilderTabComponent', () => {
       const gate = fixture.componentInstance as unknown as { canUseExistingMaster: () => boolean };
       // Both rows arrive ticked. Untick 101 so the inclusion alone is conflict-free, while 202 keeps
       // the mandatory suppression satisfied.
-      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      toggleStandardRow('lf_events_gdpr');
       click('audience-card-grid-toggle-101');
       expect(gate.canUseExistingMaster(), 'the precondition: reuse is open with no conflict').toBe(true);
 
-      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      toggleStandardRow('lf_events_gdpr');
       expect(gate.canUseExistingMaster(), 'master reuse stayed open with an unresolved conflict').toBe(false);
     });
 
@@ -2538,6 +2546,65 @@ describe('AudienceBuilderTabComponent', () => {
       expect(composeAudienceMaster).not.toHaveBeenCalled();
     });
 
+    it('names the shared standard suppression list and still treats the attach as current', async () => {
+      await renderWithPastSend('brief-1');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' },
+          suppressionListIds: ['40000'],
+          standardSuppression: { listId: '40000', name: 'LFX Standard Suppressions - tlf', hubspotUrl: 'https://app.hubspot.com/l/2' },
+          audience: ATTACHED_AUDIENCE,
+        })
+      );
+
+      click('campaigns-audience-use-direct');
+
+      const note = host().querySelector('[data-testid="campaigns-audience-attach-suppression"]')?.textContent ?? '';
+      expect(note).toContain('through the shared list');
+      expect(note).toContain('LFX Standard Suppressions - tlf');
+      // The record holds the standing list's id, but QA and the "used" match compare the standard rows it stands for.
+      const sent = attachExistingAudience.mock.calls.at(-1)?.[1].suppressionListIds;
+      expect((fixture.componentInstance as unknown as { attachedExclusions: () => readonly string[] }).attachedExclusions()).toEqual(sent);
+    });
+
+    it('ticks the current-registrants row by default and asks the attach to create its list', async () => {
+      getAudienceSuppressionLists.mockReturnValue(
+        of([
+          {
+            key: 'lf_events_gdpr',
+            label: 'LF Events GDPR',
+            listId: '201',
+            name: 'LF Events - GDPR Suppression',
+            size: 5000,
+            category: 'standard',
+            hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/201',
+          },
+          {
+            key: 'current_registrants',
+            label: 'Current registrants - Synthetic Summit 2026',
+            listId: '',
+            name: 'Synthetic Summit 2026 - Current Registrants',
+            category: 'current_registrants',
+            hubspotUrl: '',
+            willCreate: true,
+          },
+        ])
+      );
+      await renderWithPastSend('brief-1');
+      click('audience-card-grid-toggle-101');
+      attachExistingAudience.mockReturnValue(
+        of({ master: { listId: '101', name: 'Registrants', hubspotUrl: 'u' }, suppressionListIds: ['201', '9001'], audience: ATTACHED_AUDIENCE })
+      );
+
+      expect(host().querySelector<HTMLInputElement>('[data-testid="audience-suppression-grid-toggle-current_registrants"]')?.checked).toBe(true);
+      click('campaigns-audience-use-direct');
+
+      const request = attachExistingAudience.mock.calls.at(-1)?.[1];
+      expect(request.suppressionListIds, 'a list that does not exist yet has no id to send').toEqual(['201']);
+      expect(request.currentRegistrantsEvent).toBe('Synthetic Summit 2026');
+    });
+
     it('keeps writes serialized across a brief switch away and back while an attach is outstanding', async () => {
       // The brief-switch reset cleared the SPINNER, which was also the write guard. A -> B -> A then
       // let a second attach for A start, and an out-of-order reply let the older one overwrite the
@@ -2656,7 +2723,7 @@ describe('AudienceBuilderTabComponent', () => {
       click('audience-card-grid-toggle-101');
       expect(host().querySelector('[data-testid="campaigns-audience-suppression-required"]'), 'the pre-ticked suppression read as missing').toBeNull();
 
-      click('audience-suppression-grid-toggle-lf_events_gdpr');
+      toggleStandardRow('lf_events_gdpr');
 
       expect(host().querySelector('[data-testid="campaigns-audience-suppression-required"]')).not.toBeNull();
       expect(host().querySelector<HTMLButtonElement>('[data-testid="campaigns-audience-compose"]')?.disabled).toBe(true);
@@ -2918,9 +2985,9 @@ describe('AudienceBuilderTabComponent', () => {
       expect(host().querySelector('[data-testid="campaigns-audience-use-existing-888"]')).toBeNull();
     });
 
-    it('shows the URL typed in Event mode when switching to Reuse', async () => {
+    it('shows the URL typed in the Build tab when switching to Reuse', async () => {
       await render();
-      click('campaigns-audience-mode-event');
+      click('campaigns-audience-mode-build');
       const planUrl = host().querySelector<HTMLInputElement>('[data-testid="campaigns-audience-event-plan-url"]');
       if (planUrl === null) throw new Error('the event plan URL is not rendered');
       planUrl.value = 'https://events.example.org/typed-in-event-mode';
@@ -2940,7 +3007,7 @@ describe('AudienceBuilderTabComponent', () => {
       builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
       fixture.detectChanges();
 
-      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
     });
 
     it('loads the planned scope once a portfolio-wide load already on the wire settles', async () => {
@@ -2949,7 +3016,7 @@ describe('AudienceBuilderTabComponent', () => {
       getAudienceSuppressionLists.mockReturnValueOnce(generic);
       builder().created.emit({ listId: '7777', name: 'Seoul', hubspotUrl: 'https://app.hubspot.com/x/7777' });
       fixture.detectChanges();
-      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', '', '');
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', '', '', '');
 
       builder().eventPlanned.emit({ eventName: 'Synthetic Summit 2026', brandShort: 'SYN', eventDates: [] });
       generic.next([
@@ -2966,7 +3033,7 @@ describe('AudienceBuilderTabComponent', () => {
       generic.complete();
       fixture.detectChanges();
 
-      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
     });
 
     it('holds Discover while a custom create is still landing', async () => {
@@ -2994,7 +3061,7 @@ describe('AudienceBuilderTabComponent', () => {
       generic.complete();
       fixture.detectChanges();
 
-      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
     });
 
     it('retries a failed planned rescope on the next trigger', async () => {
@@ -3010,7 +3077,7 @@ describe('AudienceBuilderTabComponent', () => {
       fixture.detectChanges();
 
       expect(getAudienceSuppressionLists.mock.calls.length, 'the failed scope is loaded again').toBe(callsAfterFailure + 1);
-      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
     });
 
     it('keeps a row the operator unticked unticked when a failed rescope is retried', async () => {
@@ -3028,7 +3095,7 @@ describe('AudienceBuilderTabComponent', () => {
       builder().created.emit({ listId: '8888', name: 'Busan', hubspotUrl: 'https://app.hubspot.com/x/8888' });
       fixture.detectChanges();
 
-      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026');
+      expect(getAudienceSuppressionLists).toHaveBeenLastCalledWith('tlf', 'SYN', 'Synthetic Summit 2026', 'Synthetic Summit 2026');
       expect(tab.suppression().has('lf_events_gdpr'), 'the operator unticked it; a retry must not re-tick it').toBe(false);
     });
 
@@ -3089,11 +3156,16 @@ describe('AudienceBuilderTabComponent', () => {
       expect((builderPreset() as { request: string }).request).toContain('Regional expansion audience');
     });
 
-    it('opens on Event Audience, like the legacy builder, and switches modes', async () => {
+    it('offers two tabs, opens on Build a new audience, and switches to existing lists', async () => {
       await render();
 
-      expect(host().querySelector('[data-testid="campaigns-audience-mode-event"]')?.getAttribute('aria-selected')).toBe('true');
-      expect(host().querySelector('[data-testid="campaigns-audience-event-panel"]')).not.toBeNull();
+      const tabs = [...host().querySelectorAll('[data-testid^="campaigns-audience-mode-"]')].map((tab) => tab.textContent?.trim());
+      expect(tabs).toEqual(['Build a new audience', 'Use existing lists']);
+      expect(host().querySelector('[data-testid="campaigns-audience-mode-build"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(host().querySelector('[data-testid="campaigns-audience-event-panel"]'), 'the event-page draft lives in the Build tab').not.toBeNull();
+      expect(host().querySelector('[data-testid="campaigns-audience-custom"]')?.classList.contains('hidden'), 'and so does the description builder').toBe(
+        false
+      );
       expect(host().querySelector('[data-testid="campaigns-audience-reuse-view"]')?.classList.contains('hidden')).toBe(true);
 
       click('campaigns-audience-mode-reuse');
@@ -3123,7 +3195,7 @@ describe('AudienceBuilderTabComponent', () => {
         host().querySelector('[data-testid="campaigns-audience-remove-777"]'),
         'the Review step appears for a list chosen without discovery'
       ).not.toBeNull();
-      expect(getAudienceSuppressionLists).toHaveBeenCalledWith('tlf', '', '');
+      expect(getAudienceSuppressionLists).toHaveBeenCalledWith('tlf', '', '', '');
     });
 
     it('adds a reused existing list to Include', async () => {
