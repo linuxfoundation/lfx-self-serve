@@ -34,6 +34,7 @@ import {
   User,
 } from '@lfx-one/shared/interfaces';
 import { MktgAgentRunService } from '@services/mktg-agent-run.service';
+import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgIntakeDocumentsService } from '@services/mktg-intake-documents.service';
@@ -88,7 +89,11 @@ const SHELL_INTAKE: MktgAgentIntake = {
     { key: 'voice_adjectives', question: 'Three adjectives for the voice you want?', kind: 'textarea', rows: 2 },
   ],
   sections: ['Review Sheet', 'How to Use This Document', '1. Project Definition', '2. Positioning', 'Appendix A: Document Architecture'],
-  endpoints: { generate: '/api/mktg-agents/shell-fixture/generate', result: '/api/mktg-agents/shell-fixture/result' },
+  endpoints: {
+    generate: '/api/mktg-agents/shell-fixture/generate',
+    result: '/api/mktg-agents/shell-fixture/result',
+    answers: '/api/mktg-agents/shell-fixture/answers',
+  },
 };
 MKTG_AGENTS.push(SHELL_AGENT);
 MKTG_AGENT_INTAKES[SHELL_AGENT.id] = SHELL_INTAKE;
@@ -145,6 +150,7 @@ describe('MktgAgentRunComponent', () => {
   const fieldError = (fieldKey: string): HTMLElement | null => query(`mktg-agent-run-field-error-${fieldKey}`);
 
   const configure = async (platformId: 'browser' | 'server' = 'browser', agentId = SHELL_AGENT.id): Promise<void> => {
+    window.localStorage.clear();
     activeContext = signal<ProjectContext | null>(null);
     userSignal = signal<User | null>({ sub: 'auth0|user-1' } as User);
     storedRuns = {};
@@ -196,6 +202,7 @@ describe('MktgAgentRunComponent', () => {
       ],
     }).compileComponents();
 
+    if (!vi.isMockFunction(Router.prototype.navigate)) vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fixture = TestBed.createComponent(MktgAgentRunComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
@@ -248,14 +255,140 @@ describe('MktgAgentRunComponent', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
-  it('shows a runtime-ended failure as an intake error without treating it as a document', async () => {
+  describe('intake-only asset handoff', () => {
+    const target = Object.values(MKTG_AGENT_INTAKES).find((intake) => intake.regenerateViaGenerate && !intake.endpoints.answers);
+    if (!target) {
+      throw new Error('Missing registered direct intake');
+    }
+    const fill = async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      for (const field of target.fields) {
+        component['intakeForm'].controls[field.key].setValue(
+          field.format?.startsWith('github') ? 'https://github.com/synthetic-org/synthetic-orbit' : 'Synthetic answer'
+        );
+      }
+      await fixture.whenStable();
+    };
+
+    it('retries a failed navigation only, never Generate, and keeps the form instead of a result/feedback section', async () => {
+      await configure('browser', target.agentId);
+      await fill();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValueOnce(false).mockResolvedValue(true);
+      component['onSubmit']();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
+      host().querySelector<HTMLButtonElement>('[data-testid="mktg-agent-run-open-asset"] button')?.click();
+      await fixture.whenStable();
+      expect(navigate).toHaveBeenCalledTimes(2);
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+      expect(host().querySelector('[data-testid="mktg-agent-run-result"]')).toBeNull();
+      expect(host().querySelector('[data-testid="mktg-agent-run-version-chips"]')).toBeNull();
+    });
+
+    it.each(['project', 'subject'])('clears a stale %s destination when retry runs before the context effect', async (change) => {
+      await configure('browser', target.agentId);
+      await fill();
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const discard = vi.spyOn(attempts, 'discard');
+      component['onSubmit']();
+      await fixture.whenStable();
+      const token = component['navigation']()?.generation;
+      expect(token).toBeTruthy();
+      if (change === 'project') activeContext.set(PROJECT_2);
+      else userSignal.update((user) => (user ? { ...user, sub: 'synthetic-other-subject' } : user));
+      component['onRetryHandoff']();
+      expect(discard).toHaveBeenCalledWith(token);
+      expect(component['navigation']()).toBeNull();
+      expect(component['navigating']()).toBe(false);
+      expect(component['phase']()).toBe('form');
+      expect(component['errorText']()).toContain('project or identity changed');
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+      await fixture.whenStable();
+    });
+
+    it.each(['project', 'null-context', 'subject'])('discards a pending token on %s change and ignores late navigation rejection', async (change) => {
+      await configure('browser', target.agentId);
+      await fill();
+      let finish: (opened: boolean) => void = () => undefined;
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          })
+      );
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const discard = vi.spyOn(attempts, 'discard');
+      component['onSubmit']();
+      await fixture.whenStable();
+      const token = component['navigation']()?.generation;
+      expect(token).toBeTruthy();
+      if (change === 'subject') userSignal.update((user) => (user ? { ...user, sub: 'synthetic-other-subject' } : user));
+      else activeContext.set(change === 'project' ? PROJECT_2 : null);
+      await fixture.whenStable();
+      expect(discard).toHaveBeenCalledWith(token);
+      expect(attempts.consume(token ?? '', PROJECT_1.uid, target.agentId)).toBeNull();
+      finish(false);
+      await fixture.whenStable();
+      expect(component['navigation']()).toBeNull();
+      expect(component['errorText']()).toBe('');
+      component['onRetryHandoff']();
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each(['Synthetic runtime rejection.', ''])(
+    'shows a runtime-ended failure %j as an intake error without treating it as a document',
+    async (failureText) => {
+      await configure();
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['onProgress']({ type: 'failed', failureText }, PROJECT_1.uid);
+      await fixture.whenStable();
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-error')?.textContent).toContain(failureText || 'The agent could not complete this run. Your intake is kept — try again.');
+    }
+  );
+
+  it.each(['request', 'run'] as const)('returns an incomplete current-scope completion with missing %s to an actionable intake', async (missing) => {
     await configure();
     activeContext.set(PROJECT_1);
     await fixture.whenStable();
-    component['onProgress']({ type: 'failed', failureText: 'Synthetic runtime rejection.' }, PROJECT_1.uid);
+    component['phase'].set('running');
+    component['writingStretch'].set(true);
+    component['activeRequest'] = missing === 'request' ? null : { agentId: SHELL_AGENT.id, projectUid: PROJECT_1.uid, intake: SHELL_INTAKE, answers: {} };
+    const progress: MktgGenerateProgress =
+      missing === 'run' ? { type: 'persisted', run: null } : { type: 'document', run: storedRun(PROJECT_1.uid, '# Synthetic asset', {}) };
+    component['onProgress'](progress, PROJECT_1.uid);
     await fixture.whenStable();
     expect(component['phase']()).toBe('form');
-    expect(query('mktg-agent-run-error')?.textContent).toContain('Synthetic runtime rejection.');
+    expect(component['writingStretch']()).toBe(false);
+    expect(query('mktg-agent-run-form')).not.toBeNull();
+    expect(query('mktg-agent-run-error')?.textContent).toContain('open Documents to check it, or try again');
+    expect(generate).not.toHaveBeenCalled();
+    expect(answerQuestions).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late foreign-project completion without changing the active intake', async () => {
+    await configure();
+    activeContext.set(PROJECT_1);
+    await fixture.whenStable();
+    component['phase'].set('running');
+    component['writingStretch'].set(true);
+    component['activeRequest'] = { agentId: SHELL_AGENT.id, projectUid: PROJECT_1.uid, intake: SHELL_INTAKE, answers: {} };
+    component['onProgress']({ type: 'document', run: storedRun(PROJECT_2.uid, '# Foreign synthetic asset', {}) }, PROJECT_2.uid);
+    expect(component['phase']()).toBe('running');
+    expect(component['writingStretch']()).toBe(true);
+    expect(component['errorText']()).toBe('');
+    expect(notifyDocumentsChanged).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(answerQuestions).not.toHaveBeenCalled();
   });
 
   describe('LFX prefill — applied (fromLfx) vs available (lfxMissing)', () => {
@@ -296,9 +429,6 @@ describe('MktgAgentRunComponent', () => {
       projects = { 'proj-one': { repository_url: 'https://github.com/one/repo', description: 'One-line description from LFX' } };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-
-      // Back to the form (restored runs land on the result phase).
-      component['onEditInputs']();
       await fixture.whenStable();
 
       // Restored answers stay untouched, carry no "From LFX" chip…
@@ -372,7 +502,6 @@ describe('MktgAgentRunComponent', () => {
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-      component['onEditInputs']();
       await fixture.whenStable();
 
       expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Restored Name', voice_adjectives: 'confident, technical' });
@@ -549,14 +678,48 @@ describe('MktgAgentRunComponent', () => {
   describe('resetForContext — an active-context switch never bleeds state across projects', () => {
     beforeEach(async () => configure());
 
+    it('cancels on A to null and reinitializes the same A without automatically resubmitting', async () => {
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      for (const field of SHELL_INTAKE.fields) {
+        component['intakeForm'].controls[field.key].setValue(
+          field.format === 'github-url' ? 'https://github.com/synthetic-org/synthetic-orbit' : 'Synthetic answer'
+        );
+      }
+      const progress = new Subject<MktgGenerateProgress>();
+      generate.mockReturnValue(progress);
+      component['onSubmit']();
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      expect(component['phase']()).toBe('running');
+      activeContext.set(null);
+      await fixture.whenStable();
+      expect(progress.observed).toBe(false);
+      expect(component['activeRequest']).toBeNull();
+      expect(component['navigation']()).toBeNull();
+      expect(component['phase']()).toBe('form');
+      expect(component['writingStretch']()).toBe(false);
+      loadRun.mockClear();
+      getProject.mockClear();
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      expect(loadRun).toHaveBeenCalledWith(PROJECT_1.uid, SHELL_AGENT.id);
+      expect(getProject).toHaveBeenCalledWith(PROJECT_1.slug, false);
+      expect(component['intakeForm'].controls['project_name'].value).toBe(PROJECT_1.name);
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-form')).not.toBeNull();
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
     it('restores the stored run for the active project and resets fully when switching to a project without one', async () => {
       storedRuns = { 'proj-1': storedRun('proj-1', '# Doc', { project_name: 'Stored Name' }) };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
 
-      // Project 1 restores straight to its stored document.
-      expect(query('mktg-agent-run-result')).not.toBeNull();
-      expect(query('mktg-agent-run-doc-version')?.textContent).toContain('v1');
+      // Restored history fills the intake; the result belongs on the asset page.
+      expect(query('mktg-agent-run-result')).toBeNull();
+      expect(query('mktg-agent-run-form')).not.toBeNull();
       expect(component['intakeForm'].getRawValue()).toMatchObject({ project_name: 'Stored Name' });
 
       // Project 2 has no stored run — back to a clean form, no leaked answers,
@@ -989,7 +1152,7 @@ describe('MktgAgentRunComponent', () => {
         expect(component['phase']()).toBe('form');
         expect(query('mktg-agent-run-error')?.textContent).toContain('this run was not started');
         expect(query('mktg-agent-run-result')).toBeNull();
-        expect(component['run']()).toBeNull();
+        expect(component['activeRequest']).toBeNull();
         expect(component['intakeForm'].controls['website_url'].value).toBe('https://one.example.org');
       });
     });
@@ -1142,15 +1305,9 @@ describe('MktgAgentRunComponent', () => {
       }
       await fixture.whenStable();
 
-      expect(component['phase']()).toBe('result');
-      expect(query('mktg-boilerplates-view-title')?.textContent).toContain('Project One Boilerplates');
-      expect(query('mktg-boilerplates-view-version')?.textContent).toContain('v1');
-      expect(query('mktg-boilerplates-view-text-0')?.textContent).toContain('Project One is the open service mesh.');
-      expect(query('mktg-boilerplates-view-count-3')?.textContent).toContain('16 / 100 words');
-      expect(query('mktg-framework-view')).toBeNull();
-      expect(query('mktg-agent-run-change-note')?.textContent).toContain('To change the boilerplates, edit the inputs and generate again');
-      expect(query('mktg-agent-run-download-pdf')).toBeNull();
-      expect(query('mktg-agent-run-export-slides')).toBeNull();
+      expect(query('mktg-agent-run-result')).toBeNull();
+      expect(query('mktg-boilerplates-view')).toBeNull();
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['..', 'documents', 'boilerplates', 'living'], expect.anything());
       expect(notifyDocumentsChanged).toHaveBeenCalledWith('proj-1');
     });
   });
@@ -1581,7 +1738,7 @@ describe('MktgAgentRunComponent', () => {
         await fixture.whenStable();
 
         expect(component['phase']()).toBe('running');
-        expect(query('mktg-agent-run-asset')).not.toBeNull();
+        expect(query('mktg-agent-run-live')).not.toBeNull();
         // The live page is the feed alone (hand test, 18 Oct): no document title, status chip or tabs until there is a document.
         expect(query('mktg-framework-view')).toBeNull();
         expect(query('mktg-framework-view-title')).toBeNull();
@@ -1713,16 +1870,9 @@ describe('MktgAgentRunComponent', () => {
         expect(sent).toEqual(answers);
         expect(generate).toHaveBeenCalledTimes(1);
 
-        expect(component['phase']()).toBe('result');
-        expect(query('mktg-agent-run-result')).not.toBeNull();
-        expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
-        expect(query('mktg-framework-view-version')?.textContent).toContain('v1');
-        expect(query('mktg-agent-run-asked-toggle')?.textContent).toContain('asked 2 question(s)');
-        query('mktg-agent-run-asked-toggle')?.click();
-        await fixture.whenStable();
-        expect(query('mktg-agent-run-asked-ranked-goals')?.textContent).toContain('Adoption first.');
-        expect(query('mktg-agent-run-asked-ranked-goals')?.textContent).toContain('Suggested by the agent, accepted');
-        expect(query('mktg-agent-run-asked-words-to-avoid')?.textContent).toContain('Your answer');
+        expect(query('mktg-agent-run-result')).toBeNull();
+        expect(query('mktg-agent-run-asked-toggle')).toBeNull();
+        expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['..', 'documents', 'foundation-message', 'living'], expect.anything());
       });
 
       it('marks an edited suggestion as edited, goes back with Back, and shows the writing feed once sent', async () => {
@@ -1760,7 +1910,7 @@ describe('MktgAgentRunComponent', () => {
 
       expect(component['phase']()).toBe('form');
       expect(query('mktg-agent-run-result')).toBeNull();
-      expect(component['versions']()).toEqual([]);
+      expect(query('mktg-agent-run-version-chips')).toBeNull();
       expect(component['intakeForm'].controls['website_url'].value).toBe('https://testorbit.example.org');
     });
 
@@ -1778,8 +1928,6 @@ describe('MktgAgentRunComponent', () => {
       };
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
-
-      component['onEditInputs']();
       await fixture.whenStable();
 
       const restored = component['intakeForm'].getRawValue();
@@ -1798,7 +1946,8 @@ describe('MktgAgentRunComponent', () => {
       component['intakeForm'].controls['business_outcome'].setValue('Membership growth');
     };
     const siblingDoc = (agentId: string, document: string, version = 2): MktgDependencyDocument => ({ agentId, source: 'server', version, document });
-    const submittedAnswers = (): Record<string, string> => (generate.mock.calls[0][0] as MktgGenerateRequest).answers;
+    const submittedAnswers = (): Record<string, string> =>
+      TestBed.inject(MktgRunAttemptService).load(PROJECT_1.uid, component['agent']?.id ?? '')?.request.answers ?? {};
 
     beforeEach(async () => configure('browser', 'icp'));
 
@@ -1825,7 +1974,8 @@ describe('MktgAgentRunComponent', () => {
       component['onSubmit']();
       await fixture.whenStable();
 
-      expect(generate).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledTimes(1);
       expect(submittedAnswers()).toEqual({
         project_name: 'TestOrbit',
         github_url: 'https://github.com/example-org/testorbit',
@@ -1971,7 +2121,19 @@ describe('MktgAgentRunComponent', () => {
         expect(fieldError('github_url')).toBeNull();
         expect(component['submitDisabled']()).toBe(false);
         component['onSubmit']();
-        expect(generate).toHaveBeenCalledTimes(1);
+        expect(TestBed.inject(Router).navigate).toHaveBeenCalledTimes(1);
+        expect(generate).not.toHaveBeenCalled();
+      });
+
+      it('blocks a full submission on the same format rule before any handoff or generation', async () => {
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+        fillNameAndUrl('https://github.com/synthetic-org');
+        await fixture.whenStable();
+        expect(component['submitDisabled']()).toBe(true);
+        component['onSubmit']();
+        expect(TestBed.inject(Router).navigate).not.toHaveBeenCalled();
+        expect(generate).not.toHaveBeenCalled();
       });
 
       it('leaves an empty box to the required rule — no format error, and no double message', async () => {
@@ -1983,19 +2145,6 @@ describe('MktgAgentRunComponent', () => {
 
         expect(fieldError('github_url')).toBeNull();
         expect(component['submitDisabled']()).toBe(true);
-      });
-
-      it('blocks the regenerate path on the same rule — a resubmit is a full submit', async () => {
-        activeContext.set(PROJECT_1);
-        await fixture.whenStable();
-
-        fillNameAndUrl('https://github.com/aaif');
-        component['feedbackForm'].controls.feedback.setValue('Sharpen the pitch.');
-        await fixture.whenStable();
-
-        expect(component['regenerateDisabled']()).toBe(true);
-        component['onRegenerate']();
-        expect(generate).not.toHaveBeenCalled();
       });
     });
 
