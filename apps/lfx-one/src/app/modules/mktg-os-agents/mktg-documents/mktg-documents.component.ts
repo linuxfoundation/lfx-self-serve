@@ -22,6 +22,7 @@ import { describeMktgRevision, describeMktgRevisionAuthor } from '@lfx-one/share
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 // The Marketing OS Documents area (design of record: "Document store", Main
 // board): living documents in run order with their revision state, the
@@ -33,7 +34,7 @@ import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } fro
   // Excluding layout gutters: ~620px host at 1024, ~876px at 1280.
   // The 800px switch leaves headroom for classic scrollbars.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-documents-width' },
-  imports: [DatePipe, NgClass, RouterLink, MessageComponent],
+  imports: [DatePipe, NgClass, RouterLink, MessageComponent, PageHeaderComponent],
   templateUrl: './mktg-documents.component.html',
 })
 export class MktgDocumentsComponent {

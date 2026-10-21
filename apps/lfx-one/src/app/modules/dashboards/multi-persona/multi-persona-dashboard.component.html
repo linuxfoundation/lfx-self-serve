@@ -3,10 +3,7 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="multi-persona-dashboard-container">
   <!-- Page Header -->
-  <div class="mb-6" data-testid="multi-persona-dashboard-header">
-    <h1 class="font-display font-light text-2xl">My Dashboard</h1>
-    <p class="mt-1 text-sm text-gray-500">{{ subtitleText() }}</p>
-  </div>
+  <lfx-page-header class="mb-6" data-testid="multi-persona-dashboard-header" title="My Dashboard" [description]="subtitleText()" />
 
   <!-- Dashboard Sections -->
   <div class="flex flex-col gap-10" data-testid="multi-persona-dashboard-sections">

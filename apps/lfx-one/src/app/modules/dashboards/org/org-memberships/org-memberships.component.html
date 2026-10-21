@@ -42,7 +42,7 @@
       </div>
     </div>
   } @else {
-    <h1 class="font-display font-light text-2xl" data-testid="memberships-page-title">Membership — {{ companyName() }}</h1>
+    <lfx-page-header [title]="'Membership — ' + companyName()" titleTestId="memberships-page-title" />
 
     <div
       role="tablist"

@@ -27,6 +27,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -42,6 +43,7 @@ import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-g
 @Component({
   selector: 'lfx-org-easycla',
   imports: [
+    PageHeaderComponent,
     ButtonComponent,
     EmptyStateComponent,
     InputTextComponent,

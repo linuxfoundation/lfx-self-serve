@@ -51,6 +51,7 @@ import type {
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { decorateParticipatingOrgRow, linksKey, memberAccountIdsOf } from './participating-orgs.util';
 import { ParticipatingOrgsService } from './services/participating-orgs.service';
@@ -76,6 +77,7 @@ import { ParticipatingOrgsService } from './services/participating-orgs.service'
     SelectComponent,
     StatCardGridComponent,
     TableComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './participating-orgs.component.html',
 })

@@ -27,6 +27,7 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
 import { NewsletterInviteDialogComponent } from '../components/newsletter-invite-dialog/newsletter-invite-dialog.component';
 import { NewsletterInviteLandingComponent } from '../components/newsletter-invite-landing/newsletter-invite-landing.component';
 import { NewsletterPreviewDrawerComponent } from '../components/newsletter-preview-drawer/newsletter-preview-drawer.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Me-lens "My Newsletters" foundation drill-down (`/newsletters/my/:foundationSlug`, #3483): the
@@ -54,6 +55,7 @@ import { NewsletterPreviewDrawerComponent } from '../components/newsletter-previ
     SkeletonModule,
     TableComponent,
     TooltipModule,
+    PageHeaderComponent,
   ],
   providers: [DialogService],
   templateUrl: './my-newsletters.component.html',

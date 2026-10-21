@@ -11,10 +11,11 @@ import { TooltipModule } from 'primeng/tooltip';
 
 import { MeetupsListComponent } from './components/meetups-list/meetups-list.component';
 import { MeetupsTopBarComponent } from './components/meetups-top-bar/meetups-top-bar.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-meetups-dashboard',
-  imports: [ButtonComponent, CardComponent, CardTabsBarComponent, MeetupsListComponent, MeetupsTopBarComponent, TooltipModule],
+  imports: [ButtonComponent, CardComponent, CardTabsBarComponent, MeetupsListComponent, MeetupsTopBarComponent, TooltipModule, PageHeaderComponent],
   templateUrl: './meetups-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

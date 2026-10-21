@@ -3,9 +3,11 @@
 
 import { Component, input } from '@angular/core';
 import { MKTG_KIT_LABELS } from '@lfx-one/shared/constants';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-mktg-kit-header',
+  imports: [PageHeaderComponent],
   templateUrl: './mktg-kit-header.component.html',
 })
 export class MktgKitHeaderComponent {

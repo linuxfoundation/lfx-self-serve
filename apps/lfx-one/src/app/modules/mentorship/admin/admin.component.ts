@@ -13,6 +13,7 @@ import { catchError, debounceTime, distinctUntilChanged, exhaustMap, finalize, m
 
 import { ProgramsListComponent } from './components/programs-list/programs-list.component';
 import { Router } from '@angular/router';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Admin landing page for the mentorship module.
@@ -26,7 +27,7 @@ import { Router } from '@angular/router';
  */
 @Component({
   selector: 'lfx-mentorship-admin',
-  imports: [ButtonComponent, RouteLoadingComponent, ProgramsListComponent],
+  imports: [ButtonComponent, RouteLoadingComponent, ProgramsListComponent, PageHeaderComponent],
   templateUrl: './admin.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -14,6 +14,7 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import {
   DEFAULT_EVENTS_PAGE_SIZE,
   DEFAULT_ORG_EVENTS_TAB_ID,
@@ -45,6 +46,7 @@ import { OrgEventsTableComponent } from './components/org-events-table/org-event
 @Component({
   selector: 'lfx-org-events-dashboard',
   imports: [
+    PageHeaderComponent,
     FormsModule,
     CardComponent,
     CardTabsBarComponent,

@@ -29,6 +29,7 @@ import { ProfileVisibilityDrawerComponent } from '../../modules/profile/componen
 import { ProfileVisibilityDrawerService } from '../../modules/profile/components/profile-visibility-drawer/profile-visibility-drawer.service';
 import { OpenProfileBannerComponent } from './open-profile-banner/open-profile-banner.component';
 import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * ProfileLayoutComponent is the shell for the Profile & Account hub. It provides:
@@ -53,6 +54,7 @@ import { ProfilePanelComponent } from './profile-panel/profile-panel.component';
     ProfileEditDrawerComponent,
     ProfileVisibilityDrawerComponent,
     OpenProfileBannerComponent,
+    PageHeaderComponent,
   ],
   // Drawer services are layout-scoped (not root) so their retained context is torn down when the hub
   // is left; each drawer child shares this injector instance via the providers below. MessageService

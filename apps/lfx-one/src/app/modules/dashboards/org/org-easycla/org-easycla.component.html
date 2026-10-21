@@ -2,31 +2,28 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-easycla-page">
-  <header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between" data-testid="org-easycla-header">
-    <div class="flex flex-col gap-2">
-      <h1 class="font-display font-light text-2xl" data-testid="org-easycla-title">
-        @if (contentVisible() && companyName()) {
-          EasyCLA &mdash; {{ companyName() }}
-        } @else {
-          EasyCLA
-        }
-      </h1>
-      <p class="text-sm text-gray-500" data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</p>
+  <lfx-page-header
+    [title]="contentVisible() && companyName() ? 'EasyCLA — ' + companyName() : 'EasyCLA'"
+    titleTestId="org-easycla-title"
+    data-testid="org-easycla-header">
+    <span pageHeaderDescription class="flex flex-col gap-1">
+      <span data-testid="org-easycla-subtitle">The corporate CLAs your organization holds across Linux Foundation projects.</span>
       <a
         href="/docs/organization/easycla"
         target="_blank"
         rel="noopener noreferrer"
-        class="text-xs text-blue-600 hover:underline"
+        class="self-start text-xs text-blue-600 hover:underline"
         data-testid="org-easycla-docs-link"
         >Learn more about EasyCLA →</a
       >
-    </div>
+    </span>
 
     <!-- Offered to anyone who can see this page. Disabled while no organization is selected,
          while a hand-off is already open, while a page-level state replaces the page, and until
          the org context and the current list have settled. Picker Continue and Start do not
          ask ACS. Attestation Continue does, with a project. -->
     <lfx-button
+      pageHeaderActions
       label="Sign CLA"
       icon="fa-light fa-file-signature"
       [disabled]="signClaDisabled()"
@@ -34,7 +31,7 @@
       styleClass="shrink-0"
       (onClick)="startSigning()"
       data-testid="org-easycla-sign-cla" />
-  </header>
+  </lfx-page-header>
 
   @if (pageState(); as state) {
     <lfx-org-lens-empty-state
