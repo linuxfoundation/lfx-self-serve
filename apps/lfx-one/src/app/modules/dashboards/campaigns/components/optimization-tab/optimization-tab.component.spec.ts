@@ -32,6 +32,7 @@ import {
   META_AD_SET_STATUS_UNCONFIRMED_CODE,
   META_AD_SET_UNCONFIRMED_MESSAGE,
   META_AD_SETS_UNAVAILABLE_UNPROVISIONED_REASON,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   campaignResumeAdoptedReason,
   campaignResumeRefusedAdoptedMessage,
@@ -5048,5 +5049,83 @@ describe('OptimizationTabComponent — live counters (#3299)', () => {
     expect(called).not.toContain('updateCampaignStatus');
     expect(called).not.toContain('updateCampaignBudget');
     expect(called).toContain('getCampaignMetrics');
+  });
+});
+
+/**
+ * lfx-self-serve-ops#54: a non-root caller is refused the Google Ads monitor, whose customer is shared
+ * by every foundation. The tab says so instead of reporting a failure, and still shows the wasted and
+ * low-quality-score keyword sections, which read only the project-scoped `/keywords`.
+ */
+describe('OptimizationTabComponent — shared Google Ads account restriction', () => {
+  let fixture: ComponentFixture<OptimizationTabComponent>;
+  let service: Record<string, ReturnType<typeof vi.fn>>;
+
+  /** Spend with no conversions (wasted) and a quality score of 3 (low quality), so both sections render. */
+  const flaggedKeyword = {
+    keyword: 'cheap cloud',
+    matchType: 'BROAD',
+    qualityScore: 3,
+    status: 'ENABLED',
+    adGroup: 'AG',
+    adGroupId: '1',
+    criterionId: '2',
+    campaign: 'C',
+    campaignId: '555',
+    googleAdsUrl: '',
+    impressions: 1000,
+    clicks: 10,
+    ctr: 1,
+    avgCpc: 0.5,
+    spend: 5,
+    conversions: 0,
+  };
+
+  beforeEach(async () => {
+    service = {
+      updateCampaignStatus: vi.fn(),
+      getMonitorData: vi.fn().mockReturnValue(of(null)),
+      getKeywords: vi.fn().mockReturnValue(of({ keywords: [flaggedKeyword], truncated: false })),
+      getMicrosoftKeywords: vi.fn().mockReturnValue(of(null)),
+      getRedditKeywords: vi.fn().mockReturnValue(of(null)),
+      getLinkedInAccounts: vi.fn().mockReturnValue(of([])),
+      getRedditAccounts: vi.fn().mockReturnValue(of([])),
+      getBriefMetrics: vi.fn().mockReturnValue(of({ brief_id: 'b-1', window: 'last_30_days', rows: [], ok_count: 0, action_items: [] })),
+      getMetaAccounts: vi.fn().mockReturnValue(of([])),
+      getLinkedInMonitor: vi.fn().mockReturnValue(of(null)),
+      getRedditMonitor: vi.fn().mockReturnValue(of(null)),
+      getMetaMonitor: vi.fn().mockReturnValue(of(null)),
+      executeKeywordActions: vi.fn().mockReturnValue(of({ results: [] })),
+    };
+    await TestBed.configureTestingModule({
+      imports: [OptimizationTabComponent],
+      providers: [provideNoopAnimations(), { provide: MessageService, useValue: { add: vi.fn() } }, { provide: CampaignService, useValue: service }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(OptimizationTabComponent);
+    fixture.componentRef.setInput('projectSlug', 'tlf');
+    fixture.componentRef.setInput('briefId', 'b-1');
+  });
+
+  const el = (testId: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+
+  it('shows the restricted notice and keeps the wasted and low-quality keyword sections', () => {
+    service['getMonitorData'].mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'shared account', code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE } }))
+    );
+    fixture.detectChanges();
+
+    expect(el('optimization-restricted')?.textContent).toContain('Google Ads optimization is limited to LF administrators');
+    expect(el('optimization-error')).toBeNull();
+    expect(el('optimization-wasted-keywords')?.textContent).toContain('cheap cloud');
+    expect(el('optimization-low-qs')?.textContent).toContain('cheap cloud');
+  });
+
+  it('still reports any other monitor failure as an error', () => {
+    service['getMonitorData'].mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom', code: 'INTERNAL_ERROR' } })));
+    fixture.detectChanges();
+
+    expect(el('optimization-error')).not.toBeNull();
+    expect(el('optimization-restricted')).toBeNull();
   });
 });

@@ -18,6 +18,7 @@ import {
   MONITOR_DATE_RANGE_OPTIONS,
   MONITOR_KEYWORD_PAGE_SIZE,
   MONITOR_PLATFORM_BUTTON_COLORS,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   parseCampaignName,
 } from '@lfx-one/shared/constants';
 import { formatPercent } from '@lfx-one/shared/utils';
@@ -188,6 +189,13 @@ export class MonitoringTabComponent implements OnInit {
   protected readonly monitorViaCampaignService = signal(false);
   protected readonly monitorConnections = signal<CampaignMonitorConnections['platforms']>({});
   protected readonly metricsDisabledPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
+  /**
+   * Panels whose read the BFF refused because the ad account is shared by every foundation
+   * (`MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE`, lfx-self-serve-ops#54). Shown as a notice on either path.
+   */
+  protected readonly restrictedPlatforms = signal<ReadonlySet<MonitorConnectionPlatform>>(new Set());
+  /** The Google Ads block's equivalent: its campaigns and KPIs are hidden, its project-scoped keywords and audience still show. */
+  protected readonly googleRestricted = signal(false);
   /** X stays hidden while the app does not offer it (`disabled: true` in `CAMPAIGN_PLATFORMS`), whatever the flag says. */
   protected readonly twitterOffered = !CAMPAIGN_PLATFORMS.find((p) => p.id === 'twitter-ads')?.disabled;
 
@@ -388,6 +396,7 @@ export class MonitoringTabComponent implements OnInit {
 
     this.loading.set(true);
     this.error.set(null);
+    this.googleRestricted.set(false);
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
@@ -399,13 +408,17 @@ export class MonitoringTabComponent implements OnInit {
           this.loading.set(false);
         },
         error: (err) => {
+          this.loading.set(false);
+          if (this.isSharedAccountRestricted(err)) {
+            this.googleRestricted.set(true);
+            return;
+          }
           // `extractErrorMessage`, not `err?.error?.message`. BaseApiError.toResponse serialises
           // the operator-facing text as `{ error: string }` (`BaseApiError.toResponse`), so `.error.message`
           // is undefined for every error this path produces and the operator got Angular's generic
           // "Http failure response for <url>" instead of the actionable upstream reason. The same
           // reading already exists in `toTransportOutcome`; these loaders never got it (Copilot).
           this.error.set(extractErrorMessage(err, 'Failed to load campaign data'));
-          this.loading.set(false);
         },
       });
 
@@ -479,7 +492,8 @@ export class MonitoringTabComponent implements OnInit {
     }
     const notice = this.panelNotices()[panel];
     this.setMetricsDisabled(panel, false);
-    if (notice?.state === 'metrics_disabled') {
+    this.setRestricted(panel, false);
+    if (notice?.state === 'metrics_disabled' || notice?.state === 'restricted') {
       this.fetchSelectedPanel();
       return;
     }
@@ -506,6 +520,7 @@ export class MonitoringTabComponent implements OnInit {
     // A previous read's "metrics not enabled" must not outlive this one: if this read fails some
     // other way, the notice would otherwise hide that error and its Retry. As `fetchHubSpotData` does.
     this.setMetricsDisabled(platform, false);
+    this.setRestricted(platform, false);
     const accountId = this.reportBackedAccount()?.accountId;
     if (!accountId) {
       // No bound account: the panel shows the connection's empty state, and there is nothing to read.
@@ -527,6 +542,11 @@ export class MonitoringTabComponent implements OnInit {
       },
       error: (err: unknown) => {
         this.reportBackedLoading.set(false);
+        if (this.isSharedAccountRestricted(err)) {
+          this.reportBackedData.set(null);
+          this.setRestricted(platform, true);
+          return;
+        }
         if (this.isMetricsDisabledError(err)) {
           this.reportBackedData.set(null);
           this.setMetricsDisabled(platform, true);
@@ -584,6 +604,7 @@ export class MonitoringTabComponent implements OnInit {
     this.linkedInError.set(null);
     // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
     this.setMetricsDisabled('linkedin', false);
+    this.setRestricted('linkedin', false);
     const accountSource = this.monitorAccountSource();
     this.linkedInSub = this.campaignService
       .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), accountSource)
@@ -596,6 +617,12 @@ export class MonitoringTabComponent implements OnInit {
           this.linkedInLoading.set(false);
         },
         error: (err: unknown) => {
+          if (this.isSharedAccountRestricted(err)) {
+            this.linkedInData.set(null);
+            this.setRestricted('linkedin', true);
+            this.linkedInLoading.set(false);
+            return;
+          }
           if (this.isMetricsDisabledError(err)) {
             this.linkedInData.set(null);
             this.setMetricsDisabled('linkedin', true);
@@ -626,6 +653,7 @@ export class MonitoringTabComponent implements OnInit {
     this.redditError.set(null);
     // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
     this.setMetricsDisabled('reddit', false);
+    this.setRestricted('reddit', false);
     this.redditSub = this.campaignService
       .getRedditMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), this.monitorAccountSource())
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -636,6 +664,12 @@ export class MonitoringTabComponent implements OnInit {
           this.redditLoading.set(false);
         },
         error: (err: unknown) => {
+          if (this.isSharedAccountRestricted(err)) {
+            this.redditData.set(null);
+            this.setRestricted('reddit', true);
+            this.redditLoading.set(false);
+            return;
+          }
           if (this.isMetricsDisabledError(err)) {
             this.redditData.set(null);
             this.setMetricsDisabled('reddit', true);
@@ -666,6 +700,7 @@ export class MonitoringTabComponent implements OnInit {
     this.metaError.set(null);
     // Cleared per read, as `fetchReportBackedData` does: a stale "metrics not enabled" would hide a new error.
     this.setMetricsDisabled('meta', false);
+    this.setRestricted('meta', false);
     const accountSource = this.monitorAccountSource();
     this.metaSub = this.campaignService
       .getMetaMonitorData(this.activeFoundationSlug(), accountKey, this.selectedDays(), accountSource)
@@ -678,6 +713,12 @@ export class MonitoringTabComponent implements OnInit {
           this.metaLoading.set(false);
         },
         error: (err: unknown) => {
+          if (this.isSharedAccountRestricted(err)) {
+            this.metaData.set(null);
+            this.setRestricted('meta', true);
+            this.metaLoading.set(false);
+            return;
+          }
           if (this.isMetricsDisabledError(err)) {
             this.metaData.set(null);
             this.setMetricsDisabled('meta', true);
@@ -762,10 +803,15 @@ export class MonitoringTabComponent implements OnInit {
   private initPanelNotices(): Signal<Partial<Record<MonitorPanelKey, MonitorPanelNotice>>> {
     return computed(() => {
       const notices: Partial<Record<MonitorPanelKey, MonitorPanelNotice>> = {};
+      // A refused shared-account read can come from either path, so it is noticed before the legacy early return.
+      for (const platform of this.restrictedPlatforms()) {
+        notices[platform] = this.noticeFor(platform, 'restricted');
+      }
       if (!this.monitorViaCampaignService()) return notices;
       const connections = this.monitorConnections();
       const disabled = this.metricsDisabledPlatforms();
       for (const platform of Object.keys(MONITOR_CONNECTION_PROVIDERS) as MonitorConnectionPlatform[]) {
+        if (notices[platform]) continue;
         const state = connections[platform]?.state;
         // No state yet means the connections are still loading: no notice, the panel just waits.
         if (state && state !== 'connected') {
@@ -1205,6 +1251,29 @@ export class MonitoringTabComponent implements OnInit {
     this.metricsDisabledPlatforms.set(next);
   }
 
+  private setRestricted(platform: MonitorConnectionPlatform, restricted: boolean): void {
+    const current = this.restrictedPlatforms();
+    if (current.has(platform) === restricted) return;
+    const next = new Set(current);
+    if (restricted) {
+      next.add(platform);
+    } else {
+      next.delete(platform);
+    }
+    this.restrictedPlatforms.set(next);
+  }
+
+  /** The BFF's 403 for a monitor read whose ad account is shared by every foundation (lfx-self-serve-ops#54). */
+  private isSharedAccountRestricted(err: unknown): boolean {
+    return this.errorCode(err) === MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE;
+  }
+
+  /** The BFF's own error `code` (`BaseApiError.toResponse`), as distinct from an upstream service's `upstreamCode`. */
+  private errorCode(err: unknown): string | null {
+    const code = (err as { error?: { code?: unknown } | null } | null)?.error?.code;
+    return typeof code === 'string' ? code : null;
+  }
+
   /** The BFF's 400 for "this platform's metrics are switched off in campaign-service", told apart by its `upstreamCode`. */
   private isMetricsDisabledError(err: unknown): boolean {
     return this.upstreamCode(err) === ACCOUNT_MONITOR_METRICS_DISABLED_CODE;
@@ -1255,6 +1324,12 @@ export class MonitoringTabComponent implements OnInit {
           state,
           title: `No ${label} ad account selected`,
           message: `This project's ${label} connection has no ad account bound to it, so there is nothing to monitor. Ask an LFX administrator to choose the ad account on the connection, then refresh.`,
+        };
+      case 'restricted':
+        return {
+          state,
+          title: `${label} monitoring is limited to LF administrators`,
+          message: `This ${label} ad account is shared by every foundation, so its campaigns and spend can't be shown for a single project.`,
         };
       case 'metrics_disabled':
         return {
@@ -1347,6 +1422,8 @@ export class MonitoringTabComponent implements OnInit {
     this.hubSpotNoticeState.set(null);
     this.monitorConnections.set({});
     this.metricsDisabledPlatforms.set(new Set());
+    this.restrictedPlatforms.set(new Set());
+    this.googleRestricted.set(false);
 
     // Same reason as the per-platform signals above: the templates gate their loading placeholder
     // on `loading() && !monitorData()` (and the keywords equivalent), so leaving the aggregate data
@@ -1489,6 +1566,8 @@ export class MonitoringTabComponent implements OnInit {
     this.metaError.set(null);
     this.reportBackedError.set(null);
     this.metricsDisabledPlatforms.set(new Set());
+    // Google's read is not redone here, so its restricted state stays with it.
+    this.restrictedPlatforms.set(new Set());
   }
 
   private loadLegacyAccounts(slug: string): void {
