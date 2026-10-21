@@ -173,7 +173,7 @@ export class MktgDocumentRunService {
   }
 
   public async recordResult(req: Request, sessionId: string, result: MktgRunResultResponse, project?: string): Promise<void> {
-    if (result.status !== 'ready' && result.status !== 'failed' && result.status !== 'refused') {
+    if (result.status !== 'ready' && result.status !== 'questions' && result.status !== 'failed' && result.status !== 'refused') {
       return;
     }
     const partition = result.persistence?.project ?? project;

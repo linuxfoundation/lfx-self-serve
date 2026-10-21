@@ -30,7 +30,7 @@ import type {
   MktgRevisionSummary,
   ParsedMktgRevisionKey,
 } from '../interfaces/mktg-document-store.interface';
-import type { MktgRunPersistReceipt } from '../interfaces/mktg-run.interface';
+import type { MktgRunPersistReceipt, MktgRunResultResponse } from '../interfaces/mktg-run.interface';
 
 /** Normalize the artifact receipt's snake-case location for camel-case UI/progress models. */
 export function mktgDocumentLocationOfReceipt(receipt?: MktgRunPersistReceipt): MktgDocumentLocation | undefined {
@@ -200,4 +200,18 @@ export function isMktgRunAttemptId(value: string): boolean {
 
 export function mktgRunIdFromKey(key: string): string {
   return key.split('/').at(-1)?.slice(0, -5) ?? '';
+}
+
+/** Bounded dedup identity, never an authorization token; sessionId remains a separate version key. */
+export function mktgRunResultIdentity(result: MktgRunResultResponse, preferReceipt = true): string {
+  const sha = result.persistence?.content_sha256;
+  if (preferReceipt && sha && MKTG_ARTIFACT_SHA256_REGEX.test(sha)) return sha;
+  const text = JSON.stringify({ document: result.documentMarkdown, asset: result.asset, brandKit: result.brandKit });
+  let first = 2166136261;
+  let second = 5381;
+  for (let i = 0; i < text.length; i++) {
+    first = Math.imul(first ^ text.charCodeAt(i), 16777619) >>> 0;
+    second = (Math.imul(second, 33) ^ text.charCodeAt(i)) >>> 0;
+  }
+  return first.toString(16).padStart(8, '0') + second.toString(16).padStart(8, '0');
 }

@@ -13,6 +13,7 @@ import {
   FOUNDATION_MESSAGE_READ_REASONS,
   MKTG_AGENTS,
   MKTG_AGENT_INTAKES,
+  MKTG_RUN_QUESTIONS_ID_REGEX,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
 import {
@@ -54,6 +55,7 @@ import {
   MktgHistoryResponse,
   MktgReadText,
   MktgRunAnswer,
+  MktgRunResultResponse,
 } from '@lfx-one/shared/interfaces';
 import {
   countFoundationMessageWords,
@@ -71,6 +73,7 @@ import {
   validateIcpIntakeAnswers,
 } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { BoilerplatesService } from '../services/boilerplates.service';
@@ -81,6 +84,7 @@ import { GuildService } from '../services/guild.service';
 import { IcpService } from '../services/icp.service';
 import { logger } from '../services/logger.service';
 import { MktgSourceTextService } from '../services/mktg-source-text.service';
+import { MktgDocumentRunService } from '../services/mktg-document-run.service';
 import { ProjectService } from '../services/project.service';
 import { getEffectiveSub, getEffectiveUsername } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
@@ -94,6 +98,7 @@ export class MktgAgentsController {
   private readonly icpService = new IcpService();
   private readonly mktgSourceTextService = new MktgSourceTextService();
   private readonly projectService = new ProjectService();
+  private readonly documentRuns = new MktgDocumentRunService();
 
   /**
    * POST /api/mktg-agents/chat
@@ -101,7 +106,7 @@ export class MktgAgentsController {
    * With sessionId → verify the owner token, post a follow-up, return `{ success: true }`.
    */
   public async chat(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { agentId, message, sessionId, ownerToken } = req.body as MktgChatRequest;
+    const { agentId, message, sessionId, ownerToken, project: rawProject } = (req.body ?? {}) as MktgChatRequest;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       next(
@@ -171,9 +176,13 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'mktg_agents_chat', { agent_id: trimmedAgentId, has_session: !!validSessionId });
 
     try {
+      const project = await this.documentRuns.resolveCatalogProject(req, agent.id, rawProject);
       if (!validSessionId) {
         // New session: bind it to the creator via an opaque owner token.
         const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
+        if (project) {
+          await this.trackStart(req, agent.id, project, newSessionId);
+        }
         logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: true });
         const response: MktgChatResponse = { sessionId: newSessionId, ownerToken: createSessionOwnerToken(userId, newSessionId) };
         res.json(response);
@@ -189,7 +198,12 @@ export class MktgAgentsController {
         return;
       }
 
+      const turnId = randomUUID();
       await this.guildService.sendFollowUp(req, validSessionId, { message: message.trim(), handle: agent.guildAgentHandle });
+      if (project) {
+        // Chat supplies no prior-version hint; this metadata field is generate-path only.
+        await this.trackStart(req, agent.id, project, validSessionId, 0, turnId);
+      }
       logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: false });
       const response: MktgChatResponse = { success: true };
       res.json(response);
@@ -337,9 +351,11 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, files, trimmedProject || undefined, agent.guildAgentHandle);
+      const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, files, project, agent.guildAgentHandle);
+      const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
-      const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
     } catch (error) {
       next(error);
@@ -407,7 +423,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_answers', { answers: validAnswers.length });
 
     try {
+      const project = await this.answersProject(req);
       await this.brandKitService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      if (project) {
+        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
+      }
       logger.success(req, 'brand_kit_answers', startTime, { answers: validAnswers.length });
       const response: BrandKitAnswersResponse = { success: true };
       res.json(response);
@@ -480,6 +500,7 @@ export class MktgAgentsController {
 
     try {
       const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid);
+      await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -632,15 +653,11 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const sessionId = await this.foundationMessageService.startGeneration(
-        req,
-        trimmedAnswers,
-        submitted,
-        trimmedProject || undefined,
-        agent.guildAgentHandle
-      );
+      const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
+      const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
-      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
     } catch (error) {
       next(error);
@@ -709,7 +726,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_answers', { answers: validAnswers.length });
 
     try {
+      const project = await this.answersProject(req);
       await this.foundationMessageService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      if (project) {
+        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
+      }
       logger.success(req, 'foundation_message_answers', startTime, { answers: validAnswers.length });
       const response: FoundationMessageAnswersResponse = { success: true };
       res.json(response);
@@ -828,6 +849,7 @@ export class MktgAgentsController {
 
     try {
       const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
+      await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -909,9 +931,11 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const sessionId = await this.boilerplatesService.startGeneration(req, trimmedAnswers, trimmedProject || undefined, agent.guildAgentHandle);
+      const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      const sessionId = await this.boilerplatesService.startGeneration(req, trimmedAnswers, project, agent.guildAgentHandle);
+      const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'boilerplates_generate', startTime, { session_created: true });
-      const response: BoilerplatesGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      const response: BoilerplatesGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
     } catch (error) {
       next(error);
@@ -980,7 +1004,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_answers', { answers: validAnswers.length });
 
     try {
+      const project = await this.answersProject(req);
       await this.boilerplatesService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      if (project) {
+        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
+      }
       logger.success(req, 'boilerplates_answers', startTime, { answers: validAnswers.length });
       const response: BoilerplatesAnswersResponse = { success: true };
       res.json(response);
@@ -1054,6 +1082,7 @@ export class MktgAgentsController {
 
     try {
       const result: BoilerplatesResultResponse = await this.boilerplatesService.getResult(req, validSessionId, validProjectUid);
+      await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'boilerplates_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -1073,7 +1102,7 @@ export class MktgAgentsController {
    */
   public async generateIcp(req: Request, res: Response, next: NextFunction): Promise<void> {
     // Normalize a missing/null body so malformed requests get a 400, not a throw.
-    const { answers, feedback, priorVersion } = (req.body ?? {}) as Partial<IcpGenerateRequest>;
+    const { answers, feedback, priorVersion, project: rawProject } = (req.body ?? {}) as Partial<IcpGenerateRequest>;
 
     const answersResult = validateIcpIntakeAnswers(answers);
     if (!answersResult.valid) {
@@ -1160,12 +1189,14 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
+      const project = await this.documentRuns.resolveProject(req, rawProject);
       const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
+      const runId = await this.trackStart(req, agent.id, project, sessionId, priorVersion ?? 0);
       logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
       // The README outcome rides the response so the run shell can label a
       // document generated WITHOUT a README instead of leaving a thin document
       // unexplained.
-      const response: IcpGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme };
+      const response: IcpGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), readme, runId };
       res.json(response);
     } catch (error) {
       next(error);
@@ -1236,6 +1267,7 @@ export class MktgAgentsController {
 
     try {
       const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -1392,9 +1424,11 @@ export class MktgAgentsController {
           .map(([key, value]) => [key, value.trim()])
           .filter(([, value]) => value !== '')
       );
-      const sessionId = await this.faqService.startGeneration(req, trimmedAnswers, submitted, trimmedProject || undefined, agent.guildAgentHandle);
+      const project = await this.documentRuns.resolveProject(req, trimmedProject);
+      const sessionId = await this.faqService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
+      const runId = await this.trackStart(req, agent.id, project, sessionId);
       logger.success(req, 'faq_generate', startTime, { session_created: true });
-      const response: FaqGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId) };
+      const response: FaqGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
     } catch (error) {
       next(error);
@@ -1457,7 +1491,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_answers', { answers: validAnswers.length });
 
     try {
+      const project = await this.answersProject(req);
       await this.faqService.sendAnswers(req, validSessionId, validAnswers, agent.guildAgentHandle);
+      if (project) {
+        await this.documentRuns.resumeAfterQuestions(req, project, validSessionId, req.body.questionsId);
+      }
       logger.success(req, 'faq_answers', startTime, { answers: validAnswers.length });
       const response: FaqAnswersResponse = { success: true };
       res.json(response);
@@ -1524,6 +1562,7 @@ export class MktgAgentsController {
 
     try {
       const result: FaqResultResponse = await this.faqService.getResult(req, validSessionId, validProjectUid);
+      await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'faq_result', startTime, { status: result.status });
       res.json(result);
     } catch (error) {
@@ -1560,13 +1599,23 @@ export class MktgAgentsController {
     }
   }
 
-  /**
-   * The `?project=` uid of a stored-artifact read, shape-gated to ONE safe
-   * path segment, or null when it is absent or malformed. Shared by every
-   * agent's `/stored` endpoint so the gate that protects the unencoded
-   * `/projects/{uid}` lookup can never be present on one and missing on
-   * another. Pure: the caller owns the 400 response and its operation name.
-   */
+  /** Record the ACK through the catalog-aware domain service. */
+  private async trackStart(req: Request, agentId: string, project: string, sessionId: string, priorVersion = 0, turnId = 'initial'): Promise<string> {
+    return this.documentRuns.startForCatalogAgent(req, agentId, project, sessionId, priorVersion, turnId);
+  }
+
+  private async answersProject(req: Request): Promise<string | undefined> {
+    if (req.body.questionsId !== undefined && (typeof req.body.questionsId !== 'string' || !MKTG_RUN_QUESTIONS_ID_REGEX.test(req.body.questionsId))) {
+      throw ServiceValidationError.forField('questionsId', 'Invalid questions block.');
+    }
+    return req.body.project === undefined ? undefined : this.documentRuns.resolveProject(req, req.body.project);
+  }
+
+  private async trackResult(req: Request, sessionId: string, result: MktgRunResultResponse, project?: string): Promise<void> {
+    await this.documentRuns.recordResultBestEffort(req, sessionId, result, project);
+  }
+
+  /** Shape-gated `?project=` uid shared by the stored-artifact reads before any upstream lookup. */
   private readStoredArtifactProjectUid(req: Request): string | null {
     const projectParam = req.query['project'];
     const projectUid = typeof projectParam === 'string' ? projectParam.trim() : '';

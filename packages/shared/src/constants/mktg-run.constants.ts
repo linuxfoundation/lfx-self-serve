@@ -153,7 +153,6 @@ export const BRAND_KIT_INTAKE: MktgAgentIntake = {
   ],
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   sections: BRAND_KIT_REQUIRED_HEADINGS.map((heading) => heading.replace(/^## /, '')),
   endpoints: {
@@ -343,7 +342,6 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   assetView: 'messaging-framework',
   // The asset view shows the framework itself; there is no section checklist to tick.
   sections: [],
@@ -365,7 +363,7 @@ export const FOUNDATION_MESSAGE_INTAKE: MktgAgentIntake = {
  * project name from LFX, the website from LFX (its host is the domain the
  * 100-word version ends on: "Learn more at <domain>."; left empty, the agent
  * takes the LFX record's website or asks) and notes. The LFX project uid
- * rides the form (`submitsProject`) for the agent's own LFX lookups. The
+ * is the writer-resolved run scope, also used for the agent's LFX lookups. The
  * agent reads the website, the launch press release and the LFX record
  * itself, then asks only the gaps it could not settle — the domain, the main
  * programs, the member names it may use — each with a suggested answer
@@ -447,7 +445,6 @@ export const BOILERPLATES_INTAKE: MktgAgentIntake = {
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   assetView: 'boilerplates',
   // The asset view shows the boilerplates themselves; there is no section checklist to tick.
@@ -585,7 +582,6 @@ export const FAQ_INTAKE: MktgAgentIntake = {
   requiredNote: '* required — everything else is optional',
   freshRunPerSubmission: true,
   liveActivity: true,
-  submitsProject: true,
   fullWidth: true,
   assetView: 'faq',
   // The FAQ view shows the questions themselves; there is no section checklist to tick.
@@ -851,6 +847,8 @@ export const MKTG_DOCUMENT_STATUS_REVIEWED_PREFIX = 'ED-reviewed';
 export const MKTG_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-agent-run';
 /** Pending LinkedIn capabilities; namespace/shape converged with the in-flight AEO/GEO intake. */
 export const MKTG_PENDING_DOCUMENT_STORAGE_PREFIX = 'lfx-mktg-pending-document';
+/** Separately scoped intake/attempt recovery, including submissions that never received an ACK. */
+export const MKTG_PENDING_RUN_STORAGE_KEY_PREFIX = 'lfx-mktg-pending-run';
 
 /**
  * TTL for browser-persisted runs. A stored run carries the session's

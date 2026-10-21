@@ -262,10 +262,10 @@ describe('MktgDocumentRunService core', () => {
       await service.start(req, project, type.agentKey, session);
       vi.advanceTimersByTime(7_200_000);
       flows.result.mockResolvedValue({ status: 'questions', questionsId: 'a1234567' });
-      await service.recordResult(req, session, { status: 'failed' }, project);
+      await service.recordResult(req, session, { status: 'questions', questionsId: 'a1234567' }, project);
       expect(stored().metadata['state']).toBe('questions');
       flows.get.mockClear();
-      await service.recordResult(req, session, { status: 'failed' }, project);
+      await service.recordResult(req, session, { status: 'questions', questionsId: 'a1234567' }, project);
       expect(flows.get).toHaveBeenCalledTimes(1); // Caller read only: no mark/re-read for the same pause.
       await service.resumeAfterQuestions(req, project, session, 'a1234567');
       expect(stored().metadata['state']).toBe('writing');
