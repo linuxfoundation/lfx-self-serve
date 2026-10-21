@@ -245,7 +245,8 @@ export function computeVoteParticipationStats(results: VoteResultsResponse | nul
 /**
  * Builds the generic (plurality) per-question results view model from the results API payload
  * @description Choice percentages prefer the upstream value and fall back to `num_votes_cast` as the base. Winner and
- * tie markers are only set when `isClosed`; `isLeading` marks the top option(s) while the vote is live.
+ * tie markers are only set when `isClosed`; `isLeading` marks the top option(s) regardless of `isClosed`, and live
+ * views use it for the highlight.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @param isClosed - Whether the vote is finalized (ended, or 100% participation)
  * @returns One VoteResultsQuestion per poll question, in API order

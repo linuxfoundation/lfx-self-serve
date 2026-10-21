@@ -766,6 +766,35 @@ describe('VoteResultsDrawerComponent — rendered results', () => {
       expect(textOf('vote-results-comments')).not.toContain(squash('Synthetic p1 comment 01'));
     });
 
+    it('keeps the voter comment page when the reopen reload recreates the comment list', async () => {
+      const service = await setupResultsDrawer(commentVote(), commentResults(), 'voter', RESPONDED_VOTER);
+
+      byTestId('vote-results-comments-paginator-p1')?.querySelector<HTMLButtonElement>('.p-paginator-next')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(textOf('vote-results-voter-comments')).toContain(squash('Synthetic p1 comment 26'));
+
+      // Reopening refetches the voter's response; while it is pending the skeleton replaces (destroys) the comment list.
+      const reload = new Subject<MyVoteResponse | null>();
+      service.getMyVoteResponse.mockReturnValue(reload);
+      fixture.componentRef.setInput('visible', false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      fixture.componentRef.setInput('visible', true);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(byTestId('vote-results-drawer-voter-loading')).toBeTruthy();
+      expect(byTestId('vote-results-voter-comments')).toBeNull();
+
+      reload.next(RESPONDED_VOTER);
+      reload.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(textOf('vote-results-voter-comments')).toContain(squash('Synthetic p1 comment 26'));
+      expect(textOf('vote-results-voter-comments')).not.toContain(squash('Synthetic p1 comment 01'));
+    });
+
     it('hides comments when the results load fails', async () => {
       const service = await setupResultsDrawer(commentVote(), commentResults());
       service.getVoteResults.mockReturnValue(throwError(() => new Error('Synthetic results failure')));
