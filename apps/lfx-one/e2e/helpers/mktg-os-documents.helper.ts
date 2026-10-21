@@ -9,7 +9,7 @@ import {
   PERSONA_COOKIE_KEY,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import type { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
+import type { MktgDocumentDetailResponse, MktgDocumentsResponse, MktgDocumentRunProgress, MktgRevisionSummary, Project } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route } from '@playwright/test';
 
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
@@ -26,6 +26,17 @@ function livingDocumentType() {
 }
 export const DOCUMENTS_URL = `/project/mktg-os-agents/documents?project=${DOCUMENT_PROJECT.slug}`;
 export const DOCUMENT_VIEW_URL = `/project/mktg-os-agents/documents/${DOCUMENT_TYPE.agentKey}/living?project=${DOCUMENT_PROJECT.slug}`;
+
+export function startedDocumentRun(state: MktgDocumentRunProgress['state'] = 'writing'): MktgDocumentRunProgress {
+  return {
+    project: DOCUMENT_PROJECT.uid,
+    agentKey: DOCUMENT_TYPE.agentKey,
+    documentId: 'living',
+    runId: 'b'.repeat(64),
+    startedAt: '2026-10-19T12:00:00Z',
+    state,
+  };
+}
 
 export function documentFixture(revisionCount: 3 | 9 = 3, currentNumber = 2): MktgDocumentDetailResponse {
   const revisions: MktgRevisionSummary[] = Array.from({ length: revisionCount }, (_, index) => revisionCount - index).map((number) => ({
@@ -78,6 +89,8 @@ export async function setupDocuments(
     currentRevisionNumber?: number;
     longDocument?: boolean;
     revisionAuthorName?: string;
+    runs?: MktgDocumentRunProgress[];
+    progressUnavailable?: boolean;
   } = {}
 ): Promise<void> {
   await suppressCookieBanner(page);
@@ -114,7 +127,7 @@ export async function setupDocuments(
       lens,
     });
   });
-  let detail = documentFixture(options.revisionCount, options.currentRevisionNumber);
+  let detail = { ...documentFixture(options.revisionCount, options.currentRevisionNumber), runs: options.runs ?? [] };
   if (options.revisionAuthorName !== undefined) {
     const name = options.revisionAuthorName;
     detail = {
@@ -156,6 +169,8 @@ export async function setupDocuments(
       if (!current) throw new Error('Documents fixture has no current revision');
       const response: MktgDocumentsResponse = {
         project: DOCUMENT_PROJECT.uid,
+        runs: options.runs ?? [],
+        ...(options.progressUnavailable && { progressUnavailable: true }),
         groups: MKTG_DOCUMENT_TYPES.map((type) => ({
           type,
           documents:

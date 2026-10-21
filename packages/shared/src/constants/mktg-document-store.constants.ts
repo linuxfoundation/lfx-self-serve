@@ -28,6 +28,8 @@ export const MKTG_STARTED_RUN_CACHE_STABLE_MS = 2000;
 /** Base64 encoding this UTF-8 snapshot stays below the total object-metadata budget. */
 export const MKTG_STARTED_RUN_FAILURE_BYTES = 768;
 export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
+/** Automatic progress reads back off on availability failures, not on human questions pauses. */
+export const MKTG_DOCUMENT_PROGRESS_POLL = { maxBackoffMs: 8 * MKTG_RUN_POLL.intervalMs } as const;
 export const MKTG_STARTED_RUN_ID_REGEX = /^[0-9a-f]{64}$/;
 export const MKTG_STARTED_RUN_ATTEMPT_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
 /** Metadata within one attempt advances only; explicit retries have a newer retry-at. */
