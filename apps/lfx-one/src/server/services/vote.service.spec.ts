@@ -14,8 +14,14 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { VOTE_REMINDER_INACTIVE, VOTE_REMINDER_PRECHECK_FAILED, VOTE_REMINDER_SELECTION_STALE } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
+import {
+  VOTE_REMINDER_INACTIVE,
+  VOTE_REMINDER_PRECHECK_FAILED,
+  VOTE_REMINDER_SELECTION_STALE,
+  VOTE_VOTERS_DRAFT,
+  VOTE_VOTERS_PSEUDO_ANONYMOUS,
+} from '@lfx-one/shared/constants';
+import { IndexedVoteResponseStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
 import type { CreateVoteResponseRequest, IndexedVote, IndexedVoteResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 
 // Only `@lfx-one/shared/utils` is stubbed: its barrel pulls `@angular/common/http` (HttpParams via
@@ -1909,7 +1915,7 @@ describe('VoteService', () => {
 
   describe('getVoteReminderRecipients (#3769)', () => {
     const VOTE_UID = 'v0000000-0000-0000-0000-00000000r001';
-    const row = (overrides: Partial<IndexedVoteResponse & { poll_answers: unknown[]; comment_responses: unknown[] }> = {}) => ({
+    const row = (overrides: Partial<IndexedVoteResponse> = {}) => ({
       uid: 'r-1',
       vote_uid: VOTE_UID,
       user_name: 'Avery Example',
@@ -1992,7 +1998,12 @@ describe('VoteService', () => {
     });
 
     it('returns an identity-only projection — ballot content is never forwarded', async () => {
-      fetchAllQueryResources.mockResolvedValue([row({ poll_answers: [{ question_id: 'q-1' }], comment_responses: [{ comment: 'secret' }] })]);
+      fetchAllQueryResources.mockResolvedValue([
+        row({
+          poll_answers: [{ question_id: 'q-1', prompt: 'Approve?', type: 'generic', user_choice: [], ranked_user_choice: [] }],
+          comment_responses: [{ prompt_id: 'c-1', comment_text: 'secret' }],
+        }),
+      ]);
 
       const [recipient] = await service.getVoteReminderRecipients(req, VOTE_UID);
 
@@ -2004,6 +2015,292 @@ describe('VoteService', () => {
         user_role: 'Member',
         user_voting_status: 'Voting Rep',
       });
+    });
+  });
+
+  describe('getVoteVoters (#3911)', () => {
+    const VOTE_UID = 'v0000000-0000-0000-0000-00000000b001';
+    const genericAnswer = {
+      question_id: 'q-1',
+      prompt: 'Approve the charter?',
+      type: 'generic',
+      user_choice: [{ choice_id: 'c-yes', choice_text: 'Yes' }],
+    };
+    const rankedAnswer = {
+      question_id: 'q-2',
+      prompt: 'Rank the candidates',
+      type: 'ranked_choice',
+      ranked_user_choice: [
+        { choice_id: 'c-b', choice_text: 'Candidate B', choice_rank: 1 },
+        { choice_id: 'c-a', choice_text: 'Candidate A', choice_rank: 2 },
+      ],
+    };
+    const comment = { prompt_id: 'p-1', comment_text: 'Synthetic comment' };
+    const row = (overrides: Partial<IndexedVoteResponse> = {}): IndexedVoteResponse => ({
+      uid: 'b-1',
+      vote_uid: VOTE_UID,
+      user_name: 'Avery Example',
+      user_email: 'avery@acme-motors.example',
+      username: 'avery-example',
+      user_org_name: 'Acme Motors',
+      user_role: 'Member',
+      user_voting_status: 'Voting Rep',
+      profile_picture: 'https://avatars.example/avery.png',
+      vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE,
+      voter_removed: false,
+      vote_creation_time: '',
+      ...overrides,
+    });
+    const namedVote = { ...voteFixture, uid: VOTE_UID, status: 'active', pseudo_anonymity: false, end_time: '2099-06-01T18:00:00Z' };
+    const queryResourceCalls = () => proxyRequest.mock.calls.filter(([, , path]) => path === '/query/resources');
+
+    beforeEach(() => {
+      proxyRequest.mockResolvedValue(namedVote);
+      fetchAllQueryResources.mockResolvedValue([]);
+    });
+
+    it.each(['disabled', 'DISABLED', 'archived', '', undefined])(
+      'refuses a draft or unrecognized status (%j) with 409 before reading any ballot (AC-2)',
+      async (status) => {
+        proxyRequest.mockResolvedValue({ ...namedVote, status });
+
+        await expect(service.getVoteVoters(req, VOTE_UID)).rejects.toMatchObject({ statusCode: 409, code: VOTE_VOTERS_DRAFT });
+
+        expect(fetchAllQueryResources).not.toHaveBeenCalled();
+        expect(queryResourceCalls()).toHaveLength(0);
+      }
+    );
+
+    it('checks the draft state before the privacy flag, so a pseudo-anonymous draft still reports 409', async () => {
+      proxyRequest.mockResolvedValue({ ...namedVote, status: 'disabled', pseudo_anonymity: true });
+
+      await expect(service.getVoteVoters(req, VOTE_UID)).rejects.toMatchObject({ statusCode: 409, code: VOTE_VOTERS_DRAFT });
+    });
+
+    it.each([
+      { status: 'active', pseudo_anonymity: true },
+      { status: 'ended', pseudo_anonymity: true },
+      { status: 'active', pseudo_anonymity: undefined },
+      { status: 'ended', pseudo_anonymity: undefined },
+      { status: 'active', pseudo_anonymity: null },
+    ])('refuses a vote that is not explicitly named (%j) with 403 before reading any ballot (AC-4)', async (state) => {
+      proxyRequest.mockResolvedValue({ ...namedVote, ...state });
+
+      await expect(service.getVoteVoters(req, VOTE_UID)).rejects.toMatchObject({ statusCode: 403, code: VOTE_VOTERS_PSEUDO_ANONYMOUS });
+
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+      expect(queryResourceCalls()).toHaveLength(0);
+    });
+
+    it('propagates a vote lookup failure without reading any ballot', async () => {
+      const upstream = new MicroserviceError('vote lookup failed', 502, 'BAD_GATEWAY', {});
+      proxyRequest.mockRejectedValue(upstream);
+
+      await expect(service.getVoteVoters(req, VOTE_UID)).rejects.toBe(upstream);
+
+      expect(fetchAllQueryResources).not.toHaveBeenCalled();
+    });
+
+    it.each(['active', 'ended', 'ACTIVE', 'Ended'])('returns every invitee with status and current ballot on a named %s vote (AC-1)', async (status) => {
+      proxyRequest.mockResolvedValue({ ...namedVote, status });
+      fetchAllQueryResources.mockResolvedValue([
+        row({
+          uid: 'b-voted',
+          user_name: 'Blake Example',
+          vote_status: IndexedVoteResponseStatus.RESPONDED,
+          vote_creation_time: '2026-10-02T09:30:00Z',
+          abstained: false,
+          poll_answers: [genericAnswer, rankedAnswer],
+          comment_responses: [comment],
+        }),
+        row({
+          uid: 'b-abstained',
+          user_name: 'Casey Example',
+          vote_status: IndexedVoteResponseStatus.RESPONDED,
+          vote_creation_time: '2026-10-03T11:00:00Z',
+          abstained: true,
+          poll_answers: [],
+          comment_responses: [comment],
+        }),
+        row({ uid: 'b-pending', user_name: 'Avery Example' }),
+      ]);
+
+      const voters = await service.getVoteVoters(req, VOTE_UID);
+
+      expect(voters).toEqual([
+        {
+          uid: 'b-pending',
+          user_name: 'Avery Example',
+          user_email: 'avery@acme-motors.example',
+          username: 'avery-example',
+          user_org_name: 'Acme Motors',
+          user_role: 'Member',
+          user_voting_status: 'Voting Rep',
+          profile_picture: 'https://avatars.example/avery.png',
+          status: VoteVoterStatus.NOT_VOTED,
+          submitted_at: undefined,
+          poll_answers: undefined,
+          comment_responses: undefined,
+        },
+        expect.objectContaining({
+          uid: 'b-voted',
+          status: VoteVoterStatus.VOTED,
+          submitted_at: '2026-10-02T09:30:00Z',
+          poll_answers: [
+            { ...genericAnswer, ranked_user_choice: [] },
+            { ...rankedAnswer, user_choice: [] },
+          ],
+          comment_responses: [comment],
+        }),
+        expect.objectContaining({
+          uid: 'b-abstained',
+          status: VoteVoterStatus.ABSTAINED,
+          submitted_at: '2026-10-03T11:00:00Z',
+          poll_answers: [],
+          comment_responses: [comment],
+        }),
+      ]);
+    });
+
+    it('normalizes omitted choice arrays without mutating the indexed answers', async () => {
+      const unanswered = { question_id: 'q-3', prompt: 'Optional question', type: 'generic' };
+      fetchAllQueryResources.mockResolvedValue([
+        row({ vote_status: IndexedVoteResponseStatus.RESPONDED, poll_answers: [genericAnswer, rankedAnswer, unanswered] }),
+      ]);
+
+      const [voter] = await service.getVoteVoters(req, VOTE_UID);
+
+      expect(voter.poll_answers).toEqual([
+        { ...genericAnswer, ranked_user_choice: [] },
+        { ...rankedAnswer, user_choice: [] },
+        { ...unanswered, user_choice: [], ranked_user_choice: [] },
+      ]);
+      expect(genericAnswer).not.toHaveProperty('ranked_user_choice');
+      expect(rankedAnswer).not.toHaveProperty('user_choice');
+      expect(unanswered).not.toHaveProperty('user_choice');
+      expect(unanswered).not.toHaveProperty('ranked_user_choice');
+    });
+
+    it('never forwards fields outside the voter projection, such as SES tracking or the org id', async () => {
+      fetchAllQueryResources.mockResolvedValue([
+        { ...row({ user_org_id: 'org-1', vote_creation_time: '2026-10-02T09:30:00Z' }), ses_message_id: 'ses-1', user_id: 'auth0|synthetic' },
+      ]);
+
+      const [voter] = await service.getVoteVoters(req, VOTE_UID);
+
+      expect(Object.keys(voter).sort()).toEqual(
+        [
+          'comment_responses',
+          'poll_answers',
+          'profile_picture',
+          'status',
+          'submitted_at',
+          'uid',
+          'user_email',
+          'user_name',
+          'user_org_name',
+          'user_role',
+          'user_voting_status',
+          'username',
+        ].sort()
+      );
+    });
+
+    it.each([
+      { label: 'responded without a submission time', overrides: { vote_status: IndexedVoteResponseStatus.RESPONDED }, expected: VoteVoterStatus.VOTED },
+      {
+        label: 'a submission time with an ended status',
+        overrides: { vote_status: IndexedVoteResponseStatus.ENDED, vote_creation_time: '2026-10-02T09:30:00Z' },
+        expected: VoteVoterStatus.VOTED,
+      },
+      {
+        label: 'an abstention marked responded without a submission time',
+        overrides: { vote_status: IndexedVoteResponseStatus.RESPONDED, abstained: true },
+        expected: VoteVoterStatus.ABSTAINED,
+      },
+      {
+        label: 'awaiting response after the poll ended',
+        overrides: { vote_status: IndexedVoteResponseStatus.AWAITING_RESPONSE_BUT_POLL_ENDED },
+        expected: VoteVoterStatus.NOT_VOTED,
+      },
+      { label: 'an abstained flag on an unsubmitted row', overrides: { abstained: true }, expected: VoteVoterStatus.NOT_VOTED },
+    ])('derives the status from $label', async ({ overrides, expected }) => {
+      fetchAllQueryResources.mockResolvedValue([row(overrides)]);
+
+      const [voter] = await service.getVoteVoters(req, VOTE_UID);
+
+      expect(voter.status).toBe(expected);
+    });
+
+    it('drops removed voters, rows with another parent, rows without a uid and duplicates, keeping legacy poll_id-only rows', async () => {
+      fetchAllQueryResources.mockResolvedValue([
+        row({ uid: 'legacy', vote_uid: undefined, poll_id: VOTE_UID }),
+        row({ uid: 'legacy', vote_uid: undefined, poll_id: VOTE_UID }),
+        row({ uid: 'current', poll_id: VOTE_UID }),
+        row({ uid: 'removed', voter_removed: true }),
+        row({ uid: 'foreign', vote_uid: 'another-vote', poll_id: VOTE_UID }),
+        row({ uid: 'unparented', vote_uid: undefined }),
+        row({ uid: undefined }),
+      ]);
+
+      const voters = await service.getVoteVoters(req, VOTE_UID);
+
+      expect(voters.map((voter) => voter.uid).sort()).toEqual(['current', 'legacy']);
+    });
+
+    it('sorts voters by name, placing unnamed voters first', async () => {
+      fetchAllQueryResources.mockResolvedValue([
+        row({ uid: 'b-zed', user_name: 'Zed Example' }),
+        row({ uid: 'b-unnamed', user_name: undefined }),
+        row({ uid: 'b-avery', user_name: 'Avery Example' }),
+      ]);
+
+      const voters = await service.getVoteVoters(req, VOTE_UID);
+
+      expect(voters.map((voter) => voter.uid)).toEqual(['b-unnamed', 'b-avery', 'b-zed']);
+    });
+
+    it('drains the vote-scoped vote_response rows with failOnPartial, through the user-token proxy, after the vote lookup', async () => {
+      fetchAllQueryResources.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<unknown>) => {
+        await fetchPage();
+        await fetchPage('next-token');
+        return [];
+      });
+      proxyRequest.mockResolvedValueOnce(namedVote).mockResolvedValue({ resources: [] });
+
+      await service.getVoteVoters(req, VOTE_UID);
+
+      expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), { failOnPartial: true });
+      expect(proxyRequest).toHaveBeenNthCalledWith(1, req, 'LFX_V2_SERVICE', `/votes/${VOTE_UID}`, 'GET');
+      expect(proxyRequest).toHaveBeenNthCalledWith(2, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'vote_response',
+        filters_or: [`vote_uid:${VOTE_UID}`, `poll_id:${VOTE_UID}`],
+      });
+      expect(proxyRequest).toHaveBeenNthCalledWith(3, req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'vote_response',
+        filters_or: [`vote_uid:${VOTE_UID}`, `poll_id:${VOTE_UID}`],
+        page_token: 'next-token',
+      });
+    });
+
+    it('rejects instead of returning a partial voter list when the page set is incomplete', async () => {
+      const partial = new MicroserviceError('Incomplete query-service page set', 502, 'BAD_GATEWAY', {});
+      fetchAllQueryResources.mockRejectedValue(partial);
+
+      await expect(service.getVoteVoters(req, VOTE_UID)).rejects.toBe(partial);
+
+      expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), { failOnPartial: true });
+    });
+
+    it('logs counts only — never voter names or emails', async () => {
+      fetchAllQueryResources.mockResolvedValue([row({ uid: 'b-1' }), row({ uid: 'b-2', voter_removed: true })]);
+
+      await service.getVoteVoters(req, VOTE_UID);
+
+      expect(logger.debug).toHaveBeenCalledWith(req, 'get_vote_voters', 'Mapped vote voters', { vote_uid: VOTE_UID, row_count: 2, voter_count: 1 });
+      const loggedMetadata = JSON.stringify(vi.mocked(logger.debug).mock.calls);
+      expect(loggedMetadata).not.toContain('avery@acme-motors.example');
+      expect(loggedMetadata).not.toContain('Avery Example');
     });
   });
 

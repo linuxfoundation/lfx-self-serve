@@ -8,8 +8,10 @@ import {
   VOTE_REMINDER_INACTIVE,
   VOTE_REMINDER_PRECHECK_FAILED,
   VOTE_REMINDER_SELECTION_STALE,
+  VOTE_VOTERS_DRAFT,
+  VOTE_VOTERS_PSEUDO_ANONYMOUS,
 } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus, VoteVoterStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
@@ -30,6 +32,7 @@ import {
   VoteStatusCounts,
   VoteSummary,
   VoteResultsResponse,
+  VoteVoter,
 } from '@lfx-one/shared/interfaces';
 import {
   compareVotesByRecency,
@@ -41,7 +44,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, BaseApiError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchEntityProject, toEntityProjectFields } from '../helpers/entity-project-enrichment.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -593,17 +596,7 @@ export class VoteService {
       });
     }
 
-    // failOnPartial: a truncated page set would silently leave voters out of the reminder list.
-    const rows = await fetchAllQueryResources<IndexedVoteResponse>(
-      req,
-      (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote_response',
-          filters_or: [`vote_uid:${voteUid}`, `poll_id:${voteUid}`],
-          ...(pageToken && { page_token: pageToken }),
-        }),
-      { failOnPartial: true }
-    );
+    const rows = await this.fetchVoteResponseRows(req, voteUid);
 
     const seen = new Set<string>();
     const recipients = rows
@@ -637,6 +630,55 @@ export class VoteService {
     });
 
     return recipients;
+  }
+
+  /**
+   * Lists every invited voter on a named vote with their participation status and current ballot (#3911).
+   * The caller must have run `assertVoteWrite` first — every vote auditor can read these rows.
+   * Draft or unrecognized-status votes (409) and votes not explicitly named (403) are refused before
+   * any `vote_response` row is read, so no ballot content is fetched for a pseudo-anonymous vote.
+   */
+  public async getVoteVoters(req: Request, voteUid: string): Promise<VoteVoter[]> {
+    logger.debug(req, 'get_vote_voters', 'Fetching vote_response rows for the voter list', { vote_uid: voteUid });
+
+    const vote = await this.getVoteById(req, voteUid);
+    const status = normalizePollStatus(vote.status);
+    if (status !== PollStatus.ACTIVE && status !== PollStatus.ENDED) {
+      throw new ConflictError('This vote is still a draft.', VOTE_VOTERS_DRAFT, {
+        operation: 'get_vote_voters',
+        service: 'vote_service',
+      });
+    }
+
+    // Fail closed: upstream always serializes the flag, so a missing value is treated as pseudo-anonymous.
+    if (vote.pseudo_anonymity !== false) {
+      throw new AuthorizationError('Individual ballots are not available for pseudo-anonymous votes.', {
+        code: VOTE_VOTERS_PSEUDO_ANONYMOUS,
+        operation: 'get_vote_voters',
+        service: 'vote_service',
+      });
+    }
+
+    const rows = await this.fetchVoteResponseRows(req, voteUid);
+
+    const seen = new Set<string>();
+    const voters = rows
+      .filter((row): row is IndexedVoteResponse & { uid: string } => getParentVoteId(row) === voteUid && row.voter_removed !== true && !!row.uid)
+      .filter((row) => {
+        if (seen.has(row.uid)) return false;
+        seen.add(row.uid);
+        return true;
+      })
+      .map((row) => this.toVoteVoter(row))
+      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? ''));
+
+    logger.debug(req, 'get_vote_voters', 'Mapped vote voters', {
+      vote_uid: voteUid,
+      row_count: rows.length,
+      voter_count: voters.length,
+    });
+
+    return voters;
   }
 
   /**
@@ -976,6 +1018,56 @@ export class VoteService {
     );
     const votes = drained.map((vote) => this.normalizeIndexedVote(req, vote));
     return status ? votes.filter((vote) => normalizePollStatus(vote.status) === status) : votes;
+  }
+
+  /**
+   * Drains every `vote_response` row for a vote, under both the current and legacy parent keys.
+   * Shared by the reminder list and the voter list. failOnPartial: a truncated page set would
+   * silently leave voters out of either list.
+   */
+  private async fetchVoteResponseRows(req: Request, voteUid: string): Promise<IndexedVoteResponse[]> {
+    return fetchAllQueryResources<IndexedVoteResponse>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVoteResponse>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote_response',
+          filters_or: [`vote_uid:${voteUid}`, `poll_id:${voteUid}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+  }
+
+  /**
+   * Maps a `vote_response` row to the voter list's projection (#3911). A row with a submission
+   * time, or marked `responded`, has been submitted — either one alone is enough, so a mismatch
+   * between them can't hide a ballot. ITX rewrites `vote_creation_time` on every ballot change.
+   */
+  private toVoteVoter(row: IndexedVoteResponse & { uid: string }): VoteVoter {
+    const submitted = !!row.vote_creation_time || row.vote_status === IndexedVoteResponseStatus.RESPONDED;
+    let status = VoteVoterStatus.NOT_VOTED;
+    if (submitted) {
+      status = row.abstained === true ? VoteVoterStatus.ABSTAINED : VoteVoterStatus.VOTED;
+    }
+
+    return {
+      uid: row.uid,
+      user_name: row.user_name,
+      user_email: row.user_email,
+      username: row.username,
+      user_org_name: row.user_org_name,
+      user_role: row.user_role,
+      user_voting_status: row.user_voting_status,
+      profile_picture: row.profile_picture,
+      status,
+      submitted_at: row.vote_creation_time || undefined,
+      poll_answers: row.poll_answers?.map((answer) => ({
+        ...answer,
+        user_choice: answer.user_choice ?? [],
+        ranked_user_choice: answer.ranked_user_choice ?? [],
+      })),
+      comment_responses: row.comment_responses,
+    };
   }
 
   /**

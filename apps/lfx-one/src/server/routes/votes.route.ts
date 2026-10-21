@@ -39,6 +39,9 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 // GET /votes/:uid/reminder-recipients - eligible voters who have not voted yet (vote#writer only)
 router.get('/:uid/reminder-recipients', (req, res, next) => voteController.getVoteReminderRecipients(req, res, next));
 
+// GET /votes/:uid/voters - invited voters with their current ballot (vote#writer only, named votes)
+router.get('/:uid/voters', (req, res, next) => voteController.getVoteVoters(req, res, next));
+
 // GET /votes/:uid - get a single vote
 router.get('/:uid', (req, res, next) => voteController.getVoteById(req, res, next));
 
