@@ -13,6 +13,7 @@ import {
   fulfillDocumentJson,
   openDocuments,
   setupDocuments,
+  startedDocumentRun,
 } from './helpers/mktg-os-documents.helper';
 
 test.describe('Marketing OS Documents structure', () => {
@@ -22,6 +23,37 @@ test.describe('Marketing OS Documents structure', () => {
   });
   test.afterEach(async ({ page }, testInfo) => {
     await page.screenshot({ path: testInfo.outputPath('final-structure.png'), fullPage: true });
+  });
+
+  for (const width of [390, 1024]) {
+    test(`recorded progress is a labelled, keyboard-accessible section at ${width}px`, async ({ page }) => {
+      const run = startedDocumentRun('questions');
+      await setupDocuments(page, { empty: true, runs: [run] });
+      await page.setViewportSize({ width, height: 1000 });
+      await openDocuments(page);
+      const section = page.getByRole('region', { name: 'Started runs', exact: true });
+      await expect(section).toBeVisible();
+      await expect(section.getByRole('heading', { level: 2 })).toHaveText('Started runs');
+      const open = section.getByTestId(`mktg-documents-open-started-${run.runId}`);
+      await expect(open).toHaveAttribute('href', new RegExp(`generation=${run.runId}`));
+      await open.focus();
+      await expect(open).toBeFocused();
+      await expect(page.locator('main main')).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    });
+  }
+
+  test('progress read failures have a retry warning, not fabricated active rows or an empty-history error', async ({ page }) => {
+    await setupDocuments(page, { progressUnavailable: true });
+    await openDocuments(page);
+    await expect(page.getByTestId('mktg-documents-refresh-warning')).toContainText('Retrying');
+    const refresh = page.getByTestId('mktg-documents-refresh-progress').getByRole('button');
+    await expect(refresh).toHaveAttribute('type', 'button');
+    await refresh.focus();
+    await expect(refresh).toBeFocused();
+    await expect(page.getByTestId('mktg-documents-started-runs')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-documents-revisions')).toBeVisible();
+    await expect(page.getByTestId('mktg-documents-error')).toHaveCount(0);
   });
 
   test('uses one layout main, labelled sections, and a real revision list', async ({ page }) => {

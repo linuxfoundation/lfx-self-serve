@@ -39,6 +39,11 @@ export interface MktgDocumentRunSnapshot {
   progressUnavailable?: boolean;
 }
 
+/** Catalog-labelled row in the Documents overview. */
+export interface MktgDocumentRunRow extends MktgDocumentRunProgress {
+  label: string;
+}
+
 /**
  * Mutable server-only started-run record in the private document store.
  * It must never be returned by spreading it into a public response: project

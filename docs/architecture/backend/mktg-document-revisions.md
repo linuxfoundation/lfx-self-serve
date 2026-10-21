@@ -267,7 +267,13 @@ timer reads reject that selector. A stale/foreign selector or transient tracking
 error retains the stored document/known rows with an availability warning, never
 a run-id-based document 404. Detail is loaded after refresh so late persistence
 is visible. Retry POSTs recheck the stored session, never submit Generate or move
-the approved-current pointer.
+the approved-current pointer. Overview polls cancel on project/effective-subject
+changes and destruction. Same-scope reloads and polls retain last loaded documents
+on transient errors; 401/403 clears inaccessible data. Consecutive unavailable
+reads back off to eight intervals and stop after the normal poll timeout, leaving
+a warning/manual refresh; healthy reads reset the budget. Questions-only rows do
+not start automatic polling. Unavailable tracking retains missing same-scope
+run rows and suppresses absence claims, without hiding a known stored-current badge.
 
 Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.
