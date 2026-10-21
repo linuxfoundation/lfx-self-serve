@@ -373,6 +373,22 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-notice')).toBeNull();
   });
 
+  it.each(['unavailable', 'started'])('never asserts no one-off runs while %s progress exists', async (state) => {
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing synthetic one-off document type');
+    const data: MktgDocumentsResponse = {
+      project: PROJECT.uid,
+      groups: MKTG_DOCUMENT_TYPES.map((type) => ({ type, documents: [] })),
+      runs: state === 'started' ? [{ ...startedRun(), agentKey: type.agentKey }] : [],
+      progressUnavailable: state === 'unavailable',
+    };
+    store.listDocuments.mockReturnValue(of(data));
+    await render('/?type=' + type.agentKey);
+    expect(query('mktg-documents-empty-runs')).toBeNull();
+    expect(query('mktg-documents-pending-run')).not.toBeNull();
+    expect(query('mktg-documents-pending-run')?.textContent).toContain(state === 'unavailable' ? 'unavailable' : 'recorded run');
+  });
+
   it('shows a run type’s runs, or says there are none yet', async () => {
     await render('/?type=linkedin-post');
 

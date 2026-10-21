@@ -591,7 +591,7 @@ describe('MktgAgentRunService', () => {
       expect(document?.type === 'document' ? document.run.versions.at(-1)?.contentSha256 : undefined).toBe('abc');
     });
 
-    it.each([false, true])('retains receipt keys only in memory for immediate/late document navigation (late=%s)', async (late) => {
+    it.each([false, true])('retains canonical locations without raw receipt keys for immediate/late document navigation (late=%s)', async (late) => {
       const key = `documents/proj-1/brand-kit/living/000001-${'a'.repeat(64)}.json`;
       const ready: MktgRunResultResponse = {
         ...READY_NO_RECEIPT,
@@ -609,16 +609,16 @@ describe('MktgAgentRunService', () => {
       if (late) {
         const first = service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1);
         if (!first) throw new Error('Missing synthetic run');
-        expect(service.receiptKey(first)).toBeNull();
+        expect(first.documentLocation).toBeUndefined();
         await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
       }
       const version = service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1);
       if (!version) throw new Error('Missing synthetic run');
-      expect(service.receiptKey(version)).toBe(key);
+      expect(version.documentLocation?.revisionId).toBe(`000001-${'a'.repeat(64)}`);
       expect(version.documentLocation).toEqual({ agentKey: 'brand-kit', documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` });
       expect(version.source?.identity).toBe('a'.repeat(64));
       expect(JSON.stringify(version)).not.toContain(key);
-      expect(service.receiptKey({ ...version })).toBeNull();
+      expect(JSON.parse(JSON.stringify(version)).documentLocation).toEqual(version.documentLocation);
     });
 
     it.each([false, true])('never stores a foreign-project receipt location (late=%s)', async (late) => {
@@ -639,7 +639,7 @@ describe('MktgAgentRunService', () => {
       const version = service.loadRun('proj-1', generateRequest().agentId)?.versions.at(-1);
       if (!version) throw new Error('Missing synthetic run version');
       expect(version.documentLocation).toBeUndefined();
-      expect(service.receiptKey(version)).toBeNull();
+      expect(JSON.stringify(version)).not.toContain('synthetic-foreign-key');
     });
 
     it('bounds the retry — a permanently receipt-less result never polls beyond the shared budget', async () => {

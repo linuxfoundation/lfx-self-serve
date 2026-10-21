@@ -14,7 +14,7 @@
         <span class="rounded-full border border-gray-200 px-2 py-0.5 text-xs text-gray-600" data-testid="mktg-boilerplates-view-mode">{{ modeLabel() }}</span>
       }
     }
-    <div class="flex grow flex-wrap justify-end gap-2"><ng-content select="[asset-actions]" /></div>
+    <div class="flex grow flex-wrap justify-end gap-2" data-testid="mktg-boilerplates-view-actions"><ng-content select="[asset-actions]" /></div>
   </div>
 
   <!-- Tabs: the four lengths, then the run's report -->

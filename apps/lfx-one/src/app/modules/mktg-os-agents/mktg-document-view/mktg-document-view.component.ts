@@ -19,6 +19,7 @@ import {
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
   MKTG_KIT_FRAMEWORK_KEY,
   MKTG_DOCUMENT_TYPES,
+  MKTG_AGENTS,
   MKTG_RUN_POLL,
   MKTG_STARTED_RUN_STATE_ORDER,
   MKTG_DOCUMENT_PROGRESS_POLL,
@@ -38,6 +39,7 @@ import {
   MktgApprovedRevisionState,
   MktgDocumentDetailResponse,
   MktgDocumentReadCycle,
+  MktgDocumentLocalProgress,
   MktgDocumentRunProgress,
   MktgGenerateProgress,
   MktgPendingGeneration,
@@ -193,8 +195,9 @@ export class MktgDocumentViewComponent {
   protected readonly savingLink = signal(false);
   protected readonly linkError = signal('');
   protected readonly runDetail = signal<MktgDocumentDetailResponse | null>(null);
-  protected readonly localProgress = signal<'writing' | 'storing' | 'failed' | null>(null);
+  protected readonly localProgress = signal<MktgDocumentLocalProgress>(null);
   protected readonly failureText = signal('');
+  private readonly unconfirmed = signal(false);
   protected readonly refreshWarning = signal('');
   protected readonly restoreNotice = signal('');
   protected readonly retrying = signal(false);
@@ -350,6 +353,9 @@ export class MktgDocumentViewComponent {
     );
   });
 
+  private readonly runParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), { initialValue: '' });
+  private readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
+
   private readonly request$ = toObservable(
     computed(() => ({
       project: this.projectContext.activeContextUid(),
@@ -363,9 +369,6 @@ export class MktgDocumentViewComponent {
       reload: this.reloads() + this.reload(),
     }))
   );
-  private readonly runParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('run') ?? '')), { initialValue: '' });
-
-  private readonly generationParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('generation') ?? '')), { initialValue: '' });
 
   protected readonly selectedRun: Signal<MktgDocumentRunProgress | null> = this.initSelectedRun();
   protected readonly runState: Signal<MktgDocumentRunProgress['state'] | null> = this.initRunState();
@@ -378,7 +381,8 @@ export class MktgDocumentViewComponent {
 
   protected readonly runAgentId = computed(() => {
     const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey);
-    return type?.kind === 'living' ? (type.catalogAgentId ?? '') : '';
+    const id = type?.catalogAgentId;
+    return type?.kind === 'living' && id && MKTG_AGENT_INTAKES[id] && MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active') ? id : '';
   });
 
   private readonly assetViewKind = computed(() => {
@@ -448,6 +452,7 @@ export class MktgDocumentViewComponent {
               this.localProgress.set(null);
               this.submittingGeneration.set(false);
               this.failureText.set('');
+              this.unconfirmed.set(false);
               this.retrying.set(false);
               this.handoffRunId.set('');
               this.refreshedFailures.clear();
@@ -550,7 +555,10 @@ export class MktgDocumentViewComponent {
               this.runService.resume(pending).pipe(
                 tap((progress) => this.onProgress(progress, pending)),
                 ignoreElements(),
-                catchError(() => {
+                catchError((error: unknown) => {
+                  const errorType = error instanceof Error ? error.name : typeof error;
+                  console.error('Failed to confirm Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
+                  this.unconfirmed.set(true);
                   this.localProgress.set('failed');
                   this.failureText.set('The run could not be confirmed. Your intake is kept; return to the intake form to try again.');
                   return EMPTY;
@@ -560,6 +568,12 @@ export class MktgDocumentViewComponent {
             const generation$ = prepared ? resume(prepared.pending) : EMPTY;
             const existingView = this.view();
             let known: MktgDocumentReadCycle | null = existingView ? { detail: existingView, view: existingView } : null;
+            if (!known && prepared && type) {
+              known = {
+                detail: { project: request.project, type, documentId: request.documentId, revisions: [], approvedCurrent: null, runs: [] },
+                view: null,
+              };
+            }
             let unavailableSince: number | null = null;
             let unavailableCount = 0;
             let observedRun = false;
@@ -597,10 +611,9 @@ export class MktgDocumentViewComponent {
               );
               const cycle$ =
                 request.revisionId && !request.runId && !prepared
-                  ? (poll
-                      ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId, true)
-                      : this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
-                    ).pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
+                  ? this.documentStore
+                      .getRevision(request.project, request.agentKey, request.documentId, request.revisionId, poll)
+                      .pipe(map((view): MktgDocumentReadCycle => ({ detail: view, view })))
                   : metadata$.pipe(
                       switchMap((detail) => {
                         const revisionId =
@@ -728,13 +741,13 @@ export class MktgDocumentViewComponent {
       });
   }
 
-  protected onOpenIntake(event: Event): void {
+  protected onOpenIntake(): void {
+    const agentId = this.runAgentId();
+    if (!agentId) return;
     const project = this.projectContext.activeContextUid();
-    const pending = project ? this.attempts.load(project, this.runAgentId()) : null;
-    if (!pending || !this.runAgentId()) return;
-    event.preventDefault();
-    const token = this.attempts.prepare(pending.request, true);
-    void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
+    const pending = project ? this.attempts.load(project, agentId) : null;
+    const token = pending ? this.attempts.prepare(pending.request, true) : null;
+    void this.router.navigate([mktgKitRootPath(this.router.url), agentId], {
       queryParams: { ...this.runAgainParams(), questions: token },
     });
   }
@@ -955,7 +968,7 @@ export class MktgDocumentViewComponent {
 
   private initLiveState(): Signal<string> {
     return computed(() => {
-      if (this.runState() === 'failed') return this.selectedRun() ? 'The run did not finish.' : 'The run could not be confirmed.';
+      if (this.runState() === 'failed') return this.selectedRun() || !this.unconfirmed() ? 'The run did not finish.' : 'The run could not be confirmed.';
       if (this.runState() === 'questions') return 'Waiting for your answers.';
       if (this.runState()) return 'Generating the asset.';
       return this.view() ? 'The asset is ready.' : '';
@@ -1073,6 +1086,7 @@ export class MktgDocumentViewComponent {
       this.localProgress.set('writing');
     }
     if (progress.type === 'document' || progress.type === 'persisted') {
+      this.dependencyService.notifyDocumentsChanged(pending.request.projectUid);
       const location = progress.run?.versions.at(-1)?.documentLocation;
       if (location) {
         this.localProgress.set(null);
@@ -1085,7 +1099,10 @@ export class MktgDocumentViewComponent {
     }
     if (progress.type === 'failed' || progress.type === 'refused') {
       this.localProgress.set('failed');
-      this.failureText.set(progress.type === 'failed' ? progress.failureText : progress.reply);
+      this.unconfirmed.set(false);
+      this.failureText.set(
+        progress.type === 'failed' ? progress.failureText || 'The agent could not complete this run. Your intake is kept — try again.' : progress.reply
+      );
     }
     if (progress.type === 'questions') {
       const token = this.attempts.prepare(pending.request, true);

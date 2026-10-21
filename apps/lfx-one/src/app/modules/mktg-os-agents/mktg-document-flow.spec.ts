@@ -20,6 +20,7 @@ import {
 import {
   MktgGenerateRequest,
   MktgDependencyDocument,
+  MktgRunQuestionsPending,
   MktgRunResultResponse,
   MktgRevisionResponse,
   MktgRevisionSummary,
@@ -697,6 +698,54 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
       http.expectNone((candidate) => candidate.method === 'POST');
     }
   );
+
+  it.each(['project', 'foundation'])('opens the %s intake with its owner questions token through exactly one navigation', async (lens) => {
+    const frameworkType = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === FOUNDATION_MESSAGE_INTAKE.agentId);
+    if (!frameworkType) throw new Error('Missing synthetic framework type');
+    const req: MktgGenerateRequest = { ...request, agentId: FOUNDATION_MESSAGE_INTAKE.agentId, intake: FOUNDATION_MESSAGE_INTAKE };
+    const pending: MktgRunQuestionsPending = {
+      attempt: { session: { agentId: req.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' }, priorVersion: 0, runId: 'b'.repeat(64) },
+      questionsId: 'a1234567',
+      questions: [{ key: 'goal', label: 'Goal', question: 'Which synthetic goal?', why: '', suggestedAnswer: 'Adoption', basis: [] }],
+    };
+    TestBed.inject(MktgRunAttemptService).save({
+      request: req,
+      state: 'questions',
+      attempt: pending.attempt,
+      pendingQuestions: pending,
+      updatedAt: new Date().toISOString(),
+    });
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${frameworkType.agentKey}/living?run=${'b'.repeat(64)}`, MktgDocumentViewComponent);
+    await settle();
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`))
+      .flush({
+        project: project.uid,
+        type: frameworkType,
+        documentId: 'living',
+        revisions: [],
+        runs: [
+          {
+            project: project.uid,
+            agentKey: frameworkType.agentKey,
+            documentId: 'living',
+            runId: 'b'.repeat(64),
+            state: 'questions',
+            startedAt: '2026-10-19T08:00:00Z',
+          },
+        ],
+      });
+    await settle();
+    const navigate = vi.spyOn(router, 'navigate');
+    const landed = navigation();
+    query('mktg-document-view-intake-link')?.querySelector('button')?.click();
+    await landed;
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(router.url).toContain('questions=');
+    expect(query('mktg-agent-run-questions')?.textContent).toContain('Which synthetic goal?');
+    http.expectNone((candidate) => candidate.method === 'POST');
+  });
 
   it.each(
     MKTG_DOCUMENT_TYPES.filter((candidate) => !!findMktgRunIntake(candidate.agentKey)?.endpoints.answers).flatMap((target) =>

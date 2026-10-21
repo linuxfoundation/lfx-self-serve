@@ -104,14 +104,6 @@ export class MktgAgentRunService {
    * loss only ever costs cross-visit restore, never in-session correctness.
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
-  // Receipt keys support exact document navigation during this page session only.
-  // They never become persisted run fields or approval evidence.
-  private readonly receiptKeys = new WeakMap<MktgRunVersion, string>();
-
-  public receiptKey(version: MktgRunVersion): string | null {
-    return this.receiptKeys.get(version) ?? null;
-  }
-
   /**
    * Generates (or regenerates) an agent document. Emits, in order:
    *
@@ -339,11 +331,11 @@ export class MktgAgentRunService {
   }
 
   /**
-   * Follow-up on the run's existing Guild session (edit-inputs resubmit or
-   * "Request changes" regeneration): the full form — always with the
-   * prior-version directive so the agent finalizes as v+1, plus the feedback
-   * paragraph when regenerating — rendered as the agent's batch message and
-   * posted through the chat/session BFF contract.
+   * Follow-up on an existing Guild session: the full form and prior-version
+   * directive, plus optional legacy/programmatic feedback, rendered as the
+   * agent's batch message and posted through the chat/session BFF contract.
+   * The current intake UI has no Request changes form; document revision
+   * workflows own subsequent edits.
    *
    * The stored run's latest version is the single source of truth for BOTH the
    * message's "finalize as version N+1" directive and the result poll's gate —
@@ -594,7 +586,7 @@ export class MktgAgentRunService {
     );
   }
 
-  /** Keep exact revision metadata and hash persistence; retain receipt keys only in memory for document navigation. */
+  /** Keep canonical revision metadata and hashes without retaining raw storage receipt keys. */
   private recordReceipt(request: MktgGenerateRequest, version: number, receipt: MktgRunPersistReceipt | undefined): MktgStoredAgentRun | null {
     const contentSha256 = receipt?.content_sha256;
     const location = receipt?.project === request.projectUid ? mktgDocumentLocationOfReceipt(receipt) : undefined;
@@ -612,7 +604,6 @@ export class MktgAgentRunService {
           ...(location && { documentLocation: location }),
           ...(entry.source && MKTG_ARTIFACT_SHA256_REGEX.test(contentSha256) && { source: { ...entry.source, identity: contentSha256 } }),
         };
-        if (receipt?.project === request.projectUid) this.receiptKeys.set(updated, receipt.s3_key);
         return updated;
       }),
       savedAt: new Date().toISOString(),
@@ -658,7 +649,7 @@ export class MktgAgentRunService {
       // always says version 1, so the run numbers its own history instead.
       version: request.intake.freshRunPerSubmission ? lastVersion + 1 : (result.version ?? lastVersion + 1),
       document: result.documentMarkdown ?? '',
-      // An agent that writes an asset instead of a document stores it with the version; the run page renders it on the asset view.
+      // Structured output stays on its stored version; the document route owns rendering and exports.
       ...(result.asset && { asset: result.asset }),
       feedback: request.feedback,
       derivatives: result.derivatives,
@@ -673,7 +664,6 @@ export class MktgAgentRunService {
       ...(result.persistence?.content_sha256 && { contentSha256: result.persistence.content_sha256 }),
       createdAt: new Date().toISOString(),
     };
-    if (result.persistence?.project === request.projectUid) this.receiptKeys.set(version, result.persistence.s3_key);
     const run: MktgStoredAgentRun = {
       agentId: request.agentId,
       projectUid: request.projectUid,

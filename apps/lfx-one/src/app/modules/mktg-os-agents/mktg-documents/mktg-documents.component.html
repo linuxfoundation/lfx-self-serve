@@ -295,6 +295,14 @@
                   </div>
                 }
               </div>
+            } @else if (selectedRuns().length || documents()?.progressUnavailable) {
+              <p class="text-sm text-gray-500" role="status" data-testid="mktg-documents-pending-run">
+                {{
+                  documents()?.progressUnavailable
+                    ? 'Run progress is unavailable. Refresh to check the last known runs.'
+                    : 'A recorded run is listed above. Open its document to follow progress or retry it.'
+                }}
+              </p>
             } @else {
               <p class="text-sm text-gray-500" data-testid="mktg-documents-empty-runs">
                 No runs yet. Each run of the {{ selectedType().agentName }} is stored here as its own document and is never updated: a new run is a new

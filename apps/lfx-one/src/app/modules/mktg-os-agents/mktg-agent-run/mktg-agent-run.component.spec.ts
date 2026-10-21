@@ -15,7 +15,6 @@ import {
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
   MKTG_INTAKE_FORMAT_ERRORS,
-  MKTG_README_SKIP_NOTES,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
@@ -191,7 +190,7 @@ describe('MktgAgentRunComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: () => activeContext()?.uid ?? '' } },
         { provide: ProjectService, useValue: { getProject } },
         { provide: UserService, useValue: { user: userSignal } },
-        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions, receiptKey: vi.fn(() => null) } },
+        { provide: MktgAgentRunService, useValue: { loadRun, generate, answerQuestions } },
         { provide: MktgDependencyService, useValue: { resolveDependencies, resolveBrandKit, notifyDocumentsChanged } },
         provideMktgSlidesExportStub(slidesExport),
         { provide: MktgIntakeDocumentsService, useValue: { readFile } },
@@ -346,6 +345,35 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-error')?.textContent).toContain('Synthetic terminal failure');
       component['onRetryHandoff']();
       expect(navigate).toHaveBeenCalledTimes(1);
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])('admits only the current catalog asset receipt before navigation (foreign=%s)', async (foreign) => {
+      await configure('browser', target.agentId);
+      await fill();
+      const { request } = accepted();
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === target.agentId);
+      const other = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey !== type?.agentKey);
+      if (!type || !other) throw new Error('Missing synthetic catalog asset types');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
+      run.agentId = target.agentId;
+      run.versions[0].documentLocation = { agentKey: foreign ? other.agentKey : type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+      component['onProgress']({ type: 'document', run }, PROJECT_1.uid);
+      await fixture.whenStable();
+      if (foreign) {
+        expect(navigate).not.toHaveBeenCalled();
+        expect(component['phase']()).toBe('form');
+        expect(query('mktg-agent-run-error')?.textContent).toContain('receipt belongs to another asset');
+      } else {
+        expect(navigate).toHaveBeenCalledWith(
+          ['..', 'documents', type.agentKey, 'living'],
+          expect.objectContaining({
+            queryParams: expect.objectContaining({ revision: `000001-${'a'.repeat(64)}` }),
+          })
+        );
+      }
       expect(generate).not.toHaveBeenCalled();
       expect(answerQuestions).not.toHaveBeenCalled();
     });
@@ -1613,7 +1641,7 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
 
       expect(host().textContent).not.toContain('Paul');
-      for (const copy of [MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, MKTG_README_SKIP_NOTES, FOUNDATION_MESSAGE_READ_REASONS]) {
+      for (const copy of [MKTG_AGENT_INTAKES, MKTG_AGENTS, MKTG_INTAKE_FORMAT_ERRORS, FOUNDATION_MESSAGE_READ_REASONS]) {
         expect(JSON.stringify(copy)).not.toContain('Paul');
       }
     });
@@ -1811,8 +1839,8 @@ describe('MktgAgentRunComponent', () => {
       expect(component['documentsBusy']()).toBe(false);
     });
 
-    describe('the run lands on the asset view — the live feed inside it while the agent works', () => {
-      it('shows the framework shell in its generating state with each step as it is reported, and switches to writing once the answers went back', async () => {
+    describe('the run route owns research and questions before handing off to the asset route', () => {
+      it('keeps the research feed on the run route and labels the writing stretch after answers', async () => {
         activeContext.set(PROJECT_1);
         await fixture.whenStable();
         fillRequired();
@@ -1956,7 +1984,7 @@ describe('MktgAgentRunComponent', () => {
         expect(component['phase']()).toBe('form');
       });
 
-      it('sends every answer with its origin from the last question, on the same run, and lands on the rendered framework with what was asked', async () => {
+      it('sends each answer with its origin on the same run and prepares the asset-route handoff', async () => {
         const answers: MktgRunAnswer[] = [
           { key: 'ranked-goals', text: 'Adoption first.', origin: 'accepted' },
           { key: 'words-to-avoid', text: 'Avoid "synergy".', origin: 'requester' },
