@@ -2203,6 +2203,37 @@ describe('MonitoringTabComponent — shared-account restriction', () => {
     expect(el('reddit-connection-notice')).toBeNull();
   });
 
+  const flagOnShared: CampaignMonitorConnections = {
+    viaCampaignService: true,
+    platforms: {
+      meta: { state: 'connected', accountId: 'act_cncf', label: 'act_cncf' },
+      twitter: { state: 'connected', accountId: '18ce54d4x5t', label: '18ce54d4x5t' },
+    },
+  };
+
+  it.each([
+    { panel: 'meta', read: 'getMetaMonitorData', path: 'legacy', connections: flagOff },
+    { panel: 'meta', read: 'getMetaMonitorData', path: 'cutover', connections: flagOnShared },
+    { panel: 'linkedin', read: 'getLinkedInMonitorData', path: 'legacy', connections: flagOff },
+    { panel: 'twitter', read: 'getTwitterMonitorData', path: 'cutover', connections: flagOnShared },
+  ] as const)('shows a restricted $panel read on the $path path as a notice, not an error', async ({ panel, read, connections }) => {
+    await setup(connections);
+    service[read].mockReturnValue(throwError(restricted));
+    fixture.detectChanges();
+    if (panel === 'twitter') {
+      // X's button is hidden while the app disables the platform, so the panel is selected directly.
+      (fixture.componentInstance as unknown as { setPlatform(p: string): void }).setPlatform('twitter');
+      fixture.detectChanges();
+    } else {
+      select(panel);
+    }
+
+    expect(service[read]).toHaveBeenCalled();
+    expect(el(`${panel}-connection-notice`)?.getAttribute('data-state')).toBe('restricted');
+    expect(el(`${panel}-connection-notice-title`)?.textContent).toContain('monitoring is limited to LF administrators');
+    expect(el(`${panel}-error`)).toBeNull();
+  });
+
   it('clears the restricted states when the foundation changes', async () => {
     await setup(flagOff);
     service['getMonitorData'].mockReturnValue(throwError(restricted));

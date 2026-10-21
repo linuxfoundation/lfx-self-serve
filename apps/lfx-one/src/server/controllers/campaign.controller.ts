@@ -4001,8 +4001,10 @@ export class CampaignController {
    * monitor on a shared account (Google Ads, Meta, Reddit, X, and LinkedIn's legacy allowlist account)
    * returns every foundation's campaigns. Only a cross-foundation principal may see that: a ROOT
    * writer, or a holder of ROOT `global_marketing_ops`. LF staff membership is not enough. Both checks
-   * are request-cached (the marketing-access middleware usually primed them) and fail closed, and the
-   * refusal runs before any upstream call.
+   * are request-cached and fail closed, and the refusal runs before any upstream call. The
+   * marketing-access middleware has already primed `checkRootWriter`; it runs `checkRootCampaignManager`
+   * only for a request naming no project, so on these project-scoped reads that check is a fresh ROOT
+   * lookup.
    */
   private async requireSharedAccountMonitorAccess(req: Request, next: NextFunction, operation: string, platformLabel: string): Promise<boolean> {
     const [isRootWriter, isRootCampaignManager] = await Promise.all([
