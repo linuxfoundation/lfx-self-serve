@@ -7,6 +7,8 @@ import { createHash, createHmac } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 import { ObjectStorePutInput } from '@lfx-one/shared/interfaces';
+const warning = vi.hoisted(() => vi.fn());
+vi.mock('./logger.service', () => ({ logger: { warning } }));
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string> }>());
 vi.mock('./object-store.service', () => ({
   ObjectStoreService: class {
@@ -34,6 +36,7 @@ const setup = { name: 'Example author', role: 'Maintainer', focus_areas: 'Code',
 describe('LinkedIn per-user profile store', () => {
   beforeEach(() => {
     objects.clear();
+    warning.mockClear();
     vi.stubEnv('PCC_AUTH0_SECRET', 'synthetic-profile-secret');
   });
   afterEach(() => {
@@ -78,6 +81,45 @@ describe('LinkedIn per-user profile store', () => {
       true
     );
     expect((await store.read(req, 'subject-one'))?.profile.about.role).toBe('Updated role');
+  });
+  it('retries an incomplete profile write after restart but never replays completed setup after delete', async () => {
+    const store = new LinkedinProfileService();
+    const profile = linkedinProfileFromSetup(setup);
+    const saved = { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) };
+    const put = ObjectStoreService.prototype.putPrivateObjectIfAbsent;
+    const failure = new Error('Synthetic profile write failure');
+    let failed = false;
+    vi.spyOn(ObjectStoreService.prototype, 'putPrivateObjectIfAbsent').mockImplementation(async function (this: ObjectStoreService, req, purpose, key, input) {
+      if (key.endsWith('current.json') && !failed) {
+        failed = true;
+        throw failure;
+      }
+      return put.call(this, req, purpose, key, input);
+    });
+    await expect(store.initializeOnce(req, 'subject-one', 'synthetic-session', saved)).rejects.toBe(failure);
+    expect(objects.size).toBe(0);
+    expect(await new LinkedinProfileService().initializeOnce(req, 'subject-one', 'synthetic-session', saved)).toBe(true);
+    await store.delete(req, 'subject-one');
+    expect(await new LinkedinProfileService().initializeOnce(req, 'subject-one', 'synthetic-session', saved)).toBe(false);
+    expect(await store.read(req, 'subject-one')).toBeNull();
+  });
+  it('preserves the original write failure if claim cleanup also fails without logging private details', async () => {
+    const failure = new Error('Synthetic profile write failure');
+    const put = ObjectStoreService.prototype.putPrivateObjectIfAbsent;
+    vi.spyOn(ObjectStoreService.prototype, 'putPrivateObjectIfAbsent').mockImplementation(async function (this: ObjectStoreService, req, purpose, key, input) {
+      if (key.endsWith('current.json')) throw failure;
+      return put.call(this, req, purpose, key, input);
+    });
+    vi.spyOn(ObjectStoreService.prototype, 'deletePrivateObject').mockRejectedValue(new Error('PRIVATE_CLEANUP_MARKER'));
+    const profile = linkedinProfileFromSetup(setup);
+    await expect(
+      new LinkedinProfileService().initializeOnce(req, 'subject-one', 'synthetic-session', {
+        profile,
+        profile_markdown: renderLinkedinProfileMarkdown(profile),
+      })
+    ).rejects.toBe(failure);
+    expect(warning).toHaveBeenCalledWith(req, 'linkedin_profile_initialize', expect.any(String), {});
+    expect(JSON.stringify(warning.mock.calls)).not.toContain('PRIVATE_CLEANUP_MARKER');
   });
   it('retains a non-personal consumed marker across deletion and service restart, never recreating the profile', async () => {
     const store = new LinkedinProfileService();

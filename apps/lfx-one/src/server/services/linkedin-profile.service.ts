@@ -9,6 +9,7 @@ import { createHash, createHmac } from 'node:crypto';
 
 import { MicroserviceError } from '../errors';
 import { ObjectStoreService } from './object-store.service';
+import { logger } from './logger.service';
 
 /** One current profile per effective subject; deletion follows the backend retention policy. */
 export class LinkedinProfileService {
@@ -44,17 +45,28 @@ export class LinkedinProfileService {
     await this.store.putMutableObject(req, 'marketing-os-artifacts', `${this.prefix(user)}current.json`, this.input(profile));
   }
 
-  /** Consume automatic setup once, durably, before attempting its create-only profile write. */
+  /** Consume successful setup once; release an incomplete claim after a failed profile write. */
   public async initializeOnce(req: Request, user: string, sessionId: string, profile: LinkedinStoredProfile): Promise<boolean> {
     const prefix = this.prefix(user);
     const run = createHash('sha256').update(sessionId).digest('hex');
-    const claimed = await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', `${prefix}${LINKEDIN_PROFILE_INITIALIZATIONS}${run}.json`, {
+    const marker = `${prefix}${LINKEDIN_PROFILE_INITIALIZATIONS}${run}.json`;
+    const claimed = await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', marker, {
       body: Buffer.from('{}'),
       contentType: 'application/json',
       cacheControl: 'private, no-store',
     });
     if (!claimed) return (await this.read(req, user)) !== null;
-    const created = await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', `${prefix}current.json`, this.input(profile));
+    let created: boolean;
+    try {
+      created = await this.store.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', `${prefix}current.json`, this.input(profile));
+    } catch (error) {
+      try {
+        await this.store.deletePrivateObject(req, 'marketing-os-artifacts', marker);
+      } catch {
+        logger.warning(req, 'linkedin_profile_initialize', 'Failed to release an incomplete initialization claim', {});
+      }
+      throw error;
+    }
     return created || (await this.read(req, user)) !== null;
   }
 
