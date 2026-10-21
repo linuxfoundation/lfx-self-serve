@@ -565,7 +565,8 @@ describe('MktgDocumentViewComponent', () => {
       expect(harness.routeNativeElement?.querySelector('nav [aria-current="page"]')?.textContent ?? null).toBe(assetLabel);
     } else expect(query('mktg-document-view-back-link')?.textContent).toContain('Documents');
     expect(query('mktg-document-view-title')).not.toBeNull();
-    expect(query('mktg-document-view-revision-chip')).not.toBeNull();
+    // LinkedIn posts hide the revision chip (Joan's LinkedIn post board: no Approve, you finish by copying a post).
+    expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post');
   });
 
   it('keeps both crumbs on the current context without router navigation, clearing document-only params', async () => {
