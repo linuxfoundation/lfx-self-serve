@@ -581,6 +581,17 @@ describe('ObjectStoreService', () => {
     });
   });
 
+  describe('headObject', () => {
+    it('returns metadata without downloading a body and propagates the original read error', async () => {
+      sendMock.mockResolvedValueOnce({ Metadata: { state: 'writing' } });
+      await expect(service.headObject(buildReq(), 'marketing-os-artifacts', 'document-runs/p/r.json')).resolves.toEqual({ state: 'writing' });
+      expect(sendMock.mock.calls[0][0]).toBeInstanceOf(HeadObjectCommand);
+      const failure = buildForbiddenError();
+      sendMock.mockRejectedValueOnce(failure);
+      await expect(service.headObject(buildReq(), 'marketing-os-artifacts', 'document-runs/p/r.json')).rejects.toBe(failure);
+    });
+  });
+
   describe('getObject', () => {
     const key = 'brand-kit/testorbit/abc.md';
 

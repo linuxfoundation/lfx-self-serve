@@ -99,7 +99,7 @@ vi.mock('./object-store.service', () => ({
 import { MktgDocumentRunService } from './mktg-document-run.service';
 import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
-import type { MktgRunResultResponse } from '@lfx-one/shared/interfaces';
+import type { MktgRunResultResponse, MktgDocumentDetailResponse, MktgDocumentRunSnapshot } from '@lfx-one/shared/interfaces';
 
 const req = {} as Request;
 const project = 'synthetic-project';
@@ -274,6 +274,62 @@ describe('MktgDocumentRunService core', () => {
       err: expect.any(ServiceValidationError),
     });
     expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('synthetic-private-marker');
+  });
+
+  it('owns catalog-to-document tracking and unsupported catalog admission without controller lookups', async () => {
+    const agentId = types[0].catalogAgentId ?? '';
+    expect(await service.resolveCatalogProject(req, agentId, project)).toBe(project);
+    expect(await service.startForCatalogAgent(req, agentId, project, session)).toBe(hash(session));
+    flows.project.mockClear();
+    expect(await service.resolveCatalogProject(req, 'synthetic-untracked-agent', project)).toBeUndefined();
+    expect(flows.project).not.toHaveBeenCalled();
+    await expect(service.startForCatalogAgent(req, 'synthetic-untracked-agent', project, session)).rejects.toThrow();
+  });
+
+  it('degrades a tracking failure in the service without hiding the returned agent result', async () => {
+    const failure = new Error('Synthetic tracking outage');
+    vi.spyOn(service, 'recordResult').mockRejectedValueOnce(failure);
+    await expect(service.recordResultBestEffort(req, session, ready(), project)).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_run_record_result', expect.any(String), { err: failure });
+  });
+
+  it.each(['missing', 'store'])('retains an existing document and known rows when selected refresh is %s', async (kind) => {
+    const id = hash(session);
+    const detail: MktgDocumentDetailResponse = {
+      project,
+      type: types[0],
+      documentId: 'living',
+      revisions: [],
+      approvedCurrent: null,
+      current: { revisionId: location().revision_id, changedAt: '2026-10-19T12:00:00Z', changedBy: null },
+    };
+    const progress: MktgDocumentRunSnapshot = {
+      runs: [{ runId: id, project, agentKey: types[0].agentKey, documentId: 'living', startedAt: '2026-10-19T12:00:00Z', state: 'failed' }],
+    };
+    const failure =
+      kind === 'missing'
+        ? new ResourceNotFoundError('Run', id)
+        : new MicroserviceError('Synthetic store outage', 503, 'STORE_UNAVAILABLE', { service: 'object_store' });
+    vi.spyOn(service, 'refreshFailure').mockRejectedValueOnce(failure);
+    const result = await service.detailWithProgress(req, project, types[0], 'living', detail, progress, false, id);
+    expect(result).toEqual({ ...detail, ...progress, progressUnavailable: true });
+    expect(result?.current).toEqual(detail.current);
+    expect(progress).not.toHaveProperty('progressUnavailable');
+  });
+
+  it('has one empty-detail policy and rejects malformed/timer refresh before querying a session', async () => {
+    const progress: MktgDocumentRunSnapshot = { runs: [] };
+    expect(await service.detailWithProgress(req, project, types[0], 'living', null, progress)).toBeNull();
+    expect(await service.detailWithProgress(req, project, types[0], 'living', null, progress, true)).toMatchObject({
+      revisions: [],
+      approvedCurrent: null,
+      runs: [],
+    });
+    await expect(service.detailWithProgress(req, project, types[0], 'living', null, progress, true, hash(session))).rejects.toBeInstanceOf(
+      ServiceValidationError
+    );
+    await expect(service.detailWithProgress(req, project, types[0], 'living', null, progress, false, '../bad')).rejects.toBeInstanceOf(ServiceValidationError);
+    expect(flows.result).not.toHaveBeenCalled();
   });
 
   it('uses a separate persistence budget after a ready result and accepts a matching late receipt', async () => {

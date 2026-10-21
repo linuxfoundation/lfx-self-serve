@@ -33,6 +33,12 @@ export interface MktgDocumentRunProgress {
   failureText?: string;
 }
 
+/** Public rows only; read unavailability is not evidence of active work or current selection. */
+export interface MktgDocumentRunSnapshot {
+  runs: MktgDocumentRunProgress[];
+  progressUnavailable?: boolean;
+}
+
 /**
  * Mutable server-only started-run record in the private document store.
  * It must never be returned by spreading it into a public response: project
@@ -70,6 +76,14 @@ export interface MktgStoredStartedRun {
   key: string;
   body: string;
   record: MktgStartedRunRecord;
+}
+
+/** BFF-only partial coverage; The Documents transport retains known rows, never echoes these IDs to the client. */
+export interface MktgDocumentRunCoverage {
+  /** Unchecked entries, including unknown outside-window history that may already be closed. */
+  uncheckedCount: number;
+  /** Opaque IDs known unfinished/failed from HEAD or a matching terminal cache; bounded by discovery + cache limits. */
+  retainedRunIds: string[];
 }
 
 /** The Documents transport's retry body, scoped by its document/run route; no generation is started. */
