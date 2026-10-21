@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LinkedinEnvelope, LinkedinSetup } from '@lfx-one/shared/interfaces';
 import { LINKEDIN_FINALIZE_TOOL } from '@lfx-one/shared/constants';
 import { LINKEDIN_RECORDED_CASES } from '../../../../../packages/shared/src/constants/linkedin-post-recorded.fixture';
+import { LINKEDIN_RECORDED_QUESTIONS, LINKEDIN_RECORDED_ANSWERS } from '../../../../../packages/shared/src/constants/linkedin-post-questions.fixture';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
 
 const mocks = vi.hoisted(() => ({
@@ -185,6 +186,44 @@ describe('LinkedIn generation', () => {
     expect(result.envelope).toEqual(envelope);
     expect(result.envelope?.inputs).toHaveProperty('research');
     expect(mocks.persist).toHaveBeenCalledOnce();
+  });
+  it('returns the recorded questions, sends their answers on the SAME session, and never leaks reasoning in any status', async () => {
+    const publicProgress = JSON.stringify({
+      type: 'agent_notification_progress',
+      created_at: '2026-10-19T14:00:00Z',
+      content: { type: 'text', data: 'Reading the public source.' },
+    });
+    const privateProgress = JSON.stringify({
+      type: 'agent_notification_progress',
+      content: { type: 'application/guild-reasoning-progress', data: 'PRIVATE THOUGHTS', envelope: fixture() },
+    });
+    const service = new LinkedinPostService();
+    mocks.events.mockResolvedValue([publicProgress, privateProgress]);
+    const pending = await service.result(req, 'subject-1', 'session-1', 'project-1');
+    expect(pending.status).toBe('pending');
+    expect(pending.activity?.map((row) => row.label)).toContain('Reading the public source.');
+    const questionsEvent = JSON.stringify({ type: 'agent_notification_message', content: { type: 'text', data: LINKEDIN_RECORDED_QUESTIONS } });
+    mocks.events.mockResolvedValue([publicProgress, privateProgress, questionsEvent]);
+    const questions = await service.result(req, 'subject-1', 'session-1', 'project-1');
+    expect(questions.status).toBe('questions');
+    expect(questions.questions?.map((question) => question.key)).toEqual(['tendency', 'admired-style', 'avoid']);
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    if (!questions.questionsId || !questions.questions) throw new Error('Expected recorded gap round');
+    const answers = questions.questions.map((question) => ({ key: question.key, text: question.suggestedAnswer, origin: 'accepted' as const }));
+    await service.sendAnswers(req, 'session-1', questions.questionsId, answers, 'linkedin-post');
+    expect(mocks.followUp).toHaveBeenCalledWith(req, 'session-1', { message: LINKEDIN_RECORDED_ANSWERS, handle: 'linkedin-post' });
+    await expect(
+      service.sendAnswers(req, 'session-1', questions.questionsId, [{ key: 'tone', text: 'Not an asked gap.', origin: 'requester' }], 'linkedin-post')
+    ).rejects.toMatchObject({ statusCode: 400 });
+    mocks.events.mockResolvedValue([publicProgress, privateProgress, finalized(fixture())]);
+    const ready = await service.result(req, 'subject-1', 'session-1', 'project-1');
+    expect(ready.status).toBe('ready');
+    mocks.events.mockResolvedValue([questionsEvent, finalized(fixture())]);
+    await service.sendAnswers(req, 'session-1', questions.questionsId, answers, 'linkedin-post');
+    expect(mocks.followUp).toHaveBeenCalledTimes(1);
+    expect(mocks.createSession).not.toHaveBeenCalled();
+    for (const state of [pending, questions, ready]) expect(JSON.stringify(state)).not.toContain('PRIVATE');
   });
 
   it('does not overwrite an intervening profile edit on a repeated result poll', async () => {

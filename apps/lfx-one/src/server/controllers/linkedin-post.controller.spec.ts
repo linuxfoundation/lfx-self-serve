@@ -177,4 +177,19 @@ describe('LinkedIn endpoint boundaries', () => {
     await controller.getProfile(request({}, 'stable-subject', 'renamed-user'), response(), vi.fn());
     expect(mocks.read.mock.calls.map((call) => call[1])).toEqual(['stable-subject', 'stable-subject']);
   });
+
+  it('erases only the effective user and requires authentication for deletion', async () => {
+    const controller = new LinkedinPostController();
+    const req = request({ user: 'other-user' });
+    const res = response();
+    const next = vi.fn();
+    await controller.deleteProfile(req, res, next);
+    expect(mocks.delete).toHaveBeenCalledWith(req, 'subject-one');
+    expect(mocks.startOperation).toHaveBeenCalledWith(req, 'delete_linkedin_profile', {});
+    expect(res.status).toHaveBeenCalledWith(204);
+    mocks.delete.mockClear();
+    await controller.deleteProfile(request({}, ''), response(), next);
+    expect(mocks.delete).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(401);
+  });
 });
