@@ -2457,8 +2457,7 @@ describe('CampaignProxyService streaming AI failures', () => {
   /**
    * Drains an SSE generator and returns its `error` event's payload — the exact string the browser
    * is handed. Takes the generator rather than the service so both `aiChatStream` callers can be
-   * driven through it: a helper pinned to one of them is how the refine stage shipped with logging
-   * and no test (#4044).
+   * driven through it — a helper pinned to one caller leaves the other's logging unpinned.
    */
   async function errorEvent(gen: AsyncGenerator<{ type: string; data: unknown }>): Promise<string> {
     const events: { type: string; data: unknown }[] = [];
