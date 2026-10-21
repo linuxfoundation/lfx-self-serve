@@ -37,6 +37,7 @@ import {
   ORG_CLA_REVIEW_COPY_FAILURE,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
+  ORG_CLA_VIEW_ONLY_COPY,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
@@ -51,6 +52,7 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaIsViewOnly,
   orgClaPairFoundationSfid,
   orgClaPairProjectSfid,
   orgClaPreviewGroup,
@@ -528,6 +530,10 @@ export class OrgEasyclaDetailComponent {
   );
 
   protected readonly status = computed(() => this.initStatus());
+
+  protected readonly viewOnly = computed(() => this.initViewOnly());
+
+  protected readonly viewOnlyCopy = ORG_CLA_VIEW_ONLY_COPY;
 
   protected readonly coverageChips = computed(() => this.initCoverageChips());
 
@@ -1388,6 +1394,11 @@ export class OrgEasyclaDetailComponent {
     // The preview's agreement does not exist yet, so there is no row to find — its shape is built
     // from the picker's choice. Gated on `showingPreview` rather than the selection alone.
     return this.showingPreview() && this.previewSelection ? orgClaPreviewGroup(this.previewSelection) : undefined;
+  }
+
+  private initViewOnly(): boolean {
+    const group = this.claGroup();
+    return !!group && orgClaIsViewOnly(group);
   }
 
   private initStatus(): OrgClaStatusDisplay | null {

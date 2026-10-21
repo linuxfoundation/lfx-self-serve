@@ -4,7 +4,7 @@ description: View and manage an organization's corporate CLAs in the Organizatio
 audience: [all]
 product_area: Organization
 tags: [organization, easycla, cla, ccla, cla-manager, approval-list, signing]
-last_updated: 2026-10-19
+last_updated: 2026-10-21
 intercom_collection: Organization
 ---
 
@@ -39,6 +39,8 @@ You can open EasyCLA when you have an Organization lens role on that organizatio
 | CLA Manager with no other Organization lens role       | EasyCLA only. The rest of the Organization lens stays closed.                              | Only the corporate CLAs you are named on                                                                   |
 | Someone with no EasyCLA role at the organization       | The page title **We couldn't load your CLAs**, with the reason in the text under the title | Nothing on this page                                                                                       |
 
+A signed corporate CLA that does not name you as a CLA Manager is marked **View only**, both on its card in the list and next to its name at the top of its page. The page also says **Only the CLA Managers named on this CLA can change it.** and **See who manages it** opens the **CLA Managers** tab. The label depends only on the CLA Manager list: a corporate CLA that names you has no label, and neither does the preview you reach from **Sign CLA** before an agreement is signed.
+
 The name on the CLA Manager list has to match your LF username exactly, including capitalization. A difference only in case does not count as a match.
 
 A CLA Manager role that was just added or just removed can take about 30 minutes before every control matches the list. Reload the page after waiting. If you remove yourself, this page updates your own controls when the list reloads, so you do not keep managing that agreement from this page while you wait.
@@ -59,6 +61,7 @@ Each card shows:
 - The CLA Group name
 - **Signed by** the signing entity, when that entity differs from the organization and the agreement is signed. Two cards can share a CLA Group name when the organization signed under more than one entity.
 - A coverage chip. One project is named on its own and opens nothing. Several projects show the foundation name, when there is one, and a **Covers N projects** chip that opens the project list.
+- A **View only** label at the top right when the agreement is signed and you are not named on its CLA Manager list. A corporate CLA that names you has no label.
 - A **Signed** pill when the agreement is signed. A sanctioned organization has no status pill on the card. See [What does a sanctioned organization look like on EasyCLA?](#what-does-a-sanctioned-organization-look-like-on-easycla).
 - A count of **approval entries** (the rules on the Approved List) and a count of **CLA Managers**. An approval-entry count the page could not read shows as an em dash, not as zero, so a zero approval-entry count means the page read it and it is zero. A CLA Manager count the page could not read shows as zero, so zero CLA Managers on the card is not proof there are none. The **CLA Managers** tab lists the managers themselves. There is no separate "needs a CLA Manager" flag on the card.
 
@@ -199,7 +202,7 @@ Signing that organization, and changing its corporate CLA, is refused. If you an
 
 ## Why is a control missing or disabled?
 
-A control you cannot use is usually disabled or absent. The table shows what you see for each one, and the sentence the page uses when it shows one.
+A control you cannot use is usually disabled or absent. On a corporate CLA marked **View only**, you are not on the CLA Manager list, so every change in this table is closed to you. The table shows what you see for each one, and the sentence the page uses when it shows one.
 
 | What you tried               | What you see                                                                                                                                                                                                                        | The words                                                                |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -209,7 +212,7 @@ A control you cannot use is usually disabled or absent. The table shows what you
 | Change the Approval List     | **Add entries**, edit, and delete are absent. If a change is still refused, an error says the sentence below.                                                                                                                       | `Only a CLA manager named on this CLA can change its approval list.`     |
 | Invalidate an acknowledgment | **Invalidate** is absent. If a change is still refused, an error says the sentence below.                                                                                                                                           | `Only a CLA manager named on this CLA can invalidate acknowledgments`    |
 
-A CLA Manager who was added or removed in the last 30 minutes can see these disagree with the list until access catches up. Reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](#who-can-see-easycla-and-who-can-change-a-corporate-cla).
+The **View only** label follows the CLA Manager list. A CLA Manager who was added or removed in the last 30 minutes can see these controls disagree with the list until access catches up. Reload after waiting. See [Who can see EasyCLA, and who can change a corporate CLA?](#who-can-see-easycla-and-who-can-change-a-corporate-cla).
 
 ## What does Self Serve leave to DocuSign?
 
