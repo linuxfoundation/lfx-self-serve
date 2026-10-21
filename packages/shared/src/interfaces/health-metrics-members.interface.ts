@@ -820,7 +820,7 @@ export interface HealthMetricsMembersChurnView {
   trendRose: boolean;
 }
 
-/** One organization in "Who left". */
+/** One lost membership in "Who left"; an organization appears once per lost term. */
 export interface HealthMetricsMembersChurnDepartureRowView {
   key: string;
   accountId: string;

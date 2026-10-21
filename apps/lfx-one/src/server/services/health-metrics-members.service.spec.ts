@@ -1260,8 +1260,8 @@ describe('HealthMetricsMembersService.getChurn', () => {
 
     const [sql] = readOf('MEMBERSHIP_CHURN');
     expect(sql).toContain('IFF(opening_arr_usd > 0, dues_lost_usd / opening_arr_usd * 100, NULL) AS revenue_not_renewed_rate');
-    expect(sql).not.toContain('revenue_churn_rate,');
-    expect(sql).not.toContain('revenue_churn_rate_change_pp');
+    const selected = sql.replace(/--.*$/gm, '');
+    expect(selected).not.toMatch(/\brevenue_churn_rate\b/);
   });
 
   it('splits the all-tiers rows from the tier rows and keeps unmeasured values null', async () => {

@@ -729,6 +729,7 @@ export class HealthMetricsMembersService {
         dues_lost_usd,
         dues_lost_prior_usd,
         -- The view's revenue_churn_rate is now net of upgrades; the headline is the share of dues that did not renew.
+        -- Derived here until MEMBERSHIP_CHURN carries the column (#4048).
         IFF(opening_arr_usd > 0, dues_lost_usd / opening_arr_usd * 100, NULL) AS revenue_not_renewed_rate,
         tier_churn_rate,
         share_of_loss_pct,
@@ -777,7 +778,8 @@ export class HealthMetricsMembersService {
         WHERE foundation_slug = ?
           AND year = ?
           AND movement_type IN ('churned', 'downgrade')
-        -- One row per organization and movement, so the join below can never multiply a lost membership.
+        -- One row per organization and movement, so the join cannot multiply a lost membership; dates are therefore
+        -- per organization, and two lost terms of one type share them until the churned-members view carries its own.
         QUALIFY ROW_NUMBER() OVER (PARTITION BY account_id, movement_type ORDER BY movement_date DESC NULLS LAST) = 1
       ),
       scoped AS (
