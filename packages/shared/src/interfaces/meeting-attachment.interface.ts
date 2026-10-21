@@ -27,6 +27,8 @@ export interface MeetingAttachment {
   uid: string;
   /** Meeting this attachment belongs to */
   meeting_id: string;
+  /** Occurrence this attachment is scoped to (unix start time). Absent means it applies to every occurrence of the meeting */
+  occurrence_id?: string;
   /** Attachment type: 'file' for uploaded files, 'link' for external URLs */
   type: 'file' | 'link';
   /** Category of the attachment */
@@ -130,6 +132,8 @@ export interface CreateLinkAttachmentRequest {
   description?: string;
   /** External URL to link */
   link: string;
+  /** Scope the attachment to one occurrence. Omit for all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -145,6 +149,8 @@ export interface CreateFileAttachmentRequest {
   name: string;
   /** Optional description */
   description?: string;
+  /** Scope the attachment to one occurrence. Omit for all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -168,6 +174,8 @@ export interface UpdateMeetingAttachmentRequest {
   description?: string;
   /** External URL (for link type) */
   link?: string;
+  /** Occurrence to scope the attachment to. The update replaces the scope, so omitting it makes the attachment apply to all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -184,6 +192,8 @@ export interface PresignAttachmentRequest {
   description?: string;
   /** Optional attachment category */
   category?: AttachmentCategory;
+  /** Scope the attachment to one occurrence. Omit for all occurrences */
+  occurrence_id?: string;
 }
 
 /**
@@ -195,6 +205,8 @@ export interface PresignAttachmentResponse {
   uid: string;
   /** Meeting or past meeting ID */
   meeting_id?: string;
+  /** Occurrence this attachment is scoped to (unix start time). Absent means it applies to every occurrence of the meeting */
+  occurrence_id?: string;
   /** Presigned S3 URL to upload the file to via HTTP PUT */
   file_url: string;
   /** Attachment type */
@@ -259,3 +271,10 @@ export interface PendingAttachment {
   /** Error message if upload failed */
   uploadError?: string;
 }
+
+/**
+ * Which occurrences an upcoming meeting attachment applies to
+ * - `occurrence`: the single occurrence it is scoped to
+ * - `series`: every occurrence of the meeting
+ */
+export type AttachmentScope = 'occurrence' | 'series';

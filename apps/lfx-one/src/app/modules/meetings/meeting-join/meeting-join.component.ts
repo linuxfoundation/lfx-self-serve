@@ -47,6 +47,7 @@ import {
   getLargestSessionShareUrl,
   getPastMeetingResourceId,
   getPastMeetingTranscriptUrl,
+  AttachmentScope,
   MaterialsChangedEvent,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
@@ -75,6 +76,9 @@ import {
 } from '@lfx-one/shared';
 import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
+  canScopeAttachmentToOccurrence,
+  filterAttachmentsForOccurrence,
+  getAttachmentScope,
   getMeetingSelfRemovalMessage,
   getUserTimezone,
   isHostKeyVisible,
@@ -127,6 +131,7 @@ import {
 import { AddToCalendarComponent } from '../components/add-to-calendar/add-to-calendar.component';
 import { CancelOccurrenceConfirmationComponent } from '../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
+import { AttachmentScopeBadgeComponent } from '../components/attachment-scope-badge/attachment-scope-badge.component';
 import { HostKeyPanelComponent } from '../components/host-key-panel/host-key-panel.component';
 import { MeetingMaterialsDrawerComponent } from '../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
@@ -162,6 +167,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     FileTypeDisplayPipe,
     DynamicDialogModule,
     MeetingMaterialsDrawerComponent,
+    AttachmentScopeBadgeComponent,
     ImpersonationBannerComponent,
   ],
   providers: [DialogService, ConfirmationService],
@@ -327,7 +333,18 @@ export class MeetingJoinComponent implements OnInit {
   protected showRecordingBadge = computed(() => (this.loadedViaPastMeetingId() ? !!this.primaryRecordingUrl() : !!this.meeting()?.recording_enabled));
   // Returns meeting_and_occurrence_id when set (occurrences use a composite key for attachment API calls).
   protected pastMeetingResourceId = computed(() => (this.loadedViaPastMeetingId() && this.meeting() ? getPastMeetingResourceId(this.meeting()!) : undefined));
-  protected currentAttachments = computed(() => (this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : this.attachments()));
+  // A live meeting's materials span every date; the page shows one occurrence, so another date's materials are dropped.
+  protected currentAttachments = computed(() =>
+    this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : filterAttachmentsForOccurrence(this.attachments(), this.currentOccurrence()?.occurrence_id)
+  );
+  // Materials carry a scope worth showing only on an upcoming recurring meeting, where each is for one date or the series.
+  protected showAttachmentScopes = computed(() => !this.pastMeetingFullAccess() && !!this.meeting()?.recurrence);
+  // The occurrence the materials drawer manages, or null when materials cannot be scoped to it (not recurring, cancelled, or past).
+  protected scopableOccurrence = computed(() => {
+    const meeting = this.meeting();
+    const occurrence = this.currentOccurrence();
+    return meeting && !this.loadedViaPastMeetingId() && canScopeAttachmentToOccurrence(meeting, occurrence) ? occurrence : null;
+  });
   protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
   protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
   protected hasRecentlyUpdatedMaterials = computed(() => {
@@ -845,6 +862,10 @@ export class MeetingJoinComponent implements OnInit {
       dismissableMask: true,
       data: { pastMeetingUid: getPastMeetingResourceId(meeting), meetingTitle: meeting.title },
     });
+  }
+
+  protected attachmentScope(attachment: MeetingAttachment | PastMeetingAttachment): AttachmentScope {
+    return getAttachmentScope(attachment as MeetingAttachment);
   }
 
   private initializeAutoJoin(): void {

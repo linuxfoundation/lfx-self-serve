@@ -1892,7 +1892,7 @@ export class MeetingController {
    */
   public async uploadMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const { name, file_size, file_type, category, description } = req.query as Record<string, string>;
+    const { name, file_size, file_type, category, description, occurrence_id } = req.query as Record<string, string>;
 
     const startTime = logger.startOperation(req, 'upload_meeting_attachment', {
       meeting_id: uid,
@@ -1954,6 +1954,7 @@ export class MeetingController {
         file_type,
         ...(category && { category: category as AttachmentCategory }),
         ...(description && { description }),
+        ...(occurrence_id && { occurrence_id }),
       };
 
       const result = await this.meetingService.uploadMeetingAttachment(req, uid, fileBuffer, presignData);

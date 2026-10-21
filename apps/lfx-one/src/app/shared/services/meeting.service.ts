@@ -456,6 +456,10 @@ export class MeetingService {
       params = params.set('description', presignData.description);
     }
 
+    if (presignData.occurrence_id) {
+      params = params.set('occurrence_id', presignData.occurrence_id);
+    }
+
     return this.http
       .post<PresignAttachmentResponse>(`/api/meetings/${meetingId}/attachments/upload`, file, {
         headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
