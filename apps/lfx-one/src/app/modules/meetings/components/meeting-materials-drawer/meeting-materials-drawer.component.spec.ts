@@ -197,6 +197,15 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
       expect(component.effectiveScope(component.linkAttachments()[0])).toBe('series');
     });
 
+    it('ignores a scope change made while a save is running', async () => {
+      const { component } = await mount({ occurrence, attachments: [attachment({ uid: 'series' })] });
+      component.saving.set(true);
+
+      component.toggleScope(component.linkAttachments()[0]);
+
+      expect(component.pendingScopes().size).toBe(0);
+    });
+
     it('does not update an attachment that is also being deleted', async () => {
       const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'series' })] });
       component.toggleScope(component.linkAttachments()[0]);

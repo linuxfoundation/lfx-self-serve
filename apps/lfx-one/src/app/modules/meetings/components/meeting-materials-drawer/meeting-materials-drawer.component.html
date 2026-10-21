@@ -35,31 +35,36 @@
       @if (canScope()) {
         <div class="flex flex-col gap-2" data-testid="materials-scope-picker">
           <h4 class="text-neutral-950 font-medium">Applies to</h4>
+          <!-- Native radios (visually hidden) give the group its keyboard behavior: one Tab stop, arrow keys move and select. -->
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Which occurrences new materials apply to">
-            <button
-              type="button"
-              role="radio"
-              [attr.aria-checked]="newItemScope() === 'occurrence'"
-              [disabled]="saving()"
-              (click)="setNewItemScope('occurrence')"
-              class="flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors"
+            <label
+              class="flex cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-300"
               [class]="newItemScope() === 'occurrence' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
               data-testid="scope-option-occurrence">
+              <input
+                type="radio"
+                name="materials-scope"
+                class="sr-only"
+                [checked]="newItemScope() === 'occurrence'"
+                [disabled]="saving()"
+                (change)="setNewItemScope('occurrence')" />
               <span class="text-sm font-medium text-gray-900">This occurrence</span>
               <span class="text-xs text-gray-500">{{ occurrence()?.start_time | date: 'EEE, MMM d, h:mm a' }}</span>
-            </button>
-            <button
-              type="button"
-              role="radio"
-              [attr.aria-checked]="newItemScope() === 'series'"
-              [disabled]="saving()"
-              (click)="setNewItemScope('series')"
-              class="flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors"
+            </label>
+            <label
+              class="flex cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors focus-within:ring-2 focus-within:ring-blue-300"
               [class]="newItemScope() === 'series' ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'"
               data-testid="scope-option-series">
+              <input
+                type="radio"
+                name="materials-scope"
+                class="sr-only"
+                [checked]="newItemScope() === 'series'"
+                [disabled]="saving()"
+                (change)="setNewItemScope('series')" />
               <span class="text-sm font-medium text-gray-900">All occurrences</span>
               <span class="text-xs text-gray-500">Every date in the series</span>
-            </button>
+            </label>
           </div>
           <p class="text-xs text-gray-500">
             Choose before adding. Files and links you add now apply to {{ newItemScope() === 'occurrence' ? 'this occurrence only' : 'every occurrence' }}. You

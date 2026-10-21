@@ -232,6 +232,8 @@ export class MeetingMaterialsDrawerComponent {
 
   /** Stages flipping an existing attachment between this occurrence and all occurrences; flipping back clears the staged change. */
   public toggleScope(attachment: MeetingAttachment): void {
+    // A save has already read the staged changes, so one made now would be overwritten or never sent.
+    if (this.saving()) return;
     const saved = getAttachmentScope(attachment);
     const next: AttachmentScope = this.effectiveScope(attachment) === 'series' ? 'occurrence' : 'series';
     this.pendingScopes.update((current) => {
