@@ -35,6 +35,7 @@ import {
   VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
+import { isVoteClosingSoon } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
@@ -46,6 +47,7 @@ export class VoteService {
   private readonly http = inject(HttpClient);
   private readonly voteDetailCache = new Map<string, { observable: Observable<Vote>; cachedAt: number }>();
   private readonly recentlyOpenedVotes: WritableSignal<Map<string, number>> = signal(new Map());
+  private readonly recentlyCreatedVotes: WritableSignal<Map<string, { vote: Vote; markedAt: number }>> = signal(new Map());
 
   /**
    * Single active speculative-create slot (GH-2826) — service-owned, not component-owned, so
@@ -233,6 +235,11 @@ export class VoteService {
       ),
       tap({
         next: ({ vote, opened }) => {
+          // Service-subscribed (see confirm$.subscribe below) so this survives navigation away from
+          // the dialog, same reasoning as markVoteOpened above (GH-4007 dealako/cursor[bot]: marking
+          // from the component's own `next` handler under takeUntilDestroyed drops the carrier if the
+          // user navigates away before this settles).
+          this.markVoteCreated(vote, opened);
           if (opened) {
             this.markVoteOpened(vote.uid);
           }
@@ -282,7 +289,11 @@ export class VoteService {
   public deleteVote(voteUid: string): Observable<void> {
     return this.http.delete<void>(`/api/votes/${encodeURIComponent(voteUid)}`).pipe(
       take(1),
-      tap(() => this.voteDetailCache.delete(voteUid))
+      tap(() => {
+        this.voteDetailCache.delete(voteUid);
+        // Otherwise a deleted synthesized draft (GH-4007) keeps reappearing in the list until its TTL expires.
+        this.evictRecentlyCreatedVote(voteUid);
+      })
     );
   }
 
@@ -389,6 +400,116 @@ export class VoteService {
       }
       return { ...vote, status: PollStatus.ACTIVE };
     });
+  }
+
+  /**
+   * Records a just-created vote, including a clone (GH-4007), so the votes list can synthesize
+   * its row until the search index catches up. `mergeRecentlyOpenedVotes` only patches a row
+   * already present in a fetched page, but a brand-new vote can be missing from every page for a
+   * short window — the full Vote is carried so the synthesized row renders correctly, not a
+   * status-only stub. Reuses RECENTLY_OPENED_VOTE_TTL_MS: same "search index hasn't caught up yet"
+   * window the just-opened carrier already assumes.
+   *
+   * `opened` normalizes the stored status: `confirmSpeculativeVote()`'s `vote` field is always the
+   * pre-`enableVote()` create-response snapshot (still Draft/Disabled) regardless of whether the
+   * follow-up enable call succeeded, so a caller passing `opened: true` gets a synthesized row that
+   * already shows Active instead of a stale Draft badge until the index converges.
+   */
+  public markVoteCreated(vote: Vote, opened: boolean): void {
+    const carried = opened ? { ...vote, status: PollStatus.ACTIVE } : vote;
+    this.recentlyCreatedVotes.update((created) => new Map(created).set(vote.uid, { vote: carried, markedAt: Date.now() }));
+  }
+
+  /** Evicts a carried uid once a fetched row already carries it — the server row is now the source of truth. */
+  public evictRecentlyCreatedVote(voteUid: string): void {
+    this.recentlyCreatedVotes.update((created) => {
+      if (!created.has(voteUid)) return created;
+      const next = new Map(created);
+      next.delete(voteUid);
+      return next;
+    });
+  }
+
+  /**
+   * Inserts any still-live recently-created vote (GH-4007) that is missing from a fetched page —
+   * prepended so a just-created or cloned vote appears in the list immediately instead of only
+   * after the search index converges. Self-healing: once a fetched page already contains the uid,
+   * the carried entry is evicted and the server row is used instead.
+   *
+   * `options` scope the insertion to the list actually being rendered:
+   * - `projectUid`/`committeeUid` keep a vote created in one project/committee from leaking into
+   *   another's list — a carried vote only inserts into a page whose scope it matches.
+   * - `statusFilter` keeps a carried vote out of a page filtered to a status it doesn't match
+   *   (e.g. a newly-opened vote must not appear under the Disabled tab).
+   * - `closingOnly`/`nowMs` keep a carried vote out of the Closing Soon quick filter unless it
+   *   actually falls inside that rolling window (same `isVoteClosingSoon` check the fetched rows
+   *   are already subject to server-side).
+   * - `searchName`/`group` mirror the same free-text search and Group dropdown the fetch itself is
+   *   scoped to (dealako, GH-4007 round 2) — without these a carried vote would insert into a page
+   *   the user has filtered to a different search term or committee, one the fetched rows all honor.
+   * - `isFirstPage` (default `true`) limits insertion to the first page of a paginated fetch so the
+   *   same optimistic row isn't prepended to every page.
+   *
+   * A row present in the fetched page is handled the same way `mergeRecentlyOpenedVotes` handles
+   * GH-2730's carrier: a fetched row still reporting `disabled` hasn't converged yet (this can
+   * happen on a *different* tab/page than the one the vote was created from, e.g. Active →
+   * Draft → Active before the index catches up) so the carried status is kept instead of
+   * discarding the synthesized vote; only a fetched row reporting any other status is treated as
+   * real convergence and evicts the carrier.
+   */
+  public mergeRecentlyCreatedVotes(
+    votes: Vote[],
+    options: {
+      projectUid?: string;
+      committeeUid?: string;
+      statusFilter?: PollStatus | null;
+      closingOnly?: boolean;
+      nowMs?: number;
+      searchName?: string;
+      group?: string;
+      isFirstPage?: boolean;
+    } = {}
+  ): Vote[] {
+    const { projectUid, committeeUid, statusFilter, closingOnly, nowMs = Date.now(), searchName, group, isFirstPage = true } = options;
+    const recentlyCreated = this.getLiveRecentlyCreatedVotes();
+    if (recentlyCreated.size === 0) {
+      return votes;
+    }
+
+    const present = new Set<string>();
+    const merged = votes.map((vote) => {
+      const carried = recentlyCreated.get(vote.uid);
+      if (!carried) return vote;
+      present.add(vote.uid);
+      if (vote.status !== PollStatus.DISABLED) {
+        this.evictRecentlyCreatedVote(vote.uid);
+        return vote;
+      }
+      // Don't re-badge a stale Disabled row outside the tab its carried status actually belongs to
+      // (Copilot/dealako/greptile/cursor[bot], GH-4007 round 3): a Draft-tab fetch (statusFilter:
+      // DISABLED) can still return this uid's stale index row, and the lazy table never re-filters
+      // returned rows, so overlaying Active here would violate the Draft filter the user selected.
+      if (statusFilter != null && statusFilter !== carried.status) return vote;
+      return carried.status !== PollStatus.DISABLED ? { ...vote, status: carried.status } : vote;
+    });
+
+    if (!isFirstPage) {
+      return merged;
+    }
+
+    const missing: Vote[] = [];
+    for (const [uid, vote] of recentlyCreated) {
+      if (present.has(uid)) continue;
+      if (projectUid !== undefined && vote.project_uid !== projectUid) continue;
+      if (committeeUid !== undefined && vote.committee_uid !== committeeUid) continue;
+      if (statusFilter != null && vote.status !== statusFilter) continue;
+      if (closingOnly && !isVoteClosingSoon(vote, nowMs)) continue;
+      if (searchName && !vote.name.toLowerCase().includes(searchName.toLowerCase())) continue;
+      if (group && vote.committee_name !== group) continue;
+      missing.push(vote);
+    }
+
+    return missing.length > 0 ? [...missing, ...merged] : merged;
   }
 
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
@@ -516,5 +637,23 @@ export class VoteService {
         this.voteDetailCache.delete(key);
       }
     }
+  }
+
+  /** Returns the live recently-created map (uid → Vote), pruning entries older than RECENTLY_OPENED_VOTE_TTL_MS. */
+  private getLiveRecentlyCreatedVotes(): Map<string, Vote> {
+    const now = Date.now();
+    const current = this.recentlyCreatedVotes();
+    const live = new Map<string, { vote: Vote; markedAt: number }>();
+    const liveVotes = new Map<string, Vote>();
+    for (const [uid, entry] of current) {
+      if (now - entry.markedAt < RECENTLY_OPENED_VOTE_TTL_MS) {
+        live.set(uid, entry);
+        liveVotes.set(uid, entry.vote);
+      }
+    }
+    if (live.size !== current.size) {
+      this.recentlyCreatedVotes.set(live);
+    }
+    return liveVotes;
   }
 }

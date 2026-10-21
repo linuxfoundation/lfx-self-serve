@@ -266,6 +266,289 @@ describe('VoteService', () => {
     });
   });
 
+  // GH-4007: a just-created (including cloned) vote can be missing entirely from a fetched page
+  // until the search index catches up — unlike the GH-2730 carrier above, there is no row to patch,
+  // so the carrier must insert one. Self-heals the same way: evict on convergence, prune at the TTL.
+  describe('recently-created vote carrier (GH-4007)', () => {
+    it('passes rows through untouched (same array) when nothing was marked', () => {
+      const votes = [buildVote({ uid: 'v1' }), buildVote({ uid: 'v2' })];
+
+      expect(service.mergeRecentlyCreatedVotes(votes)).toBe(votes);
+    });
+
+    it('prepends a marked vote missing from the fetched page', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Cloned ballot' });
+      service.markVoteCreated(created, false);
+
+      const votes = [buildVote({ uid: 'v1' })];
+      const merged = service.mergeRecentlyCreatedVotes(votes);
+
+      expect(merged).toEqual([created, votes[0]]);
+    });
+
+    it('evicts the carried uid once a fetched row reports a converged (non-disabled) status — the server row wins', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
+      const merged = service.mergeRecentlyCreatedVotes([serverRow]);
+
+      expect(merged).toEqual([serverRow]);
+      // The carry was evicted on convergence — a later fetch missing the row does not re-insert it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('keeps the carried (known-open) status when a fetched row on another tab/page is still stale Disabled', () => {
+      // Regression: a present row no longer unconditionally evicted the carrier — a stale Disabled
+      // row on a different tab (e.g. Draft) must not discard a known-open creation before the index
+      // has actually converged, or returning to Active loses the vote.
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow]);
+
+      expect(merged).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+
+      // Carrier is still live — a later fetch missing the row still re-inserts it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    // GH-4007 round 3 (Copilot/dealako/greptile-apps/cursor[bot]): the overlay above must not
+    // re-badge a stale Disabled row outside the tab its carried status belongs to — a Draft-tab
+    // fetch (statusFilter: DISABLED) can still return this uid's stale index row, and the lazy
+    // table never re-filters returned rows, so overlaying Active here would violate the Draft tab.
+    it('does not re-badge a present stale Disabled row to the carried status when it conflicts with the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow], { statusFilter: PollStatus.DISABLED });
+
+      expect(merged).toEqual([staleServerRow]);
+    });
+
+    it('still re-badges a present stale Disabled row when it matches the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+    });
+
+    // GH-4007 round 4 (Copilot/dealako): mergeRecentlyCreatedVotes must run on the RAW fetched rows,
+    // not on a row the opened-overlay has already rebadged to Active — otherwise the eviction check
+    // (`vote.status !== DISABLED`) fires on the optimistic status while the index is still actually
+    // lagging, discarding the carrier before it ever converges for real.
+    it('does not evict the created carrier when the raw row is still Disabled, even if an opened-overlay would rebadge it first', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+      service.markVoteOpened('new-vote');
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+
+      // Correct order: created-merge sees the raw Disabled row and keeps the carrier; the
+      // opened-overlay runs after, on the already-correct Active result.
+      const correctOrder = service.mergeRecentlyOpenedVotes(service.mergeRecentlyCreatedVotes([staleServerRow]));
+      expect(correctOrder).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+
+      // The carrier is still live afterward — a later fetch missing the row still re-inserts it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('keeps inserting inside the TTL window', () => {
+      vi.useFakeTimers();
+      try {
+        const created = buildVote({ uid: 'new-vote' });
+        service.markVoteCreated(created, false);
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS - 1);
+
+        const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+        expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('prunes entries older than the TTL so a never-indexed vote cannot be pinned into the list forever', () => {
+      vi.useFakeTimers();
+      try {
+        const created = buildVote({ uid: 'new-vote' });
+        service.markVoteCreated(created, false);
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+
+        const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+        expect(merged.map((v) => v.uid)).toEqual(['other']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('evictRecentlyCreatedVote is a no-op for uids that are not carried', () => {
+      expect(() => service.evictRecentlyCreatedVote('never-marked')).not.toThrow();
+    });
+
+    it('normalizes the carried status to Active when the vote was successfully opened', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+
+      expect(merged.find((v) => v.uid === 'new-vote')?.status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('keeps the carried status as-is when the vote was not opened', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+
+      expect(merged.find((v) => v.uid === 'new-vote')?.status).toBe(PollStatus.DISABLED);
+    });
+
+    it('does not insert a carried vote scoped to a different project', () => {
+      const created = buildVote({ uid: 'new-vote', project_uid: 'project-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { projectUid: 'project-b' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote scoped to the matching project', () => {
+      const created = buildVote({ uid: 'new-vote', project_uid: 'project-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { projectUid: 'project-a' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote scoped to a different committee', () => {
+      const created = buildVote({ uid: 'new-vote', committee_uid: 'committee-a' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { committeeUid: 'committee-b' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    // GH-4007 round 2 (dealako): inserted rows previously ignored the free-text search box and the
+    // Group dropdown, so a carried vote could appear on a page the user had filtered away from.
+    it('does not insert a carried vote whose name does not match the active search term', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Board decision' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { searchName: 'budget' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote whose name matches the active search term, case-insensitively', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Approve the Budget' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { searchName: 'budget' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote scoped to a different Group', () => {
+      const created = buildVote({ uid: 'new-vote', committee_name: 'Technical Steering Committee' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { group: 'Marketing Committee' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote scoped to the matching Group', () => {
+      const created = buildVote({ uid: 'new-vote', committee_name: 'Technical Steering Committee' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { group: 'Technical Steering Committee' });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert a carried vote whose status does not match the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote whose status matches the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+
+    it('does not insert on a page other than the first, to avoid duplicating the row across pagination', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { isFirstPage: false });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('still evicts a converged carried uid even on a non-first page', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
+      const merged = service.mergeRecentlyCreatedVotes([serverRow], { isFirstPage: false });
+
+      expect(merged).toEqual([serverRow]);
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { isFirstPage: false });
+      expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('does not insert a carried vote outside the Closing Soon rolling window', () => {
+      const nowMs = Date.parse('2026-01-01T00:00:00Z');
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, end_time: '2026-02-01T00:00:00Z' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { closingOnly: true, nowMs });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote that falls inside the Closing Soon rolling window', () => {
+      const nowMs = Date.parse('2026-01-01T00:00:00Z');
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, end_time: '2026-01-03T00:00:00Z' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { closingOnly: true, nowMs });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+    });
+  });
+
+  describe('deleteVote', () => {
+    it('evicts the recently-created carrier so a deleted synthesized draft cannot reappear in the list', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created, false);
+      http.delete.mockReturnValue(of(undefined));
+
+      service.deleteVote('new-vote').subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+  });
+
   it('createVote posts a plain create — no params, no options (GH-2826 removed the fused open flag)', () => {
     http.post.mockReturnValue(of(buildVote()));
 
@@ -347,6 +630,33 @@ describe('VoteService', () => {
       // The service (not the component) marks the vote opened so the carrier survives navigation.
       expect(service.getLiveRecentlyOpenedVotes().has('vote-1')).toBe(true);
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
+    });
+
+    // GH-4007 round 2 (dealako): markVoteCreated previously fired from the component's own `next`
+    // handler, so a user navigating away before confirm$ settled dropped the carrier. Moved into this
+    // same service-subscribed tap as markVoteOpened so both survive navigation identically.
+    it('marks the vote created inside the service-owned confirm chain, not just opened', () => {
+      http.post.mockReturnValue(of(createResponse(buildVote())));
+      http.put.mockReturnValue(of({ uid: 'vote-1', status: PollStatus.ACTIVE }));
+
+      service.beginSpeculativeCreate(request);
+      service.confirmSpeculativeVote(request).subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['vote-1', 'other']);
+      expect(merged[0].status).toBe(PollStatus.ACTIVE);
+    });
+
+    it('marks the vote created with its pre-enable status when the enable call fails (opened: false)', () => {
+      http.post.mockReturnValue(of(createResponse(buildVote())));
+      http.put.mockReturnValue(throwError(() => new Error('enable failed')));
+
+      service.beginSpeculativeCreate(request);
+      service.confirmSpeculativeVote(request).subscribe();
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(merged.map((v) => v.uid)).toEqual(['vote-1', 'other']);
+      expect(merged[0].status).toBe(buildVote().status);
     });
 
     it('confirm before the create resolves waits for the uid, then enables — one PUT, no duplicate POST', () => {

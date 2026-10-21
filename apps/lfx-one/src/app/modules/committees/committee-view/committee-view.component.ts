@@ -1731,8 +1731,18 @@ export class CommitteeViewComponent {
           }
           this.votesLoading.set(true);
           return this.voteService.getVotesByCommittee(committee.uid).pipe(
-            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over
-            // stale index rows — same transformation the child component previously applied.
+            // mergeRecentlyCreatedVotes (GH-4007) inserts a just-created/cloned vote that is missing
+            // from the page entirely while the search index catches up — scoped to this committee so
+            // a vote created elsewhere can't leak in. getVotesByCommittee is unpaginated (returns the
+            // full list in one call), so isFirstPage defaults true with no duplication risk.
+            //
+            // Runs on the RAW fetched rows, before the opened-overlay (Copilot/dealako, GH-4007 round
+            // 4): the created-carrier's eviction check reads `vote.status`, and if the opened overlay
+            // ran first it would see an already-rebadged Active row and evict the carrier while the
+            // index is still actually lagging — losing the new vote again once it converges.
+            map((votes) => this.voteService.mergeRecentlyCreatedVotes(votes, { committeeUid: committee.uid })),
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale
+            // index rows — same transformation the child component previously applied.
             map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
             catchError(() => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
