@@ -266,6 +266,72 @@ describe('VoteService', () => {
     });
   });
 
+  // GH-4007: a just-created (including cloned) vote can be missing entirely from a fetched page
+  // until the search index catches up — unlike the GH-2730 carrier above, there is no row to patch,
+  // so the carrier must insert one. Self-heals the same way: evict on convergence, prune at the TTL.
+  describe('recently-created vote carrier (GH-4007)', () => {
+    it('passes rows through untouched (same array) when nothing was marked', () => {
+      const votes = [buildVote({ uid: 'v1' }), buildVote({ uid: 'v2' })];
+
+      expect(service.mergeRecentlyCreatedVotes(votes)).toBe(votes);
+    });
+
+    it('prepends a marked vote missing from the fetched page', () => {
+      const created = buildVote({ uid: 'new-vote', name: 'Cloned ballot' });
+      service.markVoteCreated(created);
+
+      const votes = [buildVote({ uid: 'v1' })];
+      const merged = service.mergeRecentlyCreatedVotes(votes);
+
+      expect(merged).toEqual([created, votes[0]]);
+    });
+
+    it('evicts the carried uid once a fetched page already contains it — the server row wins', () => {
+      const created = buildVote({ uid: 'new-vote' });
+      service.markVoteCreated(created);
+
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name' });
+      const merged = service.mergeRecentlyCreatedVotes([serverRow]);
+
+      expect(merged).toEqual([serverRow]);
+      // The carry was evicted on convergence — a later fetch missing the row does not re-insert it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('keeps inserting inside the TTL window', () => {
+      vi.useFakeTimers();
+      try {
+        const created = buildVote({ uid: 'new-vote' });
+        service.markVoteCreated(created);
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS - 1);
+
+        const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+        expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('prunes entries older than the TTL so a never-indexed vote cannot be pinned into the list forever', () => {
+      vi.useFakeTimers();
+      try {
+        const created = buildVote({ uid: 'new-vote' });
+        service.markVoteCreated(created);
+        vi.advanceTimersByTime(RECENTLY_OPENED_VOTE_TTL_MS + 1);
+
+        const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+        expect(merged.map((v) => v.uid)).toEqual(['other']);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('evictRecentlyCreatedVote is a no-op for uids that are not carried', () => {
+      expect(() => service.evictRecentlyCreatedVote('never-marked')).not.toThrow();
+    });
+  });
+
   it('createVote posts a plain create — no params, no options (GH-2826 removed the fused open flag)', () => {
     http.post.mockReturnValue(of(buildVote()));
 

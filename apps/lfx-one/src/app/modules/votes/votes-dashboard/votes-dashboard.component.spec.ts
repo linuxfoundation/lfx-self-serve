@@ -92,6 +92,7 @@ describe('VotesDashboardComponent personal summary', () => {
           useValue: {
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
+            mergeRecentlyCreatedVotes: (votes: Vote[]) => votes,
             getVotesCountByProject: vi.fn(() => of(20)),
             getVotesSummaryByProject: vi.fn(() => of({ active_votes: 20, closing_soon: 3, as_of: new Date(NOW).toISOString() })),
             getVoteStatusCountsByProject: vi.fn(() => of({ all: 9, active: 4, disabled: 2, ended: 3 })),

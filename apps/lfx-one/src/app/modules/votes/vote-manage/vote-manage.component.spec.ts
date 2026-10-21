@@ -52,6 +52,7 @@ describe('VoteManageComponent', () => {
     confirmSpeculativeVote: ReturnType<typeof vi.fn>;
     discardSpeculativeVote: ReturnType<typeof vi.fn>;
     markVoteOpened: ReturnType<typeof vi.fn>;
+    markVoteCreated: ReturnType<typeof vi.fn>;
   };
 
   // Mutable route double — edit mode by default; create-mode tests call setRouteMode(null) before
@@ -129,6 +130,7 @@ describe('VoteManageComponent', () => {
       confirmSpeculativeVote: vi.fn().mockReturnValue(of({ vote: unenrichedVote(), opened: true })),
       discardSpeculativeVote: vi.fn(),
       markVoteOpened: vi.fn(),
+      markVoteCreated: vi.fn(),
     };
 
     TestBed.configureTestingModule({
@@ -327,6 +329,9 @@ describe('VoteManageComponent', () => {
       // markVoteOpened moved into the service's confirm chain (it must survive navigation).
       expect(voteServiceMock.markVoteOpened).not.toHaveBeenCalled();
       expect(voteServiceMock.discardSpeculativeVote).not.toHaveBeenCalled();
+      // Carries the confirmed vote to the recently-created list so it renders immediately,
+      // instead of waiting on the search index (GH-4007).
+      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(unenrichedVote());
     });
 
     it('accept with opened: false warns and navigates — the draft residue is intentional, no delete', async () => {
@@ -546,6 +551,40 @@ describe('VoteManageComponent', () => {
 
       expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
       expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: SOURCE_PROJECT_UID });
+    });
+
+    // GH-4007: a cloned vote previously went missing from the votes list until a manual page
+    // reload, because the search index hadn't caught up yet. Clone shares submitVote()'s create
+    // path exactly, so confirming creation must mark the new vote the same way a plain create does.
+    it('marks the newly created vote so the cloned vote appears in the list immediately (GH-4007)', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      const createdVote = { uid: 'new-cloned-vote-uid', project_uid: SOURCE_PROJECT_UID } as unknown as Vote;
+      voteServiceMock.confirmSpeculativeVote.mockReturnValue(of({ vote: createdVote, opened: true }));
+      activeContext.set({ uid: SOURCE_PROJECT_UID, slug: 'source-project', name: 'Source Project' });
+      getProject.mockReturnValue(of({ uid: SOURCE_PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      let capturedConfirmation: Confirmation | null = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: Confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+      (capturedConfirmation as Confirmation | null)?.accept?.();
+
+      expect(voteServiceMock.markVoteCreated).toHaveBeenCalledWith(createdVote);
     });
 
     // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): fail closed rather than silently trusting the clone's own

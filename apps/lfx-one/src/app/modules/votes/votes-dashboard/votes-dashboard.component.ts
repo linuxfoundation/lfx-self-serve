@@ -609,11 +609,13 @@ export class VotesDashboardComponent {
             }),
             map((response: VoteListResponse) => response.data),
             // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale
-            // index rows. Skipped under a server-side `status:` filter — the filtered response can't
-            // contain the just-opened row (Active tab: absent until convergence) and mustn't re-badge
-            // it (Draft tab: an Active-badged row would violate the filter while `totalRecords` still
+            // index rows. mergeRecentlyCreatedVotes (GH-4007) also inserts a just-created/cloned vote
+            // missing from the page entirely, while the search index catches up. Both skipped under a
+            // server-side `status:` filter — the filtered response can't contain the just-opened/just-
+            // created row (Active tab: absent until convergence) and mustn't re-badge or insert it
+            // (Draft tab: an Active-badged row would violate the filter while `totalRecords` still
             // counts it as draft); only the All tab (`status: null`) keeps the merge.
-            map((votes) => (filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes))),
+            map((votes) => (filterState.status ? votes : this.voteService.mergeRecentlyCreatedVotes(this.voteService.mergeRecentlyOpenedVotes(votes)))),
             catchError(() => {
               this.loading.set(false);
               return of([]);
@@ -708,9 +710,11 @@ export class VotesDashboardComponent {
           return this.voteService.getMyVotes().pipe(
             tap((response) => this.myVotesComplete.set(response.complete === true)),
             // Optimistic merge (GH-2730), same overlay as the project lens: just-opened votes'
-            // known-active status over stale index rows. Unconditional here — the Me lens has no
-            // server-side status filter (its filtering is client-side over these rows).
-            map((response) => this.voteService.mergeRecentlyOpenedVotes(response.votes)),
+            // known-active status over stale index rows, plus mergeRecentlyCreatedVotes (GH-4007)
+            // inserting a just-created/cloned vote missing from the page entirely. Unconditional
+            // here — the Me lens has no server-side status filter (its filtering is client-side
+            // over these rows).
+            map((response) => this.voteService.mergeRecentlyCreatedVotes(this.voteService.mergeRecentlyOpenedVotes(response.votes))),
             tap(() => this.myVotesNowMs.set(Date.now())),
             catchError(() => {
               this.myVotesError.set(true);

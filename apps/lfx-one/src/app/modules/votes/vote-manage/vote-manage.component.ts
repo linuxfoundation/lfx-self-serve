@@ -480,8 +480,11 @@ export class VoteManageComponent {
         .confirmSpeculativeVote(createRequest)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
-          next: ({ opened }) => {
+          next: ({ vote, opened }) => {
             this.submitting.set(false);
+            // Carries the new vote (including a clone, GH-4007) so the list shows it immediately
+            // instead of waiting on the search index to catch up.
+            this.voteService.markVoteCreated(vote);
             if (opened) {
               this.messageService.add({
                 severity: 'success',

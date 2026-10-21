@@ -46,6 +46,7 @@ export class VoteService {
   private readonly http = inject(HttpClient);
   private readonly voteDetailCache = new Map<string, { observable: Observable<Vote>; cachedAt: number }>();
   private readonly recentlyOpenedVotes: WritableSignal<Map<string, number>> = signal(new Map());
+  private readonly recentlyCreatedVotes: WritableSignal<Map<string, { vote: Vote; markedAt: number }>> = signal(new Map());
 
   /**
    * Single active speculative-create slot (GH-2826) — service-owned, not component-owned, so
@@ -391,6 +392,53 @@ export class VoteService {
     });
   }
 
+  /**
+   * Records a just-created vote, including a clone (GH-4007), so the votes list can synthesize
+   * its row until the search index catches up. `mergeRecentlyOpenedVotes` only patches a row
+   * already present in a fetched page, but a brand-new vote can be missing from every page for a
+   * short window — the full Vote is carried so the synthesized row renders correctly, not a
+   * status-only stub. Reuses RECENTLY_OPENED_VOTE_TTL_MS: same "search index hasn't caught up yet"
+   * window the just-opened carrier already assumes.
+   */
+  public markVoteCreated(vote: Vote): void {
+    this.recentlyCreatedVotes.update((created) => new Map(created).set(vote.uid, { vote, markedAt: Date.now() }));
+  }
+
+  /** Evicts a carried uid once a fetched row already carries it — the server row is now the source of truth. */
+  public evictRecentlyCreatedVote(voteUid: string): void {
+    this.recentlyCreatedVotes.update((created) => {
+      if (!created.has(voteUid)) return created;
+      const next = new Map(created);
+      next.delete(voteUid);
+      return next;
+    });
+  }
+
+  /**
+   * Inserts any still-live recently-created vote (GH-4007) that is missing from a fetched page —
+   * prepended so a just-created or cloned vote appears in the list immediately instead of only
+   * after the search index converges. Self-healing: once a fetched page already contains the uid,
+   * the carried entry is evicted and the server row is used instead.
+   */
+  public mergeRecentlyCreatedVotes(votes: Vote[]): Vote[] {
+    const recentlyCreated = this.getLiveRecentlyCreatedVotes();
+    if (recentlyCreated.size === 0) {
+      return votes;
+    }
+
+    const present = new Set(votes.map((vote) => vote.uid));
+    const missing: Vote[] = [];
+    for (const [uid, vote] of recentlyCreated) {
+      if (present.has(uid)) {
+        this.evictRecentlyCreatedVote(uid);
+      } else {
+        missing.push(vote);
+      }
+    }
+
+    return missing.length > 0 ? [...missing, ...votes] : votes;
+  }
+
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
     return this.http.post<void>('/api/votes/responses', payload).pipe(take(1));
   }
@@ -516,5 +564,23 @@ export class VoteService {
         this.voteDetailCache.delete(key);
       }
     }
+  }
+
+  /** Returns the live recently-created map (uid → Vote), pruning entries older than RECENTLY_OPENED_VOTE_TTL_MS. */
+  private getLiveRecentlyCreatedVotes(): Map<string, Vote> {
+    const now = Date.now();
+    const current = this.recentlyCreatedVotes();
+    const live = new Map<string, { vote: Vote; markedAt: number }>();
+    const liveVotes = new Map<string, Vote>();
+    for (const [uid, entry] of current) {
+      if (now - entry.markedAt < RECENTLY_OPENED_VOTE_TTL_MS) {
+        live.set(uid, entry);
+        liveVotes.set(uid, entry.vote);
+      }
+    }
+    if (live.size !== current.size) {
+      this.recentlyCreatedVotes.set(live);
+    }
+    return liveVotes;
   }
 }

@@ -1733,7 +1733,9 @@ export class CommitteeViewComponent {
           return this.voteService.getVotesByCommittee(committee.uid).pipe(
             // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over
             // stale index rows — same transformation the child component previously applied.
-            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
+            // mergeRecentlyCreatedVotes (GH-4007) also inserts a just-created/cloned vote that is
+            // missing from the page entirely while the search index catches up.
+            map((votes) => this.voteService.mergeRecentlyCreatedVotes(this.voteService.mergeRecentlyOpenedVotes(votes))),
             catchError(() => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
               return of([]);
