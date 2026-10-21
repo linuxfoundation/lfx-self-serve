@@ -10,10 +10,12 @@ import {
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
+  GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS,
   GOOGLE_VIDEO_CREATE_UNSUPPORTED_REASON,
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -1318,9 +1320,29 @@ describe('CampaignController.createCampaign cutover', () => {
     ['an oversized structured-snippet header', { structuredSnippets: [{ header: 'x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1), values: ['A'] }] }],
     [
       'an oversized structured-snippet value list',
-      { structuredSnippets: [{ header: 'Brands', values: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `v-${i}`) }] },
+      {
+        structuredSnippets: [{ header: 'Brands', values: Array.from({ length: MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES + 1 }, (_v, i) => `v-${i}`) }],
+      },
     ],
     ['an oversized structured-snippet value', { structuredSnippets: [{ header: 'Brands', values: ['x'.repeat(MAX_GOOGLE_CREATIVE_FIELD_LENGTH + 1)] }] }],
+    // The nested ceiling is raised for `values` alone, because that is the only nested name
+    // upstream decodes as a list. A nested array under a name upstream decodes as a plain string
+    // is a body upstream refuses outright, so it stays on the flat entry cap.
+    [
+      'an oversized array under a nested name that is a scalar upstream',
+      { sitelinks: [{ text: Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => `t-${i}`), finalUrl: 'https://x.example' }] },
+    ],
+    // Each list is inside the nested ceiling and the outer list is inside its own, so the only
+    // bound left to fire is the aggregate — the one that stops per-list ceilings multiplying.
+    [
+      'structured-snippet value lists that exceed the nested total',
+      {
+        structuredSnippets: Array.from({ length: GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS + 1 }, (_v, i) => ({
+          header: `H${i}`,
+          values: Array.from({ length: MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES }, (_w, j) => `v-${i}-${j}`),
+        })),
+      },
+    ],
   ])('refuses %s before normalising or dispatching', async (_label, overrides) => {
     const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
 
@@ -1379,6 +1401,34 @@ describe('CampaignController.createCampaign cutover', () => {
     await controller.createCampaign(buildReq(googleBody({ campaignTypes: ['display'], ...overrides }), { project: 'tlf', brief_id: 'b-1' }), res, next);
 
     // Past the bound: normalisation ran. Whatever the later guards decide, it was not this one.
+    expect(createConfigEnvelope).toHaveBeenCalled();
+  });
+
+  /**
+   * The aggregate is derived from the raw snippet count upstream refuses past, so the largest body
+   * that can reach upstream's value loop sits exactly on it: `validateStructuredSnippets` checks
+   * `len(snippets)` before it reads one, and each list is already bounded above. This pins that the
+   * aggregate does not refuse that body — normalisation runs, and whatever the named snippet caps
+   * decide afterwards, the resource ceiling was not what stopped it.
+   */
+  it('does not refuse the largest nested-value payload that can reach upstream', async () => {
+    const createConfigEnvelope = vi.spyOn(controller as unknown as { createConfigEnvelope: (body: unknown) => unknown }, 'createConfigEnvelope');
+
+    await controller.createCampaign(
+      buildReq(
+        googleBody({
+          campaignTypes: ['display'],
+          structuredSnippets: Array.from({ length: GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS }, (_v, i) => ({
+            header: `H${i}`,
+            values: Array.from({ length: MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES }, (_w, j) => `v-${i}-${j}`),
+          })),
+        }),
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
     expect(createConfigEnvelope).toHaveBeenCalled();
   });
 
@@ -4864,6 +4914,40 @@ describe('CampaignController.createCampaign cutover', () => {
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(refusalFrom().message).toContain('structured snippet 2 has no header');
+  });
+
+  it('admits a null VALUE and dispatches it dropped, because Go decodes it to a blank it then skips', async () => {
+    // `Values` is a plain `[]string`, so a null element decodes to `""` and
+    // `validateStructuredSnippets` skips it exactly as it skips a blank. Refusing the shape here
+    // would refuse a create upstream accepts — the over-refusal these guards exist to avoid.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b1', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [{ header: 'Brands', values: ['Alpha', null, 'Beta', 'Gamma'] }] } as never), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toEqual([
+      { header: 'Brands', values: ['Alpha', 'Beta', 'Gamma'] },
+    ]);
+  });
+
+  it('dispatches a duplicate-heavy value list above the flat entry cap, which upstream counts as three values', async () => {
+    // The Implementation tab stores what was typed rather than the collapsed list, so a pasted
+    // list of repeats reaches the BFF at its raw length. Upstream caps only the DISTINCT count, so
+    // the flat 100 would refuse a create it accepts — see MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000b2', error: null });
+    const pasted = Array.from({ length: MAX_GOOGLE_CREATIVE_LIST_ENTRIES + 1 }, (_v, i) => ['Alpha', 'Beta', 'Gamma'][i % 3]);
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('Brands', pasted)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toEqual([{ header: 'Brands', values: pasted }]);
   });
 
   it.each([
