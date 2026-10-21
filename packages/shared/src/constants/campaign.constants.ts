@@ -3431,6 +3431,25 @@ export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
 
 /**
+ * The same resource bound for a list nested INSIDE a list entry, where the widest legitimate list
+ * is not the one a cap names.
+ *
+ * `structuredSnippets[].values` is the only such list today, and upstream puts no cap on its raw
+ * length at all: `validateStructuredSnippets` skips blanks and collapses case-folded repeats
+ * BEFORE counting, so its 3..10 bound is on DISTINCT values
+ * ({@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, {@link GOOGLE_ADS_MAX_SNIPPET_VALUES}) and a hundred
+ * lines of `Alpha` / `Beta` / `Gamma` is a valid three-value snippet. The Implementation tab
+ * stores what the operator typed rather than the collapsed list, so a duplicate-heavy paste
+ * reaches the BFF at its raw length — which is why the 100 above, sized against lists whose caps
+ * are 20 and 60, would refuse a create upstream would have accepted.
+ *
+ * Far above any paste an operator produces, so the invariant the bound above states — a resource
+ * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
+ * stopped before `createConfigEnvelope` walks it.
+ */
+export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
+
+/**
  * The Google channels this application can ask campaign-service to create, in the order the
  * Implementation tab offers them. Each maps one-to-one onto `googleAdsConfig.channel` upstream
  * (`internal/dispatch/googleads.go`).

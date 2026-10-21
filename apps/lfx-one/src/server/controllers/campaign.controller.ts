@@ -123,6 +123,7 @@ import {
   MAX_BULK_KEYWORD_ACTIONS,
   MAX_GOOGLE_CREATIVE_FIELD_LENGTH,
   MAX_GOOGLE_CREATIVE_LIST_ENTRIES,
+  MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES,
   MAX_HUBSPOT_BODY_HTML_LENGTH,
   MAX_KEYWORD_TARGETING_REVISION_LENGTH,
   MAX_NEGATIVE_KEYWORD_TEXT_LENGTH,
@@ -1278,8 +1279,9 @@ export class CampaignController {
         const refuse = (message: string): void =>
           next(ServiceValidationError.forField('structuredSnippets', message, { operation: 'campaign_create', service: 'campaign_controller' }));
         // The Go decode into `[]googleAdsStructuredSnippetConfig` refuses a non-list, a non-object
-        // entry, a non-string header or a `values` that is not a list of strings. A null entry or
-        // field decodes to blanks, which the entry checks refuse.
+        // entry, a non-string header or a `values` holding anything but text. A null entry, field
+        // or VALUE decodes to a blank instead — the entry checks refuse the first two by name, and
+        // upstream's value loop skips the third exactly as it skips a typed blank.
         if (!Array.isArray(rawSnippets) || !rawSnippets.every((entry) => this.isStructuredSnippetShape(entry))) {
           refuse('Google Ads structured snippets must be a list of objects with a header and a list of values.');
           return;
@@ -4707,6 +4709,13 @@ export class CampaignController {
    * Whether one raw snippet entry survives the Go decode into `googleAdsStructuredSnippetConfig`: an
    * object (or null, which decodes to a blank snippet) whose `header` is absent, null or text and
    * whose `values` is absent, null or a list of text.
+   *
+   * A `null` ELEMENT of `values` is text as far as the decode is concerned: `Values` is a plain
+   * `[]string` (`internal/dispatch/googleads.go`), and Go's `encoding/json` leaves a null element
+   * at its zero value `""` — which `validateStructuredSnippets` then skips exactly as it skips a
+   * blank one. Refusing it here would refuse a create upstream accepts, so it is admitted and
+   * {@link googleStructuredSnippetList} drops it, which is what its `typeof v === 'string'` filter
+   * has always done.
    */
   private isStructuredSnippetShape(entry: unknown): boolean {
     if (entry === null) return true;
@@ -4715,7 +4724,7 @@ export class CampaignController {
     const { header, values } = fields;
     if (!(header === undefined || header === null || typeof header === 'string')) return false;
     if (values === undefined || values === null) return true;
-    return Array.isArray(values) && values.every((v) => typeof v === 'string');
+    return Array.isArray(values) && values.every((v) => v === null || typeof v === 'string');
   }
 
   /**
@@ -4877,9 +4886,19 @@ export class CampaignController {
           // A nested list is bounded on both axes, as the top-level loop bounds a list of strings:
           // its length first, then each string in it. Measured with the same `max` as a plain field,
           // so one named field cannot be bounded two different ways depending on how it is shaped.
+          //
+          // Its LENGTH is bounded at the nested ceiling rather than the one above, because the only
+          // nested list today — `structuredSnippets.values` — has no raw-count cap upstream at all:
+          // blanks and case-folded repeats are collapsed before the 3..10 bound is counted, so a
+          // duplicate-heavy paste is a valid three-value snippet at any raw length. The 100 above is
+          // sized against lists capped at 20 and 60 and would refuse it. See
+          // MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES.
           if (Array.isArray(value)) {
-            if (value.length > MAX_GOOGLE_CREATIVE_LIST_ENTRIES) {
-              return { field: `${key}.${name}`, message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_LIST_ENTRIES} entries` };
+            if (value.length > MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES) {
+              return {
+                field: `${key}.${name}`,
+                message: `the list exceeds the maximum of ${MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES} entries`,
+              };
             }
             const long = value.find((nested) => typeof nested === 'string' && this.boundedLength(nested) > max);
             if (long !== undefined) {
