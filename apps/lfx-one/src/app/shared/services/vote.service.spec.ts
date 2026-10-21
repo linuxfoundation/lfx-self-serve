@@ -286,17 +286,34 @@ describe('VoteService', () => {
       expect(merged).toEqual([created, votes[0]]);
     });
 
-    it('evicts the carried uid once a fetched page already contains it — the server row wins', () => {
+    it('evicts the carried uid once a fetched row reports a converged (non-disabled) status — the server row wins', () => {
       const created = buildVote({ uid: 'new-vote' });
       service.markVoteCreated(created, false);
 
-      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name' });
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
       const merged = service.mergeRecentlyCreatedVotes([serverRow]);
 
       expect(merged).toEqual([serverRow]);
       // The carry was evicted on convergence — a later fetch missing the row does not re-insert it.
       const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
       expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('keeps the carried (known-open) status when a fetched row on another tab/page is still stale Disabled', () => {
+      // Regression: a present row no longer unconditionally evicted the carrier — a stale Disabled
+      // row on a different tab (e.g. Draft) must not discard a known-open creation before the index
+      // has actually converged, or returning to Active loses the vote.
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow]);
+
+      expect(merged).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+
+      // Carrier is still live — a later fetch missing the row still re-inserts it.
+      const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })]);
+      expect(after.map((v) => v.uid)).toEqual(['new-vote', 'other']);
     });
 
     it('keeps inserting inside the TTL window', () => {
@@ -407,12 +424,32 @@ describe('VoteService', () => {
       const created = buildVote({ uid: 'new-vote' });
       service.markVoteCreated(created, false);
 
-      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name' });
+      const serverRow = buildVote({ uid: 'new-vote', name: 'Indexed name', status: PollStatus.ACTIVE });
       const merged = service.mergeRecentlyCreatedVotes([serverRow], { isFirstPage: false });
 
       expect(merged).toEqual([serverRow]);
       const after = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { isFirstPage: false });
       expect(after.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('does not insert a carried vote outside the Closing Soon rolling window', () => {
+      const nowMs = Date.parse('2026-01-01T00:00:00Z');
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, end_time: '2026-02-01T00:00:00Z' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { closingOnly: true, nowMs });
+
+      expect(merged.map((v) => v.uid)).toEqual(['other']);
+    });
+
+    it('inserts a carried vote that falls inside the Closing Soon rolling window', () => {
+      const nowMs = Date.parse('2026-01-01T00:00:00Z');
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.ACTIVE, end_time: '2026-01-03T00:00:00Z' });
+      service.markVoteCreated(created, false);
+
+      const merged = service.mergeRecentlyCreatedVotes([buildVote({ uid: 'other' })], { closingOnly: true, nowMs });
+
+      expect(merged.map((v) => v.uid)).toEqual(['new-vote', 'other']);
     });
   });
 

@@ -35,6 +35,7 @@ import {
   VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
+import { isVoteClosingSoon } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
@@ -435,34 +436,63 @@ export class VoteService {
    *   another's list — a carried vote only inserts into a page whose scope it matches.
    * - `statusFilter` keeps a carried vote out of a page filtered to a status it doesn't match
    *   (e.g. a newly-opened vote must not appear under the Disabled tab).
+   * - `closingOnly`/`nowMs` keep a carried vote out of the Closing Soon quick filter unless it
+   *   actually falls inside that rolling window (same `isVoteClosingSoon` check the fetched rows
+   *   are already subject to server-side).
    * - `isFirstPage` (default `true`) limits insertion to the first page of a paginated fetch so the
    *   same optimistic row isn't prepended to every page.
+   *
+   * A row present in the fetched page is handled the same way `mergeRecentlyOpenedVotes` handles
+   * GH-2730's carrier: a fetched row still reporting `disabled` hasn't converged yet (this can
+   * happen on a *different* tab/page than the one the vote was created from, e.g. Active →
+   * Draft → Active before the index catches up) so the carried status is kept instead of
+   * discarding the synthesized vote; only a fetched row reporting any other status is treated as
+   * real convergence and evicts the carrier.
    */
   public mergeRecentlyCreatedVotes(
     votes: Vote[],
-    options: { projectUid?: string; committeeUid?: string; statusFilter?: PollStatus | null; isFirstPage?: boolean } = {}
+    options: {
+      projectUid?: string;
+      committeeUid?: string;
+      statusFilter?: PollStatus | null;
+      closingOnly?: boolean;
+      nowMs?: number;
+      isFirstPage?: boolean;
+    } = {}
   ): Vote[] {
-    const { projectUid, committeeUid, statusFilter, isFirstPage = true } = options;
+    const { projectUid, committeeUid, statusFilter, closingOnly, nowMs = Date.now(), isFirstPage = true } = options;
     const recentlyCreated = this.getLiveRecentlyCreatedVotes();
     if (recentlyCreated.size === 0) {
       return votes;
     }
 
-    const present = new Set(votes.map((vote) => vote.uid));
+    const present = new Set<string>();
+    const merged = votes.map((vote) => {
+      const carried = recentlyCreated.get(vote.uid);
+      if (!carried) return vote;
+      present.add(vote.uid);
+      if (vote.status !== PollStatus.DISABLED) {
+        this.evictRecentlyCreatedVote(vote.uid);
+        return vote;
+      }
+      return carried.status !== PollStatus.DISABLED ? { ...vote, status: carried.status } : vote;
+    });
+
+    if (!isFirstPage) {
+      return merged;
+    }
+
     const missing: Vote[] = [];
     for (const [uid, vote] of recentlyCreated) {
-      if (present.has(uid)) {
-        this.evictRecentlyCreatedVote(uid);
-        continue;
-      }
-      if (!isFirstPage) continue;
+      if (present.has(uid)) continue;
       if (projectUid !== undefined && vote.project_uid !== projectUid) continue;
       if (committeeUid !== undefined && vote.committee_uid !== committeeUid) continue;
       if (statusFilter != null && vote.status !== statusFilter) continue;
+      if (closingOnly && !isVoteClosingSoon(vote, nowMs)) continue;
       missing.push(vote);
     }
 
-    return missing.length > 0 ? [...missing, ...votes] : votes;
+    return missing.length > 0 ? [...missing, ...merged] : merged;
   }
 
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {

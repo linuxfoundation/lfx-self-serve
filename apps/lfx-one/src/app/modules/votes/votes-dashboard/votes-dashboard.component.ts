@@ -619,10 +619,15 @@ export class VotesDashboardComponent {
             // created vote has a real status already, so passing `statusFilter` lets it insert into
             // whichever tab its own status actually matches (and nowhere else), scoped to this
             // project and limited to the first page so it isn't duplicated across paginated pages.
+            // `closingOnly`/`nowMs` additionally gate insertion under the Closing Soon quick filter —
+            // the lazy table doesn't locally re-filter returned rows, so a newly created vote outside
+            // the rolling seven-day window must never be inserted while that filter is active.
             map((votes) =>
               this.voteService.mergeRecentlyCreatedVotes(filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes), {
                 projectUid: project.uid,
                 statusFilter: filterState.status,
+                closingOnly: this.managementClosingOnly(),
+                nowMs: Date.now(),
                 isFirstPage: pageIndex === 0,
               })
             ),
