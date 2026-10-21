@@ -71,6 +71,8 @@
         <p>{{ kit.error() }}</p>
         <lfx-button label="Try again" [outlined]="true" (onClick)="kit.retry()" data-testid="mktg-family-error-retry" />
       </div>
+      <!-- Keep the named export slot available when the document listing is denied or fails. -->
+      <lfx-mktg-family-export-actions [familyId]="definition.id" />
     } @else if (family(); as family) {
       @if (family.live) {
         <!-- Family board: 1280px leaves ~876px host; 800px side-column threshold reserves ~60px headroom; 600px stacks the mobile table. -->

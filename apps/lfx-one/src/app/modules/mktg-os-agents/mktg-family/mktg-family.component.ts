@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser, Location } from '@angular/common';
 import { afterNextRender, Component, computed, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -15,9 +15,11 @@ import {
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
 } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
-import { isMktgKitFamilyLive, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
+import { isMktgKitFamilyLive, mktgFamilyExportAgentKeys, readMktgRebuildNavigationIntent } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
-import { map } from 'rxjs';
+import { catchError, distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { MktgFamilyExportService } from '@services/mktg-family-export.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
@@ -45,6 +47,8 @@ export class MktgFamilyComponent {
   private readonly router = inject(Router);
   private readonly platform = inject(PLATFORM_ID);
   private readonly location = inject(Location);
+  private readonly exports = inject(MktgFamilyExportService);
+  private readonly context = inject(ProjectContextService);
   protected readonly kit = inject(MktgKitService);
 
   // Writable signals
@@ -75,6 +79,20 @@ export class MktgFamilyComponent {
       delete remaining[MKTG_REBUILD_NAVIGATION_STATE_KEY];
       this.location.replaceState(this.location.path(), '', remaining);
     });
+    // Start the last-export read even while the unrelated kit/document listing is loading or failed.
+    if (isPlatformBrowser(this.platform)) {
+      toObservable(computed(() => ({ project: this.context.activeContext()?.uid, familyId: this.familyId(), writer: this.context.canWrite() })))
+        .pipe(
+          distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+          switchMap(({ project, familyId, writer }) =>
+            project && familyId && writer && mktgFamilyExportAgentKeys(familyId).length
+              ? this.exports.last({ project, familyId }, true).pipe(catchError(() => of(null)))
+              : of(null)
+          ),
+          takeUntilDestroyed()
+        )
+        .subscribe();
+    }
   }
 
   protected runFirstAgent(): void {

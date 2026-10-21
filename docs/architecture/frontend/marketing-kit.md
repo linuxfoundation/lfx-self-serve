@@ -67,7 +67,7 @@ A failed listing read omits last-run dates; known catalog availability remains u
 Unregistered agent ids create no tile or Run action. Catalog Coming soon entries remain
 disabled; design examples never override the catalog.
 
-## Family and export seams
+## Family and exports
 
 The Family page links the real asset view `documents/:agentKey/:documentId`, preserving
 lens/project context. The first declared agent is runnable only with an active catalog entry;
@@ -83,9 +83,18 @@ questions answered in place on the same session. Other families retain Coming so
 The framework Asset view's Downstream action enters that flow through one-shot router
 navigation state, never a URL write command. See [the API and sequencing contract](../backend/mktg-rebuild.md).
 
-`lfx-mktg-family-export-actions` is the export integration slot, with required `familyId`
-and stable `family-export-pdf` / `family-export-slides` IDs. Both buttons remain disabled
-with the board explanations. No export service or BFF is introduced here.
+`lfx-mktg-family-export-actions` uses the required `familyId` and stable
+`family-export-pdf` / `family-export-slides` IDs for the live Family-only export actions.
+PDF composes the approved framework print and kit book; boilerplates/FAQ are
+provisionally omitted with an explicit note because they have no print rendering.
+Slides exports the supported approved family assets and branding, offers Update or
+Create for an existing deck, shows progress and a dated revision-linked last export,
+and marks changed approved member sets stale. Readers see disabled actions and the
+write-access note. A failed last-export lookup blocks creation until retried rather
+than guessing that no deck exists. Lookup starts independently of document-list loading;
+the slot stays available after a listing error/403. Browser family and document clients
+share one polling deadline/attempt/error policy. The family BFF and record model are
+documented in [Family exports](../backend/mktg-document-revisions.md#family-exports).
 
 `lfx-mktg-family-details` adds the board's static Approve explainer and Family-only source
 read. It reads only the framework row's latest document revision via the existing endpoint,
