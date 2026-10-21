@@ -40,6 +40,7 @@ import {
   MktgDocumentsResponse,
   MktgDocumentType,
   MktgGenerationProvenance,
+  MktgGenerationAttribution,
   MktgLegacyDocument,
   MktgListedRevision,
   MktgRevisionAuthor,
@@ -98,6 +99,9 @@ export class MktgDocumentStoreService {
   private readonly linkedinPresentation = new LinkedinDocumentPresentationService();
   private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
   private userService?: Promise<UserService>;
+
+  /** A per-generation context only; never change the visiting Request or share an override across runs. */
+  public constructor(private readonly generationAttribution?: MktgGenerationAttribution) {}
 
   /** Persist the compatibility artifact, then publish its revision before returning a receipt. */
   public async persistGeneration(
@@ -1016,7 +1020,10 @@ export class MktgDocumentStoreService {
     const body = JSON.stringify(record);
     const hash = this.sha256(body);
     const key = buildMktgRevisionKey(project, type.agentKey, documentId, sequence, hash);
-    const authorId = record.origin === 'legacy' ? null : this.author(req);
+    let authorId = record.origin === 'legacy' ? null : this.author(req);
+    if (record.origin === 'generated' && this.generationAttribution) {
+      authorId = this.generationAttribution.creatorSubject;
+    }
     const status = this.recordStatus(record);
     const boundedStatus = status.length > MKTG_REVISION_STATUS_METADATA_MAX_CHARS ? `${status.slice(0, MKTG_REVISION_STATUS_METADATA_MAX_CHARS - 1)}…` : status;
     const metadata: Record<string, string> = {

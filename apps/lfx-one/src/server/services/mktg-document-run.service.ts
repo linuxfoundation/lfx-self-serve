@@ -3,6 +3,7 @@
 
 import {
   MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_DOCUMENT_TYPES,
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_REVISION_ID_REGEX,
   MKTG_RUN_POLL,
@@ -12,6 +13,11 @@ import {
   MKTG_STARTED_RUN_PREFIX,
   MKTG_STARTED_RUN_SCHEMA,
   MKTG_STARTED_RUN_STATE_ORDER,
+  MKTG_STARTED_RUN_POLL_WINDOW_MS,
+  MKTG_STARTED_RUN_READ_CONCURRENCY,
+  MKTG_STARTED_RUN_DISCOVERY_LIMIT,
+  MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT,
+  MKTG_STARTED_RUN_CACHE_STABLE_MS,
   MKTG_STARTED_RUN_FAILURE_BYTES,
   BRAND_KIT_INTAKE,
   FOUNDATION_MESSAGE_INTAKE,
@@ -21,19 +27,27 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MktgDocumentAgentKey,
+  MktgDocumentType,
+  MktgDocumentDetailResponse,
+  MktgDocumentRunSnapshot,
   MktgDocumentRunProgress,
+  MktgDocumentRunCoverage,
   MktgRunResultResponse,
   MktgStartedRunRecord,
   MktgStoredDocumentRunState,
   MktgStoredStartedRun,
+  MktgGenerationAttribution,
+  ObjectStoreListEntry,
 } from '@lfx-one/shared/interfaces';
 import {
   mktgDocumentLocationOfReceipt,
   findMktgRunIntake,
   mktgRunProgress,
+  matchesMktgRunProgress,
   isMktgRunClosed,
   isMktgRunTerminal,
   isMktgRunAttemptId,
+  mktgRunIdFromKey,
   mktgRunRenewAt,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -49,15 +63,11 @@ import { logger } from './logger.service';
 import { ObjectStoreService } from './object-store.service';
 import { ProjectService } from './project.service';
 
-/** Private session-keyed starts backed by existing document-store metadata operations. */
+/** Private session-keyed starts. Existing metadata operations only; the terminal cache is disposable. */
 export class MktgDocumentRunService {
+  private static readonly terminalCache = new Map<string, { stamp: number; progress: MktgDocumentRunProgress | null }>();
   private readonly store = new ObjectStoreService();
   private readonly projects = new ProjectService();
-  private readonly brandKit = new BrandKitService();
-  private readonly boilerplates = new BoilerplatesService();
-  private readonly foundation = new FoundationMessageService();
-  private readonly faq = new FaqService();
-  private readonly icp = new IcpService();
 
   public async resolveProject(req: Request, raw: unknown): Promise<string> {
     const uid = typeof raw === 'string' ? raw.trim() : '';
@@ -83,6 +93,16 @@ export class MktgDocumentRunService {
       });
     }
     return project.uid;
+  }
+
+  public async resolveCatalogProject(req: Request, agentId: string, project: unknown): Promise<string | undefined> {
+    return this.catalogDocumentType(agentId) ? this.resolveProject(req, project) : undefined;
+  }
+
+  public async startForCatalogAgent(req: Request, agentId: string, project: string, sessionId: string, priorVersion = 0, turnId = 'initial'): Promise<string> {
+    const type = this.catalogDocumentType(agentId);
+    if (!type) throw ServiceValidationError.forField('agentId', 'No registered document intake for this agent.');
+    return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
   }
 
   /** Opaque turn ids dedupe ACKs. Concurrent same-session ACK ordering is a documented caller limitation. */
@@ -148,6 +168,7 @@ export class MktgDocumentRunService {
         });
       }
     }
+    if (written) void this.retireOlderRuns(req, record, key);
     return runId;
   }
 
@@ -169,20 +190,127 @@ export class MktgDocumentRunService {
     }
   }
 
+  /** A valid agent result remains usable when its tracking refresh cannot be recorded. */
+  public async recordResultBestEffort(req: Request, sessionId: string, result: MktgRunResultResponse, project?: string): Promise<void> {
+    try {
+      await this.recordResult(req, sessionId, result, project);
+    } catch (err) {
+      logger.warning(req, 'mktg_run_record_result', 'Result returned; tracking may retry on a Documents read', { err });
+    }
+  }
+
+  /** Lists keys in full, then bounds discovery work. Cached terminal values never contain session capabilities. */
+  public async reconcile(
+    req: Request,
+    project: string,
+    agentKey?: string,
+    documentId?: string,
+    poll = false,
+    coverage?: MktgDocumentRunCoverage
+  ): Promise<MktgDocumentRunProgress[]> {
+    const entries = await this.discover(req, project, coverage);
+    const runs: MktgDocumentRunProgress[] = [];
+    for (let offset = 0; offset < entries.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+      const batch = await Promise.all(
+        entries.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (entry) => {
+          const stamp = entry.lastModified?.getTime() ?? 0;
+          let stored: MktgStoredStartedRun | null = null;
+          let knownUnfinished = false;
+          try {
+            const cached = this.cached(entry.key);
+            if (cached?.stamp === stamp) {
+              return matchesMktgRunProgress(cached.progress, agentKey, documentId);
+            }
+            MktgDocumentRunService.terminalCache.delete(entry.key);
+            const metadata = await this.store.headObject(req, 'marketing-os-artifacts', entry.key);
+            if (!metadata) {
+              return null;
+            }
+            if (isMktgRunClosed(metadata['state'] as MktgStoredDocumentRunState)) {
+              this.remember(entry, null);
+              return null;
+            }
+            knownUnfinished = Object.hasOwn(MKTG_STARTED_RUN_STATE_ORDER, metadata['state']);
+            if (poll && (!stamp || Date.now() - stamp > MKTG_STARTED_RUN_POLL_WINDOW_MS)) {
+              this.skip(entry, coverage, knownUnfinished);
+              return null;
+            }
+            stored = await this.read(req, project, entry.key);
+            if (
+              !stored ||
+              isMktgRunClosed(stored.record.state) ||
+              (agentKey && stored.record.agentKey !== agentKey) ||
+              (documentId && stored.record.documentId !== documentId)
+            ) {
+              return null;
+            }
+            let record = stored.record;
+            let fullReply: string | undefined;
+            // Failed is terminal for automatic reconciliation. Only an explicit detail refresh or creator poll rechecks it.
+            if (record.state !== 'failed') {
+              const result = await this.result(req, record);
+              record = await this.advanceResult(req, stored, result);
+              fullReply = result.failureText ?? result.reply;
+            }
+            if (isMktgRunTerminal(record.state)) {
+              this.remember(entry, mktgRunProgress(record));
+            }
+            return mktgRunProgress(record, record.state === 'failed' ? fullReply : undefined);
+          } catch (error) {
+            logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
+            this.skip(entry, coverage, knownUnfinished);
+            return stored ? mktgRunProgress(stored.record) : null;
+          }
+        })
+      );
+      runs.push(...batch.filter((run): run is MktgDocumentRunProgress => run !== null));
+    }
+    return runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  }
+
+  /** One public detail policy for navigation and retry; stale run selectors cannot hide a stored document. */
+  public async detailWithProgress(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    detail: MktgDocumentDetailResponse | null,
+    progress: MktgDocumentRunSnapshot,
+    poll = false,
+    refreshRunId?: string
+  ): Promise<(MktgDocumentDetailResponse & MktgDocumentRunSnapshot) | null> {
+    if (refreshRunId !== undefined && (poll || !MKTG_STARTED_RUN_ID_REGEX.test(refreshRunId))) {
+      throw ServiceValidationError.forField('refreshRun', 'Refresh must name one run on an explicit detail read.');
+    }
+    const snapshot: MktgDocumentRunSnapshot = { runs: [...progress.runs], ...(progress.progressUnavailable && { progressUnavailable: true }) };
+    if (refreshRunId) {
+      try {
+        const refreshed = await this.refreshFailure(req, project, type.agentKey, documentId, refreshRunId);
+        snapshot.runs = snapshot.runs.filter((run) => run.runId !== refreshRunId);
+        if (refreshed) snapshot.runs.unshift(refreshed);
+      } catch (err) {
+        if (err instanceof ServiceValidationError || err instanceof AuthorizationError) throw err;
+        snapshot.progressUnavailable = true;
+        logger.warning(req, 'mktg_run_failure_detail', 'Selected failure could not be refreshed; stored document and progress retained', {
+          project,
+          run: refreshRunId,
+          err,
+        });
+      }
+    }
+    if (!detail && !snapshot.runs.length && !poll && !snapshot.progressUnavailable) return null;
+    return { ...(detail ?? { project, type, documentId, revisions: [], approvedCurrent: null }), ...snapshot };
+  }
+
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */
   public async refreshFailure(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<MktgDocumentRunProgress | null> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
     if (stored.record.state !== 'failed') {
       return mktgRunProgress(stored.record);
     }
-    try {
-      const result = await this.result(req, stored.record);
-      const record = await this.advanceResult(req, stored, result);
-      return mktgRunProgress(record, result.failureText ?? result.reply);
-    } catch (error) {
-      logger.warning(req, 'mktg_run_failure_refresh', 'Failure detail could not be refreshed', { project, run: runId, err: error });
-      return mktgRunProgress(stored.record);
-    }
+    const result = await this.result(req, stored.record);
+    const record = await this.advanceResult(req, stored, result);
+    return mktgRunProgress(record, result.failureText ?? result.reply);
   }
 
   public async retry(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<void> {
@@ -205,6 +333,46 @@ export class MktgDocumentRunService {
       }
     } catch (error) {
       logger.warning(req, 'mktg_run_answers_resume', 'Answers accepted; tracking renewal failed, do not resend', { project, err: error });
+    }
+  }
+
+  /** Retirement cannot delay or fail the durable ACK; every asynchronous failure is isolated. */
+  private async retireOlderRuns(req: Request, record: MktgStartedRunRecord, key: string): Promise<void> {
+    const project = record.project;
+    try {
+      const entries = (await this.discover(req, project)).filter((entry) => entry.key !== key);
+      for (let offset = 0; offset < entries.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+        await Promise.all(
+          entries.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (entry) => {
+            try {
+              const cached = this.cached(entry.key);
+              if (cached?.stamp === (entry.lastModified?.getTime() ?? 0) && cached.progress === null) return;
+              const metadata = await this.store.headObject(req, 'marketing-os-artifacts', entry.key);
+              if (!metadata) return;
+              if (isMktgRunClosed(metadata['state'] as MktgStoredDocumentRunState)) {
+                this.remember(entry, null);
+                return;
+              }
+              const older = await this.read(req, project, entry.key);
+              const olderAt = older ? Date.parse(older.record.retryAt ?? older.record.startedAt) : NaN;
+              const currentAt = Date.parse(record.startedAt);
+              if (
+                older &&
+                !isMktgRunClosed(older.record.state) &&
+                older.record.agentKey === record.agentKey &&
+                older.record.documentId === record.documentId &&
+                (olderAt < currentAt || (olderAt === currentAt && older.record.runId < record.runId))
+              ) {
+                await this.mark(req, older, 'superseded');
+              }
+            } catch (err) {
+              logger.warning(req, 'mktg_run_supersede', 'Older run could not be retired; other runs remain readable', { project, key: entry.key, err });
+            }
+          })
+        );
+      }
+    } catch (err) {
+      logger.warning(req, 'mktg_run_supersede', 'Run recorded; best-effort retirement discovery could not be completed', { project, run: record.runId, err });
     }
   }
 
@@ -258,17 +426,18 @@ export class MktgDocumentRunService {
   }
 
   private result(req: Request, record: MktgStartedRunRecord): Promise<MktgRunResultResponse> {
+    const attribution: MktgGenerationAttribution = { creatorSubject: record.creatorSubject ?? null };
     switch (findMktgRunIntake(record.agentKey)?.endpoints.result) {
       case BRAND_KIT_INTAKE.endpoints.result:
-        return this.brandKit.getResult(req, record.sessionId, record.project);
+        return new BrandKitService(attribution).getResult(req, record.sessionId, record.project);
       case FOUNDATION_MESSAGE_INTAKE.endpoints.result:
-        return this.foundation.getResult(req, record.sessionId, record.project);
+        return new FoundationMessageService(attribution).getResult(req, record.sessionId, record.project);
       case BOILERPLATES_INTAKE.endpoints.result:
-        return this.boilerplates.getResult(req, record.sessionId, record.project);
+        return new BoilerplatesService(attribution).getResult(req, record.sessionId, record.project);
       case FAQ_INTAKE.endpoints.result:
-        return this.faq.getResult(req, record.sessionId, record.project);
+        return new FaqService(attribution).getResult(req, record.sessionId, record.project);
       case ICP_INTAKE.endpoints.result:
-        return this.icp.getResult(req, record.sessionId, record.project);
+        return new IcpService(attribution).getResult(req, record.sessionId, record.project);
       default:
         throw ServiceValidationError.forField('agentKey', 'No registered result endpoint for this run.');
     }
@@ -332,9 +501,69 @@ export class MktgDocumentRunService {
     metadata: Record<string, string>,
     refreshMetadataWhen: (value: Record<string, string>) => boolean
   ): Promise<boolean> {
+    MktgDocumentRunService.terminalCache.delete(key);
     return this.store.putContentAddressedObject(req, 'marketing-os-artifacts', key, Buffer.from(body), 'application/json; charset=utf-8', 'private', metadata, {
       refreshMetadataWhen,
     });
+  }
+  private async discover(req: Request, project: string, coverage?: MktgDocumentRunCoverage): Promise<ObjectStoreListEntry[]> {
+    const prefix = this.prefix(project);
+    const entries = (await this.store.listObjects(req, 'marketing-os-artifacts', prefix))
+      .filter((entry) => entry.key.startsWith(prefix) && entry.key.endsWith('.json') && MKTG_STARTED_RUN_ID_REGEX.test(mktgRunIdFromKey(entry.key)))
+      .sort((a, b) => (b.lastModified?.getTime() ?? 0) - (a.lastModified?.getTime() ?? 0));
+    if (coverage) {
+      for (const entry of entries.slice(MKTG_STARTED_RUN_DISCOVERY_LIMIT)) {
+        const cached = MktgDocumentRunService.terminalCache.get(entry.key);
+        if (cached?.stamp === (entry.lastModified?.getTime() ?? 0)) {
+          if (cached.progress !== null) {
+            this.skip(entry, coverage, true);
+          }
+        } else {
+          this.skip(entry, coverage);
+        }
+      }
+    }
+    return entries.slice(0, MKTG_STARTED_RUN_DISCOVERY_LIMIT);
+  }
+  private skip(entry: ObjectStoreListEntry, coverage?: MktgDocumentRunCoverage, knownUnfinished = false): void {
+    if (!coverage) {
+      return;
+    }
+    coverage.uncheckedCount++;
+    const id = mktgRunIdFromKey(entry.key);
+    if (
+      knownUnfinished &&
+      coverage.retainedRunIds.length < MKTG_STARTED_RUN_DISCOVERY_LIMIT + MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT &&
+      !coverage.retainedRunIds.includes(id)
+    ) {
+      coverage.retainedRunIds.push(id);
+    }
+  }
+  private cached(key: string) {
+    const cache = MktgDocumentRunService.terminalCache;
+    const entry = cache.get(key);
+    if (entry) {
+      cache.delete(key);
+      cache.set(key, entry);
+    }
+    return entry;
+  }
+
+  private remember(entry: ObjectStoreListEntry, progress: MktgDocumentRunProgress | null): void {
+    const stamp = entry.lastModified?.getTime() ?? 0;
+    // S3 timestamps have second precision: never memoize the still-current write second.
+    if (!stamp || Date.now() - stamp < MKTG_STARTED_RUN_CACHE_STABLE_MS) {
+      return;
+    }
+    const cache = MktgDocumentRunService.terminalCache;
+    cache.delete(entry.key);
+    cache.set(entry.key, { stamp, progress });
+    while (cache.size > MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) {
+        cache.delete(oldest);
+      }
+    }
   }
   private snapshot(text: string): string {
     let value = '';
@@ -395,6 +624,7 @@ export class MktgDocumentRunService {
         body: object.body,
         record: {
           ...record,
+          creatorSubject: typeof record.creatorSubject === 'string' && record.creatorSubject.trim() ? record.creatorSubject : null,
           state: state as MktgStoredDocumentRunState,
           startedAt,
           priorVersion,
@@ -417,6 +647,10 @@ export class MktgDocumentRunService {
       return null;
     }
   }
+  private catalogDocumentType(agentId: string): MktgDocumentType | undefined {
+    return MKTG_DOCUMENT_TYPES.find((type) => type.catalogAgentId === agentId && !!findMktgRunIntake(type.agentKey));
+  }
+
   private hash(value: string): string {
     return createHash('sha256').update(value).digest('hex');
   }

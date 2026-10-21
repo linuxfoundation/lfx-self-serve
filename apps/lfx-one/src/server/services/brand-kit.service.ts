@@ -10,6 +10,7 @@ import {
   BrandKitStoredResponse,
   MktgRunAnswer,
   MktgRunQuestion,
+  MktgGenerationAttribution,
   MktgRevisionRef,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -80,10 +81,14 @@ export class BrandKitService {
    * layer and recorded as a revision of the project's Brand Kit document,
    * whose approved current is what plain and sidecar stored reads serve.
    */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
 
   /** Brand Kit knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['brand-kit'];
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {

@@ -8,6 +8,7 @@ import {
   FaqSessionOutcome,
   MktgArtifactPersistReceipt,
   MktgIntakeDocument,
+  MktgGenerationAttribution,
   MktgRunAnswer,
   MktgRevisionRef,
 } from '@lfx-one/shared/interfaces';
@@ -72,10 +73,14 @@ export class FaqService {
   private readonly guildService = new GuildService();
 
   /** The Marketing OS document store: every validated FAQ is recorded as a revision of the project's FAQ document. */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
 
   /** The FAQ knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['faq'];
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {
