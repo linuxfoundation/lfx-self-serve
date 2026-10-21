@@ -3,8 +3,9 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
+import { LINKEDIN_API, MKTG_DOCUMENTS_API_PATH } from '@lfx-one/shared/constants';
 import {
+  LinkedinShareLinkResponse,
   MktgDocumentDetailResponse,
   MktgDocumentsResponse,
   MktgRestoreRevisionRequest,
@@ -88,6 +89,12 @@ export class MktgDocumentStoreService {
   public restoreRevision(projectUid: string, agentKey: string, documentId: string, revisionId: string): Observable<MktgRestoreRevisionResponse> {
     const body: MktgRestoreRevisionRequest = { project: projectUid, revisionId };
     return this.http.post<MktgRestoreRevisionResponse>(`${this.documentPath(agentKey, documentId)}/restore`, body).pipe(take(1));
+  }
+
+  public saveLinkedinShareLink(project: string, documentId: string, shareLink: string): Observable<LinkedinShareLinkResponse> {
+    return this.http
+      .patch<LinkedinShareLinkResponse>(`${LINKEDIN_API}/documents/${encodeURIComponent(documentId)}/share-link`, { project, share_link: shareLink })
+      .pipe(take(1));
   }
 
   private logAndRethrow(message: string, error: unknown): Observable<never> {

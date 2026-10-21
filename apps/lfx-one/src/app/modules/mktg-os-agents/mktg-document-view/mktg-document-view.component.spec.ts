@@ -68,6 +68,7 @@ describe('MktgDocumentViewComponent', () => {
     getApprovedRevision: ReturnType<typeof vi.fn>;
     restoreRevision: ReturnType<typeof vi.fn>;
     approveRevision: ReturnType<typeof vi.fn>;
+    saveLinkedinShareLink: ReturnType<typeof vi.fn>;
   };
 
   function query(testId: string): HTMLElement | null {
@@ -215,6 +216,7 @@ describe('MktgDocumentViewComponent', () => {
       getApprovedRevision: vi.fn((detail: MktgDocumentDetailResponse, viewed?: MktgRevisionResponse) =>
         of(detail.approvedCurrent && viewed?.revision.id === detail.approvedCurrent.revisionId ? viewed : null)
       ),
+      saveLinkedinShareLink: vi.fn(() => of({ share_link: 'https://public.example/new' })),
     };
     resolveBrandKit = vi.fn(() => of(null));
     slidesExport = { last: vi.fn(() => of({ last: null, latestRevision: null })), start: vi.fn(() => of()), poll: vi.fn(() => of()) };
@@ -243,6 +245,205 @@ describe('MktgDocumentViewComponent', () => {
         { provide: UserService, useValue: { impersonating, user: viewer } },
       ],
     }).compileComponents();
+  });
+
+  function expectNoKitAssetChrome(): void {
+    for (const id of ['approve', 'run-again', 'revision-chip', 'about', 'revisions']) expect(query(`mktg-document-view-${id}`)).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('lfx-mktg-asset-meta')).toBeNull();
+    expect(store.approveRevision).not.toHaveBeenCalled();
+  }
+
+  it('renders stored LinkedIn options and its saved link with the shared copy cards', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing LinkedIn test document type');
+    const doc = { project: PROJECT.uid, type, documentId: 'run-0123456789abcdef01234567', revisions: [LATEST] };
+    const options = [1, 2, 3].map((number) => ({
+      number,
+      label: `Angle ${number}`,
+      text: `Example post ${number}. [LINK]`,
+      word_count: 4,
+      hashtags: ['#Code', '#Release', '#Community'],
+      tagging_suggestions: ['Example project'],
+    }));
+    store.getDocument.mockReturnValueOnce(of(doc));
+    store.getRevision.mockReturnValueOnce(
+      of({
+        ...doc,
+        revision: LATEST,
+        markdown: '# Original [LINK]',
+        linkedinPost: { options, notes: ['Verify handles.'], answers: { share_link: 'https://public.example/shared' } },
+      })
+    );
+    const clipboard = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: clipboard } });
+    await render(`/documents/linkedin-post/${doc.documentId}`);
+    expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-linkedin-option"]').length).toBe(3);
+    expectNoKitAssetChrome();
+    expect(query('mktg-linkedin-draft-another')).not.toBeNull();
+    expect(query('mktg-linkedin-post-text')?.textContent).toContain('https://public.example/shared');
+    expect(query('mktg-document-view-revisions')).toBeNull();
+    expect(query('mktg-linkedin-document-author')).toBeNull();
+    const link = query('mktg-linkedin-share-link')?.querySelector('input');
+    expect(link?.readOnly).toBe(true);
+    expect(link?.value).toBe('https://public.example/shared');
+    expect(store.restoreRevision).not.toHaveBeenCalled();
+    const button = query('mktg-linkedin-copy-1')?.querySelector('button');
+    if (!button) throw new Error('Missing stored copy button');
+    button.click();
+    await settle();
+    expect(clipboard).toHaveBeenCalledWith('Example post 1. https://public.example/shared\n\n#Code #Release #Community');
+    expect(query('mktg-linkedin-copy-1')?.textContent).toContain('Copied');
+  });
+
+  function linkedinResponse(link = '', isAuthor = true, name: string | null = 'Example author'): MktgRevisionResponse {
+    const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing LinkedIn type');
+    return {
+      project: PROJECT.uid,
+      type,
+      documentId: 'run-0123456789abcdef01234567',
+      revisions: [LATEST],
+      revision: LATEST,
+      approval: null,
+      approvedCurrent: null,
+      markdown: '# Original [LINK]',
+      sidecar: null,
+      linkedinPost: {
+        options: [1, 2, 3].map((number) => ({
+          number,
+          label: `Angle ${number}`,
+          text: 'Original [LINK]',
+          word_count: 2,
+          hashtags: ['#Code', '#Release', '#Community'],
+          tagging_suggestions: ['Example project'],
+        })),
+        notes: [],
+        answers: { share_link: link },
+        author: { name },
+        isAuthor,
+      },
+    };
+  }
+  async function renderLinkedin(response: MktgRevisionResponse): Promise<void> {
+    store.getDocument.mockReturnValueOnce(of(response));
+    store.getRevision.mockReturnValueOnce(of(response));
+    await render(`/documents/linkedin-post/${response.documentId}`);
+  }
+  it('preserves other answer keys after a share-link save without adding a nested main landmark', async () => {
+    const response = linkedinResponse('https://public.example/original');
+    if (!response.linkedinPost) throw new Error('Expected synthetic LinkedIn cards');
+    response.linkedinPost.answers['other_answer'] = 'Retained synthetic value';
+    await renderLinkedin(response);
+    expect(harness.routeNativeElement?.querySelector('main')).toBeNull();
+    query('mktg-linkedin-edit-link')?.querySelector('button')?.click();
+    await settle();
+    const input = query('mktg-linkedin-share-link')?.querySelector('input');
+    if (!input) throw new Error('Expected editable link');
+    input.value = 'https://public.example/new';
+    input.dispatchEvent(new Event('input'));
+    query('mktg-linkedin-save-link')?.querySelector('button')?.click();
+    await settle();
+    const component = harness.routeDebugElement?.componentInstance as MktgDocumentViewComponent;
+    expect(component['view']()?.linkedinPost?.answers).toEqual({ share_link: 'https://public.example/new', other_answer: 'Retained synthetic value' });
+  });
+
+  it('hands a chip focus to the editable field, saves only on success, and can clear the link', async () => {
+    await renderLinkedin(linkedinResponse());
+    const input = query('mktg-linkedin-share-link')?.querySelector('input');
+    if (!input) throw new Error('Missing saved link field');
+    input.scrollIntoView = vi.fn();
+    query('mktg-linkedin-add-link')?.click();
+    await settle();
+    expect(input.readOnly).toBe(false);
+    expect(document.activeElement).toBe(input);
+    expect(input.scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
+    input.value = 'https://public.example/new';
+    input.dispatchEvent(new Event('input'));
+    const pending = new Subject<{ share_link: string }>();
+    store.saveLinkedinShareLink.mockReturnValueOnce(pending);
+    query('mktg-linkedin-save-link')?.querySelector('button')?.click();
+    await settle();
+    expect(input.disabled).toBe(true);
+    expect(query('mktg-linkedin-post-text')?.textContent).toContain('add your link');
+    pending.next({ share_link: 'https://public.example/new' });
+    pending.complete();
+    await settle();
+    expect(query('mktg-linkedin-post-text')?.textContent).toContain('https://public.example/new');
+    expect(input.readOnly).toBe(true);
+    expect(store.restoreRevision).not.toHaveBeenCalled();
+    query('mktg-linkedin-edit-link')?.querySelector('button')?.click();
+    await settle();
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    store.saveLinkedinShareLink.mockReturnValueOnce(of({ share_link: '' }));
+    query('mktg-linkedin-save-link')?.querySelector('button')?.click();
+    await settle();
+    expect(query('mktg-linkedin-add-link')).not.toBeNull();
+  });
+  it('rejects invalid links, keeps the saved link after a failed save, and cancels unsaved changes', async () => {
+    await renderLinkedin(linkedinResponse('https://public.example/original'));
+    const input = query('mktg-linkedin-share-link')?.querySelector('input');
+    if (!input) throw new Error('Missing saved link field');
+    input.scrollIntoView = vi.fn();
+    query('mktg-linkedin-edit-link')?.querySelector('button')?.click();
+    await settle();
+    input.value = 'http://public.example/unsafe';
+    input.dispatchEvent(new Event('input'));
+    query('mktg-linkedin-save-link')?.querySelector('button')?.click();
+    await settle();
+    expect(store.saveLinkedinShareLink).not.toHaveBeenCalled();
+    expect(query('mktg-linkedin-share-error')?.textContent).toContain('HTTPS');
+    input.value = 'https://public.example/new';
+    input.dispatchEvent(new Event('input'));
+    store.saveLinkedinShareLink.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500 })));
+    query('mktg-linkedin-save-link')?.querySelector('button')?.click();
+    await settle();
+    expect(query('mktg-linkedin-share-error')?.textContent).toContain('could not be saved');
+    expect(query('mktg-linkedin-post-text')?.textContent).toContain('https://public.example/original');
+    query('mktg-linkedin-cancel-link')?.querySelector('button')?.click();
+    await settle();
+    expect(input.value).toBe('https://public.example/original');
+    expect(query('mktg-linkedin-share-error')).toBeNull();
+  });
+  it.each([
+    [true, 'Example author', 'Writing as'],
+    [false, 'Example author', 'Drafted by'],
+    [false, null, 'Drafted by'],
+  ])('renders author %s / %s at read time', async (isAuthor, name, label) => {
+    await renderLinkedin(linkedinResponse('', isAuthor as boolean, name as string | null));
+    expect(query('mktg-linkedin-document-author')?.textContent).toContain(`${label} ${name ?? 'name unavailable'}`);
+    expect(!!query('mktg-linkedin-document-edit-profile')).toBe(isAuthor);
+    expect(query('mktg-document-view-revision-chip')).toBeNull();
+  });
+
+  it('takes only the author to their LinkedIn profile edit page', async () => {
+    await renderLinkedin(linkedinResponse());
+    expect(query('mktg-linkedin-document-date')?.textContent).toMatch(/\d{1,2} Oct 2026/);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    query('mktg-linkedin-document-edit-profile')?.click();
+    expect(navigate).toHaveBeenCalledWith(['linkedin-post'], expect.objectContaining({ queryParams: { profile: 'edit', revision: null, type: null } }));
+  });
+
+  it('explicitly drops the profile-edit marker when drafting another post', async () => {
+    await renderLinkedin(linkedinResponse());
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    query('mktg-linkedin-draft-another')?.querySelector('button')?.click();
+    expect(navigate).toHaveBeenCalledWith(
+      ['linkedin-post'],
+      expect.objectContaining({ queryParams: { profile: null, revision: null, type: null }, queryParamsHandling: 'merge' })
+    );
+  });
+
+  it('keeps Markdown-only LinkedIn revisions readable without inventing structured cards', async () => {
+    const type = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'linkedin-post');
+    if (!type) throw new Error('Missing LinkedIn test document type');
+    const doc = { project: PROJECT.uid, type, documentId: 'run-0123456789abcdef01234567', revisions: [LATEST] };
+    store.getDocument.mockReturnValueOnce(of(doc));
+    store.getRevision.mockReturnValueOnce(of({ ...doc, revision: LATEST, markdown: '# Older post [LINK]' }));
+    await render(`/documents/linkedin-post/${doc.documentId}`);
+    expect(query('mktg-document-view-document')?.textContent).toContain('Older post [LINK]');
+    expect(query('mktg-linkedin-option')).toBeNull();
+    expectNoKitAssetChrome();
   });
 
   it('opens the latest revision when no revision is asked for', async () => {

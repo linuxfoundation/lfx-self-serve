@@ -156,6 +156,14 @@ describe('MktgDocumentStoreService', () => {
     request.flush({});
   });
 
+  it('PATCHes only the run presentation link and project, not a revision or agent request', () => {
+    service.saveLinkedinShareLink('proj-1', 'run-example', 'https://public.example/new').subscribe();
+    const request = http.expectOne('/api/mktg-agents/linkedin-post/documents/run-example/share-link');
+    expect(request.request.method).toBe('PATCH');
+    expect(request.request.body).toEqual({ project: 'proj-1', share_link: 'https://public.example/new' });
+    request.flush({ share_link: 'https://public.example/new' });
+  });
+
   it('POSTs a restore with the project and the revision id in the body', () => {
     service.restoreRevision('proj-1', 'icp', 'living', REVISION_ID).subscribe();
 

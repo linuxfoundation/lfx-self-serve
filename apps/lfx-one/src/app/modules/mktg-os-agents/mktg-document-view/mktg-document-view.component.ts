@@ -3,13 +3,21 @@
 
 import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MKTG_DOCUMENT_REVISION_PREVIEW_COUNT } from '@lfx-one/shared/constants';
+import {
+  LINKEDIN_POST_INTAKE,
+  LINKEDIN_SHARE_LINK_ANSWER_KEY,
+  LINKEDIN_SHARE_LINK_HINT,
+  LINKEDIN_SHARE_LINK_MAX_CHARS,
+  MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
+} from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
   MktgBoilerplatesAsset,
@@ -30,7 +38,9 @@ import {
   isMktgSlidesExportAgentKey,
   mktgAssetHeaderMetadata,
   parseMktgLegacyRevisionId,
+  normalizeLinkedinShareLink,
   readBrandKitRevision,
+  readLinkedinDocumentContent,
 } from '@lfx-one/shared/utils';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
@@ -43,6 +53,7 @@ import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map,
 
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
+import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
@@ -75,12 +86,17 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
     MktgFaqViewComponent,
     MktgFrameworkViewComponent,
     TooltipModule,
+    LinkedinPostOptionsComponent,
+    ReactiveFormsModule,
+    InputTextComponent,
   ],
   templateUrl: './mktg-document-view.component.html',
 })
 export class MktgDocumentViewComponent {
   // === Injections ===
   private readonly dependencyService = inject(MktgDependencyService);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
   private readonly platformId = inject(PLATFORM_ID);
@@ -88,9 +104,15 @@ export class MktgDocumentViewComponent {
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   // Explicit parent target works for both project and foundation route hosts.
   protected readonly documentsRoute = this.route.parent;
+
+  protected readonly linkForm = new FormGroup({ share_link: new FormControl('', { nonNullable: true }) });
+  protected readonly shareLinkAnswerKey = LINKEDIN_SHARE_LINK_ANSWER_KEY;
+  protected readonly shareLinkHint = LINKEDIN_SHARE_LINK_HINT;
+  protected readonly maxShareLinkChars = LINKEDIN_SHARE_LINK_MAX_CHARS;
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -103,6 +125,9 @@ export class MktgDocumentViewComponent {
   protected readonly approvingId = signal<string | null>(null);
   protected readonly approvalError = signal('');
   protected readonly approvalAnnouncement = signal('');
+  protected readonly editingLink = signal(false);
+  protected readonly savingLink = signal(false);
+  protected readonly linkError = signal('');
 
   private readonly params = toSignal(
     this.route.paramMap.pipe(map((params) => ({ agentKey: params.get('agentKey') ?? '', documentId: params.get('documentId') ?? '' }))),
@@ -113,6 +138,8 @@ export class MktgDocumentViewComponent {
   // === Computed ===
   protected readonly writePending = computed(() => this.approvingId() !== null || this.restoringId() !== null);
   protected readonly title: Signal<string> = this.initTitle();
+  protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
+  protected readonly linkedinContent = this.initLinkedinContent();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -276,6 +303,10 @@ export class MktgDocumentViewComponent {
             this.notice.set('');
             this.approvalError.set('');
             this.approvalAnnouncement.set('');
+            this.editingLink.set(false);
+            this.savingLink.set(false);
+            this.linkError.set('');
+            this.linkForm.enable({ emitEvent: false });
           }),
           switchMap((request) => {
             // Without `?revision=`, open current, which may not be newest.
@@ -304,6 +335,7 @@ export class MktgDocumentViewComponent {
         )
         .subscribe((view) => {
           this.view.set(view);
+          this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
         });
     }
@@ -344,6 +376,78 @@ export class MktgDocumentViewComponent {
           }
         },
       });
+  }
+
+  protected onEditProfile(): void {
+    if (!this.linkedinContent()?.isAuthor) return;
+    void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
+      relativeTo: this.route.parent,
+      queryParams: { profile: 'edit', revision: null, type: null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  protected onEditLink(): void {
+    if (!isPlatformBrowser(this.platformId) || this.savingLink()) return;
+    this.editingLink.set(true);
+    this.linkError.set('');
+    afterNextRender(
+      () => {
+        if (this.destroyRef.destroyed || !this.editingLink()) return;
+        const input = this.host.nativeElement.querySelector<HTMLInputElement>('#linkedin-document-share-link');
+        input?.focus();
+        input?.scrollIntoView({ block: 'center' });
+      },
+      { injector: this.injector }
+    );
+  }
+
+  protected onCancelLink(): void {
+    if (this.savingLink()) return;
+    this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
+    this.editingLink.set(false);
+    this.linkError.set('');
+  }
+
+  protected onSaveLink(): void {
+    const current = this.view();
+    const content = current?.linkedinPost;
+    if (!current || !content || !this.editingLink() || this.savingLink()) return;
+    const link = normalizeLinkedinShareLink(this.linkForm.controls.share_link.value);
+    if (link === null) {
+      this.linkError.set('Enter one HTTPS link or leave it empty.');
+      return;
+    }
+    this.savingLink.set(true);
+    this.linkError.set('');
+    this.linkForm.disable({ emitEvent: false });
+    this.documentStore
+      .saveLinkedinShareLink(current.project, current.documentId, link)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (response) => {
+          if (this.view() !== current) return;
+          this.view.set({ ...current, linkedinPost: { ...content, answers: { ...content.answers, [LINKEDIN_SHARE_LINK_ANSWER_KEY]: response.share_link } } });
+          this.linkForm.enable({ emitEvent: false });
+          this.linkForm.controls.share_link.setValue(response.share_link);
+          this.savingLink.set(false);
+          this.editingLink.set(false);
+        },
+        error: () => {
+          if (this.view() !== current) return;
+          this.linkForm.enable({ emitEvent: false });
+          this.savingLink.set(false);
+          this.linkError.set('The link could not be saved. Your saved post is unchanged. Try again or cancel.');
+        },
+      });
+  }
+
+  protected onDraftAnother(): void {
+    void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
+      relativeTo: this.route.parent,
+      queryParams: { profile: null, revision: null, type: null },
+      queryParamsHandling: 'merge',
+    });
   }
 
   protected onRestore(revision: MktgRevisionSummary): void {
@@ -449,6 +553,13 @@ export class MktgDocumentViewComponent {
     });
   }
 
+  private initLinkedinContent() {
+    return computed(() => {
+      const view = this.view();
+      return view?.type.agentKey === LINKEDIN_POST_INTAKE.agentId ? readLinkedinDocumentContent(view.linkedinPost, true) : null;
+    });
+  }
+
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();
@@ -458,7 +569,8 @@ export class MktgDocumentViewComponent {
       if (view.type.kind === 'living') {
         return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
       }
-      return view.type.itemLabel;
+      const source = this.linkedinContent()?.source;
+      return source ? `${view.type.itemLabel} · ${source.label}` : view.type.itemLabel;
     });
   }
 
