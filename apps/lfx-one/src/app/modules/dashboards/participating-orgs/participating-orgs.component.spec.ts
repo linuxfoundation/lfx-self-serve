@@ -164,7 +164,7 @@ describe('ParticipatingOrgsComponent', () => {
     expect(name?.tagName).toBe('A');
     expect(name?.getAttribute('href')).toBe(`/org/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
     expect(text('participating-orgs-subtitle')).toBe(
-      'Every organization contributing to Synthetic Project, ranked by activity and split by Synthetic Foundation membership.'
+      'Synthetic Foundation members and every organization contributing to Synthetic Project, ranked by activity.'
     );
     expect(getSummary).toHaveBeenCalledWith(PROJECT_SLUG, '12mo');
     expect(getPage).toHaveBeenCalledWith(PROJECT_SLUG, { range: '12mo', segment: 'all', sort: 'commits', dir: 'desc', pageSize: 10, offset: 0 });
@@ -382,6 +382,16 @@ describe('ParticipatingOrgsComponent', () => {
     await settle();
 
     expect(text('stat-card-Member Commit Share')).toContain('—');
+  });
+
+  it('counts every listed member, contributing or not, in the All tab while Orgs Participating counts contributors only', async () => {
+    // 5 members (2 contributing) + 1 non-member: 3 contributing companies, 6 listed.
+    getSummary.mockReturnValue(of({ summary: summary({ orgsCount: 3, membersCount: 5, nonMembersCount: 1 }) }));
+    await render();
+
+    expect(text('participating-orgs-tabs')).toContain('All (6)');
+    expect(text('participating-orgs-tabs')).toContain('Members (5)');
+    expect(text('stat-card-Orgs Participating')).toContain('3');
   });
 
   it('shows the no-access state on a 403', async () => {

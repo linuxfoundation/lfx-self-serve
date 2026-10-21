@@ -348,9 +348,10 @@ export class ParticipatingOrgsComponent {
     const project = this.projectContextService.activeContext()?.name ?? 'this project';
     const summary = this.summary();
     const foundation = summary?.foundationName ?? summary?.foundationSlug;
+    // On a foundation's own project the Members list is the full current roster, contributing or not.
     return foundation
-      ? `Every organization contributing to ${project}, ranked by activity and split by ${foundation} membership.`
-      : `Every organization contributing to ${project}, ranked by activity and split by parent foundation membership.`;
+      ? `${foundation} members and every organization contributing to ${project}, ranked by activity.`
+      : `Parent foundation members and every organization contributing to ${project}, ranked by activity.`;
   }
 
   private initTiles(): StatCardItem[] {
@@ -390,7 +391,9 @@ export class ParticipatingOrgsComponent {
     // Locale pinned so SSR on Node and the browser render the same digits (no hydration mismatch).
     const label = (name: string, count: number | undefined): string => (count === undefined ? name : `${name} (${count.toLocaleString('en-US')})`);
     return [
-      { id: 'all', label: label('All', summary?.orgsCount) },
+      // The All tab lists members (contributing or not) plus non-members, so it counts both; the Orgs Participating
+      // tile counts contributing companies only.
+      { id: 'all', label: label('All', summary ? summary.membersCount + summary.nonMembersCount : undefined) },
       { id: 'members', label: label('Members', summary?.membersCount) },
       { id: 'non_members', label: label('Non-Members', summary?.nonMembersCount) },
     ];
