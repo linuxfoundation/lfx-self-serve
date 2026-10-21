@@ -46,7 +46,7 @@
         <button
           type="button"
           class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-          [disabled]="fileSaving()"
+          [disabled]="busy()"
           [attr.data-testid]="'mentee-tasks-replace-file-' + task().id"
           [attr.aria-label]="'Replace submission for ' + task().title"
           (click)="fileInput.click()">
@@ -57,7 +57,7 @@
         <button
           type="button"
           class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
-          [disabled]="fileSaving()"
+          [disabled]="busy()"
           [attr.data-testid]="'mentee-tasks-remove-file-' + task().id"
           [attr.aria-label]="'Remove submission for ' + task().title"
           (click)="onRemoveFile()">
@@ -69,7 +69,7 @@
       <button
         type="button"
         class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
-        [disabled]="uploadBlocked() || fileSaving()"
+        [disabled]="uploadBlocked() || busy()"
         [attr.aria-describedby]="uploadBlocked() ? statusHintId() : null"
         [attr.data-testid]="'mentee-tasks-upload-' + task().id"
         [attr.aria-label]="'Upload submission for ' + task().title"
@@ -80,7 +80,7 @@
     }
   </div>
 
-  <!-- Status dropdown — read-only while saving or locked; the sr-only label and the hint name it for assistive tech -->
+  <!-- Status dropdown — read-only while the status or file is saving, or locked; the sr-only label and the hint name it for assistive tech -->
   <div
     class="flex shrink-0 flex-col gap-1 md:items-end"
     [ngClass]="{ 'opacity-60 cursor-wait': saving() }"
@@ -102,7 +102,7 @@
         optionValue="value"
         size="small"
         variant="filled"
-        [readonly]="statusState().locked || saving()"
+        [readonly]="statusState().locked || busy()"
         [ariaLabelledBy]="statusLabelledBy()"
         [styleClass]="'mentee-task-status-dropdown ' + effectiveTask().statusClass"
         [dataTest]="'mentee-tasks-status-dropdown-' + task().id"

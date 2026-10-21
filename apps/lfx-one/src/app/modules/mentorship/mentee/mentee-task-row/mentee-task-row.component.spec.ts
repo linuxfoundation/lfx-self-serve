@@ -316,6 +316,51 @@ describe('MenteeTaskRowComponent', () => {
       expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeNull();
     });
 
+    it('holds Submitted after an upload that lands before the refresh of a start', async () => {
+      const task = uploadNeededTask();
+      const form = await buildRow(task);
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+      inFlight.next(true);
+      inFlight.complete();
+      fixture.detectChanges();
+
+      pickFile('row_upload', new File(['%PDF-1.7'], 'answer.pdf', { type: 'application/pdf' }));
+      fileInFlight.next(true);
+      fileInFlight.complete();
+      fixture.detectChanges();
+
+      // The task input is still pending, yet the row reads Submitted, as upstream now has it.
+      expect(form.controls[task.id].value).toBe('submitted');
+      expect(byTestId('mentee-tasks-task-row-row_upload')?.querySelector('.fa-circle-check')).toBeTruthy();
+    });
+
+    it('runs a status change and a file change one at a time', async () => {
+      const task = uploadedTask();
+      const form = await buildRow(task);
+
+      // A reopen in flight blocks the file actions.
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+      fixture.detectChanges();
+      expect((byTestId('mentee-tasks-replace-file-row_uploaded') as HTMLButtonElement).disabled).toBe(true);
+      pickFile('row_uploaded', new File(['%PDF-1.7'], 'answer.pdf', { type: 'application/pdf' }));
+      expect(upload).not.toHaveBeenCalled();
+      inFlight.next(true);
+      inFlight.complete();
+      fixture.detectChanges();
+
+      // An upload in flight makes the select read-only and reverts a change picked meanwhile.
+      pickFile('row_uploaded', new File(['%PDF-1.7'], 'answer.pdf', { type: 'application/pdf' }));
+      fixture.detectChanges();
+      expect(select().readonly()).toBe(true);
+      changeStatus.mockClear();
+      form.controls[task.id].setValue('submitted');
+      component['onStatusChange']();
+      expect(changeStatus).not.toHaveBeenCalled();
+      expect(form.controls[task.id].value).toBe('in_progress');
+    });
+
     it('reverts a failed change to the status a mid-flight refresh brought in', async () => {
       const task = pendingTask();
       const form = await buildRow(task);
