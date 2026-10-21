@@ -800,10 +800,12 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
   });
 
   it('patches the task submission route with a body of only the status', async () => {
-    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'incomplete' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
     expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
       status: 'in_progress',
     });
@@ -926,13 +928,36 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('still lets a past-due task be started, without reading it', async () => {
+  it('still lets a past-due pending task be started', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
-    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'incomplete', due_date: '2026-09-30' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenCalledTimes(2);
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', SUBMISSION_PATH, 'PATCH', undefined, { status: 'in_progress' });
+  });
+
+  it('reopens a submitted task before its due date has ended', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-30T23:59:59Z'));
+    proxyRequest
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted', due_date: '2026-09-30' }))
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress', due_date: '2026-09-30' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
+    expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', SUBMISSION_PATH, 'PATCH', undefined, { status: 'in_progress' });
+  });
+
+  it('refuses to reopen a submitted task once its due date has ended in UTC, without patching', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-01T00:00:00Z'));
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'submitted', due_date: '2026-09-30' }));
+
+    await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).rejects.toMatchObject({
+      statusCode: 400,
+      code: MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE,
+    });
     expect(proxyRequest).toHaveBeenCalledTimes(1);
-    expect(proxyRequest.mock.calls[0][3]).toBe('PATCH');
   });
 
   it.each([
@@ -947,7 +972,7 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
   });
 
   it('URL-encodes the task id in the path', async () => {
-    proxyRequest.mockResolvedValueOnce(upstreamTask());
+    proxyRequest.mockResolvedValueOnce(upstreamTask({ status: 'incomplete' })).mockResolvedValueOnce(upstreamTask());
 
     await service.updateMenteeTaskStatus(buildReq(), 'a/b?c', 'in_progress');
 
@@ -958,12 +983,13 @@ describe('MentorshipMenteeService.updateMenteeTaskStatus', () => {
     proxyRequest
       .mockRejectedValueOnce(upstreamError(401, { error: 'local user is not provisioned' }))
       .mockResolvedValueOnce({})
+      .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'incomplete' }))
       .mockResolvedValueOnce(upstreamTask({ id: taskId, status: 'in_progress' }));
 
     await expect(service.updateMenteeTaskStatus(buildReq(), taskId, 'in_progress')).resolves.toBeUndefined();
-    expect(proxyRequest).toHaveBeenCalledTimes(3);
+    expect(proxyRequest).toHaveBeenCalledTimes(4);
     expect(proxyRequest).toHaveBeenNthCalledWith(2, expect.anything(), 'LFX_V2_SERVICE', '/mentorship/v1/me', 'PUT', undefined, {});
-    expect(proxyRequest).toHaveBeenNthCalledWith(3, expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
+    expect(proxyRequest).toHaveBeenNthCalledWith(4, expect.anything(), 'LFX_V2_SERVICE', `${TASKS_PATH}/${taskId}/submission`, 'PATCH', undefined, {
       status: 'in_progress',
     });
   });

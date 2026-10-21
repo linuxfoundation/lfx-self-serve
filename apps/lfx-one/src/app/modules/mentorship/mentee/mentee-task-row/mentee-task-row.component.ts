@@ -127,14 +127,22 @@ export class MenteeTaskRowComponent {
     this.taskStatusService.changeStatus(current.id, requested).subscribe((changed) => this.onStatusSettled(current.id, requested, changed));
   }
 
-  /** Uploads the picked file, which replaces any stored one. The input is cleared so the same file can be picked again. */
+  /**
+   * Uploads the picked file, which replaces any stored one and marks the task submitted upstream. The input is cleared so
+   * the same file can be picked again.
+   */
   protected onFileSelected(input: HTMLInputElement): void {
     const file = input.files?.[0];
     input.value = '';
     if (!file || this.fileSaving()) return;
     this.fileSaving.set(true);
     // No takeUntilDestroyed: the toast and cache invalidation must run even if the row is destroyed mid-flight.
-    this.taskFileService.upload(this.task().id, file).subscribe(() => this.fileSaving.set(false));
+    this.taskFileService.upload(this.task().id, file).subscribe((saved) => {
+      // Upstream owns the status after an upload: a held In Progress from a reopen must not outlive the refresh,
+      // which may bring back the very `submitted` status that reopen started from.
+      if (saved) this.confirmed.set(null);
+      this.fileSaving.set(false);
+    });
   }
 
   protected onRemoveFile(): void {

@@ -295,6 +295,27 @@ describe('MenteeTaskRowComponent', () => {
       expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeTruthy();
     });
 
+    it('drops a held reopen once an upload succeeds, so the refresh shows the task submitted again', async () => {
+      const task = uploadedTask();
+      const form = await buildRow(task);
+      form.controls[task.id].setValue('in_progress');
+      component['onStatusChange']();
+      inFlight.next(true);
+      inFlight.complete();
+      fixture.detectChanges();
+      expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeTruthy();
+
+      // Replace before the reopen's refresh lands; upstream marks the task submitted again.
+      pickFile('row_uploaded', new File(['%PDF-1.7'], 'answer.pdf', { type: 'application/pdf' }));
+      fileInFlight.next(true);
+      fileInFlight.complete();
+      fixture.componentRef.setInput('task', uploadedTask());
+      fixture.detectChanges();
+
+      expect(byTestId('mentee-tasks-task-row-row_uploaded')?.querySelector('.fa-circle-check')).toBeTruthy();
+      expect(byTestId('mentee-tasks-remove-file-row_uploaded')).toBeNull();
+    });
+
     it('reverts a failed change to the status a mid-flight refresh brought in', async () => {
       const task = pendingTask();
       const form = await buildRow(task);

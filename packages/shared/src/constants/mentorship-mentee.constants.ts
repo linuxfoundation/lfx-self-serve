@@ -428,7 +428,7 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_ERROR_MESSAGES: Readonly<Record<numbe
  * deadline, so the BFF checks the task's own `due_date` (the end of that UTC day) before forwarding.
  */
 export const MENTORSHIP_MENTEE_TASK_PAST_DUE_ERROR_CODE = 'TASK_PAST_DUE';
-export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted.';
+export const MENTORSHIP_MENTEE_TASK_PAST_DUE_MESSAGE = 'The due date for this task has passed, so it can no longer be submitted or reopened.';
 /** The same 400 code, on a file upload or removal after the due date. */
 export const MENTORSHIP_MENTEE_TASK_FILE_PAST_DUE_MESSAGE = 'The due date for this task has passed, so its file can no longer change.';
 
