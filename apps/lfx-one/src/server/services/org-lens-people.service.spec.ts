@@ -79,7 +79,7 @@ import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 interface SqlDatabase {
   exec(sql: string): void;
   prepare(sql: string): {
-    run(...values: (string | number)[]): unknown;
+    run(...values: (string | number | null)[]): unknown;
     all(...values: string[]): Record<string, unknown>[];
   };
   close(): void;
@@ -95,11 +95,15 @@ const UNAVAILABLE: OrgPersonCompanyEmailsResponse = { companyEmails: [], company
 let database: SqlDatabase;
 let service: OrgLensPeopleService;
 
-function addPerson(account: string, personKey: string, username: string, emails: string[] = []): void {
+function addPerson(account: string, personKey: string, username: string | null, emails: string[] = []): void {
   const insertEmail = database.prepare('INSERT INTO ORG_PEOPLE_COMPANY_EMAILS VALUES (?, ?, ?, ?, ?)');
   for (const [index, email] of emails.entries()) {
     insertEmail.run(account, personKey, username, email, index === 0 ? 1 : 0);
   }
+}
+
+function addRosterRow(account: string, key: string, username: string): void {
+  database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?)').run(account, key, username);
 }
 
 beforeEach(() => {
@@ -109,6 +113,7 @@ beforeEach(() => {
   ValkeyService.resetInstance();
   database = new DatabaseSync(':memory:');
   database.exec('CREATE TABLE ORG_PEOPLE_COMPANY_EMAILS (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT, EMAIL TEXT, IS_PRIMARY INTEGER)');
+  database.exec('CREATE TABLE ORG_PEOPLE_ALL (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT)');
   // Run the service's real SQL against SQLite instead of mocking its identity matching.
   execute.mockImplementation(async (query: string, binds: string[]) => {
     const rows = database.prepare(query.replaceAll('ANALYTICS.PLATINUM_LFX_ONE.', '')).all(...binds);
@@ -206,7 +211,7 @@ describe('OrgLensPeopleService username company emails', () => {
       companyEmailsStatus: 'resolved',
     });
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
-    expect(cacheValues.size).toBe(2);
+    expect(cacheValues.size).toBe(4);
     for (const key of cacheValues.keys()) {
       expect(key.toLowerCase()).not.toContain('mixeduser');
     }
@@ -252,6 +257,22 @@ describe('OrgLensPeopleService username company emails', () => {
     execute.mockRejectedValue(new Error('warehouse unavailable'));
 
     await expectBothPaths({ companyEmails: [], companyEmailsStatus: 'failed' });
+  });
+
+  it("reads a roster person's addresses by person key, even when the address rows carry no username", async () => {
+    addRosterRow(ACCOUNT, 'person-one', ' MixedUser ');
+    addPerson(ACCOUNT, 'person-one', null, ['first@company.example']);
+
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({
+      companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
+    });
+  });
+
+  it('reports a roster person without addresses as none on record, not unavailable', async () => {
+    addRosterRow(ACCOUNT, 'person-one', 'MixedUser');
+
+    expect(await service.getCompanyEmailsByUsername(ACCOUNT, 'mixeduser')).toEqual({ companyEmails: [], companyEmailsStatus: 'resolved' });
   });
 });
 
@@ -390,14 +411,6 @@ describe('OrgLensPeopleService person-key company emails', () => {
   });
 
   describe('by LF username (lfx-self-serve-ops#894)', () => {
-    beforeEach(() => {
-      database.exec('CREATE TABLE ORG_PEOPLE_ALL (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT)');
-    });
-
-    function addRosterRow(account: string, key: string, username: string): void {
-      database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?)').run(account, key, username);
-    }
-
     it("resolves the username to its one roster person in this account and returns that person's activity", async () => {
       addRosterRow(ACCOUNT, personKey, ' MixedUser ');
       addRosterRow(ACCOUNT, 'person-two', 'someone-else');
