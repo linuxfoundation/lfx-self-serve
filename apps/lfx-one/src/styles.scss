@@ -22,6 +22,28 @@
 }
 
 @media print {
+  /* Both print documents are placed against the page (inset 0), so no
+     element around them may be their containing block. The app shell's are:
+     the document page's wrapper is positioned (relative) and the document
+     view is a size container (@container), so the print document started at
+     the page wrapper's offset (the shell's padding and top margin) — shifted
+     right and clipped at the right edge, and pushed down so the framework's
+     cover ran onto a second sheet. While a print class is on the body, every
+     element holding the print document stops being a containing block. */
+  body.lfx-print-brand-kit :has(.lfx-brand-kit-book),
+  body.lfx-print-framework :has(.lfx-framework-print) {
+    position: static !important;
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    perspective: none !important;
+    contain: none !important;
+    container-type: normal !important;
+    will-change: auto !important;
+  }
+}
+
+@media print {
   /* A named page, so only the book prints landscape — every other print keeps its own setup. */
   @page brand-kit {
     size: letter landscape;
@@ -76,16 +98,18 @@
    and its print document (lfx-mktg-framework-print) sits in a print-only
    wrapper (FOUNDATION_MESSAGE_PRINT_ONLY_CLASS) never shown there. While the
    body carries FOUNDATION_MESSAGE_PRINT_BODY_CLASS (set by Download PDF for
-   the print only) that document is the only thing on paper: letter pages,
-   portrait, its sections flowing from page to page. */
+   the print only) that document is the only thing on paper: portrait pages
+   of the paper chosen in the print dialog (A4 or US Letter), its sections
+   flowing from page to page. */
 .lfx-framework-print-only {
   display: none;
 }
 
 @media print {
-  /* A named page, so only the framework prints on these margins — every other print keeps its own setup. */
+  /* A named page, so only the framework prints on these margins — every other print keeps its own setup.
+     No paper size: the document is as wide as the page area, so it fits whichever paper the dialog has. */
   @page mktg-framework {
-    size: letter portrait;
+    size: portrait;
     margin: 0.55in 0.6in;
   }
 
@@ -107,11 +131,10 @@
       visibility: visible;
     }
 
-    /* The page area of a letter sheet on the margins above: 8.5 in less 2 × 0.6 in. */
+    /* As wide as the page area of the chosen paper, from its top left corner. */
     .lfx-framework-print {
       position: absolute;
-      inset: 0 auto auto 0;
-      width: 7.3in;
+      inset: 0 0 auto;
       margin: 0;
     }
   }
