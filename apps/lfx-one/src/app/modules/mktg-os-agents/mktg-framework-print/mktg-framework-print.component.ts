@@ -9,9 +9,10 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { distinctUntilChanged, filter } from 'rxjs';
 
 // The Messaging Framework's PRINT rendering (Download PDF): the framework
-// view's tabs as one document on letter pages, portrait — a cover, then the
-// framework (the statements, the goal columns, say and avoid, the anchor
-// questions), the ICPs, the message house and the key numbers. The run's
+// view's tabs as one document on portrait pages of the paper the print
+// dialog has (A4 or US Letter) — a cover, then the framework (the
+// statements, the goal columns, say and avoid, the anchor questions), the
+// ICPs, the message house and the key numbers. The run's
 // sources and gaps, and the reviewer's note, stay on screen. Set in the
 // project's brand when it has a Brand Kit (its colours, typeface and logo),
 // in the LF look otherwise. On screen the framework is its app page

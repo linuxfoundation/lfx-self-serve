@@ -568,6 +568,75 @@ describe('CommitteeManageComponent', () => {
       expect(navigate).toHaveBeenCalledWith(['/groups']);
     });
 
+    it('imports CSV members into a newly created group and saves them only on Done', async () => {
+      const newGroup = { ...enrichedCommittee(), uid: 'new-group-uid' };
+      const dialogClose = new Subject<StagedCommitteeMemberRequest[]>();
+      const dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
+      const getCommitteeInvites = vi.fn().mockReturnValue(of([]));
+      createCommittee.mockReturnValue(of(newGroup));
+      getCommittee.mockReturnValue(of(newGroup));
+      TestBed.overrideProvider(ActivatedRoute, {
+        useValue: {
+          paramMap: of(convertToParamMap({})),
+          queryParamMap: queryParamMap$.asObservable(),
+          snapshot: { paramMap: convertToParamMap({}), queryParamMap: convertToParamMap({}) },
+        },
+      });
+      TestBed.overrideProvider(CommitteeService, {
+        useValue: {
+          getCommittee,
+          createCommittee,
+          updateCommittee,
+          createCommitteeMember,
+          revokeCommitteeInvite,
+          getCommitteeInvites,
+          getCommitteeMembers,
+          getCommitteesByProject: vi.fn().mockReturnValue(of([])),
+        },
+      });
+      TestBed.overrideComponent(CommitteeManageComponent, {
+        set: {
+          template: `@if (committeeId()) {
+            <lfx-committee-members-manager [committeeId]="committeeId()" [memberUpdates]="memberUpdates()"
+              [isEditMode]="isEditMode()" [submitting]="submitting()" (memberUpdatesChange)="onMemberUpdatesChange($event)" />
+          }`,
+        },
+      });
+      TestBed.overrideComponent(CommitteeMembersManagerComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: dialogService }] },
+      });
+      const fixture = TestBed.createComponent(CommitteeManageComponent);
+      const component = fixture.componentInstance;
+      await fixture.whenStable();
+      expect(component.isEditMode()).toBe(false);
+
+      component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
+      component.onSubmit();
+      await fixture.whenStable();
+      expect(createCommittee).toHaveBeenCalledTimes(1);
+      expect(component.committeeId()).toBe('new-group-uid');
+
+      const manager: CommitteeMembersManagerComponent = fixture.debugElement.query(By.directive(CommitteeMembersManagerComponent)).componentInstance;
+      manager.openImportMembersDialog();
+      expect(getCommitteeInvites.mock.calls[0][0]).toBe('new-group-uid');
+      expect(dialogService.open).toHaveBeenCalledTimes(1);
+      dialogClose.next([{ email: createdMember.email, first_name: 'Ada', createOptions: { skipNotification: false } }]);
+      expect(component.memberUpdates().toAdd).toEqual([expect.objectContaining({ email: createdMember.email })]);
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+
+      component.onDone();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(
+        'new-group-uid',
+        expect.objectContaining({ email: createdMember.email, first_name: 'Ada' }),
+        {
+          skipNotification: false,
+        }
+      );
+      expect(updateCommittee).not.toHaveBeenCalled();
+      expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(['/groups']);
+    });
+
     it.each([true, false])('passes notification suppression %s separately from the native member body', async (skipNotification) => {
       const component = await setupPending([{ email: createdMember.email, createOptions: { skipNotification }, pendingInviteUids: ['invite-1'] }]);
       component.onSubmitAll();

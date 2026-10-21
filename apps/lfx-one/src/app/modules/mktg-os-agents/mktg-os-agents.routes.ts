@@ -54,6 +54,12 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     canActivate: [authGuard],
   },
   {
+    path: 'member-360',
+    title: 'Member 360',
+    loadComponent: () => import('./member-360-run/member-360-run.component').then((m) => m.Member360RunComponent),
+    canActivate: [authGuard],
+  },
+  {
     path: ':agentId',
     title: 'Agent',
     loadComponent: () => import('./mktg-agent-run/mktg-agent-run.component').then((m) => m.MktgAgentRunComponent),

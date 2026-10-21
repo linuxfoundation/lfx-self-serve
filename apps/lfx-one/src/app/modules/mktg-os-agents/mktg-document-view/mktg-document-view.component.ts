@@ -52,7 +52,7 @@ import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, defer, distinctUntilChanged, EMPTY, filter, finalize, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
@@ -60,6 +60,12 @@ import { LinkedinPostOptionsComponent } from '../components/linkedin-post-option
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
 import { MktgFaqViewComponent } from '../mktg-faq-view/mktg-faq-view.component';
 import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framework-view.component';
+import { MEMBER_360_FAILURE_MESSAGES, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { Member360Result, MktgDocumentListItem, MktgRunActivity } from '@lfx-one/shared/interfaces';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
+import { Member360Service } from '@services/member-360.service';
+import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
+import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -92,6 +98,8 @@ import { MktgFrameworkViewComponent } from '../mktg-framework-view/mktg-framewor
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
     InputTextComponent,
+    Member360ResultComponent,
+    MktgRunActivityComponent,
   ],
   templateUrl: './mktg-document-view.component.html',
 })
@@ -102,6 +110,7 @@ export class MktgDocumentViewComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly documentStore = inject(MktgDocumentStoreService);
+  private readonly member360 = inject(Member360Service);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -119,6 +128,15 @@ export class MktgDocumentViewComponent {
 
   // === Signals ===
   protected readonly loading = signal(true);
+  protected readonly generating = signal(false);
+  protected readonly needsInput = signal(false);
+  protected readonly runFailed = signal(false);
+  protected readonly failureDetails = signal('');
+  protected readonly runActivity = signal<MktgRunActivity[]>([]);
+  protected readonly runStartedAt = signal(0);
+  protected readonly runHistory = signal<MktgDocumentListItem[]>([]);
+  protected readonly historyError = signal('');
+  protected readonly reload = signal(0);
   protected readonly errorText = signal('');
   protected readonly notice = signal('');
   protected readonly view = signal<MktgRevisionResponse | null>(null);
@@ -140,10 +158,14 @@ export class MktgDocumentViewComponent {
 
   // === Computed ===
   protected readonly writePending = computed(() => this.approvingId() !== null || this.restoringId() !== null);
-  protected readonly title: Signal<string> = this.initTitle();
+  protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
   protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
   protected readonly kitBreadcrumb: Signal<{ family: MktgKitFamily; asset: MktgKitAsset; living: boolean } | null> = this.initKitBreadcrumb();
+  protected readonly generatingLabel = computed(
+    () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
+  );
+  protected readonly title: Signal<string> = this.initTitle();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -275,12 +297,15 @@ export class MktgDocumentViewComponent {
     computed(() => ({
       project: this.projectContext.activeContextUid(),
       slug: this.projectContext.activeContext()?.slug ?? '',
+      user: this.params().agentKey === 'member-360' ? this.userService.user()?.sub : undefined,
       ...this.params(),
       revisionId: this.revisionParam(),
+      reload: this.reload(),
     }))
   );
 
   public constructor() {
+    bindLfxDocumentTitle(computed(() => (this.view()?.member360 ? this.title() : '')));
     if (isPlatformBrowser(this.platformId)) {
       let shownDocument = '';
       // Action rights follow user context without cancelling document or last-export reads.
@@ -294,7 +319,6 @@ export class MktgDocumentViewComponent {
         .subscribe((project) => this.writer.set(!!project?.writer));
       this.request$
         .pipe(
-          filter((request) => !!request.project && !!request.agentKey && !!request.documentId),
           distinctUntilChanged((previous, current) => JSON.stringify(previous) === JSON.stringify(current)),
           tap((request) => {
             const documentKey = JSON.stringify([request.project, request.agentKey, request.documentId]);
@@ -312,26 +336,72 @@ export class MktgDocumentViewComponent {
             this.savingLink.set(false);
             this.linkError.set('');
             this.linkForm.enable({ emitEvent: false });
+            this.runHistory.set([]);
+            this.historyError.set('');
+            this.runActivity.set([]);
+            this.needsInput.set(false);
+            this.runFailed.set(false);
+            this.failureDetails.set('');
           }),
           switchMap((request) => {
-            // Without `?revision=`, open current, which may not be newest.
-            const revision$ = request.revisionId
-              ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
-              : this.documentStore
-                  .getDocument(request.project, request.agentKey, request.documentId)
+            if (!request.project || !request.agentKey || !request.documentId) {
+              this.generating.set(false);
+              return EMPTY;
+            }
+            const typedPending = request.agentKey === 'member-360' && !!request.user && this.member360.isPending(request.project, request.documentId);
+            this.generating.set(typedPending);
+            this.runStartedAt.set(typedPending ? (this.member360.pendingStartedAt(request.project, request.documentId) ?? Date.now()) : 0);
+            const ready$: Observable<Member360Result | null> = typedPending
+              ? this.member360
+                  .waitForStored(request.project, request.documentId, (activity) => this.runActivity.set(activity))
                   .pipe(
-                    switchMap((detail) =>
-                      this.documentStore.getRevision(
-                        request.project,
-                        request.agentKey,
-                        request.documentId,
-                        detail.current?.revisionId ?? (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
+                    tap((result) => {
+                      this.needsInput.set(result.status === 'needs_input');
+                      if (result.status === 'failed') {
+                        this.runFailed.set(true);
+                        this.errorText.set(MEMBER_360_FAILURE_MESSAGES[result.reason ?? 'agent_stopped'] ?? MEMBER_360_FAILURE_MESSAGES.agent_stopped);
+                        this.failureDetails.set(result.message ?? '');
+                      }
+                    }),
+                    filter((result) => result.status !== 'needs_input')
+                  )
+              : of(null);
+            // Without `?revision=`, open current, which may not be newest.
+            const revision$ = defer(() =>
+              request.revisionId
+                ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
+                : this.documentStore
+                    .getDocument(request.project, request.agentKey, request.documentId)
+                    .pipe(
+                      switchMap((detail) =>
+                        this.documentStore.getRevision(
+                          request.project,
+                          request.agentKey,
+                          request.documentId,
+                          detail.current?.revisionId ?? (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
+                        )
                       )
                     )
-                  );
-            return revision$.pipe(
+            );
+            return ready$.pipe(
+              switchMap((result) => (result?.status === 'failed' ? of(null) : revision$)),
+              switchMap((view) => {
+                if (!view?.member360) return of(view);
+                return this.documentStore.listDocuments(request.project).pipe(
+                  tap((listing) => this.runHistory.set(listing.groups.find((group) => group.type.agentKey === 'member-360')?.documents ?? [])),
+                  map(() => view),
+                  catchError(() => {
+                    this.historyError.set('Run history could not be loaded.');
+                    return of(view);
+                  })
+                );
+              }),
               catchError((error: HttpErrorResponse) => {
-                this.errorText.set(this.loadErrorText(error.status, error.error?.code));
+                this.errorText.set(
+                  typedPending
+                    ? 'This run could not be loaded yet. Retry to check the same run; nothing is overwritten.'
+                    : this.loadErrorText(error.status, error.error?.code)
+                );
                 return of(null);
               })
             );
@@ -342,6 +412,7 @@ export class MktgDocumentViewComponent {
           this.view.set(view);
           this.linkForm.controls.share_link.setValue(this.linkedinContent()?.answers[LINKEDIN_SHARE_LINK_ANSWER_KEY] ?? '');
           this.loading.set(false);
+          this.generating.set(false);
         });
     }
   }
@@ -453,6 +524,10 @@ export class MktgDocumentViewComponent {
       queryParams: { profile: null, revision: null, type: null },
       queryParamsHandling: 'merge',
     });
+  }
+
+  protected retryLoad(): void {
+    this.reload.update((value) => value + 1);
   }
 
   protected onRestore(revision: MktgRevisionSummary): void {
@@ -580,6 +655,7 @@ export class MktgDocumentViewComponent {
       if (!view) {
         return '';
       }
+      if (view.member360) return `Member 360 · ${view.member360.period.label}`;
       if (view.type.kind === 'living') {
         return `${this.projectContext.activeContext()?.name ?? ''} ${view.type.label}`.trim();
       }

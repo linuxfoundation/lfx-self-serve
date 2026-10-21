@@ -12,6 +12,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
 vi.mock('../controllers/mktg-slides-export.controller', () => ({ MktgSlidesExportController: class {} }));
 vi.mock('../controllers/mktg-agents.controller', () => ({ MktgAgentsController: class {} }));
 vi.mock('../controllers/member-360.controller', () => ({ Member360Controller: class {} }));
+vi.mock('../controllers/member-360-workbook.controller', () => ({ Member360WorkbookController: class {} }));
 vi.mock('../controllers/mktg-documents.controller', () => ({
   MktgDocumentsController: class {
     public approveRevision = approve;
@@ -24,6 +25,13 @@ import { blockDuringImpersonation } from '../middleware/impersonation-readonly.m
 import router from './mktg-agents.route';
 
 describe('Marketing OS approval route', () => {
+  it.each(['start', 'advance', 'result'])('guards rebuild %s before invoking its controller', (method) => {
+    const layer = router.stack.find((entry) => entry.route?.path === `/rebuild/${method}`);
+    expect(layer?.route?.stack[0].handle).toBe(blockDuringImpersonation);
+    const next = vi.fn();
+    layer?.route?.stack[0].handle({ path: `/rebuild/${method}`, method: 'POST', impersonationActive: true } as Request, {} as Response, next);
+    expect(next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+  });
   it('installs the impersonation guard before the approval handler', () => {
     const layer = router.stack.find((entry) => entry.route?.path === '/documents/:agentKey/:documentId/revisions/:revisionId/approve');
     expect(layer?.route?.stack[0].method).toBe('post');

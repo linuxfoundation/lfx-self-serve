@@ -5,6 +5,7 @@
 export * from './member-360-schema.utils';
 export * from './member-360.utils';
 export * from './member-360-redaction.utils';
+export * from './member-360-terminal.utils';
 export { extractMktgEnvelopeCandidates } from '../utils/mktg-envelope.utils';
 export { findMktgDocumentType } from '../utils/mktg-document-store.utils';
 export { rankMember360Rows } from '../utils/member-360-ranking.utils';

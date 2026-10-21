@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 jobs:
-  quality-checks:
-    name: Code Quality Checks
+  static-checks:
+    name: Static Checks
     runs-on: ubuntu-latest
 
     steps:
@@ -81,11 +81,152 @@ jobs:
         working-directory: apps/lfx-one
         run: yarn e2e:check-collection
 
-      - name: Run unit tests
-        run: yarn test
+  build:
+    name: Production Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        id: node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Compute Angular cache namespace
+        id: angular-cache-key
+        env:
+          NODE_VERSION: ${{ steps.node.outputs.node-version }}
+          CONFIG_HASH: ${{ hashFiles('yarn.lock', '.yarnrc.yml', 'package.json', 'apps/*/package.json', 'packages/*/package.json', 'tsconfig*.json', 'apps/lfx-one/angular.json', 'apps/lfx-one/tsconfig*.json', 'packages/shared/tsconfig*.json', 'apps/lfx-one/tailwind.config.js', 'apps/lfx-one/postcss.config.js') }}
+        run: echo "prefix=ng-ci-v1-${RUNNER_OS}-${RUNNER_ARCH}-node${NODE_VERSION}-${CONFIG_HASH}-production-" >> "$GITHUB_OUTPUT"
+
+      # Compiler state only: never restore dist, test results, or Turbo task successes.
+      - name: Restore Angular compiler cache
+        id: angular-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apps/lfx-one/.angular/cache
+          key: ${{ steps.angular-cache-key.outputs.prefix }}${{ github.sha }}
+          restore-keys: ${{ steps.angular-cache-key.outputs.prefix }}
 
       - name: Build project
         run: yarn build
+
+      # Forks can restore public base caches, but only trusted, successful runs populate caches.
+      # Merge-queue refs are short-lived; restore there without saving another copy.
+      - name: Save Angular compiler cache
+        if: >-
+          success() && steps.angular-cache.outputs.cache-hit != 'true' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: apps/lfx-one/.angular/cache
+          key: ${{ steps.angular-cache.outputs.cache-primary-key }}
+
+  unit-tests:
+    name: Unit Tests (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: server
+            workspace: lfx-one-ui
+            command: test:server
+          - suite: shared
+            workspace: "@lfx-one/shared"
+            command: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      # Direct workspace commands bypass the shared build and docs generation in yarn test.
+      - name: Build shared package
+        if: matrix.suite == 'server'
+        run: yarn workspace @lfx-one/shared build
+
+      - name: Generate docs
+        if: matrix.suite == 'server'
+        run: yarn workspace lfx-one-ui docs:build
+
+      - name: Run unit tests
+        run: yarn workspace ${{ matrix.workspace }} ${{ matrix.command }}
+
+  frontend-tests:
+    name: Frontend Tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Build shared package
+        run: yarn workspace @lfx-one/shared build
+
+      - name: Generate docs
+        run: yarn workspace lfx-one-ui docs:build
+
+      - name: Run frontend shard
+        working-directory: apps/lfx-one
+        run: node scripts/run-app-test-shard.mjs ${{ matrix.shard }}/4
+
+  quality-checks:
+    # Preserve the existing check context, and never turn a skipped/cancelled dependency green.
+    name: Code Quality Checks
+    if: always()
+    needs: [static-checks, build, unit-tests, frontend-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all quality jobs to succeed
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'NODE'
+          const jobs = JSON.parse(process.env.JOB_RESULTS);
+          for (const [name, { result }] of Object.entries(jobs)) {
+            console.log(`${name}: ${result}`);
+            if (result !== 'success') process.exitCode = 1;
+          }
+          NODE
 
   # e2e-tests:
   #   name: E2E Tests

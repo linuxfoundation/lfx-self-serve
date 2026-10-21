@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Project } from '@lfx-one/shared/interfaces';
 import { Page } from '@playwright/test';
 
 import { getMockProject } from '../fixtures/mock-data';
@@ -16,7 +17,7 @@ export class ApiMockHelper {
    * @param options - Optional configuration for the mock
    * @param options.writer - Override the writer permission for the project
    */
-  static async setupProjectSlugMock(page: Page, options?: { writer?: boolean }): Promise<void> {
+  static async setupProjectSlugMock(page: Page, options?: { writer?: boolean; project?: Project }): Promise<void> {
     // Mock individual project by slug endpoint (/api/projects/:slug)
     await page.route('**/api/projects/*', async (route) => {
       const url = route.request().url();
@@ -32,7 +33,8 @@ export class ApiMockHelper {
 
       console.log(`[Mock] Intercepting project request for slug: "${slug}"`);
 
-      const project = getMockProject(slug);
+      const supplied = options?.project;
+      const project = supplied && (slug === supplied.slug || slug === supplied.uid) ? supplied : getMockProject(slug);
 
       if (!project) {
         await route.fulfill({

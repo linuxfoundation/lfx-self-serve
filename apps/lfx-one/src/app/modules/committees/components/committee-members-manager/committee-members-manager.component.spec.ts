@@ -91,13 +91,52 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
 
   afterEach(() => TestBed.resetTestingModule());
 
-  it('offers Import Members only in the edit wizard, not during creation', async () => {
-    await setup();
-    expect(query('import-members-csv-btn')?.textContent).toContain('Import Members');
-    fixture.componentRef.setInput('isEditMode', false);
+  it.each([3, 10, 11, 110])('keeps all %i members searchable in a keyboard-accessible scroll region', async (count) => {
+    const members = Array.from({ length: count }, (_, index) => ({
+      ...EXISTING,
+      uid: `member-${index}`,
+      email: `member${index}@example.com`,
+    }));
+    await setup({}, of(members));
+
+    const list = query('members-list')!;
+    expect(list.getAttribute('role')).toBe('region');
+    expect(list.getAttribute('aria-label')).toBe('Group members');
+    expect(list.tabIndex).toBe(0);
+    expect(list.classList.contains('overflow-y-auto')).toBe(true);
+    expect(list.classList.contains('max-h-[64.5rem]')).toBe(true);
+    const cards = list.querySelectorAll<HTMLElement>('[data-testid="member-card"]');
+    expect(cards).toHaveLength(count);
+    cards.forEach((card) => {
+      expect(card.classList.contains('min-h-24')).toBe(true);
+      expect(card.classList.contains('shrink-0')).toBe(true);
+    });
+
+    component.searchForm.controls['search'].setValue(members.at(-1)!.email);
     await fixture.whenStable();
-    expect(query('import-members-csv-btn')).toBeNull();
+    expect(query('members-list')?.querySelectorAll('[data-testid="member-card"]')).toHaveLength(1);
+    expect(query('members-list')?.textContent).toContain(members.at(-1)!.email);
+    expect(component.memberCount()).toBe(count);
+  });
+
+  it.each([true, false])('offers Import Members as a collect-only staging dialog when isEditMode is %s', async (isEditMode) => {
+    await setup({ isEditMode });
+    expect(query('import-members-csv-btn')?.textContent).toContain('Import Members');
+    query('import-members-csv-btn')?.querySelector('button')?.click();
+    expect(dialogService.open).toHaveBeenCalledWith(
+      ImportMembersDialogComponent,
+      expect.objectContaining({ data: expect.objectContaining({ collectOnly: true }) })
+    );
+    dialogClose.next([{ ...REQUEST, email: 'new@example.com', createOptions: { skipNotification: true } }]);
+    await fixture.whenStable();
+    expect(updates.at(-1)?.toAdd).toEqual([expect.objectContaining({ email: 'new@example.com', createOptions: { skipNotification: true } })]);
+    expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+  });
+
+  it('keeps Import Members unavailable until the newly created group is known', async () => {
+    await setup({ committeeId: null, isEditMode: false });
     component.openImportMembersDialog();
+    expect(committeeService.getCommitteeInvites).not.toHaveBeenCalled();
     expect(dialogService.open).not.toHaveBeenCalled();
   });
 

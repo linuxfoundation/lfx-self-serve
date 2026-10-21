@@ -18,6 +18,8 @@ const guildMocks = vi.hoisted(() => ({
 }));
 const documentStoreMocks = vi.hoisted(() => ({
   persistJsonGeneration: vi.fn(),
+  captureFramework: vi.fn(async () => null),
+  rememberGenerationFramework: vi.fn(async () => undefined),
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -45,6 +47,8 @@ vi.mock('./guild.service', () => ({
 vi.mock('./mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
     public persistJsonGeneration = documentStoreMocks.persistJsonGeneration;
+    public captureFramework = documentStoreMocks.captureFramework;
+    public rememberGenerationFramework = documentStoreMocks.rememberGenerationFramework;
   },
 }));
 vi.mock('./logger.service', () => ({
@@ -179,6 +183,37 @@ describe('BoilerplatesService.startGeneration', () => {
     const params = guildMocks.createSession.mock.calls[0][1] as { message?: string; agentInput?: Record<string, unknown> };
     expect(params.message).toBeUndefined();
     expect(params.agentInput).toMatchObject({ type: 'boilerplates_intake_form', project_name: 'Acme Mesh', messaging_framework: FRAMEWORK_SIDECAR.content });
+  });
+});
+
+describe('BoilerplatesService provenance failure boundary', () => {
+  it('does not create a Guild session if capture fails', async () => {
+    vi.clearAllMocks();
+    documentStoreMocks.captureFramework.mockRejectedValueOnce(new Error('capture unavailable'));
+    await expect(
+      new BoilerplatesService().startGeneration(
+        req,
+        { project_name: 'Synthetic mesh', messaging_framework: JSON.stringify(FRAMEWORK_SIDECAR) },
+        'proj-uid-1',
+        'boilerplates'
+      )
+    ).rejects.toThrow('capture unavailable');
+    expect(guildMocks.createSession).not.toHaveBeenCalled();
+  });
+  it('does not return a capability if the durable capture write fails', async () => {
+    vi.clearAllMocks();
+    guildMocks.createSession.mockResolvedValueOnce('untracked-session');
+    documentStoreMocks.rememberGenerationFramework.mockRejectedValueOnce(new Error('write unavailable'));
+    await expect(
+      new BoilerplatesService().startGeneration(
+        req,
+        { project_name: 'Synthetic mesh', messaging_framework: JSON.stringify(FRAMEWORK_SIDECAR) },
+        'proj-uid-1',
+        'boilerplates'
+      )
+    ).rejects.toThrow('write unavailable');
+    expect(documentStoreMocks.rememberGenerationFramework).toHaveBeenCalledWith(req, 'boilerplates', 'proj-uid-1', 'untracked-session', null);
+    expect(documentStoreMocks.captureFramework.mock.invocationCallOrder[0]).toBeLessThan(guildMocks.createSession.mock.invocationCallOrder[0]);
   });
 });
 

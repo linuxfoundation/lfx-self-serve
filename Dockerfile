@@ -32,7 +32,9 @@ RUN yarn workspace @lfx-one/shared build:${BUILD_ENV}
 # Build the Angular application
 # Note: Client IDs (LaunchDarkly, DataDog RUM) are now injected at runtime
 # via environment variables (LD_CLIENT_ID, DD_RUM_CLIENT_ID, DD_RUM_APPLICATION_ID)
-RUN yarn workspace lfx-one-ui build:${BUILD_ENV}
+# Allow the Angular compiler worker more heap for the full SSR build.
+# Scope this to the build command so the runtime keeps Node's default limit.
+RUN NODE_OPTIONS="--max-old-space-size=6144" yarn workspace lfx-one-ui build:${BUILD_ENV}
 
 # build:${BUILD_ENV} (unlike the bare `build` script) doesn't copy PDF
 # templates into dist/, since certificate.service.ts resolves them relative

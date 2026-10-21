@@ -47,13 +47,18 @@ vi.mock('./user.service', () => ({
 
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/linkedin-post-presentation.utils')),
 }));
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/boilerplates.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-rebuild.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
@@ -154,6 +159,8 @@ import type { Request } from 'express';
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ObjectStoreService } from './object-store.service';
+import { BoilerplatesService } from './boilerplates.service';
+import { GuildService } from './guild.service';
 
 const req = {
   path: '/api/mktg-agents/documents',
@@ -272,6 +279,159 @@ describe('MktgDocumentStoreService', () => {
     });
     await expect(service.listDocuments(req, PROJECT, 'member-360')).rejects.toMatchObject({ statusCode: 503 });
     read.mockRestore();
+  });
+
+  describe('captured framework provenance', () => {
+    async function approvedFramework() {
+      const generated = jsonEnvelope('Synthetic framework');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'framework-1');
+      await approveStored(FRAMEWORK, 1);
+      return { generated, ref: await service.captureFramework(req, PROJECT, generated.content) };
+    }
+
+    it('starts a non-writer run with unknown provenance without writing any store object', async () => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+      const start = vi.spyOn(GuildService.prototype, 'createSession').mockResolvedValue('synthetic-session');
+      const answers = { project_name: 'Synthetic', messaging_framework: JSON.stringify(jsonEnvelope('Synthetic').content) };
+      try {
+        await expect(new BoilerplatesService().startGeneration(req, answers, PROJECT, 'boilerplates')).resolves.toBe('synthetic-session');
+        expect(store.objects.size).toBe(0);
+        expect(store.conditionalWrites).toEqual([]);
+        expect(projectMocks.getProjectById).toHaveBeenCalledTimes(1);
+      } finally {
+        start.mockRestore();
+      }
+    });
+
+    it.each([false, true])('rejects an expected-framework start if the second writable lookup is unavailable (reject=%s)', async (reject) => {
+      const { generated, ref } = await approvedFramework();
+      if (!ref) throw new Error('Expected synthetic approved input');
+      projectMocks.getProjectById.mockReset().mockResolvedValueOnce({ uid: PROJECT, writer: true });
+      if (reject) projectMocks.getProjectById.mockRejectedValueOnce(new Error('Project lookup unavailable'));
+      else projectMocks.getProjectById.mockResolvedValueOnce({ uid: PROJECT, writer: false });
+      const start = vi.spyOn(GuildService.prototype, 'createSession').mockResolvedValue('synthetic-session');
+      try {
+        await expect(
+          new BoilerplatesService().startGeneration(
+            req,
+            { project_name: 'Synthetic', messaging_framework: JSON.stringify(generated.content) },
+            PROJECT,
+            'boilerplates',
+            ref
+          )
+        ).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_PROVENANCE_UNAVAILABLE' });
+        expect([...store.objects.keys()].filter((key) => key.startsWith('generation-provenance/'))).toEqual([]);
+      } finally {
+        start.mockRestore();
+      }
+    });
+    it('refuses a known framework capture without a writable partition', async () => {
+      const { ref } = await approvedFramework();
+      if (!ref) throw new Error('Expected synthetic approved input');
+      await expect(service.rememberGenerationFramework(req, 'brand-kit', undefined, 'session', ref)).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'MKTG_PROVENANCE_UNAVAILABLE',
+      });
+    });
+
+    it('captures approved input identity only for exact content and authorized project', async () => {
+      const { generated, ref } = await approvedFramework();
+      expect(ref).toMatchObject({ agentKey: 'foundation-message', revisionNumber: 1, contentSha256: generated.content_sha256 });
+      expect(await service.captureFramework(req, PROJECT, { mf: { tagline: 'different' } })).toBeNull();
+      expect(await service.captureFramework(req, undefined, generated.content)).toBeNull();
+      projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: false });
+      expect(await service.captureFramework(req, PROJECT, generated.content)).toBeNull();
+      if (!ref) throw new Error('Expected synthetic approved input');
+      await expect(service.captureFramework(req, PROJECT, generated.content, ref)).rejects.toThrow('could not be verified');
+    });
+
+    it.each([/current\.json$/, /\/[0-9]{6}-[a-f0-9]{64}\.json$/])(
+      'keeps run-page provenance unknown on read failure but fails a rebuild capture',
+      async (failure) => {
+        const { generated, ref } = await approvedFramework();
+        if (!ref) throw new Error('Expected synthetic approved input');
+        store.failGetsMatching = failure;
+        expect(await service.captureFramework(req, PROJECT, generated.content)).toBeNull();
+        expect(loggerMocks.warning).toHaveBeenCalledWith(req, 'mktg_generation_provenance', expect.any(String), expect.objectContaining({ project: PROJECT }));
+        await expect(service.captureFramework(req, PROJECT, generated.content, ref)).rejects.toThrow();
+      }
+    );
+
+    it('does not claim a Draft framework as provenance', async () => {
+      const generated = jsonEnvelope('Draft only');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'framework-1');
+      expect(await service.captureFramework(req, PROJECT, generated.content)).toBeNull();
+    });
+
+    it('refuses a changed chain selector even when a different approved revision has identical content', async () => {
+      const { generated, ref } = await approvedFramework();
+      if (!ref) throw new Error('Expected synthetic approved input');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, generated, PROJECT, 'framework-2');
+      await approveStored(FRAMEWORK, 2);
+      await expect(service.captureFramework(req, PROJECT, generated.content, ref)).rejects.toThrow('framework changed');
+    });
+
+    it('keeps the captured input when approval changes before result persistence', async () => {
+      const { ref } = await approvedFramework();
+      await service.rememberGenerationFramework(req, 'brand-kit', PROJECT, 'dependent-1', ref);
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('New framework'), PROJECT, 'framework-2');
+      await approveStored(FRAMEWORK, 2);
+      await service.persistGeneration(req, SPEC, envelope('# Synthetic kit'), PROJECT, 'dependent-1');
+      const kit = revisionKeys().find((key) => key.includes('/brand-kit/'));
+      expect(kit).toBeDefined();
+      expect(storedRecord(kit ?? '').bundle.sidecar?.['upstreamFramework']).toEqual(ref);
+      const listed = await service.listDocuments(req, PROJECT);
+      expect(listed.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents[0].needsRebuild?.builtFrom).toEqual(ref);
+    });
+
+    it('projects staleness from HEAD metadata without downloading any revision bodies', async () => {
+      const { ref } = await approvedFramework();
+      await service.rememberGenerationFramework(req, 'brand-kit', PROJECT, 'dependent-1', ref);
+      await service.persistGeneration(req, SPEC, envelope('# Synthetic kit'), PROJECT, 'dependent-1');
+      await service.persistJsonGeneration(req, FRAMEWORK_SPEC, jsonEnvelope('Changed'), PROJECT, 'framework-2');
+      await approveStored(FRAMEWORK, 2);
+      store.reads.length = 0;
+      const listed = await service.listDocuments(req, PROJECT);
+      expect(listed.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents[0].needsRebuild).toBeTruthy();
+      expect(store.reads.filter((key) => /\/[0-9]{6}-[a-f0-9]{64}\.json$/.test(key))).toEqual([]);
+      const kit = revisionKeys().find((key) => key.includes('/brand-kit/'));
+      const metadata = storedObject(kit ?? '').metadata;
+      expect(Object.entries(metadata).reduce((bytes, [key, value]) => bytes + Buffer.byteLength(key + value), 0)).toBeLessThan(2048);
+    });
+
+    it('never trusts an agent-supplied upstream ref or guesses unknown sessions from current approval', async () => {
+      const { ref } = await approvedFramework();
+      await service.persistGeneration(
+        req,
+        SPEC,
+        { ...envelope('# Unknown provenance'), upstreamFramework: ref } as MktgArtifactEnvelope,
+        PROJECT,
+        'old-session'
+      );
+      const kit = revisionKeys().find((key) => key.includes('/brand-kit/'));
+      expect(storedRecord(kit ?? '').bundle.sidecar).not.toHaveProperty('upstreamFramework');
+      expect((await service.listDocuments(req, PROJECT)).groups.find((group) => group.type.agentKey === 'brand-kit')?.documents[0].needsRebuild).toBeNull();
+    });
+
+    it('makes same-capture retry idempotent and rejects a different capture for the same session', async () => {
+      const { ref } = await approvedFramework();
+      await service.rememberGenerationFramework(req, 'brand-kit', PROJECT, 'dependent-1', ref);
+      await service.rememberGenerationFramework(req, 'brand-kit', PROJECT, 'dependent-1', ref);
+      if (!ref) throw new Error('Expected synthetic approved input');
+      await expect(service.rememberGenerationFramework(req, 'brand-kit', PROJECT, 'dependent-1', { ...ref, revisionNumber: 99 })).rejects.toThrow();
+    });
+
+    it('fails closed on a corrupt capture or failed write, leaving persistence retryable', async () => {
+      const { ref } = await approvedFramework();
+      store.failPutsMatching = /generation-provenance/;
+      await expect(service.rememberGenerationFramework(req, 'brand-kit', PROJECT, 'dependent-1', ref)).rejects.toThrow();
+      store.failPutsMatching = null;
+      await service.rememberGenerationFramework(req, 'brand-kit', PROJECT, 'dependent-1', ref);
+      const capture = [...store.objects.keys()].find((key) => key.startsWith('generation-provenance/'));
+      storedObject(capture ?? '').body = '{}';
+      expect(await service.persistGeneration(req, SPEC, envelope('# Retry later'), PROJECT, 'dependent-1')).toBeNull();
+      expect(revisionKeys().filter((key) => key.includes('/brand-kit/'))).toEqual([]);
+    });
   });
 
   async function approveStored(type: MktgDocumentType, number: number): Promise<void> {
@@ -479,9 +639,10 @@ describe('MktgDocumentStoreService', () => {
 
       const receipt = await service.persistGeneration(req, SPEC, generated, PROJECT, 'session-1');
 
-      expect(receipt?.s3_key).toBe(`brand-kit/${PROJECT}/${generated.content_sha256}.md`);
+      expect(store.objects.has(`brand-kit/${PROJECT}/${generated.content_sha256}.md`)).toBe(true);
       const keys = revisionKeys();
       expect(keys).toHaveLength(1);
+      expect(receipt?.s3_key).toBe(keys[0]);
       expect(keys[0]).toMatch(new RegExp(`^documents/${PROJECT}/brand-kit/living/000001-[0-9a-f]{64}\\.json$`));
       // Content-addressed by the record's own bytes.
       expect(keys[0]).toContain(sha(store.objects.get(keys[0])?.body ?? ''));
@@ -887,12 +1048,14 @@ describe('MktgDocumentStoreService', () => {
       expect((await service.getDocument(req, PROJECT, BRAND_KIT, 'living'))?.revisions[0].author).toEqual({ name: null });
     });
 
-    it('omits a corrupt document without failing other documents in the project', async () => {
+    it('keeps navigation best-effort but strictly rejects unreadable family documents, not missing ones', async () => {
+      await expect(service.listDocuments(req, PROJECT, [BRAND_KIT.agentKey])).resolves.toMatchObject({ project: PROJECT });
       await service.recordGeneration(req, BRAND_KIT, PROJECT, envelope('# One'), 'one');
       const run = await service.recordGeneration(req, LINKEDIN, PROJECT, envelope('# Run'), 'run');
       const pointer = store.objects.get(`documents/${PROJECT}/brand-kit/living/current.json`);
       if (!pointer) throw new Error('Expected synthetic pointer to exist');
       pointer.body = 'not json';
+      await expect(service.listDocuments(req, PROJECT, [BRAND_KIT.agentKey])).rejects.toBeInstanceOf(MicroserviceError);
       const listed = await service.listDocuments(req, PROJECT);
       expect(listed.groups.find((group) => group.type.agentKey === 'brand-kit')?.documents).toEqual([]);
       expect(listed.groups.find((group) => group.type.agentKey === 'linkedin-post')?.documents[0].documentId).toBe(run.record.documentId);

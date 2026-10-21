@@ -185,8 +185,9 @@ export class HealthMetricsEngagementService {
 
     // The sub-nav's "below 50%": not dormant and rated, so a "No data" row never counts. A null
     // dormancy flag reads as not dormant, as `mapGroupPeriod` does; bound here, in SQL order.
-    const lowAttendanceColumn = `COUNT_IF(NOT COALESCE(is_dormant_${suffix}, FALSE) AND attendance_pct_${suffix} < ? AND meetings_count_${suffix} >= ?) AS low_attendance_groups`;
-    binds.push(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE);
+    // Compared on the whole percent the bars show, so a group reading "50%" is never counted below it.
+    const lowAttendanceColumn = `COUNT_IF(NOT COALESCE(is_dormant_${suffix}, FALSE) AND ROUND(attendance_pct_${suffix} * 100) < ? AND meetings_count_${suffix} >= ?) AS low_attendance_groups`;
+    binds.push(Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100), HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE);
 
     // The per-type counts and the header stay on the whole scope, so the type cut applies to the page
     // and its paginator total only; each type's labels are bound where they are counted.

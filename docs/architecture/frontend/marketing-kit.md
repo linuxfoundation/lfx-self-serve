@@ -29,8 +29,11 @@ on scope changes. Failed reads never assert an empty kit or invented zero counts
 Without approval metadata a populated living document is **Draft**; a registered type
 without a document is **Missing**; an unbuilt asset is **Coming soon**. **Approved · vN**
 reads only the store's valid `approvedCurrent` (non-empty revision id, positive revision number).
-The service passes listing items unchanged, never inventing approval. **Needs rebuild** awaits its real producer;
-a timestamp, latest/current pointer or revision count alone is never approval or staleness.
+The service passes listing items unchanged, never inventing approval. **Needs rebuild**
+comes from the server's `needsRebuild` projection: each downstream asset's current-revision
+provenance is compared by revision identity and content hash against the approved-current
+framework. Unknown provenance and one-off outputs never mark; a timestamp or revision
+count alone is never approval or staleness. See [downstream rebuild](../backend/mktg-rebuild.md).
 
 Current prefers the store's valid `currentRevisionNumber`; older listings fall back to the
 sequence in the selected `latestRevisionId`, **never `revisionCount`**. Its date is `updatedAt`. Non-sequence legacy ids show no invented
@@ -74,9 +77,11 @@ its button automatically enables once an active catalog entry lands.
 Missing rows offer a Run link only for an active, non-excluded catalog agent, keeping query
 params and leaving the header Run button unchanged.
 Made by shows the agent only; approved-by/comment attribution stays absent until its producer
-supplies real read-time metadata. Rebuild remains disabled: stale means built from an older
-framework revision than the current approved framework, for boilerplates/FAQ/brand kit only;
-one-off runs never go stale. Its implementation belongs to a separate item.
+supplies real read-time metadata. On the `positioning-brand` Family page, Rebuild runs
+`lfx-mktg-rebuild` for the stale downstream set in family order, with live progress and
+questions answered in place on the same session. Other families retain Coming soon.
+The framework Asset view's Downstream action enters that flow through one-shot router
+navigation state, never a URL write command. See [the API and sequencing contract](../backend/mktg-rebuild.md).
 
 `lfx-mktg-family-export-actions` is the export integration slot, with required `familyId`
 and stable `family-export-pdf` / `family-export-slides` IDs. Both buttons remain disabled

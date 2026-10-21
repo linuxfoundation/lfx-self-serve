@@ -24,15 +24,17 @@ oversized-upload rejection depends on socket and response-lifecycle semantics th
 before the first such spec existed, on the proxy it replaced. Reach for one only when that is the case — a fake is cheaper everywhere else.
 
 ```bash
-yarn test          # both halves (this is what CI runs)
+yarn test          # local: server then app; root Turbo also runs shared tests
 yarn test:server   # server only — fast, no Angular compile
 yarn test:app      # app only
 ```
 
-`yarn test` runs the two halves **unconditionally** and exits with the worse of the two statuses,
+The app workspace's `yarn test` runs the two halves **serially and unconditionally** and exits with the worse of the two statuses,
 rather than chaining them with `&&`. A failing server spec must not stop the app half from
-running: the point of splitting them is that each half reports independently, and a CI log that
-shows only the first failure sends you back for a second round to discover the second.
+running: the point of splitting them is that each half reports independently, and a local run that
+shows only the first failure sends you back for a second round to discover the second. At the
+repo root, Turbo also runs the shared package's tests. CI uses independent jobs instead of this
+local wrapper.
 
 That lives in `scripts/run-tests.mjs` rather than in the `package.json` script, because
 `yarn run` executes scripts in **Yarn's own portable shell, not `sh`**. That shell has no `$?`
@@ -44,6 +46,67 @@ changes to it **through `yarn test`**, not by running the pieces by hand.
 Keep the two sets disjoint. A server spec picked up by the Angular builder pays for a browser
 environment it never uses; an app spec picked up by `vitest.config.ts` fails on the missing
 template compiler.
+
+## CI execution
+
+The **Quality Checks** workflow (`.github/workflows/quality-check.yml`) runs these jobs
+independently, so a failure in one does not prevent the others from reporting:
+
+- `static-checks`: fixture-data and company-address guards, formatting, lint, type checking, and
+  E2E collection (no browser execution).
+- `build`: the full `yarn build`.
+- `unit-tests`: a server/shared matrix with `fail-fast: false`.
+- `frontend-tests`: an app-spec matrix of shards 1–4, also with `fail-fast: false`. Each shard
+  builds the shared package and runs `docs:build` before executing its app specs.
+
+The final `quality-checks` job retains the check name **Code Quality Checks**. It runs with
+`always()` and succeeds only when **every** required job succeeds; a skipped, cancelled, or
+failed dependency cannot produce a green aggregate check.
+
+### Incremental compiler caching
+
+Angular's disk cache is enabled for both local development and CI through
+`cli.cache.environment: "all"` in `apps/lfx-one/angular.json`. The production-build job
+restores and saves **only** `apps/lfx-one/.angular/cache`. Its namespace includes the runner
+OS/architecture, resolved Node version, dependency and build-configuration hash, and production
+mode. Each successful source revision
+gets a new cache key; the matching namespace can restore earlier incremental state. Angular still
+validates the current source inputs.
+
+Cache hits never skip a build or test command. Compiled application outputs, test results, and
+Turbo task-success records are not persisted. In particular, restoring `.turbo` would need a
+separate audit of environment hashing and validation semantics; compiler caching is not task caching.
+
+Only successful main pushes, same-repository pull requests, and manual runs save caches. Fork
+pull requests and merge-queue runs may restore accessible caches but do not save them. Compiler
+caches can contain transformed source: keep deployment secrets and generated secret-bearing
+configuration out of these jobs, and never consume PR-scoped caches from privileged deployment jobs.
+
+The first production run populates the cache. Frontend shards do not transfer persistent caches:
+benchmarking showed too little warm-compilation improvement to justify transfer/storage overhead.
+Compare compilation and cache-transfer durations on later runs before extending cache persistence
+to another job. From `apps/lfx-one`, `yarn ng cache info` reports
+the effective setting and cache size; `yarn ng cache clean` clears this workspace's compiler state.
+
+### Running an app shard locally
+
+From `apps/lfx-one`, after building `@lfx-one/shared` and running `yarn docs:build`:
+
+```bash
+node scripts/run-app-test-shard.mjs 1/4         # execute the first of four shards
+node scripts/run-app-test-shard.mjs 1/4 --list  # print the partition without executing tests
+```
+
+The caller supplies those build prerequisites; the shard runner does not perform them. It
+discovers `src/app/**/*.spec.ts` and assigns files deterministically using weighted greedy
+balancing: checked-in historical timing weights in `scripts/frontend-test-durations.json` supply the
+weights, with a one-second default for other or new specs. Every shard validates that the whole
+plan is exhaustive, disjoint, and nonempty. Invalid arguments fail, as does a change to the
+Angular test configuration's include/exclude discovery contract that the runner does not support.
+
+Execution still uses the Angular unit-test builder, with an explicit `--include` per assigned
+file and `--watch=false`, not vanilla Vitest. The Angular builder does not support native
+sharding. This CI partitioning leaves the local `yarn test` wrapper unchanged.
 
 ## The app-side builder
 
@@ -110,6 +173,25 @@ await fixture.whenStable();
 
 expect(pill('kubecon').getAttribute('aria-pressed')).toBe('true');
 ```
+
+### Fast tests without changing scheduling semantics
+
+Use virtual time for deliberate debounce and retry delays, rather than shortening production
+timeouts or waiting for them in real time. In RxJS debounce tests, selectively fake `Date`,
+`setInterval`, and `clearInterval`; leave Angular's timeout/animation-frame scheduling real.
+Flush the Angular effect that schedules the debounce **before** advancing time, then render and
+await stability. Preserve intermediate assertions that intentionally run before the debounce fires.
+
+Retry-budget tests must advance both timers and `Date`, because elapsed-time guards read the
+clock. Attach the promise's rejection assertion before asynchronous timer advancement so a
+rejection cannot become unhandled. Keep boundary cases and read-count assertions intact. Destroy
+fixtures or reset TestBed before restoring real timers, and clear pending virtual timers in teardown.
+
+For state-only component cases, an explicit empty-template fixture can retain the real component,
+forms, services, and signals without repeatedly mounting unrelated children. Keep real templates
+for DOM, child-binding, lazy-panel, and handoff assertions. Similarly, expensive module initialization
+can be shared within a fixed-configuration suite while stdout spies, mutable state, environment
+restoration, and filesystem scratch directories remain isolated per test.
 
 ## Writing an app spec
 

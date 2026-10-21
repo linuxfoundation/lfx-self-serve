@@ -38,6 +38,7 @@ vi.mock('./user.service', () => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-envelope.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/brand-kit.utils')),
@@ -55,6 +56,8 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-rebuild.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/brand-kit.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-slides-export.constants')),

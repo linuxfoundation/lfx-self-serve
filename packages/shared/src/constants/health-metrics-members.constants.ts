@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { lfxColors } from './colors.constants';
-import { HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS } from './health-metrics-engagement.constants';
+import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
+  HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+} from './health-metrics-engagement.constants';
 
 import type { FilterOption } from '../interfaces/filter.interface';
+import type { HealthMetricsEngagementAttendanceRule } from '../interfaces/health-metrics-engagement.interface';
 import type { HealthMetricsFootnotePart, HealthMetricsL2CrossReference } from '../interfaces/health-metrics-l2.interface';
 import type {
   HealthMetricsMembersAtRisk,
@@ -13,6 +18,7 @@ import type {
   HealthMetricsMembersBridge,
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardLatestTone,
   HealthMetricsMembersBoardCohortOption,
   HealthMetricsMembersBridgeStepType,
   HealthMetricsMembersChurn,
@@ -426,6 +432,32 @@ export const HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS: Record<HealthMetricsMem
   voting_members: 'voting meeting',
 };
 
+/** Each cohort's attendance rule: the board's (ENG-01), and voting members as another voting group (ENG-03). */
+export const HEALTH_METRICS_MEMBERS_BOARD_COHORT_RULES: Record<HealthMetricsMembersBoardCohort, HealthMetricsEngagementAttendanceRule> = {
+  board: HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
+  voting_members: HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
+};
+
+/** The hero caption's suffix when the latest meeting is below its cohort's rule; the board's is the design's. */
+export const HEALTH_METRICS_MEMBERS_BOARD_BELOW_LEVEL_CAPTIONS: Record<HealthMetricsMembersBoardCohort, string> = {
+  board: 'below the ~100% this should be',
+  voting_members: `below the ${Math.round(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE.threshold * 100)}% a voting group needs`,
+};
+
+/** The trend's latest bar: red or amber below the cohort's rule, the accent otherwise. */
+export const HEALTH_METRICS_MEMBERS_BOARD_LATEST_BAR_COLORS: Record<HealthMetricsMembersBoardLatestTone, string> = {
+  critical: lfxColors.red[600],
+  low: lfxColors.amber[500],
+  ok: lfxColors.blue[500],
+};
+
+/** The hero value's colour: red or amber below the cohort's rule, ink otherwise. */
+export const HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS: Record<HealthMetricsMembersBoardLatestTone, string> = {
+  critical: 'text-red-600',
+  low: 'text-amber-600',
+  ok: 'text-gray-900',
+};
+
 /** Read-failed / no-foundation value: no cohorts measured, so the section renders no figures. */
 export const HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED: HealthMetricsMembersBoardAttendance = {
   cohorts: { board: null, voting_members: null },
@@ -463,8 +495,8 @@ export const HEALTH_METRICS_MEMBERS_NPS_LEADING_AUDIENCES = ['Board', 'Maintaine
 /** Longest audience name a caller may pass; the view's names are far shorter. */
 export const HEALTH_METRICS_MEMBERS_NPS_MAX_AUDIENCE_LENGTH = 100;
 
-/** Below this whole-percent response rate, a score is not a foundation-wide signal. */
-export const HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT = 40;
+/** Below this whole-percent response rate the sample is too small to trust the score (NPS-04). */
+export const HEALTH_METRICS_MEMBERS_NPS_RATE_FLOOR_PCT = 35;
 
 /** A response-rate fall of at least this many points makes a rising score unproven; a smaller one is noise. */
 export const HEALTH_METRICS_MEMBERS_NPS_RATE_DROP_PP = 5;

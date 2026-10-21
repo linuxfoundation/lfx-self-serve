@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES } from '@lfx-one/shared/constants';
-import express, { NextFunction, Request, RequestHandler, Response, Router } from 'express';
+import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FILE_BYTES, MEMBER_360_MAX_BYTES } from '@lfx-one/shared/constants';
+import express, { NextFunction, raw, Request, RequestHandler, Response, Router } from 'express';
 
 import type { LinkedinPostController } from '../controllers/linkedin-post.controller';
 import { Member360Controller } from '../controllers/member-360.controller';
+import { Member360WorkbookController } from '../controllers/member-360-workbook.controller';
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
+import type { MktgRebuildController } from '../controllers/mktg-rebuild.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
 import { MicroserviceError } from '../errors';
 import { blockDuringImpersonation } from '../middleware/impersonation-readonly.middleware';
@@ -66,9 +68,41 @@ const mktgAgentsController = new MktgAgentsController();
 const mktgDocumentsController = new MktgDocumentsController();
 const mktgSlidesExportController = new MktgSlidesExportController();
 const member360Controller = new Member360Controller();
+const member360Workbook = new Member360WorkbookController();
+
+router.get('/member-360/documents/:documentId/workbook', (req, res, next) => member360Workbook.download(req, res, next));
+router.post(
+  '/member-360/tracker',
+  raw({ type: 'application/octet-stream', limit: MEMBER_360_MAX_BYTES }),
+  (err: unknown, req: Request, _res: Response, next: NextFunction) => {
+    if (err && typeof err === 'object' && 'type' in err && err.type === 'entity.too.large') {
+      next(new MicroserviceError('The tracker exceeds 5 MB.', 413, 'PAYLOAD_TOO_LARGE', { operation: 'member_360_tracker', path: req.path }));
+      return;
+    }
+    next(err);
+  },
+  (req: Request, res: Response, next: NextFunction) => member360Workbook.parseTracker(req, res, next)
+);
 
 router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
 router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));
+
+let rebuild: MktgRebuildController | undefined;
+function rebuildRoute(method: keyof MktgRebuildController): RequestHandler {
+  return (req, res, next): void => {
+    void import('../controllers/mktg-rebuild.controller')
+      .then(({ MktgRebuildController }) => {
+        rebuild ??= new MktgRebuildController();
+        return rebuild[method](req, res, next);
+      })
+      .catch(next);
+  };
+}
+
+// Every chain endpoint can persist a Draft/turn and is a writer operation.
+router.post('/rebuild/start', blockDuringImpersonation, rebuildRoute('start'));
+router.post('/rebuild/advance', blockDuringImpersonation, rebuildRoute('advance'));
+router.post('/rebuild/result', blockDuringImpersonation, rebuildRoute('result'));
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));

@@ -63,6 +63,8 @@ vi.mock('./mktg-document-store.service', async () => {
   const { MktgArtifactService } = await import('./mktg-artifact.service');
   return {
     MktgDocumentStoreService: class {
+      public captureFramework = vi.fn(async () => null);
+      public rememberGenerationFramework = vi.fn(async () => undefined);
       private readonly artifactService = new MktgArtifactService();
       public async persistJsonGeneration(
         req: Request,

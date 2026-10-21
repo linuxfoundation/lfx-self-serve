@@ -23,6 +23,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
 
+// Typed document fixtures and providers share one seam with sibling agents.
+import { Title } from '@angular/platform-browser';
+import { Member360Result } from '@lfx-one/shared/interfaces';
+import { Member360Service } from '@services/member-360.service';
+import { member360Fixture } from '../../../../../e2e/fixtures/mock-data/member-360.mock';
+import { SYNTHETIC_ORG_NAME } from '../../../../../e2e/fixtures/mock-data/synthetic-org.mock';
+
 describe('MktgDocumentViewComponent', () => {
   const PROJECT: ProjectContext = { uid: 'proj-1', name: 'TestOrbit', slug: 'testorbit' };
   const BRAND_KIT = MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === 'brand-kit') as MktgDocumentType;
@@ -62,7 +69,13 @@ describe('MktgDocumentViewComponent', () => {
   let resolveBrandKit: ReturnType<typeof vi.fn>;
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let slidesExport: { last: ReturnType<typeof vi.fn>; start: ReturnType<typeof vi.fn>; poll: ReturnType<typeof vi.fn> };
+  const run = {
+    isPending: vi.fn(() => false),
+    pendingStartedAt: vi.fn(() => Date.parse('2026-10-19T10:00:00.000Z')),
+    waitForStored: vi.fn<Member360Service['waitForStored']>(() => of({ status: 'ready', stored: true })),
+  };
   let store: {
+    listDocuments: ReturnType<typeof vi.fn>;
     getDocument: ReturnType<typeof vi.fn>;
     getRevision: ReturnType<typeof vi.fn>;
     getApprovedRevision: ReturnType<typeof vi.fn>;
@@ -199,7 +212,9 @@ describe('MktgDocumentViewComponent', () => {
   }
 
   beforeEach(async () => {
+    run.isPending.mockReturnValue(false);
     store = {
+      listDocuments: vi.fn(() => of({ groups: [] })),
       getDocument: vi.fn(() => of(detail)),
       getRevision: vi.fn((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
         of(revisionResponse([LATEST, OLDER, RESTORED].find((candidate) => candidate.id === revisionId) ?? LATEST))
@@ -243,6 +258,7 @@ describe('MktgDocumentViewComponent', () => {
         { provide: MktgDocumentStoreService, useValue: store },
         { provide: ProjectService, useValue: { getProject: projectLookup } },
         { provide: UserService, useValue: { impersonating, user: viewer } },
+        { provide: Member360Service, useValue: run },
       ],
     }).compileComponents();
   });
@@ -444,6 +460,121 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-document')?.textContent).toContain('Older post [LINK]');
     expect(query('mktg-linkedin-option')).toBeNull();
     expectNoKitAssetChrome();
+  });
+
+  it('keeps loading while project context is unresolved', async () => {
+    activeContext.set(null);
+    await render('/documents/brand-kit/living');
+    expect(query('mktg-document-view-loading')).not.toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    activeContext.set(PROJECT);
+    await settle();
+    expect(store.getDocument).toHaveBeenCalled();
+  });
+
+  it('keeps the document generating until the server confirms persistence', async () => {
+    const completion = new Subject<Member360Result>();
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(completion);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('mktg-run-activity-title')?.textContent?.trim()).toBe('Working on Member 360');
+    expect(query('mktg-run-activity-starting')?.textContent).toContain('Starting the agent');
+    expect(query('mktg-run-activity-phase-questions')).toBeNull();
+    const onActivity = run.waitForStored.mock.calls.at(-1)?.[2];
+    onActivity?.([{ id: 'step-1', kind: 'lfx', label: 'Checking LFX', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' }]);
+    await settle();
+    expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX');
+    expect(store.getDocument).not.toHaveBeenCalled();
+    completion.next({ status: 'ready', stored: true });
+    await settle();
+    expect(store.getDocument).toHaveBeenCalled();
+  });
+
+  it.each(['no_edit_access', 'agent_stopped'] as const)('shows a short %s reason, collapsed Details and Run again', async (reason) => {
+    run.isPending.mockReturnValue(true);
+    const message =
+      reason === 'no_edit_access'
+        ? 'SCOPE GUARD: no entitlement for sample-project-uid in this session.'
+        : 'The internal session stopped before producing the report.';
+    run.waitForStored.mockReturnValue(of({ status: 'failed', reason, message }));
+    await render('/documents/member-360/run-0123456789abcdef01234567?revision=obsolete');
+    const short =
+      reason === 'no_edit_access'
+        ? "Member 360 couldn't run: your account doesn't have edit access to this project's member data."
+        : "Member 360 couldn't finish this run.";
+    expect(query('mktg-document-view-error')?.textContent).toContain(short);
+    expect(query('mktg-document-view-error')?.textContent).not.toContain(message);
+    const details = query('member-360-failure-details');
+    expect(details?.hasAttribute('open')).toBe(false);
+    expect(details?.querySelector('summary')?.textContent).toBe('Details');
+    expect(query('member-360-failure-message')?.textContent?.trim()).toBe(message);
+    details?.querySelector('summary')?.click();
+    expect(details?.hasAttribute('open')).toBe(true);
+    expect(query('member-360-run-again')?.textContent?.trim()).toBe('Run again');
+    expect(query('member-360-run-again')?.getAttribute('href')).toBe('/project/mktg-os-agents/member-360');
+    expect(query('mktg-document-view-retry')).toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
+    expect(query('mktg-run-activity-title')).toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(store.getRevision).not.toHaveBeenCalled();
+  });
+
+  it('keeps a questions turn open with the feed instead of an error or stored result', async () => {
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(of({ status: 'needs_input' }));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('member-360-needs-input')?.textContent).toContain('this version of the page cannot answer yet; the run stays open');
+    expect(query('mktg-run-activity-title')).not.toBeNull();
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+  });
+  it('renders Member 360 as the structured type of this document, not a second viewer', async () => {
+    const member360 = member360Fixture();
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360 }));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('member-360-result')).not.toBeNull();
+    expect(query('member-360-ranking')?.textContent).toContain(SYNTHETIC_ORG_NAME);
+    expect(query('mktg-document-view-document')).toBeNull();
+  });
+
+  it('opens a stored Member 360 report without a subject, including after a user-context flicker', async () => {
+    run.waitForStored.mockClear();
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), member360: member360Fixture() }));
+    viewer.set(undefined);
+    impersonating.set(true);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(query('member-360-result')).not.toBeNull();
+    viewer.set({ sub: 'synthetic-writer' });
+    await settle();
+    viewer.set(undefined);
+    await settle();
+    expect(query('member-360-result')).not.toBeNull();
+    expect(query('mktg-document-view-loading')).toBeNull();
+    expect(run.waitForStored).not.toHaveBeenCalled();
+  });
+
+  it('gates pending capabilities on the subject but leaves a failed stored read retryable', async () => {
+    run.isPending.mockClear();
+    run.waitForStored.mockClear();
+    viewer.set(undefined);
+    run.isPending.mockReturnValue(true);
+    run.waitForStored.mockReturnValue(NEVER);
+    store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    expect(run.isPending).not.toHaveBeenCalled();
+    expect(run.waitForStored).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-loading')).toBeNull();
+    expect(query('mktg-document-view-retry')).not.toBeNull();
+    viewer.set({ sub: 'synthetic-writer' });
+    await settle();
+    expect(run.isPending).toHaveBeenCalledWith(PROJECT.uid, 'run-0123456789abcdef01234567');
+    expect(run.waitForStored).toHaveBeenCalled();
+  });
+
+  it('does not replace a prose document title with the typed document title', async () => {
+    TestBed.inject(Title).setTitle('Baseline document · LFX');
+    await render('/documents/brand-kit/living');
+    expect(TestBed.inject(Title).getTitle()).toBe('Baseline document · LFX');
   });
 
   it('opens the latest revision when no revision is asked for', async () => {

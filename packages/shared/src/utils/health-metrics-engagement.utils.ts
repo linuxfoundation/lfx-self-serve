@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
   HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_TREND_MIN_MONTHS,
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
@@ -20,6 +21,7 @@ import { formatIsoDateLabel } from './date-time.utils';
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
   HealthMetricsEngagementAttendanceMonth,
+  HealthMetricsEngagementAttendanceRule,
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementAttendanceTrendPointView,
   HealthMetricsEngagementAttendanceTrendSummaryView,
@@ -77,15 +79,19 @@ export function formatHealthMetricsEngagementRatio(numerator: number | null, den
 }
 
 /**
- * Three bar states, not the Overview's five classification codes: nobody showed up, showing up
- * badly, or fine. Blue is the design's interaction colour and is deliberately reused for "fine".
+ * Bar states, not the Overview's five classification codes: nobody showed up, below the group's rule
+ * (amber, or red for the board), or fine. Blue is the design's interaction colour, reused for "fine".
  */
-export function resolveHealthMetricsEngagementAttendanceTone(fraction: number | null): HealthMetricsEngagementAttendanceTone {
+export function resolveHealthMetricsEngagementAttendanceTone(
+  fraction: number | null,
+  rule: HealthMetricsEngagementAttendanceRule = HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE
+): HealthMetricsEngagementAttendanceTone {
   if (fraction === null || fraction === 0) {
     return 'empty';
   }
 
-  return fraction < HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD ? 'low' : 'ok';
+  // Judged on the whole percent the label shows, so a bar reading "90%" is never red under a 90% rule.
+  return Math.round(fraction * 100) < Math.round(rule.threshold * 100) ? rule.tone : 'ok';
 }
 
 /**

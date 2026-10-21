@@ -180,6 +180,20 @@
           }
         </div>
 
+        @if (!pastMeeting() && showAddRegistrant() && inviteResend.canResend(registrant)) {
+          <button
+            type="button"
+            class="flex-shrink-0 rounded-md p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-50"
+            [attr.aria-label]="'Resend invite to ' + registrant.first_name + ' ' + registrant.last_name"
+            [attr.data-testid]="'registrant-display-resend-' + registrant.uid"
+            pTooltip="Resend invite"
+            tooltipPosition="top"
+            [disabled]="inviteResend.isResending(registrant.uid)"
+            (click)="onRequestResendInvite(registrant)">
+            <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
+          </button>
+        }
+
         @if (!pastMeeting() && showAddRegistrant() && registrant.type !== 'committee') {
           <button
             type="button"
