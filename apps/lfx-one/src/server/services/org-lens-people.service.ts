@@ -24,7 +24,6 @@ import type {
   OrgAllEmployeeVotingStatus,
   OrgAllEmployeesInternalResponse,
   OrgAllEmployeesResponse,
-  OrgCompanyEmailsStatus,
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
@@ -135,30 +134,19 @@ export class OrgLensPeopleService {
     };
   }
 
-  /** Chevron-expansion detail for one person within an account; five Snowflake queries in parallel, served through the shared per-org cache. */
+  /**
+   * Chevron-expansion detail for one person within an account: four activity queries in parallel, served
+   * through the shared per-org cache. Company addresses are a separate read (`getCompanyEmails`): they come
+   * from a live warehouse view that takes seconds, so callers render activity without waiting for it.
+   */
   public async getEmployeeDetail(req: Request, accountId: string, personKey: string): Promise<OrgAllEmployeeDetail> {
-    // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every one of the five detail
-    // queries is a guaranteed-empty round trip for them. Short-circuit straight to the live-merged
-    // roster (access/board/committee/keyContact sources) instead of burning five Snowflake
-    // connections just to resolve an email.
+    // Live-only (synthetic) keys have no ORG_PEOPLE_ALL row at all — every activity query is a guaranteed-empty
+    // round trip for them, so answer the empty detail without touching Snowflake.
     if (personKey.startsWith('live-')) {
-      // A synthetic key joins to nothing in the warehouse; read on the roster's LF username instead.
-      // No username → unavailable, never "no company address".
-      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
-      const live = username ? await this.getCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
-      return {
-        personKey,
-        boardSeats: [],
-        committeeSeats: [],
-        code: [],
-        events: [],
-        training: [],
-        companyEmails: live.companyEmails,
-        companyEmailsStatus: live.companyEmailsStatus,
-      };
+      return { personKey, boardSeats: [], committeeSeats: [], code: [], events: [], training: [] };
     }
 
-    const { committeeRows, codeRows, eventRows, trainingRows, companyEmails, companyEmailsStatus } = await this.fetchEmployeeDetailRaw(accountId, personKey);
+    const { committeeRows, codeRows, eventRows, trainingRows } = await this.fetchEmployeeActivityRaw(accountId, personKey);
 
     const memberships = committeeRows.map((row) => this.mapCommitteeRow(row));
     const boardSeats = memberships.filter((m) => m.isBoard);
@@ -191,9 +179,21 @@ export class OrgLensPeopleService {
       code: codeRows.map((row) => this.mapCodeRow(row)),
       events,
       training,
-      companyEmails,
-      companyEmailsStatus,
     };
+  }
+
+  /**
+   * Company-affiliated emails for a person identified by warehouse person key.
+   *
+   * A live-only (synthetic) key joins to nothing in the warehouse, so it reads on the live roster's LF
+   * username instead. No username → unavailable, never "no company address".
+   */
+  public async getCompanyEmails(req: Request, accountId: string, personKey: string): Promise<OrgPersonCompanyEmailsResponse> {
+    if (personKey.startsWith('live-')) {
+      const username = await this.resolveLiveOnlyUsername(req, accountId, personKey);
+      return username ? this.getCompanyEmailsByUsername(accountId, username) : UNAVAILABLE_COMPANY_EMAILS;
+    }
+    return this.getCompanyEmailsForPersonKey(accountId, personKey);
   }
 
   /**
@@ -389,21 +389,6 @@ export class OrgLensPeopleService {
     };
   }
 
-  /**
-   * Activity rows and company addresses are cached separately: a failed address read is never stored,
-   * and must not cost the four activity queries their cache slot while the address table is unhealthy.
-   */
-  private async fetchEmployeeDetailRaw(
-    accountId: string,
-    personKey: string
-  ): Promise<EmployeeActivityRaw & { companyEmails: string[]; companyEmailsStatus: OrgCompanyEmailsStatus }> {
-    const [activity, emails] = await Promise.all([
-      this.fetchEmployeeActivityRaw(accountId, personKey),
-      this.getCompanyEmailsForPersonKey(accountId, personKey),
-    ]);
-    return { ...activity, companyEmails: emails.companyEmails, companyEmailsStatus: emails.companyEmailsStatus };
-  }
-
   /** A non-filter-safe personKey bypasses the shared cache to keep the key namespace intact. */
   private fetchEmployeeActivityRaw(accountId: string, personKey: string): Promise<EmployeeActivityRaw> {
     if (!isFilterSafeIdentifier(personKey)) {
@@ -429,7 +414,7 @@ export class OrgLensPeopleService {
   }
 
   /**
-   * A failure degrades this section only, never the whole detail response, and is never cached.
+   * A failure is answered as `failed` and is never cached.
    *
    * A `cdp:` person key (no Salesforce identity to join on) short-circuits to `unavailable`
    * before the cache: no verified identity → not available, never "none on record".
@@ -455,7 +440,7 @@ export class OrgLensPeopleService {
         isCacheableCompanyEmails
       );
     } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_detail', 'company email lookup failed; serving detail without addresses', {
+      logger.info(undefined, 'get_org_lens_people_company_emails', 'company email lookup failed', {
         person_key: personKey,
         err: error,
       });

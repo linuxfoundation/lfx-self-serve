@@ -4,7 +4,8 @@
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getEmployeeDetailByUsername, logger } = vi.hoisted(() => ({
+const { getCompanyEmails, getEmployeeDetailByUsername, logger } = vi.hoisted(() => ({
+  getCompanyEmails: vi.fn(),
   getEmployeeDetailByUsername: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -15,6 +16,7 @@ vi.mock('@lfx-one/shared/utils', async () => ({ ...(await import('../../../../..
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../services/org-lens-people.service', () => ({
   OrgLensPeopleService: class {
+    public getCompanyEmails = getCompanyEmails;
     public getEmployeeDetailByUsername = getEmployeeDetailByUsername;
   },
 }));
@@ -65,5 +67,23 @@ describe('OrgLensPeopleController getEmployeeDetailByUsername (lfx-self-serve-op
     expect(next).not.toHaveBeenCalled();
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(res.json).toHaveBeenCalledWith(null);
+  });
+});
+
+describe('OrgLensPeopleController getCompanyEmails', () => {
+  const controller = new OrgLensPeopleController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects an unsafe person key before any lookup', async () => {
+    for (const personKey of ['a/b', "x' OR '1'='1", 'abc', 'k'.repeat(129)]) {
+      const next = vi.fn();
+      const req = { params: { orgUid: ORG_UID, personKey }, query: {}, path: '/test' } as unknown as Request;
+      await controller.getCompanyEmails(req, buildRes(), next);
+      expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+    }
+    expect(getCompanyEmails).not.toHaveBeenCalled();
   });
 });

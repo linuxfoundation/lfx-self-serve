@@ -131,7 +131,7 @@ afterEach(() => {
 
 async function expectBothPaths(expected: OrgPersonCompanyEmailsResponse): Promise<void> {
   expect(await service.getCompanyEmailsByUsername(ACCOUNT, GOVERNANCE_USERNAME)).toEqual(expected);
-  expect(await service.getEmployeeDetail({} as never, ACCOUNT, LIVE_PERSON)).toMatchObject(expected);
+  expect(await service.getCompanyEmails({} as never, ACCOUNT, LIVE_PERSON)).toEqual(expected);
 }
 
 describe('OrgLensPeopleService username company emails', () => {
@@ -351,64 +351,42 @@ describe('OrgLensPeopleService person-key company emails', () => {
   it('answers unavailable for cdp: person keys without resolving addresses', async () => {
     addPerson(ACCOUNT, 'cdp:member-one', 'MixedUser', ['first@company.example']);
 
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, 'cdp:member-one')).toMatchObject(UNAVAILABLE);
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, 'cdp:member-one')).toEqual(UNAVAILABLE);
   });
 
-  it('returns only the keyed person and account addresses in primary-first alphabetical order alongside activity', async () => {
+  it('returns activity without reading the address view', async () => {
+    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+
+    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({ personKey, ...activity });
+    const addressReads = (execute.mock.calls as [string][]).filter(([query]) => /ORG_PEOPLE_COMPANY_EMAILS/.test(query));
+    expect(addressReads).toEqual([]);
+  });
+
+  it('returns only the keyed person and account addresses in primary-first alphabetical order', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['z-primary@company.example', 'b-secondary@company.example', 'a-secondary@company.example']);
     addPerson('other-account', personKey, 'MixedUser', ['other-employer@other.example']);
     addPerson(ACCOUNT, 'person-two', 'mixeduser', ['other-person@company.example']);
 
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
-      personKey,
-      ...activity,
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['z-primary@company.example', 'a-secondary@company.example', 'b-secondary@company.example'],
       companyEmailsStatus: 'resolved',
-    });
-  });
-
-  it('preserves board, committee, code, event and training activity when the optional keyed email lookup fails', async () => {
-    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toEqual({
-      personKey,
-      ...activity,
-      companyEmails: [],
-      companyEmailsStatus: 'failed',
     });
   });
 
   it('retries a failed email lookup instead of replaying the failure from cache', async () => {
     addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
     database.exec('ALTER TABLE ORG_PEOPLE_COMPANY_EMAILS RENAME TO SAVED_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'failed',
-      companyEmails: [],
-    });
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({ companyEmails: [], companyEmailsStatus: 'failed' });
     database.exec('ALTER TABLE SAVED_EMAILS RENAME TO ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'resolved',
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
     });
     database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({
-      companyEmailsStatus: 'resolved',
+    expect(await service.getCompanyEmails({} as never, ACCOUNT, personKey)).toEqual({
       companyEmails: ['first@company.example'],
+      companyEmailsStatus: 'resolved',
     });
-  });
-
-  it('keeps activity rows cached while the email lookup is failing', async () => {
-    addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
-    database.exec('DROP TABLE ORG_PEOPLE_COMPANY_EMAILS');
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
-
-    database.exec(
-      'DROP TABLE ORG_PEOPLE_COMMITTEE_MEMBERSHIP; DROP TABLE ORG_PEOPLE_CODE_CONTRIBUTIONS; DROP TABLE ORG_PEOPLE_EVENTS; DROP TABLE ORG_PEOPLE_TRAINING'
-    );
-    const warehouseReads = execute.mock.calls.length;
-    expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
-    expect(execute).toHaveBeenCalledTimes(warehouseReads + 1);
   });
 
   describe('by LF username (lfx-self-serve-ops#894)', () => {
@@ -420,19 +398,13 @@ describe('OrgLensPeopleService person-key company emails', () => {
       database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?)').run(account, key, username);
     }
 
-    it("resolves the username to its one roster person in this account and returns that person's activity and addresses", async () => {
+    it("resolves the username to its one roster person in this account and returns that person's activity", async () => {
       addRosterRow(ACCOUNT, personKey, ' MixedUser ');
       addRosterRow(ACCOUNT, 'person-two', 'someone-else');
       // The same username in another account never makes this account's lookup ambiguous.
       addRosterRow('other-account', 'person-three', 'mixeduser');
-      addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
 
-      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'MIXEDUSER')).toEqual({
-        personKey,
-        ...activity,
-        companyEmails: ['first@company.example'],
-        companyEmailsStatus: 'resolved',
-      });
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'MIXEDUSER')).toEqual({ personKey, ...activity });
     });
 
     it('fails closed without reading activity when the username matches no roster person or several', async () => {

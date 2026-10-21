@@ -50,6 +50,8 @@
                 }}</span>
               }
             </span>
+          } @else if (companyEmailFeatureEnabled() && drawer.emailsLoading()) {
+            <span class="mt-1 h-3 w-40 animate-pulse rounded bg-gray-200" data-testid="person-detail-drawer-email-loading"></span>
           } @else if (companyEmailFeatureEnabled() && companyEmailsFailed()) {
             <span class="mt-1 truncate text-xs text-gray-400" data-testid="person-detail-drawer-email-failed"> Company emails couldn't be loaded </span>
           } @else if (companyEmailFeatureEnabled() && companyEmailsNotAvailable()) {

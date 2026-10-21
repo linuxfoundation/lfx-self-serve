@@ -17,7 +17,7 @@
  *   targeting needed for this one
  */
 
-import type { OrgAllEmployeeDetail, OrgContributionsResponse } from '@lfx-one/shared/interfaces';
+import type { OrgAllEmployeeDetail, OrgContributionsResponse, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
 import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
@@ -47,6 +47,9 @@ const MOCK_PERSON_DETAIL: OrgAllEmployeeDetail = {
   ],
   events: [],
   training: [],
+};
+
+const MOCK_COMPANY_EMAILS: OrgPersonCompanyEmailsResponse = {
   companyEmails: ['aramirez@acme-corp.example', 'aramirez@contractor.acme-corp.example'],
   companyEmailsStatus: 'resolved',
 };
@@ -215,6 +218,13 @@ async function stubPersonDetail(page: Page, detail: OrgAllEmployeeDetail = MOCK_
   });
 }
 
+async function stubCompanyEmails(page: Page, response: OrgPersonCompanyEmailsResponse = MOCK_COMPANY_EMAILS): Promise<void> {
+  await page.route('**/api/orgs/*/lens/people/*/company-emails', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
+  });
+}
+
 async function waitForContributionsLoaded(page: Page): Promise<void> {
   await expect(page.getByTestId('org-contributions-no-company-empty-state')).toHaveCount(0, { timeout: DATA_LOAD_TIMEOUT });
   await expect(page.getByTestId('org-contributions-content-card')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -233,6 +243,7 @@ async function gotoContributions(page: Page, response: OrgContributionsResponse 
   await stubOrgContext(page);
   await stubContributions(page, response);
   await stubPersonDetail(page);
+  await stubCompanyEmails(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
@@ -291,6 +302,11 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
     await gotoContributions(page);
     await waitForContributionsLoaded(page);
+    let companyEmailCalls = 0;
+    await page.route('**/api/orgs/*/lens/people/*/company-emails', (route) => {
+      companyEmailCalls += 1;
+      return route.fulfill({ status: 500, body: 'unexpected company-emails fetch' });
+    });
 
     await switchToCommitsTab(page);
     await expect(page.getByTestId('org-contributions-commit-demo-aramirez-20260513')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -306,33 +322,34 @@ test.describe('Org Lens Code Contributions — person detail drawer (S3)', () =>
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-not-available')).toHaveCount(0);
+    expect(companyEmailCalls).toBe(0);
   });
 
   for (const { label, status, state, otherState } of [
     { label: 'S3c', status: 'failed', state: 'failed', otherState: 'not-available' },
     { label: 'S3d', status: 'unavailable', state: 'not-available', otherState: 'failed' },
   ] as const) {
-    test(`${label}: person-key detail with ${status} company emails hides stale addresses`, async ({ page }) => {
+    test(`${label}: person-key company emails with ${status} status hide stale addresses`, async ({ page }) => {
       await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
       await gotoContributions(page);
       await waitForContributionsLoaded(page);
       // Keep the populated fixture adversarial: only a resolved status may expose addresses.
-      await stubPersonDetail(page, { ...MOCK_PERSON_DETAIL, companyEmailsStatus: status });
+      await stubCompanyEmails(page, { ...MOCK_COMPANY_EMAILS, companyEmailsStatus: status });
 
       await switchToCommitsTab(page);
-      const detailResponse = page.waitForResponse(
+      const emailsResponse = page.waitForResponse(
         (response) =>
-          new URL(response.url()).pathname === `/api/orgs/${MOCK_ACCOUNT_ID}/lens/people/${encodeURIComponent(MOCK_PERSON_KEY)}/detail` &&
+          new URL(response.url()).pathname === `/api/orgs/${MOCK_ACCOUNT_ID}/lens/people/${encodeURIComponent(MOCK_PERSON_KEY)}/company-emails` &&
           response.request().method() === 'GET'
       );
       await page.getByTestId('org-contributions-committer-demo-aramirez-20260513').click();
-      expect((await detailResponse).status()).toBe(200);
+      expect((await emailsResponse).status()).toBe(200);
       await expect(page.getByTestId('person-detail-drawer-header')).toContainText('Ana Ramirez');
       await expect(page.getByTestId(`person-detail-drawer-email-${state}`)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
       await expect(page.getByTestId(`person-detail-drawer-email-${otherState}`)).toHaveCount(0);
       await expect(page.getByTestId('person-detail-drawer-email-none')).toHaveCount(0);
       await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
-      for (const email of MOCK_PERSON_DETAIL.companyEmails) {
+      for (const email of MOCK_COMPANY_EMAILS.companyEmails) {
         await expect(page.getByText(email, { exact: true })).toHaveCount(0);
       }
     });
