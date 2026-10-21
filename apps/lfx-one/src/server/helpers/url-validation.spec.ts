@@ -92,6 +92,31 @@ describe('fetchSafeUrl final URL after redirects', () => {
     await new Promise<void>((resolve) => redirectServer.close(() => resolve()));
   });
 
+  it.each([false, true])('aborts pending DNS without a late request (redirect %s)', async (redirect) => {
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    const controller = new AbortController();
+    const failure = new Error('Synthetic DNS deadline');
+    let release: ((addresses: string[]) => void) | undefined;
+    const delayed = new Promise<string[]>((resolve) => {
+      release = resolve;
+    });
+    if (redirect) vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
+    vi.mocked(dns.promises.resolve4).mockImplementationOnce(() => {
+      controller.abort(failure);
+      return delayed;
+    });
+    const requests = vi.spyOn(http, 'request');
+    try {
+      await expect(fetchSafeUrl('https://events.example.com/old', controller.signal)).rejects.toBe(failure);
+      release?.(['93.184.216.34']);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(requests).toHaveBeenCalledTimes(redirect ? 1 : 0);
+    } finally {
+      release?.(['93.184.216.34']);
+      requests.mockRestore();
+    }
+  });
   it('reports the URL that actually served the response, not the one requested', async () => {
     // Imported INSIDE the test, like the ceiling tests below: the module must load after the
     // `node:https` mock is installed, or it captures the real transport.

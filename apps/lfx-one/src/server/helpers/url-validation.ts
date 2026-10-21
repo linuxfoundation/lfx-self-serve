@@ -360,9 +360,25 @@ export async function fetchSafeUrl(
 ): Promise<{ html: string; ok: boolean; status: number; finalUrl: string; contentType?: string }> {
   const https = await import('node:https');
   const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+  const resolveTarget = async (value: string): Promise<SsrfSafeTarget> => {
+    combinedSignal.throwIfAborted();
+    let abort: (() => void) | undefined;
+    try {
+      return await Promise.race([
+        new Promise<never>((_resolve, reject) => {
+          abort = () => reject(combinedSignal.reason);
+          combinedSignal.addEventListener('abort', abort, { once: true });
+        }),
+        resolveAndValidate(value),
+      ]);
+    } finally {
+      if (abort) combinedSignal.removeEventListener('abort', abort);
+    }
+  };
 
   const doRequest = (t: SsrfSafeTarget): Promise<{ body: string; statusCode: number; contentType: string; location?: string }> =>
     new Promise((resolve, reject) => {
+      combinedSignal.throwIfAborted();
       const req = https.request(
         {
           hostname: t.resolvedIp,
@@ -422,14 +438,14 @@ export async function fetchSafeUrl(
       req.end();
     });
 
-  let target = await resolveAndValidate(url);
+  let target = await resolveTarget(url);
   let result = await doRequest(target);
 
   let redirectCount = 0;
   while (result.statusCode >= 300 && result.statusCode < 400 && redirectCount < 5) {
     if (!result.location) break;
     const nextUrl = new URL(result.location, `https://${target.host}${target.path}`).href;
-    target = await resolveAndValidate(nextUrl);
+    target = await resolveTarget(nextUrl);
     result = await doRequest(target);
     redirectCount++;
   }
