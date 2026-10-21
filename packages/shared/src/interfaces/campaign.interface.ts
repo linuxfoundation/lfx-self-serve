@@ -5829,6 +5829,24 @@ export type AudienceBuildMode = 'build' | 'reuse';
 /** The Audience tab's numbered steps, in page order. Numbers are assigned to the visible ones only. */
 export type AudienceStepKey = 'discover' | 'include' | 'exclude' | 'reuse' | 'gaps' | 'compose' | 'qa';
 
+/** The two opt-in signals an event draft adds as existing lists rather than as new filters. */
+export type AudienceOptInSignal = 'project_opt_in' | 'lf_newsletter_opt_in';
+
+/**
+ * The existing opt-in lists looked up for an event draft. Opt-ins are HubSpot subscription types
+ * spread over many portal-specific properties, so they are never built as filters: the lists the
+ * portal already keeps for them are found by discovery and joined to Include instead.
+ */
+export interface AudienceOptInLookup {
+  status: 'idle' | 'loading' | 'done' | 'failed';
+  /** One list per signal, the largest found, added to Include. */
+  added: AudienceDiscoveredList[];
+  /** Further opt-in lists found, offered but not added. */
+  others: AudienceDiscoveredList[];
+  /** Opt-in signals discovery found no list for. */
+  missing: AudienceOptInSignal[];
+}
+
 /** The follow-up a readiness notice offers, emitted back to the tab that raised it. */
 export type AudienceReadinessAction = 'retry-audience-read' | 'retry-brief';
 

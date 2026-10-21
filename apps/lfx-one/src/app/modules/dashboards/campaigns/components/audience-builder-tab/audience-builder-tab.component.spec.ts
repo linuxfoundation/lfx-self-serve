@@ -3237,15 +3237,70 @@ describe('AudienceBuilderTabComponent', () => {
       expect((builderPreset() as { request: string }).request).toContain("SYN's education courses");
     });
 
-    it('plans an event audience from the event page through the model, without discovery', async () => {
+    it('plans an event audience from the event page through the model', async () => {
       await render();
       typeEventUrl('https://events.example.org/synthetic-summit/');
 
       click('campaigns-audience-event-generate');
 
-      expect(discoverAudience, 'an event audience needs no discovery').not.toHaveBeenCalled();
       expect(builderPreset()).toMatchObject({ eventUrl: 'https://events.example.org/synthetic-summit/' });
-      expect((builderPreset() as { request: string }).request).toContain('Regional expansion audience');
+      expect((builderPreset() as { request: string }).request).toContain('not limited to any location');
+    });
+
+    describe('opt-in lists for an event draft', () => {
+      function optIn(listId: string, signal: AudienceSignal, size?: number): AudienceDiscoveredList {
+        return { listId, name: `Opt-in ${listId}`, signal, size, reason: 'Subscribed', listType: 'DYNAMIC', hubspotUrl: '' };
+      }
+
+      async function draftWith(lists: AudienceDiscoveredList[], missingSignals: AudienceSignal[] = []): Promise<void> {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [...discovered().lists, ...lists], missingSignals }));
+      }
+
+      it('adds the largest project and LF Newsletter opt-in list to Include, and offers the rest', async () => {
+        await draftWith([optIn('301', 'project_opt_in', 50), optIn('302', 'project_opt_in', 900), optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        expect(discoverAudience).toHaveBeenCalledWith('tlf', { eventUrl: 'https://events.example.org/synthetic-summit/' });
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-302"]'), 'the largest project opt-in list was not included').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'the LF Newsletter list was not included').not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-301"]'), 'every opt-in variant joined the send').toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-101"]'), 'a non-opt-in discovered list joined Include').toBeNull();
+
+        click('campaigns-audience-opt-in-add-301');
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-301"]')).not.toBeNull();
+      });
+
+      it('leaves the Use existing lists steps as they were', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        expect(host().querySelector('[data-testid="campaigns-audience-mode-build"]')?.getAttribute('aria-selected')).toBe('true');
+        click('campaigns-audience-mode-reuse');
+        expect(
+          host().querySelector('[data-testid="campaigns-audience-discovered-steps"]')?.classList.contains('hidden'),
+          'the opt-in lookup filled the discovered grid'
+        ).toBe(true);
+      });
+
+      it('says which opt-in signal has no list', async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-missing-project_opt_in"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-in-missing-lf_newsletter_opt_in"]')).toBeNull();
+      });
+
+      it('points to the search when the lookup fails', async () => {
+        await render();
+        typeEventUrl('https://events.example.org/synthetic-summit/');
+        click('campaigns-audience-event-generate');
+        stream.next({ type: 'error', data: 'portal unreachable' });
+        fixture.detectChanges();
+
+        expect(host().querySelector('[data-testid="campaigns-audience-opt-ins-failed"]')).not.toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-discover-error"]'), 'the lookup failure was reported as a discovery').toBeNull();
+      });
     });
 
     it('offers two tabs, opens on Build a new audience, and switches to existing lists', async () => {
