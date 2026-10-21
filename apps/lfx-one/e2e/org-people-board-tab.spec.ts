@@ -336,7 +336,7 @@ test.describe('Org People → Board tab', () => {
     await expect(firstRow).toHaveAttribute('data-testid', `org-people-board-row-${ALEX_EMAIL}`);
   });
 
-  // Board rows have no personKey — drawer opens on Governance from table seats only.
+  // Board rows have no personKey — drawer opens on Governance from table seats. This row also carries no username, so there is no detail fetch.
   test('clicking a board member name opens the person-detail drawer on Governance from table seats (no fetch)', async ({ page }) => {
     await stubAccountContext(page);
     await stubBoardMembers(page);
@@ -359,7 +359,7 @@ test.describe('Org People → Board tab', () => {
     await expect(drawer).toContainText('Board');
     await expect(drawer).toContainText('Automotive Grade Linux · Steering Committee');
 
-    // Events needs the personKey-keyed fetch the board opener can't supply → not-available state.
+    // No personKey and no username → no detail fetch → not-available state.
     await page.getByTestId('person-detail-drawer-tab-events').click();
     await expect(page.getByTestId('person-detail-drawer-detail-unavailable')).toBeVisible();
 
@@ -368,12 +368,17 @@ test.describe('Org People → Board tab', () => {
     expect(personDetailCalls).toBe(0);
   });
 
-  // Board rows have no personKey, so the only address source is the username-keyed company-emails GET.
-  // Jordan carries a username here so that only the OFF flag can be what stops the request.
+  // Board rows have no personKey: the username-keyed detail is requested first (activity is not flag-gated), and on a
+  // 404 the only address source left is the company-emails GET. Jordan carries a username so only the OFF flag can stop it.
   test('company-emails request never fires when org-lens-private-release is OFF', async ({ page }) => {
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: false });
     await stubAccountContext(page);
     await stubBoardMembers(page, boardMembersResponse({ username: JORDAN_USERNAME }));
+    let detailCalls = 0;
+    await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) => {
+      detailCalls += 1;
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'Person not found' }) });
+    });
     let companyEmailCalls = 0;
     await page.route('**/api/orgs/*/lens/people/by-username/*/company-emails', (route) => {
       companyEmailCalls += 1;
@@ -383,6 +388,11 @@ test.describe('Org People → Board tab', () => {
     await gotoBoardTab(page);
     await page.getByTestId(`org-people-board-row-${JORDAN_EMAIL}-name`).click();
     await expect(page.getByTestId('person-detail-drawer-header')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    // Wait for the 404 to land (Events turns not-available) before asserting the address fallback never fired.
+    await expect.poll(() => detailCalls).toBeGreaterThan(0);
+    await page.getByTestId('person-detail-drawer-tab-events').click();
+    await expect(page.getByTestId('person-detail-drawer-detail-unavailable')).toBeVisible();
 
     await expect(page.getByTestId('person-detail-drawer-email')).toHaveCount(0);
     await expect(page.getByTestId('person-detail-drawer-email-failed')).toHaveCount(0);
@@ -397,6 +407,10 @@ test.describe('Org People → Board tab', () => {
   test('renders each company-email state from its own response', async ({ page }) => {
     await stubFeatureFlags(page, { [ORG_LENS_PRIVATE_RELEASE_FLAG]: true });
     await stubAccountContext(page);
+    // A 404 from the username-keyed detail (no single roster person) leaves company-emails as the address source.
+    await page.route('**/api/orgs/*/lens/people/by-username/*/detail', (route) =>
+      route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'Person not found' }) })
+    );
 
     const openDrawer = async (): Promise<void> => {
       await gotoBoardTab(page);

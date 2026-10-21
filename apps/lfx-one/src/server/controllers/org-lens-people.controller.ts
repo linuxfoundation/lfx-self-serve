@@ -6,7 +6,7 @@ import type { OrgContributorTimeRange, ReassignCommitteeMemberBody } from '@lfx-
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
@@ -128,6 +128,39 @@ export class OrgLensPeopleController {
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /** GET /api/orgs/:orgUid/lens/people/by-username/:username/detail — activity for openers that carry only an LF username. */
+  public async getEmployeeDetailByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const username = req.params['username'];
+    const operation = 'get_org_lens_people_detail_by_username';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertUsername(username, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username);
+      if (!response) {
+        // No single roster person carries this username; the drawer falls back to the address lookup.
+        throw new ResourceNotFoundError('Person', undefined, { operation, service: 'org_lens_people' });
+      }
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        board_seats: response.boardSeats.length,
+        committee_seats: response.committeeSeats.length,
+        code_rows: response.code.length,
+        event_rows: response.events.length,
+        training_rows: response.training.length,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
     } catch (error) {
       next(error);
     }

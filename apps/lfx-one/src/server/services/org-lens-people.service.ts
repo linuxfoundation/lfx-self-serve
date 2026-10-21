@@ -224,6 +224,25 @@ export class OrgLensPeopleService {
     }
   }
 
+  /**
+   * Detail for openers that carry only an LF username (Board/Committee/Key Contact/Access; lfx-self-serve-ops#894).
+   * Resolves the username against the account's cached warehouse roster (ORG_PEOPLE_ALL, a table — not the address
+   * view) and fails closed: null when no roster row, or more than one person key, carries it.
+   */
+  public async getEmployeeDetailByUsername(req: Request, accountId: string, username: string): Promise<OrgAllEmployeeDetail | null> {
+    const normalizedUsername = username.trim().toLowerCase();
+    if (!normalizedUsername) {
+      return null;
+    }
+    const { rows } = await this.getAllEmployeesInternal(accountId);
+    const personKeys = new Set(rows.filter((row) => row.lfUsername === normalizedUsername).map((row) => row.personKey));
+    if (personKeys.size !== 1) {
+      return null;
+    }
+    const [personKey] = personKeys;
+    return this.getEmployeeDetail(req, accountId, personKey);
+  }
+
   /** Looks up a live-only person's LF username from the live roster (access/board/committee/keyContact sources). */
   private async resolveLiveOnlyUsername(req: Request, accountId: string, personKey: string): Promise<string | null> {
     if (!personKey.startsWith('live-')) {

@@ -165,6 +165,8 @@ function buildOrgsRouter(): Router {
   router.get('/:orgUid/lens/people/by-username/:username/company-emails', (req, res, next) =>
     orgLensPeopleController.getCompanyEmailsByUsername(req, res, next)
   );
+  // lfx-self-serve-ops#894 — person detail for openers that carry only an LF username (Board/Committee/Key Contact/Access).
+  router.get('/:orgUid/lens/people/by-username/:username/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetailByUsername(req, res, next));
   router.get('/:orgUid/lens/people/:personKey/detail', (req, res, next) => orgLensPeopleController.getEmployeeDetail(req, res, next));
 
   // Spec 025 — People → Org Lens Access tab (list + manager-only role change / remove).

@@ -410,6 +410,39 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
     expect(execute).toHaveBeenCalledTimes(warehouseReads + 1);
   });
+
+  describe('by LF username (lfx-self-serve-ops#894)', () => {
+    function useRoster(rows: { personKey: string; lfUsername: string | null }[]): void {
+      vi.spyOn(service, 'getAllEmployeesInternal').mockResolvedValue({ accountId: ACCOUNT, rows, stats: {}, foundations: [] } as never);
+    }
+
+    it("resolves the username to its one roster person and returns that person's activity and addresses", async () => {
+      useRoster([
+        { personKey, lfUsername: 'mixeduser' },
+        { personKey: 'person-two', lfUsername: 'someone-else' },
+      ]);
+      addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, ' MixedUser ')).toEqual({
+        personKey,
+        ...activity,
+        companyEmails: ['first@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('fails closed without reading activity when the username matches no roster person or several', async () => {
+      useRoster([
+        { personKey, lfUsername: 'shared' },
+        { personKey: 'person-two', lfUsername: 'shared' },
+      ]);
+
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'shared')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'nobody')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, '  ')).toBeNull();
+      expect(execute).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('OrgLensPeopleService roster wire shape (#2179)', () => {
