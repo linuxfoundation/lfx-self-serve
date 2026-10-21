@@ -581,7 +581,8 @@ export class ProfileController {
 
   /**
    * PUT /api/profile/emails/:email/primary - Set email as primary via auth-service NATS
-   * The :email param is the URL-encoded email address to make primary
+   * The :email param is the URL-encoded email address to make primary. With no meeting-invite
+   * override, the current primary is pinned as the invite email first; failing that, nothing changes.
    */
   public async setPrimaryEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
     const emailAddress = req.params['emailId'] ?? '';
@@ -628,18 +629,48 @@ export class ProfileController {
         return;
       }
 
-      const result = await this.emailVerificationService.setPrimaryEmail(req, authToken, emailAddress);
+      const username = await getUsernameFromAuth(req);
 
-      if (!result.success) {
+      if (!username) {
         return next(
-          new MicroserviceError(result.message || 'Failed to set primary email', 502, 'BAD_GATEWAY', {
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'set_primary_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const v1Token = req.apiGatewayToken;
+
+      if (!v1Token) {
+        return next(this.inviteEmailPinFailedError());
+      }
+
+      // Invites stick to an address, not the primary role: pin the current primary as the invite
+      // email before switching, under the lock that guards every other invite-email write (#3983).
+      const outcome = await withMeetingInviteLock(req, username, VALKEY_CACHE.MEETING_INVITE_LOCK_TTL_MS, async () => {
+        const pinnedInvite = await this.pinMeetingInviteToCurrentPrimary(req, v1Token, emailAddress);
+        if (pinnedInvite === null) {
+          return null;
+        }
+        return { pinnedInvite, result: await this.emailVerificationService.setPrimaryEmail(req, authToken, emailAddress) };
+      });
+
+      if (outcome === null) {
+        return next(this.inviteEmailPinFailedError());
+      }
+
+      if (!outcome.result.success) {
+        return next(
+          new MicroserviceError(outcome.result.message || 'Failed to set primary email', 502, 'BAD_GATEWAY', {
             operation: 'set_primary_email',
             service: 'profile_controller',
           })
         );
       }
 
-      logger.success(req, 'set_primary_email', startTime, { email: emailAddress });
+      logger.success(req, 'set_primary_email', startTime, { email: emailAddress, pinned_invite: outcome.pinnedInvite });
 
       res.status(200).json({ message: 'Primary email updated successfully' });
     } catch (error) {
@@ -713,7 +744,7 @@ export class ProfileController {
     // Coercing to '' instead routes it through the field-validation error further down.
     const rawEmail: unknown = req.body?.email;
     const emailAddress = typeof rawEmail === 'string' ? rawEmail : '';
-    // Selecting the primary row sends the sentinel instead of an address, to clear the override.
+    // The sentinel clears the override. The UI no longer sends it (#3983) — it pins literal addresses.
     const isReset = isMeetingInvitePrimarySentinel(emailAddress);
     // `email` is PII and `data.email` is not covered by the Pino redact paths — record the shape
     // of the request rather than the address itself.
@@ -2441,6 +2472,46 @@ export class ProfileController {
       path,
       errorBody: { error: response.error, message: response.message },
     });
+  }
+
+  /**
+   * With no invite override, invitations follow the primary — pin the current primary so they stay
+   * put when it changes. Returns whether it pinned, or null when that couldn't be confirmed.
+   */
+  private async pinMeetingInviteToCurrentPrimary(req: Request, v1Token: string, newPrimary: string): Promise<boolean | null> {
+    const preference = await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token);
+    if (!preference) {
+      return null;
+    }
+    if (preference.email !== null) {
+      return false;
+    }
+
+    const sub = getEffectiveSub(req);
+    const currentPrimary = sub ? (await this.emailVerificationService.getUserEmails(req, sub))?.primary_email : undefined;
+    if (!currentPrimary) {
+      logger.warning(req, 'set_primary_email', 'Could not resolve the current primary email to pin as the meeting-invite email');
+      return null;
+    }
+    if (emailsEqual(currentPrimary, newPrimary)) {
+      return false;
+    }
+
+    const result = await this.meetingPreferenceService.setMeetingInviteEmail(req, v1Token, currentPrimary);
+    return result.success ? true : null;
+  }
+
+  private inviteEmailPinFailedError(): MicroserviceError {
+    // SERVICE_ADVISORY lets the frontend surface this copy from a 5xx body.
+    return new MicroserviceError(
+      "Your primary email wasn't changed because we couldn't keep your meeting invitations on their current address. Please try again in a few minutes.",
+      503,
+      ERROR_CODES.SERVICE_ADVISORY,
+      {
+        operation: 'set_primary_email',
+        service: 'profile_controller',
+      }
+    );
   }
 
   /** Hold indistinguishable responses until the shared upstream-to-response floor. */
