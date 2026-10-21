@@ -18,6 +18,7 @@ import {
   UpdateMeetingAttachmentRequest,
 } from '@lfx-one/shared/interfaces';
 import {
+  applyAttachmentScopeOverrides,
   filterAttachmentsForOccurrence,
   generateAcceptString,
   getAcceptedFileTypesDisplay,
@@ -148,7 +149,10 @@ export class MeetingMaterialsDrawerComponent {
       return load$;
     }),
     tap((attachments) => {
-      this.existingAttachments.set(attachments as MeetingAttachment[]);
+      // A live meeting's read can still show a scope that was just changed (the query service indexes asynchronously), so
+      // overlay the changes saved in this session. A past meeting has no scopes.
+      const loaded = attachments as MeetingAttachment[];
+      this.existingAttachments.set(this.isPastMode() ? loaded : applyAttachmentScopeOverrides(loaded, this.meetingService.attachmentScopeOverrides()));
       this.pendingAttachments.set([]);
       this.pendingDeletions.set(new Set());
       this.pendingScopes.set(new Map());
@@ -482,6 +486,9 @@ export class MeetingMaterialsDrawerComponent {
     if (saved.length === 0) return;
     const occurrenceId = this.occurrence()?.occurrence_id;
     const scopeByUid = new Map(saved.map((r) => [r.uid, r.scope]));
+    // Tell every card and page showing this meeting's materials now, rather than leaving them on the old scope until a
+    // refetch catches up with the query service.
+    this.meetingService.recordAttachmentScopeChanges(saved.map((r) => ({ uid: r.uid, occurrence_id: r.scope === 'occurrence' ? occurrenceId : undefined })));
     this.existingAttachments.update((current) =>
       current.map((a) => {
         const scope = scopeByUid.get(a.uid);

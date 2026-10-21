@@ -176,6 +176,7 @@ describe('MeetingJoinComponent', () => {
             getMyMeetingRegistrants,
             removeMyMeetingRegistration,
             removedRegistrationMeetingIds: removedIds,
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),

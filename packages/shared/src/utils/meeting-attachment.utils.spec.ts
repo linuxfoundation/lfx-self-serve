@@ -9,7 +9,13 @@ import { describe, expect, it } from 'vitest';
 
 import { RecurrenceType } from '../enums';
 import { Meeting, MeetingOccurrence } from '../interfaces';
-import { canScopeAttachmentToOccurrence, filterAttachmentsForOccurrence, getAttachmentScope } from './meeting-attachment.utils';
+import {
+  applyAttachmentScopeOverrides,
+  canScopeAttachmentToOccurrence,
+  filterAttachmentsForOccurrence,
+  getAttachmentScope,
+  settledAttachmentScopeOverrides,
+} from './meeting-attachment.utils';
 
 const FUTURE_START = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 const FUTURE_ID = String(Math.floor(FUTURE_START.getTime() / 1000));
@@ -83,5 +89,56 @@ describe('canScopeAttachmentToOccurrence', () => {
   it('rejects an occurrence that already happened', () => {
     const past = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
     expect(canScopeAttachmentToOccurrence(recurring, occurrence({ start_time: past.toISOString() }))).toBe(false);
+  });
+});
+
+describe('attachment scope overrides', () => {
+  interface Item {
+    uid: string;
+    occurrence_id?: string;
+  }
+  const series: Item = { uid: 'series' };
+  const mine: Item = { uid: 'mine', occurrence_id: FUTURE_ID };
+
+  describe('applyAttachmentScopeOverrides', () => {
+    it('returns the list untouched when nothing is overridden', () => {
+      const list = [series, mine];
+      expect(applyAttachmentScopeOverrides(list, new Map())).toBe(list);
+    });
+
+    it('shows an attachment saved as scoped to an occurrence with that occurrence', () => {
+      const result = applyAttachmentScopeOverrides([series, mine], new Map([['series', OTHER_ID]]));
+      expect(result.find((a) => a.uid === 'series')?.occurrence_id).toBe(OTHER_ID);
+    });
+
+    it('shows an attachment saved as applying to all occurrences without an occurrence', () => {
+      const result = applyAttachmentScopeOverrides([series, mine], new Map([['mine', '']]));
+      expect(result.find((a) => a.uid === 'mine')?.occurrence_id).toBeUndefined();
+    });
+
+    it('leaves other attachments as they were read', () => {
+      const result = applyAttachmentScopeOverrides([series, mine], new Map([['series', OTHER_ID]]));
+      expect(result.find((a) => a.uid === 'mine')).toBe(mine);
+    });
+  });
+
+  describe('settledAttachmentScopeOverrides', () => {
+    it('settles an override once the read shows the same occurrence, in seconds or milliseconds', () => {
+      expect(settledAttachmentScopeOverrides([mine], new Map([['mine', FUTURE_ID]]))).toEqual(['mine']);
+      expect(settledAttachmentScopeOverrides([mine], new Map([['mine', String(Number(FUTURE_ID) * 1000)]]))).toEqual(['mine']);
+    });
+
+    it('settles an all-occurrences override once the read has no occurrence', () => {
+      expect(settledAttachmentScopeOverrides([series], new Map([['series', '']]))).toEqual(['series']);
+    });
+
+    it('keeps an override while the read still shows the old scope', () => {
+      expect(settledAttachmentScopeOverrides([mine], new Map([['mine', '']]))).toEqual([]);
+      expect(settledAttachmentScopeOverrides([series], new Map([['series', FUTURE_ID]]))).toEqual([]);
+    });
+
+    it('ignores attachments with no override', () => {
+      expect(settledAttachmentScopeOverrides([series, mine], new Map())).toEqual([]);
+    });
   });
 });

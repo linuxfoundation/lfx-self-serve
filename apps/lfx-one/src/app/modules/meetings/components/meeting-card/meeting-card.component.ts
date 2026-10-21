@@ -74,6 +74,7 @@ import {
   TagSeverity,
 } from '@lfx-one/shared';
 import {
+  applyAttachmentScopeOverrides,
   canScopeAttachmentToOccurrence,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
@@ -972,8 +973,15 @@ export class MeetingCardComponent implements OnInit {
       );
 
       // The meeting's materials span every date; this card shows one, so another date's materials are dropped.
+      // Scope changes saved in this session are overlaid because a refetch can still return the old scope while the query service
+      // catches up, and this card must not wait for it.
       return computed(() =>
-        this.pastMeeting() ? fetched() : filterAttachmentsForOccurrence(fetched() as MeetingAttachment[], this.occurrence()?.occurrence_id)
+        this.pastMeeting()
+          ? fetched()
+          : filterAttachmentsForOccurrence(
+              applyAttachmentScopeOverrides(fetched() as MeetingAttachment[], this.meetingService.attachmentScopeOverrides()),
+              this.occurrence()?.occurrence_id
+            )
       );
     });
   }

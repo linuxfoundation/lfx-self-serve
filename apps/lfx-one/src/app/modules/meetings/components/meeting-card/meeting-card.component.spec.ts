@@ -9,6 +9,7 @@ import { By } from '@angular/platform-browser';
 import { provideRouter, Router } from '@angular/router';
 import {
   Meeting,
+  MeetingAttachment,
   MeetingOccurrence,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -90,6 +91,7 @@ describe('MeetingCardComponent — edit-access re-check', () => {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             markRegistrationRemoved: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getMeetingDetail,
@@ -476,6 +478,7 @@ describe('MeetingCardComponent — invitee panels', () => {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             markRegistrationRemoved: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getMeetingAttachments: vi.fn().mockReturnValue(of([])),
@@ -558,6 +561,7 @@ describe('MeetingCardComponent — remove myself', () => {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: removedIds,
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             markRegistrationRemoved: (id: string) => removedIds.update((ids) => new Set(ids).add(id)),
             clearRemovedRegistration: (id: string) => removedIds.update((ids) => new Set([...ids].filter((saved) => saved !== id))),
             removeMyMeetingRegistration,
@@ -1202,6 +1206,7 @@ describe('MeetingCardComponent — summary modal read-only', () => {
           provide: MeetingService,
           useValue: {
             removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(new Map()),
             markRegistrationRemoved: vi.fn(),
             clearRemovedRegistration: vi.fn(),
             getPastMeetingRecording: vi.fn().mockReturnValue(of(null)),
@@ -1257,5 +1262,106 @@ describe('MeetingCardComponent — summary modal read-only', () => {
 
     expect(dialogOpen).toHaveBeenCalledTimes(1);
     expect(dialogOpen.mock.calls[0][1].data).toMatchObject({ summaryUid: '', readOnly: true });
+  });
+});
+
+/**
+ * Covers materials scoped to one occurrence of a recurring meeting: the card shows the series-wide ones plus its own date's,
+ * and a scope change saved from the materials drawer must show on the card at once. The read behind the list is the query
+ * service, which indexes asynchronously, so a refetch right after a save can still return the old scope.
+ */
+describe('MeetingCardComponent — occurrence-scoped materials', () => {
+  const OCCURRENCE_ID = '1893456000';
+  const OTHER_OCCURRENCE_ID = '1894060800';
+  const MEETING = {
+    id: 'meeting-1',
+    project_uid: 'project-1',
+    title: 'Weekly Sync',
+    organizer: true,
+    recurrence: { type: 2, repeat_interval: 1 },
+  } as Meeting;
+  const OCCURRENCE = { occurrence_id: OCCURRENCE_ID, start_time: '2030-01-01T00:00:00.000Z', duration: 60 } as MeetingOccurrence;
+
+  const attachment = (uid: string, occurrenceId?: string): MeetingAttachment => ({
+    uid,
+    meeting_id: MEETING.id,
+    type: 'link',
+    name: uid,
+    link: 'https://example.com',
+    created_at: '2030-01-01T00:00:00Z',
+    ...(occurrenceId && { occurrence_id: occurrenceId }),
+  });
+  const uids = (list: readonly { uid: string }[]): string[] => list.map((a) => a.uid);
+
+  let overrides: ReturnType<typeof signal<ReadonlyMap<string, string>>>;
+
+  async function mount(attachments: MeetingAttachment[]): Promise<MeetingCardComponent> {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        { provide: UserService, useValue: { user: signal(null), authenticated: signal(true), viewerUsername: signal(null), meetingFeedIdentity: signal('') } },
+        { provide: ProjectService, useValue: { project: signal(null) } },
+        { provide: MeetingComposerService, useValue: { open: vi.fn() } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: DialogService, useValue: { open: vi.fn() } },
+        { provide: ConfirmationService, useValue: { confirm: vi.fn() } },
+        {
+          provide: MeetingService,
+          useValue: {
+            removedRegistrationMeetingIds: signal<ReadonlySet<string>>(new Set()),
+            attachmentScopeOverrides: overrides,
+            getMeetingAttachments: vi.fn().mockReturnValue(of(attachments)),
+            getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
+          },
+        },
+      ],
+    });
+    TestBed.overrideComponent(MeetingCardComponent, { set: { template: '', imports: [], providers: [] } });
+    await TestBed.compileComponents();
+
+    const fixture = TestBed.createComponent(MeetingCardComponent);
+    fixture.componentRef.setInput('meetingInput', MEETING);
+    fixture.componentRef.setInput('occurrenceInput', OCCURRENCE);
+    fixture.detectChanges();
+    await TestBed.inject(ApplicationRef).whenStable();
+    return fixture.componentInstance;
+  }
+
+  beforeEach(() => {
+    overrides = signal<ReadonlyMap<string, string>>(new Map());
+  });
+
+  it("groups the series-wide materials and this date's, and leaves other dates' out", async () => {
+    const card = await mount([attachment('series'), attachment('mine', OCCURRENCE_ID), attachment('other', OTHER_OCCURRENCE_ID)]);
+
+    expect(uids(card.seriesAttachments())).toEqual(['series']);
+    expect(uids(card.occurrenceAttachments())).toEqual(['mine']);
+  });
+
+  it('moves a series-wide attachment into this occurrence the moment it is saved as scoped to it', async () => {
+    const card = await mount([attachment('series')]);
+
+    overrides.set(new Map([['series', OCCURRENCE_ID]]));
+
+    expect(uids(card.occurrenceAttachments())).toEqual(['series']);
+    expect(card.seriesAttachments()).toEqual([]);
+  });
+
+  it('moves an occurrence-scoped attachment into the series the moment it is saved as applying to all', async () => {
+    const card = await mount([attachment('mine', OCCURRENCE_ID)]);
+
+    overrides.set(new Map([['mine', '']]));
+
+    expect(uids(card.seriesAttachments())).toEqual(['mine']);
+    expect(card.occurrenceAttachments()).toEqual([]);
+  });
+
+  it("drops an attachment saved as scoped to another date, since this card shows only its own date's", async () => {
+    const card = await mount([attachment('series')]);
+
+    overrides.set(new Map([['series', OTHER_OCCURRENCE_ID]]));
+
+    expect(card.attachments()).toEqual([]);
   });
 });

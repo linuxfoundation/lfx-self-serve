@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MeetingAttachment, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
@@ -33,8 +34,18 @@ function pdf(name: string): File {
   return new File(['x'], name, { type: 'application/pdf' });
 }
 
-async function mount(options: { occurrence?: MeetingOccurrence | null; canScope?: boolean; attachments?: MeetingAttachment[]; pastMeetingId?: string } = {}) {
+async function mount(
+  options: {
+    occurrence?: MeetingOccurrence | null;
+    canScope?: boolean;
+    attachments?: MeetingAttachment[];
+    pastMeetingId?: string;
+    scopeOverrides?: Map<string, string>;
+  } = {}
+) {
   const meetingService = {
+    attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(options.scopeOverrides ?? new Map()),
+    recordAttachmentScopeChanges: vi.fn(),
     getMeetingAttachments: vi.fn().mockReturnValue(of(options.attachments ?? [])),
     getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
     createMeetingAttachment: vi.fn().mockReturnValue(of(attachment({ uid: 'new' }))),
@@ -280,6 +291,51 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
       component.onSave();
 
       expect(meetingService.updateMeetingAttachment.mock.calls[0][2]).toEqual(expect.objectContaining({ category: 'Other' }));
+    });
+  });
+
+  describe('showing a scope change at once', () => {
+    it('tells the rest of the app when a series-wide attachment is saved as scoped to the managed occurrence', async () => {
+      const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'series' })] });
+      component.toggleScope(component.linkAttachments()[0]);
+
+      component.onSave();
+
+      expect(meetingService.recordAttachmentScopeChanges).toHaveBeenCalledWith([{ uid: 'series', occurrence_id: OCCURRENCE_ID }]);
+    });
+
+    it('tells the rest of the app when a scoped attachment is saved as applying to all occurrences', async () => {
+      const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'mine', occurrence_id: OCCURRENCE_ID })] });
+      component.toggleScope(component.linkAttachments()[0]);
+
+      component.onSave();
+
+      expect(meetingService.recordAttachmentScopeChanges).toHaveBeenCalledWith([{ uid: 'mine', occurrence_id: undefined }]);
+    });
+
+    it('does not report a scope change that failed to save', async () => {
+      const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'series' })] });
+      meetingService.updateMeetingAttachment.mockReturnValue(throwError(() => new Error('rejected')));
+      component.toggleScope(component.linkAttachments()[0]);
+
+      component.onSave();
+
+      expect(meetingService.recordAttachmentScopeChanges).not.toHaveBeenCalled();
+    });
+
+    it('lists an attachment with the scope it was last saved with when the read still returns the old one', async () => {
+      const { component } = await mount({
+        occurrence,
+        attachments: [attachment({ uid: 'series' }), attachment({ uid: 'mine', occurrence_id: OCCURRENCE_ID })],
+        scopeOverrides: new Map([
+          ['series', OCCURRENCE_ID],
+          ['mine', ''],
+        ]),
+      });
+
+      const [first, second] = component.linkAttachments();
+      expect(component.effectiveScope(first)).toBe('occurrence');
+      expect(component.effectiveScope(second)).toBe('series');
     });
   });
 
