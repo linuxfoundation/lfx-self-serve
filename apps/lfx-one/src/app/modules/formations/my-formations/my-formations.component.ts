@@ -69,7 +69,7 @@ export class MyFormationsComponent {
 
   // === Template constants ===
   protected readonly checklistPath = FORMATION_CHECKLIST_PATH;
-  protected readonly stageTabOptions: FilterPillOption[] = FORMATION_STAGE_TAB_OPTIONS;
+  private readonly baseStageTabOptions: FilterPillOption[] = FORMATION_STAGE_TAB_OPTIONS;
   protected readonly pageTabOptions: FilterPillOption[] = MY_FORMATIONS_PAGE_TAB_OPTIONS;
   protected readonly tabs = PROJECT_APPLICATION_TABS;
 
@@ -111,6 +111,7 @@ export class MyFormationsComponent {
   });
   private readonly rows: Signal<DecoratedMyFormation[]> = this.initRows();
   protected readonly filteredRows: Signal<DecoratedMyFormation[]> = this.initFilteredRows();
+  protected readonly stageTabOptions: Signal<FilterPillOption[]> = this.initStageTabOptions();
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => this.stageTab() !== 'all' || !!this.searchTerm().trim());
   protected readonly showEmptyState: Signal<boolean> = computed(
     () => !this.loading() && !this.hasError() && this.rows().length === 0 && !this.hasActiveFilters()
@@ -185,6 +186,21 @@ export class MyFormationsComponent {
 
   private initRows(): Signal<DecoratedMyFormation[]> {
     return computed(() => [...(this.formationWork()?.formations ?? [])].sort(compareMyFormationsByNeed).map(decorateMyFormation));
+  }
+
+  // Counts follow the search but not the selected stage pill, so each pill shows what it would list. The
+  // pill ids are the sub-stage keys, so a new queue sub-stage picks up its count with no change here.
+  // A row with a `null` sub_stage is counted only under "All", matching the filter below.
+  private initStageTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      if (this.loading()) return this.baseStageTabOptions;
+      const term = this.searchTerm().trim().toLowerCase();
+      const rows = term ? this.rows().filter((row) => row.project_name.toLowerCase().includes(term)) : this.rows();
+      return this.baseStageTabOptions.map((option) => {
+        const count = option.id === 'all' ? rows.length : rows.filter((row) => row.sub_stage === option.id).length;
+        return { ...option, label: `${option.label} (${count})`, fullLabel: `${option.label} — ${count} ${count === 1 ? 'formation' : 'formations'}` };
+      });
+    });
   }
 
   // Both filters are client-side — the response is the caller's whole list, so there is nothing to

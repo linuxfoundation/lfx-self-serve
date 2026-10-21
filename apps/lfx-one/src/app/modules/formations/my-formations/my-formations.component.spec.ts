@@ -177,6 +177,29 @@ describe('MyFormationsComponent (#2753)', () => {
     ]);
   });
 
+  it('shows a count on each stage pill, counting an unmapped-stage row only under All', async () => {
+    const { fixture } = await render(
+      complete([
+        formation({ formation_uid: 'exploratory-1', sub_stage: 'exploratory' }),
+        formation({ formation_uid: 'engaged-1', sub_stage: 'engaged', sub_stage_raw: 'Formation - Engaged' }),
+        formation({ formation_uid: 'engaged-2', sub_stage: 'engaged', sub_stage_raw: 'Formation - Engaged' }),
+        formation({ formation_uid: 'unmapped-1', sub_stage: null, sub_stage_raw: 'Formation - Disengaged' }),
+      ])
+    );
+    const pillText = (id: string) => byTestId(fixture, `filter-pill-${id}`)?.textContent?.trim();
+
+    expect(pillText('all')).toContain('All (4)');
+    expect(pillText('exploratory')).toContain('Exploratory (1)');
+    expect(pillText('engaged')).toContain('Engaged (2)');
+    expect(pillText('on_hold')).toContain('On hold (0)');
+
+    // Counts ignore the selected pill, so each keeps showing what it would list.
+    (byTestId(fixture, 'filter-pill-engaged') as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(pillText('all')).toContain('All (4)');
+    expect(pillText('exploratory')).toContain('Exploratory (1)');
+  });
+
   it('filters rows by the stage tab, showing an unmapped-stage row only under All', async () => {
     const { fixture } = await render(
       complete([
