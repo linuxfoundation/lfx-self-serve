@@ -231,6 +231,28 @@ describe('FaqService.getResult', () => {
     expect(projectMocks.getProjectById).not.toHaveBeenCalled();
   });
 
+  it.each([FAQ_NOT_FINALIZED_REPLY, questionsText])('does not reuse a previous turn outcome after renewal: %s', async (text) => {
+    const old = agentTextPayload(text);
+    guildMocks.getRawEventPayloads.mockResolvedValue([old, JSON.stringify({ type: 'mktg_session_turn_started' }), old]);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe('pending');
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+  });
+
+  it.each([
+    { text: FAQ_NOT_FINALIZED_REPLY, status: 'refused' },
+    { text: questionsText, status: 'questions' },
+  ])('recognizes an identical but genuinely new $status reply in the next turn', async ({ text, status }) => {
+    const notification = (id: string) => JSON.stringify({ id, type: 'agent_notification_message', content: { type: 'text', data: text } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      notification('synthetic-old-reply'),
+      JSON.stringify({ type: 'mktg_session_turn_started' }),
+      notification('synthetic-old-reply'),
+      notification('synthetic-new-reply'),
+    ]);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe(status);
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+  });
+
   it('reports the reply that ended the run — even after a questions round — and stores nothing', async () => {
     guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload(questionsText), agentTextPayload(FAQ_NOT_FINALIZED_REPLY)]);
 
