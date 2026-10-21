@@ -27,6 +27,22 @@ describe('LinkedIn source ingestion', () => {
     expect(result.content_text).toBe('Release\n\nNew & useful');
     expect(result.content_file_name).toBe('release.html');
   });
+  it('preserves minified table cells, rows and additional block boundaries', async () => {
+    const html =
+      '<table><tr><th>Downloads</th><td>100</td></tr><tr><th>Contributors</th><td>20</td></tr></table><h4>Heading</h4><ul><li>First</li></ul><ol><li>Second</li></ol><blockquote>Quote</blockquote><pre>Code</pre><h5>More</h5><h6>Last</h6>';
+    const result = await new LinkedinSourceService().ingest({
+      content_source: 'file',
+      content_file_name: 'table.html',
+      content_file_base64: Buffer.from(html).toString('base64'),
+    });
+    expect(result.content_text).toMatch(/Downloads\t100\n+Contributors\t20/);
+    expect(result.content_text).toMatch(/Heading\n+First\n+Second\n+Quote\n+Code\n+More\n+Last/);
+    expect(result.content_text).not.toContain('<table>');
+    fetch.mockResolvedValueOnce({ ok: true, contentType: 'text/html', html });
+    expect((await new LinkedinSourceService().ingest({ content_source: 'url', content_url: 'https://public.example/table' })).content_text).toBe(
+      result.content_text
+    );
+  });
   it('decodes named/numeric entities once without turning a literal escape into markup', async () => {
     const result = await new LinkedinSourceService().ingest({
       content_source: 'file',

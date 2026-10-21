@@ -95,11 +95,17 @@ export class LinkedinSourceService {
   private htmlToText(html: string): string {
     // Parse before removing the small set of surviving layout tags. Scripts/styles
     // are nonTextTags in sanitize-html; no markup is ever sent to the browser.
-    const text = sanitizeHtml(html, { allowedTags: ['p', 'br', 'div', 'li', 'h1', 'h2', 'h3'], allowedAttributes: {} }).replace(
-      /<\/?(?:p|br|div|li|h[123])\s*\/?>/gi,
-      '\n'
-    );
+    const text = sanitizeHtml(html, {
+      allowedTags: 'p br div li h1 h2 h3 h4 h5 h6 table thead tbody tfoot tr td th ul ol blockquote pre'.split(' '),
+      allowedAttributes: {},
+    })
+      .replace(/<\/(?:td|th)>/gi, '\t')
+      .replace(/<\/?(?:table|thead|tbody|tfoot|tr|p|br|div|li|h[1-6]|ul|ol|blockquote|pre)\s*\/?>/gi, '\n')
+      .replace(/<\/?(?:td|th)>/gi, '');
     return decodeHtmlEntities(text)
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .join('\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
