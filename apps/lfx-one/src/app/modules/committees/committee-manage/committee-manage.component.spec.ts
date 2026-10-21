@@ -649,4 +649,108 @@ describe('CommitteeManageComponent', () => {
       expect(revokeCommitteeInvite).not.toHaveBeenCalled();
     });
   });
+
+  describe('save controls with the real PrimeNG stepper template', () => {
+    let membersResponse: Subject<CommitteeMember[]>;
+    let groupResponse: Subject<Committee>;
+    let updateCommittee: ReturnType<typeof vi.fn>;
+    let createCommitteeMember: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      membersResponse = new Subject<CommitteeMember[]>();
+      groupResponse = new Subject<Committee>();
+      // Parent details resolve immediately; the child has independent, controlled load states.
+      getCommittee.mockReturnValueOnce(of(enrichedCommittee())).mockReturnValue(groupResponse);
+      updateCommittee = vi.fn().mockReturnValue(of(enrichedCommittee()));
+      createCommitteeMember = vi.fn().mockReturnValue(of({ uid: 'new-member', email: 'imported@example.com' }));
+      TestBed.overrideProvider(CommitteeService, {
+        useValue: {
+          getCommittee,
+          updateCommittee,
+          createCommitteeMember,
+          getCommitteeMembers: vi.fn().mockReturnValue(membersResponse),
+          getCommitteeInvites: vi.fn().mockReturnValue(of([])),
+        },
+      });
+      queryParamMap$.next(convertToParamMap({ step: '4' }));
+      // Deliberately do not override CommitteeManageComponent's template, StepperModule, or its child.
+    });
+
+    async function renderRealStepper(mode: 'edit' | 'create' = 'edit') {
+      const fixture = TestBed.createComponent(CommitteeManageComponent);
+      const component = fixture.componentInstance;
+      component.mode.set(mode);
+      component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
+      component.memberUpdates.set({
+        toAdd: [{ email: 'imported@example.com', first_name: 'First', last_name: 'Last', createOptions: { skipNotification: true } }],
+        toUpdate: [],
+        toDelete: [],
+        toInvite: [],
+      });
+      fixture.detectChanges();
+      await fixture.whenStable();
+      return fixture;
+    }
+
+    it.each(['edit', 'create'] as const)('finds the projected member manager and enables the real %s save button once loaded', async (mode) => {
+      const fixture = await renderRealStepper(mode);
+      const component = fixture.componentInstance;
+      const testId = mode === 'edit' ? 'committee-manage-update-btn' : 'committee-manage-done-btn';
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`);
+      expect(fixture.debugElement.query(By.directive(CommitteeMembersManagerComponent))).not.toBeNull();
+      expect(button).not.toBeNull();
+      expect(button.disabled).toBe(true);
+      expect(component.memberSaveDisabled()).toBe(true);
+      button.click();
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(updateCommittee).not.toHaveBeenCalled();
+
+      groupResponse.next(enrichedCommittee());
+      groupResponse.complete();
+      await fixture.whenStable();
+      expect(button.disabled).toBe(true);
+      membersResponse.next([]);
+      membersResponse.complete();
+      await fixture.whenStable();
+
+      expect(component.memberSaveDisabled()).toBe(false);
+      expect(button.disabled).toBe(false);
+      button.click();
+      await fixture.whenStable();
+      expect(createCommitteeMember).toHaveBeenCalledExactlyOnceWith(COMMITTEE_UID, expect.objectContaining({ email: 'imported@example.com' }), {
+        skipNotification: true,
+      });
+      expect(updateCommittee).toHaveBeenCalledTimes(mode === 'edit' ? 1 : 0);
+      expect(navigate).toHaveBeenCalledWith(['/groups']);
+    });
+
+    it.each(['members', 'committee'] as const)('keeps the real Update Group button disabled after a %s load failure', async (failedLoad) => {
+      const fixture = await renderRealStepper();
+      const component = fixture.componentInstance;
+      const pending = component.memberUpdates();
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[data-testid="committee-manage-update-btn"] button');
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        if (failedLoad === 'members') {
+          groupResponse.next(enrichedCommittee());
+          groupResponse.complete();
+          membersResponse.error(new HttpErrorResponse({ status: 503 }));
+        } else {
+          membersResponse.next([]);
+          membersResponse.complete();
+          groupResponse.error(new HttpErrorResponse({ status: 503 }));
+        }
+        await fixture.whenStable();
+        expect(component.memberSaveDisabled()).toBe(true);
+        expect(button.disabled).toBe(true);
+        button.click();
+        component.onSubmitAll();
+        expect(updateCommittee).not.toHaveBeenCalled();
+        expect(createCommitteeMember).not.toHaveBeenCalled();
+        expect(component.memberUpdates()).toEqual(pending);
+      } finally {
+        errorLog.mockRestore();
+      }
+    });
+  });
 });
