@@ -169,7 +169,14 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(next.mock.calls[0][0].statusCode).toBe(403);
     expect(mocks.result).not.toHaveBeenCalled();
   });
-
+  it('reads profiles using the effective sub, never a caller-supplied identity', async () => {
+    const req = request({ user: 'other-user' });
+    req.method = 'GET';
+    mocks.read.mockResolvedValue(null);
+    await new LinkedinPostController().getProfile(req, response(), vi.fn());
+    expect(mocks.read).toHaveBeenCalledWith(req, 'subject-one');
+    expect(mocks.startOperation).toHaveBeenCalledWith(req, 'get_linkedin_profile', {});
+  });
   it('keeps the product-owner stable-sub profile identity across account username changes', async () => {
     mocks.read.mockResolvedValue(null);
     const controller = new LinkedinPostController();
