@@ -60,6 +60,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Gatewaze Host Session](./gw-host-session.md)                         | Server-held Gatewaze session, routes, BFF proxies, authorization, keys, flag    |
 | [LFX Insights API Tokens](./insights-tokens.md)                       | PAT service proxy, server-side LaunchDarkly access flag                         |
 | [Project Applications](./project-applications.md)                     | Propose-a-project BFF, M2M create, If-Match, accept creates the project         |
+| [LinkedIn Post Agent](./mktg-linkedin-post.md)                        | User profile lifecycle, source ingestion, one-off documents, privacy boundaries |
 
 ### Committee Management
 
