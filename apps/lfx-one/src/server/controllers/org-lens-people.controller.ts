@@ -133,6 +133,40 @@ export class OrgLensPeopleController {
     }
   }
 
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail — activity for openers that carry only an LF username.
+   * A username with no single roster person is answered `null` (200), not 404: the miss is routine, and the error
+   * handler would log the username-bearing path at WARN on every such drawer open.
+   */
+  public async getEmployeeDetailByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const username = req.params['username'];
+    const operation = 'get_org_lens_people_detail_by_username';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertUsername(username, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        resolved: response !== null,
+        board_seats: response?.boardSeats.length ?? 0,
+        committee_seats: response?.committeeSeats.length ?? 0,
+        code_rows: response?.code.length ?? 0,
+        event_rows: response?.events.length ?? 0,
+        training_rows: response?.training.length ?? 0,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /api/orgs/:orgUid/lens/people/key-contacts — org-wide read for the People tab. Membership-scoped reads + writes live on OrgLensKeyContactsController (spec 024). */
   public async getKeyContacts(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];

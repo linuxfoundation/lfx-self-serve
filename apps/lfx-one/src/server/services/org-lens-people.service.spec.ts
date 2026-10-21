@@ -410,6 +410,44 @@ describe('OrgLensPeopleService person-key company emails', () => {
     expect(await service.getEmployeeDetail({} as never, ACCOUNT, personKey)).toMatchObject({ ...activity, companyEmailsStatus: 'failed' });
     expect(execute).toHaveBeenCalledTimes(warehouseReads + 1);
   });
+
+  describe('by LF username (lfx-self-serve-ops#894)', () => {
+    beforeEach(() => {
+      database.exec('CREATE TABLE ORG_PEOPLE_ALL (ACCOUNT_ID TEXT, PERSON_KEY TEXT, LF_USERNAME TEXT)');
+    });
+
+    function addRosterRow(account: string, key: string, username: string): void {
+      database.prepare('INSERT INTO ORG_PEOPLE_ALL VALUES (?, ?, ?)').run(account, key, username);
+    }
+
+    it("resolves the username to its one roster person in this account and returns that person's activity and addresses", async () => {
+      addRosterRow(ACCOUNT, personKey, ' MixedUser ');
+      addRosterRow(ACCOUNT, 'person-two', 'someone-else');
+      // The same username in another account never makes this account's lookup ambiguous.
+      addRosterRow('other-account', 'person-three', 'mixeduser');
+      addPerson(ACCOUNT, personKey, 'MixedUser', ['first@company.example']);
+
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'MIXEDUSER')).toEqual({
+        personKey,
+        ...activity,
+        companyEmails: ['first@company.example'],
+        companyEmailsStatus: 'resolved',
+      });
+    });
+
+    it('fails closed without reading activity when the username matches no roster person or several', async () => {
+      addRosterRow(ACCOUNT, personKey, 'shared');
+      addRosterRow(ACCOUNT, 'person-two', 'shared');
+
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'shared')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, 'nobody')).toBeNull();
+      expect(await service.getEmployeeDetailByUsername({} as never, ACCOUNT, '  ')).toBeNull();
+      const activityReads = (execute.mock.calls as [string][]).filter(([query]) =>
+        /ORG_PEOPLE_(COMMITTEE_MEMBERSHIP|CODE_CONTRIBUTIONS|EVENTS|TRAINING|COMPANY_EMAILS)/.test(query)
+      );
+      expect(activityReads).toEqual([]);
+    });
+  });
 });
 
 describe('OrgLensPeopleService roster wire shape (#2179)', () => {

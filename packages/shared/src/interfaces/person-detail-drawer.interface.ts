@@ -8,7 +8,7 @@ export type PersonDrawerTab = 'events' | 'training' | 'code' | 'governance';
 
 /** Opener context for the shared person-detail drawer — header fields plus optional identity/fetch overrides. */
 export interface PersonDrawerContext {
-  /** Warehouse person_key; omitted when Governance is pre-supplied (Board/Committee tabs). */
+  /** Warehouse person_key; omitted by Board/Committee/Key Contact/Access openers, which pass `username` instead. */
   personKey?: string;
   /** Pre-loaded Governance seats when there is no personKey to fetch on. */
   governanceSeats?: OrgAllEmployeeCommitteeMembership[];
@@ -17,7 +17,7 @@ export interface PersonDrawerContext {
   avatarUrl?: string | null;
   initials?: string;
   avatarColorClass?: string;
-  /** Company-address lookup key for governance openers that have no personKey. Never an email address. */
+  /** LF username for openers without a personKey: resolved server-side to one roster person for activity, falling back to the company-address lookup. Never an email address. */
   username?: string | null;
   profileUrl?: string | null;
   sourceIconClass?: string | null;

@@ -47,42 +47,50 @@ export class PersonDetailDrawerService {
     toObservable(this.request).pipe(
       switchMap((request) => {
         const { orgUid, context, companyEmailFeatureEnabled } = request;
-        if (!context || !orgUid) {
+        const personKey = context?.personKey;
+        const username = context?.username;
+        // Detail keys on the warehouse personKey when the opener has one, else on the LF username (resolved server-side).
+        const lookup = personKey ? encodeURIComponent(personKey) : username && `by-username/${encodeURIComponent(username)}`;
+        if (!orgUid || !lookup) {
           return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'unavailable', error: false });
         }
-        if (context.personKey) {
-          const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/${encodeURIComponent(context.personKey)}/detail`;
-          return this.http.get<OrgAllEmployeeDetail>(url).pipe(
-            // Only a resolved lookup may expose addresses; an older replica may return addresses without a status.
-            map((detail) => ({
-              request,
-              detail,
-              companyEmails: detail.companyEmailsStatus === 'resolved' ? detail.companyEmails : [],
-              companyEmailsStatus: detail.companyEmailsStatus,
-              error: false,
-            })),
-            catchError(() => of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: true }))
-          );
-        }
-        // Governance openers have no activity key: addresses resolve by LF username only, never by an email address.
-        if (context.username && companyEmailFeatureEnabled) {
-          const url = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people/by-username/${encodeURIComponent(context.username)}/company-emails`;
-          return this.http.get<OrgPersonCompanyEmailsResponse>(url).pipe(
-            map((response) => ({
-              request,
-              detail: null,
-              companyEmails: response.companyEmailsStatus === 'resolved' ? response.companyEmails : [],
-              companyEmailsStatus: response.companyEmailsStatus,
-              error: false,
-            })),
-            // A failed optional email lookup must not turn unavailable activity into a fetch error.
-            catchError((err) => {
-              console.error('Failed to load company emails:', err);
-              return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: false });
-            })
-          );
-        }
-        return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'unavailable', error: false });
+        const people = `/api/orgs/${encodeURIComponent(orgUid)}/lens/people`;
+        return this.http.get<OrgAllEmployeeDetail | null>(`${people}/${lookup}/detail`).pipe(
+          switchMap((detail) => {
+            if (detail) {
+              // Only a resolved lookup may expose addresses; an older replica may return addresses without a status.
+              return of({
+                request,
+                detail,
+                companyEmails: detail.companyEmailsStatus === 'resolved' ? detail.companyEmails : [],
+                companyEmailsStatus: detail.companyEmailsStatus,
+                error: false,
+              });
+            }
+            // `null`: the username matched no single roster person, so only the flag-gated address lookup remains.
+            if (!username || !companyEmailFeatureEnabled) {
+              return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'unavailable', error: false });
+            }
+            return this.http.get<OrgPersonCompanyEmailsResponse>(`${people}/by-username/${encodeURIComponent(username)}/company-emails`).pipe(
+              map((response) => ({
+                request,
+                detail: null,
+                companyEmails: response.companyEmailsStatus === 'resolved' ? response.companyEmails : [],
+                companyEmailsStatus: response.companyEmailsStatus,
+                error: false,
+              })),
+              // A failed optional email lookup must not turn unavailable activity into a fetch error.
+              catchError((emailError: unknown) => {
+                console.error('Failed to load company emails:', emailError);
+                return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: false });
+              })
+            );
+          }),
+          catchError((err: unknown) => {
+            console.error('Failed to load person detail:', err);
+            return of({ ...EMPTY_FETCH_RESULT, request, companyEmailsStatus: 'failed', error: true });
+          })
+        );
       })
     ),
     { initialValue: null }
@@ -96,8 +104,8 @@ export class PersonDetailDrawerService {
   });
 
   public readonly loading = computed(() => {
-    const { orgUid, context, companyEmailFeatureEnabled } = this.request();
-    return !!(orgUid && context && (context.personKey || (context.username && companyEmailFeatureEnabled)) && !this.currentResult());
+    const { orgUid, context } = this.request();
+    return !!(orgUid && context && (context.personKey || context.username) && !this.currentResult());
   });
   public readonly error = computed(() => this.currentResult()?.error ?? false);
   public readonly emailError = computed(() => {

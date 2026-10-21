@@ -198,9 +198,9 @@ export interface OrgPersonCompanyEmailsResponse {
 }
 
 /**
- * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` for openers that
- * carry only an identity and no `personKey`, so the drawer's "Detailed activity isn't available" state
- * stays truthful instead of implying verified-empty activity.
+ * Internal fetch-result shape for `PersonDetailDrawerService`. `detail` stays `null` when the opener has no
+ * `personKey` and its username resolves to no single roster person (or it has neither), so the drawer's
+ * "Detailed activity isn't available" state stays truthful instead of implying verified-empty activity.
  */
 export interface OrgDrawerFetchResult {
   detail: OrgAllEmployeeDetail | null;
