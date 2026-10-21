@@ -24,6 +24,7 @@ import {
   MKTG_DOCUMENT_PROGRESS_POLL,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_AGENT_INTAKES,
+  MKTG_LIVING_DOCUMENT_ID,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -47,6 +48,7 @@ import {
   describeMktgRevisionAuthor,
   faqAssetOfRevision,
   foundationMessageAssetOfRevision,
+  findMktgRunIntake,
   isMktgSlidesExportAgentKey,
   mktgAssetHeaderMetadata,
   mktgKitCrumbsFor,
@@ -83,6 +85,8 @@ import {
   throwError,
   timer,
   Observable,
+  shareReplay,
+  take,
 } from 'rxjs';
 
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
@@ -534,18 +538,26 @@ export class MktgDocumentViewComponent {
               this.handoffRunId.set(prepared.pending.attempt?.runId ?? '');
               this.loading.set(false);
             }
-            const generation$ = prepared
-              ? this.runService.resume(prepared.pending).pipe(
-                  tap((progress) => this.onProgress(progress, prepared.pending)),
-                  ignoreElements(),
-                  catchError(() => {
-                    this.localProgress.set('failed');
-                    this.failureText.set('The run could not be confirmed. Your intake is kept; return to the intake form to try again.');
-                    return EMPTY;
-                  }),
-                  finalize(() => this.submittingGeneration.set(false))
-                )
-              : EMPTY;
+            // A manual return has no single-use handoff token. Resolve its accepted attempt from the live registry,
+            // but let the public metadata confirm that this exact run is still active before reconnecting its result poll.
+            const intake = findMktgRunIntake(request.agentKey);
+            const saved =
+              request.subject && !request.generation && !request.revisionId && request.documentId === MKTG_LIVING_DOCUMENT_ID && intake?.endpoints.result
+                ? this.attempts.load(request.project, intake.agentId)
+                : null;
+            const recoverable = saved?.state === 'writing' && saved.attempt?.runId && (!request.runId || request.runId === saved.attempt.runId) ? saved : null;
+            const resume = (pending: MktgPendingGeneration) =>
+              this.runService.resume(pending).pipe(
+                tap((progress) => this.onProgress(progress, pending)),
+                ignoreElements(),
+                catchError(() => {
+                  this.localProgress.set('failed');
+                  this.failureText.set('The run could not be confirmed. Your intake is kept; return to the intake form to try again.');
+                  return EMPTY;
+                }),
+                finalize(() => this.submittingGeneration.set(false))
+              );
+            const generation$ = prepared ? resume(prepared.pending) : EMPTY;
             const existingView = this.view();
             let known: MktgDocumentReadCycle | null = existingView ? { detail: existingView, view: existingView } : null;
             let unavailableSince: number | null = null;
@@ -647,7 +659,22 @@ export class MktgDocumentViewComponent {
                 return of(null);
               })
             );
-            return merge(generation$, detail$);
+            const reads$ = recoverable ? detail$.pipe(shareReplay({ bufferSize: 1, refCount: true })) : detail$;
+            const recovery$ =
+              recoverable && intake
+                ? reads$.pipe(
+                    filter(() => this.runDetail() !== null && !this.runDetail()?.progressUnavailable),
+                    take(1),
+                    switchMap(() => {
+                      const recorded = this.runDetail()?.runs?.find((run) => run.runId === recoverable.attempt?.runId);
+                      if (recorded?.state !== 'writing' && recorded?.state !== 'storing') return EMPTY;
+                      this.localProgress.set('writing');
+                      this.handoffRunId.set(recorded.runId);
+                      return resume({ ...recoverable, request: { ...recoverable.request, intake } });
+                    })
+                  )
+                : EMPTY;
+            return merge(generation$, reads$, recovery$);
           }),
           takeUntilDestroyed()
         )
