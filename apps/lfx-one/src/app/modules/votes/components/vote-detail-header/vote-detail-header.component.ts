@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, NgClass } from '@angular/common';
+import { formatDate, isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, inject, input, output, PLATFORM_ID, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -9,7 +9,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
 import { Vote, VoteDetailTab, VoteDetailTabOption } from '@lfx-one/shared/interfaces';
-import { formatVoteDeadline, getUserTimezone, normalizePollStatus } from '@lfx-one/shared/utils';
+import { formatVoteDeadline, getUserTimezone, getVoteEndedEarlyDetailTooltip, isVoteEndedEarly, normalizePollStatus } from '@lfx-one/shared/utils';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 
@@ -53,6 +53,7 @@ export class VoteDetailHeaderComponent {
   });
   protected readonly privacyLabel: Signal<string> = computed(() => (this.vote().pseudo_anonymity ? 'Pseudo-anonymous ballot' : 'Named ballot'));
   protected readonly closeDateText: Signal<string> = this.initCloseDateText();
+  protected readonly endedEarlyNote: Signal<string | null> = this.initEndedEarlyNote();
   protected readonly invitedText: Signal<string | null> = this.initInvitedText();
 
   // === Private Initializers ===
@@ -62,6 +63,15 @@ export class VoteDetailHeaderComponent {
       if (!vote.end_time) return '';
       const deadline = formatVoteDeadline(vote.end_time, this.viewerTimezone);
       return normalizePollStatus(vote.status) === PollStatus.ENDED ? `Closed ${deadline}` : `Closes ${deadline}`;
+    });
+  }
+
+  /** `end_time` stays the scheduled deadline when ITX ends a vote early, so say so — the same note as the results drawer and votes table. */
+  private initEndedEarlyNote(): Signal<string | null> {
+    return computed(() => {
+      const vote = this.vote();
+      if (normalizePollStatus(vote.status) !== PollStatus.ENDED || !isVoteEndedEarly(vote)) return null;
+      return getVoteEndedEarlyDetailTooltip(formatDate(vote.early_end_time!, 'MMM d, y', 'en-US'));
     });
   }
 

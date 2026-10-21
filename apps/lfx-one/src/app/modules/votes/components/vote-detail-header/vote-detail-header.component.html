@@ -60,6 +60,11 @@
           <i class="fa-light fa-calendar" aria-hidden="true"></i>{{ closeDateText() }}
         </span>
       }
+      @if (endedEarlyNote(); as endedEarly) {
+        <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-ended-early">
+          <i class="fa-light fa-circle-info" aria-hidden="true"></i>{{ endedEarly }}
+        </span>
+      }
       @if (invitedText(); as invited) {
         <span class="inline-flex items-center gap-1.5" data-testid="vote-detail-header-invited">
           <i class="fa-light fa-users" aria-hidden="true"></i>{{ invited }}

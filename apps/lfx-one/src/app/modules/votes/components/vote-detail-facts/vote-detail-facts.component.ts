@@ -1,13 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { formatDate, isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { VOTE_METHOD_LABELS } from '@lfx-one/shared/constants';
 import { Vote } from '@lfx-one/shared/interfaces';
-import { formatVoteDeadline, getUserTimezone, getVoteVisibilityRules, normalizePollStatus } from '@lfx-one/shared/utils';
+import {
+  formatVoteDeadline,
+  getUserTimezone,
+  getVoteEndedEarlyDetailTooltip,
+  getVoteVisibilityRules,
+  isVoteEndedEarly,
+  normalizePollStatus,
+} from '@lfx-one/shared/utils';
 
 /**
  * Side cards of the vote detail page (#3913): "Vote details" (group, dates, method, electorate, ballot privacy,
@@ -39,6 +46,12 @@ export class VoteDetailFactsComponent {
   protected readonly closeText: Signal<string> = computed(() => {
     const end = this.vote().end_time;
     return end ? formatVoteDeadline(end, this.viewerTimezone) : '—';
+  });
+  /** `end_time` stays the scheduled deadline when ITX ends a vote early — the same note as the results drawer and votes table. */
+  protected readonly endedEarlyNote: Signal<string | null> = computed(() => {
+    const vote = this.vote();
+    if (!this.isEnded() || !isVoteEndedEarly(vote)) return null;
+    return getVoteEndedEarlyDetailTooltip(formatDate(vote.early_end_time!, 'MMM d, y', 'en-US'));
   });
   protected readonly methodLabel: Signal<string> = computed(() => {
     const pollType = this.vote().poll_type ?? PollType.GENERIC;

@@ -65,6 +65,14 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-privacy')).toContain('Pseudo-anonymous ballot');
     expect(text('vote-detail-header-close-date')).toMatch(/^Closed /);
     expect(text('vote-detail-header-invited')).toBe('1 invited voter');
+    expect(exists('vote-detail-header-ended-early')).toBe(false);
+  });
+
+  it('notes an early close, since end_time stays the scheduled deadline', () => {
+    render({ vote: makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }) });
+
+    expect(text('vote-detail-header-close-date')).toMatch(/^Closed /);
+    expect(text('vote-detail-header-ended-early')).toBe('Vote closed early on Oct 20, 2026. All voters have responded.');
   });
 
   describe('actions', () => {

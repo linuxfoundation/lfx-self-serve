@@ -68,6 +68,15 @@ describe('VoteDetailFactsComponent', () => {
     expect(value('privacy')).toBe('Pseudo-anonymous');
     expect(value('comments')).toBe('Not enabled');
     expect(value('electorate')).toBe('—');
+    expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-ended-early"]')).toBeNull();
+  });
+
+  it('notes an early close under the scheduled close date', () => {
+    render(makeVote({ status: PollStatus.ENDED, early_end_time: '2026-10-20T12:00:00Z' }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="vote-detail-facts-ended-early"]').textContent.trim()).toBe(
+      'Vote closed early on Oct 20, 2026. All voters have responded.'
+    );
   });
 
   it('shows the voter visibility copy', () => {
