@@ -283,9 +283,20 @@ export class VotesDashboardComponent {
   }
 
   /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
-   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps). */
+   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps).
+   *  Also reconciles the closing-soon count and filtered list (per @greptile-apps / @copilot-pull-request-reviewer,
+   *  GH-3823 review): the table no longer emits `refresh` on extend (that reset pagination, per @cursor), so this
+   *  handler re-triggers the summary count and current-page fetch itself — fetch$/refresh$ refetch the page/list
+   *  in place without touching pageTokens or currentFirst, unlike refreshVotes(). extendedVoteOverride above keeps
+   *  the open drawer and this row's rendered deadline correct in the meantime while the search index catches up. */
   protected onVoteExtended(vote: Vote): void {
     this.extendedVoteOverride.set(vote);
+    if (this.isMeLens()) {
+      this.refresh$.next();
+    } else {
+      this.fetch$.next();
+      this.managementSummaryRefresh$.next();
+    }
   }
 
   protected onPageChange(event: { first: number; rows: number }): void {

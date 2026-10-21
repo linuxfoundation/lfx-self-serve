@@ -94,7 +94,7 @@ describe('VoteCastDrawerComponent — always-visible header (GH-2350)', () => {
 
     // The reported bug: with listVote null, the pre-fix template rendered no header at all while
     // the request was in flight — the drawer had no title and could not be closed.
-    expect(getVote).toHaveBeenCalledWith(VOTE.uid);
+    expect(getVote).toHaveBeenCalledWith(VOTE.uid, { skipCache: false });
     expect(el('vote-cast-drawer-header')).toBeTruthy();
     expect(el('vote-cast-drawer-close')).toBeTruthy();
     // A skeleton occupies the title slot until the detail lands; neither content nor error shows.

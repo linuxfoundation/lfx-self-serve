@@ -26,7 +26,7 @@ import { CheckboxModule } from 'primeng/checkbox';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWith, Subject, switchMap, takeUntil } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, of, startWith, Subject, switchMap, takeUntil, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-cast-drawer',
@@ -238,10 +238,18 @@ export class VoteCastDrawerComponent {
    *  reopened it on the same vote, saw the stale pre-extension deadline — voteId never changed, so the
    *  cached getVote() response was neither re-fetched nor bypassed. Keying off id/visible/listVote together
    *  and bypassing the cache on a deadline change (or a different-vote reselection) keeps this in step with
-   *  the results drawer. */
+   *  the results drawer.
+   *  Also mirrors the results drawer's last-loaded fallback and skip-loading-flag behavior (per @cursor,
+   *  GH-3823 review): a deadline change on the open vote re-runs this stream, and startWith(listVote) alone
+   *  would seed it with whatever the caller's list row currently holds — if that row is a stale/partial
+   *  summary object (or the list hasn't produced one yet), poll_questions drops out and rebuildForm() wipes
+   *  the ballot the voter was filling in. Falling back to the last fetched detail for the same vote (instead
+   *  of the raw listVote) and only flipping loadingVote when no fallback exists keeps the ballot intact. */
   private initVote(): Signal<Vote | null> {
     let prevId: string | null = null;
     let prevDeadlineKey: string | null = null;
+    let lastVoteId: string | null = null;
+    let lastVote: Vote | null = null;
 
     const selection = computed(() => ({ id: this.voteId(), visible: this.visible(), listVote: this.listVote() }));
 
@@ -259,6 +267,8 @@ export class VoteCastDrawerComponent {
             this.loadingVote.set(false);
             prevId = null;
             prevDeadlineKey = null;
+            lastVoteId = null;
+            lastVote = null;
             return of(null);
           }
           if (!visible) {
@@ -273,11 +283,19 @@ export class VoteCastDrawerComponent {
           prevId = id;
           prevDeadlineKey = deadlineKey;
 
-          this.loadingVote.set(true);
+          const fallback = listVote ?? (lastVoteId === id ? lastVote : null);
+          if (!fallback) {
+            this.loadingVote.set(true);
+          }
+
           return this.voteService.getVote(id, { skipCache }).pipe(
-            catchError(() => of(listVote)),
+            tap((v) => {
+              lastVoteId = id;
+              lastVote = v;
+            }),
+            catchError(() => of(fallback)),
             finalize(() => this.loadingVote.set(false)),
-            startWith(listVote)
+            startWith(fallback)
           );
         })
       ),
