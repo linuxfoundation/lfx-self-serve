@@ -115,6 +115,7 @@ describe('FilterPillsComponent', () => {
     { color: 'green', selected: 'bg-emerald-600', idle: 'bg-emerald-50' },
     { color: 'red', selected: 'bg-red-600', idle: 'bg-red-50' },
     { color: 'purple', selected: 'bg-purple-600', idle: 'bg-purple-50' },
+    { color: 'blue', selected: 'bg-blue-600', idle: 'bg-blue-50' },
   ] as const)('with a $color option', ({ color, selected, idle }) => {
     beforeEach(async () => {
       fixture.componentRef.setInput('options', [

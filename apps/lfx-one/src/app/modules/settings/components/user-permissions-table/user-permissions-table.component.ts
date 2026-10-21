@@ -36,11 +36,8 @@ export class UserPermissionsTableComponent {
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
   public canWrite = input<boolean>(false);
-  public readonly roleFilterOptions: FilterPillOption[] = PROJECT_PERMISSION_ROLE_OPTIONS.map((option) => ({
-    id: option.value,
-    label: option.label,
-    color: PROJECT_PERMISSION_ROLE_COLOR[option.value],
-  }));
+  // Each pill shows how many users hold the role; a role nobody holds keeps its plain label
+  public readonly roleFilterOptions: Signal<FilterPillOption[]> = this.initRoleFilterOptions();
 
   // A null selection means "all roles"
   public readonly selectedRole: WritableSignal<ProjectPermissionRole | null> = signal(null);
@@ -181,6 +178,20 @@ export class UserPermissionsTableComponent {
     return computed(() => {
       const role = this.selectedRole();
       return role ? this.users().filter((user) => user.role === role) : this.users();
+    });
+  }
+
+  private initRoleFilterOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const users = this.users();
+      return PROJECT_PERMISSION_ROLE_OPTIONS.map((option) => {
+        const count = users.filter((user) => user.role === option.value).length;
+        return {
+          id: option.value,
+          label: count > 0 ? `${option.label} (${count})` : option.label,
+          color: PROJECT_PERMISSION_ROLE_COLOR[option.value],
+        };
+      });
     });
   }
 
