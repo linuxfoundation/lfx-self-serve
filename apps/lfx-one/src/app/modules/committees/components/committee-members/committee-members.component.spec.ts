@@ -25,13 +25,13 @@ describe('CommitteeMembersComponent add-people actions', () => {
   let component: CommitteeMembersComponent;
   let dialogClose: Subject<unknown>;
   let dialogService: { open: ReturnType<typeof vi.fn> };
-  let committeeService: { getCommitteeMembers: ReturnType<typeof vi.fn> };
+  let committeeService: { getCommitteeMembers: ReturnType<typeof vi.fn>; getCommitteeInvites: ReturnType<typeof vi.fn> };
   let refreshes: number;
 
   async function setup(committee: Committee | null, inputs: Record<string, unknown> = {}): Promise<void> {
     dialogClose = new Subject<unknown>();
     dialogService = { open: vi.fn(() => ({ onClose: dialogClose })) };
-    committeeService = { getCommitteeMembers: vi.fn(() => of([...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }])) };
+    committeeService = { getCommitteeMembers: vi.fn().mockReturnValue(of(MEMBERS)), getCommitteeInvites: vi.fn().mockReturnValue(of(INVITES)) };
 
     await TestBed.configureTestingModule({
       imports: [CommitteeMembersComponent],
@@ -111,6 +111,8 @@ describe('CommitteeMembersComponent add-people actions', () => {
       fixture.componentRef.setInput('invites', invites);
       fixture.componentRef.setInput(loadingInput, false);
       await fixture.whenStable();
+      committeeService.getCommitteeMembers.mockReturnValue(of(members));
+      committeeService.getCommitteeInvites.mockReturnValue(of(invites));
 
       expect(button.disabled).toBe(false);
       button.click();
@@ -130,11 +132,12 @@ describe('CommitteeMembersComponent add-people actions', () => {
       dialogClose.next({ added: 2, conflicts: 0 } satisfies MemberImportDialogResult);
       vi.advanceTimersByTime(3000);
       expect(refreshes).toBe(0);
-      expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
     });
 
     it('refreshes and polls for the cumulative added count after an import', () => {
       vi.useFakeTimers();
+      committeeService.getCommitteeMembers.mockReturnValueOnce(of(MEMBERS)).mockReturnValue(of([...MEMBERS, { uid: 'member-2' }, { uid: 'member-3' }]));
       component.openImportMembersDialog();
       dialogClose.next({ added: 2, conflicts: 1 } satisfies MemberImportDialogResult);
 
@@ -152,7 +155,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
       vi.advanceTimersByTime(3000);
 
       expect(refreshes).toBe(1);
-      expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
     });
 
     it('does nothing after a cancelled preview', () => {
@@ -168,7 +171,7 @@ describe('CommitteeMembersComponent add-people actions', () => {
       dialogClose.next({ added: 3, conflicts: 0 } satisfies MemberImportDialogResult);
 
       expect(refreshes).toBe(0);
-      expect(committeeService.getCommitteeMembers).not.toHaveBeenCalled();
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledTimes(1);
     });
 
     it('keeps Add Member opening the existing direct-add dialog', () => {
@@ -177,6 +180,69 @@ describe('CommitteeMembersComponent add-people actions', () => {
         AddMemberDialogComponent,
         expect.objectContaining({ data: expect.objectContaining({ mode: 'direct-add' }) })
       );
+    });
+
+    it('waits for both fresh snapshots, disables duplicate opens, and uses fetched rather than fallback arrays', async () => {
+      const members = new Subject<CommitteeMember[]>();
+      const invites = new Subject<CommitteeInvite[]>();
+      committeeService.getCommitteeMembers.mockReturnValue(members);
+      committeeService.getCommitteeInvites.mockReturnValue(invites);
+      fixture.componentRef.setInput('members', []);
+      fixture.componentRef.setInput('invites', []);
+      component.openImportMembersDialog();
+      await fixture.whenStable();
+      expect((query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+      component.openImportMembersDialog();
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
+      expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
+      members.next(MEMBERS);
+      members.complete();
+      expect(dialogService.open).not.toHaveBeenCalled();
+      invites.next(INVITES);
+      invites.complete();
+      expect(dialogService.open.mock.calls[0][1].data).toEqual({ committee: WRITER_GROUP, existingMembers: MEMBERS, existingInvites: INVITES });
+      expect(component.importSnapshotsLoading()).toBe(false);
+    });
+
+    it.each(['members', 'invites'])('blocks import if the fresh %s snapshot fails and permits retry', async (failedSnapshot) => {
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        const response = new Subject<CommitteeMember[] & CommitteeInvite[]>();
+        const method = failedSnapshot === 'members' ? 'getCommitteeMembers' : 'getCommitteeInvites';
+        committeeService[method].mockReturnValue(response);
+        fixture.componentRef.setInput('members', []);
+        fixture.componentRef.setInput('invites', []);
+        component.openImportMembersDialog();
+        response.error({ status: 503, error: { message: 'private@example.com' } });
+        expect(dialogService.open).not.toHaveBeenCalled();
+        expect(component.importSnapshotsLoading()).toBe(false);
+        expect(errorLog).toHaveBeenCalledExactlyOnceWith('Failed to load CSV import snapshots', { status: 503 });
+        committeeService.getCommitteeMembers.mockReturnValue(of(MEMBERS));
+        committeeService.getCommitteeInvites.mockReturnValue(of(INVITES));
+        component.openImportMembersDialog();
+        expect(dialogService.open).toHaveBeenCalledTimes(1);
+      } finally {
+        errorLog.mockRestore();
+      }
+    });
+
+    it.each(['navigation', 'lost access', 'destruction'])('does not open from a late snapshot after %s', async (change) => {
+      const response = new Subject<CommitteeInvite[]>();
+      committeeService.getCommitteeInvites.mockReturnValue(response);
+      component.openImportMembersDialog();
+      if (change === 'destruction') {
+        fixture.destroy();
+        expect(response.observed).toBe(false);
+      } else {
+        fixture.componentRef.setInput('committee', {
+          ...WRITER_GROUP,
+          uid: change === 'navigation' ? 'committee-2' : WRITER_GROUP.uid,
+          writer: change !== 'lost access',
+        });
+      }
+      response.next(INVITES);
+      response.complete();
+      expect(dialogService.open).not.toHaveBeenCalled();
     });
   });
 

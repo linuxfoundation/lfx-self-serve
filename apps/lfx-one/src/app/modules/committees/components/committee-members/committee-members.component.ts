@@ -64,7 +64,22 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, debounceTime, distinctUntilChanged, exhaustMap, filter, map, Observable, of, startWith, take, takeUntil, timer } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  exhaustMap,
+  filter,
+  finalize,
+  forkJoin,
+  map,
+  Observable,
+  of,
+  startWith,
+  take,
+  takeUntil,
+  timer,
+} from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
@@ -144,6 +159,7 @@ export class CommitteeMembersComponent implements OnInit {
   public isDeleting = signal<boolean>(false);
   public revokingInviteUid = signal<string | null>(null);
   public processingApplicationUid = signal<string | null>(null);
+  public readonly importSnapshotsLoading = signal(false);
   // linkedSignal: resets to 'all' when the Pending tab becomes invisible (all invites revoked /
   // none loaded) so the user is never left looking at an empty Pending table.
   public activeTab = linkedSignal<boolean, CommitteeMemberTab>({
@@ -383,37 +399,40 @@ export class CommitteeMembersComponent implements OnInit {
    */
   public openImportMembersDialog(): void {
     const committee = this.committee();
-    if (!committee?.uid || !this.canManageMembers() || this.membersLoading() || this.invitesLoading()) {
+    if (!committee?.uid || !this.canManageMembers() || this.membersLoading() || this.invitesLoading() || this.importSnapshotsLoading()) {
       return;
     }
     const committeeUid = committee.uid;
-    const countBeforeImport = this.members().length;
-    const data: MemberImportDialogData = { committee, existingMembers: this.members(), existingInvites: this.invites() };
-
-    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
-      header: 'Import Members from CSV',
-      width: '960px',
-      breakpoints: { '1024px': '95vw' },
-      modal: true,
-      // Closing is only possible through the dialog's own Cancel/Close, which returns the
-      // cumulative result and is disabled while rows are being written.
-      closable: false,
-      closeOnEscape: false,
-      dismissableMask: false,
-      data,
-    });
-
-    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MemberImportDialogResult | undefined) => {
-      if (!result || this.committee()?.uid !== committeeUid) {
-        return;
-      }
-      if (result.added > 0) {
-        this.refreshMembers();
-        this.pollUntilMemberAdded(countBeforeImport, result.added);
-      } else if (result.conflicts > 0) {
-        this.refreshMembers();
-      }
-    });
+    this.importSnapshotsLoading.set(true);
+    // Parent roster inputs fall back to [] on errors. Import requires explicitly successful snapshots.
+    forkJoin({
+      members: this.committeeService.getCommitteeMembers(committeeUid),
+      invites: this.committeeService.getCommitteeInvites(committeeUid),
+    })
+      .pipe(
+        take(1),
+        finalize(() => this.importSnapshotsLoading.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: ({ members, invites }) => {
+          if (this.committee()?.uid === committeeUid && this.canManageMembers()) {
+            this.openImportDialog({ committee, existingMembers: members, existingInvites: invites });
+          }
+        },
+        error: (error: HttpErrorResponse) => {
+          if (this.committee()?.uid !== committeeUid) {
+            return;
+          }
+          console.error('Failed to load CSV import snapshots', { status: error.status });
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Open Import Dialog',
+            detail: 'Could not load members and pending invitations. Please try again.',
+            life: 6000,
+          });
+        },
+      });
   }
 
   public openInviteMemberDialog(): void {
@@ -688,6 +707,33 @@ export class CommitteeMembersComponent implements OnInit {
           detail: getHttpErrorDetail(err, 'Failed to remove member. Please try again.'),
         });
       },
+    });
+  }
+
+  private openImportDialog(data: MemberImportDialogData): void {
+    const committeeUid = data.committee.uid;
+    const countBeforeImport = data.existingMembers.length;
+    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
+      header: 'Import Members from CSV',
+      width: '960px',
+      breakpoints: { '1024px': '95vw' },
+      modal: true,
+      // The dialog's own controls return cumulative results and prevent closing during writes.
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data,
+    });
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: MemberImportDialogResult | undefined) => {
+      if (!result || this.committee()?.uid !== committeeUid) {
+        return;
+      }
+      if (result.added > 0) {
+        this.refreshMembers();
+        this.pollUntilMemberAdded(countBeforeImport, result.added);
+      } else if (result.conflicts > 0) {
+        this.refreshMembers();
+      }
     });
   }
 

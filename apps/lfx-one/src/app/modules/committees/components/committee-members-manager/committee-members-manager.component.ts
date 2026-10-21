@@ -129,6 +129,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
   private readonly loadingImportInvites = signal(false);
+  private readonly importInvites = signal<MemberPendingChanges['importInvites']>(undefined);
 
   // Simple computed signals
   // Members in state 'deleted' stay in membersWithState (so emitMemberUpdates() keeps re-queuing
@@ -185,6 +186,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public ngOnInit(): void {
     // Rehydrate from the parent-bound input now that it's applied (see the field comment above).
     this.pendingInvites.set(this.memberUpdates().toInvite);
+    this.importInvites.set(this.memberUpdates().importInvites);
 
     this.initializeMembers();
     this.loadCommittee();
@@ -242,12 +244,17 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public openImportMembersDialog(): void {
     const committee = this.committee();
     const committeeId = this.committeeId();
-    if (!this.isEditMode() || !committeeId || committee?.uid !== committeeId || this.mutationsDisabled()) {
+    // The route identifier can be a vanity slug; pin its resolved UUID separately for API calls.
+    const committeeUid = committee?.uid;
+    if (!this.isEditMode() || !committeeId || !committeeUid || this.mutationsDisabled()) {
+      return;
+    }
+    if (committeeId !== committeeUid && committee?.sso_group_name?.toLowerCase() !== committeeId.toLowerCase()) {
       return;
     }
     this.loadingImportInvites.set(true);
     this.committeeService
-      .getCommitteeInvites(committeeId)
+      .getCommitteeInvites(committeeUid)
       .pipe(
         take(1),
         finalize(() => this.loadingImportInvites.set(false)),
@@ -256,7 +263,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       .subscribe({
         next: (invites) => {
           this.loadingImportInvites.set(false);
-          this.openCollectImportDialog(committeeId, invites);
+          this.openCollectImportDialog(committeeId, committeeUid, invites);
         },
         error: (error: { status?: number }) => {
           console.error('Failed to load invitations for CSV import', { status: error.status });
@@ -394,9 +401,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
     this.emitMemberUpdates();
   }
 
-  private openCollectImportDialog(committeeId: string, invites: CommitteeInvite[]): void {
+  private openCollectImportDialog(committeeId: string, committeeUid: string, invites: CommitteeInvite[]): void {
     const committee = this.committee();
-    if (!this.isEditMode() || committee?.uid !== committeeId || this.committeeId() !== committeeId || this.mutationsDisabled()) {
+    if (!this.isEditMode() || committee?.uid !== committeeUid || this.committeeId() !== committeeId || this.mutationsDisabled()) {
       return;
     }
     const data: MemberImportDialogData = {
@@ -416,9 +423,14 @@ export class CommitteeMembersManagerComponent implements OnInit {
       data,
     });
     dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((members: StagedCommitteeMemberRequest[] | undefined) => {
-      if (!members?.length || this.mutationsDisabled() || this.committeeId() !== committeeId) {
+      if (!members?.length || this.mutationsDisabled() || this.committeeId() !== committeeId || this.committee()?.uid !== committeeUid) {
         return;
       }
+      this.importInvites.set(
+        invites
+          .filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')
+          .map(({ uid, invitee_email: inviteeEmail }) => ({ uid, invitee_email: inviteeEmail }))
+      );
       const seen = new Set(this.membersWithState().map((member) => (member.email ?? '').trim().toLowerCase()));
       for (const member of members) {
         const email = member.email.trim().toLowerCase();
@@ -737,11 +749,14 @@ export class CommitteeMembersManagerComponent implements OnInit {
     this.memberUpdatesChange.emit({
       toAdd: members
         .filter((m) => m.state === 'new')
-        .map((m) => ({
-          ...this.stripMetadata(m),
-          ...(m.createOptions ? { createOptions: m.createOptions } : {}),
-          ...(m.pendingInviteUids ? { pendingInviteUids: m.pendingInviteUids } : {}),
-        })),
+        .map((m) => {
+          const pendingInviteUids = this.getImportedInviteUids(m);
+          return {
+            ...this.stripMetadata(m),
+            ...(m.createOptions ? { createOptions: m.createOptions } : {}),
+            ...(pendingInviteUids ? { pendingInviteUids } : {}),
+          };
+        }),
       toUpdate: members
         .filter((m) => m.state === 'modified')
         .map((m) => ({
@@ -750,7 +765,21 @@ export class CommitteeMembersManagerComponent implements OnInit {
         })),
       toDelete: members.filter((m) => m.state === 'deleted').map((m) => m.uid),
       toInvite,
+      ...(this.importInvites() ? { importInvites: this.importInvites() } : {}),
     });
+  }
+
+  /** Re-match the current email, not the address originally uploaded, without duplicating the snapshot on every member. */
+  private getImportedInviteUids(member: CommitteeMemberWithState): string[] | undefined {
+    const invites = this.importInvites();
+    if (!member.createOptions || !invites) {
+      return member.pendingInviteUids;
+    }
+    const email = member.email.trim().toLowerCase();
+    return invites
+      .filter((invite) => (invite.invitee_email ?? '').trim().toLowerCase() === email)
+      .map((invite) => invite.uid)
+      .filter(Boolean);
   }
 
   private stripMetadata(member: CommitteeMemberWithState): CreateCommitteeMemberRequest {

@@ -215,6 +215,8 @@ export interface MemberPendingChanges {
    * the wizard sends nothing (LFXV2-2606).
    */
   toInvite: CreateCommitteeInviteRequest[];
+  /** Pending server-invitation snapshot used to rematch edited CSV emails; retained across wizard-step remounts. */
+  importInvites?: Pick<CommitteeInvite, 'uid' | 'invitee_email'>[];
 }
 
 /** Kind of staged operation flushed by the committee-manage wizard (GH-1608). */

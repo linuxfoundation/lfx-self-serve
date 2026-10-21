@@ -114,7 +114,7 @@
               size="small"
               severity="secondary"
               [outlined]="true"
-              [disabled]="membersLoading() || invitesLoading()"
+              [disabled]="membersLoading() || invitesLoading() || importSnapshotsLoading()"
               (onClick)="openImportMembersDialog()"
               data-testid="import-members-csv-btn">
             </lfx-button>

@@ -21,7 +21,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
 import { CommitteeMembersManagerComponent } from './committee-members-manager.component';
 
-const GROUP = { uid: 'committee-1', name: 'Example Group', writer: true, enable_voting: false, business_email_required: false } as Committee;
+const GROUP = {
+  uid: 'committee-1',
+  sso_group_name: 'example-group',
+  name: 'Example Group',
+  writer: true,
+  enable_voting: false,
+  business_email_required: false,
+} as Committee;
 const EXISTING = { uid: 'member-1', email: 'existing@example.com', first_name: 'Existing', last_name: 'Member' } as CommitteeMember;
 const REQUEST: CreateCommitteeMemberRequest = {
   email: 'new@example.com',
@@ -264,6 +271,7 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
 
   it.each([false, true])('retains notification suppression %s and invitation IDs through staging, remount and editing', async (skipNotification) => {
     await setup();
+    committeeService.getCommitteeInvites.mockReturnValue(of([{ uid: 'invite-1', invitee_email: REQUEST.email, status: 'pending' }]));
     component.openImportMembersDialog();
     dialogClose.next([{ ...REQUEST, createOptions: { skipNotification }, pendingInviteUids: ['invite-1'] }]);
     const pending = updates.at(-1)!;
@@ -279,7 +287,75 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     });
     component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: 'different@example.com' } });
     expect(updates.at(-1)?.toAdd[0].createOptions).toEqual({ skipNotification });
-    expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toBeUndefined();
+    expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual([]);
+    expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+  });
+
+  it.each(['example-group', 'EXAMPLE-GROUP'])('opens imports from slug %s and fetches invitations with the resolved UUID', async (slug) => {
+    await setup({ committeeId: slug });
+    component.openImportMembersDialog();
+    expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(GROUP.uid);
+    expect(dialogService.open.mock.calls[0][1].data.committee.uid).toBe(GROUP.uid);
+    dialogClose.next([{ ...REQUEST, createOptions: { skipNotification: true } }]);
+    expect(updates.at(-1)?.toAdd).toHaveLength(1);
+  });
+
+  it('does not use the previous group snapshot when the route has changed to another group', async () => {
+    await setup();
+    fixture.componentRef.setInput('committeeId', 'unrelated-group');
+    component.openImportMembersDialog();
+    expect(committeeService.getCommitteeInvites).not.toHaveBeenCalled();
+    expect(dialogService.open).not.toHaveBeenCalled();
+  });
+
+  it.each(['fetch', 'dialog'])('rejects a changed resolved UUID during the %s phase on an unchanged slug route', async (phase) => {
+    await setup({ committeeId: 'example-group' });
+    const response = new Subject<CommitteeInvite[]>();
+    committeeService.getCommitteeInvites.mockReturnValue(response);
+    component.openImportMembersDialog();
+    if (phase === 'dialog') {
+      response.next([]);
+      response.complete();
+      expect(dialogService.open).toHaveBeenCalledTimes(1);
+    }
+    component.committee.set({ ...GROUP, uid: 'committee-2' });
+    if (phase === 'fetch') {
+      response.next([]);
+      response.complete();
+      expect(dialogService.open).not.toHaveBeenCalled();
+    } else {
+      dialogClose.next([{ ...REQUEST, createOptions: { skipNotification: true } }]);
+    }
+    expect(updates).toEqual([]);
+  });
+
+  it('rematches corrected CSV emails against a parent-owned invitation snapshot across remounts', async () => {
+    await setup();
+    committeeService.getCommitteeInvites.mockReturnValue(
+      of([
+        { uid: 'old-address', invitee_email: REQUEST.email, status: 'pending' },
+        { uid: 'corrected-1', invitee_email: ' CORRECTED@EXAMPLE.COM ', status: 'pending' },
+        { uid: 'corrected-2', invitee_email: 'corrected@example.com', status: 'pending' },
+        { uid: 'revoked', invitee_email: 'corrected@example.com', status: 'revoked' },
+      ])
+    );
+    component.openImportMembersDialog();
+    dialogClose.next([{ ...REQUEST, createOptions: { skipNotification: true }, pendingInviteUids: ['old-address'] }]);
+    const pending = updates.at(-1)!;
+    expect(pending.importInvites?.map((invite) => invite.uid)).toEqual(['old-address', 'corrected-1', 'corrected-2']);
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    await setup({ memberUpdates: pending });
+    const staged = component.membersWithState().find((member) => member.email === REQUEST.email)!;
+    component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: 'corrected@example.com' } });
+    expect(updates.at(-1)?.toAdd[0]).toMatchObject({
+      email: 'corrected@example.com',
+      createOptions: { skipNotification: true },
+      pendingInviteUids: ['corrected-1', 'corrected-2'],
+    });
+    expect(updates.at(-1)?.importInvites).toEqual(pending.importInvites);
+    component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: 'uninvited@example.com' } });
+    expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual([]);
     expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
   });
 });
