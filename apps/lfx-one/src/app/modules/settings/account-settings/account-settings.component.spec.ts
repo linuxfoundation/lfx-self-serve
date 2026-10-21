@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
-import { EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES, MEETING_INVITE_PRIMARY_SENTINEL } from '@lfx-one/shared/constants';
+import { EMAIL_VERIFICATION_SENT_MESSAGE, ERROR_CODES } from '@lfx-one/shared/constants';
 import { EmailManagementData, MeetingInviteEmail, SendEmailVerificationResponse, UserEmail } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -188,7 +188,7 @@ describe('AccountSettingsComponent — deferred re-scroll waits for email load (
 
 /**
  * Guards the client-side meeting-invite selection and delete-guard invariants (Copilot review,
- * PR #1073): the primary row sends the reset sentinel, a write-in-flight blocks a second
+ * PR #1073): the primary row pins its literal address (#3983), a write-in-flight blocks a second
  * selection, both error paths surface to the right UI element, and delete stays blocked whenever
  * the target is (or might be, on a failed lookup) the current meeting-invite address.
  */
@@ -240,13 +240,13 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
     return fixture;
   }
 
-  it('sends the reset sentinel when the primary row is selected while an override is active', async () => {
+  it('pins the literal primary address, not the sentinel, when the primary row is selected (#3983)', async () => {
     const userServiceMock = makeUserServiceMock({ invite: { email_id: 'id-1', email: ALT_EMAIL.email } });
     const fixture = await setup(userServiceMock);
 
     fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
 
-    expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(MEETING_INVITE_PRIMARY_SENTINEL);
+    expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(PRIMARY_EMAIL.email);
   });
 
   it('sends the literal address when a non-primary row is selected', async () => {
@@ -309,14 +309,14 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
       expect(fixture.componentInstance.emailsWithMetadata().some((e) => e.isMeetingInvite)).toBe(false);
     });
 
-    it('lets the primary row restore the default after a failed lookup instead of silently no-oping', async () => {
+    it('lets the primary row pin itself after a failed lookup instead of silently no-oping', async () => {
       const userServiceMock = makeUserServiceMock({ invite: 'error' });
       const fixture = await setup(userServiceMock);
 
       expect(menuLabelsFor(fixture, PRIMARY_EMAIL.email)).toContain('Use for Meeting Invitations');
       fixture.componentInstance.setMeetingInvite(PRIMARY_EMAIL);
 
-      expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(MEETING_INVITE_PRIMARY_SENTINEL);
+      expect(userServiceMock['setMeetingInviteEmail']).toHaveBeenCalledWith(PRIMARY_EMAIL.email);
     });
 
     it('surfaces an override that matches none of the listed addresses', async () => {
@@ -435,6 +435,31 @@ describe('AccountSettingsComponent — meeting-invite selection & delete guard (
 
     expect(fixture.componentInstance.meetingInviteError()).toBeNull();
     expect(messageServiceMock.add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
+  });
+
+  // A primary change is blocked when the invite email couldn't be pinned first (#3983); the reason
+  // must reach the user rather than a generic failure, for both the retryable and the rejected case.
+  it.each([
+    ['a retryable 503 advisory', 503, ERROR_CODES.SERVICE_ADVISORY, "Your primary email wasn't changed. Please try again in a few minutes."],
+    [
+      'a rejected-pin 400',
+      400,
+      ERROR_CODES.VALIDATION_ERROR,
+      "Your primary email wasn't changed. Choose a different address for meeting invitations in Settings.",
+    ],
+  ])('shows why a primary change was blocked by %s', async (_label, status, code, guidance) => {
+    const userServiceMock = makeUserServiceMock();
+    userServiceMock['setPrimaryEmail'] = vi.fn(() =>
+      throwError(
+        () =>
+          new HttpErrorResponse({ status, error: { error: guidance, code, errors: [{ field: 'email', message: guidance, code: 'FIELD_VALIDATION_ERROR' }] } })
+      )
+    );
+    const fixture = await setup(userServiceMock);
+
+    fixture.componentInstance.setPrimary(ALT_EMAIL);
+
+    expect(TestBed.inject(MessageService).add).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
   });
 
   it('fails closed and skips the delete flow entirely when the invite lookup itself failed', async () => {

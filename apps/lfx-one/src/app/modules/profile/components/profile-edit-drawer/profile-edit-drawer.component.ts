@@ -26,6 +26,7 @@ import { capCodePointEdit, codePointLength, markFormControlsAsTouched } from '@l
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { UserService } from '@services/user.service';
 import { stripAuthPrefixOrNull } from '@app/shared/utils/strip-auth-prefix.util';
+import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { TooltipModule } from 'primeng/tooltip';
@@ -392,10 +393,11 @@ export class ProfileEditDrawerComponent {
           if (this.toastIfImpersonationReadOnly(error)) {
             return;
           }
+          // Surfaces the server's reason, e.g. a change blocked because the invite email couldn't be pinned.
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: 'Failed to update primary email. Please try again.',
+            detail: extractErrorMessage(error, 'Failed to update primary email. Please try again.'),
           });
         },
       });
