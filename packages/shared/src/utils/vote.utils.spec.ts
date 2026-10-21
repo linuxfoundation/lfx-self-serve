@@ -632,7 +632,7 @@ describe('buildRankedQuestionViews', () => {
     const [view] = buildRankedQuestionViews(
       resultsWith([
         rankedQuestion({
-          ranked_choice_winner_info: { poll_choices: [{ choice_id: 'c1', choice_text: 'Winner-info One' }] } as PollQuestionResult['ranked_choice_winner_info'],
+          ranked_choice_winner_info: { poll_choices: [{ choice_id: 'c1', choice_text: 'Winner-info One' }], condorcet_irv_used_for_eliminations: false },
         }),
       ])
     );
@@ -640,9 +640,7 @@ describe('buildRankedQuestionViews', () => {
   });
 
   it('treats missing ranked votes as no distributions', () => {
-    const [view] = buildRankedQuestionViews(
-      resultsWith([rankedQuestion({ ranked_choice_votes: undefined as unknown as PollQuestionResult['ranked_choice_votes'] })])
-    );
+    const [view] = buildRankedQuestionViews(resultsWith([rankedQuestion({ ranked_choice_votes: undefined })]));
     expect(view.choiceDistributions).toEqual([]);
   });
 
