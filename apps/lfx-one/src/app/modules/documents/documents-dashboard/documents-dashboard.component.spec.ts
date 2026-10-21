@@ -142,7 +142,7 @@ describe('DocumentsDashboardComponent', () => {
     ];
     await render();
     const component = fixture.componentInstance;
-    component['filterForm'].controls.projectDocumentSource.setValue('meeting');
+    component['onProjectSourceTabChange']('meeting');
     expect(visibleIds()).toEqual(['project_link:new', 'project_link:old']);
 
     component['filterForm'].controls.search.setValue('Report');
@@ -152,6 +152,30 @@ describe('DocumentsDashboardComponent', () => {
     component['refreshTrigger'].update((value) => value + 1);
     await fixture.whenStable();
     expect(visibleIds()).toEqual(['project_link:latest', 'project_link:nested', 'project_link:new', 'project_link:old']);
+  });
+
+  it('shows per-source counts on the project pills, follows the search, and filters rows when selected', async () => {
+    projectDocuments = [
+      document('p1', '2026-01-01', { name: 'Plan one' }),
+      document('c1', '2026-01-02', { name: 'Plan two', document_source: 'committee' }),
+      document('m1', '2026-01-03', { name: 'Notes', document_source: 'meeting' }),
+      document('r1', '2026-01-04', { name: 'Recording', document_source: 'recording' }),
+      document('ml1', '2026-01-05', { name: 'List', document_source: 'mailing_list' }),
+    ];
+    await render();
+    const component = fixture.componentInstance;
+    const labels = () => component['projectSourceTabOptions']().map((option) => option.label);
+
+    expect(labels()).toEqual(['All (5)', 'Project (1)', 'Groups (1)', 'Meetings (2)', 'Mailing Lists (1)']);
+    expect(fixture.nativeElement.querySelector('[data-testid="documents-dashboard-source-filter"]')).toBeNull();
+
+    component['onProjectSourceTabChange']('meeting');
+    expect(visibleIds()).toEqual(['project_link:r1', 'project_link:m1']);
+    // Counts ignore the selected pill so every pill keeps showing what it would list.
+    expect(labels()).toEqual(['All (5)', 'Project (1)', 'Groups (1)', 'Meetings (2)', 'Mailing Lists (1)']);
+
+    component['filterForm'].controls.search.setValue('Plan');
+    await vi.waitFor(() => expect(labels()).toEqual(['All (2)', 'Project (1)', 'Groups (1)', 'Meetings', 'Mailing Lists']));
   });
 
   it('sorts the legacy My Documents feed globally across sources before pagination and after filtering', async () => {
