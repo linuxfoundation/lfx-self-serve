@@ -784,8 +784,15 @@ describe('VotesTableComponent — row More menu', () => {
     // reminder stays at index 1 whether or not it is there.
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
-      hasPMOAccess ? ['Copy link', 'Send reminder', 'Reminder mailing list', 'Clone'] : ['Copy link', 'Send reminder', 'Reminder mailing list']
+      hasPMOAccess ? ['Copy link', 'Send reminder', 'Send reminder to mailing list', 'Clone'] : ['Copy link', 'Send reminder', 'Send reminder to mailing list']
     );
+
+    const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
+    reminderItem.dispatchEvent(new Event('mouseenter'));
+    await fixture.whenStable();
+    expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Opens a dialog to send reminders to eligible voters who have not voted yet');
+    expect(items[1].tooltipOptions?.tooltipPosition).toBe('left');
+    reminderItem.dispatchEvent(new Event('mouseleave'));
 
     items[1].command!({});
 
@@ -800,12 +807,12 @@ describe('VotesTableComponent — row More menu', () => {
     );
   });
 
-  describe('Reminder mailing list (#3658)', () => {
+  describe('Send reminder to mailing list (#3658)', () => {
     const TSC = { uid: 'ml-1', group_name: 'tsc', domain: 'lists.example.org' } as GroupsIOMailingList;
     const MAIN = { uid: 'ml-2', group_name: 'main', domain: 'lists.example.org' } as GroupsIOMailingList;
     const UNSAFE = { uid: 'ml-3', group_name: 'tsc,other@evil.example', domain: 'lists.example.org' } as GroupsIOMailingList;
 
-    /** Opens the active row's menu as a manager and returns the Reminder mailing list item. */
+    /** Opens the active row's menu as a manager and returns the mailing list reminder item. */
     async function reminderItem(overrides: Partial<Vote> = { committee_uid: 'committee-1' }) {
       fixture.componentRef.setInput(
         'votes',
@@ -814,12 +821,13 @@ describe('VotesTableComponent — row More menu', () => {
       await settle();
       moreButton('active')!.click();
       await settle();
-      return table['rowActionMenuItems']().find((item) => item.label === 'Reminder mailing list')!;
+      return table['rowActionMenuItems']().find((item) => item.label === 'Send reminder to mailing list')!;
     }
 
     it('shows on manager rows with a tooltip saying it opens the mail app', async () => {
       const item = await reminderItem();
 
+      expect(Array.from(document.querySelectorAll('[role="menuitem"]'), (element) => element.textContent?.trim())).toContain('Send reminder to mailing list');
       expect(item.icon).toBe('fa-light fa-envelopes-bulk');
       expect(item.tooltipOptions?.tooltipLabel).toBe('Opens your mail app to send a reminder email to the mailing list');
     });

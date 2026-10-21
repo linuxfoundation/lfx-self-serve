@@ -250,9 +250,14 @@ export class VotesTableComponent {
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }];
     // Managers only, and only while the vote is open — upstream rejects reminders for any other status.
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
-      items.push({ label: 'Send reminder', icon: 'fa-light fa-envelope', command: () => this.openReminderDialog(vote) });
       items.push({
-        label: 'Reminder mailing list',
+        label: 'Send reminder',
+        icon: 'fa-light fa-envelope',
+        tooltipOptions: { tooltipLabel: 'Opens a dialog to send reminders to eligible voters who have not voted yet', tooltipPosition: 'left' },
+        command: () => this.openReminderDialog(vote),
+      });
+      items.push({
+        label: 'Send reminder to mailing list',
         icon: 'fa-light fa-envelopes-bulk',
         tooltipOptions: { tooltipLabel: 'Opens your mail app to send a reminder email to the mailing list', tooltipPosition: 'left' },
         command: () => this.sendMailingListReminder(vote),
