@@ -273,13 +273,26 @@ describe('ImportMembersDialogComponent', () => {
     });
   });
 
-  describe('edit-wizard collection', () => {
+  describe('wizard collection', () => {
+    it('explains both wizard save actions before upload and in the preview', async () => {
+      await setup(OPEN_GROUP, [], [], true);
+      expect(component.phase()).toBe('select');
+      expect(query('import-members-guidance')?.textContent).toContain('Done (when creating) or Update Group (when editing)');
+
+      await upload('email\nada@example.com');
+      await render();
+      expect(query('import-members-summary')?.textContent?.replace(/\s+/g, ' ')).toContain(
+        'Confirm to add them to the form, then select Done (when creating) or Update Group (when editing) to save.'
+      );
+      expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+    });
+
     it('returns only ready requests without writing members or revoking invitations', async () => {
       await setup(OPEN_GROUP, [{ email: 'existing@example.com' }], [{ uid: 'invite-1', invitee_email: 'ada@example.com', status: 'pending' }], true);
       await upload('email,first_name\nada@example.com,Ada\nexisting@example.com,Existing\nADA@example.com,Duplicate');
       await render();
 
-      expect(query('import-members-guidance')?.textContent).toContain('saved only when you select Update Group');
+      expect(query('import-members-guidance')?.textContent).toContain('Done (when creating) or Update Group (when editing)');
       expect(query('import-members-send-notification')).not.toBeNull();
       expect(component.form.controls.send_notification.value).toBe(false);
       expect(query('import-members-submit-btn')?.textContent).toContain('Import 1 member');

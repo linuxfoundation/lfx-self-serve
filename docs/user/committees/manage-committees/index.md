@@ -42,7 +42,7 @@ To link directly to a tab, append `?tab=members` to the group URL for the Member
 
 ## Import members from a CSV
 
-If you can manage a group's members, you can add many people at once from a CSV file. Import is available on an existing group's **Members** tab and in **Edit Group → Add Members**. It does not send invitations or create groups, and it is not available while you are creating a new group.
+If you can manage a group's members, you can add many people at once from a CSV file. Import is available on an existing group's **Members** tab, in **Edit Group → Add Members**, and on the **Add Members** step when you create a new group. It does not send invitations or create groups.
 
 ### Import from the Members tab
 
@@ -55,18 +55,18 @@ If you can manage a group's members, you can add many people at once from a CSV 
 7. Optionally select **Send notification emails to added members**. Notifications are off by default, the same as **Add Member**.
 8. Select **Add _N_ members**.
 
-### Import while editing a group
+### Import while creating or editing a group
 
-1. Open **Edit Group** and go to the **Add Members** step.
+1. When creating a group, select **Create Group** on the **Settings** step to reach **Add Members**. When editing, open **Edit Group** and go to the **Add Members** step.
 2. Select **Import Members** alongside **Invite by email** and **Add with details**.
-3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the edit form.
+3. Download the template or choose a CSV file, then review the preview. Required organization and voting fields reflect the group's current settings in the form.
 4. Optionally select **Send notification emails to added members**. Notifications are off by default; this choice is retained when you edit staged members or move between steps.
 5. Select **Import _N_ members**. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
-6. Select **Update Group** to save the pending member additions along with your other changes. Cancelling the CSV preview or leaving without saving does not add those members or revoke their invitations.
+6. Select **Done** (when creating) or **Update Group** (when editing) to save the pending member additions along with your other changes. Cancelling the CSV preview, selecting **Skip For Now**, or leaving without saving does not add those members or revoke their invitations. When creating, the group itself has already been saved; only the pending members are discarded.
 
-**Update Group** stays unavailable while member or group details are loading or could not be loaded. No pending changes are submitted in that state. Once the members step loads successfully, you can save; your staged additions, edits, removals, and invitations remain pending.
+**Done** and **Update Group** stay unavailable while member or group details are loading or could not be loaded. No pending changes are submitted in that state. Once the members step loads successfully, you can save; your staged additions, edits, removals, and invitations remain pending.
 
-People already in the group or already staged in the edit form are skipped. Imports use the edit form's normal save flow rather than the Members tab's per-row results. After an imported member is successfully added, matching pending invitations are revoked. If cleanup fails, a warning directs you to revoke them from the **Pending** tab; the added member is not resubmitted when you retry other failed changes.
+People already in the group or already staged in the form are skipped. Imports use the form's normal save flow rather than the Members tab's per-row results. After an imported member is successfully added, matching pending invitations are revoked. If cleanup fails, a warning directs you to revoke them from the **Pending** tab; the added member is not resubmitted when you retry other failed changes.
 
 ### What the CSV needs
 

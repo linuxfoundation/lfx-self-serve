@@ -30,18 +30,16 @@
         data-testid="add-member-button"
         (click)="openAddMemberDialog()">
       </lfx-button>
-      @if (isEditMode()) {
-        <lfx-button
-          size="small"
-          label="Import Members"
-          icon="fa-light fa-file-csv"
-          severity="secondary"
-          [outlined]="true"
-          [disabled]="mutationsDisabled()"
-          data-testid="import-members-csv-btn"
-          (onClick)="openImportMembersDialog()">
-        </lfx-button>
-      }
+      <lfx-button
+        size="small"
+        label="Import Members"
+        icon="fa-light fa-file-csv"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="mutationsDisabled()"
+        data-testid="import-members-csv-btn"
+        (onClick)="openImportMembersDialog()">
+      </lfx-button>
     </div>
   </div>
 

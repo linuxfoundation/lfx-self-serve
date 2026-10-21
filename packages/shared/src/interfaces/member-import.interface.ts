@@ -100,12 +100,12 @@ export interface MemberImportRowView {
   details: { column: MemberImportColumn; value: string }[];
 }
 
-/** Data the Members tab or edit wizard passes into the import dialog. */
+/** Data the Members tab or the create or edit wizard passes into the import dialog. */
 export interface MemberImportDialogData {
   committee: Committee;
   existingMembers: CommitteeMember[];
   existingInvites: CommitteeInvite[];
-  /** Collect validated member requests for the edit wizard; close returns StagedCommitteeMemberRequest[] with notification/cleanup metadata, without writing. */
+  /** Collect validated member requests for the create or edit wizard; close returns StagedCommitteeMemberRequest[] with notification/cleanup metadata, without writing. */
   collectOnly?: boolean;
 }
 

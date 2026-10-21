@@ -13,7 +13,7 @@
             One member per row, up to {{ maxRecords }} rows and {{ maxFileMegabytes }} MB. Use the template's column names in any order; other columns are
             rejected. No invitations are created.
             @if (collectOnly) {
-              Members are added to the edit form and saved only when you select Update Group.
+              Members stay pending in the form until you select Done (when creating) or Update Group (when editing).
             } @else {
               People are added to the group directly.
             }
@@ -111,7 +111,7 @@
       } @else if (phase() === 'preview') {
         <p class="text-sm text-gray-600">
           @if (collectOnly) {
-            Review the rows below. Confirm to add them to the edit form, then select Update Group to save.
+            Review the rows below. Confirm to add them to the form, then select Done (when creating) or Update Group (when editing) to save.
           } @else {
             Review the rows below. Nothing is added until you confirm.
           }

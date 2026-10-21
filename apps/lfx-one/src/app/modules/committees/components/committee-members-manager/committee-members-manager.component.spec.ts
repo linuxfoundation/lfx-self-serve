@@ -119,13 +119,24 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     expect(component.memberCount()).toBe(count);
   });
 
-  it('offers Import Members only in the edit wizard, not during creation', async () => {
-    await setup();
+  it.each([true, false])('offers Import Members as a collect-only staging dialog when isEditMode is %s', async (isEditMode) => {
+    await setup({ isEditMode });
     expect(query('import-members-csv-btn')?.textContent).toContain('Import Members');
-    fixture.componentRef.setInput('isEditMode', false);
+    query('import-members-csv-btn')?.querySelector('button')?.click();
+    expect(dialogService.open).toHaveBeenCalledWith(
+      ImportMembersDialogComponent,
+      expect.objectContaining({ data: expect.objectContaining({ collectOnly: true }) })
+    );
+    dialogClose.next([{ ...REQUEST, email: 'new@example.com', createOptions: { skipNotification: true } }]);
     await fixture.whenStable();
-    expect(query('import-members-csv-btn')).toBeNull();
+    expect(updates.at(-1)?.toAdd).toEqual([expect.objectContaining({ email: 'new@example.com', createOptions: { skipNotification: true } })]);
+    expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+  });
+
+  it('keeps Import Members unavailable until the newly created group is known', async () => {
+    await setup({ committeeId: null, isEditMode: false });
     component.openImportMembersDialog();
+    expect(committeeService.getCommitteeInvites).not.toHaveBeenCalled();
     expect(dialogService.open).not.toHaveBeenCalled();
   });
 
