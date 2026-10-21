@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import '@angular/compiler';
-import { NextFunction, Request, Response } from 'express';
+import { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MKTG_AGENTS } from '@lfx-one/shared/constants';
 vi.mock('@lfx-one/shared/constants', async (original) => {
