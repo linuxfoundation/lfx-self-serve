@@ -45,7 +45,11 @@ export class LinkedinProfileService {
     await this.store.putMutableObject(req, 'marketing-os-artifacts', `${this.prefix(user)}current.json`, this.input(profile));
   }
 
-  /** Consume successful setup once; release an incomplete claim after a failed profile write. */
+  /**
+   * Consume acknowledged setup once; release an incomplete claim if its write fails.
+   * A delete between claim and create can still be followed by this in-flight write.
+   * Completed-run replay is blocked; cross-instance deletion fencing is follow-up F7.
+   */
   public async initializeOnce(req: Request, user: string, sessionId: string, profile: LinkedinStoredProfile): Promise<boolean> {
     const prefix = this.prefix(user);
     const run = createHash('sha256').update(sessionId).digest('hex');
@@ -70,6 +74,7 @@ export class LinkedinProfileService {
     return created || (await this.read(req, user)) !== null;
   }
 
+  /** Removes current bytes, but cannot cancel a first-run write already admitted above. */
   public async delete(req: Request, user: string): Promise<void> {
     await this.store.deletePrivateObject(req, 'marketing-os-artifacts', `${this.prefix(user)}current.json`);
   }

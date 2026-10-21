@@ -132,6 +132,39 @@ describe('LinkedIn per-user profile store', () => {
     expect([...objects.values()]).toEqual([{ body: '{}', metadata: {} }]);
     expect([...objects.keys()][0]).not.toContain('synthetic-session');
   });
+  it('documents an admitted first run finishing after an intervening delete, not a deletion fence', async () => {
+    const store = new LinkedinProfileService();
+    const profile = linkedinProfileFromSetup(setup);
+    const saved = { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) };
+    const put = ObjectStoreService.prototype.putPrivateObjectIfAbsent;
+    let started: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const resumed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(ObjectStoreService.prototype, 'putPrivateObjectIfAbsent').mockImplementation(async function (this: ObjectStoreService, req, purpose, key, input) {
+      if (key.endsWith('current.json')) {
+        started?.();
+        await resumed;
+      }
+      return put.call(this, req, purpose, key, input);
+    });
+    const initializing = store.initializeOnce(req, 'subject-one', 'synthetic-session', saved);
+    try {
+      await paused;
+      await new LinkedinProfileService().delete(req, 'subject-one');
+      expect(await store.read(req, 'subject-one')).toBeNull();
+    } finally {
+      release?.();
+      await initializing;
+    }
+    expect(await store.read(req, 'subject-one')).toEqual(saved);
+    await store.delete(req, 'subject-one');
+    expect(await store.initializeOnce(req, 'subject-one', 'synthetic-session', saved)).toBe(false);
+  });
   it('deletes only the requesting subject’s current record, idempotently', async () => {
     const store = new LinkedinProfileService();
     await store.saveFromInput(req, 'subject-one', { setup });
