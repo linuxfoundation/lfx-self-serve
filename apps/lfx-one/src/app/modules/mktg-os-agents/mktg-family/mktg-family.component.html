@@ -31,19 +31,39 @@
               }
             </div>
           }
-          <!-- Stale = built-from framework revision older than current approved framework; boilerplates/FAQ/brand kit only (hard-coded framework → downstream), never one-off runs; separate item. -->
-          <div class="flex flex-col gap-1">
+          @if (definition.id === rebuildFamilyId) {
             <lfx-button
               label="Rebuild what is stale"
               [outlined]="true"
-              [disabled]="true"
-              ariaLabel="Rebuild what is stale (coming soon)"
+              [disabled]="!hasStale() || !rebuildPanel()?.canStart()"
+              ariaLabel="Rebuild what is stale"
+              (onClick)="rebuildPanel()?.start()"
               data-testid="mktg-family-rebuild" />
-            <span class="text-xs text-gray-500" data-testid="mktg-family-rebuild-unavailable">Coming soon</span>
-          </div>
+          } @else {
+            <div class="flex flex-col gap-1">
+              <lfx-button
+                label="Rebuild what is stale"
+                [outlined]="true"
+                [disabled]="true"
+                ariaLabel="Rebuild what is stale (coming soon)"
+                data-testid="mktg-family-rebuild" />
+              <span class="text-xs text-gray-500" data-testid="mktg-family-rebuild-unavailable">Coming soon</span>
+            </div>
+          }
         </div>
       }
     </lfx-page-header>
+    @if (definition.id === rebuildFamilyId) {
+      <lfx-mktg-rebuild
+        [project]="kit.projectUid()"
+        [projectSlug]="kit.projectQueryParams().project ?? null"
+        [projectName]="kit.projectName()"
+        [framework]="kit.documents()?.approvedFramework ?? null"
+        [writer]="!!kit.documents() && !kit.error()"
+        [autoStartRevisionId]="hasStale() ? autoRebuild() : ''"
+        (started)="rebuildStarted()"
+        (changed)="kit.retry()" />
+    }
     @if (kit.loading()) {
       <p role="status" class="py-8 text-gray-500" data-testid="mktg-family-loading">Loading family assets…</p>
     } @else if (kit.error()) {

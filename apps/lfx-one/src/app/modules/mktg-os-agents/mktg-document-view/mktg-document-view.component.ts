@@ -18,6 +18,7 @@ import {
   LINKEDIN_SHARE_LINK_MAX_CHARS,
   MKTG_DOCUMENT_REVISION_PREVIEW_COUNT,
   MKTG_KIT_FAMILIES,
+  MKTG_KIT_FRAMEWORK_KEY,
 } from '@lfx-one/shared/constants';
 import {
   BrandKitRevision,
@@ -66,6 +67,7 @@ import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { Member360Service } from '@services/member-360.service';
 import { Member360ResultComponent } from '../components/member-360-result/member-360-result.component';
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
+import { MktgDownstreamComponent } from '../components/mktg-downstream/mktg-downstream.component';
 
 // One revision of a Marketing OS document (design of record: "Document
 // store", DocumentView board): the header says which revision of how many,
@@ -86,6 +88,7 @@ import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity
     NgClass,
     NgTemplateOutlet,
     MktgAssetMetaComponent,
+    MktgDownstreamComponent,
     ButtonComponent,
     RouterLink,
     BrandKitWebViewComponent,
@@ -120,6 +123,7 @@ export class MktgDocumentViewComponent {
 
   // Explicit parent target works for both project and foundation route hosts.
   protected readonly documentsRoute = this.route.parent;
+  protected readonly frameworkKey = MKTG_KIT_FRAMEWORK_KEY;
 
   protected readonly linkForm = new FormGroup({ share_link: new FormControl('', { nonNullable: true }) });
   protected readonly shareLinkAnswerKey = LINKEDIN_SHARE_LINK_ANSWER_KEY;
@@ -227,8 +231,8 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view?.type.agentKey === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
-  /** Structured assets use main's full-width layout; the side-column treatment is a separate follow-up. */
-  protected readonly fullWidth = computed(() => this.asset() !== null || this.boilerplates() !== null || this.faq() !== null || this.brandKit() !== null);
+  /** Boilerplates, FAQ and Brand Kit stay full width; the framework keeps Revisions and Downstream in the right column. */
+  protected readonly fullWidth = computed(() => this.boilerplates() !== null || this.faq() !== null || this.brandKit() !== null);
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);

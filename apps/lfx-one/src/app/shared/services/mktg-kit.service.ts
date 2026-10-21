@@ -23,6 +23,7 @@ export class MktgKitService {
   public readonly loading = signal(true);
   public readonly error = signal('');
   public readonly documents = signal<MktgDocumentsResponse | null>(null);
+  public readonly projectUid = computed(() => this.context.activeContext()?.uid ?? '');
   public readonly projectName = computed(() => this.context.activeContext()?.name ?? 'Project');
   public readonly projectQueryParams = computed(() => ({ project: this.context.activeContext()?.slug ?? null }));
   public readonly families = computed(() => {

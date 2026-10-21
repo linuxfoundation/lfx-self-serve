@@ -34,6 +34,7 @@ export class MktgKitComponent {
     return computed(() =>
       this.kit.families().map((family) => ({
         ...family,
+        needsRebuild: family.rows.some((row) => row.state === 'needs-rebuild'),
         rows: family.live ? family.rows.filter((row) => this.selectedFilter() === 'all' || row.state === this.selectedFilter()) : [],
         agentNames: family.family.leadSummary ?? family.agents.map((agent) => agent.name).join(', '),
       }))
