@@ -96,6 +96,8 @@ describe('ProjectParticipatingOrgsController validation', () => {
     ['getList', { sort: 'revenue' }, 'sort'],
     ['getList', { dir: 'up' }, 'dir'],
     ['getList', { tier: 'Diamond' }, 'tier'],
+    ['getList', { contribution: 'idle' }, 'contribution'],
+    ['export', { contribution: 'idle' }, 'contribution'],
     ['getList', { search: 'a'.repeat(PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH + 1) }, 'search'],
     ['getList', { segment: ['all', 'members'] }, 'segment'],
     ['export', { sort: 'revenue' }, 'sort'],
@@ -121,11 +123,22 @@ describe('ProjectParticipatingOrgsController validation', () => {
       offset: 0,
     });
 
-    await call('getList', { range: '30d', segment: 'members', tier: 'Gold', search: '  syn  ', sort: 'tier', dir: 'asc', pageSize: '50', offset: '50' });
+    await call('getList', {
+      range: '30d',
+      segment: 'members',
+      tier: 'Gold',
+      contribution: 'contributing',
+      search: '  syn  ',
+      sort: 'tier',
+      dir: 'asc',
+      pageSize: '50',
+      offset: '50',
+    });
     expect(getPage).toHaveBeenLastCalledWith(expect.anything(), 'synthetic-project', {
       range: '30d',
       segment: 'members',
       tier: 'Gold',
+      contribution: 'contributing',
       search: 'syn',
       sort: 'tier',
       dir: 'asc',

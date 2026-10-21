@@ -20,6 +20,7 @@ import {
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE,
   MEMBERSHIP_TIER_ORDER,
+  PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_OPTIONS,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR,
   PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
@@ -36,6 +37,7 @@ import type {
   FilterPillOption,
   MembershipTierClass,
   ProjectParticipatingOrgRowVm,
+  ProjectParticipatingOrgsContributionFilter,
   ProjectParticipatingOrgsExportFilters,
   ProjectParticipatingOrgsOrgLensLinksAnswer,
   ProjectParticipatingOrgsPage,
@@ -87,6 +89,7 @@ export class ParticipatingOrgsComponent {
 
   protected readonly rangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
+  protected readonly contributionOptions = PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_OPTIONS;
   /** Page-size choices only once there is more than one page, as on the Groups and Documents tables. */
   protected readonly rppOptions = computed<number[] | undefined>(() =>
     this.totalRecords() > PROJECT_PARTICIPATING_ORGS_PAGE_SIZE ? [...PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS] : undefined
@@ -97,6 +100,7 @@ export class ParticipatingOrgsComponent {
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
     tier: new FormControl<MembershipTierClass | null>(null),
+    contribution: new FormControl<ProjectParticipatingOrgsContributionFilter>('all', { nonNullable: true }),
   });
   protected readonly rangeForm = new FormGroup({
     range: new FormControl<ProjectParticipatingOrgsRange>(CONTRIBUTIONS_DEFAULT_DATE_RANGE, { nonNullable: true }),
@@ -123,10 +127,13 @@ export class ParticipatingOrgsComponent {
   });
   private readonly search: Signal<string> = this.initSearch();
   private readonly tier: Signal<MembershipTierClass | null> = toSignal(this.filterForm.controls.tier.valueChanges, { initialValue: null });
+  private readonly contribution: Signal<ProjectParticipatingOrgsContributionFilter> = toSignal(this.filterForm.controls.contribution.valueChanges, {
+    initialValue: this.filterForm.controls.contribution.value,
+  });
 
   /** Switching project, or any filter, tab, range or sort change, returns the table to its first page. */
   protected readonly offset = linkedSignal({
-    source: () => `${this.slug()}|${this.range()}|${this.segment()}|${this.search()}|${this.tier()}|${this.sort()}|${this.dir()}`,
+    source: () => `${this.slug()}|${this.range()}|${this.segment()}|${this.search()}|${this.tier()}|${this.contribution()}|${this.sort()}|${this.dir()}`,
     computation: () => 0,
   });
 
@@ -143,6 +150,14 @@ export class ParticipatingOrgsComponent {
   protected readonly summary: Signal<ProjectParticipatingOrgsSummary | null> = computed(() => {
     const state = this.summaryState();
     return state.slug === this.slug() ? state.summary : null;
+  });
+  /**
+   * Only a foundation's own project lists members without activity, so the contribution filter shows and applies only
+   * once the summary confirms one; until then, and on a sub-project, a carried-over choice is never sent.
+   */
+  protected readonly isFoundationProject = computed(() => {
+    const summary = this.summary();
+    return summary !== null && summary.projectSlug === summary.foundationSlug;
   });
   protected readonly page: Signal<ProjectParticipatingOrgsPage> = computed(() => {
     const state = this.pageState();
@@ -182,18 +197,22 @@ export class ParticipatingOrgsComponent {
   );
 
   /**
-   * The tier filter narrows to members of one tier, so it has no meaning on the Non-Members tab. It is cleared and
-   * disabled in the same synchronous step as the tab change, so the switch issues one read without a stray tier.
+   * Tier narrows to members of one tier, and every non-member contributes, so neither filter has meaning on the
+   * Non-Members tab. Both are cleared and disabled in the same synchronous step as the tab change, so the switch issues
+   * one read without a stray filter.
    */
   protected onSegmentChange(id: string): void {
     const segment = PROJECT_PARTICIPATING_ORGS_SEGMENTS.find((value) => value === id);
     if (!segment) return;
-    const tier = this.filterForm.controls.tier;
+    const { tier, contribution } = this.filterForm.controls;
     if (segment === 'non_members') {
       tier.setValue(null);
       tier.disable();
+      contribution.setValue('all');
+      contribution.disable();
     } else {
       tier.enable();
+      contribution.enable();
     }
     this.segment.set(segment);
   }
@@ -233,11 +252,13 @@ export class ParticipatingOrgsComponent {
   private exportFilters(): ProjectParticipatingOrgsExportFilters {
     const search = this.search();
     const tier = this.tier();
+    const contribution = this.isFoundationProject() ? this.contribution() : 'all';
     return {
       range: this.range(),
       segment: this.segment(),
       ...(search ? { search } : {}),
       ...(tier ? { tier } : {}),
+      ...(contribution !== 'all' ? { contribution } : {}),
       sort: this.sort(),
       dir: this.dir(),
     };
@@ -348,6 +369,10 @@ export class ParticipatingOrgsComponent {
     const project = this.projectContextService.activeContext()?.name ?? 'this project';
     const summary = this.summary();
     const foundation = summary?.foundationName ?? summary?.foundationSlug;
+    // Only a foundation's own project lists its full member roster; a sub-project lists contributing members only.
+    if (foundation && summary?.projectSlug === summary?.foundationSlug) {
+      return `${foundation} members and every organization contributing to ${project}, ranked by activity.`;
+    }
     return foundation
       ? `Every organization contributing to ${project}, ranked by activity and split by ${foundation} membership.`
       : `Every organization contributing to ${project}, ranked by activity and split by parent foundation membership.`;
@@ -359,14 +384,16 @@ export class ParticipatingOrgsComponent {
     // Locale pinned so SSR on Node and the browser render the same digits (no hydration mismatch).
     return [
       {
+        // Companies with activity in the range: contributing members + non-members.
         value: (summary?.orgsCount ?? 0).toLocaleString('en-US'),
-        label: 'Orgs Participating',
+        label: 'Contributing Orgs',
         icon: 'fa-solid fa-building',
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },
       {
         value: (summary?.membersCount ?? 0).toLocaleString('en-US'),
         label: 'Members',
+        ...(summary ? { subLine: `${summary.contributingMembersCount.toLocaleString('en-US')} contributing` } : {}),
         icon: 'fa-solid fa-circle-check',
         iconContainerClass: 'bg-emerald-100 text-emerald-600',
       },
@@ -390,7 +417,9 @@ export class ParticipatingOrgsComponent {
     // Locale pinned so SSR on Node and the browser render the same digits (no hydration mismatch).
     const label = (name: string, count: number | undefined): string => (count === undefined ? name : `${name} (${count.toLocaleString('en-US')})`);
     return [
-      { id: 'all', label: label('All', summary?.orgsCount) },
+      // The All tab lists members (contributing or not) plus non-members, so it counts both; the Contributing Orgs
+      // tile counts contributing companies only.
+      { id: 'all', label: label('All', summary ? summary.membersCount + summary.nonMembersCount : undefined) },
       { id: 'members', label: label('Members', summary?.membersCount) },
       { id: 'non_members', label: label('Non-Members', summary?.nonMembersCount) },
     ];

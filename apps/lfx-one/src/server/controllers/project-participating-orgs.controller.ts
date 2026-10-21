@@ -6,6 +6,7 @@ import {
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   MEMBERSHIP_TIER_ORDER,
   ORG_ACCOUNT_ID_PATTERN,
+  PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_FILTERS,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR,
   PROJECT_PARTICIPATING_ORGS_EXPORT_CSV_HEADER,
@@ -73,6 +74,7 @@ export class ProjectParticipatingOrgsController {
         range: filters.range,
         segment: filters.segment,
         tier: filters.tier,
+        contribution: filters.contribution ?? 'all',
         sort: filters.sort,
         dir: filters.dir,
         has_search: !!filters.search,
@@ -177,6 +179,7 @@ function parseFilters(req: Request, operation: string): ProjectParticipatingOrgs
     }
     tier = tierParam as MembershipTierClass;
   }
+  const contribution = parseEnum(req, 'contribution', PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_FILTERS, 'all', operation);
 
   return {
     range: parseRange(req, operation),
@@ -185,6 +188,7 @@ function parseFilters(req: Request, operation: string): ProjectParticipatingOrgs
     dir: parseEnum(req, 'dir', PROJECT_PARTICIPATING_ORGS_SORT_DIRECTIONS, PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR, operation),
     ...(search ? { search } : {}),
     ...(tier ? { tier } : {}),
+    ...(contribution !== 'all' ? { contribution } : {}),
   };
 }
 
