@@ -12,7 +12,7 @@ import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { Committee, CommitteeMember, PersonaType, Project, StagedCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeMember, MemberPendingChanges, PersonaType, Project, StagedCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
@@ -325,6 +325,7 @@ describe('CommitteeManageComponent', () => {
     let updateCommittee: ReturnType<typeof vi.fn>;
     let createCommitteeMember: ReturnType<typeof vi.fn>;
     let revokeCommitteeInvite: ReturnType<typeof vi.fn>;
+    let getCommitteeMembers: ReturnType<typeof vi.fn>;
     const createdMember = { uid: 'added-1', email: 'ada@example.com', first_name: 'Ada', last_name: 'Example' } as CommitteeMember;
 
     beforeEach(() => {
@@ -332,13 +333,14 @@ describe('CommitteeManageComponent', () => {
       updateCommittee = vi.fn().mockReturnValue(of(enrichedCommittee()));
       createCommitteeMember = vi.fn().mockReturnValue(of(createdMember));
       revokeCommitteeInvite = vi.fn().mockReturnValue(of(undefined));
+      getCommitteeMembers = vi.fn().mockReturnValue(of([]));
       TestBed.overrideProvider(CommitteeService, {
         useValue: {
           getCommittee,
           updateCommittee,
           createCommitteeMember,
           revokeCommitteeInvite,
-          getCommitteeMembers: vi.fn().mockReturnValue(of([])),
+          getCommitteeMembers,
           getCommitteeInvites: vi.fn().mockReturnValue(of([])),
         },
       });
@@ -351,14 +353,124 @@ describe('CommitteeManageComponent', () => {
       });
     });
 
-    async function setupPending(toAdd: StagedCommitteeMemberRequest[]): Promise<CommitteeManageComponent> {
+    async function setupPending(toAdd: StagedCommitteeMemberRequest[], changes: Partial<MemberPendingChanges> = {}): Promise<CommitteeManageComponent> {
       const fixture = TestBed.createComponent(CommitteeManageComponent);
       const component = fixture.componentInstance;
-      component.memberUpdates.set({ toAdd, toUpdate: [], toDelete: [], toInvite: [] });
+      component.memberUpdates.set({ toAdd, toUpdate: [], toDelete: [], toInvite: [], ...changes });
       component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
       await fixture.whenStable();
       return component;
     }
+
+    it.each(['onDone', 'onSubmitAll'] as const)('blocks %s during roster loading and failure without losing any pending operation', async (submit) => {
+      const response = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(response);
+      const pending: MemberPendingChanges = {
+        toAdd: [{ email: 'added@example.com', createOptions: { skipNotification: true } }],
+        toUpdate: [{ uid: 'member-update', changes: { email: 'edited@example.com', first_name: 'Edited' } }],
+        toDelete: ['member-delete'],
+        toInvite: [{ invitee_email: 'invited@example.com' }],
+      };
+      const component = await setupPending(pending.toAdd, pending);
+      if (submit === 'onDone') component.mode.set('create');
+      expect(component.memberSaveDisabled()).toBe(true);
+      component[submit]();
+      expect(updateCommittee).not.toHaveBeenCalled();
+      expect(createCommitteeMember).not.toHaveBeenCalled();
+      expect(component.memberUpdates()).toEqual(pending);
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        response.error(new HttpErrorResponse({ status: 503 }));
+        await TestBed.inject(ApplicationRef).whenStable();
+        expect(component.memberSaveDisabled()).toBe(true);
+        component[submit]();
+        expect(updateCommittee).not.toHaveBeenCalled();
+        expect(createCommitteeMember).not.toHaveBeenCalled();
+        expect(revokeCommitteeInvite).not.toHaveBeenCalled();
+        expect(component.memberUpdates()).toEqual(pending);
+        expect(component.failedDeleteUids()).toEqual([]);
+        expect(component.submitting()).toBe(false);
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+      } finally {
+        errorLog.mockRestore();
+      }
+    });
+
+    it('preserves edits and removals through a failed load, successful step reload, partial save and retry', async () => {
+      const response = new Subject<CommitteeMember[]>();
+      getCommitteeMembers.mockReturnValue(response);
+      const updateMember = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const deleteMember = vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      const inviteMember = vi.fn().mockReturnValue(of({ uid: 'sent-invite' }));
+      const pending: MemberPendingChanges = {
+        toAdd: [{ email: createdMember.email, createOptions: { skipNotification: true } }],
+        toUpdate: [{ uid: 'member-update', changes: { email: 'edited@example.com', first_name: 'Edited' } }],
+        toDelete: ['member-delete'],
+        toInvite: [{ invitee_email: 'invited@example.com' }],
+      };
+      queryParamMap$.next(convertToParamMap({ step: '4' }));
+      TestBed.overrideComponent(CommitteeManageComponent, {
+        set: {
+          template: `@if (isLastStep()) {
+            <lfx-committee-members-manager [committeeId]="committeeId()" [memberUpdates]="memberUpdates()"
+              [failedDeleteUids]="failedDeleteUids()" [isEditMode]="isEditMode()" [submitting]="submitting()"
+              (memberUpdatesChange)="onMemberUpdatesChange($event)" />
+          }`,
+        },
+      });
+      const fixture = TestBed.createComponent(CommitteeManageComponent);
+      const component = fixture.componentInstance;
+      component.memberUpdates.set(pending);
+      component.form.patchValue({ name: 'Example Group', category: 'Technical Steering Committee' });
+      Object.assign(TestBed.inject(CommitteeService), {
+        updateCommitteeMember: updateMember,
+        deleteCommitteeMember: deleteMember,
+        createCommitteeInvite: inviteMember,
+      });
+      await fixture.whenStable();
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      try {
+        response.error(new HttpErrorResponse({ status: 503 }));
+        await fixture.whenStable();
+        component.onSubmitAll();
+        expect(updateCommittee).not.toHaveBeenCalled();
+        expect(component.memberUpdates()).toEqual(pending);
+
+        queryParamMap$.next(convertToParamMap({ step: '3' }));
+        await fixture.whenStable();
+        expect(component.memberSaveDisabled()).toBe(true);
+        getCommitteeMembers.mockReturnValue(
+          of([
+            { uid: 'member-update', email: 'edited@example.com', first_name: 'Original' } as CommitteeMember,
+            { uid: 'member-delete', email: 'removed@example.com' } as CommitteeMember,
+          ])
+        );
+        queryParamMap$.next(convertToParamMap({ step: '4' }));
+        await fixture.whenStable();
+        expect(component.memberSaveDisabled()).toBe(false);
+        component.onSubmitAll();
+        expect(component.memberUpdates().toAdd).toEqual([]);
+        expect(component.memberUpdates().toInvite).toEqual([]);
+        expect(component.memberUpdates().toUpdate).toEqual([
+          expect.objectContaining({ uid: 'member-update', changes: expect.objectContaining({ email: 'edited@example.com', first_name: 'Edited' }) }),
+        ]);
+        expect(component.memberUpdates().toDelete).toEqual(['member-delete']);
+        expect(component.failedDeleteUids()).toEqual(['member-delete']);
+        expect(navigate).not.toHaveBeenCalledWith(['/groups']);
+
+        updateMember.mockReturnValue(of({ uid: 'member-update' }));
+        deleteMember.mockReturnValue(of(undefined));
+        await fixture.whenStable();
+        component.onSubmitAll();
+        expect(updateMember).toHaveBeenCalledTimes(2);
+        expect(deleteMember).toHaveBeenCalledTimes(2);
+        expect(createCommitteeMember).toHaveBeenCalledTimes(1);
+        expect(inviteMember).toHaveBeenCalledTimes(1);
+        expect(navigate).toHaveBeenCalledWith(['/groups']);
+      } finally {
+        errorLog.mockRestore();
+      }
+    });
 
     it.each(['example-group', 'EXAMPLE-GROUP'])('imports and saves from slug %s using one pinned UUID for every write', async (slug) => {
       const uid = '00000000-0000-4000-8000-000000000001';

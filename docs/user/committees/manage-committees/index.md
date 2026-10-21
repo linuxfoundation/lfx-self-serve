@@ -64,6 +64,8 @@ If you can manage a group's members, you can add many people at once from a CSV 
 5. Select **Import _N_ members**. The dialog closes and the imported members appear in the editable list with a **New** badge. Nothing has been saved yet; you can edit or remove them before saving.
 6. Select **Update Group** to save the pending member additions along with your other changes. Cancelling the CSV preview or leaving without saving does not add those members or revoke their invitations.
 
+**Update Group** stays unavailable while member or group details are loading or could not be loaded. No pending changes are submitted in that state. Once the members step loads successfully, you can save; your staged additions, edits, removals, and invitations remain pending.
+
 People already in the group or already staged in the edit form are skipped. Imports use the edit form's normal save flow rather than the Members tab's per-row results. After an imported member is successfully added, matching pending invitations are revoked. If cleanup fails, a warning directs you to revoke them from the **Pending** tab; the added member is not resubmitted when you retry other failed changes.
 
 ### What the CSV needs

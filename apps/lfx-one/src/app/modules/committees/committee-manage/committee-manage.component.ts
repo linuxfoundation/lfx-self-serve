@@ -143,6 +143,8 @@ export class CommitteeManageComponent {
       this.memberUpdates().toDelete.length > 0 ||
       this.memberUpdates().toInvite.length > 0
   );
+  // A missing/loading/failed child cannot safely reconcile pending changes after a partial save.
+  public readonly memberSaveDisabled = computed(() => this.submitting() || this.membersManager()?.mutationsDisabled() !== false);
 
   // UI labels
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
@@ -291,7 +293,7 @@ export class CommitteeManageComponent {
 
   public onDone(): void {
     const committeeUid = this.resolveCommitteeWriteUid();
-    if (!committeeUid) {
+    if (!committeeUid || this.memberSaveDisabled()) {
       return;
     }
 
@@ -332,7 +334,7 @@ export class CommitteeManageComponent {
   public onSubmitAll(): void {
     // Edit mode only - save the committee, then flush member/invite changes once it lands
     const committeeUid = this.resolveCommitteeWriteUid();
-    if (!this.isEditMode() || !committeeUid) {
+    if (!this.isEditMode() || !committeeUid || this.memberSaveDisabled()) {
       return;
     }
 
