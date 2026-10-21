@@ -83,7 +83,17 @@ export class ProjectParticipatingOrgsService {
   public async getPage(req: Request, slug: string, query: ProjectParticipatingOrgsQuery): Promise<ProjectParticipatingOrgsPage> {
     const pageSize = clampInteger(query.pageSize, 1, PROJECT_PARTICIPATING_ORGS_MAX_PAGE_SIZE, PROJECT_PARTICIPATING_ORGS_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
-    const discriminator = [query.range, query.segment, query.search ?? '', query.tier ?? '', query.sort, query.dir, pageSize, offset];
+    const discriminator = [
+      query.range,
+      query.segment,
+      query.search ?? '',
+      query.tier ?? '',
+      query.contribution ?? 'all',
+      query.sort,
+      query.dir,
+      pageSize,
+      offset,
+    ];
     return withProjectParticipatingOrgsCache(slug, 'page', discriminator, () => this.fetchPage(req, slug, { ...query, pageSize, offset }), isPage);
   }
 
@@ -248,7 +258,7 @@ function listTableName(): string {
   return `${resolveLfxOnePlatinumSchema()}.PROJECT_PARTICIPATING_ORGS`;
 }
 
-/** Segment, tier and search predicates over `scoped`, with binds in placeholder order (slug and range first). */
+/** Segment, tier, contribution and search predicates over `scoped`, with binds in placeholder order (slug and range first). */
 function buildMatch(slug: string, filters: ProjectParticipatingOrgsExportFilters): { matchClause: string; binds: string[] } {
   const binds: string[] = [slug, filters.range];
   const predicates: string[] = [];
@@ -259,6 +269,9 @@ function buildMatch(slug: string, filters: ProjectParticipatingOrgsExportFilters
     predicates.push('membership_tier_class = ?');
     binds.push(filters.tier);
   }
+  // Activity in the range, from the modeled counts: only members are ever listed without it.
+  if (filters.contribution === 'contributing') predicates.push('(commits > 0 OR contributors > 0)');
+  if (filters.contribution === 'not_contributing') predicates.push('commits = 0 AND contributors = 0');
   if (filters.search) {
     predicates.push("participant_name ILIKE ? ESCAPE '!'");
     binds.push(`%${escapeSqlLikePattern(filters.search)}%`);

@@ -20,6 +20,7 @@ import {
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE,
   MEMBERSHIP_TIER_ORDER,
+  PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_OPTIONS,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT,
   PROJECT_PARTICIPATING_ORGS_DEFAULT_SORT_DIR,
   PROJECT_PARTICIPATING_ORGS_MAX_SEARCH_LENGTH,
@@ -36,6 +37,7 @@ import type {
   FilterPillOption,
   MembershipTierClass,
   ProjectParticipatingOrgRowVm,
+  ProjectParticipatingOrgsContributionFilter,
   ProjectParticipatingOrgsExportFilters,
   ProjectParticipatingOrgsOrgLensLinksAnswer,
   ProjectParticipatingOrgsPage,
@@ -87,6 +89,7 @@ export class ParticipatingOrgsComponent {
 
   protected readonly rangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly tierOptions = MEMBERSHIP_TIER_ORDER.map((tier) => ({ label: tier, value: tier }));
+  protected readonly contributionOptions = PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_OPTIONS;
   /** Page-size choices only once there is more than one page, as on the Groups and Documents tables. */
   protected readonly rppOptions = computed<number[] | undefined>(() =>
     this.totalRecords() > PROJECT_PARTICIPATING_ORGS_PAGE_SIZE ? [...PROJECT_PARTICIPATING_ORGS_PAGE_SIZE_OPTIONS] : undefined
@@ -97,6 +100,7 @@ export class ParticipatingOrgsComponent {
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
     tier: new FormControl<MembershipTierClass | null>(null),
+    contribution: new FormControl<ProjectParticipatingOrgsContributionFilter>('all', { nonNullable: true }),
   });
   protected readonly rangeForm = new FormGroup({
     range: new FormControl<ProjectParticipatingOrgsRange>(CONTRIBUTIONS_DEFAULT_DATE_RANGE, { nonNullable: true }),
@@ -123,10 +127,13 @@ export class ParticipatingOrgsComponent {
   });
   private readonly search: Signal<string> = this.initSearch();
   private readonly tier: Signal<MembershipTierClass | null> = toSignal(this.filterForm.controls.tier.valueChanges, { initialValue: null });
+  private readonly contribution: Signal<ProjectParticipatingOrgsContributionFilter> = toSignal(this.filterForm.controls.contribution.valueChanges, {
+    initialValue: this.filterForm.controls.contribution.value,
+  });
 
   /** Switching project, or any filter, tab, range or sort change, returns the table to its first page. */
   protected readonly offset = linkedSignal({
-    source: () => `${this.slug()}|${this.range()}|${this.segment()}|${this.search()}|${this.tier()}|${this.sort()}|${this.dir()}`,
+    source: () => `${this.slug()}|${this.range()}|${this.segment()}|${this.search()}|${this.tier()}|${this.contribution()}|${this.sort()}|${this.dir()}`,
     computation: () => 0,
   });
 
@@ -233,11 +240,13 @@ export class ParticipatingOrgsComponent {
   private exportFilters(): ProjectParticipatingOrgsExportFilters {
     const search = this.search();
     const tier = this.tier();
+    const contribution = this.contribution();
     return {
       range: this.range(),
       segment: this.segment(),
       ...(search ? { search } : {}),
       ...(tier ? { tier } : {}),
+      ...(contribution !== 'all' ? { contribution } : {}),
       sort: this.sort(),
       dir: this.dir(),
     };
@@ -348,10 +357,13 @@ export class ParticipatingOrgsComponent {
     const project = this.projectContextService.activeContext()?.name ?? 'this project';
     const summary = this.summary();
     const foundation = summary?.foundationName ?? summary?.foundationSlug;
-    // On a foundation's own project the Members list is the full current roster, contributing or not.
+    // Only a foundation's own project lists its full member roster; a sub-project lists contributing members only.
+    if (foundation && summary?.projectSlug === summary?.foundationSlug) {
+      return `${foundation} members and every organization contributing to ${project}, ranked by activity.`;
+    }
     return foundation
-      ? `${foundation} members and every organization contributing to ${project}, ranked by activity.`
-      : `Parent foundation members and every organization contributing to ${project}, ranked by activity.`;
+      ? `Every organization contributing to ${project}, ranked by activity and split by ${foundation} membership.`
+      : `Every organization contributing to ${project}, ranked by activity and split by parent foundation membership.`;
   }
 
   private initTiles(): StatCardItem[] {

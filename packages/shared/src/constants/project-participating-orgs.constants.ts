@@ -7,12 +7,22 @@
 import type { MembershipTierClass } from '../interfaces/org-lens.interface';
 import type {
   ProjectParticipatingOrgChangeTone,
+  ProjectParticipatingOrgsContributionFilter,
   ProjectParticipatingOrgsPage,
   ProjectParticipatingOrgsSortDirection,
   ProjectParticipatingOrgsSortField,
 } from '../interfaces/project-participating-orgs.interface';
 
 export const PROJECT_PARTICIPATING_ORGS_SEGMENTS = ['all', 'members', 'non_members'] as const;
+
+/** Contribution filter: every listed company, those with activity in the range, or (members) those without. */
+export const PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_FILTERS = ['all', 'contributing', 'not_contributing'] as const;
+
+export const PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_OPTIONS: { label: string; value: ProjectParticipatingOrgsContributionFilter }[] = [
+  { label: 'All', value: 'all' },
+  { label: 'Contributing', value: 'contributing' },
+  { label: 'Not contributing', value: 'not_contributing' },
+];
 
 /** `*_change` sort on the % change against the previous window; rows without one (All Time, new) sort last. */
 export const PROJECT_PARTICIPATING_ORGS_SORT_FIELDS = ['name', 'tier', 'commits', 'commits_change', 'contributors', 'contributors_change'] as const;

@@ -6,7 +6,11 @@
 // project_lens models): every company contributing code to a project, split into
 // current members of the project's parent foundation and non-members.
 
-import type { PROJECT_PARTICIPATING_ORGS_SEGMENTS, PROJECT_PARTICIPATING_ORGS_SORT_FIELDS } from '../constants/project-participating-orgs.constants';
+import type {
+  PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_FILTERS,
+  PROJECT_PARTICIPATING_ORGS_SEGMENTS,
+  PROJECT_PARTICIPATING_ORGS_SORT_FIELDS,
+} from '../constants/project-participating-orgs.constants';
 import type { ContributionsDateRange } from './org-contributions.interface';
 import type { MembershipTierClass } from './org-lens.interface';
 
@@ -15,6 +19,12 @@ export type ProjectParticipatingOrgsRange = ContributionsDateRange;
 
 /** Tab: every listed company, current members only, or non-members (including Unidentified). */
 export type ProjectParticipatingOrgsSegment = (typeof PROJECT_PARTICIPATING_ORGS_SEGMENTS)[number];
+
+/**
+ * Contribution filter: `contributing` keeps companies with activity in the range; `not_contributing` keeps the
+ * listed companies without (only members on a foundation's own project, who are listed contributing or not).
+ */
+export type ProjectParticipatingOrgsContributionFilter = (typeof PROJECT_PARTICIPATING_ORGS_CONTRIBUTION_FILTERS)[number];
 
 /** Server-side sortable columns. `tier` orders members by tier rank (Platinum first); non-members, and rows with no % change, sort last. */
 export type ProjectParticipatingOrgsSortField = (typeof PROJECT_PARTICIPATING_ORGS_SORT_FIELDS)[number];
@@ -81,6 +91,8 @@ export interface ProjectParticipatingOrgsQuery {
   search?: string;
   /** Members of this tier class only (implies members). */
   tier?: MembershipTierClass;
+  /** Companies with or without activity in the range; omitted means all. */
+  contribution?: Exclude<ProjectParticipatingOrgsContributionFilter, 'all'>;
   sort: ProjectParticipatingOrgsSortField;
   dir: ProjectParticipatingOrgsSortDirection;
   pageSize: number;

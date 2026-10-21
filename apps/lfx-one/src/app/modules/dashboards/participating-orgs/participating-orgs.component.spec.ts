@@ -164,10 +164,34 @@ describe('ParticipatingOrgsComponent', () => {
     expect(name?.tagName).toBe('A');
     expect(name?.getAttribute('href')).toBe(`/org/${SYNTHETIC_ORG_ACCOUNT_ID}/memberships/${FOUNDATION_SLUG}`);
     expect(text('participating-orgs-subtitle')).toBe(
-      'Synthetic Foundation members and every organization contributing to Synthetic Project, ranked by activity.'
+      'Every organization contributing to Synthetic Project, ranked by activity and split by Synthetic Foundation membership.'
     );
     expect(getSummary).toHaveBeenCalledWith(PROJECT_SLUG, '12mo');
     expect(getPage).toHaveBeenCalledWith(PROJECT_SLUG, { range: '12mo', segment: 'all', sort: 'commits', dir: 'desc', pageSize: 10, offset: 0 });
+  });
+
+  it('names the full member roster in the subtitle only on a foundation’s own project', async () => {
+    getSummary.mockReturnValue(of({ summary: summary({ projectSlug: FOUNDATION_SLUG }) }));
+    activeContext.set({ uid: 'foundation-uid', name: 'Synthetic Foundation', slug: FOUNDATION_SLUG });
+    await render();
+
+    expect(text('participating-orgs-subtitle')).toBe(
+      'Synthetic Foundation members and every organization contributing to Synthetic Foundation, ranked by activity.'
+    );
+  });
+
+  it('filters by contribution from the first page, and sends nothing for All', async () => {
+    await render();
+    fixture.componentInstance['offset'].set(20);
+    await settle();
+
+    fixture.componentInstance['filterForm'].controls.contribution.setValue('not_contributing');
+    await settle();
+    expect(getPage).toHaveBeenLastCalledWith(PROJECT_SLUG, expect.objectContaining({ contribution: 'not_contributing', offset: 0 }));
+
+    fixture.componentInstance['filterForm'].controls.contribution.setValue('all');
+    await settle();
+    expect(getPage.mock.lastCall?.[1]).not.toHaveProperty('contribution');
   });
 
   it('renders a member the viewer cannot open as focusable plain text carrying the access hint', async () => {
