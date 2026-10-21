@@ -18,9 +18,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // path alias isn't wired here, so runtime shared subpaths and the constructed collaborators must be
 // mocked (mirrors session-store.service.spec.ts / meeting.helper.spec.ts). Only the
 // microservice-proxy call path is exercised; the query-service pagination helper runs for real.
-const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc, getUserVerifiedEmails, getContactIdForMatching } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc, getUserVerifiedEmails } = vi.hoisted(() => ({
   getUserVerifiedEmails: vi.fn(),
-  getContactIdForMatching: vi.fn(),
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
@@ -78,7 +77,7 @@ vi.mock('./committee.service', () => ({
 vi.mock('./project.service', () => ({ ProjectService: class {} }));
 vi.mock('./user-verified-emails.service', () => ({
   UserVerifiedEmailsService: vi.fn(function () {
-    return { getUserVerifiedEmails, getContactIdForMatching };
+    return { getUserVerifiedEmails };
   }),
 }));
 vi.mock('../utils/auth-helper', () => ({
@@ -460,7 +459,7 @@ describe('MeetingService.removeMeetingRegistrantSelf', () => {
 
     await service.removeMeetingRegistrantSelf(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token');
 
-    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true, false);
+    expect(lookup).toHaveBeenCalledWith(req, 'mtg-1', 'alice@example.com', 'alice', 'm2m-token', true);
   });
 
   it('removes a committee row together with a direct one', async () => {
@@ -639,9 +638,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   beforeEach(() => {
     proxyRequest.mockReset();
     getUserVerifiedEmails.mockReset();
-    getContactIdForMatching.mockReset();
-    getContactIdForMatching.mockResolvedValue(null);
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, contactId: null, incomplete: false });
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: false });
     service = new MeetingService();
   });
 
@@ -656,42 +653,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     expect(proxyRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves the contact id out of the lookup when includeContactId is false, without calling /me', async () => {
-    getContactIdForMatching.mockResolvedValue('lfTESTCONTACT00001');
-    proxyRequest.mockResolvedValueOnce(registrantPage([]));
-
-    await service.getMeetingRegistrantsForUser(req, 'm-1', 'user@example.com', undefined, 'm2m', false, false);
-
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'case_insensitive_email:user@example.com']);
-    expect(getContactIdForMatching).not.toHaveBeenCalled();
-  });
-
-  it('adds the contact id to the single-meeting user lookup so a rewritten email still matches', async () => {
-    getContactIdForMatching.mockResolvedValue('lfTESTCONTACT00001');
-    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-alias', email: 'user+alias@example.com' }]));
-
-    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', 'user@example.com', undefined, 'm2m');
-
-    expect(rows.map((row) => row.uid)).toEqual(['reg-alias']);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual([
-      'email:user@example.com',
-      'case_insensitive_email:user@example.com',
-      'user_id:lfTESTCONTACT00001',
-    ]);
-    expect(proxyRequest).toHaveBeenCalledTimes(1);
-  });
-
-  it('matches by contact id alone when the user has no email or username', async () => {
-    getContactIdForMatching.mockResolvedValue('lfTESTCONTACT00001');
-    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-alias' }]));
-
-    const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', undefined, undefined);
-
-    expect(rows).toHaveLength(1);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:lfTESTCONTACT00001']);
-  });
-
-  it('returns nothing without querying when there is no email, username or contact id', async () => {
+  it('returns nothing without querying when there is no email or username', async () => {
     const rows = await service.getMeetingRegistrantsForUser(req, 'm-1', undefined, undefined);
 
     expect(rows).toEqual([]);
@@ -702,7 +664,6 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     getUserVerifiedEmails.mockResolvedValue({
       emails: ['user@example.com', 'user+meetings@example.com', 'alt@example.org'],
       preferenceEmail: null,
-      contactId: null,
       incomplete: false,
     });
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
@@ -723,24 +684,8 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     });
   });
 
-  it('matches a row by contact id when its email is not one the user verified', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, contactId: '0032M00003abcdeQAA', incomplete: false });
-    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-3', email: 'user+calendar@gmail.example' }]));
-
-    const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
-
-    expect(result.registrants.map((row) => row.uid)).toEqual(['reg-3']);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:0032M00003abcdeQAA']);
-    expect(logger.info).toHaveBeenCalledWith(
-      req,
-      'get_meeting_registrants_by_verified_emails',
-      expect.any(String),
-      expect.objectContaining({ matched_source: 'user_id' })
-    );
-  });
-
   it('skips the query when there are no other verified emails', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, contactId: null, incomplete: false });
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user@example.com'], preferenceEmail: null, incomplete: false });
 
     const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
 
@@ -752,7 +697,6 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
     getUserVerifiedEmails.mockResolvedValue({
       emails: ['pref@example.com', 'alt@example.org'],
       preferenceEmail: 'pref@example.com',
-      contactId: null,
       incomplete: false,
     });
     proxyRequest.mockResolvedValueOnce(
@@ -775,7 +719,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   });
 
   it('reports a failed lookup only when nothing matched', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: [], preferenceEmail: null, contactId: null, incomplete: true });
+    getUserVerifiedEmails.mockResolvedValue({ emails: [], preferenceEmail: null, incomplete: true });
 
     const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
 
@@ -784,7 +728,7 @@ describe('MeetingService verified-email registrant lookup (PCC-1570)', () => {
   });
 
   it('does not report a failed lookup when a partial lookup still matched', async () => {
-    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, contactId: null, incomplete: true });
+    getUserVerifiedEmails.mockResolvedValue({ emails: ['user+meetings@example.com'], preferenceEmail: null, incomplete: true });
     proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'reg-2', email: 'user+meetings@example.com' }]));
 
     const result = await service.getMeetingRegistrantsByVerifiedEmails(req, 'm-1', 'user@example.com');
@@ -2466,18 +2410,6 @@ describe('MeetingService.createMeetingRsvp — acknowledged response', () => {
     expect(saved.response_type).toBe(answer);
     expect(saved.scope).toBe('single');
     expect(saved.occurrence_id).toBe('1791930600');
-  });
-
-  it('resolves the registrant without the contact id, since upstream only accepts email or username ownership', async () => {
-    vi.clearAllMocks();
-    const service = new MeetingService();
-    const lookup = vi.spyOn(service, 'getMeetingRegistrantsForUser').mockResolvedValue([{ uid: 'synthetic-registrant' } as MeetingRegistrant]);
-    vi.spyOn(service, 'getMeetingRsvps').mockResolvedValue([]);
-    proxyRequest.mockResolvedValueOnce({ id: 'synthetic-rsvp', meeting_id: 'synthetic-meeting', response: 'accepted', scope: 'all' });
-
-    await service.createMeetingRsvp(req, 'synthetic-meeting', { response: 'accepted', scope: 'all' });
-
-    expect(lookup.mock.calls[0].slice(4)).toEqual([undefined, false, false]);
   });
 
   it('keeps a nonempty response supplied by ITX authoritative', async () => {

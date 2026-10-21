@@ -83,7 +83,6 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
 import { ProjectService } from './project.service';
 import { SnowflakeService } from './snowflake.service';
-import { UserVerifiedEmailsService } from './user-verified-emails.service';
 
 const VALID_TSHIRT_SIZES: ReadonlySet<string> = new Set(TSHIRT_SIZES.map((s) => s.value));
 const VALID_TSHIRT_SIZES_LABEL = TSHIRT_SIZES.map((s) => s.value).join(', ');
@@ -99,7 +98,6 @@ export class UserService {
   private microserviceProxy: MicroserviceProxyService;
   private accessCheckService: AccessCheckService;
   private committeeService: CommitteeService;
-  private userVerifiedEmailsService: UserVerifiedEmailsService;
 
   private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
   private readonly bufferMinutes = 40;
@@ -112,7 +110,6 @@ export class UserService {
     this.microserviceProxy = new MicroserviceProxyService();
     this.accessCheckService = new AccessCheckService();
     this.committeeService = new CommitteeService();
-    this.userVerifiedEmailsService = new UserVerifiedEmailsService();
   }
 
   /**
@@ -941,7 +938,7 @@ export class UserService {
 
   /**
    * Gets all unique meeting IDs the user is registered for by querying registrant records.
-   * Checks email, username and contact id (fallback) to find all registrations. Uses the user's
+   * Checks both email and username (fallback) to find all registrations. Uses the user's
    * bearer token — the query service enforces ACL (registrant records require `viewer` on
    * the parent meeting, which `host`/`participant` relations grant transitively).
    * @param req - Express request object
@@ -966,8 +963,6 @@ export class UserService {
     const filtersOr: string[] = [];
     if (normalizedEmail) filtersOr.push(`email:${normalizedEmail}`);
     if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
-    const contactId = await this.userVerifiedEmailsService.getContactIdForMatching(req);
-    if (contactId) filtersOr.push(`user_id:${contactId}`);
 
     if (filtersOr.length === 0) {
       return new Map();
@@ -1734,8 +1729,6 @@ export class UserService {
     const orClauses: string[] = [];
     if (email) orClauses.push(`email:${email.toLowerCase()}`);
     if (username) orClauses.push(`username:${username}`);
-    const contactId = await this.userVerifiedEmailsService.getContactIdForMatching(req);
-    if (contactId) orClauses.push(`user_id:${contactId}`);
     if (orClauses.length === 0) return { uids: new Set(), meetingIds: new Set(), committeeMeetingIds: new Set(), uidsByMeeting: new Map() };
 
     // failOnPartial: a missing registrant UID here means an RSVP-guard lookup would wrongly

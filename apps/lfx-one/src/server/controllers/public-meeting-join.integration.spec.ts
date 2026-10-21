@@ -27,26 +27,22 @@ const LOGIN_EMAIL = 'jane.doe@login-example.example';
 const ALIAS_EMAIL = 'Jane.Doe+Meetings@Acme-Motors.example';
 const JOIN_URL = 'https://zoom.example.com/j/123';
 const GATEWAY_URL = 'https://gw.example/';
-const CONTACT_ID = '0032M00003abcdeQAA';
 
 interface Row {
   meeting_id: string;
   email?: string;
   case_insensitive_email?: string;
   username?: string;
-  user_id?: string;
 }
 
 interface Scenario {
   rows: Row[];
   preference: 'none' | 'timeout' | string;
   authEmails: { primary_email: string; alternate_emails: { email: string; verified: boolean }[] } | 'fail';
-  contactId: string | 'fail' | 'none';
 }
 
 let scenario: Scenario;
 let natsCalls: { subject: string; payload: any }[];
-let contactIdCalls: number;
 let joinCalls: { path: string; query: any }[];
 let queryCalls: { filters: string[]; filters_or?: string[] }[];
 
@@ -139,20 +135,9 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     natsCalls = [];
     joinCalls = [];
     queryCalls = [];
-    contactIdCalls = 0;
-    scenario = { rows: [], preference: 'none', authEmails: { primary_email: LOGIN_EMAIL, alternate_emails: [] }, contactId: CONTACT_ID };
+    scenario = { rows: [], preference: 'none', authEmails: { primary_email: LOGIN_EMAIL, alternate_emails: [] } };
     vi.stubEnv('API_GW_AUDIENCE', GATEWAY_URL);
 
-    // /me is the only outbound fetch faked; the test's own calls to the local server pass through.
-    const realFetch = globalThis.fetch;
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      if (String(input).startsWith(`${GATEWAY_URL}user-service/v1/me`)) {
-        contactIdCalls += 1;
-        if (scenario.contactId === 'fail') return { ok: false, status: 502 } as globalThis.Response;
-        return { ok: true, status: 200, json: async () => (scenario.contactId === 'none' ? {} : { ID: scenario.contactId }) } as globalThis.Response;
-      }
-      return realFetch(input, init);
-    });
     sessionOptions = { email: LOGIN_EMAIL, apiGatewayToken: 'v1-gateway-token' };
 
     vi.spyOn(NatsService.prototype, 'request').mockImplementation(async function (this: NatsService, subject: string, data: Uint8Array) {
@@ -240,54 +225,6 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('NOT_REGISTERED_FOR_MEETING');
     expect(joinCalls).toHaveLength(0);
-  });
-
-  it('3b. joins when the alias is unverified but the row carries the user contact id', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
-
-    const res = await postJoin();
-
-    expect(res.status).toBe(200);
-    expect(joinCalls[0].query.email).toBe(ALIAS_EMAIL);
-  });
-
-  it('3c. rejects a row that carries a different contact id', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: '0032M00003otherQAA' }];
-
-    const res = await postJoin();
-
-    expect(res.status).toBe(403);
-    expect(joinCalls).toHaveLength(0);
-  });
-
-  it('3d. answers 503 rather than 403 when the contact-id lookup fails and nothing else matched', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
-    scenario.contactId = 'fail';
-
-    const res = await postJoin();
-
-    expect(res.status).toBe(503);
-    expect(joinCalls).toHaveLength(0);
-  });
-
-  it('3e. answers 503 when the gateway token is missing and nothing else matched', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
-    sessionOptions = { email: LOGIN_EMAIL };
-
-    const res = await postJoin();
-
-    expect(res.status).toBe(503);
-    expect(contactIdCalls).toBe(0);
-  });
-
-  it('3f. answers 403 when the profile has no contact id and nothing else matched', async () => {
-    scenario.rows = [aliasRow()];
-    scenario.contactId = 'none';
-
-    const res = await postJoin();
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('NOT_REGISTERED_FOR_MEETING');
   });
 
   it('4. rejects an unregistered user when every email source is healthy', async () => {
@@ -391,7 +328,6 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     expect(res.status).toBe(403);
     expect(joinCalls).toHaveLength(0);
     expect(natsCalls).toHaveLength(0);
-    expect(contactIdCalls).toBe(0);
   });
 
   it('8b. answers 403, not 503, for an unregistered impersonation target even though no preference is read', async () => {
@@ -407,63 +343,5 @@ describe('POST /public/api/meetings/:id/join-url (restricted meeting, real servi
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('NOT_REGISTERED_FOR_MEETING');
     expect(subjectCalls(NatsSubjects.MEETING_PREFERRED_EMAIL_GET)).toHaveLength(0);
-    expect(contactIdCalls).toBe(0);
-  });
-
-  const getOccurrences = async (): Promise<{ status: number; body: any }> => {
-    const res = await fetch(`${baseUrl}/public/api/meetings/${MEETING_ID}/occurrences`);
-    return { status: res.status, body: await res.json() };
-  };
-
-  it('9. lets a registrant whose row carries only the contact id view the restricted series timeline', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
-
-    const res = await getOccurrences();
-
-    expect(res.status).toBe(200);
-    expect(contactIdCalls).toBe(1);
-  });
-
-  it('9b. denies the series timeline when the alias row carries a different contact id', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: '0032M00003otherQAA' }];
-
-    const res = await getOccurrences();
-
-    expect(res.status).toBe(403);
-  });
-
-  it('9c. denies the series timeline while impersonating, with no contact-id lookup', async () => {
-    sessionOptions = {
-      email: 'admin.user@example.com',
-      apiGatewayToken: 'impersonator-gateway-token',
-      impersonation: { sub: 'auth0|target-1', email: 'target.user@example.com' },
-    };
-    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
-
-    const res = await getOccurrences();
-
-    expect(res.status).toBe(403);
-    expect(contactIdCalls).toBe(0);
-  });
-
-  it('10. flags a contact-id-only registrant as invited on the meeting detail response', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: CONTACT_ID }];
-
-    const res = await fetch(`${baseUrl}/public/api/meetings/${MEETING_ID}`, { headers: { [MEETING_PASSWORD_HEADER]: PASSWORD } });
-    const body: any = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(body.meeting.invited).toBe(true);
-    expect(contactIdCalls).toBe(1);
-  });
-
-  it('10b. does not flag a row carrying a different contact id as invited', async () => {
-    scenario.rows = [{ ...aliasRow(), user_id: '0032M00003otherQAA' }];
-
-    const res = await fetch(`${baseUrl}/public/api/meetings/${MEETING_ID}`, { headers: { [MEETING_PASSWORD_HEADER]: PASSWORD } });
-    const body: any = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(body.meeting.invited).toBe(false);
   });
 });

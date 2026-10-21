@@ -21,33 +21,19 @@ import {
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  proxyRequest,
-  getMyPendingInvitations,
-  getManagedPendingApplications,
-  getUsernameFromAuth,
-  getMyFormationWork,
-  isImpersonating,
-  getEffectiveEmail,
-  getContactIdForMatching,
-} = vi.hoisted(() => ({
-  proxyRequest: vi.fn(),
-  getMyPendingInvitations: vi.fn(),
-  getManagedPendingApplications: vi.fn(),
-  getUsernameFromAuth: vi.fn(),
-  getMyFormationWork: vi.fn(),
-  isImpersonating: vi.fn(() => false),
-  getEffectiveEmail: vi.fn(),
-  getContactIdForMatching: vi.fn(async () => null as string | null),
-}));
+const { proxyRequest, getMyPendingInvitations, getManagedPendingApplications, getUsernameFromAuth, getMyFormationWork, isImpersonating, getEffectiveEmail } =
+  vi.hoisted(() => ({
+    proxyRequest: vi.fn(),
+    getMyPendingInvitations: vi.fn(),
+    getManagedPendingApplications: vi.fn(),
+    getUsernameFromAuth: vi.fn(),
+    getMyFormationWork: vi.fn(),
+    isImpersonating: vi.fn(() => false),
+    getEffectiveEmail: vi.fn(),
+  }));
 
 // Stub the constructor collaborators (NATS, Snowflake, etc.) so `new UserService()` is cheap and
 // side-effect-free — validateUserMetadata is pure and synchronous and touches none of them.
-vi.mock('./user-verified-emails.service', () => ({
-  UserVerifiedEmailsService: vi.fn(function () {
-    return { getContactIdForMatching };
-  }),
-}));
 vi.mock('./nats.service', () => ({ NatsService: vi.fn() }));
 vi.mock('./snowflake.service', () => ({ SnowflakeService: { getInstance: vi.fn(() => ({})) } }));
 vi.mock('./meeting.service', () => ({ MeetingService: vi.fn() }));
@@ -1518,60 +1504,10 @@ describe('UserService.getUserMeetingRegistrations', () => {
     expect([...ids].sort()).toEqual(['m1', 'm2']);
   });
 
-  it('adds the contact id so registrations whose email was rewritten still count', async () => {
-    getContactIdForMatching.mockResolvedValueOnce('lfTESTCONTACT00001');
-    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'r1', meeting_id: 'm1', type: 'committee' }]));
-
-    const registrations = await service.getUserMeetingRegistrations(req, 'user@example.com');
-
-    expect([...registrations.keys()]).toEqual(['m1']);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'username:testuser', 'user_id:lfTESTCONTACT00001']);
-  });
-
-  it('matches on the contact id alone when there is no email or username', async () => {
-    getUsernameFromAuth.mockResolvedValue(null);
-    getContactIdForMatching.mockResolvedValueOnce('lfTESTCONTACT00001');
-    proxyRequest.mockResolvedValueOnce(registrantPage([{ uid: 'r1', meeting_id: 'm1', type: 'direct' }]));
-
-    expect((await service.getUserMeetingRegistrations(req, undefined)).size).toBe(1);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['user_id:lfTESTCONTACT00001']);
-  });
-
   it('returns an empty result when the caller has no email or username to match on', async () => {
     getUsernameFromAuth.mockResolvedValue(null);
 
     expect((await service.getUserMeetingRegistrations(req, undefined)).size).toBe(0);
-    expect(proxyRequest).not.toHaveBeenCalled();
-  });
-});
-
-describe('UserService.fetchUserActiveRegistrantIdentities contact id', () => {
-  const req = {} as unknown as Request;
-
-  beforeEach(() => {
-    proxyRequest.mockReset();
-  });
-
-  it('includes registrants whose email was rewritten by matching the contact id', async () => {
-    getContactIdForMatching.mockResolvedValueOnce('lfTESTCONTACT00001');
-    proxyRequest.mockResolvedValueOnce({
-      resources: [{ id: 'reg-alias', type: 'v1_meeting_registrant', data: { uid: 'reg-alias', meeting_id: 'm1', type: 'committee' } }],
-    });
-    const service = new UserService();
-
-    const result = await (service as any).fetchUserActiveRegistrantIdentities(req, 'user@example.com', null);
-
-    expect([...result.uids]).toEqual(['reg-alias']);
-    expect([...result.committeeMeetingIds]).toEqual(['m1']);
-    expect(proxyRequest.mock.calls[0][4].filters_or).toEqual(['email:user@example.com', 'user_id:lfTESTCONTACT00001']);
-  });
-
-  it('skips the query when there is no email, username or contact id', async () => {
-    const service = new UserService();
-
-    const result = await (service as any).fetchUserActiveRegistrantIdentities(req, null, null);
-
-    expect(result.uids.size).toBe(0);
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 });

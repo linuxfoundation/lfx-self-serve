@@ -1394,7 +1394,7 @@ describe('MeetingController', () => {
       expect(next).not.toHaveBeenCalled();
     });
 
-    it("resolves the join link from a registrant row whose email was rewritten to an alias the user's contact id still matches", async () => {
+    it("resolves the join link from a registrant row under one of the user's other verified emails", async () => {
       meetingSvc.getMeetingById.mockResolvedValue({ id: MEETING_ID, title: 'Board Sync', restricted: true, recurrence: null });
       vi.mocked(getEffectiveUsername).mockReturnValueOnce(null);
       vi.mocked(getEffectiveEmail).mockReturnValueOnce('jason@example.com');

@@ -64,9 +64,7 @@ export interface UserVerifiedEmails {
   emails: string[];
   /** The meeting-invite preference, when set; also `emails[0]`. */
   preferenceEmail: string | null;
-  /** The user's v1 contact id (what registrant rows store as `user_id`), or null when unavailable. */
-  contactId: string | null;
-  /** True when a source that should have been queried failed, so `emails` or `contactId` may be missing. */
+  /** True when a source that should have been queried failed, so `emails` may be missing. */
   incomplete: boolean;
 }
 

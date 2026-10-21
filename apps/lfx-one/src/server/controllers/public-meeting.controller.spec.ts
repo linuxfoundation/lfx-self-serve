@@ -49,7 +49,6 @@ const {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
-    getMeetingRegistrantsForUser: vi.fn(),
     getMeetingRegistrantsByUsername: vi.fn(),
     getMeetingRegistrantsByVerifiedEmails: vi.fn(),
     getMeetingRegistrantCount: vi.fn(),
@@ -1026,18 +1025,18 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
   });
 
-  it('allows an authenticated registrant on a restricted meeting via the M2M registrant check', async () => {
+  it('allows an authenticated registrant on a restricted meeting via the M2M email check', async () => {
     meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
     validatePasswordMock.mockReturnValue(false);
     getEffectiveEmailMock.mockReturnValue('user@example.com');
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([{ email: 'user@example.com' }]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ email: 'user@example.com' }]);
     const { req, res, next } = buildReqRes(true);
 
     await controller.getMeetingOccurrences(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrantsForUser).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', undefined, 'm2m-token');
+    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'm2m-token');
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
   });
 
@@ -1046,7 +1045,7 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
     validatePasswordMock.mockReturnValue(false);
     getEffectiveEmailMock.mockReturnValue('user@example.com');
-    meetingSvc.getMeetingRegistrantsForUser.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
     addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: true }));
     const { req, res, next } = buildReqRes(true);
 

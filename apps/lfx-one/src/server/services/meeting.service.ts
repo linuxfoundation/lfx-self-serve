@@ -933,7 +933,7 @@ export class MeetingService {
   /**
    * Whether the caller may read a meeting's guest rows (names, emails, RSVP status).
    * @description Organizers always may. Anyone else must be a registrant of the meeting, matched by
-   * email, username or contact id like `isUserInvitedToMeeting`, and the meeting must share its guest list
+   * email or username like `isUserInvitedToMeeting`, and the meeting must share its guest list
    * (`isMeetingAttendeeListShared`), the same rule
    * `GET /meetings/:uid/my-meeting-registrants` applies. Query-service FGA alone is not enough: it
    * lets anyone who can view the meeting list its registrants. The organizer probe is strict, so an
@@ -1041,10 +1041,9 @@ export class MeetingService {
   }
 
   /**
-   * Fetches registrants for a meeting that match the caller's email, username or v1 contact id in a single query.
-   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z, user_id:C]` so the
+   * Fetches registrants for a meeting that match the caller's email or username in a single query.
+   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email clauses, username:Z]` so the
    * query service resolves the intersection in one call instead of two sequential lookups.
-   * Pass `includeContactId: false` for mutations: upstream only accepts email or username ownership.
    */
   public async getMeetingRegistrantsForUser(
     req: Request,
@@ -1052,33 +1051,26 @@ export class MeetingService {
     email: string | undefined,
     username: string | undefined,
     m2mToken?: string,
-    failOnPartial = false,
-    includeContactId = true
+    failOnPartial = false
   ): Promise<MeetingRegistrant[]> {
     const orClauses: string[] = [];
     if (email) orClauses.push(...this.emailClauses(email.toLowerCase()));
     if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
-    // Sync rewrites registrant emails to the meeting-invite preference but keeps `user_id`.
-    const contactId = includeContactId ? await this.userVerifiedEmailsService.getContactIdForMatching(req) : null;
-    if (contactId) orClauses.push(`user_id:${contactId}`);
+
+    if (orClauses.length === 0) return [];
 
     logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
       meeting_id: meetingUid,
       has_email: !!email,
       has_username: !!username,
-      has_contact_id: !!contactId,
     });
-
-    if (orClauses.length === 0) {
-      return [];
-    }
 
     return this.queryMeetingRegistrants(req, meetingUid, orClauses, m2mToken, failOnPartial);
   }
 
   /**
    * Fetches the signed-in user's registrants for a meeting by their verified emails other than
-   * `triedEmail`, or by their v1 contact id, in one query. Rows are ordered by email priority (meeting-invite preference first).
+   * `triedEmail` in one query. Rows are ordered by email priority (meeting-invite preference first).
    * `lookupFailed` is set when nothing matched and an email source was unavailable.
    */
   public async getMeetingRegistrantsByVerifiedEmails(
@@ -1086,12 +1078,11 @@ export class MeetingService {
     meetingUid: string,
     triedEmail: string | undefined
   ): Promise<MeetingRegistrantsByVerifiedEmails> {
-    const { emails, preferenceEmail, contactId, incomplete } = await this.userVerifiedEmailsService.getUserVerifiedEmails(req);
+    const { emails, preferenceEmail, incomplete } = await this.userVerifiedEmailsService.getUserVerifiedEmails(req);
     const tried = triedEmail?.trim().toLowerCase();
     const candidates = emails.filter((candidate) => candidate !== tried);
 
-    // `user_id` catches rows whose email was rewritten to an address the user never verified.
-    const orClauses = [...candidates.flatMap((candidate) => this.emailClauses(candidate)), ...(contactId ? [`user_id:${contactId}`] : [])];
+    const orClauses = candidates.flatMap((candidate) => this.emailClauses(candidate));
     const registrants = orClauses.length > 0 ? await this.queryMeetingRegistrants(req, meetingUid, orClauses) : [];
     const rank = (registrant: MeetingRegistrant): number => {
       const index = candidates.indexOf((registrant.email || '').trim().toLowerCase());
@@ -1100,24 +1091,19 @@ export class MeetingService {
     registrants.sort((a, b) => rank(a) - rank(b));
 
     const matchedEmail = registrants.length > 0 ? (registrants[0].email || '').trim().toLowerCase() : null;
-    let matchedSource: 'meeting_invite_preference' | 'auth_service' | 'user_id' | null = null;
+    let matchedSource: 'meeting_invite_preference' | 'auth_service' | null = null;
     if (registrants.length > 0) {
-      if (!candidates.includes(matchedEmail || '')) {
-        matchedSource = 'user_id';
-      } else {
-        matchedSource = matchedEmail === preferenceEmail ? 'meeting_invite_preference' : 'auth_service';
-      }
+      matchedSource = matchedEmail === preferenceEmail ? 'meeting_invite_preference' : 'auth_service';
     }
     const logMeta = {
       meeting_id: meetingUid,
       candidate_count: candidates.length,
-      has_contact_id: !!contactId,
       has_preference: !!preferenceEmail,
       matched_source: matchedSource,
       incomplete,
     };
     if (matchedSource) {
-      logger.info(req, 'get_meeting_registrants_by_verified_emails', "Matched a registrant by the user's other verified emails or contact id", logMeta);
+      logger.info(req, 'get_meeting_registrants_by_verified_emails', "Matched a registrant by the user's other verified emails", logMeta);
     } else {
       logger.debug(req, 'get_meeting_registrants_by_verified_emails', "No registrant under the user's other verified emails", logMeta);
     }
@@ -1254,7 +1240,7 @@ export class MeetingService {
 
   /**
    * Removes the authenticated user as a registrant of a meeting using their own bearer token.
-   * The caller's registrant records are resolved server-side (by email, username or contact id) so the client
+   * The caller's registrant records are resolved server-side (by email or username) so the client
    * never needs a registrant UID; upstream re-verifies ownership and returns 403 for anyone else's
    * record. Committee and mailing list registrations are removed like any other: the meeting service flags
    * the delete as a self removal, so ITX records an exclusion that keeps later syncs from adding the user back.
@@ -1270,7 +1256,7 @@ export class MeetingService {
     username: string | undefined,
     m2mToken: string
   ): Promise<MeetingRegistrationRemovalResult> {
-    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true, false);
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken, true);
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Meeting registration', meetingUid, {
@@ -1770,7 +1756,7 @@ export class MeetingService {
     // Resolve registrant_id — single query matches email OR username against this meeting.
     const email = getEffectiveEmail(req) ?? undefined;
     const username = (await getUsernameFromAuth(req)) ?? undefined;
-    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, undefined, false, false);
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
 
     if (registrants.length === 0) {
       throw new ResourceNotFoundError('Registrant', email || username || 'unknown', {

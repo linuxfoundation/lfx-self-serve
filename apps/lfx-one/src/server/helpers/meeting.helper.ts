@@ -17,7 +17,7 @@ const meetingService = new MeetingService();
 const committeeService = new CommitteeService();
 
 /**
- * Checks if a user is invited to a meeting by their email, falling back to username or contact id
+ * Checks if a user is invited to a meeting by their email, falling back to username
  * The meeting service may store a different email (e.g. "meeting email" preference) than the
  * auth email, so we also check by username to ensure we find the registrant.
  * @param req - Express request object

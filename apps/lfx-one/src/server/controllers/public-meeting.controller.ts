@@ -905,16 +905,19 @@ export class PublicMeetingController {
       return false;
     }
 
-    try {
-      const registrants = await this.meetingService.getMeetingRegistrantsForUser(req, meeting.id, getEffectiveEmail(req) || undefined, undefined, m2mToken);
-      if (registrants.length > 0) {
-        return true;
+    const email = getEffectiveEmail(req);
+    if (email) {
+      try {
+        const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, meeting.id, email, m2mToken);
+        if (registrants.length > 0) {
+          return true;
+        }
+      } catch (error) {
+        logger.warning(req, 'get_public_meeting_occurrences', 'Registrant check failed, continuing to organizer check', {
+          meeting_id: meeting.id,
+          err: error,
+        });
       }
-    } catch (error) {
-      logger.warning(req, 'get_public_meeting_occurrences', 'Registrant check failed, continuing to organizer check', {
-        meeting_id: meeting.id,
-        err: error,
-      });
     }
 
     // Guard on originalToken, not just isAuthenticated: running the access check while the

@@ -2712,7 +2712,7 @@ export class MeetingController {
 
   /**
    * Mirrors `PublicMeetingController.restrictedMeetingCheck`'s registrant lookup (username, email,
-   * then verified emails or contact id), but returns `null` instead of throwing when no registrant matches — this
+   * then verified emails), but returns `null` instead of throwing when no registrant matches — this
    * endpoint degrades to "no join link" rather than failing the whole .ics download (GH-3505).
    */
   private async findRestrictedMeetingRegistrant(req: Request, uid: string, email: string, username: string | null): Promise<MeetingRegistrant | null> {
