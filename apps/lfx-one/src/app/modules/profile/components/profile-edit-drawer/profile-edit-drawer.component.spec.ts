@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORGANIZATION_INFO_TOOLTIP } from '@lfx-one/shared/constants';
+import { ERROR_CODES, ORGANIZATION_INFO_TOOLTIP } from '@lfx-one/shared/constants';
 import { CombinedProfile, EmailManagementData, ProfilePictureUploadResponse, WorkExperienceEntry } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -167,6 +168,19 @@ describe('ProfileEditDrawerComponent — impersonation read-only (#2399)', () =>
     expect(messageAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'error', detail: 'Profile editing is unavailable while impersonating another user.' })
     );
+  });
+
+  // A primary change blocked because the invite email couldn't be pinned (#3983) toasts the reason.
+  it('toasts the server reason and restores the selection when a primary change is blocked', async () => {
+    await setup({ impersonating: false });
+    const guidance = "Your primary email wasn't changed. Please try again in a few minutes.";
+    setPrimaryEmail.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { error: guidance, code: ERROR_CODES.SERVICE_ADVISORY } })));
+
+    comp.onPrimaryEmailChange('alt@example.com');
+    await fixture.whenStable();
+
+    expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: guidance }));
+    expect(comp.selectedPrimaryEmail()).toBe(EMAILS.primary_email);
   });
 });
 

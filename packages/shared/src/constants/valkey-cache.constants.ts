@@ -80,6 +80,9 @@ export const VALKEY_CACHE = {
    * window for the in-memory mutex `withMeetingInviteLock` always holds (Valkey layers cross-replica
    * coverage on top when enabled and reachable), so a hung request can't wedge the lock forever.
    *
+   * `setPrimaryEmail` also uses it (#3983): its region chains the invite GET, a user-emails read, the
+   * invite SET (20s) and the primary-email write — ~35s worst case, well inside this TTL.
+   *
    * `setMeetingInviteEmail`'s own worst case is much shorter (bounded by
    * `NATS_CONFIG.MEETING_PREFERENCE_SET_TIMEOUT`, 20s) — it uses the dedicated, shorter
    * `MEETING_INVITE_SET_LOCK_TTL_MS` below instead, so a lost release on that path doesn't force

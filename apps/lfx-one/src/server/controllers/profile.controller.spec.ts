@@ -1077,6 +1077,37 @@ describe('ProfileController.setPrimaryEmail', () => {
       expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
     });
 
+    it('blocks with a 400 pointing at the invite setting, not a retry, when the pin is rejected as invalid', async () => {
+      meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: false, reason: 'validation', error: 'not an active, verified address' });
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ statusCode: 400, message: expect.stringContaining('Choose a different address for meeting invitations') })
+      );
+      expect(emailVerificationSvc.setPrimaryEmail).not.toHaveBeenCalled();
+    });
+
+    it('keeps the pin and responds 502 when the primary switch itself fails after pinning', async () => {
+      emailVerificationSvc.setPrimaryEmail.mockResolvedValue({ success: false, message: 'auth-service down' });
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.setPrimaryEmail(buildPrimaryReq(), res, next);
+
+      expect(meetingPrefSvc.setMeetingInviteEmail).toHaveBeenCalledWith(expect.anything(), 'v1-token', OLD_PRIMARY);
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 502 }));
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('never logs the email address', async () => {
+      await controller.setPrimaryEmail(buildPrimaryReq(), buildRes(), vi.fn());
+
+      expect(logger.startOperation).toHaveBeenCalledWith(expect.anything(), 'set_primary_email');
+      expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'set_primary_email', expect.anything(), { pinned_invite: true });
+    });
+
     it('blocks the primary change with a 503 advisory when the v1 api-gateway token is missing', async () => {
       const next = vi.fn();
 
