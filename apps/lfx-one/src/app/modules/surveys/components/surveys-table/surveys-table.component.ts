@@ -62,7 +62,7 @@ export class SurveysTableComponent {
   protected readonly SurveyStatus = SurveyStatus;
   // Viewer-local zone so countdown chips count the viewer's day, matching the adjacent local date (pipe fallback is the legacy-vote Pacific zone)
   protected readonly viewerTimezone: string = isPlatformBrowser(this.platformId) ? getUserTimezone() : 'UTC';
-  protected readonly statusTabOptions: FilterPillOption[] = [
+  private readonly baseStatusTabOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: 'open', label: 'Open' },
     { id: 'closed', label: 'Closed' },
@@ -106,6 +106,9 @@ export class SurveysTableComponent {
   private readonly typeFilter: Signal<string | null> = this.initTypeFilter();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly typeOptions: Signal<{ label: string; value: string | null }[]> = this.initTypeOptions();
+  // Rows matching search/group/type but not the status tab, so tab counts reflect the other active filters.
+  private readonly rowsBeforeStatusFilter: Signal<SurveyTableRow[]> = this.initRowsBeforeStatusFilter();
+  protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly filteredSurveys: Signal<SurveyTableRow[]> = this.initFilteredSurveys();
   protected readonly isFiltered = computed(
     () => this.searchTerm() !== '' || this.statusTab() !== 'all' || this.groupFilter() !== null || this.typeFilter() !== null
@@ -248,7 +251,22 @@ export class SurveysTableComponent {
     });
   }
 
-  private initFilteredSurveys(): Signal<SurveyTableRow[]> {
+  private initStatusTabOptions(): Signal<FilterPillOption[]> {
+    return computed(() => {
+      const rows = this.rowsBeforeStatusFilter();
+      const counts: Record<string, number> = {
+        all: rows.length,
+        open: rows.filter((row) => row.displayStatus === SurveyStatus.OPEN).length,
+        closed: rows.filter((row) => row.displayStatus === SurveyStatus.CLOSED).length,
+      };
+
+      // Show counts only once data is loaded; a confirmed zero keeps the plain label, matching votes.
+      if (this.loading()) return this.baseStatusTabOptions;
+      return this.baseStatusTabOptions.map((option) => (counts[option.id] > 0 ? { ...option, label: `${option.label} (${counts[option.id]})` } : option));
+    });
+  }
+
+  private initRowsBeforeStatusFilter(): Signal<SurveyTableRow[]> {
     return computed(() => {
       // Precompute displayStatus once per row so the template, filter, and sort
       // all agree on cutoff/case-normalized status (matches what the badge pipe shows).
@@ -267,15 +285,6 @@ export class SurveysTableComponent {
         filtered = filtered.filter((survey) => survey.survey_title.toLowerCase().includes(searchTerm));
       }
 
-      const statusTab = this.statusTab();
-      if (statusTab !== 'all') {
-        if (statusTab === 'open') {
-          filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.OPEN);
-        } else if (statusTab === 'closed') {
-          filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.CLOSED);
-        }
-      }
-
       const group = this.groupFilter();
       if (group) {
         filtered = filtered.filter((survey) => this.getGroupName(survey) === group);
@@ -284,6 +293,21 @@ export class SurveysTableComponent {
       const type = this.typeFilter();
       if (type) {
         filtered = filtered.filter((survey) => (type === 'nps' ? survey.is_nps_survey : !survey.is_nps_survey));
+      }
+
+      return filtered;
+    });
+  }
+
+  private initFilteredSurveys(): Signal<SurveyTableRow[]> {
+    return computed(() => {
+      let filtered = this.rowsBeforeStatusFilter();
+
+      const statusTab = this.statusTab();
+      if (statusTab === 'open') {
+        filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.OPEN);
+      } else if (statusTab === 'closed') {
+        filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.CLOSED);
       }
 
       return this.sortSurveys(filtered);

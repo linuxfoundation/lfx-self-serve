@@ -75,7 +75,7 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
     vi.useRealTimers();
   });
 
-  function render(surveys: Survey[], options: { hasPMOAccess?: boolean; isMeLens?: boolean; committeeUid?: string } = {}): void {
+  function render(surveys: Survey[], options: { hasPMOAccess?: boolean; isMeLens?: boolean; committeeUid?: string; loading?: boolean } = {}): void {
     fixture.componentRef.setInput('surveys', surveys);
     for (const [name, value] of Object.entries(options)) {
       fixture.componentRef.setInput(name, value);
@@ -212,5 +212,31 @@ describe('SurveysTableComponent — row-scoped draft edit access', () => {
     fixture.detectChanges();
     expect(action('edit', 'draft')?.querySelector('a')).not.toBeNull();
     expect(action('delete', 'draft')).toBeNull();
+  });
+  describe('status tab counts', () => {
+    const tabLabels = (): string[] =>
+      Array.from(fixture.nativeElement.querySelectorAll('[data-testid="surveys-status-tabs"] [data-testid^="filter-pill-"]') as NodeListOf<HTMLElement>).map(
+        (el) => (el.textContent ?? '').trim()
+      );
+
+    const mixed = (): Survey[] => [
+      survey('open-1', ['a'], { survey_status: SurveyStatus.OPEN, survey_cutoff_date: '2999-01-01T00:00:00Z' }),
+      survey('open-2', ['b'], { survey_status: SurveyStatus.OPEN, survey_cutoff_date: '2999-01-01T00:00:00Z' }),
+      survey('closed-1', ['a'], { survey_status: SurveyStatus.CLOSED }),
+      survey('draft-1', ['a']),
+    ];
+
+    it('shows per-tab counts and omits zero counts', () => {
+      render(mixed());
+      expect(tabLabels()).toEqual(['All (4)', 'Open (2)', 'Closed (1)']);
+
+      render([survey('draft-only', ['a'])]);
+      expect(tabLabels()).toEqual(['All (1)', 'Open', 'Closed']);
+    });
+
+    it('hides counts while loading', () => {
+      render(mixed(), { loading: true });
+      expect(tabLabels()).toEqual(['All', 'Open', 'Closed']);
+    });
   });
 });
