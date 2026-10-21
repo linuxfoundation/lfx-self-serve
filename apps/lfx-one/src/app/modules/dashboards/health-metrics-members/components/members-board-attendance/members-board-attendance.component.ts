@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -15,6 +15,7 @@ import {
   HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_MEMBERS_BOARD_COHORT_OPTIONS,
   HEALTH_METRICS_MEMBERS_BOARD_COHORTS,
+  HEALTH_METRICS_MEMBERS_BOARD_LATEST_BAR_COLORS,
   HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS,
   HEALTH_METRICS_MEMBERS_BOARD_NEVER_ATTENDED_LINK,
   HEALTH_METRICS_MEMBERS_BOARD_PAGE_SIZE,
@@ -41,6 +42,7 @@ import type {
   HealthMetricsMembersBoardAttendance,
   HealthMetricsMembersBoardAttendanceQuery,
   HealthMetricsMembersBoardCohort,
+  HealthMetricsMembersBoardLatestTone,
   HealthMetricsMembersBoardMeetingRowView,
   HealthMetricsMembersBoardSummaryView,
   HealthMetricsMembersBoardTrendBarView,
@@ -53,7 +55,7 @@ import type { TablePageEvent } from 'primeng/table';
  */
 @Component({
   selector: 'lfx-members-board-attendance',
-  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, RouterLink, Skeleton, TableComponent],
+  imports: [ChartComponent, EmptyStateComponent, FilterPillsComponent, NgClass, RouterLink, Skeleton, TableComponent],
   templateUrl: './members-board-attendance.component.html',
 })
 export class MembersBoardAttendanceComponent {
@@ -109,7 +111,7 @@ export class MembersBoardAttendanceComponent {
   });
   protected readonly trend: Signal<HealthMetricsMembersBoardTrendBarView[]> = computed(() => buildHealthMetricsMembersBoardTrend(this.response().trend));
   protected readonly rowViews: Signal<HealthMetricsMembersBoardMeetingRowView[]> = computed(() =>
-    buildHealthMetricsMembersBoardMeetingRows(this.response().rows)
+    buildHealthMetricsMembersBoardMeetingRows(this.response().rows, this.cohort())
   );
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly meetingNoun = computed(() => HEALTH_METRICS_MEMBERS_BOARD_MEETING_NOUNS[this.cohort()]);
@@ -119,7 +121,7 @@ export class MembersBoardAttendanceComponent {
     () => this.loading() && (this.response() === HEALTH_METRICS_MEMBERS_BOARD_ATTENDANCE_UNMEASURED || this.responseScope() !== this.scope())
   );
   protected readonly noMeetings = computed(() => this.totalRecords() === 0 && this.trend().length === 0);
-  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.trend(), this.summary().isBelowExpectedLevel));
+  protected readonly chartData: Signal<ChartData<'bar'>> = computed(() => this.buildChart(this.trend(), this.summary().latestTone));
   protected readonly chartLabel = computed(
     () => `Attendance at the latest ${this.trend().length} ${this.meetingNoun()}s, oldest first. The following table lists the same values.`
   );
@@ -231,9 +233,9 @@ export class MembersBoardAttendanceComponent {
     );
   }
 
-  /** Earlier meetings pale, the view's latest solid — red when the view flags it below the expected level. */
-  private buildChart(bars: HealthMetricsMembersBoardTrendBarView[], latestBelow: boolean): ChartData<'bar'> {
-    const latestColor = latestBelow ? lfxColors.red[600] : lfxColors.blue[500];
+  /** Earlier meetings pale, the view's latest solid — red or amber when it is below the cohort's rule. */
+  private buildChart(bars: HealthMetricsMembersBoardTrendBarView[], latestTone: HealthMetricsMembersBoardLatestTone): ChartData<'bar'> {
+    const latestColor = HEALTH_METRICS_MEMBERS_BOARD_LATEST_BAR_COLORS[latestTone];
     return {
       labels: bars.map((bar) => bar.label),
       datasets: [

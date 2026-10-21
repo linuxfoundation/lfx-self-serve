@@ -14,6 +14,7 @@ import type {
 } from '../constants/health-metrics-members.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
+import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -513,7 +514,7 @@ export interface HealthMetricsMembersBoardCohortSummary {
   latestInvitedCount: number | null;
   meetingsInRangeCount: number | null;
   neverAttendedCount: number | null;
-  /** The view's own level flag; the page never compares the share with a threshold. */
+  /** The view's level flag (one 90% line for both cohorts); read only when the share is missing. */
   isBelowExpectedLevel: boolean | null;
 }
 
@@ -539,12 +540,17 @@ export interface HealthMetricsMembersBoardAttendance {
   totalRecords: number;
 }
 
+/** The latest meeting against its cohort's rule: below it (red or amber), or not. */
+export type HealthMetricsMembersBoardLatestTone = Extract<HealthMetricsEngagementAttendanceTone, 'low' | 'critical' | 'ok'>;
+
 /** The board hero as the section renders it. */
 export interface HealthMetricsMembersBoardSummaryView {
   meetingsLabel: string;
   latestPctLabel: string;
   latestCaption: string;
   isBelowExpectedLevel: boolean;
+  latestTone: HealthMetricsMembersBoardLatestTone;
+  latestTextClass: string;
   otherCohortLabel: string;
   otherCohortPctLabel: string;
   attendedInvitedLabel: string;
@@ -581,7 +587,7 @@ export interface HealthMetricsMembersNpsQuery {
   audience: string | null;
 }
 
-/** One audience surveyed in the period; `isSampleTooSmall` marks a score that rests on too few replies. */
+/** One audience surveyed in the period; `isSampleTooSmall` is the view's 40% response-rate line, read only without a rate. */
 export interface HealthMetricsMembersNpsAudience {
   audience: string;
   npsScore: number | null;

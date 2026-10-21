@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
@@ -125,6 +126,19 @@ describe('resolveHealthMetricsEngagementAttendanceTone', () => {
     expect(resolveHealthMetricsEngagementAttendanceTone(0.49)).toBe('low');
     expect(resolveHealthMetricsEngagementAttendanceTone(0.5)).toBe('ok');
     expect(resolveHealthMetricsEngagementAttendanceTone(0.92)).toBe('ok');
+  });
+
+  it('holds a board to its own rule: red below 90%', () => {
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.89, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('critical');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.9, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('empty');
+  });
+
+  // 26 of 29 reads "90%", so it must not be red under a 90% rule; 0.494 reads "49%" and stays amber.
+  it('judges the whole percent the label shows, not the raw share', () => {
+    expect(resolveHealthMetricsEngagementAttendanceTone(26 / 29, HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.496)).toBe('ok');
+    expect(resolveHealthMetricsEngagementAttendanceTone(0.494)).toBe('low');
   });
 });
 

@@ -20,8 +20,14 @@ export type HealthMetricsEngagementGroupTypeFilter = (typeof HEALTH_METRICS_ENGA
 
 export type HealthMetricsTabKey = (typeof HEALTH_METRICS_TABS)[number]['key'];
 
-/** Attendance-bar tone: grey at zero, amber below the low threshold, blue otherwise. */
-export type HealthMetricsEngagementAttendanceTone = 'empty' | 'low' | 'ok';
+/** Attendance-bar tone: grey at zero, amber or red below the rule's threshold, blue otherwise. */
+export type HealthMetricsEngagementAttendanceTone = 'empty' | 'low' | 'critical' | 'ok';
+
+/** A group level's attendance rule: a 0-1 share below `threshold` takes `tone`. */
+export interface HealthMetricsEngagementAttendanceRule {
+  threshold: number;
+  tone: Extract<HealthMetricsEngagementAttendanceTone, 'low' | 'critical'>;
+}
 
 /** One entry in the Health Metrics tab bar. */
 export interface HealthMetricsTab {
@@ -255,6 +261,7 @@ export interface HealthMetricsEngagementAttendanceTrendSummaryView {
 export interface HealthMetricsEngagementParticipationRowView {
   row: HealthMetricsEngagementParticipationRow;
   period: HealthMetricsEngagementParticipationPeriod | null;
+  attendanceRule: HealthMetricsEngagementAttendanceRule;
 }
 
 /** Which cut of the org table is showing: everyone, or only orgs lapsed past the dormancy window. */

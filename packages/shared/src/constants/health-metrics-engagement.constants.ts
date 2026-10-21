@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  HealthMetricsEngagementAttendanceRule,
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementAttendanceTrend,
   HealthMetricsEngagementGroupAttendance,
@@ -147,8 +148,22 @@ export const HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE = 3;
 /** Days without activity before an organization is lapsed. Group dormancy is the view's own flag. */
 export const HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS = 180;
 
-/** Attendance below this share (0-1) is the one threshold worth colouring amber. */
+/** Attendance below this share (0-1) is Needs attention for a group (ENG-03), and colours amber. */
 export const HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD = 0.5;
+
+/** A board must sit near full attendance (ENG-01): below 90% is Needs action, and colours red. */
+export const HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_THRESHOLD = 0.9;
+
+/** The rule every group without a level of its own follows. */
+export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE: HealthMetricsEngagementAttendanceRule = {
+  threshold: HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
+  tone: 'low',
+};
+
+export const HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE: HealthMetricsEngagementAttendanceRule = {
+  threshold: HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_THRESHOLD,
+  tone: 'critical',
+};
 
 /** Fewer points than this cannot express a direction, so the trend chart is suppressed entirely. */
 export const HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS = 2;
@@ -208,10 +223,11 @@ export const HEALTH_METRICS_ENGAGEMENT_SPARK_BAR_RANGE_PX = 19;
 export const HEALTH_METRICS_ENGAGEMENT_ORG_TOP_TIERS: readonly string[] = ['platinum', 'premier', 'founding'];
 export const HEALTH_METRICS_ENGAGEMENT_ORG_TIER_PILL_CLASS = { top: 'bg-blue-50 text-blue-700', other: 'bg-gray-100 text-gray-600' } as const;
 
-/** Attendance-bar fill per tone — grey at zero, amber below the threshold, blue otherwise. */
+/** Attendance-bar fill per tone — grey at zero, amber or red below the rule's threshold, blue otherwise. */
 export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetricsEngagementAttendanceTone, string> = {
   empty: 'bg-gray-300',
   low: 'bg-amber-500',
+  critical: 'bg-red-500',
   ok: 'bg-blue-500',
 };
 
@@ -267,6 +283,11 @@ export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER: readonly strin
  * Only the board qualifies today; widening this is one entry, not a code change.
  */
 export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS: readonly string[] = ['Board'];
+
+/** Meeting-type rows with a rule of their own; the rest follow `HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE`. */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_RULES: Readonly<Record<string, HealthMetricsEngagementAttendanceRule>> = {
+  Board: HEALTH_METRICS_ENGAGEMENT_BOARD_ATTENDANCE_RULE,
+};
 
 /** The view's own level values. The finer `committee_type` level is not read by this section. */
 export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] = ['all', 'group'];

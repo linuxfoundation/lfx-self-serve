@@ -157,7 +157,10 @@
             </td>
             <td class="w-[170px]">
               @if (attendanceMode()) {
-                <lfx-engagement-attendance-bar [attendancePct]="period?.attendancePct ?? null" [meetingsHeld]="period?.meetingsHeld ?? 0" />
+                <lfx-engagement-attendance-bar
+                  [attendancePct]="period?.attendancePct ?? null"
+                  [meetingsHeld]="period?.meetingsHeld ?? 0"
+                  [rule]="view.attendanceRule" />
               } @else {
                 <lfx-engagement-attendance-bar [meetingsHeld]="period?.meetingsHeld ?? null" [countMax]="maxTypeMeetings()" />
               }
