@@ -372,14 +372,16 @@ export class ParticipatingOrgsComponent {
     // Locale pinned so SSR on Node and the browser render the same digits (no hydration mismatch).
     return [
       {
+        // Companies with activity in the range: contributing members + non-members.
         value: (summary?.orgsCount ?? 0).toLocaleString('en-US'),
-        label: 'Orgs Participating',
+        label: 'Contributing Orgs',
         icon: 'fa-solid fa-building',
         iconContainerClass: 'bg-blue-100 text-blue-600',
       },
       {
         value: (summary?.membersCount ?? 0).toLocaleString('en-US'),
         label: 'Members',
+        ...(summary ? { subLine: `${summary.contributingMembersCount.toLocaleString('en-US')} contributing` } : {}),
         icon: 'fa-solid fa-circle-check',
         iconContainerClass: 'bg-emerald-100 text-emerald-600',
       },
@@ -403,7 +405,7 @@ export class ParticipatingOrgsComponent {
     // Locale pinned so SSR on Node and the browser render the same digits (no hydration mismatch).
     const label = (name: string, count: number | undefined): string => (count === undefined ? name : `${name} (${count.toLocaleString('en-US')})`);
     return [
-      // The All tab lists members (contributing or not) plus non-members, so it counts both; the Orgs Participating
+      // The All tab lists members (contributing or not) plus non-members, so it counts both; the Contributing Orgs
       // tile counts contributing companies only.
       { id: 'all', label: label('All', summary ? summary.membersCount + summary.nonMembersCount : undefined) },
       { id: 'members', label: label('Members', summary?.membersCount) },

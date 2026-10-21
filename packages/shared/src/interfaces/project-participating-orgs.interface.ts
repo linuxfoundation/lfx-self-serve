@@ -40,8 +40,12 @@ export interface ProjectParticipatingOrgsSummary {
   range: ProjectParticipatingOrgsRange;
   /** Build date (ISO `YYYY-MM-DD`); every window ends at the start of this date. */
   asOfDate: string;
+  /** Companies with activity in the range (members and non-members). */
   orgsCount: number;
+  /** Listed members: on a foundation's own project the full current roster, contributing or not. */
   membersCount: number;
+  /** Members with activity in the range; `contributingMembersCount + nonMembersCount = orgsCount`. */
+  contributingMembersCount: number;
   /** Includes `unidentifiedCount`. */
   nonMembersCount: number;
   unidentifiedCount: number;

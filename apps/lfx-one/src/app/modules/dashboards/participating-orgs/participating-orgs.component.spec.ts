@@ -45,6 +45,7 @@ function summary(overrides: Partial<ProjectParticipatingOrgsSummary> = {}): Proj
     asOfDate: '2026-10-15',
     orgsCount: 3,
     membersCount: 2,
+    contributingMembersCount: 2,
     nonMembersCount: 1,
     unidentifiedCount: 1,
     memberCommits: 300,
@@ -408,14 +409,15 @@ describe('ParticipatingOrgsComponent', () => {
     expect(text('stat-card-Member Commit Share')).toContain('—');
   });
 
-  it('counts every listed member, contributing or not, in the All tab while Orgs Participating counts contributors only', async () => {
+  it('counts every listed member in the All tab and names how many contribute on the Members tile', async () => {
     // 5 members (2 contributing) + 1 non-member: 3 contributing companies, 6 listed.
-    getSummary.mockReturnValue(of({ summary: summary({ orgsCount: 3, membersCount: 5, nonMembersCount: 1 }) }));
+    getSummary.mockReturnValue(of({ summary: summary({ orgsCount: 3, membersCount: 5, contributingMembersCount: 2, nonMembersCount: 1 }) }));
     await render();
 
     expect(text('participating-orgs-tabs')).toContain('All (6)');
     expect(text('participating-orgs-tabs')).toContain('Members (5)');
-    expect(text('stat-card-Orgs Participating')).toContain('3');
+    expect(text('stat-card-Contributing Orgs')).toContain('3');
+    expect(text('stat-card-Members')).toContain('2 contributing');
   });
 
   it('shows the no-access state on a 403', async () => {
