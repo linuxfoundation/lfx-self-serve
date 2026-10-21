@@ -10,6 +10,7 @@ import {
   BrandKitStoredResponse,
   MktgRunAnswer,
   MktgRunQuestion,
+  MktgRevisionRef,
 } from '@lfx-one/shared/interfaces';
 import {
   brandKitQuestionsId,
@@ -98,7 +99,8 @@ export class BrandKitService {
     answers: Record<string, string>,
     logoFiles: BrandKitLogoFile[],
     projectUid: string | undefined,
-    guildAgentHandle: string
+    guildAgentHandle: string,
+    expectedFramework?: MktgRevisionRef
   ): Promise<string> {
     const payload = buildBrandKitFormPayload(answers, { logoFiles, projectUid });
 
@@ -113,9 +115,12 @@ export class BrandKitService {
       has_project: !!projectUid,
     });
 
-    return this.structuredAgentInputEnabled
+    const framework = await this.documentStore.captureFramework(req, projectUid, payload.messaging_framework, expectedFramework);
+    const sessionId = await (this.structuredAgentInputEnabled
       ? this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle })
-      : this.guildService.createSession(req, { message: renderBrandKitFormText(payload), handle: guildAgentHandle });
+      : this.guildService.createSession(req, { message: renderBrandKitFormText(payload), handle: guildAgentHandle }));
+    await this.documentStore.rememberGenerationFramework(req, this.artifactSpec.agentKey, projectUid, sessionId, framework);
+    return sessionId;
   }
 
   /**

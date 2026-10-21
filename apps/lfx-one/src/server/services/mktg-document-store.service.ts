@@ -15,6 +15,11 @@ import {
   MKTG_REVISION_CONTENT_TYPE,
   MKTG_REVISION_SCHEMA,
   MKTG_REVISION_STATUS_METADATA_MAX_CHARS,
+  MKTG_KIT_FRAMEWORK_KEY,
+  MKTG_GENERATION_PROVENANCE_KEY_PREFIX,
+  MKTG_REBUILD_DOWNSTREAM_KEYS,
+  MKTG_REBUILD_UPSTREAM_METADATA_KEY,
+  MKTG_REBUILD_UPSTREAM_SIDECAR_KEY,
 } from '@lfx-one/shared/constants';
 import { LINKEDIN_AGENT_KEY } from '@lfx-one/shared/constants/linkedin-post.constants';
 import {
@@ -34,9 +39,11 @@ import {
   MktgDocumentGroup,
   MktgDocumentsResponse,
   MktgDocumentType,
+  MktgGenerationProvenance,
   MktgLegacyDocument,
   MktgListedRevision,
   MktgRevisionAuthor,
+  MktgRevisionRef,
   MktgRevisionContentSource,
   MktgRevisionFormat,
   MktgRevisionRecord,
@@ -60,10 +67,13 @@ import {
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
   readLinkedinDocumentContent,
+  readMktgFrameworkRef,
+  projectMktgRebuildStaleness,
 } from '@lfx-one/shared/utils';
 import { envelopeSchema as member360Schema } from '@lfx-one/shared/server';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
@@ -154,6 +164,68 @@ export class MktgDocumentStoreService {
     }
   }
 
+  /** Capture the exact approved input BEFORE starting a session; content mismatch means unknown provenance. */
+  public async captureFramework(req: Request, project: string | undefined, supplied: unknown, expected?: MktgRevisionRef): Promise<MktgRevisionRef | null> {
+    if (!project || !MKTG_ARTIFACT_PARTITION_REGEX.test(project)) {
+      if (expected) throw ServiceValidationError.forField('project', 'A valid project is required for the rebuild input.');
+      return null;
+    }
+    try {
+      const partition = await this.artifactService.resolveWritablePartition(req, MKTG_ARTIFACT_SPECS[MKTG_KIT_FRAMEWORK_KEY], project);
+      if (!partition) {
+        if (expected) throw new MicroserviceError('The approved framework input could not be verified for this project.', 503, 'MKTG_PROVENANCE_UNAVAILABLE');
+        return null;
+      }
+      const type = findMktgDocumentType(MKTG_KIT_FRAMEWORK_KEY);
+      if (!type) return null;
+      const detail = await this.getDocument(req, partition, type, MKTG_LIVING_DOCUMENT_ID);
+      const summary = this.approvedCurrentOf(detail);
+      if (!detail || !summary) {
+        if (expected) throw new ConflictError('The framework is no longer approved. Reload before rebuilding.', 'MKTG_APPROVED_CURRENT_CHANGED');
+        return null;
+      }
+      if (expected && (expected.revisionId !== summary.id || expected.contentSha256 !== summary.contentSha256))
+        throw new ConflictError('The approved framework changed. Reload before rebuilding.', 'MKTG_APPROVED_CURRENT_CHANGED');
+      const stored = await this.loadApprovedRevision(req, detail, summary);
+      if (stored.record.bundle.format !== 'json' || !isDeepStrictEqual(JSON.parse(stored.record.bundle.markdown), supplied)) {
+        if (expected) throw new ConflictError('The rebuild input does not match the approved framework.', 'MKTG_FRAMEWORK_INPUT_MISMATCH');
+        return null;
+      }
+      return { agentKey: type.agentKey, revisionId: summary.id, revisionNumber: summary.number, contentSha256: summary.contentSha256 };
+    } catch (err) {
+      if (expected) throw err;
+      // A run-page generation still starts as on main; unverified input must never become false provenance.
+      logger.warning(req, 'mktg_generation_provenance', 'Framework input could not be verified; provenance remains unknown', { project, err });
+      return null;
+    }
+  }
+
+  /** Publish capture before returning the session capability. Storage failure must not return an untracked new session. */
+  public async rememberGenerationFramework(
+    req: Request,
+    agentKey: MktgDocumentAgentKey,
+    project: string | undefined,
+    sessionId: string,
+    framework: MktgRevisionRef | null
+  ): Promise<void> {
+    if (!framework) return;
+    if (!project || !MKTG_ARTIFACT_PARTITION_REGEX.test(project))
+      throw new MicroserviceError('No writable provenance partition.', 503, 'MKTG_PROVENANCE_UNAVAILABLE');
+    const partition = await this.artifactService.resolveWritablePartition(req, MKTG_ARTIFACT_SPECS[MKTG_KIT_FRAMEWORK_KEY], project);
+    if (!partition) throw new MicroserviceError('No writable provenance partition.', 503, 'MKTG_PROVENANCE_UNAVAILABLE');
+    const key = this.generationProvenanceKey(partition, agentKey, sessionId);
+    const capture: MktgGenerationProvenance = { project: partition, agentKey, framework };
+    const body = JSON.stringify(capture);
+    const written = await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', key, {
+      body: Buffer.from(body),
+      contentType: MKTG_REVISION_CONTENT_TYPE,
+      cacheControl: 'private',
+      ifNoneMatch: '*',
+    });
+    if (!written && (await this.objectStore.getObject(req, 'marketing-os-artifacts', key))?.body !== body)
+      throw new PreconditionFailedError('The generation input was already recorded differently. Start a new run.');
+  }
+
   /** One shared append path for runs now and the future comment-and-revise writer. */
   public async recordGeneration(
     req: Request,
@@ -164,6 +236,16 @@ export class MktgDocumentStoreService {
   ): Promise<MktgStoredRevision> {
     const documentId = type.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const source = 'document_markdown' in envelope ? this.markdownSource(envelope) : envelope;
+    let sidecar = source.sidecar;
+    if (type.kind === 'living' && MKTG_REBUILD_DOWNSTREAM_KEYS.includes(type.agentKey)) {
+      const framework = await this.generationFramework(req, project, type.agentKey, sessionId);
+      // An agent envelope cannot manufacture host provenance. Only our captured identity is authoritative.
+      if (sidecar) {
+        sidecar = { ...sidecar };
+        delete sidecar[MKTG_REBUILD_UPSTREAM_SIDECAR_KEY];
+      }
+      if (framework) sidecar = { ...sidecar, [MKTG_REBUILD_UPSTREAM_SIDECAR_KEY]: framework };
+    }
     return this.recordRevision(
       req,
       project,
@@ -174,7 +256,7 @@ export class MktgDocumentStoreService {
         origin: 'generated',
         restoredFromId: null,
         source: { sessionId, draftVersion: source.version, intakeMode: source.intakeMode },
-        bundle: { markdown: source.text, contentSha256: source.contentSha256, format: source.format, sidecar: source.sidecar, brandFile: null },
+        bundle: { markdown: source.text, contentSha256: source.contentSha256, format: source.format, sidecar, brandFile: null },
       },
       this.sha256(type.kind === 'run' ? sessionId : `${sessionId}:${source.contentSha256}`),
       source.contentSha256
@@ -303,6 +385,8 @@ export class MktgDocumentStoreService {
             latestRevisionId: current.id,
             approvedCurrent: detail.approvedCurrent,
             currentRevisionNumber: current.number,
+            contentSha256: current.contentSha256,
+            upstreamFramework: current.upstreamFramework ?? null,
             updatedAt: current.createdAt,
             createdAt: detail.revisions.at(-1)?.createdAt ?? null,
           });
@@ -311,7 +395,7 @@ export class MktgDocumentStoreService {
       documents.sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
       groups.push({ type, documents });
     }
-    return { project, groups };
+    return projectMktgRebuildStaleness({ project, groups });
   }
 
   /** Read summaries and the current selection with bounded I/O, without downloading new revision bodies. */
@@ -547,6 +631,34 @@ export class MktgDocumentStoreService {
       if (revision) return { id: revision.id, number: summary.number, contentSha256: revision.record.bundle.contentSha256 };
     }
     return null;
+  }
+
+  private generationProvenanceKey(project: string, agentKey: MktgDocumentAgentKey, sessionId: string): string {
+    return `${MKTG_GENERATION_PROVENANCE_KEY_PREFIX}/${project}/${agentKey}/${this.sha256(sessionId)}.json`;
+  }
+
+  private async generationFramework(req: Request, project: string, agentKey: MktgDocumentAgentKey, sessionId: string): Promise<MktgRevisionRef | null> {
+    const saved = await this.objectStore.getObject(req, 'marketing-os-artifacts', this.generationProvenanceKey(project, agentKey, sessionId));
+    if (!saved) return null; // Sessions from before provenance support remain unknown.
+    try {
+      const value: unknown = JSON.parse(saved.body);
+      if (
+        value &&
+        typeof value === 'object' &&
+        'framework' in value &&
+        'project' in value &&
+        value.project === project &&
+        'agentKey' in value &&
+        value.agentKey === agentKey
+      ) {
+        if (value.framework === null) return null;
+        const framework = readMktgFrameworkRef(value.framework);
+        if (framework) return framework;
+      }
+    } catch {
+      /* Corrupt server capture must fail closed, not be guessed from today's approval. */
+    }
+    throw new MicroserviceError('The generation input record could not be read.', 502, 'MKTG_PROVENANCE_UNREADABLE');
   }
 
   /** The sole selection policy; public DTOs keep dependency/export consumers independent of storage. */
@@ -893,6 +1005,7 @@ export class MktgDocumentStoreService {
       'comment-count': String(record.comments.length),
       'based-on': record.basedOnId ?? '',
       'restored-from': record.restoredFromId ?? '',
+      [MKTG_REBUILD_UPSTREAM_METADATA_KEY]: JSON.stringify(readMktgFrameworkRef(record.bundle.sidecar?.[MKTG_REBUILD_UPSTREAM_SIDECAR_KEY])),
       ...(authorId && { 'author-id': authorId }),
       ...(generation && { generation }),
     };
@@ -923,11 +1036,22 @@ export class MktgDocumentStoreService {
       contentSha256: entry.record?.bundle.contentSha256 ?? metadata['content-sha'] ?? '',
       format: this.format(entry.record?.bundle.format ?? metadata['format']),
       commentCount: entry.record?.comments?.length ?? Number(metadata['comment-count'] ?? 0),
+      upstreamFramework: this.summaryFramework(entry),
       draftVersion: entry.record?.source.draftVersion ?? (Number(metadata['draft-version']) || undefined),
       latest: false,
       approval: null,
       basedOnNumber: null,
     };
+  }
+
+  /** New summaries use one bounded HEAD field. Old records remain unknown without extra body reads. */
+  private summaryFramework(entry: MktgListedRevision): MktgRevisionRef | null {
+    if (entry.record) return readMktgFrameworkRef(entry.record.bundle.sidecar?.[MKTG_REBUILD_UPSTREAM_SIDECAR_KEY]);
+    try {
+      return readMktgFrameworkRef(JSON.parse(entry.metadata?.[MKTG_REBUILD_UPSTREAM_METADATA_KEY] ?? 'null'));
+    } catch {
+      return null;
+    }
   }
 
   private legacySummary(legacy: MktgLegacyDocument): MktgRevisionSummary {

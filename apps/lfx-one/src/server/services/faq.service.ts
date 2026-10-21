@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { FAQ_CONTRACT_ID, FAQ_FINALIZE_TOOL, MKTG_ARTIFACT_SPECS } from '@lfx-one/shared/constants';
-import { FaqEnvelope, FaqResultResponse, FaqSessionOutcome, MktgArtifactPersistReceipt, MktgIntakeDocument, MktgRunAnswer } from '@lfx-one/shared/interfaces';
+import {
+  FaqEnvelope,
+  FaqResultResponse,
+  FaqSessionOutcome,
+  MktgArtifactPersistReceipt,
+  MktgIntakeDocument,
+  MktgRunAnswer,
+  MktgRevisionRef,
+} from '@lfx-one/shared/interfaces';
 import {
   buildFaqFormPayload,
   buildMktgRunActivity,
@@ -84,7 +92,8 @@ export class FaqService {
     answers: Record<string, string>,
     documents: MktgIntakeDocument[],
     projectUid: string | undefined,
-    guildAgentHandle: string
+    guildAgentHandle: string,
+    expectedFramework?: MktgRevisionRef
   ): Promise<string> {
     const payload = buildFaqFormPayload(answers, { documents: documents.map((document) => toFaqFormDocument(document)), projectUid });
 
@@ -100,9 +109,12 @@ export class FaqService {
       has_project: !!projectUid,
     });
 
-    return this.structuredAgentInputEnabled
+    const framework = await this.documentStore.captureFramework(req, projectUid, payload.messaging_framework, expectedFramework);
+    const sessionId = await (this.structuredAgentInputEnabled
       ? this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle })
-      : this.guildService.createSession(req, { message: renderFaqFormText(payload), handle: guildAgentHandle });
+      : this.guildService.createSession(req, { message: renderFaqFormText(payload), handle: guildAgentHandle }));
+    await this.documentStore.rememberGenerationFramework(req, this.artifactSpec.agentKey, projectUid, sessionId, framework);
+    return sessionId;
   }
 
   /**
