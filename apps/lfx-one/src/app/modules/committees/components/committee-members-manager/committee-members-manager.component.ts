@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
+import { HttpParams } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -254,7 +255,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
     }
     this.loadingImportInvites.set(true);
     this.committeeService
-      .getCommitteeInvites(committeeUid)
+      .getCommitteeInvites(committeeUid, new HttpParams().set('require_complete', 'true'))
       .pipe(
         take(1),
         finalize(() => this.loadingImportInvites.set(false)),

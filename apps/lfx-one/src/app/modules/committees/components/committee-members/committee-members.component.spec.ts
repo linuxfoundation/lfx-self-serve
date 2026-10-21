@@ -3,6 +3,7 @@
 
 // Members tab entry points for adding people, including the CSV import (GH-3849). Synthetic data only.
 
+import { HttpParams } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Committee, CommitteeInvite, CommitteeMember, MemberImportDialogResult } from '@lfx-one/shared/interfaces';
@@ -193,8 +194,10 @@ describe('CommitteeMembersComponent add-people actions', () => {
       await fixture.whenStable();
       expect((query('import-members-csv-btn')?.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
       component.openImportMembersDialog();
-      expect(committeeService.getCommitteeMembers).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
-      expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid);
+      expect(committeeService.getCommitteeMembers).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid, expect.any(HttpParams));
+      expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(WRITER_GROUP.uid, expect.any(HttpParams));
+      expect(committeeService.getCommitteeMembers.mock.calls[0][1].get('require_complete')).toBe('true');
+      expect(committeeService.getCommitteeInvites.mock.calls[0][1].get('require_complete')).toBe('true');
       members.next(MEMBERS);
       members.complete();
       expect(dialogService.open).not.toHaveBeenCalled();

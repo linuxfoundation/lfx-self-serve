@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpParams } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
@@ -227,7 +228,8 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     const invites = [{ uid: 'invite-1', invitee_email: REQUEST.email, status: 'pending' }] as CommitteeInvite[];
     committeeService.getCommitteeInvites.mockReturnValue(of(invites));
     component.openImportMembersDialog();
-    expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(GROUP.uid);
+    expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(GROUP.uid, expect.any(HttpParams));
+    expect(committeeService.getCommitteeInvites.mock.calls[0][1].get('require_complete')).toBe('true');
     expect(dialogService.open.mock.calls[0][1].data.existingInvites).toEqual(invites);
   });
 
@@ -294,7 +296,8 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
   it.each(['example-group', 'EXAMPLE-GROUP'])('opens imports from slug %s and fetches invitations with the resolved UUID', async (slug) => {
     await setup({ committeeId: slug });
     component.openImportMembersDialog();
-    expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(GROUP.uid);
+    expect(committeeService.getCommitteeInvites).toHaveBeenCalledExactlyOnceWith(GROUP.uid, expect.any(HttpParams));
+    expect(committeeService.getCommitteeInvites.mock.calls[0][1].get('require_complete')).toBe('true');
     expect(dialogService.open.mock.calls[0][1].data.committee.uid).toBe(GROUP.uid);
     dialogClose.next([{ ...REQUEST, createOptions: { skipNotification: true } }]);
     expect(updates.at(-1)?.toAdd).toHaveLength(1);

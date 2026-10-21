@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, TitleCasePipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, linkedSignal, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -404,10 +404,11 @@ export class CommitteeMembersComponent implements OnInit {
     }
     const committeeUid = committee.uid;
     this.importSnapshotsLoading.set(true);
-    // Parent roster inputs fall back to [] on errors. Import requires explicitly successful snapshots.
+    // Require complete pagination as well as successful requests; partial snapshots cannot drive imports.
+    const params = new HttpParams().set('require_complete', 'true');
     forkJoin({
-      members: this.committeeService.getCommitteeMembers(committeeUid),
-      invites: this.committeeService.getCommitteeInvites(committeeUid),
+      members: this.committeeService.getCommitteeMembers(committeeUid, params),
+      invites: this.committeeService.getCommitteeInvites(committeeUid, params),
     })
       .pipe(
         take(1),

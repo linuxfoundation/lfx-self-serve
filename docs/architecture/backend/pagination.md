@@ -179,6 +179,22 @@ The helper:
 
 See [Server Helpers](./server-helpers.md) for more details on the helper implementation.
 
+### CSV member-import snapshots
+
+The existing committee member and invitation list endpoints accept the BFF-only
+`require_complete=true` flag. Only the exact single string `true` enables strict
+pagination (`failOnPartial: true`); the flag is consumed in the committee service
+and never forwarded to the upstream query service. Ordinary list reads retain
+their existing partial-result behavior, and internal strict member callers cannot
+be downgraded by the flag.
+
+The Members-tab CSV import requests strict member and invitation snapshots. The
+Edit Group CSV import requests a strict invitation snapshot before opening its
+collect-only preview. If any requested page still fails after the helper's retry
+policy, the request fails and the existing import error handler blocks the
+preview so the manager can try again. This guarantees successful pagination,
+not immediate search-index consistency or an atomic snapshot across requests.
+
 ### Bound multi-request dashboard sources
 
 For a paginated source that also performs authorization and enrichment, a timeout per HTTP request is not a timeout for the entire source. Pass the same `ApiRequestOptions.deadlineAt` (absolute epoch milliseconds) to every standard JSON proxy request and strict access check. `ApiClientService` uses the smaller of the per-request timeout and the remaining deadline, aborts an in-flight transfer when that budget expires, and rejects before dispatch when no budget remains. Pagination retry delays can briefly extend source completion beyond the transport deadline, but cannot dispatch another expired request.
