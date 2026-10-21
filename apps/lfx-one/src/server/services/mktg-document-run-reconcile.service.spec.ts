@@ -368,6 +368,21 @@ describe('MktgDocumentRunService', () => {
     expect(stored().metadata['state']).toBe('failed');
   });
 
+  it('marks actual selected-result lookup failure unavailable while retaining the stored detail and failed row', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.result.mockResolvedValue({ status: 'failed', failureText: 'Synthetic refusal' });
+    const rows = await service.reconcile(req, project);
+    expect(rows[0].state).toBe('failed');
+    const detail = { project, type: types[0], documentId: 'living', revisions: [], approvedCurrent: null };
+    flows.result.mockRejectedValueOnce(new MicroserviceError('Synthetic selected result outage', 503, 'RESULT_UNAVAILABLE'));
+    await expect(service.detailWithProgress(req, project, types[0], 'living', detail, { runs: rows }, false, hash(session))).resolves.toEqual({
+      ...detail,
+      runs: rows,
+      progressUnavailable: true,
+    });
+    expect(stored().metadata['state']).toBe('failed');
+  });
+
   it('supersedes the older failed run when a new session for the same document is recorded', async () => {
     await service.start(req, project, types[0].agentKey, session);
     flows.result.mockResolvedValue({ status: 'failed', failureText: 'Synthetic refusal' });
@@ -506,6 +521,44 @@ describe('MktgDocumentRunService', () => {
     expect(stored().metadata['state']).toBe('writing');
     expect(flows.result).not.toHaveBeenCalled();
     expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_run_supersede', expect.any(String), expect.objectContaining({ project, err: failure }));
+  });
+
+  it('marks window-skipped unfinished rows unavailable without Guild or leaking private coverage/session fields', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    vi.advanceTimersByTime(86_400_000);
+    const snapshot = await service.readProgress(req, project, types[0].agentKey, 'living', true);
+    expect(snapshot).toEqual({ runs: [expect.objectContaining({ runId: hash(session), state: 'writing' })], progressUnavailable: true });
+    expect(await service.readProgress(req, project, types[0].agentKey, 'living', true)).toEqual(snapshot);
+    expect(flows.result).not.toHaveBeenCalled();
+    expect(JSON.stringify(snapshot)).not.toContain(session);
+    expect(snapshot).not.toHaveProperty('retainedRunIds');
+    expect(snapshot).not.toHaveProperty('uncheckedCount');
+  });
+
+  it('keeps stored documents independently readable when tracking LIST fails, but does not hide invalid input', async () => {
+    vi.spyOn(service['store'], 'listObjects').mockRejectedValueOnce(new Error('Synthetic LIST outage'));
+    expect(await service.readProgress(req, project)).toEqual({ runs: [], progressUnavailable: true });
+    await expect(service.readProgress(req, '../invalid')).rejects.toThrow();
+    expect(flows.result).not.toHaveBeenCalled();
+  });
+
+  it('signals an actual progress lookup failure without inventing a run or exposing coverage IDs', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    flows.head.mockImplementationOnce(() => {
+      throw new Error('Synthetic read outage');
+    });
+    expect(await service.readProgress(req, project)).toEqual({ runs: [], progressUnavailable: true });
+    expect(flows.result).not.toHaveBeenCalled();
+  });
+
+  it('does not turn intentionally bounded closed history into an unavailable/active work signal', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    const template = stored();
+    objects.clear();
+    for (let n = 0; n < MKTG_STARTED_RUN_DISCOVERY_LIMIT + 20; n++) {
+      objects.set(key(`closed-${n}`), { ...template, metadata: { state: 'completed' }, lastModified: new Date(Date.now() - 10_000 - n) });
+    }
+    expect(await service.readProgress(req, project)).toEqual({ runs: [] });
   });
 
   it('starts with batched HEADs, never GETs completed history, and reuses its closed terminal cache', async () => {

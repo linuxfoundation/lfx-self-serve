@@ -17,6 +17,7 @@ import type { MktgRebuildStaleness, MktgRevisionRef } from './mktg-rebuild.inter
 import type { LinkedinDocumentContent } from './linkedin-post.interface';
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
 import type { Member360Envelope } from './member-360.interface';
+import type { MktgDocumentRunSnapshot } from './mktg-document-run.interface';
 
 /**
  * Agent key of a document type — the artifact namespace for the agents that
@@ -238,7 +239,7 @@ export interface MktgDocumentGroup {
 }
 
 /** Response of `GET /api/mktg-agents/documents?project=<uid>`. */
-export interface MktgDocumentsResponse {
+export interface MktgDocumentsResponse extends Partial<MktgDocumentRunSnapshot> {
   project: string;
   groups: MktgDocumentGroup[];
   /** Approved-current framework identity for the Downstream card and rebuild precondition. */
@@ -246,7 +247,7 @@ export interface MktgDocumentsResponse {
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId?project=<uid>`: the document and its revisions, newest first. */
-export interface MktgDocumentDetailResponse {
+export interface MktgDocumentDetailResponse extends Partial<MktgDocumentRunSnapshot> {
   project: string;
   type: MktgDocumentType;
   documentId: string;
