@@ -485,6 +485,11 @@ export class VoteService {
         this.evictRecentlyCreatedVote(vote.uid);
         return vote;
       }
+      // Don't re-badge a stale Disabled row outside the tab its carried status actually belongs to
+      // (Copilot/dealako/greptile/cursor[bot], GH-4007 round 3): a Draft-tab fetch (statusFilter:
+      // DISABLED) can still return this uid's stale index row, and the lazy table never re-filters
+      // returned rows, so overlaying Active here would violate the Draft filter the user selected.
+      if (statusFilter != null && statusFilter !== carried.status) return vote;
       return carried.status !== PollStatus.DISABLED ? { ...vote, status: carried.status } : vote;
     });
 

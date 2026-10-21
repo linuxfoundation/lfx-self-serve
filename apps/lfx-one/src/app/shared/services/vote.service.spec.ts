@@ -316,6 +316,30 @@ describe('VoteService', () => {
       expect(after.map((v) => v.uid)).toEqual(['new-vote', 'other']);
     });
 
+    // GH-4007 round 3 (Copilot/dealako/greptile-apps/cursor[bot]): the overlay above must not
+    // re-badge a stale Disabled row outside the tab its carried status belongs to — a Draft-tab
+    // fetch (statusFilter: DISABLED) can still return this uid's stale index row, and the lazy
+    // table never re-filters returned rows, so overlaying Active here would violate the Draft tab.
+    it('does not re-badge a present stale Disabled row to the carried status when it conflicts with the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow], { statusFilter: PollStatus.DISABLED });
+
+      expect(merged).toEqual([staleServerRow]);
+    });
+
+    it('still re-badges a present stale Disabled row when it matches the active status filter', () => {
+      const created = buildVote({ uid: 'new-vote', status: PollStatus.DISABLED });
+      service.markVoteCreated(created, true);
+
+      const staleServerRow = buildVote({ uid: 'new-vote', name: 'Stale indexed name', status: PollStatus.DISABLED });
+      const merged = service.mergeRecentlyCreatedVotes([staleServerRow], { statusFilter: PollStatus.ACTIVE });
+
+      expect(merged).toEqual([{ ...staleServerRow, status: PollStatus.ACTIVE }]);
+    });
+
     it('keeps inserting inside the TTL window', () => {
       vi.useFakeTimers();
       try {
