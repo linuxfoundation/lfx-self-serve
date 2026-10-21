@@ -594,7 +594,7 @@
               }
             </div>
 
-            @if (!(isPastMeeting() && !pastMeetingFullAccess())) {
+            @if (canViewMeetingDetails()) {
               <!-- Divider -->
               <hr class="border-gray-200 my-4" />
 
@@ -752,7 +752,7 @@
                   </div>
                 </div>
 
-                @if (isPastMeeting() && !pastMeetingFullAccess()) {
+                @if (!canViewMeetingDetails()) {
                   <div class="bg-amber-50 border border-amber-300 rounded px-3 py-3 flex items-start gap-3">
                     <i class="fa-light fa-lock text-amber-600 text-base mt-0.5"></i>
                     <div>

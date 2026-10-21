@@ -68,6 +68,7 @@ import {
   PublicMeetingOccurrencesResponse,
   PublicMeetingParentProject,
   PublicMeetingProject,
+  PublicMeetingResponse,
   PublicPastMeetingResponse,
   TagSeverity,
   User,
@@ -261,6 +262,10 @@ export class MeetingJoinComponent implements OnInit {
   // time-based fallback for non-hyphenated URLs where past-ness is only knowable from the clock.
   protected loadedViaPastMeetingId = signal(false);
   protected pastMeetingFullAccess = signal(false);
+  // Mirrors pastMeetingFullAccess for the live/upcoming meeting path — false whenever a private
+  // meeting was only reached via its shared password link (anonymous or guest), gating agenda,
+  // materials, and date/time from both unauthenticated and guest-only viewers.
+  protected liveMeetingFullAccess = signal(false);
   // Set when the meeting fetch settles with an error that doesn't navigate away (e.g. a 5xx or
   // network failure) — 404/403/400 already redirect to /meetings/not-found, so this only covers
   // the terminal, non-navigating case where the skeleton would otherwise spin forever (GH-2041).
@@ -304,6 +309,9 @@ export class MeetingJoinComponent implements OnInit {
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
   protected isPastMeeting: Signal<boolean>;
+  // Gates agenda, materials, and date/time rendering for both the past-meeting and live-meeting
+  // paths — picks whichever full-access flag matches how the current meeting() was loaded.
+  protected canViewMeetingDetails = computed(() => (this.loadedViaPastMeetingId() ? this.pastMeetingFullAccess() : this.liveMeetingFullAccess()));
   protected pastMeetingSummary: Signal<PastMeetingSummary | null>;
   protected hasSummaryContent: Signal<boolean>;
   protected summaryAwaitingApproval: Signal<boolean>;
@@ -436,6 +444,7 @@ export class MeetingJoinComponent implements OnInit {
     if (transferredMeeting) {
       this.loadedViaPastMeetingId.set(transferredMeeting.loadedViaPastMeetingId);
       this.pastMeetingFullAccess.set(transferredMeeting.pastMeetingFullAccess);
+      this.liveMeetingFullAccess.set(transferredMeeting.liveMeetingFullAccess ?? false);
       if (transferredMeeting.meetingLoadFailed) {
         this.meetingLoadFailed.set(true);
         // Seed `meetingRouteId` here too — otherwise the first hydration emission (route id vs.
@@ -946,10 +955,16 @@ export class MeetingJoinComponent implements OnInit {
           // would otherwise flip to the upcoming/default view and cancel the past-meeting's
           // summary/recording/attachments/participant streams before the 404 fallback resolves.
           result$ = this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
-            tap(() => {
+            tap((res: PublicMeetingResponse) => {
               this.loadedViaPastMeetingId.set(false);
               this.pastMeetingFullAccess.set(false);
+              this.liveMeetingFullAccess.set(res.full_access);
             }),
+            map((res: PublicMeetingResponse) => ({
+              // Preserve the legacy join-page view model without claiming a complete Meeting at the HTTP boundary.
+              meeting: res.meeting as Meeting,
+              project: res.project,
+            })),
             catchError((error) => {
               if (error.status === 404) {
                 return this.meetingService.getPublicPastMeeting(meetingId).pipe(
@@ -1000,6 +1015,7 @@ export class MeetingJoinComponent implements OnInit {
             meeting: res,
             loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
             pastMeetingFullAccess: this.pastMeetingFullAccess(),
+            liveMeetingFullAccess: this.liveMeetingFullAccess(),
             meetingLoadFailed: false,
           });
         }
@@ -1025,6 +1041,7 @@ export class MeetingJoinComponent implements OnInit {
         meeting: null,
         loadedViaPastMeetingId: this.loadedViaPastMeetingId(),
         pastMeetingFullAccess: this.pastMeetingFullAccess(),
+        liveMeetingFullAccess: this.liveMeetingFullAccess(),
         meetingLoadFailed: true,
       });
     }

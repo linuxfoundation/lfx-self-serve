@@ -10,6 +10,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
+import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   Meeting,
   MeetingJoinPageState,
@@ -671,6 +672,7 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...buildMeeting(), project: buildProject() },
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
         meetingLoadFailed: false,
       });
 
@@ -697,6 +699,7 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...buildMeeting(), project: buildProject() },
         loadedViaPastMeetingId: true,
         pastMeetingFullAccess: true,
+        liveMeetingFullAccess: false,
         meetingLoadFailed: false,
       });
 
@@ -734,6 +737,7 @@ describe('MeetingJoinComponent', () => {
         meeting: { ...recurringMeeting, project: buildProject() },
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
         meetingLoadFailed: false,
       });
 
@@ -887,6 +891,7 @@ describe('MeetingJoinComponent', () => {
         meeting: null,
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
         meetingLoadFailed: true,
       });
 
@@ -936,6 +941,7 @@ describe('MeetingJoinComponent', () => {
         meeting: null,
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
+        liveMeetingFullAccess: false,
         meetingLoadFailed: true,
       });
 
@@ -1383,6 +1389,7 @@ describe('MeetingJoinComponent', () => {
           meeting: { ...invitedMeeting, project: buildProject() },
           loadedViaPastMeetingId: false,
           pastMeetingFullAccess: false,
+          liveMeetingFullAccess: false,
           meetingLoadFailed: false,
         });
 
@@ -1676,6 +1683,49 @@ describe('MeetingJoinComponent', () => {
       expect(fixture.componentInstance.effectivelyInvited()).toBe(true);
       expect(buttons.selectedResponse()).toBeNull();
       expect(fixture.componentInstance.currentUserRsvp()).toBeNull();
+    });
+  });
+
+  // GH bug: a private meeting reached without full access (no session at all, or a guest who only
+  // has the shared password) must show title + "Join as Guest" only — no agenda, docs, or date/time.
+  describe('private live meeting access gating', () => {
+    const renderLiveMeeting = async (overrides: Partial<Meeting> = {}, fullAccess: boolean): Promise<HTMLElement> => {
+      getPublicMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, description: 'Secret agenda details', ...overrides }),
+          project: buildProject(),
+          full_access: fullAccess,
+        })
+      );
+      await TestBed.compileComponents();
+      const fixture = TestBed.createComponent(MeetingJoinComponent);
+      await TestBed.inject(ApplicationRef).whenStable();
+      return fixture.nativeElement as HTMLElement;
+    };
+
+    it('hides the agenda from an unauthenticated viewer but still offers the guest join form', async () => {
+      authenticated.set(false);
+      const page = await renderLiveMeeting({}, false);
+
+      expect(page.querySelector('[data-testid="meeting-description"]')).toBeNull();
+      expect(page.querySelector('[data-testid="meeting-join-sign-in"]')).not.toBeNull();
+      expect(page.querySelector('lfx-guest-form')).not.toBeNull();
+    });
+
+    it('hides the agenda from an authenticated guest-only viewer (password access, no real membership)', async () => {
+      authenticated.set(true);
+      const page = await renderLiveMeeting({ organizer: false, invited: false }, false);
+
+      expect(page.querySelector('[data-testid="meeting-description"]')).toBeNull();
+      expect(page.textContent).toContain('This is a private meeting');
+    });
+
+    it('shows full meeting details to an authenticated viewer with real access', async () => {
+      authenticated.set(true);
+      const page = await renderLiveMeeting({ organizer: true }, true);
+
+      expect(page.querySelector('[data-testid="meeting-description"]')).not.toBeNull();
+      expect(page.textContent).not.toContain('This is a private meeting');
     });
   });
 });

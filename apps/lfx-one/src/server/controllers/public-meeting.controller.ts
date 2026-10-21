@@ -4,6 +4,7 @@
 import { Meeting } from '@lfx-one/shared';
 import {
   MEETING_PASSWORD_HEADER,
+  PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS,
   PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
   PUBLIC_REGISTRATION_FIELD_LABELS,
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH,
@@ -17,6 +18,7 @@ import {
   MeetingRegistrant,
   PastMeeting,
   Project,
+  PublicAnonymousLiveMeeting,
   PublicAnonymousPastMeeting,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
@@ -155,6 +157,7 @@ export class PublicMeetingController {
         res.json({
           meeting,
           project: this.toPublicMeetingProject(project, parent),
+          full_access: true,
         });
         return;
       }
@@ -169,6 +172,7 @@ export class PublicMeetingController {
         res.json({
           meeting,
           project: this.toPublicMeetingProject(project, parent),
+          full_access: true,
         });
         return;
       }
@@ -190,6 +194,7 @@ export class PublicMeetingController {
               res.json({
                 meeting,
                 project: this.toPublicMeetingProject(project, parent),
+                full_access: true,
               });
               return;
             }
@@ -208,8 +213,12 @@ export class PublicMeetingController {
         return;
       }
 
-      // Send the meeting and project data to the client
-      res.json({ meeting, project: this.toPublicMeetingProject(project, parent) });
+      // A correct password only proves the caller has the shared link/passcode — not that they
+      // have a real session with access (organizer/invitee/member). Anonymous visitors and
+      // password-only guests both land here, so neither gets agenda, materials, or date/time:
+      // only the title + enough context to join as a guest (per Nirav/Jordan — a private meeting
+      // must show nothing beyond that without login).
+      res.json({ meeting: this.toAnonymousLiveMeetingResponse(meeting), project: this.toPublicMeetingProject(project, parent), full_access: false });
     } catch (error) {
       // Error handler will log
       next(error);
@@ -833,6 +842,15 @@ export class PublicMeetingController {
    */
   private toAnonymousPastMeetingResponse(meeting: PastMeeting): PublicAnonymousPastMeeting {
     return Object.fromEntries(PUBLIC_ANONYMOUS_PAST_MEETING_KEYS.filter((field) => meeting[field] !== undefined).map((field) => [field, meeting[field]]));
+  }
+
+  /**
+   * Projects a live/upcoming meeting down to the anonymous/guest-access allowlist through an
+   * allowlist rather than a denylist, so new upstream fields (agenda, materials, date/time,
+   * password) cannot pass through by default to a caller who only has the shared password.
+   */
+  private toAnonymousLiveMeetingResponse(meeting: Meeting): PublicAnonymousLiveMeeting {
+    return Object.fromEntries(PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS.filter((field) => meeting[field] !== undefined).map((field) => [field, meeting[field]]));
   }
 
   /**
