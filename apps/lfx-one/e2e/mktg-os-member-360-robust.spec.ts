@@ -9,6 +9,39 @@ test.use({ storageState: { cookies: [], origins: [] } });
 test.describe.configure({ timeout: 60000 });
 
 for (const width of [1440, 1280, 390]) {
+  test(`intake project and tracker hints follow the board at ${width}px`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await setupMember360(page); // Includes suppressCookieBanner(page).
+    await openMember360(page);
+    const project = page.getByTestId('member-360-project');
+    const projectHint = project.getByTestId('member-360-project-hint');
+    await expect(projectHint).toHaveCSS('font-size', '13px');
+    await expect(project).toHaveCSS('column-gap', '10px');
+    const trackerHint = page.getByTestId('member-360-trackers-hint');
+    const trackerPositions = await trackerHint.evaluate((element) => {
+      const label = element.previousElementSibling?.getBoundingClientRect();
+      const first = element.getClientRects()[0];
+      if (!label || !first) throw new Error('Tracker label or inline hint fragment missing');
+      return { gap: first.left - label.right, labelTop: label.top, hintTop: first.top };
+    });
+    // One inline space at the app's 14px base, with subpixel tolerance; first words stay on the label's line even at390.
+    expect(Math.abs(trackerPositions.gap - 3.5)).toBeLessThanOrEqual(1);
+    expect(Math.abs(trackerPositions.hintTop - trackerPositions.labelTop)).toBeLessThan(5);
+    await expect(trackerHint).toHaveCSS('font-size', '13px');
+    await expect(trackerHint).toHaveCSS('font-weight', '400');
+    await expect(page.getByTestId('member-360-upload-types')).toHaveText('XLSX or CSV');
+    if (width >= 1280) {
+      const positions = await projectHint.evaluate((element) => {
+        const name = element.previousElementSibling?.getBoundingClientRect();
+        const hint = element.getBoundingClientRect();
+        if (!name) throw new Error('Project name missing');
+        return { gap: hint.left - name.right, nameTop: name.top, hintTop: hint.top };
+      });
+      expect(Math.abs(positions.gap - 10)).toBeLessThanOrEqual(1);
+      expect(Math.abs(positions.hintTop - positions.nameTop)).toBeLessThan(5);
+    }
+    await page.screenshot({ path: info.outputPath(`intake-hints-${width}.png`), fullPage: true });
+  });
   test(`ranking structure and collapsed sections at ${width}px`, async ({ page, browserName }, info) => {
     await page.setViewportSize({ width, height: 1000 });
     await setupMember360(page, { stored: true });

@@ -64,7 +64,21 @@ describe('Member360RunComponent', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
   it('fixes the project and defaults to a twelve-month window with empty run history', async () => {
     await render();
-    expect(fixture.nativeElement.querySelector('[data-testid="member-360-project"]').textContent).toContain('Sample Foundation');
+    const project = fixture.nativeElement.querySelector('[data-testid="member-360-project"]');
+    expect(project.textContent).toContain('Sample Foundation');
+    const hint = project.querySelector('[data-testid="member-360-project-hint"]');
+    expect(hint?.previousElementSibling?.textContent).toBe('Sample Foundation');
+    expect(hint?.classList.contains('text-[13px]')).toBe(true);
+    expect(project.classList.contains('gap-[10px]')).toBe(true);
+    const trackersLabel = fixture.nativeElement.querySelector('[data-testid="member-360-trackers-label"]');
+    expect(trackersLabel.classList.contains('flex')).toBe(false);
+    const trackersHint = trackersLabel.querySelector('[data-testid="member-360-trackers-hint"]');
+    expect(trackersHint?.previousElementSibling?.textContent).toBe('Trackers');
+    expect(trackersHint?.previousSibling?.nodeType).toBe(Node.TEXT_NODE);
+    expect(trackersHint?.previousSibling?.textContent).toBe(' ');
+    expect(trackersHint?.classList.contains('font-normal')).toBe(true);
+    expect(trackersHint?.classList.contains('text-gray-500')).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-upload-types"]').textContent).toBe('XLSX or CSV');
     expect(fixture.componentInstance.form.controls.window.value).toBe('12');
     expect(fixture.nativeElement.textContent).toContain('No Member 360 runs yet.');
     expect(button().disabled).toBe(false);
@@ -127,6 +141,34 @@ describe('Member360RunComponent', () => {
     expect(request.request.body).toBe(file);
     request.flush(tracker);
     expect(received).toEqual(tracker);
+  });
+  it('rejects a PDF selected through the chooser before any upload', async () => {
+    await render();
+    run.parseTracker.mockClear();
+    const input: HTMLInputElement = fixture.nativeElement.querySelector('[data-testid="member-360-upload"] input[type="file"]');
+    Object.defineProperty(input, 'files', { configurable: true, value: [new File(['synthetic pdf'], 'tracker.pdf', { type: 'application/pdf' })] });
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(run.parseTracker).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]').textContent).toContain('Only .xlsx or .csv trackers can be uploaded.');
+    expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
+    expect(button().disabled).toBe(false);
+  });
+  it.each([`${'x'.repeat(201)}.csv`, 'folder/tracker.csv'])('explains an invalid filename separately from its accepted extension: %s', async (filename) => {
+    await render();
+    run.parseTracker.mockClear();
+    await fixture.componentInstance['upload']([new File(['company'], filename)]);
+    fixture.detectChanges();
+    expect(run.parseTracker).not.toHaveBeenCalled();
+    expect(fixture.nativeElement.querySelector('[data-testid="member-360-error"]').textContent).toContain('Use a shorter file name without slashes.');
+  });
+  it('rejects a mixed batch before sending even the valid tracker', async () => {
+    await render();
+    run.parseTracker.mockClear();
+    await fixture.componentInstance['upload']([new File(['company'], 'tracker.csv'), new File(['pdf'], 'tracker.pdf')]);
+    expect(run.parseTracker).not.toHaveBeenCalled();
+    expect(fixture.componentInstance.form.controls.trackers.value).toEqual([]);
   });
   it('shows the specific tracker validation reason from the BFF', async () => {
     run.parseTracker.mockReturnValueOnce(
