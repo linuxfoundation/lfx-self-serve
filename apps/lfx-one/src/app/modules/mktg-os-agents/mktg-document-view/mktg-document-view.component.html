@@ -434,6 +434,10 @@
             <p class="text-xs text-gray-500">Make current selects the revision agents read. No revision is added or deleted.</p>
           </div>
 
+          @if (current.type.agentKey === frameworkKey) {
+            <lfx-mktg-downstream [project]="current.project" [refreshKey]="current.approvedCurrent?.revisionId ?? ''" [writer]="writer()" />
+          }
+
           <!-- About this document -->
           <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white px-4 py-4" data-testid="mktg-document-view-about">
             <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">About this document</h2>

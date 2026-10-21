@@ -214,7 +214,7 @@ describe('MktgDocumentViewComponent', () => {
   beforeEach(async () => {
     run.isPending.mockReturnValue(false);
     store = {
-      listDocuments: vi.fn(() => of({ groups: [] })),
+      listDocuments: vi.fn(() => of({ project: PROJECT.uid, groups: [] })),
       getDocument: vi.fn(() => of(detail)),
       getRevision: vi.fn((_project: string, _agentKey: string, _documentId: string, revisionId: string) =>
         of(revisionResponse([LATEST, OLDER, RESTORED].find((candidate) => candidate.id === revisionId) ?? LATEST))
@@ -731,7 +731,7 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-hash')?.textContent).toContain(OLDER.contentSha256);
   });
 
-  it('renders a Messaging Framework revision (JSON content) on the framework’s own view, full width, with the sidecar’s report', async () => {
+  it('renders a Messaging Framework revision with its report and a right-hand Revisions/Downstream column', async () => {
     useFrameworkRevision();
 
     await render('/documents/foundation-message/living');
@@ -742,7 +742,8 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-version')?.textContent).toContain('v2');
     expect(query('mktg-framework-view-tagline')?.textContent).toContain('Release, open.');
     expect(query('mktg-framework-view-goal-adoption')?.textContent).toContain('End users');
-    expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).toContain('@[800px]:col-span-2');
+    expect(harness.routeNativeElement?.querySelector('[aria-label="Document content"]')?.className).not.toContain('@[800px]:col-span-2');
+    expect(query('mktg-document-view-revisions')?.parentElement?.querySelector('lfx-mktg-downstream')).not.toBeNull();
 
     harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-framework-view-tab-sources"]')?.click();
     await settle();

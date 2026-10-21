@@ -76,10 +76,14 @@ describe('Marketing kit home', () => {
     expect(root.querySelector('[data-testid="mktg-kit-in-kit"]')?.textContent).toContain('1 assets');
     expect(root.querySelector('[data-testid="mktg-kit-level-empty"]')).toBeNull();
     expect(root.textContent).toContain('Needs rebuild');
+    expect(root.querySelector('[data-testid="mktg-kit-family-availability-positioning-brand"]')?.textContent).toContain('Core');
+    expect(root.querySelector('[data-testid="mktg-kit-family-needs-rebuild-positioning-brand"]')?.textContent).toContain('Needs rebuild');
     root.querySelector<HTMLButtonElement>('[data-testid="filter-pill-approved"]')?.click();
     await fixture.whenStable();
     expect(root.querySelectorAll('article')).toHaveLength(9);
     expect(root.querySelector('[data-testid="mktg-kit-asset-brand-kit"]')).toBeNull();
+    expect(root.querySelector('[data-testid="mktg-kit-family-availability-positioning-brand"]')?.textContent).toContain('Core');
+    expect(root.querySelector('[data-testid="mktg-kit-family-needs-rebuild-positioning-brand"]')?.textContent).toContain('Needs rebuild');
     expect(root.querySelector('[data-testid="mktg-kit-asset-messaging-framework"]')).not.toBeNull();
     expect(root.textContent).toContain('No assets in this state');
   });
