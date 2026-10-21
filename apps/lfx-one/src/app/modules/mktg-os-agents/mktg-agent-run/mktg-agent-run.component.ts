@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -86,9 +87,11 @@ import { MktgIntakeLogoFilesComponent } from '../mktg-intake-logo-files/mktg-int
 import { MktgRunActivityComponent } from '../mktg-run-activity/mktg-run-activity.component';
 import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questions.component';
 
-// Catalog-driven intake, research feed and questions only. Accepted answers
-// hand the same attempt to the asset page; direct intakes without answers
-// endpoints open it before their first POST. Failed navigation retries only navigation, never generation.
+// Catalog-driven intake, research/writing feed and questions. Accepted answers
+// transfer this owned attempt at their ACK. Without an agent writing marker,
+// only checking/finalize (or an earlier ready result) safely transfers a no-
+// questions run. Direct no-answers intakes still open before their first POST.
+// Failed navigation retries only navigation, never generation.
 // Asset rendering, revisions and exports belong to the one document view.
 @Component({
   selector: 'lfx-mktg-agent-run',
@@ -283,8 +286,9 @@ export class MktgAgentRunComponent {
   protected readonly activity = signal<MktgRunActivity[]>([]);
   /** Epoch ms the current stretch of the run started — the feed's timer. */
   protected readonly activityStartedAt = signal(Date.now());
-  /** True once the answers went back: the run is writing, not researching. */
+  /** True after accepted answers or a confirmed post-research handoff, never inferred from model calls. */
   protected readonly writingStretch = signal(false);
+  private readonly recheckingAttempt = signal(false);
   /** The answers last sent, by key — they come back on the questions step if sending failed. */
   protected readonly lastAnswers = signal<Record<string, string>>({});
   /** True while the answers are on their way to the agent. */
@@ -381,9 +385,7 @@ export class MktgAgentRunComponent {
   /** The questions the agent is waiting on, for the stepper. */
   protected readonly pendingQuestions = computed(() => this.questionsPending()?.questions ?? []);
   /** The feed's header line. */
-  protected readonly activityTitle = computed(() =>
-    this.writingStretch() ? `Writing your ${this.intake?.documentName ?? 'document'}…` : `Researching ${this.projectName()}…`
-  );
+  protected readonly activityTitle = computed(() => (this.recheckingAttempt() ? 'Checking recorded run progress…' : this.activityTitleForStage()));
   /** What the agent asked before writing the current version, with the answers that went back. */
   protected readonly askedRows: Signal<MktgRunAnsweredQuestionRow[]> = this.initAskedRows();
   /**
@@ -565,7 +567,7 @@ export class MktgAgentRunComponent {
   // methods (docs/reviews/frontend-checklist.md §4).
   protected readonly agentIconClass: string = this.accentIcon[this.agent?.accent ?? 'gray'];
   protected readonly agentTagline: string = this.agent?.tags.join(' · ') ?? '';
-  /** The page's outer box: the centred container, or the whole width for intakes whose result is laid out as pages. */
+  /** Outer intake/feed/questions gutters; asset layout belongs to the document route. */
   protected readonly pageClass: string = this.intake?.fullWidth ? 'w-full px-4 sm:px-6 lg:px-8 mt-3' : 'container mx-auto px-4 sm:px-6 lg:px-8 mt-3';
   /** The intake's titled field groups with their fields resolved, or empty for a flat form. */
   protected readonly fieldGroups: MktgResolvedFieldGroup[] = this.initFieldGroups();
@@ -658,6 +660,11 @@ export class MktgAgentRunComponent {
   /** Navigation recovery retries only this saved destination, never Generate or the accepted answers POST. */
   protected onRetryHandoff(): void {
     const destination = this.navigation();
+    if (destination && !destination.subject) {
+      this.phase.set('form');
+      this.errorText.set('Sign in before opening this run. Your intake is kept.');
+      return;
+    }
     if (
       !destination ||
       this.navigating() ||
@@ -786,7 +793,7 @@ export class MktgAgentRunComponent {
     this.documentsSection()?.addFiles(Array.from(event.files), field.uploadTag);
   }
 
-  /** Sends the answers to the agent's questions on the same run; the page polls on for the document. */
+  /** Sends answers once; the accepted ACK transfers this owned attempt to the asset page. */
   protected onAnswerQuestions(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending();
     const request = this.activeRequest;
@@ -1244,18 +1251,40 @@ export class MktgAgentRunComponent {
     return doc?.document || null;
   }
 
-  /**
-   * Resets ALL run state for the (new) active project, then restores that
-   * project's stored run and applies its LFX prefill. Runs on every active
-   * context change so one project's session, answers and versions can never
-   * bleed into another's.
-   */
+  private restoreInputs(request: MktgGenerateRequest, prefix: string): void {
+    this.intakeForm.patchValue(request.answers);
+    this.documents.set(
+      (request.documents ?? []).map((document, index) => ({
+        ...document,
+        id: `${prefix}-document-${index}`,
+        read: document.kind === 'file',
+        words: (document.text ?? '').split(/\s+/).filter(Boolean).length,
+        truncated: false,
+      }))
+    );
+    this.logoFiles.set(
+      (request.logoFiles ?? []).map((file, index) => ({
+        id: `${prefix}-logo-${index}`,
+        file,
+        badge: file.url ? 'LINK' : (file.name.split('.').at(-1)?.toUpperCase() ?? 'FILE'),
+        status: 'Restored input',
+      }))
+    );
+  }
+
+  /** Discards a pending navigation token without discarding the recoverable intake. */
   private discardPendingNavigation(): void {
     const token = this.navigation()?.generation;
     if (token) this.runAttempts.discard(token);
     this.navigation.set(null);
   }
 
+  /**
+   * Resets ALL run state for the (new) active project, then restores that
+   * project's stored run and applies its LFX prefill. Runs on every active
+   * context change so one project's session, answers and versions can never
+   * bleed into another's.
+   */
   private resetForContext(context: ProjectContext): void {
     if (!this.agent || !this.intake) {
       return;
@@ -1272,6 +1301,7 @@ export class MktgAgentRunComponent {
     this.run.set(null);
     this.viewVersion.set(null);
     this.phase.set('form');
+    this.recheckingAttempt.set(false);
     this.stage.set(0);
     this.errorText.set('');
     this.docExpanded.set(false);
@@ -1310,64 +1340,35 @@ export class MktgAgentRunComponent {
     const draft = this.runAttempts.load(context.uid, this.agent.id);
     if (draft) {
       if (draft.requiresReattachment) this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
-      this.intakeForm.patchValue(draft.request.answers);
-      this.documents.set(
-        (draft.request.documents ?? []).map((document, index) => ({
-          ...document,
-          id: `restored-document-${index}`,
-          read: document.kind === 'file',
-          words: (document.text ?? '').split(/\s+/).filter(Boolean).length,
-          truncated: false,
-        }))
-      );
-      this.logoFiles.set(
-        (draft.request.logoFiles ?? []).map((file, index) => ({
-          id: `restored-logo-${index}`,
-          file,
-          badge: file.url ? 'LINK' : (file.name.split('.').at(-1)?.toUpperCase() ?? 'FILE'),
-          status: 'Restored input',
-        }))
-      );
+      this.restoreInputs(draft.request, 'restored');
     }
 
     // Receiver lands before the handoff producer: a new agent questions round returns to this intake.
     const token = this.route.snapshot.queryParamMap?.get('questions');
     const returned = token ? this.runAttempts.consume(token, context.uid, this.agent.id) : null;
     if (returned?.pending.requiresReattachment) {
-      this.intakeForm.patchValue(returned.pending.request.answers);
+      this.restoreInputs(returned.pending.request, 'returned');
       this.errorText.set('Your saved intake was restored. Reattach the source files, then press Generate explicitly.');
     } else if (returned?.pending.pendingQuestions) {
       this.activeRequest = returned.pending.request;
-      this.intakeForm.patchValue(returned.pending.request.answers);
-      this.documents.set(
-        (returned.pending.request.documents ?? []).map((document, index) => ({
-          ...document,
-          id: `returned-document-${index}`,
-          read: document.kind === 'file',
-          words: (document.text ?? '').split(/\s+/).filter(Boolean).length,
-          truncated: false,
-        }))
-      );
-      this.logoFiles.set(
-        (returned.pending.request.logoFiles ?? []).map((file, index) => ({
-          id: `returned-logo-${index}`,
-          file,
-          badge: file.url ? 'LINK' : (file.name.split('.').at(-1)?.toUpperCase() ?? 'FILE'),
-          status: 'Restored input',
-        }))
-      );
+      this.restoreInputs(returned.pending.request, 'returned');
       this.showQuestions(returned.pending.pendingQuestions);
     } else if (returned?.pending.attempt) {
       this.activeRequest = returned.pending.request;
-      this.intakeForm.patchValue(returned.pending.request.answers);
+      this.restoreInputs(returned.pending.request, 'returned');
       this.phase.set('running');
+      this.recheckingAttempt.set(true);
+      this.writingStretch.set(!!returned.pending.answered);
       this.activityStartedAt.set(Date.now());
       this.generationSub = this.runService
         .resume(returned.pending)
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (progress) => this.onProgress(progress, context.uid),
-          error: () => {
+          error: (error: unknown) => {
+            const errorType = error instanceof Error ? error.name : typeof error;
+            console.error('Failed to re-check Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
+            this.recheckingAttempt.set(false);
             this.phase.set('form');
             this.errorText.set('The recorded run could not be checked. Your intake is kept; try again.');
           },
@@ -1496,6 +1497,7 @@ export class MktgAgentRunComponent {
     this.docExpanded.set(false);
     this.clearQuestions();
     this.activity.set([]);
+    this.recheckingAttempt.set(false);
     this.activityStartedAt.set(Date.now());
     this.writingStretch.set(false);
     this.lastAnswers.set({});
@@ -1556,8 +1558,9 @@ export class MktgAgentRunComponent {
         this.projectContext.activeContextUid() !== projectUid ||
         progress.pending.request.projectUid !== projectUid ||
         progress.pending.request.agentId !== this.agent?.id
-      )
+      ) {
         return;
+      }
       this.intakeForm.patchValue(progress.pending.request.answers);
       this.writingStretch.set(false);
       this.clearQuestions();
@@ -1572,6 +1575,8 @@ export class MktgAgentRunComponent {
     if (progress.type === 'activity') {
       // The whole feed so far, every time it changed.
       this.activity.set(progress.activity);
+      this.recheckingAttempt.set(false);
+      if (progress.activity.some((step) => step.kind === 'checking')) this.handoffPostResearch();
       return;
     }
     if (progress.type === 'questions') {
@@ -1593,11 +1598,13 @@ export class MktgAgentRunComponent {
     }
     if (progress.type === 'document' || progress.type === 'persisted') {
       this.dependencyService.notifyDocumentsChanged(projectUid);
+      if (this.navigation()) return;
       const request = this.activeRequest;
       const run = progress.run;
       if (!request || !run) {
         return;
       }
+      this.writingStretch.set(true);
       const location = run.versions.at(-1)?.documentLocation;
       if (location) {
         this.navigation.set({
@@ -1621,6 +1628,21 @@ export class MktgAgentRunComponent {
     }
   }
 
+  private activityTitleForStage(): string {
+    return this.writingStretch() ? `Writing your ${this.intake?.documentName ?? 'document'}…` : `Researching ${this.projectName()}…`;
+  }
+
+  /** Transfer only confirmed post-research progress on this owned attempt, never Generate. */
+  private handoffPostResearch(): void {
+    const request = this.activeRequest;
+    if (!request || this.navigation()) return;
+    const pending = this.runAttempts.load(request.projectUid, request.agentId);
+    // Terminal failure is tracked before the service emits its last activity.
+    if (!pending?.attempt || pending.state === 'failed') return;
+    this.writingStretch.set(true);
+    this.openPrepared(request, true);
+  }
+
   private openPrepared(request: MktgGenerateRequest, resume = false): void {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === request.agentId);
     if (!type) {
@@ -1628,14 +1650,21 @@ export class MktgAgentRunComponent {
       this.errorText.set('This agent has no registered asset view.');
       return;
     }
+    const subject = this.userService.user()?.sub;
+    if (!subject) {
+      this.phase.set('form');
+      this.errorText.set('Sign in before opening this run. Your intake is kept.');
+      return;
+    }
     const generation = this.runAttempts.prepare(request, resume);
     const runId = this.runAttempts.load(request.projectUid, request.agentId)?.attempt?.runId;
-    this.navigation.set({ projectUid: request.projectUid, subject: this.userService.user()?.sub ?? '', agentKey: type.agentKey, generation, runId });
+    this.navigation.set({ projectUid: request.projectUid, subject, agentKey: type.agentKey, generation, runId });
     this.onRetryHandoff();
   }
 
   /** Puts the agent's questions on the page; the stepper asks them one at a time. */
   private showQuestions(pending: MktgRunQuestionsPending): void {
+    this.recheckingAttempt.set(false);
     this.lastAnswers.set({});
     this.questionsPending.set(pending);
     this.phase.set('questions');

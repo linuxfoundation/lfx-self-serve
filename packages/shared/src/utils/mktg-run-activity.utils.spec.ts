@@ -4,6 +4,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { MKTG_RUN_ACTIVITY_HIDDEN_TOOLS, MKTG_RUN_ACTIVITY_TOOLS } from '../constants/mktg-run-activity.constants';
+import { noQuestionsActivityPayloads } from './__fixtures__/mktg-run-activity.no-questions';
 import type { MktgRunActivity } from '../interfaces';
 import { buildMktgRunActivity, mktgRunActivityPhases, mktgRunActivityReadingLabel, mktgRunQuestionShortLabel } from './mktg-run-activity.utils';
 
@@ -51,6 +53,97 @@ describe('buildMktgRunActivity — the live feed from a real session', () => {
     expect(labels(activity)).toEqual(['Writing three post options', 'Checking the post options']);
     expect(activity.map((step) => step.status)).toEqual(['done', 'running']);
   });
+
+  it('never infers writing or checking from any recorded prefix through the questions marker', () => {
+    const marker = events.findIndex((event) => JSON.stringify(event['content'] ?? '').includes('messaging-framework-questions/v1'));
+    expect(marker).toBeGreaterThan(0);
+    // Includes every between-rounds start/completion and the pre-marker window:
+    // payloads15/24/31, 14..17, 23..26, 30..33 and37..45.
+    for (let n = 1; n <= marker + 1; n++) {
+      expect(
+        buildMktgRunActivity(payloads(n)).some((step) => step.kind === 'writing' || step.kind === 'checking'),
+        `recorded prefix ${n}`
+      ).toBe(false);
+    }
+  });
+
+  it('keeps every research round of a recorded no-questions variant on the run feed until finalize', () => {
+    let researchEnd = -1;
+    for (const [index, event] of events.entries()) {
+      const task = event['task'];
+      if (
+        index < afterAnswers &&
+        event['type'] === 'runtime_done' &&
+        typeof task === 'object' &&
+        task !== null &&
+        'tool_name' in task &&
+        typeof task.tool_name === 'string' &&
+        !MKTG_RUN_ACTIVITY_HIDDEN_TOOLS.includes(task.tool_name)
+      ) {
+        researchEnd = index;
+      }
+    }
+    expect(researchEnd).toBeGreaterThan(0);
+    const direct = [...events.slice(0, researchEnd + 1), ...events.slice(afterAnswers)];
+    const finalizeAt = direct.findIndex((event) => event['type'] === 'llm_done' && String(event['body']).includes(MKTG_RUN_ACTIVITY_TOOLS.finalize));
+    expect(finalizeAt).toBeGreaterThan(researchEnd);
+    // Covers model starts AND completions between every observed research batch.
+    for (let n = 1; n <= finalizeAt; n++) {
+      expect(
+        buildMktgRunActivity(direct.slice(0, n).map((event) => JSON.stringify(event))).some((step) => step.kind === 'writing' || step.kind === 'checking'),
+        `no-questions prefix ${n}`
+      ).toBe(false);
+    }
+    const modelStart = direct
+      .slice(0, finalizeAt)
+      .reverse()
+      .find((event) => event['type'] === 'llm_start');
+    expect(modelStart).toBeDefined();
+    const checked = buildMktgRunActivity(direct.slice(0, finalizeAt + 1).map((event) => JSON.stringify(event)));
+    expect(checked.find((step) => step.kind === 'writing')).toMatchObject({
+      id: 'writing',
+      status: 'done',
+      startedAt: modelStart?.['created_at'],
+      endedAt: direct[finalizeAt]['created_at'],
+    });
+    expect(checked.some((step) => step.kind === 'checking')).toBe(true);
+    expect(checked.some((step) => step.kind === 'questions')).toBe(false);
+  });
+
+  it.each([false, true])('does not label multi-round synthetic research or a model call as writing (kit:%s)', (brandKit) => {
+    for (const phase of ['research', 'between-rounds', 'writing'] as const) {
+      expect(buildMktgRunActivity(noQuestionsActivityPayloads(phase, brandKit)).some((step) => step.kind === 'writing' || step.kind === 'checking')).toBe(
+        false
+      );
+    }
+    const checked = buildMktgRunActivity(noQuestionsActivityPayloads('checked', brandKit));
+    expect(checked.find((step) => step.kind === 'writing')).toMatchObject({
+      status: 'done',
+      startedAt: '2026-10-20T10:00:09Z',
+      endedAt: '2026-10-20T10:00:12Z',
+    });
+    expect(checked.some((step) => step.kind === 'checking')).toBe(true);
+  });
+  it.each([
+    MKTG_RUN_ACTIVITY_TOOLS.fetch,
+    MKTG_RUN_ACTIVITY_TOOLS.webSearch,
+    MKTG_RUN_ACTIVITY_TOOLS.lfxGetProject,
+    MKTG_RUN_ACTIVITY_TOOLS.inspectLogos,
+    MKTG_RUN_ACTIVITY_TOOLS.askRequester,
+  ])('does not admit a finalize completion that also issues %s', (otherTool) => {
+    const body = [otherTool, MKTG_RUN_ACTIVITY_TOOLS.finalize]
+      .map(
+        (name) =>
+          `data: ${JSON.stringify({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: `synthetic-${name}`, name, input: {} } })}`
+      )
+      .join('\n');
+    const activity = buildMktgRunActivity([
+      ...noQuestionsActivityPayloads('writing'),
+      JSON.stringify({ type: 'llm_done', created_at: '2026-10-20T10:00:12Z', body }),
+    ]);
+    expect(activity.some((step) => step.kind === 'writing' || step.kind === 'checking')).toBe(false);
+  });
+
   it('reads the research in order, in plain sentences, ending with the questions', () => {
     const activity = buildMktgRunActivity(payloads(afterAnswers));
 

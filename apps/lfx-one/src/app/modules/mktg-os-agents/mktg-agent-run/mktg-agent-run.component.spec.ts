@@ -264,6 +264,23 @@ describe('MktgAgentRunComponent', () => {
       await fixture.whenStable();
     };
 
+    it('does not prepare or navigate an asset handoff while the effective subject is missing', async () => {
+      await configure('browser', target.agentId);
+      userSignal.set(null);
+      await fixture.whenStable();
+      await fill();
+      const prepare = vi.spyOn(TestBed.inject(MktgRunAttemptService), 'prepare');
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+      navigate.mockClear();
+      component['onSubmit']();
+      await fixture.whenStable();
+      expect(prepare).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(component['phase']()).toBe('form');
+      expect(query('mktg-agent-run-error')?.textContent).toContain('Sign in');
+    });
+
     it('retries a failed navigation only, never Generate, and keeps the form instead of a result/feedback section', async () => {
       await configure('browser', target.agentId);
       await fill();
