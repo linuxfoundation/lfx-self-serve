@@ -91,6 +91,29 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
 
   afterEach(() => TestBed.resetTestingModule());
 
+  it.each([3, 10, 11, 110])('keeps all %i members searchable in a keyboard-accessible scroll region', async (count) => {
+    const members = Array.from({ length: count }, (_, index) => ({
+      ...EXISTING,
+      uid: `member-${index}`,
+      email: `member${index}@example.com`,
+    }));
+    await setup({}, of(members));
+
+    const list = query('members-list')!;
+    expect(list.getAttribute('role')).toBe('region');
+    expect(list.getAttribute('aria-label')).toBe('Group members');
+    expect(list.tabIndex).toBe(0);
+    expect(list.classList.contains('overflow-y-auto')).toBe(true);
+    expect(list.classList.contains('max-h-[64.5rem]')).toBe(true);
+    expect(list.querySelectorAll('[data-testid="member-card"]')).toHaveLength(count);
+
+    component.searchForm.controls['search'].setValue(members.at(-1)!.email);
+    await fixture.whenStable();
+    expect(query('members-list')?.querySelectorAll('[data-testid="member-card"]')).toHaveLength(1);
+    expect(query('members-list')?.textContent).toContain(members.at(-1)!.email);
+    expect(component.memberCount()).toBe(count);
+  });
+
   it('offers Import Members only in the edit wizard, not during creation', async () => {
     await setup();
     expect(query('import-members-csv-btn')?.textContent).toContain('Import Members');
