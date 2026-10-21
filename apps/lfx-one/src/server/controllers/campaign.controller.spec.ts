@@ -4609,6 +4609,282 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(refusalFrom().message).not.toContain('🎉🎉');
   });
 
+  /**
+   * The structured-snippet guards, one test per branch of upstream's `validateStructuredSnippets`
+   * (`internal/platform/googleads/assets.go`), plus the accept-cases that keep them from
+   * over-refusing. Same preflight position as the two sets above — inside `validateAssetPlan`,
+   * before the budget mutate — so every one of these costs the whole campaign, not just the snippet.
+   */
+  const snip = (header: string, values: string[] = ['Alpha', 'Beta', 'Gamma']) => ({ header, values });
+  const SNIPPETS_10 = Array.from({ length: 10 }, (_, i) => snip(`Header ${i + 1}`));
+
+  it('dispatches a list of 10 structured snippets, which is exactly what upstream accepts', async () => {
+    // The contrast for the cap below: without it a controller that refused every snippet list would
+    // pass every refusal test here.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a1', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: SNIPPETS_10 }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toHaveLength(10);
+  });
+
+  it('refuses an 11-snippet list even when the 11th repeats a header, because upstream caps before it de-duplicates', async () => {
+    // `validateStructuredSnippets` compares `len(in.StructuredSnippets) > maxStructuredSnippets` on
+    // the RAW slice, before any entry is read.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [...SNIPPETS_10, snip('Header 1')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('11');
+  });
+
+  it('names a snippet with no header instead of letting Google refuse it opaquely', async () => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('  ')] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('structured snippet 1 has no header');
+  });
+
+  it('names a snippet header over the 25-rune bound', async () => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('A'.repeat(26))] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('dispatches a 25-EMOJI snippet header, because upstream counts runes and not UTF-16 units', async () => {
+    // A header of 25 astral characters is 50 UTF-16 units. `.length` would refuse a header Google
+    // accepts — and Google publishes its header lists PER LOCALE, so a non-ASCII header is ordinary.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a2', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('🎉'.repeat(25))] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+
+  it('refuses a header repeated in a different case, which upstream refuses rather than merges', async () => {
+    // Google serves one line per header, so the second would be dropped silently.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands'), snip('brands')] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('twice');
+  });
+
+  it.each([
+    ['a trailing U+0085, which Go trims and JS `trim` keeps', 'brands', 'Brands'],
+    ['a final sigma, which JS `toLowerCase` folds differently from Go', 'ΟΔΟΣ', 'οδοσ'],
+  ])("refuses a repeated header hidden by %s, judging it with Go's string rules", async (_label, repeat, first) => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip(first), snip(repeat)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('twice');
+  });
+
+  it('names a snippet value over the 25-rune bound', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', 'B'.repeat(26), 'Gamma'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('refuses an over-long value that merely repeats an earlier one, because upstream checks the bound before it collapses repeats', async () => {
+    // Upstream's value loop skips blanks, checks the rune bound, and only THEN skips a case-folded
+    // repeat. De-duplicating first would let this through — and Go would then kill the campaign.
+    const long = 'B'.repeat(26);
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', long, 'Gamma', long])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('refuses three values of which two are the same, because two render and Google needs three', async () => {
+    // Upstream's own reason for de-duplicating BEFORE it counts the minimum.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Go', 'go', 'Rust'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('at least 3');
+  });
+
+  it('refuses a snippet whose third value is blank, since a blank is skipped before the count', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', 'Beta', '   '])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('at least 3');
+  });
+
+  it('dispatches exactly 3 distinct values, the minimum upstream accepts', async () => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a3', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', ['Alpha', 'Beta', 'Gamma'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(createCampaigns).toHaveBeenCalled();
+  });
+
+  it('dispatches exactly 10 distinct values and refuses 11', async () => {
+    const ten = Array.from({ length: 10 }, (_, i) => `Value ${i + 1}`);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a4', error: null });
+
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets: [snip('Brands', ten)] }), { project: 'tlf', brief_id: 'b-1' }), res, next);
+    expect(next).not.toHaveBeenCalled();
+
+    vi.mocked(next).mockClear();
+    createCampaigns.mockClear();
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands', [...ten, 'Value 11'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('at most 10 values');
+  });
+
+  it("dispatches each snippet trimmed with Go's rules, repeats kept as the guard judged them", async () => {
+    // The dispatched list must be the one this controller judged — dropping the repeat here would
+    // ship a list Go counts differently from the one that passed the guard.
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a5', error: null });
+
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [{ header: ' Brands', values: [' Alpha ', 'Beta', 'Gamma', 'alpha'] }] } as never), {
+        project: 'tlf',
+        brief_id: 'b-1',
+      }),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect((envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>)['structuredSnippets']).toEqual([
+      { header: 'Brands', values: ['Alpha', 'Beta', 'Gamma', 'alpha'] },
+    ]);
+  });
+
+  it.each([
+    ['an absent snippet list', {}],
+    ['an empty snippet list', { structuredSnippets: [] }],
+    ['a null snippet list, which the Go decode reads as absent', { structuredSnippets: null }],
+  ])('omits the structuredSnippets key entirely for %s', async (_label, overrides) => {
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: '9f1c2d3e-0000-4000-8000-0000000000a6', error: null });
+
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(envelopeFor(createCampaigns)['googleAdsConfig'] as Record<string, unknown>).not.toHaveProperty('structuredSnippets');
+  });
+
+  it.each([
+    ['a bare object', { header: 'Brands', values: ['a', 'b', 'c'] }],
+    ['a non-object entry', [123]],
+    ['an array entry', [['Brands']]],
+    ['a header that is not a string', [{ header: 7, values: ['a', 'b', 'c'] }]],
+    ['a values list that is not a list', [{ header: 'Brands', values: 'Alpha' }]],
+    ['a values list holding a non-string', [{ header: 'Brands', values: ['Alpha', 2, 'Gamma'] }]],
+  ])('refuses %s by name rather than dropping it', async (_label, structuredSnippets) => {
+    await controller.createCampaign(buildReq(googleBody({ structuredSnippets } as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('must be a list of objects');
+  });
+
+  it('reads a null entry as a blank snippet and refuses it by name, as the Go decode does', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('Brands'), null] } as never), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().message).toContain('structured snippet 2 has no header');
+  });
+
+  it.each([
+    ['a snippet', [snip('Brands')]],
+    ['an entry with every field blank, which upstream still counts as asked', [{ header: '', values: [] }]],
+  ])('refuses %s on a non-Search channel by name, because upstream refuses the whole create there', async (_label, structuredSnippets) => {
+    await controller.createCampaign(
+      buildReq(googleBody({ campaignTypes: ['demand-gen'], structuredSnippets }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe('structuredSnippets');
+    expect(refusalFrom().message).toContain('Demand Gen');
+  });
+
+  it.each([
+    ['the callout guard before the snippet guard', { callouts: [''], structuredSnippets: [snip('')] }, 'callouts'],
+    ['the channel before the cap', { campaignTypes: ['demand-gen'], structuredSnippets: [...SNIPPETS_10, snip('Extra')] }, 'structuredSnippets'],
+    ['the cap before a bad entry', { structuredSnippets: [...SNIPPETS_10, snip('')] }, 'structuredSnippets'],
+  ])("refuses for %s, in upstream's own order", async (_label, overrides, field) => {
+    // `validateAssetPlan` runs sitelinks, then callouts, then structured snippets; inside
+    // `validateStructuredSnippets` the channel fence and the cap both come before any entry is read.
+    await controller.createCampaign(buildReq(googleBody(overrides as never), { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusalFrom().field).toBe(field);
+  });
+
+  it('refuses the header before the values, and the first bad entry before a later one', async () => {
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip('A'.repeat(26), ['only one']), snip('Brands', ['x'])] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain('26');
+  });
+
+  it('cuts an echoed snippet header by code point, so an emoji at the cut is never split', async () => {
+    // The header comes from an unvalidated body, so the refusal echoes it short.
+    await controller.createCampaign(
+      buildReq(googleBody({ structuredSnippets: [snip(`${'A'.repeat(31)}${'🎉'.repeat(5)}`)] }), { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    expect(refusalFrom().message).toContain(`${'A'.repeat(31)}🎉…`);
+    expect(refusalFrom().message).not.toContain('🎉🎉');
+  });
+
   it.each([
     ['a zero budget', 0],
     ['a negative budget, which no body validator on this route stops', -50],

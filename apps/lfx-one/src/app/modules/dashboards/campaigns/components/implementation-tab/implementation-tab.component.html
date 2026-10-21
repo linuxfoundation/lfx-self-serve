@@ -85,7 +85,7 @@
 </div>
 
 <!--
-  Google callouts and sitelinks withheld, announced. Top-level for the same reason as the three regions above:
+  Google callouts, sitelinks and structured snippets withheld, announced. Top-level for the same reason as the three regions above:
   the visible notice is created by the change that gives it its text. Polite, because the campaign
   is still created; the visible `<p>` carries no role, or the sentence would be announced twice.
 -->
@@ -94,6 +94,9 @@
 </div>
 <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-sitelinks-withheld-live">
   {{ googleSitelinksWithheldWarning() }}
+</div>
+<div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-google-structured-snippets-withheld-live">
+  {{ googleStructuredSnippetsWithheldWarning() }}
 </div>
 <!--
   The other reason extensions are withheld — the capability, not the channel. Same region shape and
@@ -482,7 +485,7 @@
         </div>
       }
 
-      <!-- Callouts and sitelinks typed under Search and withheld after a switch. Announced by the regions at the top. -->
+      <!-- Extensions typed under Search and withheld after a switch. Announced by the regions at the top. -->
       @if (googleCalloutsWithheldWarning(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-callouts-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
@@ -490,6 +493,11 @@
       }
       @if (googleSitelinksWithheldWarning(); as warning) {
         <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-sitelinks-withheld">
+          <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
+        </p>
+      }
+      @if (googleStructuredSnippetsWithheldWarning(); as warning) {
+        <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="implementation-google-structured-snippets-withheld">
           <i class="fa-light fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ warning }}
         </p>
       }
@@ -712,6 +720,121 @@
           } @else if (googleSitelinkUrlBytesOver() > 0) {
             <p id="google-sitelink-url-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-sitelink-url-too-long">
               Destination URL is {{ googleSitelinkUrlBytesOver() }} bytes — Google's limit is {{ googleMaxFinalUrlBytes }}.
+            </p>
+          }
+        </div>
+      }
+
+      <!--
+        Google Ads: structured snippets.
+
+        Same gate and same reason as the two sections above. TYPED, not generated: there is no
+        generator event for snippets, so this section is the only way one reaches the campaign — and
+        the only way one survives a visit is the implementation draft.
+
+        The values box is a `<textarea>`, one value per line, the same shape the conversion-action
+        box uses. A header plus at least three distinct values is the smallest servable snippet, so
+        this is a sub-form with its own add button rather than an enter-to-add box.
+      -->
+      @if (googleCalloutsAvailable()) {
+        <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-5" data-testid="implementation-google-structured-snippets-section">
+          <label class="block text-xs font-medium text-gray-700" for="google-snippet-header">
+            Google Structured Snippets ({{ googleStructuredSnippets().length }}/{{ googleMaxStructuredSnippets }})
+          </label>
+          @if (googleStructuredSnippets().length > 0) {
+            <div class="flex flex-col gap-2">
+              @for (snippet of googleStructuredSnippets(); track snippet.header; let i = $index) {
+                <div class="flex items-start justify-between gap-2 rounded-md bg-blue-50 px-3 py-2">
+                  <div class="flex min-w-0 flex-col gap-0.5">
+                    <span class="break-words text-xs font-medium text-blue-700">{{ snippet.header }}</span>
+                    <span class="break-words text-[10px] text-blue-700">{{ snippet.values.join(', ') }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    (click)="removeGoogleStructuredSnippet(i)"
+                    class="text-blue-600 hover:text-blue-800"
+                    [attr.aria-label]="'Remove ' + snippet.header"
+                    [attr.data-testid]="'implementation-google-structured-snippet-remove-' + snippet.header">
+                    <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              }
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-structured-snippets-empty">
+              No structured snippets added — this campaign is created without them.
+            </span>
+          }
+          @if (!googleStructuredSnippetsFull()) {
+            <!--
+              No maxlength, for the reason the sitelink boxes carry none: the add trims with Go's
+              rules before it counts runes, and a browser cap counts UTF-16 units. The message lines
+              below carry the feedback instead.
+
+              The section's `<label for>` names the header box; the textarea carries an `aria-label`,
+              since its placeholder is neither an accessible name nor durable once typing starts.
+            -->
+            <div class="flex flex-col gap-2">
+              <input
+                id="google-snippet-header"
+                type="text"
+                placeholder="Header (e.g. Courses, Brands, Types)"
+                [value]="googleStructuredSnippetDraft().header"
+                (input)="onGoogleStructuredSnippetDraftInput('header', $event)"
+                [attr.aria-invalid]="googleSnippetHeaderErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSnippetHeaderErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-snippet-header" />
+              <textarea
+                rows="4"
+                placeholder="One value per line"
+                aria-label="Structured snippet values, one per line"
+                [value]="googleStructuredSnippetDraft().values"
+                (input)="onGoogleStructuredSnippetDraftInput('values', $event)"
+                [attr.aria-invalid]="googleSnippetValuesErrorId() ? 'true' : null"
+                [attr.aria-describedby]="googleSnippetValuesErrorId()"
+                class="rounded-md border border-gray-300 px-3 py-1.5 text-xs"
+                data-testid="implementation-google-snippet-values"></textarea>
+              <button
+                type="button"
+                (click)="onGoogleStructuredSnippetAdd()"
+                [disabled]="googleStructuredSnippetAddDisabled()"
+                class="self-start rounded-md border border-dashed border-blue-300 px-3 py-1.5 text-xs text-blue-600 disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
+                data-testid="implementation-google-snippet-add">
+                + Add structured snippet
+              </button>
+            </div>
+          } @else {
+            <span class="text-xs text-gray-500" data-testid="implementation-google-structured-snippets-full">
+              Maximum of {{ googleMaxStructuredSnippets }} structured snippets reached — remove one to add another.
+            </span>
+          }
+          <!--
+            One line per upstream refusal this sub-form can still hit, named while it is editable.
+            Each is a whole-create refusal at the other end — `validateStructuredSnippets` runs
+            inside the same preflight — so each costs the operator the entire campaign.
+          -->
+          @if (googleSnippetHeaderTooLong()) {
+            <p id="google-snippet-header-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-header-too-long">
+              Header is {{ googleSnippetHeaderLength() }} characters — Google's limit is {{ googleMaxSnippetHeaderRunes }}.
+            </p>
+          } @else if (googleSnippetHeaderDuplicate()) {
+            <p id="google-snippet-header-duplicate" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-header-duplicate">
+              That header is already on the list — Google refuses a campaign carrying the same snippet header twice.
+            </p>
+          }
+          @if (googleSnippetValueOverLength() > 0) {
+            <p id="google-snippet-value-too-long" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-value-too-long">
+              One value is {{ googleSnippetValueOverLength() }} characters — each value is limited to {{ googleMaxSnippetValueRunes }}.
+            </p>
+          } @else if (googleSnippetTooFewValues()) {
+            <p id="google-snippet-too-few-values" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-too-few-values">
+              Google needs at least {{ googleMinSnippetValues }} different values on a line, and repeats of the same value count once. This one has
+              {{ googleSnippetDistinctValueCount() }}.
+            </p>
+          } @else if (googleSnippetTooManyValues()) {
+            <p id="google-snippet-too-many-values" role="alert" class="text-xs text-red-600" data-testid="implementation-google-snippet-too-many-values">
+              Google takes at most {{ googleMaxSnippetValues }} values on a line — this one has {{ googleSnippetDistinctValueCount() }}.
             </p>
           }
         </div>
