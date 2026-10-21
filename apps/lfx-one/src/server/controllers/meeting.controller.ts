@@ -48,7 +48,7 @@ import { MicroserviceError, ServiceValidationError } from '../errors';
 import { buildMeetingCalendarEvents, buildVCalendar } from '../helpers/ics.helper';
 import { addInvitedStatusToMeeting, applyOrganizerAndHostKeyResult, enrichMeetingsWithCreatedBy, stripHostKey } from '../helpers/meeting.helper';
 import { settleInBatches } from '../helpers/settle-in-batches.helper';
-import { validateUidParameter } from '../helpers/validation.helper';
+import { getStringQueryParam, validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
@@ -1949,6 +1949,8 @@ export class MeetingController {
   public async uploadMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const { name, file_size, file_type, category, description } = req.query as Record<string, string>;
+    // Read through the helper rather than the cast above: a repeated key would otherwise reach the service as an array.
+    const occurrenceId = getStringQueryParam(req, 'occurrence_id')?.trim();
 
     const startTime = logger.startOperation(req, 'upload_meeting_attachment', {
       meeting_id: uid,
@@ -2010,6 +2012,7 @@ export class MeetingController {
         file_type,
         ...(category && { category: category as AttachmentCategory }),
         ...(description && { description }),
+        ...(occurrenceId && { occurrence_id: occurrenceId }),
       };
 
       const result = await this.meetingService.uploadMeetingAttachment(req, uid, fileBuffer, presignData);

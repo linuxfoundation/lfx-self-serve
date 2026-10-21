@@ -75,6 +75,10 @@ import {
 } from '@lfx-one/shared';
 import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
+  applyAttachmentScopeOverrides,
+  canScopeAttachmentToOccurrence,
+  filterAttachmentsForOccurrence,
+  getAttachmentScope,
   getMeetingSelfRemovalMessage,
   getUserTimezone,
   isHostKeyVisible,
@@ -128,6 +132,7 @@ import {
 import { AddToCalendarComponent } from '../components/add-to-calendar/add-to-calendar.component';
 import { CancelOccurrenceConfirmationComponent } from '../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
+import { AttachmentScopeBadgeComponent } from '../components/attachment-scope-badge/attachment-scope-badge.component';
 import { HostKeyPanelComponent } from '../components/host-key-panel/host-key-panel.component';
 import { MeetingMaterialsDrawerComponent } from '../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
@@ -163,6 +168,7 @@ import { RescheduleOccurrenceDialogComponent } from '../components/reschedule-oc
     FileTypeDisplayPipe,
     DynamicDialogModule,
     MeetingMaterialsDrawerComponent,
+    AttachmentScopeBadgeComponent,
     ImpersonationBannerComponent,
   ],
   providers: [DialogService, ConfirmationService],
@@ -330,7 +336,29 @@ export class MeetingJoinComponent implements OnInit {
   protected showRecordingBadge = computed(() => (this.loadedViaPastMeetingId() ? !!this.primaryRecordingUrl() : !!this.meeting()?.recording_enabled));
   // Returns meeting_and_occurrence_id when set (occurrences use a composite key for attachment API calls).
   protected pastMeetingResourceId = computed(() => (this.loadedViaPastMeetingId() && this.meeting() ? getPastMeetingResourceId(this.meeting()!) : undefined));
-  protected currentAttachments = computed(() => (this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : this.attachments()));
+  // A live meeting's materials span every date; the page shows one occurrence, so another date's materials are dropped.
+  protected currentAttachments = computed(() =>
+    this.pastMeetingFullAccess()
+      ? this.pastMeetingAttachments()
+      : filterAttachmentsForOccurrence(
+          // Scope changes saved in this session are overlaid because a refetch can still return the old scope while the query service catches up.
+          applyAttachmentScopeOverrides(this.attachments(), this.meetingService.attachmentScopeOverrides()),
+          this.currentOccurrence()?.occurrence_id
+        )
+  );
+  // Materials carry a scope worth showing only on an upcoming recurring meeting, where each is for one date or the series.
+  protected showAttachmentScopes = computed(() => !this.pastMeetingFullAccess() && !!this.meeting()?.recurrence);
+  // Each listed attachment's scope, keyed by uid, so the template reads a value instead of calling a method per row.
+  protected attachmentScopes = computed(
+    () => new Map(this.currentAttachments().map((attachment) => [attachment.uid, getAttachmentScope(attachment as MeetingAttachment)] as const))
+  );
+  // The occurrence the materials drawer manages: the one this page shows, for an upcoming recurring meeting.
+  protected attachmentOccurrence = computed(() => (this.showAttachmentScopes() && !this.loadedViaPastMeetingId() ? this.currentOccurrence() : null));
+  // False once the shown occurrence is cancelled or past, where the service would reject a scope.
+  protected canScopeToOccurrence = computed(() => {
+    const meeting = this.meeting();
+    return !!meeting && !!this.attachmentOccurrence() && canScopeAttachmentToOccurrence(meeting, this.currentOccurrence());
+  });
   protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
   protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
   protected hasRecentlyUpdatedMaterials = computed(() => {

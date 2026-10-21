@@ -805,22 +805,24 @@ describe('VotesTableComponent — row More menu', () => {
     moreButton('active')!.click();
     await settle();
 
-    // Clone rides on project access, reminders on per-vote writer access — the two gates are
-    // independent, which is the whole point of this case. Clone is appended last (#3781), so the
-    // reminder stays at index 1 whether or not it is there.
+    // Clone rides on project access, reminders (and Extend) on per-vote writer access — the gates
+    // are independent, which is the whole point of this case. Clone is appended last (#3781), so
+    // the reminder stays at index 2 (after Extend) whether or not Clone is there.
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
-      hasPMOAccess ? ['Copy link', 'Send reminder', 'Send reminder to mailing list', 'Clone'] : ['Copy link', 'Send reminder', 'Send reminder to mailing list']
+      hasPMOAccess
+        ? ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
+        : ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list']
     );
 
     const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
     reminderItem.dispatchEvent(new Event('mouseenter'));
     await fixture.whenStable();
     expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Opens a dialog to send reminders to eligible voters who have not voted yet');
-    expect(items[1].tooltipOptions?.tooltipPosition).toBe('left');
+    expect(items[2].tooltipOptions?.tooltipPosition).toBe('left');
     reminderItem.dispatchEvent(new Event('mouseleave'));
 
-    items[1].command!({});
+    items[2].command!({});
 
     expect(openDialog).toHaveBeenCalledWith(
       VoteReminderDialogComponent,
@@ -1268,6 +1270,7 @@ describe('VotesTableComponent — participation progress', () => {
 
 describe('VotesTableComponent — Extend deadline', () => {
   let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
   let extendVote: ReturnType<typeof vi.fn>;
   let dialogOpen: ReturnType<typeof vi.fn>;
   let onClose: Subject<{ end_time: string; end_time_timezone: string } | undefined>;
@@ -1276,7 +1279,15 @@ describe('VotesTableComponent — Extend deadline', () => {
     vote('ended', { status: PollStatus.ENDED, writer: true }),
     vote('draft', { status: PollStatus.DISABLED, writer: true }),
   ];
-  const extendButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-extend-deadline-${uid}"] button`);
+  const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
+  /** Opens the row's "..." menu and returns its 'Extend' item, if present. */
+  async function extendItem(uid: string) {
+    const button = moreButton(uid);
+    if (!button) return undefined;
+    button.click();
+    await settle();
+    return table['rowActionMenuItems']().find((item) => item.label === 'Extend');
+  }
 
   beforeEach(async () => {
     extendVote = vi.fn().mockReturnValue(of(vote('active')));
@@ -1299,6 +1310,7 @@ describe('VotesTableComponent — Extend deadline', () => {
       })
       .compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
     fixture.componentRef.setInput('votes', ROWS);
     fixture.componentRef.setInput('hasPMOAccess', true);
   });
@@ -1310,50 +1322,51 @@ describe('VotesTableComponent — Extend deadline', () => {
     await fixture.whenStable();
   }
 
-  it('shows the button only for a manager on an active vote', async () => {
+  it('shows the Extend item only for a manager on an active vote', async () => {
     await settle();
-    expect(extendButton('active')).not.toBeNull();
-    expect(extendButton('ended')).toBeNull();
-    expect(extendButton('draft')).toBeNull();
+    expect(await extendItem('active')).toBeDefined();
+    expect(await extendItem('ended')).toBeUndefined();
+    expect(moreButton('draft')).toBeNull();
   });
 
-  it('hides the button for a non-manager viewer', async () => {
+  it('hides the Extend item for a non-manager viewer', async () => {
     fixture.componentRef.setInput(
       'votes',
       ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
     );
     await settle();
-    expect(extendButton('active')).toBeNull();
+    expect(await extendItem('active')).toBeUndefined();
   });
 
-  // GH-3823 review (PRRT_kwDOPMiRQ86uO-ES @copilot-pull-request-reviewer): the button was previously
+  // GH-3823 review (PRRT_kwDOPMiRQ86uO-ES @copilot-pull-request-reviewer): the item was previously
   // gated on project-level hasPMOAccess() rather than the vote's own writer flag — a committee-only
   // writer without project access couldn't extend their own vote's deadline, even though they could
   // already "Send reminder" on the same row (toggleRowActionMenu() already used vote.writer there).
-  it('shows the button for a writable vote even without project access', async () => {
+  it('shows the Extend item for a writable vote even without project access', async () => {
     fixture.componentRef.setInput('hasPMOAccess', false);
     fixture.componentRef.setInput(
       'votes',
       ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: true } : row))
     );
     await settle();
-    expect(extendButton('active')).not.toBeNull();
+    expect(await extendItem('active')).toBeDefined();
   });
 
-  it('hides the button for a non-writable vote even with project access', async () => {
+  it('hides the Extend item for a non-writable vote even with project access', async () => {
     fixture.componentRef.setInput('hasPMOAccess', true);
     fixture.componentRef.setInput(
       'votes',
       ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
     );
     await settle();
-    expect(extendButton('active')).toBeNull();
+    expect(await extendItem('active')).toBeUndefined();
   });
 
   it('opens the dialog seeded with the vote name/current deadline and extends on confirm', async () => {
     await settle();
 
-    extendButton('active')!.click();
+    const item = await extendItem('active');
+    item!.command!({});
     await settle();
 
     expect(dialogOpen).toHaveBeenCalledWith(
@@ -1373,7 +1386,8 @@ describe('VotesTableComponent — Extend deadline', () => {
   it('does nothing when the dialog is dismissed without a result', async () => {
     await settle();
 
-    extendButton('active')!.click();
+    const item = await extendItem('active');
+    item!.command!({});
     onClose.next(undefined);
     await settle();
 
@@ -1389,7 +1403,8 @@ describe('VotesTableComponent — Extend deadline', () => {
     extendVote.mockReturnValue(of(vote('active', { end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' })));
     await settle();
 
-    extendButton('active')!.click();
+    let item = await extendItem('active');
+    item!.command!({});
     await settle();
     onClose.next({ end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' });
     await settle();
@@ -1398,7 +1413,8 @@ describe('VotesTableComponent — Extend deadline', () => {
     fixture.componentRef.setInput('votes', [vote('active', { end_time: '2026-12-01T23:59:00.000Z', end_time_timezone: 'UTC', writer: true })]);
     await settle();
 
-    extendButton('active')!.click();
+    item = await extendItem('active');
+    item!.command!({});
     await settle();
 
     expect(dialogOpen).toHaveBeenLastCalledWith(

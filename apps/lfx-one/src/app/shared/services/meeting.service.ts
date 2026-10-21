@@ -16,6 +16,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
+  AttachmentScopeOverrides,
   BatchRegistrantOperationResponse,
   CancelMeetingOccurrenceRequest,
   CreateMeetingAttachmentRequest,
@@ -79,6 +80,18 @@ export class MeetingService {
    * still report `invited: true`.
    */
   public readonly removedRegistrationMeetingIds: Signal<ReadonlySet<string>> = this.removedRegistrationIds.asReadonly();
+
+  private readonly attachmentScopeOverridesState: WritableSignal<AttachmentScopeOverrides> = signal(new Map<string, string>());
+  /**
+   * Attachment scope changes saved in this session that a read may not show yet, keyed by attachment uid.
+   * @description Lives here so every card, page and drawer showing the meeting's materials sees a change the moment it
+   * is saved, rather than after the next refetch: reads come from the query service, which indexes asynchronously and
+   * can still return the old scope. An entry holds the last scope saved for that attachment and stays for the session: each
+   * card keeps its own fetched list and only the one that saved refetches, so dropping an entry when one read agreed with it
+   * would send the other cards back to their stale snapshot. A later change to the same attachment replaces the entry. The
+   * cost is that a change made by someone else mid-session stays hidden on that attachment until the page reloads.
+   */
+  public readonly attachmentScopeOverrides: Signal<AttachmentScopeOverrides> = this.attachmentScopeOverridesState.asReadonly();
 
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
@@ -413,6 +426,16 @@ export class MeetingService {
 
   // ─── Meeting Attachment Methods ───────────────────────────────────────────
 
+  /** Records scope changes that saved, so they show everywhere at once. `occurrence_id` absent means all occurrences. */
+  public recordAttachmentScopeChanges(changes: { uid: string; occurrence_id?: string }[]): void {
+    if (changes.length === 0) return;
+    this.attachmentScopeOverridesState.update((current) => {
+      const next = new Map(current);
+      changes.forEach((change) => next.set(change.uid, change.occurrence_id ?? ''));
+      return next;
+    });
+  }
+
   public getMeetingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
     return this.http.get<MeetingAttachment[]>(`/api/meetings/${meetingId}/attachments`).pipe(
       take(1),
@@ -454,6 +477,10 @@ export class MeetingService {
 
     if (presignData.description) {
       params = params.set('description', presignData.description);
+    }
+
+    if (presignData.occurrence_id) {
+      params = params.set('occurrence_id', presignData.occurrence_id);
     }
 
     return this.http
