@@ -16,6 +16,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   AttachmentDownloadUrlResponse,
+  AttachmentScopeOverrides,
   BatchRegistrantOperationResponse,
   CancelMeetingOccurrenceRequest,
   CreateMeetingAttachmentRequest,
@@ -60,12 +61,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import {
-  AttachmentScopeOverrides,
-  isBatchRegistrantOperationResponse,
-  mergeBatchRegistrantResponses,
-  settledAttachmentScopeOverrides,
-} from '@lfx-one/shared/utils';
+import { isBatchRegistrantOperationResponse, mergeBatchRegistrantResponses } from '@lfx-one/shared/utils';
 import { catchError, concatMap, from, identity, map, Observable, of, shareReplay, take, tap, throwError, toArray } from 'rxjs';
 
 import { extractErrorMessage, retryPropagationLag } from '@shared/utils/http-error.utils';
@@ -90,7 +86,10 @@ export class MeetingService {
    * Attachment scope changes saved in this session that a read may not show yet, keyed by attachment uid.
    * @description Lives here so every card, page and drawer showing the meeting's materials sees a change the moment it
    * is saved, rather than after the next refetch: reads come from the query service, which indexes asynchronously and
-   * can still return the old scope. An entry is dropped once a read agrees with it.
+   * can still return the old scope. An entry holds the last scope saved for that attachment and stays for the session: each
+   * card keeps its own fetched list and only the one that saved refetches, so dropping an entry when one read agreed with it
+   * would send the other cards back to their stale snapshot. A later change to the same attachment replaces the entry. The
+   * cost is that a change made by someone else mid-session stays hidden on that attachment until the page reloads.
    */
   public readonly attachmentScopeOverrides: Signal<AttachmentScopeOverrides> = this.attachmentScopeOverridesState.asReadonly();
 
@@ -440,7 +439,6 @@ export class MeetingService {
   public getMeetingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
     return this.http.get<MeetingAttachment[]>(`/api/meetings/${meetingId}/attachments`).pipe(
       take(1),
-      tap((attachments) => this.settleAttachmentScopeOverrides(attachments)),
       catchError(() => of([]))
     );
   }
@@ -896,17 +894,6 @@ export class MeetingService {
   }
 
   // Opportunistic sweep on insert: entries otherwise linger for the whole session once their TTL lapses.
-  /** Drops the overrides a read now agrees with; the ones it still contradicts stay until a later read catches up. */
-  private settleAttachmentScopeOverrides(attachments: MeetingAttachment[]): void {
-    const settled = settledAttachmentScopeOverrides(attachments, this.attachmentScopeOverridesState());
-    if (settled.length === 0) return;
-    this.attachmentScopeOverridesState.update((current) => {
-      const next = new Map(current);
-      settled.forEach((uid) => next.delete(uid));
-      return next;
-    });
-  }
-
   private pruneExpiredMeetingDetailCache(): void {
     const now = Date.now();
     for (const [key, entry] of this.meetingDetailCache) {

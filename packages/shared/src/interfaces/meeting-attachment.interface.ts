@@ -291,3 +291,21 @@ export interface OccurrenceScopedAttachment {
   /** Occurrence the attachment is scoped to (unix start time) */
   occurrence_id?: string;
 }
+
+/**
+ * Scope changes that were saved, keyed by attachment uid
+ * @description The value is the occurrence the attachment is now scoped to, or '' for all occurrences. Reads come from the
+ * query service, which indexes asynchronously, so a read right after a save can still return the old scope.
+ */
+export type AttachmentScopeOverrides = ReadonlyMap<string, string>;
+
+/**
+ * Outcome of one staged upload in the materials drawer
+ * @description Keyed by the pending attachment's id; `result` is null when the upload failed.
+ */
+export interface MeetingAttachmentUploadResult {
+  /** Id of the pending attachment that was uploaded */
+  id: string;
+  /** The created attachment, or null when the upload failed */
+  result: PresignAttachmentResponse | null;
+}

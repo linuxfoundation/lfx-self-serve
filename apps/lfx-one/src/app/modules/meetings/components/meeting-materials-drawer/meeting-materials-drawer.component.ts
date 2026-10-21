@@ -11,6 +11,7 @@ import {
   AttachmentScope,
   MaterialsChangedEvent,
   MeetingAttachment,
+  MeetingAttachmentUploadResult,
   MeetingOccurrence,
   PastMeetingAttachment,
   PendingAttachment,
@@ -32,12 +33,6 @@ import { DrawerModule } from 'primeng/drawer';
 import { catchError, from, map, mergeMap, Observable, of, skip, switchMap, take, tap, toArray } from 'rxjs';
 
 import { AttachmentScopeBadgeComponent } from '../attachment-scope-badge/attachment-scope-badge.component';
-
-/** Outcome of one staged upload, keyed by the pending attachment's id; `result` is null when the upload failed. */
-interface UploadResult {
-  id: string;
-  result: PresignAttachmentResponse | null;
-}
 
 @Component({
   selector: 'lfx-meeting-materials-drawer',
@@ -336,7 +331,7 @@ export class MeetingMaterialsDrawerComponent {
       .pipe(
         switchMap((deleteResults) => scope$.pipe(map((scopeResults) => ({ deleteResults, scopeResults })))),
         switchMap(({ deleteResults, scopeResults }) => {
-          if (uploads.length === 0) return of({ deleteResults, scopeResults, uploadResults: [] as UploadResult[] });
+          if (uploads.length === 0) return of({ deleteResults, scopeResults, uploadResults: [] as MeetingAttachmentUploadResult[] });
           return from(uploads).pipe(
             mergeMap((attachment) =>
               (isPast
@@ -353,8 +348,8 @@ export class MeetingMaterialsDrawerComponent {
                     ...(attachment.occurrence_id && { occurrence_id: attachment.occurrence_id }),
                   })
               ).pipe(
-                map((result): UploadResult => ({ id: attachment.id, result })),
-                catchError(() => of<UploadResult>({ id: attachment.id, result: null }))
+                map((result): MeetingAttachmentUploadResult => ({ id: attachment.id, result })),
+                catchError(() => of<MeetingAttachmentUploadResult>({ id: attachment.id, result: null }))
               )
             ),
             toArray(),
@@ -445,8 +440,8 @@ export class MeetingMaterialsDrawerComponent {
    * an upload that went through would otherwise be uploaded again as a duplicate, and a delete that went through
    * would be refused as not found on every retry.
    */
-  private clearSavedUploadsAndDeletions(uploadResults: UploadResult[], deletedUids: string[], meetingId?: string): void {
-    const uploaded = uploadResults.filter((r): r is UploadResult & { result: PresignAttachmentResponse } => r.result !== null);
+  private clearSavedUploadsAndDeletions(uploadResults: MeetingAttachmentUploadResult[], deletedUids: string[], meetingId?: string): void {
+    const uploaded = uploadResults.filter((r): r is MeetingAttachmentUploadResult & { result: PresignAttachmentResponse } => r.result !== null);
     if (uploaded.length > 0) {
       const uploadedIds = new Set(uploaded.map((r) => r.id));
       this.pendingAttachments.update((current) => current.filter((a) => !uploadedIds.has(a.id)));

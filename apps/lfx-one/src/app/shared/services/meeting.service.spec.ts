@@ -271,7 +271,7 @@ describe('MeetingService attachment scope overrides', () => {
     expect(service.attachmentScopeOverrides().get('b')).toBe('');
   });
 
-  it('keeps an override while a read still returns the old scope', async () => {
+  it('keeps an override after a read that still returns the old scope', async () => {
     service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }]);
     get.mockReturnValue(of([attachment('a')]));
 
@@ -280,22 +280,23 @@ describe('MeetingService attachment scope overrides', () => {
     expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
   });
 
-  it('drops an override once a read shows the saved scope', async () => {
+  // Each card keeps its own fetched list and only the one that saved refetches, so a read agreeing with the saved scope must
+  // not drop the override: the other cards would fall back to their stale snapshot.
+  it('keeps an override after a read that already shows the saved scope', async () => {
     service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }, { uid: 'b' }]);
     get.mockReturnValue(of([attachment('a', OCCURRENCE_ID), attachment('b')]));
 
     await firstValueFrom(service.getMeetingAttachments('mtg-1'));
 
-    expect(service.attachmentScopeOverrides().size).toBe(0);
+    expect(service.attachmentScopeOverrides().get('a')).toBe(OCCURRENCE_ID);
+    expect(service.attachmentScopeOverrides().get('b')).toBe('');
   });
 
-  it('settles one attachment without touching another that has not caught up', async () => {
-    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }, { uid: 'b' }]);
-    get.mockReturnValue(of([attachment('a', OCCURRENCE_ID), attachment('b', OCCURRENCE_ID)]));
+  it('replaces an override when the same attachment is changed again', () => {
+    service.recordAttachmentScopeChanges([{ uid: 'a', occurrence_id: OCCURRENCE_ID }]);
+    service.recordAttachmentScopeChanges([{ uid: 'a' }]);
 
-    await firstValueFrom(service.getMeetingAttachments('mtg-1'));
-
-    expect([...service.attachmentScopeOverrides().keys()]).toEqual(['b']);
+    expect(service.attachmentScopeOverrides().get('a')).toBe('');
   });
 });
 
