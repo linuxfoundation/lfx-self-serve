@@ -1,7 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (agent && intake) {
+@if (agent && intake && intake.oneOffDocument) {
+  @switch (intake.agentId) {
+    @case (linkedinIntake.agentId) {
+      <lfx-linkedin-post-run [intake]="intake" />
+    }
+  }
+}
+@if (agent && intake && !intake.oneOffDocument) {
   <div [ngClass]="pageClass" data-testid="mktg-agent-run-page">
     <div class="flex flex-col bg-white border border-gray-200 rounded-lg overflow-hidden">
       <!-- Header -->

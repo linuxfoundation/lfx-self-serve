@@ -123,7 +123,14 @@ describe('LinkedIn generation', () => {
     expect(request.message).toContain('PROJECT SCOPE:');
     expect(request.message).not.toContain('forged');
   });
-
+  it('returns the LFX share-link answer without adding it to the agent form', async () => {
+    const result = await new LinkedinPostService().start(req, 'subject-1', { share_link: 'https://public.example/shared-only' }, setup, 'linkedin-post');
+    expect(result.answers).toEqual({ share_link: 'https://public.example/shared-only' });
+    expect(mocks.createSession.mock.calls[0][1].message).not.toContain('https://public.example/shared-only');
+    await expect(new LinkedinPostService().start(req, 'subject-1', { share_link: 'javascript:bad' }, setup, 'linkedin-post')).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
   it('uses the server-stored profile on later runs', async () => {
     const envelope = fixture();
     mocks.read.mockResolvedValue(envelope);

@@ -15,6 +15,9 @@ export const MKTG_OS_AGENTS_LABEL = {
 /** Route segment (lens-prefixed at the route layer, e.g. /project/mktg-os-agents). */
 export const MKTG_OS_AGENTS_ROUTE_SEGMENT = 'mktg-os-agents';
 
+/** Shared family copy; the kit-family layer owns generalising the family model. */
+export const MKTG_FAMILY_SOCIAL_COMMUNITY = 'Social & community';
+
 // Marketing OS agent catalog — the single source of truth for the marketplace
 // grid and the form-first agent run pages. Only agents with BOTH a live Guild
 // `guildAgentHandle` AND a registered intake form (MKTG_AGENT_INTAKES in
@@ -143,8 +146,9 @@ export const MKTG_AGENTS: MktgAgent[] = [
     number: 8,
     name: 'LinkedIn Post Agent',
     tags: ['Social', 'Copy'],
-    status: 'coming-soon',
-    description: 'Writes LinkedIn post drafts in your project voice from releases, events, and news.',
+    status: 'active',
+    guildAgentHandle: 'linkedin-post',
+    description: 'Writes three LinkedIn post options in your personal voice from pasted text, a link or a file.',
     icon: 'fa-light fa-bullhorn',
     accent: 'blue',
   },
