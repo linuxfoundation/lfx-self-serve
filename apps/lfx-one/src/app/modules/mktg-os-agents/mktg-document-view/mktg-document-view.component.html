@@ -50,13 +50,86 @@
       }
     </div>
 
+    @if (runAgentId() && !hasAssetView()) {
+      <a
+        [routerLink]="runAgainLink()"
+        [queryParams]="runAgainParams()"
+        class="w-fit text-sm font-semibold text-blue-600 hover:text-blue-800"
+        data-testid="mktg-document-view-run-again"
+        >Run again</a
+      >
+    }
+
+    <span class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="mktg-document-view-live-state">{{ liveState() }}</span>
+
+    @if (runState(); as state) {
+      <section class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-6 py-5" data-testid="mktg-document-view-run">
+        <h2 class="text-lg font-semibold text-gray-900">{{ liveState() }}</h2>
+        @if (selectedRun(); as run) {
+          <p class="text-xs text-gray-500">Started {{ run.startedAt | date: 'd MMM y, HH:mm' }}</p>
+        }
+        @if (state === 'failed') {
+          <p class="text-sm text-gray-600" data-testid="mktg-document-view-retry-note">
+            {{
+              selectedRun()?.state === 'failed'
+                ? 'A previous run did not finish. Retry polls it again; no new generation is started.'
+                : 'The run could not be confirmed. Your intake is kept; open the intake form to continue.'
+            }}
+          </p>
+          @if (runFailure()) {
+            <p class="whitespace-pre-wrap text-sm text-gray-900" data-testid="mktg-document-view-failure-reply">{{ runFailure() }}</p>
+          }
+          @if (selectedRun()?.state === 'failed') {
+            <lfx-button label="Retry" [loading]="retrying()" [disabled]="retrying()" (onClick)="onRetryRun()" data-testid="mktg-document-view-progress-retry" />
+          }
+        } @else if (state === 'questions') {
+          <p class="text-sm text-gray-600">The agent needs your answers. Open the intake form to continue.</p>
+        } @else {
+          <ol class="flex flex-col gap-2 text-sm text-gray-600" data-testid="mktg-document-view-run-steps">
+            <li>{{ state === 'storing' ? 'Written' : 'Writing the asset…' }}</li>
+            <li>{{ state === 'storing' ? 'Saving the revision…' : 'The revision will appear here when it is ready.' }}</li>
+          </ol>
+          @if (runRecorded()) {
+            <p class="text-sm text-gray-500">You can leave this page. The run is recorded and will be checked when you return.</p>
+          } @else {
+            <p class="text-sm text-gray-500">Submitting your intake. Keep this page open until the run is recorded.</p>
+          }
+        }
+        @if (runAgentId()) {
+          <a
+            [routerLink]="runAgainLink()"
+            (click)="onOpenIntake($event)"
+            [queryParams]="runAgainParams()"
+            class="w-fit text-sm text-blue-600 hover:text-blue-800"
+            data-testid="mktg-document-view-intake-link"
+            >Open the intake form</a
+          >
+        }
+      </section>
+    }
+    @if (refreshWarning()) {
+      <div class="flex flex-wrap items-center gap-2" data-testid="mktg-document-view-refresh-warning">
+        <p class="text-xs text-gray-500">{{ refreshWarning() }}</p>
+        <button
+          type="button"
+          class="text-sm text-blue-700 underline"
+          [disabled]="submittingGeneration()"
+          (click)="onRefreshProgress()"
+          data-testid="mktg-document-view-refresh-progress">
+          Refresh
+        </button>
+      </div>
+    }
+
+    @if (restoreNotice()) {
+      <lfx-message severity="info" [text]="restoreNotice()" data-testid="mktg-document-view-restored-intake" />
+    }
     @if (errorText()) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-document-view-error" />
       @if (runFailed()) {
         <a
-          routerLink="/project/mktg-os-agents/member-360"
-          [queryParams]="{ revision: null }"
-          queryParamsHandling="merge"
+          [routerLink]="runAgainLink()"
+          [queryParams]="runAgainParams()"
           class="font-semibold text-blue-600 hover:text-blue-800"
           data-testid="member-360-run-again"
           >Run again</a
@@ -68,7 +141,7 @@
           </details>
         }
       } @else {
-        <lfx-button label="Retry" [text]="true" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
+        <lfx-button label="Retry" [text]="true" [disabled]="submittingGeneration()" (onClick)="retryLoad()" data-testid="mktg-document-view-retry" />
       }
     }
     @if (notice()) {
@@ -298,6 +371,17 @@
               data-testid="mktg-document-view-brand-kit">
               <ng-container asset-actions [ngTemplateOutlet]="approveActions" />
             </lfx-brand-kit-web-view>
+          } @else if (unsupportedAsset()) {
+            <div data-testid="mktg-document-view-unsupported-asset">
+              <lfx-message
+                severity="warn"
+                [text]="
+                  'This revision could not be displayed. Revision ' +
+                  current.revision.number +
+                  '. This stored asset cannot be rendered in its structured view. Generate a new revision; the stored history is unchanged.'
+                "
+                data-testid="mktg-document-view-unreadable-json" />
+            </div>
           } @else {
             <article class="rounded-xl border border-gray-200 bg-white px-8 py-7" data-testid="mktg-document-view-document">
               @if (current.revision.format === 'json') {

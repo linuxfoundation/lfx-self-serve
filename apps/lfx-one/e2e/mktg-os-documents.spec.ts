@@ -38,7 +38,11 @@ test.describe('Marketing OS current revisions', () => {
       await expect(page.getByTestId(`mktg-documents-started-run-${run.runId}`)).toContainText(text);
       await expect(page.getByTestId('mktg-documents-pending-document')).toBeVisible();
       await expect(page.getByTestId('mktg-documents-empty-living')).toHaveCount(0);
-      await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', new RegExp(`generation=${run.runId}`));
+      await expect(page.getByTestId(`mktg-documents-open-started-${run.runId}`)).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
+      await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
+      await expect(page.getByTestId('mktg-document-view-run')).toBeVisible();
+      await expect(page.getByTestId('mktg-document-view-revision-chip')).toHaveCount(0);
+      if (state === 'failed') await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveText(run.failureText!);
     });
   }
 
@@ -70,12 +74,28 @@ test.describe('Marketing OS current revisions', () => {
     expect(reads).toBe(2);
   });
 
+  test('Retry checks the recorded run without a Generate POST and keeps current selection', async ({ page }) => {
+    let generates = 0;
+    await setupDocuments(page, { runs: [startedDocumentRun('failed')] });
+    await page.route('**/api/mktg-agents/*/generate', (route) => {
+      generates++;
+      return fulfillDocumentJson(route, {}, 500);
+    });
+    await openDocuments(page, `${DOCUMENT_VIEW_URL}&run=${startedDocumentRun().runId}`);
+    await expect(page.getByTestId('mktg-document-view-failure-reply')).toBeVisible();
+    await page.getByTestId('mktg-document-view-progress-retry').getByRole('button').click();
+    await expect(page.getByTestId('mktg-document-view-failure-reply')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-document-view-run-steps')).toBeVisible();
+    await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
+    expect(generates).toBe(0);
+  });
+
   test('opens the selected run without changing the stored current revision', async ({ page }) => {
     const run = startedDocumentRun();
     await setupDocuments(page, { runs: [run] });
     await openDocuments(page);
     await page.getByTestId(`mktg-documents-open-started-${run.runId}`).click();
-    await expect(page).toHaveURL(new RegExp(`generation=${run.runId}`));
+    await expect(page).toHaveURL(new RegExp(`run=${run.runId}`));
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
   });
@@ -227,7 +247,7 @@ test.describe('Marketing OS current revisions', () => {
     const summary = page.getByTestId('mktg-document-view-history-bar-summary');
     await expect(summary).toBeVisible();
     expect(await summary.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-    await page.getByTestId('mktg-breadcrumb-link-1').focus();
+    await page.getByTestId('mktg-document-view-run-again').focus();
     await page.keyboard.press('Tab');
     await expect(summary).toBeFocused();
     await expect(page.getByRole('tooltip')).toHaveText(`You're viewing v7 · 13 Oct · ${name} · v9 is current`);

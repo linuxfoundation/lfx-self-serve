@@ -105,6 +105,7 @@ function intakeDocumentName(catalogAgentId: string): string {
 export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   {
     agentKey: 'brand-kit',
+    structuredView: 'brand-kit',
     kind: 'living',
     catalogAgentId: 'brand-kit',
     agentName: catalogAgentName('brand-kit'),

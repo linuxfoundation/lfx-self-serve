@@ -35,9 +35,16 @@ test.describe('Marketing OS Documents structure', () => {
       await expect(section).toBeVisible();
       await expect(section.getByRole('heading', { level: 2 })).toHaveText('Started runs');
       const open = section.getByTestId(`mktg-documents-open-started-${run.runId}`);
-      await expect(open).toHaveAttribute('href', new RegExp(`generation=${run.runId}`));
+      await expect(open).toHaveAttribute('href', new RegExp(`run=${run.runId}`));
       await open.focus();
       await expect(open).toBeFocused();
+      await open.press('Enter');
+      await expect(page.getByTestId('mktg-document-view-live-state')).toHaveAttribute('aria-live', 'polite');
+      await expect(page.getByTestId('mktg-document-view-live-state')).toHaveText('Waiting for your answers.');
+      const intake = page.getByTestId('mktg-document-view-intake-link');
+      await intake.focus();
+      await expect(intake).toBeFocused();
+      await expect(page.getByTestId('mktg-document-view-page').locator('h1')).toHaveCount(1);
       await expect(page.locator('main main')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     });
