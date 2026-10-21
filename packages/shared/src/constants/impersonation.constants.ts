@@ -30,8 +30,9 @@ export const IMPERSONATION_TRANSITION_MESSAGES: Record<ImpersonationTransition, 
 };
 
 /**
- * Rendered height of the fixed impersonation banner. `styles.scss` sets the root font size to
- * 14px, so Tailwind's rem-based `h-12`/`min-h-12` (`3rem`) undershoots to 42px, not 48px — see
- * `.claude/rules/styling.md`.
+ * Rendered height of the fixed impersonation banner. The banner is a fixed single-line `h-[36px]`
+ * (px, not rem, because `styles.scss` sets a 14px root — see `.claude/rules/styling.md`), and every
+ * layout offset under it (`top-[36px]` / `pt-[36px]`, the `_navbar.scss` banner-offset popover)
+ * must match this value.
  */
-export const IMPERSONATION_BANNER_HEIGHT_PX = 42;
+export const IMPERSONATION_BANNER_HEIGHT_PX = 36;

@@ -1,10 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Impersonation Banner -->
+<!-- Impersonation Banner — a fixed 36px bar; the pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX -->
 <lfx-impersonation-banner />
 
-<div [ngClass]="{ 'pt-12': userService.impersonating() }">
+<div [ngClass]="{ 'pt-[36px]': userService.impersonating() }">
   <lfx-header></lfx-header>
 
   @if (meetingLoadFailed() && (!meeting() || !meetingMatchesRoute())) {

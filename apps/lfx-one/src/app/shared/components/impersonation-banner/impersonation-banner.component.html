@@ -6,33 +6,52 @@
     role="status"
     aria-live="polite"
     aria-label="Impersonation active"
-    class="fixed top-0 left-0 right-0 z-[60] flex min-h-12 items-center justify-center gap-2 bg-yellow-400 py-2 text-sm font-medium text-black"
+    class="fixed top-0 left-0 right-0 z-[60] flex h-[36px] items-center justify-center gap-2 overflow-hidden whitespace-nowrap bg-yellow-400 px-4 text-sm font-medium text-black"
     data-testid="impersonation-banner">
     @if (transitionMessage(); as message) {
       <!-- Pure-CSS spinner: the Font Awesome kit is deferred and must not gate a loading indicator (see styling.md). -->
-      <span class="h-4 w-4 animate-spin rounded-full border-2 border-black/20 border-t-black" aria-hidden="true"></span>
-      <span data-testid="impersonation-transition-message">{{ message }}</span>
+      <span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-black/20 border-t-black" aria-hidden="true"></span>
+      <span class="min-w-0 truncate" data-testid="impersonation-transition-message">{{ message }}</span>
     } @else {
-      <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
-      <span
-        >Viewing as <strong>{{ userService.user()?.email }}</strong></span
+      <i class="fa-light fa-eye shrink-0 text-sm" aria-hidden="true"></i>
+      <!-- One line at every width: the banner height is a fixed layout offset, so lower-priority text drops out and the email truncates instead of wrapping. -->
+      <span class="min-w-0 truncate" [pTooltip]="userService.user()?.email" tooltipEvent="both" tooltipPosition="bottom" tabindex="0" role="note"
+        ><span class="hidden sm:inline">Viewing as </span><strong>{{ userService.user()?.email }}</strong></span
       >
-      <span class="text-black/60">— by {{ userService.impersonator()?.name }}</span>
+      <span
+        class="hidden min-w-0 truncate text-black/60 md:inline"
+        [pTooltip]="userService.impersonator()?.name"
+        tooltipEvent="both"
+        tooltipPosition="bottom"
+        tabindex="0"
+        role="note"
+        >— by {{ userService.impersonator()?.name }}</span
+      >
     }
-    <lfx-button
-      label="Switch User"
-      severity="secondary"
-      size="small"
-      [disabled]="transitioning()"
-      (onClick)="openSwitchDialog()"
-      data-testid="switch-impersonation-button" />
-    <lfx-button
-      label="Stop Impersonating"
-      severity="contrast"
-      size="small"
-      [disabled]="transitioning()"
-      [loading]="transitioning()"
-      (onClick)="stopImpersonation()"
-      data-testid="stop-impersonation-button" />
+    <!-- Short labels below sm leave the email room to show; the full labels return from sm up. -->
+    <div class="ml-2 flex shrink-0 items-center gap-2 sm:ml-4">
+      <lfx-button
+        severity="contrast"
+        size="small"
+        [outlined]="true"
+        [rounded]="true"
+        styleClass="!h-[24px] !py-0 !px-3 !border-black/30 !text-black hover:!border-black hover:!bg-transparent"
+        [disabled]="transitioning()"
+        (onClick)="openSwitchDialog()"
+        data-testid="switch-impersonation-button">
+        <span class="sm:hidden">Switch</span><span class="hidden sm:inline">Switch User</span>
+      </lfx-button>
+      <lfx-button
+        severity="contrast"
+        size="small"
+        [rounded]="true"
+        styleClass="!h-[24px] !py-0 !px-3 hover:!border-gray-800 hover:!bg-gray-800"
+        [disabled]="transitioning()"
+        [loading]="transitioning()"
+        (onClick)="stopImpersonation()"
+        data-testid="stop-impersonation-button">
+        <span class="sm:hidden">Stop</span><span class="hidden sm:inline">Stop Impersonating</span>
+      </lfx-button>
+    </div>
   </div>
 }

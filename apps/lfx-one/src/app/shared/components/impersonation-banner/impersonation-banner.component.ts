@@ -8,11 +8,12 @@ import { IMPERSONATION_TRANSITION_MESSAGES } from '@lfx-one/shared/constants';
 import { ImpersonationService } from '@services/impersonation.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
+import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-impersonation-banner',
-  imports: [ButtonComponent],
+  imports: [ButtonComponent, TooltipModule],
   templateUrl: './impersonation-banner.component.html',
 })
 export class ImpersonationBannerComponent {

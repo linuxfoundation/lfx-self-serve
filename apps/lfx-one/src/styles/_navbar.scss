@@ -1213,10 +1213,10 @@
     0 2px 6px -2px theme('colors.gray.900 / 8%');
 }
 
-// Under the impersonation banner the navbar sits 48px lower. Classes stacked so this wins on specificity.
+// Under the impersonation banner the navbar sits 36px lower. Classes stacked so this wins on specificity.
 .lfxn-brand-popover.lfxn-brand-popover--banner-offset.p-popover {
-  top: 104px !important;
-  max-height: calc(100dvh - 112px);
+  top: 92px !important;
+  max-height: calc(100dvh - 100px);
 }
 
 .lfxn-brand-menu {
