@@ -53,7 +53,10 @@ describe('VoteAbstainResultComponent', () => {
   });
 
   it('defaults to the final variant and the creator test id', () => {
-    expect(render(stats(1, 20))?.classList).toContain('rounded-lg');
+    const row = render(stats(1, 20));
+
+    expect(row).toBeTruthy();
+    expect(row?.classList).toContain('rounded-lg');
   });
 
   it('applies the given test id', () => {
