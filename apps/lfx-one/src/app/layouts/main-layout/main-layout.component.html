@@ -4,12 +4,12 @@
 <!-- Impersonation Banner -->
 <lfx-impersonation-banner />
 
-<div class="flex min-h-screen" [ngClass]="{ 'pt-12': userService.impersonating() }">
+<div class="flex min-h-screen" [ngClass]="{ 'pt-[36px]': userService.impersonating() }">
   <!-- Navbar - Desktop: floating 280px panel, 8px inset (288px gutter) -->
   <div
     class="hidden lg:flex flex-shrink-0 fixed left-0 bottom-0 z-40"
     [ngClass]="{
-      'top-12': userService.impersonating(),
+      'top-[36px]': userService.impersonating(),
       'top-0': !userService.impersonating(),
     }"
     data-testid="navbar-column">
@@ -48,7 +48,7 @@
     <div
       class="hidden lg:block fixed inset-0 bg-black/10 z-30"
       [ngClass]="{
-        'top-12': userService.impersonating(),
+        'top-[36px]': userService.impersonating(),
         'top-0': !userService.impersonating(),
       }"
       (click)="selectorPanelOpen.set(false)"
@@ -61,7 +61,7 @@
     <!-- Mobile Menu Button -->
     <div
       class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"
-      [ngClass]="{ 'top-12': userService.impersonating(), 'top-0': !userService.impersonating() }">
+      [ngClass]="{ 'top-[36px]': userService.impersonating(), 'top-0': !userService.impersonating() }">
       <button
         type="button"
         class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"

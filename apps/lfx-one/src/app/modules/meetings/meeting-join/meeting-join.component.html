@@ -4,7 +4,7 @@
 <!-- Impersonation Banner -->
 <lfx-impersonation-banner />
 
-<div [ngClass]="{ 'pt-12': userService.impersonating() }">
+<div [ngClass]="{ 'pt-[36px]': userService.impersonating() }">
   <lfx-header></lfx-header>
 
   @if (meetingLoadFailed() && (!meeting() || !meetingMatchesRoute())) {
