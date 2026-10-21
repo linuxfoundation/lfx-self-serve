@@ -577,6 +577,28 @@ describe('MktgDocumentViewComponent', () => {
     expect(TestBed.inject(Title).getTitle()).toBe('Baseline document · LFX');
   });
 
+  it('keeps a Started run with no stored revision in the generating state', async () => {
+    const runId = 'b'.repeat(64);
+    store.getDocument.mockReturnValue(
+      of({
+        ...detail,
+        current: null,
+        revisions: [],
+        runs: [{ project: PROJECT.uid, agentKey: BRAND_KIT.agentKey, documentId: 'living', runId, state: 'writing', startedAt: '2026-10-22T05:00:00Z' }],
+      })
+    );
+    await render(`/documents/${BRAND_KIT.agentKey}/living?generation=${runId}`);
+    expect(store.getRevision).not.toHaveBeenCalled();
+    expect(query('mktg-document-view-error')).toBeNull();
+    expect(query('mktg-document-view-loading')?.textContent).toContain('This run will appear here when it is stored.');
+    store.getDocument.mockReturnValue(of(detail));
+    await harness.navigateByUrl(`/documents/${BRAND_KIT.agentKey}/living?generation=${runId}&revision=${LATEST.id}`, MktgDocumentViewComponent);
+    await settle();
+    expect(store.getRevision).toHaveBeenCalledExactlyOnceWith(PROJECT.uid, BRAND_KIT.agentKey, 'living', LATEST.id);
+    expect(query('mktg-document-view-loading')).toBeNull();
+    expect(query('mktg-document-view-error')).toBeNull();
+  });
+
   it('opens the latest revision when no revision is asked for', async () => {
     await render('/documents/brand-kit/living');
 

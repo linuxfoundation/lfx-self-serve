@@ -376,18 +376,16 @@ export class MktgDocumentViewComponent {
             const revision$ = defer(() =>
               request.revisionId
                 ? this.documentStore.getRevision(request.project, request.agentKey, request.documentId, request.revisionId)
-                : this.documentStore
-                    .getDocument(request.project, request.agentKey, request.documentId)
-                    .pipe(
-                      switchMap((detail) =>
-                        this.documentStore.getRevision(
-                          request.project,
-                          request.agentKey,
-                          request.documentId,
-                          detail.current?.revisionId ?? (detail.revisions.find((revision) => revision.latest) ?? detail.revisions[0]).id
-                        )
-                      )
-                    )
+                : this.documentStore.getDocument(request.project, request.agentKey, request.documentId).pipe(
+                    switchMap((detail) => {
+                      const revisionId = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
+                      if (!revisionId) {
+                        this.generating.set(true);
+                        return EMPTY;
+                      }
+                      return this.documentStore.getRevision(request.project, request.agentKey, request.documentId, revisionId);
+                    })
+                  )
             );
             return ready$.pipe(
               switchMap((result) => (result?.status === 'failed' ? of(null) : revision$)),
