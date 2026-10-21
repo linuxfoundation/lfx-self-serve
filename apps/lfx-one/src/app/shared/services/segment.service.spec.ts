@@ -23,7 +23,7 @@ function createAnalytics() {
     track: vi.fn(),
     identifyAuth0User: vi.fn(),
     reset: vi.fn(),
-  };
+  } satisfies LfxSegmentAnalytics;
 }
 
 type FakeAnalytics = ReturnType<typeof createAnalytics>;
@@ -43,8 +43,8 @@ describe('SegmentService', () => {
   let originalUrl: string;
   let originalTitle: string;
 
-  const installWrapper = (instance: Partial<FakeAnalytics>): void => {
-    window.LfxAnalytics = { LfxSegmentsAnalytics: { getInstance: () => instance as unknown as LfxSegmentAnalytics } };
+  const installWrapper = (instance: LfxSegmentAnalytics): void => {
+    window.LfxAnalytics = { LfxSegmentsAnalytics: { getInstance: () => instance } };
   };
 
   const waitForAnalytics = (): Promise<void> => service['waitForAnalytics']();
@@ -89,7 +89,8 @@ describe('SegmentService', () => {
     });
 
     it('stays disabled without falling back to init() when the artifact lacks protected init', async () => {
-      const legacy: Partial<FakeAnalytics> = createAnalytics();
+      const legacy: LfxSegmentAnalytics = createAnalytics();
+      // @ts-expect-error Deliberately model a legacy artifact without protected initialization.
       delete legacy.initWithEventSanitizer;
       installWrapper(legacy);
       service.identifyUser(AUTH0_USER);

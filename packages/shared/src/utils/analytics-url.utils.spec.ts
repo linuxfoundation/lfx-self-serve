@@ -218,7 +218,12 @@ describe('sanitizeSegmentEvent', () => {
   });
 
   it('throws on a non-object container so the wrapper cancels the event', () => {
-    const event = { type: 'page', messageId: 'msg-1', properties: `?password=${SECRET}` } as unknown as SegmentEvent;
+    const event: SegmentEvent = {
+      type: 'page',
+      messageId: 'msg-1',
+      // @ts-expect-error Deliberately model a malformed runtime container.
+      properties: `?password=${SECRET}`,
+    };
 
     expect(() => sanitizeSegmentEvent(event)).toThrow(TypeError);
   });
