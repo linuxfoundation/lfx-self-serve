@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
+import { AppFooterComponent } from '@components/app-footer/app-footer.component';
 import { NavbarComponent } from '@components/navbar/navbar.component';
 import { LensService } from '@services/lens.service';
 import { SidebarNavService } from '@services/sidebar-nav.service';
-import { TranscendService } from '@services/transcend.service';
 import { filter, map, startWith } from 'rxjs';
 
 import { DocsSidebarNavComponent } from '../../modules/docs/components/docs-sidebar-nav/docs-sidebar-nav.component';
@@ -41,17 +41,15 @@ import { UserService } from '../../shared/services/user.service';
 @Component({
   selector: 'lfx-docs-layout',
   standalone: true,
-  imports: [NgClass, RouterModule, NavbarComponent, DocsSidebarNavComponent],
+  imports: [NgClass, RouterModule, AppFooterComponent, NavbarComponent, DocsSidebarNavComponent],
   templateUrl: './docs-layout.component.html',
   styleUrl: './docs-layout.component.scss',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class DocsLayoutComponent {
   protected readonly userService = inject(UserService);
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly sidebarNavService = inject(SidebarNavService);
-  private readonly transcendService = inject(TranscendService);
 
   protected readonly isAuthenticated = computed(() => this.userService.authenticated());
 
@@ -68,12 +66,6 @@ export class DocsLayoutComponent {
    * `initialValue` literal that would otherwise be dead code.
    */
   protected readonly signInHref = this.initSignInHref();
-
-  /** Opens the Transcend consent manager from the footer's "Cookie settings" link. */
-  public openCookieSettings(event: Event): void {
-    event.preventDefault();
-    this.transcendService.showPreferences();
-  }
 
   private initSignInHref() {
     return toSignal(
