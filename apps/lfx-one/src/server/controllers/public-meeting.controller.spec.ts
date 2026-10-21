@@ -101,6 +101,8 @@ vi.mock('@lfx-one/shared/constants', async () => ({
     .PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS,
   PUBLIC_ANONYMOUS_PAST_MEETING_KEYS: (await import('../../../../../packages/shared/src/constants/public-past-meeting.constants'))
     .PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
+  PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS: (await import('../../../../../packages/shared/src/constants/public-live-meeting.constants'))
+    .PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS,
   HOST_KEY_EARLY_MINUTES: 70,
   HOST_KEY_LATE_MINUTES: 40,
   MEETING_PASSWORD_HEADER: 'x-meeting-password',

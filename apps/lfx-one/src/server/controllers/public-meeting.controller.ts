@@ -153,11 +153,18 @@ export class PublicMeetingController {
       // Log the success
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
 
+      // Computed once against the full internal meeting (before any field stripping below) so every
+      // response branch — including the anonymous/guest one — can tell the client whether the join
+      // window is currently open. Reuses the same check `postMeetingLink` enforces server-side before
+      // issuing a join URL, so this is advisory for UI state only, never a bypass of that gate.
+      const canJoin = this.isWithinJoinWindow(meeting);
+
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
         res.json({
           meeting,
           project: this.toPublicMeetingProject(project, parent),
           full_access: true,
+          can_join: canJoin,
         });
         return;
       }
@@ -173,6 +180,7 @@ export class PublicMeetingController {
           meeting,
           project: this.toPublicMeetingProject(project, parent),
           full_access: true,
+          can_join: canJoin,
         });
         return;
       }
@@ -195,6 +203,7 @@ export class PublicMeetingController {
                 meeting,
                 project: this.toPublicMeetingProject(project, parent),
                 full_access: true,
+                can_join: canJoin,
               });
               return;
             }
@@ -218,7 +227,12 @@ export class PublicMeetingController {
       // password-only guests both land here, so neither gets agenda, materials, or date/time:
       // only the title + enough context to join as a guest (per Nirav/Jordan — a private meeting
       // must show nothing beyond that without login).
-      res.json({ meeting: this.toAnonymousLiveMeetingResponse(meeting), project: this.toPublicMeetingProject(project, parent), full_access: false });
+      res.json({
+        meeting: this.toAnonymousLiveMeetingResponse(meeting),
+        project: this.toPublicMeetingProject(project, parent),
+        full_access: false,
+        can_join: canJoin,
+      });
     } catch (error) {
       // Error handler will log
       next(error);

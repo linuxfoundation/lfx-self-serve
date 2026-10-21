@@ -1899,12 +1899,16 @@ export type PublicAnonymousLiveMeeting = Partial<Pick<Meeting, (typeof PUBLIC_AN
  * member), as opposed to an anonymous visitor or a guest who only has the shared password. A
  * private meeting reached without `full_access` returns only the fields in
  * `PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS` (title + enough context to join as a guest) — no agenda,
- * materials, or date/time.
+ * materials, or date/time. `can_join` is a server-computed substitute for the join-window check the
+ * client can no longer run itself once `start_time`/`early_join_time_minutes` are stripped from a
+ * non-full-access response — it reuses the same window the controller already enforces before
+ * issuing a join URL, so the client's Join button state matches what the server will actually allow.
  */
 export interface PublicMeetingResponse {
   meeting: Meeting | PublicAnonymousLiveMeeting;
   project: PublicMeetingProject;
   full_access: boolean;
+  can_join: boolean;
 }
 
 /**
@@ -1925,6 +1929,7 @@ export interface MeetingJoinPageState {
   loadedViaPastMeetingId: boolean;
   pastMeetingFullAccess: boolean;
   liveMeetingFullAccess: boolean;
+  liveMeetingCanJoin: boolean;
   meetingLoadFailed: boolean;
 }
 

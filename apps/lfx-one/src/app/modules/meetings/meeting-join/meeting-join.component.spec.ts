@@ -673,6 +673,7 @@ describe('MeetingJoinComponent', () => {
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
         liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: false,
       });
 
@@ -700,6 +701,7 @@ describe('MeetingJoinComponent', () => {
         loadedViaPastMeetingId: true,
         pastMeetingFullAccess: true,
         liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: false,
       });
 
@@ -738,6 +740,7 @@ describe('MeetingJoinComponent', () => {
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
         liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: false,
       });
 
@@ -892,6 +895,7 @@ describe('MeetingJoinComponent', () => {
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
         liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: true,
       });
 
@@ -942,6 +946,7 @@ describe('MeetingJoinComponent', () => {
         loadedViaPastMeetingId: false,
         pastMeetingFullAccess: false,
         liveMeetingFullAccess: false,
+        liveMeetingCanJoin: false,
         meetingLoadFailed: true,
       });
 
@@ -1145,7 +1150,9 @@ describe('MeetingJoinComponent', () => {
     const REGISTER_BUTTON = '[data-testid="register-meeting-button"]';
 
     const createFixture = async (meeting: Meeting) => {
-      getPublicMeeting.mockReturnValue(of({ meeting, project: buildProject() }));
+      // This describe block is scoped to signed-in invitee/organizer viewers, who always get full_access per
+      // the controller — without it, the new liveMeetingCanJoin gate would (incorrectly) treat them as anonymous.
+      getPublicMeeting.mockReturnValue(of({ meeting, project: buildProject(), full_access: true }));
       await TestBed.compileComponents();
       const fixture = TestBed.createComponent(MeetingJoinComponent);
       await TestBed.inject(ApplicationRef).whenStable();
@@ -1390,6 +1397,7 @@ describe('MeetingJoinComponent', () => {
           loadedViaPastMeetingId: false,
           pastMeetingFullAccess: false,
           liveMeetingFullAccess: false,
+          liveMeetingCanJoin: false,
           meetingLoadFailed: false,
         });
 
