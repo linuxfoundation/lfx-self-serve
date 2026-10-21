@@ -47,6 +47,7 @@
             @if (row.status === 'draft' && row.revisionId) {
               <lfx-button
                 label="Open Draft"
+                [ariaLabel]="active() ? 'Open Draft in a new tab' : 'Open Draft'"
                 [outlined]="true"
                 size="small"
                 (onClick)="openDraft(row)"

@@ -3,12 +3,15 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
+import { By } from '@angular/platform-browser';
 import { MktgRebuildResponse } from '@lfx-one/shared/interfaces';
+import { buildMktgRevisionKey } from '@lfx-one/shared/utils';
 import { MktgRebuildService } from '@services/mktg-rebuild.service';
 import { UserService } from '@services/user.service';
 import { Subject } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MktgRunActivityComponent } from '../../mktg-run-activity/mktg-run-activity.component';
 import { MktgRebuildComponent } from './mktg-rebuild.component';
 
 const framework = { agentKey: 'foundation-message' as const, revisionId: `000002-${'a'.repeat(64)}`, revisionNumber: 2, contentSha256: 'b'.repeat(64) };
@@ -48,10 +51,76 @@ describe('Family rebuild progress', () => {
     });
     fixture = TestBed.createComponent(MktgRebuildComponent);
     fixture.componentRef.setInput('project', 'synthetic-project');
+    fixture.componentRef.setInput('projectSlug', 'synthetic-slug');
     fixture.componentRef.setInput('projectName', 'Synthetic mesh');
     fixture.componentRef.setInput('framework', framework);
     fixture.componentRef.setInput('writer', true);
     await fixture.whenStable();
+  });
+  afterEach(() => vi.restoreAllMocks());
+  it('resets elapsed time only when the running step changes, not on same-step progress', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    fixture.componentInstance.start();
+    const chain = pending();
+    chain.status = 'running';
+    chain.steps[0] = { ...chain.steps[0], status: 'running', questions: undefined };
+    updates.next(chain);
+    await fixture.whenStable();
+    const startedAt = () => fixture.debugElement.query(By.directive(MktgRunActivityComponent)).componentInstance.startedAt();
+    expect(startedAt()).toBe(1000);
+    now.mockReturnValue(361000);
+    updates.next({ ...chain });
+    await fixture.whenStable();
+    expect(startedAt()).toBe(1000);
+    updates.next({
+      ...chain,
+      steps: [
+        { ...chain.steps[0], status: 'draft' },
+        { agentId: 'faq', agentKey: 'faq', status: 'running', activity: [] },
+      ],
+    });
+    await fixture.whenStable();
+    expect(startedAt()).toBe(361000);
+  });
+  it('opens saved Drafts in a new tab during an active chain, with the switched project slug, without stopping progress', async () => {
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?project=old-slug');
+    fixture.componentRef.setInput('project', 'next-project');
+    fixture.componentRef.setInput('projectSlug', 'next-slug');
+    await fixture.whenStable();
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    fixture.componentInstance.start();
+    const chain = pending();
+    chain.status = 'running';
+    chain.steps = [
+      {
+        ...chain.steps[0],
+        status: 'draft',
+        questions: undefined,
+        persistence: {
+          s3_key: buildMktgRevisionKey('next-project', 'boilerplates', 'living', 2, 'a'.repeat(64)),
+          content_sha256: 'a'.repeat(64),
+          project: 'next-project',
+          version: 1,
+        },
+      },
+      { agentId: 'faq', agentKey: 'faq', status: 'running', activity: [] },
+    ];
+    updates.next(chain);
+    await fixture.whenStable();
+    const button = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('[data-testid="mktg-rebuild-open-boilerplates"] button');
+    expect(button?.getAttribute('aria-label')).toBe('Open Draft in a new tab');
+    button?.click();
+    expect(open).toHaveBeenCalledWith(expect.stringContaining(`project=next-slug&revision=${framework.revisionId}`), '_blank', 'noopener,noreferrer');
+    expect(router.url).toBe('/?project=old-slug');
+    expect(updates.observed).toBe(true);
+    updates.next({ ...chain, status: 'complete', steps: chain.steps.map((step) => ({ ...step, status: 'draft' })) });
+    await fixture.whenStable();
+    expect(fixture.componentInstance.chain()?.status).toBe('complete');
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+    button?.click();
+    expect(router.serializeUrl(navigate.mock.calls[0][0] as ReturnType<Router['createUrlTree']>)).toContain('project=next-slug');
+    expect(open).toHaveBeenCalledOnce();
   });
   it('blocks without write evidence and during impersonation', async () => {
     fixture.componentRef.setInput('writer', false);

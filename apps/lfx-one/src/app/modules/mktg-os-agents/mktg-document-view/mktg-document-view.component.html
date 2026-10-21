@@ -435,7 +435,11 @@
           </div>
 
           @if (current.type.agentKey === frameworkKey) {
-            <lfx-mktg-downstream [project]="current.project" [refreshKey]="current.approvedCurrent?.revisionId ?? ''" [writer]="writer()" />
+            <lfx-mktg-downstream
+              [project]="current.project"
+              [projectSlug]="projectSlug()"
+              [refreshKey]="current.approvedCurrent?.revisionId ?? ''"
+              [writer]="writer()" />
           }
 
           <!-- About this document -->

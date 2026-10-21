@@ -56,6 +56,7 @@
     @if (definition.id === rebuildFamilyId) {
       <lfx-mktg-rebuild
         [project]="kit.projectUid()"
+        [projectSlug]="kit.projectQueryParams().project ?? null"
         [projectName]="kit.projectName()"
         [framework]="kit.documents()?.approvedFramework ?? null"
         [writer]="!!kit.documents() && !kit.error()"

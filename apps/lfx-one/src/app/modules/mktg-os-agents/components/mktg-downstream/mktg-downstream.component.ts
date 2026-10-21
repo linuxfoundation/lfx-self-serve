@@ -25,6 +25,7 @@ export class MktgDownstreamComponent {
   private readonly router = inject(Router);
   protected readonly user = inject(UserService);
   public readonly project = input.required<string>();
+  public readonly projectSlug = input<string | null>(null);
   public readonly refreshKey = input('');
   public readonly writer = input(false);
   protected readonly familyId = MKTG_KIT_POSITIONING_FAMILY_ID;
@@ -80,12 +81,11 @@ export class MktgDownstreamComponent {
 
   protected rebuild(): void {
     const framework = this.listing()?.approvedFramework;
-    if (!framework || !this.writer() || this.user.impersonating()) return;
+    if (!framework || !this.projectSlug() || !this.writer() || this.user.impersonating()) return;
     void this.router.navigate(['families', this.familyId], {
       relativeTo: this.moduleRoute,
       state: { [MKTG_REBUILD_NAVIGATION_STATE_KEY]: { project: this.project(), frameworkRevisionId: framework.revisionId } },
-      queryParams: { revision: null },
-      queryParamsHandling: 'merge',
+      queryParams: { project: this.projectSlug() },
     });
   }
 
@@ -98,7 +98,7 @@ export class MktgDownstreamComponent {
       const names = entries.map((entry) => entry.label);
       if (entries.length === 1) return `${names[0]} was built from v${entries[0].stale?.builtFrom.revisionNumber}. Rebuild it from v${target.revisionNumber}?`;
       if (versions.size === 1)
-        return `${names.join(' and ')} were built from v${entries[0].stale?.builtFrom.revisionNumber}. Rebuild them from v${target.revisionNumber}?`;
+        return `${new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(names)} were built from v${entries[0].stale?.builtFrom.revisionNumber}. Rebuild them from v${target.revisionNumber}?`;
       return `${entries.map((entry) => `${entry.label} (from v${entry.stale?.builtFrom.revisionNumber})`).join(', ')} need rebuilding from v${target.revisionNumber}.`;
     });
   }

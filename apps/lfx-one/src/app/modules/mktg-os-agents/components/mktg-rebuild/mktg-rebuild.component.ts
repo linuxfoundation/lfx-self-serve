@@ -29,6 +29,7 @@ export class MktgRebuildComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   public readonly project = input.required<string>();
+  public readonly projectSlug = input<string | null>(null);
   public readonly projectName = input.required<string>();
   public readonly framework = input<MktgRevisionRef | null>(null);
   /** A successful writer-entitled documents listing is the Family page's grant evidence. */
@@ -101,12 +102,13 @@ export class MktgRebuildComponent {
   }
 
   protected openDraft(row: MktgRebuildStepView): void {
-    if (!row.revisionId) return;
-    void this.router.navigate(['documents', row.agentKey, this.livingId], {
+    if (!row.revisionId || !this.projectSlug() || !isPlatformBrowser(this.platform)) return;
+    const url = this.router.createUrlTree(['documents', row.agentKey, this.livingId], {
       relativeTo: this.moduleRoute,
-      queryParams: { revision: row.revisionId },
-      queryParamsHandling: 'merge',
+      queryParams: { project: this.projectSlug(), revision: row.revisionId },
     });
+    if (this.active()) window.open(this.router.serializeUrl(url), '_blank', 'noopener,noreferrer');
+    else void this.router.navigateByUrl(url);
   }
 
   private initRows() {
@@ -129,6 +131,8 @@ export class MktgRebuildComponent {
     this.subscription?.unsubscribe();
     this.subscription = stream.subscribe({
       next: (chain) => {
+        const runningIndex = chain.steps.findIndex((step) => step.status === 'running');
+        if (runningIndex >= 0 && this.chain()?.steps[runningIndex]?.status !== 'running') this.startedAt.set(Date.now());
         this.chain.set(chain);
         this.sending.set(false);
         if (chain.status === 'complete' || chain.status === 'failed') this.changed.emit();

@@ -13,10 +13,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MktgDownstreamComponent } from './mktg-downstream.component';
 
 const reference: MktgRevisionRef = { agentKey: 'foundation-message', revisionId: `000003-${'c'.repeat(64)}`, revisionNumber: 3, contentSha256: 'd'.repeat(64) };
-const listing = (stale = true): MktgDocumentsResponse => ({
+const listing = (stale = true, keys = ['boilerplates', 'faq']): MktgDocumentsResponse => ({
   project: 'synthetic-project',
   approvedFramework: reference,
-  groups: MKTG_DOCUMENT_TYPES.filter((type) => ['boilerplates', 'faq'].includes(type.agentKey)).map((type) => ({
+  groups: MKTG_DOCUMENT_TYPES.filter((type) => keys.includes(type.agentKey)).map((type) => ({
     type,
     documents: [
       {
@@ -58,6 +58,7 @@ describe('Framework Downstream card', () => {
     });
     fixture = TestBed.createComponent(MktgDownstreamComponent);
     fixture.componentRef.setInput('project', 'synthetic-project');
+    fixture.componentRef.setInput('projectSlug', 'synthetic-slug');
     fixture.componentRef.setInput('writer', true);
     await fixture.whenStable();
   });
@@ -68,20 +69,33 @@ describe('Framework Downstream card', () => {
     expect(root.querySelector('[data-testid="mktg-downstream-card"]')?.classList.contains('bg-amber-50')).toBe(true);
     expect(root.querySelector('[data-testid="mktg-downstream-copy"]')?.textContent).toContain('Boilerplates and FAQ were built from v1. Rebuild them from v3?');
     expect(root.querySelector('[data-testid="mktg-downstream-rebuild"]')?.textContent).toContain('Rebuild both');
+    await TestBed.inject(Router).navigateByUrl('/?project=old-slug');
+    fixture.componentRef.setInput('project', 'next-project');
+    fixture.componentRef.setInput('projectSlug', 'next-slug');
+    await fixture.whenStable();
+    reads[1].next({ ...listing(), project: 'next-project' });
+    await fixture.whenStable();
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     root.querySelector<HTMLButtonElement>('[data-testid="mktg-downstream-rebuild"] button')?.click();
     expect(navigate).toHaveBeenCalledWith(
       ['families', 'positioning-brand'],
       expect.objectContaining({
-        state: { [MKTG_REBUILD_NAVIGATION_STATE_KEY]: { project: 'synthetic-project', frameworkRevisionId: reference.revisionId } },
-        queryParams: { revision: null },
+        state: { [MKTG_REBUILD_NAVIGATION_STATE_KEY]: { project: 'next-project', frameworkRevisionId: reference.revisionId } },
+        queryParams: { project: 'next-slug' },
       })
     );
     fixture.componentRef.setInput('refreshKey', 'new-approval');
     await fixture.whenStable();
-    reads[1].next(listing(false));
+    reads[2].next(listing(false));
     await fixture.whenStable();
     expect(root.querySelector('[data-testid="mktg-downstream-card"]')).toBeNull();
+  });
+  it('formats three stale names as an English conjunction list', async () => {
+    const data = listing(true, ['boilerplates', 'faq', 'brand-kit']);
+    reads[0].next(data);
+    await fixture.whenStable();
+    const names = data.groups.map((group) => group.type.label);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(`${names[0]}, ${names[1]}, and ${names[2]} were built from v1`);
   });
   it('distinguishes loading/error from an empty stale set and retries', async () => {
     const root: HTMLElement = fixture.nativeElement;
