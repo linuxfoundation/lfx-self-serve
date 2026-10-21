@@ -289,6 +289,7 @@ export class MktgDocumentRunService {
           } catch (error) {
             logger.warning(req, 'mktg_run_reconcile', 'One run could not be checked; retaining its last known state', { project, key: entry.key, err: error });
             this.skip(entry, coverage, knownUnfinished);
+            if (coverage) coverage.lookupFailed = true;
             return stored ? mktgRunProgress(stored.record) : null;
           }
         })
@@ -304,7 +305,7 @@ export class MktgDocumentRunService {
     project: string,
     type: MktgDocumentType,
     documentId: string,
-    detail: MktgDocumentDetailResponse | null,
+    readDetail: MktgDocumentDetailResponse | null | (() => Promise<MktgDocumentDetailResponse | null>),
     progress: MktgDocumentRunSnapshot,
     poll = false,
     refreshRunId?: string
@@ -321,15 +322,71 @@ export class MktgDocumentRunService {
       } catch (err) {
         if (err instanceof ServiceValidationError || err instanceof AuthorizationError) throw err;
         snapshot.progressUnavailable = true;
-        logger.warning(req, 'mktg_run_failure_detail', 'Selected failure could not be refreshed; stored document and progress retained', {
-          project,
-          run: refreshRunId,
-          err,
-        });
+        logger[err instanceof ResourceNotFoundError ? 'debug' : 'warning'](
+          req,
+          'mktg_run_failure_detail',
+          'Selected failure could not be refreshed; stored document and progress retained',
+          {
+            project,
+            run: refreshRunId,
+            err,
+          }
+        );
       }
     }
+    const detail = typeof readDetail === 'function' ? await readDetail() : readDetail;
     if (!detail && !snapshot.runs.length && !poll && !snapshot.progressUnavailable) return null;
     return { ...(detail ?? { project, type, documentId, revisions: [], approvedCurrent: null }), ...snapshot };
+  }
+
+  /** Materialize private retained IDs into validated rows; no coverage IDs/counts or session capabilities escape. */
+  public async readProgress(req: Request, project: string, agentKey?: string, documentId?: string, poll = false): Promise<MktgDocumentRunSnapshot> {
+    this.prefix(project); // Validate caller input outside the storage-failure boundary.
+    const coverage: MktgDocumentRunCoverage = { uncheckedCount: 0, retainedRunIds: [] };
+    let observed: MktgDocumentRunProgress[];
+    try {
+      observed = await this.reconcile(req, project, agentKey, documentId, poll, coverage);
+    } catch (err) {
+      logger.warning(req, 'mktg_run_progress_read', 'Tracking discovery unavailable; stored documents remain independently readable', { project, err });
+      return { runs: [], progressUnavailable: true };
+    }
+    const rows = new Map(observed.map((run) => [run.runId, run]));
+    let staleWindow = false;
+    for (let offset = 0; offset < coverage.retainedRunIds.length; offset += MKTG_STARTED_RUN_READ_CONCURRENCY) {
+      await Promise.all(
+        coverage.retainedRunIds.slice(offset, offset + MKTG_STARTED_RUN_READ_CONCURRENCY).map(async (id) => {
+          if (rows.has(id)) return;
+          try {
+            const key = `${this.prefix(project)}${id}.json`;
+            const cached = MktgDocumentRunService.terminalCache.get(key);
+            if (cached) {
+              const row = matchesMktgRunProgress(cached.progress, agentKey, documentId);
+              if (row) {
+                rows.set(id, row);
+                staleWindow ||= poll && (row.state === 'writing' || row.state === 'storing') && Date.now() - cached.stamp >= MKTG_STARTED_RUN_POLL_WINDOW_MS;
+              }
+              return;
+            }
+            const stored = await this.read(req, project, key);
+            const row = stored && matchesMktgRunProgress(mktgRunProgress(stored.record), agentKey, documentId);
+            if (row && stored) {
+              rows.set(id, row);
+              staleWindow ||=
+                poll &&
+                (row.state === 'writing' || row.state === 'storing') &&
+                Date.now() - Date.parse(stored.record.retryAt ?? stored.record.startedAt) >= MKTG_STARTED_RUN_POLL_WINDOW_MS;
+            }
+          } catch (err) {
+            coverage.lookupFailed = true;
+            logger.warning(req, 'mktg_run_retained_read', 'One retained run could not be read; other rows remain available', { project, run: id, err });
+          }
+        })
+      );
+    }
+    return {
+      runs: [...rows.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
+      ...((coverage.lookupFailed || staleWindow) && { progressUnavailable: true }),
+    };
   }
 
   /** The Documents transport invokes this once for a selected failed run on detail navigation, never a timer/list read. */

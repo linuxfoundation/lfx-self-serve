@@ -166,7 +166,7 @@ a LIST failure after recording the start does not turn its acknowledgement into
 an error or submit another generation. Retry checks that exact stored session;
 it does not create a generation or change the document's current pointer.
 
-The prefix LIST still enumerates keys. Subsequent HEAD/GET/Guild work uses only
+The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
 the newest-mtime **128-record discovery window**, with concurrency four for both
 navigation reconciliation and Generate's supersede scan. Both paths HEAD first
 and skip completed/superseded bodies; Generate GETs unfinished/failed candidates
@@ -187,6 +187,22 @@ cache entries contribute neither IDs nor count. Timer skips within the discovery
 window HEAD first to exclude closed records, without GET/Guild work. The Documents transport treats
 this as opaque partial coverage: retain known rows, never echo coverage IDs to
 the client or interpret an unchecked count as active work or a current revision.
+
+`readProgress` consumes this private coverage before HTTP serialization. It reuses
+known cached public rows or materializes at most 384 retained IDs through bounded
+tracking-store reads (concurrency 4), without Guild calls. Only validated public
+rows leave the BFF, never coverage IDs/counts or private sessions. A real lookup
+failure adds `progressUnavailable` so clients can warn/retry even with no row;
+intentional window coverage alone never manufactures active work or endless retries.
+Window-skipped unfinished writing/storing snapshots are last-known, not fresh
+liveness: poll reads mark them unavailable, so the client's existing bounded
+availability budget stops automatic checks. Closed-history coverage is not flagged.
+Explicit detail navigation may pass `refreshRun` to refresh ONE scoped failed run;
+timer reads reject that selector. A stale/foreign selector or transient tracking
+error retains the stored document/known rows with an availability warning, never
+a run-id-based document 404. Detail is loaded after refresh so late persistence
+is visible. Retry POSTs recheck the stored session, never submit Generate or move
+the approved-current pointer.
 
 Persistence receipts carry the exact `document_location` with `agent_key`,
 `document_id`, `revision_id`; it is not a lookup of whichever revision is current.

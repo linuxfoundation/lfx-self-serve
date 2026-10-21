@@ -39,6 +39,11 @@ export interface MktgDocumentRunSnapshot {
   progressUnavailable?: boolean;
 }
 
+/** Catalog-labelled row in the Documents overview. */
+export interface MktgDocumentRunRow extends MktgDocumentRunProgress {
+  label: string;
+}
+
 /**
  * Mutable server-only started-run record in the private document store.
  * It must never be returned by spreading it into a public response: project
@@ -84,6 +89,8 @@ export interface MktgDocumentRunCoverage {
   uncheckedCount: number;
   /** Opaque IDs known unfinished/failed from HEAD or a matching terminal cache; bounded by discovery + cache limits. */
   retainedRunIds: string[];
+  /** A lookup failed, distinct from intentionally bounded history coverage. */
+  lookupFailed?: boolean;
 }
 
 /** The Documents transport's retry body, scoped by its document/run route; no generation is started. */

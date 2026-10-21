@@ -165,6 +165,9 @@ router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', bl
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
+// POST /api/mktg-agents/documents/:agentKey/:documentId/runs/:runId/retry - recheck a recorded session, not a generation
+router.post('/documents/:agentKey/:documentId/runs/:runId/retry', (req, res, next) => mktgDocumentsController.retryRun(req, res, next));
+
 // POST /api/mktg-agents/slides-export/start - export a stored Messaging Framework or Brand Kit revision to Google Slides (a new deck, or the last export's deck refreshed in place)
 router.post('/slides-export/start', (req, res, next) => mktgSlidesExportController.start(req, res, next));
 
