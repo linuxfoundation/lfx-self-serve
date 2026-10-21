@@ -99,6 +99,18 @@
       <!-- Action buttons (hidden for committee members - they can only be removed via committee selection) -->
       @if (registrant().type !== 'committee') {
         <div class="flex items-center gap-1 flex-shrink-0">
+          @if (inviteResend.canResend(registrant())) {
+            <lfx-button
+              size="small"
+              icon="fa-light fa-paper-plane"
+              styleClass="text-gray-400 hover:text-gray-600"
+              [text]="true"
+              [disabled]="inviteResend.isResending(registrant().uid)"
+              (click)="handleResendClick()"
+              [attr.aria-label]="'Resend invite to ' + registrant().first_name + ' ' + registrant().last_name"
+              [attr.data-testid]="'resend-' + registrant().uid">
+            </lfx-button>
+          }
           <lfx-button
             size="small"
             icon="fa-light fa-edit"
