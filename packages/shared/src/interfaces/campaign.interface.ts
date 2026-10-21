@@ -6178,6 +6178,29 @@ export interface AudienceStandardSuppressionToggle {
 /** How the Audience tab sets the send audience: build a new list, or use existing lists. */
 export type AudienceBuildMode = 'build' | 'reuse';
 
+/** The Audience tab's numbered steps, in page order. Numbers are assigned to the visible ones only. */
+export type AudienceStepKey = 'discover' | 'include' | 'exclude' | 'reuse' | 'gaps' | 'compose' | 'qa';
+
+/** The follow-up a readiness notice offers, emitted back to the tab that raised it. */
+export type AudienceReadinessAction = 'retry-audience-read' | 'retry-brief';
+
+/**
+ * One reason the Audience tab is paused or limited. The tab raises several at once (a staging
+ * pause, an unread audience, an unsaved plan, a degraded connection); the banner shows the most
+ * urgent first and folds the rest behind a toggle.
+ */
+export interface AudienceReadinessNotice {
+  /** The notice's `data-testid`, unchanged from when each was its own banner. */
+  testId: string;
+  /** `busy` shows a spinner; `warn` is amber and announced as an alert. */
+  tone: 'busy' | 'info' | 'warn';
+  title?: string;
+  message: string;
+  /** A `data-testid` for the message itself, when the copy variant matters to a test. */
+  messageTestId?: string;
+  action?: { kind: AudienceReadinessAction; label: string; testId: string };
+}
+
 /** Opens the custom-audience builder pre-filled, e.g. from a missing-signal "Create list" action. */
 export interface AudienceCustomPreset {
   /** Free text to interpret, when the preset needs the model (e.g. an opt-in signal). */

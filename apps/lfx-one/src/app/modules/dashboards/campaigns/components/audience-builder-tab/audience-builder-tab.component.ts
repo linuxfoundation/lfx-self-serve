@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { DecimalPipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { outputFromObservable, takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { CampaignService } from '@services/campaign.service';
@@ -20,6 +20,7 @@ import {
   AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS,
   AUDIENCE_SIGNAL_INFO,
   AUDIENCE_SIGNAL_ORDER,
+  AUDIENCE_STEP_ORDER,
   AUDIENCE_UNION_EXACT_CAP,
 } from '@lfx-one/shared/constants';
 import type {
@@ -45,10 +46,13 @@ import type {
   AudienceListNameConflict,
   AudienceListRef,
   AudienceListSearchResult,
+  AudienceReadinessAction,
+  AudienceReadinessNotice,
   AudienceMasterListBrief,
   AudiencePreviewCount,
   AudienceSignal,
   AudienceStartOverAction,
+  AudienceStepKey,
   AudienceSuppressionList,
   AudienceWriteDispatchContext,
   CampaignAudience,
@@ -60,8 +64,10 @@ import { AudienceCustomBuilderComponent } from '../audience-custom-builder/audie
 import { AudienceLastSentComponent } from '../audience-last-sent/audience-last-sent.component';
 import { AudienceMissingSignalsComponent } from '../audience-missing-signals/audience-missing-signals.component';
 import { AudienceQaPanelComponent } from '../audience-qa-panel/audience-qa-panel.component';
+import { AudienceReadinessBannerComponent } from '../audience-readiness-banner/audience-readiness-banner.component';
 import { AudienceStepCardComponent } from '../audience-step-card/audience-step-card.component';
 import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/audience-suppression-grid.component';
+import { AudienceSummaryBarComponent } from '../audience-summary-bar/audience-summary-bar.component';
 
 /**
  * The Audience tab: discover candidate HubSpot lists for an event, review and select them, apply
@@ -85,7 +91,9 @@ import { AudienceSuppressionGridComponent } from '../audience-suppression-grid/a
     AudienceLastSentComponent,
     AudienceMissingSignalsComponent,
     AudienceQaPanelComponent,
+    AudienceReadinessBannerComponent,
     AudienceStepCardComponent,
+    AudienceSummaryBarComponent,
   ],
   templateUrl: './audience-builder-tab.component.html',
   styleUrl: './audience-builder-tab.component.scss',
@@ -94,6 +102,9 @@ export class AudienceBuilderTabComponent {
   // === Services ===
   private readonly campaignService = inject(CampaignService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // === Inputs ===
   public readonly projectSlug = input.required<string>();
@@ -483,6 +494,10 @@ export class AudienceBuilderTabComponent {
   protected readonly attachResult = signal<AudienceAttachExistingResult | null>(null);
   /** What the last attach expected to create, so its result can say what it actually created. */
   private readonly attachDispatch = signal<AudienceWriteDispatchContext | null>(null);
+  /** The compose confirmation is open: the first click on Compose asks before anything is created. */
+  protected readonly composeConfirming = signal(false);
+  /** The "combine into a master list" disclosure is open. Direct use is the default action. */
+  protected readonly composeOpen = signal(false);
   /**
    * The exclusion ids the last attach actually SENT, so a prior send is matched on its whole
    * selection rather than on its master list id.
@@ -1222,13 +1237,122 @@ export class AudienceBuilderTabComponent {
       const figure = reach.toLocaleString('en-US');
       reachText = known.length === included.length ? `≤ ${figure}` : figure;
     }
+    // A preview of THIS selection is the exact union, which beats any sum of list sizes.
+    const preview = this.previewCountLabel();
     return {
       included: included.length,
       excluded: this.excludeIds().length,
-      reachText,
-      reachPartial: known.length > 0 && known.length < included.length,
+      reachText: preview === '' ? reachText : preview,
+      reachExact: preview !== '',
+      reachPartial: preview === '' && known.length > 0 && known.length < included.length,
       reachKnownCount: known.length,
     };
+  });
+
+  /**
+   * Each step's number, counting only the steps on screen. Fixed numbers read 3 → 6 → 2 in the
+   * Build tab, where Discover, Include, Reuse and Fill gaps are all hidden.
+   */
+  protected readonly stepNumbers = computed<Record<AudienceStepKey, number>>(() => {
+    const reuse = this.mode() === 'reuse';
+    const visible: Record<AudienceStepKey, boolean> = {
+      discover: reuse,
+      include: reuse && this.hasDiscovered(),
+      exclude: this.showSelection(),
+      reuse: reuse && this.hasDiscovered(),
+      gaps: reuse && this.hasDiscovered(),
+      compose: this.showSelection(),
+      qa: true,
+    };
+    const numbers = {} as Record<AudienceStepKey, number>;
+    let next = 1;
+    for (const step of AUDIENCE_STEP_ORDER) {
+      numbers[step] = visible[step] ? next++ : 0;
+    }
+    return numbers;
+  });
+
+  /**
+   * Everything pausing or limiting the tab, most urgent first, for the one readiness banner.
+   * Warnings lead (they need the operator), then fixed limits, then waits that clear on their own.
+   */
+  protected readonly readinessNotices = computed<readonly AudienceReadinessNotice[]>(() => {
+    const warn: AudienceReadinessNotice[] = [];
+    const info: AudienceReadinessNotice[] = [];
+    const busy: AudienceReadinessNotice[] = [];
+
+    if (!this.capabilitiesKnown()) {
+      busy.push({ testId: 'campaigns-audience-checking', tone: 'busy', message: 'Checking the HubSpot connection...' });
+    } else if (this.degraded()) {
+      // Both branches fail closed; only the CAUSE differs, and stating the wrong one sends the
+      // operator to fix credentials that are fine. Upstream's own reason beats the generic copy.
+      const detail = this.degradedDetail();
+      let message =
+        'This environment has no HubSpot credentials configured, so lists cannot be discovered or created. An administrator needs to set up the connection.';
+      let messageTestId = 'campaigns-audience-degraded-unconfigured';
+      if (this.capabilitiesFailed()) {
+        message =
+          'The Audience Builder could not be reached, so lists cannot be discovered or created. Reload to try again; if it persists, ask an administrator.';
+        messageTestId = 'campaigns-audience-degraded-unknown';
+      } else if (detail) {
+        message = `${detail} Everything below is read-only until the HubSpot connection is usable.`;
+        messageTestId = 'campaigns-audience-degraded-detail';
+      }
+      warn.push({ testId: 'campaigns-audience-degraded-banner', tone: 'warn', title: 'Audience Builder is unavailable', message, messageTestId });
+    }
+
+    // The brief's saved audience is unknown: every write is blocked, since a second audience on
+    // top of a hidden one is a duplicate HubSpot list.
+    if (this.audienceReadPending()) {
+      busy.push({
+        testId: 'campaigns-audience-read-pending',
+        tone: 'busy',
+        message: 'Checking whether this email already has a send audience. Attaching and composing are paused until it loads.',
+      });
+    } else if (this.audienceReadUnavailable()) {
+      info.push({
+        testId: 'campaigns-audience-read-unavailable',
+        tone: 'info',
+        message: "Saved audiences can't be looked up here, so attaching and composing are off to avoid a duplicate master list.",
+      });
+    } else if (this.audienceReadFailed()) {
+      warn.push({
+        testId: 'campaigns-audience-read-failed',
+        tone: 'warn',
+        title: "This email's saved audience could not be checked",
+        message: 'It may already have one. Attaching and composing are blocked until it can be read.',
+        action: { kind: 'retry-audience-read', label: 'Try again', testId: 'campaigns-audience-read-retry' },
+      });
+    }
+
+    // Why nothing can be attached yet. The parent saves the plan when the tab opens, so an empty
+    // brief id is a save in flight, a failed save, an unapproved plan, or one this session does
+    // not own -- never "go and save it".
+    const state = this.briefState();
+    if (this.briefId() === '' && state !== 'none' && state !== 'ready') {
+      const notice: AudienceReadinessNotice = {
+        testId: 'campaigns-audience-brief-state',
+        tone: 'info',
+        message: this.briefStateMessage(),
+        messageTestId: 'campaigns-audience-brief-state-message',
+      };
+      if (state === 'resolving') busy.push({ ...notice, tone: 'busy' });
+      else if (state === 'failed')
+        warn.push({ ...notice, tone: 'warn', action: { kind: 'retry-brief', label: 'Retry', testId: 'campaigns-audience-brief-retry' } });
+      else if (state === 'unopened') warn.push({ ...notice, tone: 'warn' });
+      else info.push(notice);
+    }
+
+    if (this.stagingInFlight()) {
+      busy.push({
+        testId: 'campaigns-audience-staging-pause',
+        tone: 'busy',
+        message:
+          'A send is being staged in HubSpot, or its last stage ended without an answer. Composing and attaching resume once it finishes or is confirmed on the Implement tab.',
+      });
+    }
+
+    return [...warn, ...info, ...busy];
   });
 
   /**
@@ -1381,13 +1505,8 @@ export class AudienceBuilderTabComponent {
   );
 
   public constructor() {
-    // Two inputs share this control (the Build tab's event-page field and Discover). A control writes typed text
-    // back to the OTHER views only on setValue, so without this the second box showed empty
-    // while its button acted on the url typed in the first.
-    this.eventUrlControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
-      this.eventUrlControl.setValue(value, { emitEvent: false });
-      this.eventUrlValue.set(value);
-    });
+    // Feeds `eventUrlValue` from typing; silent resets go through `resetEventUrl`.
+    this.eventUrlControl.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((value) => this.eventUrlValue.set(value));
 
     // The edition gains its year only once the brief's dates arrive; rows loaded before then lack
     // the current-registrants row, so they are reloaded for the edition attach will now send.
@@ -1913,8 +2032,48 @@ export class AudienceBuilderTabComponent {
   }
 
   protected onSetMode(mode: AudienceBuildMode): void {
-    // The two panels' URL inputs are kept in step by the constructor's valueChanges mirror.
     this.mode.set(mode);
+  }
+
+  /** Arrow, Home and End keys move between the mode tabs, as the WAI-ARIA tabs pattern expects. */
+  protected onModeKeydown(event: KeyboardEvent): void {
+    const modes = this.modeOptions.map((option) => option.mode);
+    const at = modes.indexOf(this.mode());
+    let next = at;
+    if (event.key === 'ArrowRight') next = (at + 1) % modes.length;
+    else if (event.key === 'ArrowLeft') next = (at - 1 + modes.length) % modes.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = modes.length - 1;
+    else return;
+    event.preventDefault();
+    this.mode.set(modes[next]);
+    this.scrollTo(`campaigns-audience-mode-${modes[next]}`, true);
+  }
+
+  /**
+   * Takes the operator to a step a hint names, switching mode first when the step lives in the
+   * other one. Hints used to say "under X above", which pointed at nothing in the other mode.
+   */
+  protected onGoToStep(step: AudienceStepKey): void {
+    if (step === 'discover' || step === 'include' || step === 'reuse' || step === 'gaps') {
+      this.mode.set('reuse');
+    }
+    this.scrollTo(`campaigns-audience-step-${step}`);
+  }
+
+  protected onReadinessAction(action: AudienceReadinessAction): void {
+    if (action === 'retry-audience-read') this.retryAudienceRead.emit();
+    else this.retryBrief.emit();
+  }
+
+  /** Compose creates real HubSpot lists, so the first click asks; only the confirmation composes. */
+  protected onRequestCompose(): void {
+    if (this.canCompose()) this.composeConfirming.set(true);
+  }
+
+  protected onConfirmCompose(): void {
+    this.composeConfirming.set(false);
+    this.onComposeMaster();
   }
 
   /** "Or use an existing list": the list joins Include in any mode, ready to attach or compose. */
@@ -1977,6 +2136,7 @@ export class AudienceBuilderTabComponent {
     if (this.customCreating()) return;
     // The builder lives in the Build view; switching there is what makes the preset visible.
     this.mode.set('build');
+    this.scrollTo('campaigns-audience-custom');
     const eventName = this.identity()?.eventName ?? '';
     const editionName = withEventYear(eventName, this.identity()?.eventDates ?? []);
     const brand = this.identity()?.brandShort ?? '';
@@ -2972,6 +3132,19 @@ export class AudienceBuilderTabComponent {
     this.previewCount.set(null);
     this.previewError.set(null);
     this.previewing.set(false);
+  }
+
+  /** Scrolls to (or focuses) an element by test id once the view has rendered the change that shows it. */
+  private scrollTo(testId: string, focus = false): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    afterNextRender(
+      () => {
+        const target = this.host.nativeElement.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+        if (focus) target?.focus();
+        else target?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      },
+      { injector: this.injector }
+    );
   }
 }
 
