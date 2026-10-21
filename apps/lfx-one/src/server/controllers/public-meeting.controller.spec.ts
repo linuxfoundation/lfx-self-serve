@@ -10,6 +10,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import type { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS } from '../../../../../packages/shared/src/constants/public-live-meeting.constants';
 import { PUBLIC_ANONYMOUS_PAST_MEETING_KEYS } from '../../../../../packages/shared/src/constants/public-past-meeting.constants';
 import { AuthenticationError } from '../errors/authentication.error';
 import type { ServiceValidationError } from '../errors/service-validation.error';
@@ -469,6 +470,98 @@ describe('PublicMeetingController.getMeetingById passcode source', () => {
     const occurrences = buildReqRes(false);
     await controller.getMeetingOccurrences(occurrences.req, occurrences.res, occurrences.next);
     expect(occurrences.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+  });
+});
+
+// The tiered-access boundary for the live/upcoming endpoint (PR #4000, per @dealako): full_access
+// gates whether the real meeting or the reduced anonymous/guest projection is returned, and this is
+// the access-control surface itself, so it gets its own direct coverage rather than relying on the
+// client-side spec's mocked HTTP responses.
+describe('PublicMeetingController.getMeetingById tiered access (#3999)', () => {
+  let controller: PublicMeetingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new PublicMeetingController();
+    generateM2MTokenMock.mockResolvedValue('m2m-token');
+    projectSvc.getProjectById.mockResolvedValue(buildProject());
+    meetingSvc.getMeetingHostKey.mockResolvedValue(null);
+    checkSingleAccessMock.mockResolvedValue(false);
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    validatePasswordMock.mockImplementation((given: string, expected: string) => given === expected);
+  });
+
+  it('grants full access for a public, non-restricted meeting', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    const { req, res, next } = buildReqRes(false);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.full_access).toBe(true);
+    expect(payload.meeting.id).toBe(MEETING_ID);
+  });
+
+  it('grants full access to an invited or organizer caller on a private meeting, without requiring a password', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, password: 'pw' } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: true }));
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.full_access).toBe(true);
+    // The full-access branch returns the real meeting object untouched — no allowlist projection.
+    expect(payload.meeting.id).toBe(MEETING_ID);
+  });
+
+  it('reduces a password-only guest on a private meeting to the anonymous allowlist, with no description, start_time, password, or occurrences', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(
+      buildMeeting({
+        visibility: MeetingVisibility.PRIVATE,
+        restricted: true,
+        password: 'pw',
+        description: 'Secret agenda',
+        occurrences: [{ occurrence_id: 'occ-1' } as never],
+      } as Partial<Meeting>)
+    );
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.full_access).toBe(false);
+    expect(payload.meeting.description).toBeUndefined();
+    expect(payload.meeting.start_time).toBeUndefined();
+    expect(payload.meeting.password).toBeUndefined();
+    expect(payload.meeting.occurrences).toBeUndefined();
+    expect(Object.keys(payload.meeting).every((key) => (PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS as readonly string[]).includes(key))).toBe(true);
+  });
+
+  it('computes can_join from the full internal meeting before the anonymous projection strips start_time', async () => {
+    // Starts 10 minutes ago, inside the join window — the allowlist would otherwise make
+    // this unknowable to the client once start_time is stripped from the guest response.
+    meetingSvc.getMeetingById.mockResolvedValue(
+      buildMeeting({
+        visibility: MeetingVisibility.PRIVATE,
+        restricted: true,
+        password: 'pw',
+        start_time: new Date(Date.now() - 10 * 60_000).toISOString(),
+        duration: 60,
+      } as Partial<Meeting>)
+    );
+    const { req, res, next } = buildReqRes(false);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.full_access).toBe(false);
+    expect(payload.can_join).toBe(true);
   });
 });
 
