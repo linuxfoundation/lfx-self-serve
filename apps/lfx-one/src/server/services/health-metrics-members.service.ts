@@ -98,6 +98,7 @@ const MEMBERSHIP_BOARD_ATTENDANCE_BY_MEETING_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.
 const MEMBERSHIP_NPS_BY_AUDIENCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_NPS_BY_AUDIENCE';
 const MEMBERSHIP_NPS_QUARTERLY_TREND_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_NPS_QUARTERLY_TREND';
 const MEMBERSHIP_CHURN_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_CHURN';
+const MEMBERSHIP_CHURNED_MEMBERS_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.MEMBERSHIP_CHURNED_MEMBERS';
 
 const BRIDGE_STEP_TYPES: ReadonlySet<string> = new Set<HealthMetricsMembersBridgeStepType>(HEALTH_METRICS_MEMBERS_BRIDGE_STEP_TYPES);
 const NPS_CATEGORIES: ReadonlySet<string> = new Set<HealthMetricsMembersNpsCategory>(HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CATEGORIES);
@@ -269,9 +270,7 @@ interface ChurnRow {
   MEMBERSHIPS_OPENING_COUNT: number | null;
   DUES_LOST_USD: number | null;
   DUES_LOST_PRIOR_USD: number | null;
-  REVENUE_CHURN_RATE: number | null;
-  REVENUE_CHURN_RATE_PRIOR: number | null;
-  REVENUE_CHURN_RATE_CHANGE_PP: number | null;
+  REVENUE_NOT_RENEWED_RATE: number | null;
   TIER_CHURN_RATE: number | null;
   SHARE_OF_LOSS_PCT: number | null;
   LOGO_CHURN_RATE: number | null;
@@ -282,12 +281,11 @@ interface MovementDetailPageRow {
   IS_PAGE_ROW: boolean | null;
 }
 
-/** One movement-detail page read; `dateColumn` is the per-read date the page selects. */
+/** One movement-detail page read. */
 interface MovementDetailPageRead {
   foundationSlug: string;
   year: number;
   movementType: string;
-  dateColumn: 'movement_date' | 'lapsed_date';
   pageSize: number;
   offset: number;
   operation: string;
@@ -297,13 +295,14 @@ interface MovementDetailPageRead {
 interface ChurnDepartureRow {
   TOTAL_RECORDS: number | null;
   IS_PAGE_ROW: boolean | null;
+  CHURN_KEY: string | null;
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_TIER: string | null;
-  DUES_IMPACT_USD: number | null;
+  REVENUE_LOST_USD: number | null;
   LAPSED_DATE: Date | string | null;
   LAST_ENGAGED_DATE: Date | string | null;
-  SORT_RANK: number | null;
+  REVENUE_LOST_SORT_RANK: number | null;
 }
 
 /** True when the Members views carry columns for the range; for a controller to check before binding. */
@@ -380,7 +379,6 @@ export class HealthMetricsMembersService {
       foundationSlug: query.foundationSlug,
       year: query.year,
       movementType: query.movementType,
-      dateColumn: 'movement_date',
       pageSize,
       offset,
       operation: 'get_members_movements',
@@ -730,9 +728,8 @@ export class HealthMetricsMembersService {
         memberships_opening_count,
         dues_lost_usd,
         dues_lost_prior_usd,
-        revenue_churn_rate,
-        revenue_churn_rate_prior,
-        revenue_churn_rate_change_pp,
+        -- The view's revenue_churn_rate is now net of upgrades; the headline is the share of dues that did not renew.
+        IFF(opening_arr_usd > 0, dues_lost_usd / opening_arr_usd * 100, NULL) AS revenue_not_renewed_rate,
         tier_churn_rate,
         share_of_loss_pct,
         logo_churn_rate
@@ -765,25 +762,77 @@ export class HealthMetricsMembersService {
   }
 
   /**
-   * One page of the organizations that lapsed in a year, in the view's own `sort_rank` order (most dues lost
-   * first). The total is a separate aggregate joined onto the page, so a page past the end still reports it.
+   * One page of the memberships lost in a year, non-renewals and downgrades, highest revenue lost first. Each
+   * row takes its lapse and last engagement from the same organization's movement row for that year.
    */
   public async getChurnDepartures(req: Request, query: HealthMetricsMembersChurnDeparturesQuery): Promise<HealthMetricsMembersChurnDepartures> {
     const pageSize = clampInteger(query.pageSize, 1, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_MAX_PAGE_SIZE, HEALTH_METRICS_MEMBERS_CHURN_DEPARTURES_PAGE_SIZE);
     const offset = clampInteger(query.offset, 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
 
-    const page = await this.readMovementDetailPage<ChurnDepartureRow>(req, {
-      foundationSlug: query.foundationSlug,
-      year: query.year,
-      movementType: 'churned',
-      dateColumn: 'lapsed_date',
-      pageSize,
-      offset,
+    // `pageSize`/`offset` are clamped above, never taken raw from the request, so interpolating them is safe.
+    const sql = `
+      WITH movements AS (
+        SELECT account_id, movement_type, COALESCE(lapsed_date, movement_date) AS lapsed_date, last_engaged_date
+        FROM ${MEMBERSHIP_MOVEMENT_DETAIL_VIEW}
+        WHERE foundation_slug = ?
+          AND year = ?
+          AND movement_type IN ('churned', 'downgrade')
+        -- One row per organization and movement, so the join below can never multiply a lost membership.
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY account_id, movement_type ORDER BY movement_date DESC NULLS LAST) = 1
+      ),
+      scoped AS (
+        SELECT
+          lost._key AS churn_key,
+          lost.account_id,
+          lost.account_name,
+          lost.membership_tier,
+          lost.revenue_lost_usd,
+          lost.revenue_lost_sort_rank,
+          movements.lapsed_date,
+          movements.last_engaged_date
+        FROM ${MEMBERSHIP_CHURNED_MEMBERS_VIEW} lost
+        LEFT JOIN movements
+          ON movements.account_id = lost.account_id
+          AND movements.movement_type = IFF(lost.churn_type = 'Downgrade', 'downgrade', 'churned')
+        WHERE lost.foundation_slug = ?
+          AND lost.year = ?
+          -- Rows the mapper cannot show must not count, or the total and the page window drift apart.
+          AND lost._key IS NOT NULL
+          AND lost.account_id IS NOT NULL
+          AND lost.account_id <> ''
+      ),
+      totals AS (
+        SELECT COUNT(*) AS total_records
+        FROM scoped
+      ),
+      page AS (
+        SELECT
+          *,
+          -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
+          TRUE AS is_page_row
+        FROM scoped
+        -- NULLS LAST pins null placement, so a pooled session's null ordering cannot drift rows between pages.
+        ORDER BY revenue_lost_sort_rank ASC NULLS LAST, churn_key ASC
+        LIMIT ${pageSize} OFFSET ${offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.revenue_lost_sort_rank ASC NULLS LAST, page.churn_key ASC
+    `;
+
+    const binds = [query.foundationSlug, query.year, query.foundationSlug, query.year];
+    const result = await executeSnowflakeViewRead<ChurnDepartureRow>(this.snowflakeService, req, sql, binds, {
+      view: MEMBERSHIP_CHURNED_MEMBERS_VIEW,
       operation: 'get_members_churn_departures',
       clientMessage: 'The list of departed members is unavailable right now.',
     });
 
-    return { rows: page.rows.flatMap(mapChurnDeparture), totalRecords: page.totalRecords };
+    return {
+      rows: result.rows.filter((row) => row.IS_PAGE_ROW === true).flatMap(mapChurnDeparture),
+      totalRecords: Number(result.rows[0]?.TOTAL_RECORDS ?? 0),
+    };
   }
 
   /**
@@ -794,7 +843,7 @@ export class HealthMetricsMembersService {
     req: Request,
     read: MovementDetailPageRead
   ): Promise<{ rows: T[]; totalRecords: number }> {
-    // `dateColumn` and the clamped `pageSize`/`offset` come from the callers, never the request, so interpolating them is safe.
+    // The clamped `pageSize`/`offset` come from the callers, never the request, so interpolating them is safe.
     const sql = `
       WITH scoped AS (
         SELECT *
@@ -816,7 +865,7 @@ export class HealthMetricsMembersService {
           account_name,
           membership_tier,
           dues_impact_usd,
-          ${read.dateColumn},
+          movement_date,
           last_engaged_date,
           sort_rank,
           -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
@@ -1310,9 +1359,7 @@ function mapChurnYear(row: ChurnRow): HealthMetricsMembersChurnYear[] {
       openingCount: toNullableNumber(row.MEMBERSHIPS_OPENING_COUNT),
       duesLostUsd: toNullableNumber(row.DUES_LOST_USD),
       duesLostPriorUsd: toNullableNumber(row.DUES_LOST_PRIOR_USD),
-      revenueChurnRate: toNullableNumber(row.REVENUE_CHURN_RATE),
-      revenueChurnRatePrior: toNullableNumber(row.REVENUE_CHURN_RATE_PRIOR),
-      revenueChurnRateChangePp: toNullableNumber(row.REVENUE_CHURN_RATE_CHANGE_PP),
+      revenueNotRenewedRate: toNullableNumber(row.REVENUE_NOT_RENEWED_RATE),
       logoChurnRate: toNullableNumber(row.LOGO_CHURN_RATE),
     },
   ];
@@ -1337,14 +1384,15 @@ function mapChurnTier(row: ChurnRow): HealthMetricsMembersChurnTier[] {
 }
 
 function mapChurnDeparture(row: ChurnDepartureRow): HealthMetricsMembersChurnDeparture[] {
-  if (!row.ACCOUNT_ID) return [];
+  if (!row.CHURN_KEY || !row.ACCOUNT_ID) return [];
 
   return [
     {
+      key: row.CHURN_KEY,
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME || row.ACCOUNT_ID,
       membershipTier: row.MEMBERSHIP_TIER || null,
-      duesLostUsd: toNullableNumber(row.DUES_IMPACT_USD),
+      duesLostUsd: toNullableNumber(row.REVENUE_LOST_USD),
       lapsedDate: toIsoDate(row.LAPSED_DATE),
       lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
     },

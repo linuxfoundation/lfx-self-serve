@@ -4147,7 +4147,7 @@ export class AnalyticsController {
     }
   }
 
-  /** `GET /api/analytics/members-churn-departures` — one page of the memberships that lapsed in a year. */
+  /** `GET /api/analytics/members-churn-departures` — one page of the memberships lost in a year (non-renewals and downgrades). */
   public async getMembersChurnDepartures(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_members_churn_departures');
 

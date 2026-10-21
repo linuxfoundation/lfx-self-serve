@@ -699,9 +699,8 @@ export interface HealthMetricsMembersChurnYear {
   openingCount: number | null;
   duesLostUsd: number | null;
   duesLostPriorUsd: number | null;
-  revenueChurnRate: number | null;
-  revenueChurnRatePrior: number | null;
-  revenueChurnRateChangePp: number | null;
+  /** Share of the opening dues that did not renew (`dues_lost_usd / opening_arr_usd`), not the view's net rate. */
+  revenueNotRenewedRate: number | null;
   logoChurnRate: number | null;
 }
 
@@ -723,7 +722,7 @@ export interface HealthMetricsMembersChurn {
   tiers: HealthMetricsMembersChurnTier[];
 }
 
-/** `GET /api/analytics/members-churn-departures` — one page of the organizations that lapsed in a year. */
+/** `GET /api/analytics/members-churn-departures` — one page of the memberships lost in a year. */
 export interface HealthMetricsMembersChurnDeparturesQuery {
   foundationSlug: string;
   year: number;
@@ -731,8 +730,10 @@ export interface HealthMetricsMembersChurnDeparturesQuery {
   pageSize: number;
 }
 
-/** One churned `MEMBERSHIP_MOVEMENT_DETAIL` row. Dates are ISO `YYYY-MM-DD`. */
+/** One lost membership from `MEMBERSHIP_CHURNED_MEMBERS`, keyed by its term; dates are ISO `YYYY-MM-DD`. */
 export interface HealthMetricsMembersChurnDeparture {
+  /** An organization can lose two memberships in a year, so rows are keyed by the lost term, not the account. */
+  key: string;
   accountId: string;
   accountName: string;
   membershipTier: string | null;
@@ -743,7 +744,7 @@ export interface HealthMetricsMembersChurnDeparture {
 
 export interface HealthMetricsMembersChurnDepartures {
   rows: HealthMetricsMembersChurnDeparture[];
-  /** Every organization that lapsed in the year, so the table can check it against the churn count. */
+  /** Every membership lost in the year, so the table can check it against the churn count. */
   totalRecords: number;
 }
 
@@ -821,6 +822,7 @@ export interface HealthMetricsMembersChurnView {
 
 /** One organization in "Who left". */
 export interface HealthMetricsMembersChurnDepartureRowView {
+  key: string;
   accountId: string;
   accountName: string;
   tierLabel: string;
