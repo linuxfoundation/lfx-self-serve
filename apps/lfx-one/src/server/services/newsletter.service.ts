@@ -19,6 +19,7 @@ import {
   NewsletterRecipientsResponse,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterStatusCounts,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -40,6 +41,12 @@ const MY_NEWSLETTERS_CONCURRENCY = 5;
  * next_page_token, which would otherwise hang the request.
  */
 const MAX_COMMITTEE_NEWSLETTER_PAGES = 20;
+
+/**
+ * Hard cap on pages followed when counting a project's newsletters (20 pages × 20 rows =
+ * 400 newsletters) — same guard as the committee feed against a never-terminating token.
+ */
+const MAX_STATUS_COUNT_PAGES = 20;
 
 /**
  * Thin pass-through layer in front of NewsletterServiceClient.
@@ -127,6 +134,51 @@ export class NewsletterService {
 
   public listNewsletters(req: Request, projectUid: string, params: NewsletterListParams): Promise<NewsletterListResponse> {
     return this.newsletterClient.listNewsletters(req, projectUid, params);
+  }
+
+  /**
+   * Tab counts for the project newsletter list. The upstream list has no totals, so this walks
+   * the unfiltered list (cursor-chained, so sequential) while reading opt-outs in parallel.
+   * A failed opt-out read only drops that count; a failed list read fails the request.
+   */
+  public async getNewsletterStatusCounts(req: Request, projectUid: string): Promise<NewsletterStatusCounts> {
+    const optOutCount = this.newsletterClient
+      .listOptOuts(req, projectUid)
+      .then((response) => response.opt_outs.length)
+      .catch((error: unknown) => {
+        const statusCode = isBaseApiError(error) ? error.statusCode : undefined;
+        if (statusCode === 401) throw error;
+        return null;
+      });
+
+    const counts = { draft: 0, scheduled: 0, sent: 0 };
+    let pageToken: string | undefined;
+    let pages = 0;
+    try {
+      do {
+        const page = await this.newsletterClient.listNewsletters(req, projectUid, { page_token: pageToken });
+        for (const row of page.newsletters ?? []) {
+          if (row.status === 'draft') counts.draft += 1;
+          else if (row.status === 'scheduled' || (row.status === 'sending' && row.scheduled_at)) counts.scheduled += 1;
+          else counts.sent += 1;
+        }
+        pageToken = page.next_page_token;
+        pages += 1;
+      } while (pageToken && pages < MAX_STATUS_COUNT_PAGES);
+    } catch (error) {
+      // Settle the in-flight opt-out read so a failure there can't surface as an unhandled rejection.
+      await optOutCount.catch(() => undefined);
+      throw error;
+    }
+
+    if (pageToken) {
+      logger.warning(req, 'newsletter_status_counts', 'Stopped following page tokens at the page cap', {
+        project_uid: projectUid,
+        page_cap: MAX_STATUS_COUNT_PAGES,
+      });
+    }
+
+    return { ...counts, optout: await optOutCount, truncated: !!pageToken };
   }
 
   public updateNewsletter(
