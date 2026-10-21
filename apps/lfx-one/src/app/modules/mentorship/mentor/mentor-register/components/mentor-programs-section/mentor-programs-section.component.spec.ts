@@ -21,6 +21,7 @@ import {
   MentorshipMentorOpenProgram,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
+  MentorshipMentorProgramInvitation,
   MentorshipMentorProgramRequest,
 } from '@lfx-one/shared/interfaces';
 import { MentorshipMentorService } from '@services/mentorship-mentor.service';
@@ -41,6 +42,8 @@ describe('MentorProgramsSectionComponent', () => {
     status: 'approved',
   };
 
+  const invitation: MentorshipMentorProgramInvitation = { id: 'member_1', programId: 'mp_gridflow', programName: 'GridFlow Ingestion' };
+
   let fixture: ComponentFixture<MentorProgramsSectionComponent>;
   let getOpenPrograms: ReturnType<typeof vi.fn<(query: MentorshipMentorOpenProgramsQuery) => Observable<MentorshipMentorOpenProgramsResponse>>>;
   let unavailableProgramIds: ReturnType<typeof signal<string[]>>;
@@ -48,6 +51,8 @@ describe('MentorProgramsSectionComponent', () => {
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const withdrawButton = (id: string): HTMLButtonElement | null =>
     element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-mentor-withdraw-${id}"] button`);
+  const invitationButton = (action: 'accept' | 'decline', id: string): HTMLButtonElement | null =>
+    element().querySelector<HTMLButtonElement>(`[data-testid="mentorship-mentor-invitation-${action}-${id}"] button`);
   const option = (id: string) => fixture.componentInstance['programOptions']().find((item) => item.value === id);
   const optionIds = (): string[] => fixture.componentInstance['programOptions']().map((item) => item.value);
 
@@ -115,7 +120,7 @@ describe('MentorProgramsSectionComponent', () => {
 
   it('lists a program the mentor is invited to as disabled, since upstream would refuse a request', () => {
     fixture.componentRef.setInput('requests', []);
-    fixture.componentRef.setInput('invitedProgramIds', ['mp_kubernetes']);
+    fixture.componentRef.setInput('invitations', [{ ...invitation, programId: 'mp_kubernetes' }]);
     fixture.detectChanges();
 
     expect(option('mp_kubernetes')).toMatchObject({ disabled: true, note: 'Invited' });
@@ -420,6 +425,52 @@ describe('MentorProgramsSectionComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-mentor-withdraw-req_1"]')?.getAttribute('data-loading')).toBe('true');
     expect(withdrawButton('req_1')?.disabled).toBe(true);
     expect(withdrawButton('req_2')?.disabled).toBe(true);
+  });
+
+  it('lists an invitation above the requests, with an Invited badge and Accept and Decline named for the program', () => {
+    fixture.componentRef.setInput('invitations', [invitation]);
+    fixture.detectChanges();
+
+    const rows = Array.from(element().querySelectorAll('tbody tr')).map((row) => row.getAttribute('data-testid'));
+    expect(rows).toEqual(['mentorship-mentor-invitation-row-member_1', 'mentorship-mentor-request-row-req_1']);
+    expect(element().querySelector('[data-testid="mentorship-mentor-invitation-status-member_1"]')?.textContent?.trim()).toBe('Invited');
+    expect(invitationButton('accept', 'member_1')?.getAttribute('aria-label')).toBe('Accept invitation to mentor GridFlow Ingestion');
+    expect(invitationButton('decline', 'member_1')?.getAttribute('aria-label')).toBe('Decline invitation to mentor GridFlow Ingestion');
+  });
+
+  it('shows the table for an invitation alone, with no requests', () => {
+    fixture.componentRef.setInput('requests', []);
+    fixture.componentRef.setInput('invitations', [invitation]);
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-invitation-row-member_1"]')).not.toBeNull();
+  });
+
+  it('emits the invitation id on Accept and on Decline, leaving the answer to the parent', () => {
+    const accepted: string[] = [];
+    const declined: string[] = [];
+    fixture.componentInstance.acceptInvitation.subscribe((id) => accepted.push(id));
+    fixture.componentInstance.declineInvitation.subscribe((id) => declined.push(id));
+    fixture.componentRef.setInput('invitations', [invitation]);
+    fixture.detectChanges();
+
+    invitationButton('accept', 'member_1')?.click();
+    invitationButton('decline', 'member_1')?.click();
+
+    expect(accepted).toEqual(['member_1']);
+    expect(declined).toEqual(['member_1']);
+  });
+
+  it('marks the invitation being answered as loading and disables every Accept and Decline meanwhile', () => {
+    fixture.componentRef.setInput('invitations', [invitation, { id: 'member_2', programId: 'mp_other', programName: 'Other' }]);
+    fixture.componentRef.setInput('respondingInvitationId', 'member_1');
+    fixture.detectChanges();
+
+    expect(element().querySelector('[data-testid="mentorship-mentor-invitation-accept-member_1"]')?.getAttribute('data-loading')).toBe('true');
+    for (const id of ['member_1', 'member_2']) {
+      expect(invitationButton('accept', id)?.disabled).toBe(true);
+      expect(invitationButton('decline', id)?.disabled).toBe(true);
+    }
   });
 
   it('shows a failed read with Retry in place of the table, and disables the select, rather than an empty list', () => {
