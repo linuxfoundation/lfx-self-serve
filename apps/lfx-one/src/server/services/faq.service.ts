@@ -16,7 +16,7 @@ import {
   buildMktgRunActivity,
   extractFaqQuestions,
   extractFaqRefusal,
-  extractMktgAgentTexts,
+  extractMktgCurrentTurnAgentTexts,
   extractMktgEnvelopeCandidates,
   extractMktgToolResults,
   faqAsset,
@@ -193,17 +193,15 @@ export class FaqService {
    */
   private findOutcome(req: Request, payloads: string[]): FaqSessionOutcome {
     let outcome: FaqSessionOutcome = { status: 'pending' };
-    for (const payload of payloads) {
-      for (const text of extractMktgAgentTexts(payload)) {
-        const questions = extractFaqQuestions(text);
-        if (questions) {
-          outcome = { status: 'questions', questions };
-          continue;
-        }
-        const reply = extractFaqRefusal(text);
-        if (reply) {
-          outcome = { status: 'refused', reply };
-        }
+    for (const text of extractMktgCurrentTurnAgentTexts(payloads)) {
+      const questions = extractFaqQuestions(text);
+      if (questions) {
+        outcome = { status: 'questions', questions };
+        continue;
+      }
+      const reply = extractFaqRefusal(text);
+      if (reply) {
+        outcome = { status: 'refused', reply };
       }
     }
     if (outcome.status === 'questions') {

@@ -21,6 +21,7 @@ import {
   findMktgDocumentType,
   mktgDocumentLocationOfReceipt,
   mktgRunProgress,
+  findMktgRunIntake,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
 } from './mktg-document-store.utils';
@@ -46,10 +47,16 @@ function startedRun(overrides: Partial<MktgStartedRunRecord> = {}): MktgStartedR
 
 describe('mktg-document-store utils', () => {
   it('projects paused run state without private session fields', () => {
-    const run = startedRun({ state: 'questions' });
+    const run = startedRun({ state: 'questions', creatorSubject: 'synthetic-creator-subject' });
     expect(mktgRunProgress(run)).toMatchObject({ runId: SHA, state: 'questions' });
     expect(mktgRunProgress(run)).not.toHaveProperty('sessionId');
+    expect(mktgRunProgress(run)).not.toHaveProperty('creatorSubject');
+    expect(JSON.stringify(mktgRunProgress(run))).not.toContain('synthetic-creator-subject');
     expect(mktgRunProgress(startedRun({ state: 'completed' }))).toBeNull();
+  });
+  it('derives run membership from the active catalog and registered intake', () => {
+    expect(findMktgRunIntake(BRAND_KIT.agentKey)?.agentId).toBe(BRAND_KIT.catalogAgentId);
+    expect(findMktgRunIntake('not-a-registered-agent')).toBeUndefined();
   });
   it('normalizes only the exact snake-case receipt location for UI readers', () => {
     expect(
