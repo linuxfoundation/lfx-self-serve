@@ -8,9 +8,12 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { NavigationEnd, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { FOUNDATION_MESSAGE_INTAKE, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_INTAKE, FOUNDATION_MESSAGE_CONTRACT_ID, MKTG_AGENT_INTAKES, MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
 import { MktgGenerateRequest, MktgRevisionResponse, MktgRevisionSummary, ProjectContext } from '@lfx-one/shared/interfaces';
+import { findMktgRunIntake } from '@lfx-one/shared/utils/mktg-document-store.utils';
+import { returningRunFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-returning-run.fixture';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
+import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgAnswerMemoryService } from '@services/mktg-answer-memory.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -118,6 +121,181 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     http?.verify();
     vi.useRealTimers();
     window.localStorage.clear();
+  });
+
+  it.each(MKTG_DOCUMENT_TYPES.filter((candidate) => !!findMktgRunIntake(candidate.agentKey)?.endpoints.result))(
+    'reconnects $agentKey result polling after leaving the routed intake mid-run',
+    async (target) => {
+      const registered = findMktgRunIntake(target.agentKey);
+      if (!registered) throw new Error('Missing registered result intake');
+      const frameworkType = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === FOUNDATION_MESSAGE_INTAKE.agentId);
+      if (!frameworkType) throw new Error('Missing registered framework dependency');
+      const framework = returningRunFixture(frameworkType, project.uid);
+      vi.spyOn(TestBed.inject(MktgDependencyService), 'resolveDependencies').mockReturnValue(
+        of({
+          [FOUNDATION_MESSAGE_INTAKE.agentId]: {
+            agentId: FOUNDATION_MESSAGE_INTAKE.agentId,
+            source: 'server',
+            version: 1,
+            document: '# Synthetic framework',
+            sidecar: { contract: FOUNDATION_MESSAGE_CONTRACT_ID, content: framework.result.asset?.content },
+          },
+        })
+      );
+      const component = await harness.navigateByUrl(`/project/mktg-os-agents/${registered.agentId}`, MktgAgentRunComponent);
+      await settle();
+      for (const field of registered.fields) {
+        if (field.optional) continue;
+        let value = 'Grow synthetic adoption';
+        if (field.prefill === 'project-name') value = project.name;
+        if (field.format === 'github-url' || field.format === 'github-repo-url') value = 'https://github.com/synthetic-org/synthetic-orbit';
+        if (field.format && field.format !== 'github-url' && field.format !== 'github-repo-url') value = 'https://synthetic.example';
+        component['intakeForm'].controls[field.key].setValue(value);
+      }
+      await settle();
+      component['onSubmit']();
+      await settle();
+      http.expectOne(registered.endpoints.generate).flush({ sessionId: 'synthetic-session', ownerToken: 'synthetic-proof', runId: 'b'.repeat(64) });
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      const interrupted = http.expectOne(registered.endpoints.result);
+      // Leave the owning route first: a direct-start intake may already be on its asset receiver.
+      await harness.navigateByUrl(`/foundation/mktg-os-agents/${registered.agentId}`, MktgAgentRunComponent);
+      expect(interrupted.cancelled).toBe(true);
+      http.match((candidate) => candidate.url.endsWith(`/documents/${target.agentKey}/living`)).forEach((read) => expect(read.cancelled).toBe(true));
+      await harness.navigateByUrl(`/project/mktg-os-agents/documents/${target.agentKey}/living?run=${'b'.repeat(64)}`, MktgDocumentViewComponent);
+      await settle();
+      http
+        .expectOne((candidate) => candidate.url.endsWith(`/documents/${target.agentKey}/living`))
+        .flush({
+          project: project.uid,
+          type: target,
+          documentId: 'living',
+          revisions: [],
+          runs: [
+            { project: project.uid, agentKey: target.agentKey, documentId: 'living', runId: 'b'.repeat(64), state: 'writing', startedAt: revision.createdAt },
+          ],
+        });
+      await settle();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+      const resumed = http.expectOne(registered.endpoints.result);
+      expect(resumed.request.body).toMatchObject({ sessionId: 'synthetic-session', ownerToken: 'synthetic-proof', project: project.uid });
+      const landed = navigation();
+      const fixture = returningRunFixture(target, project.uid);
+      resumed.flush(fixture.result);
+      await landed;
+      await settle();
+      const result = fixture.revision;
+      http.match((candidate) => candidate.url.endsWith(`/documents/${target.agentKey}/living`)).forEach((read) => read.flush(result));
+      http.expectOne((candidate) => candidate.url.endsWith(`/revisions/${revisionId}`)).flush(result);
+      await settle();
+      http.match((candidate) => candidate.url.endsWith('/slides-export/last')).forEach((read) => read.flush({ last: null, latestRevision: null }));
+      if (target.agentKey === frameworkType.agentKey) {
+        http.expectOne((candidate) => candidate.url.endsWith('/documents')).flush({ project: project.uid, groups: [] });
+      }
+      await settle();
+      expect(router.url).toContain(`revision=${revisionId}`);
+      expect(query(fixture.selector)).not.toBeNull();
+      expect(query('mktg-document-view-unsupported-asset')).toBeNull();
+      expect(query('mktg-document-view-run')).toBeNull();
+      http.expectNone(registered.endpoints.generate);
+    }
+  );
+
+  it('waits through unavailable metadata before reconnecting the accepted run exactly once', async () => {
+    TestBed.inject(MktgRunAttemptService).save({
+      request,
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+      attempt: {
+        session: { agentId: intake.agentId, sessionId: 'synthetic-waiting-session', ownerToken: 'synthetic-waiting-proof' },
+        runId: 'b'.repeat(64),
+        priorVersion: 0,
+      },
+    });
+    const resume = vi.spyOn(TestBed.inject(MktgAgentRunService), 'resume');
+    await harness.navigateByUrl(`/project/mktg-os-agents/documents/${type.agentKey}/living?run=${'b'.repeat(64)}`, MktgDocumentViewComponent);
+    await settle();
+    const unavailable = { project: project.uid, type, documentId: 'living', revisions: [], approvedCurrent: null, runs: [], progressUnavailable: true };
+    http.expectOne((candidate) => candidate.url.endsWith(`/documents/${type.agentKey}/living`)).flush(unavailable);
+    await settle();
+    expect(resume).not.toHaveBeenCalled();
+    http.expectNone(intake.endpoints.result);
+    http.expectNone(intake.endpoints.generate);
+    await vi.advanceTimersByTimeAsync(2 * MKTG_RUN_POLL.intervalMs);
+    http
+      .expectOne((candidate) => candidate.url.endsWith(`/documents/${type.agentKey}/living`))
+      .flush({
+        ...unavailable,
+        progressUnavailable: false,
+        runs: [{ project: project.uid, agentKey: type.agentKey, documentId: 'living', runId: 'b'.repeat(64), state: 'writing', startedAt: revision.createdAt }],
+      });
+    await settle();
+    expect(resume).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    const poll = http.expectOne(intake.endpoints.result);
+    expect(poll.request.body).toMatchObject({
+      sessionId: 'synthetic-waiting-session',
+      ownerToken: 'synthetic-waiting-proof',
+      project: project.uid,
+    });
+    poll.flush({ status: 'pending' });
+    await settle();
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(query('mktg-document-view-run')).not.toBeNull();
+    http.expectNone(intake.endpoints.generate);
+  });
+
+  it.each([
+    { label: 'no local attempt', local: 'none', publicState: 'writing', selection: '' },
+    { label: 'saved draft', local: 'draft', publicState: 'writing', selection: '' },
+    { label: 'saved questions', local: 'questions', publicState: 'writing', selection: '' },
+    { label: 'saved failure', local: 'failed', publicState: 'writing', selection: '' },
+    { label: 'public failure with stale local writing', local: 'writing', publicState: 'failed', selection: '' },
+    { label: 'public questions with stale local writing', local: 'writing', publicState: 'questions', selection: '' },
+    { label: 'missing public attempt', local: 'writing', publicState: 'missing', selection: '' },
+    { label: 'another selected run', local: 'writing', publicState: 'writing', selection: `?run=${'c'.repeat(64)}` },
+    { label: 'pinned revision', local: 'writing', publicState: 'writing', selection: `?revision=${revisionId}` },
+  ] as const)('does not reconnect creator polling for $label', async ({ local, publicState, selection }) => {
+    if (local !== 'none')
+      TestBed.inject(MktgRunAttemptService).save({
+        request,
+        state: local,
+        updatedAt: new Date().toISOString(),
+        attempt: {
+          session: { agentId: intake.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+          runId: 'b'.repeat(64),
+          priorVersion: 0,
+        },
+      });
+    await harness.navigateByUrl(`/project/mktg-os-agents/documents/${type.agentKey}/living${selection}`, MktgDocumentViewComponent);
+    await settle();
+    http
+      .match((candidate) => candidate.url.includes('/documents/'))
+      .forEach((read) =>
+        read.flush({
+          ...stored,
+          runs:
+            publicState === 'missing'
+              ? []
+              : [
+                  {
+                    project: project.uid,
+                    agentKey: type.agentKey,
+                    documentId: 'living',
+                    runId: 'b'.repeat(64),
+                    state: publicState,
+                    startedAt: revision.createdAt,
+                  },
+                ],
+        })
+      );
+    await settle();
+    http.match((candidate) => candidate.url.includes('/documents/')).forEach((read) => read.flush(stored));
+    await settle();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    http.expectNone((candidate) => candidate.method === 'POST');
+    http.match((candidate) => candidate.url.includes('/documents/')).forEach((read) => read.flush(stored));
+    await settle();
   });
 
   it.each(['project', 'foundation'])('consumes one prepared generation on the %s mount and opens its exact receipt revision', async (lens) => {
