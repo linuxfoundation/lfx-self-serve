@@ -73,6 +73,10 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(root.getByRole('region', { name: 'Document content' })).toBeVisible();
     await expect(page.getByTestId('mktg-document-view-revisions').locator('ol > li')).toHaveCount(3);
     await expect(page.getByTestId('mktg-document-view-restore-current')).toHaveCount(0);
+    await page.getByTestId('mktg-document-view-run-again').click();
+    await expect(page.getByTestId('mktg-agent-run-form')).toHaveJSProperty('tagName', 'FORM');
+    await expect(page.getByTestId('mktg-agent-run-page').locator('h1')).toHaveCount(1);
+    await expect(page.getByTestId('mktg-agent-run-version-chips')).toHaveCount(0);
   });
 
   test('loading does not claim empty counts; success produces semantic table headers', async ({ page }) => {

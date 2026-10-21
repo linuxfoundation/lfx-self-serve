@@ -69,6 +69,9 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page).toHaveURL(new RegExp(`run=${run.runId}`));
     await expect(page.getByTestId('mktg-document-view-revision-chip')).toContainText('Revision 2 of 3');
     await expect(page.getByTestId('mktg-document-view-current-2')).toBeVisible();
+    await page.getByTestId('mktg-document-view-run-again').click();
+    await expect(page.getByTestId('mktg-agent-run-form')).toBeVisible();
+    await expect(page.getByTestId('mktg-agent-run-result')).toHaveCount(0);
   });
 
   test('retains loaded revisions on a transient poll error and removes completed progress after retry', async ({ page }) => {

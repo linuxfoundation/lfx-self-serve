@@ -1245,6 +1245,18 @@ export interface MktgStoredPendingGeneration extends Omit<MktgPendingGeneration,
   request: Pick<MktgGenerateRequest, 'agentId' | 'projectUid' | 'answers' | 'feedback'>;
 }
 
+/** A pending navigation can be retried without repeating generation or answers. */
+export interface MktgRunNavigation {
+  projectUid: string;
+  subject: string;
+  agentKey: string;
+  /** Canonical receipt document; prepared living intakes use the shared default until persisted. */
+  documentId?: string;
+  generation?: string;
+  revisionId?: string;
+  runId?: string;
+}
+
 /** In-memory navigation handoff; this is not a session capability and is never serialized into a URL. */
 export interface MktgPreparedGeneration {
   subject: string;

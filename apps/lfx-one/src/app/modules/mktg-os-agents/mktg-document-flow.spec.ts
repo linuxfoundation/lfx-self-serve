@@ -309,12 +309,44 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
     expect(query('mktg-agent-run-page')).not.toBeNull();
   });
 
-  it.each(['project', 'foundation'])('returns another questions round to the intake receiver on the %s mount without another answers POST', async (lens) => {
-    const frameworkType = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === FOUNDATION_MESSAGE_INTAKE.agentId);
-    if (!frameworkType) {
-      throw new Error('Missing framework type');
+  it.each(['project', 'foundation'])('cancels an owned attempt re-check on the %s intake route before a late outcome can navigate', async (lens) => {
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    attempts.save({
+      request,
+      state: 'writing',
+      attempt: {
+        session: { agentId: request.agentId, sessionId: 'synthetic-owned-session', ownerToken: 'synthetic-owner-proof' },
+        runId: 'b'.repeat(64),
+        priorVersion: 0,
+      },
+      updatedAt: new Date().toISOString(),
+    });
+    const token = attempts.prepare(request, true);
+    const navigate = vi.spyOn(router, 'navigate');
+    const component = await harness.navigateByUrl(`/${lens}/mktg-os-agents/${intake.agentId}?questions=${token}`, MktgAgentRunComponent);
+    await settle();
+    expect(component['phase']()).toBe('running');
+    expect(query('mktg-agent-run-form')).toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+    const poll = http.expectOne(intake.endpoints.result);
+    http.expectNone((candidate) => candidate.method === 'POST');
+    const calls = navigate.mock.calls.length;
+    harness.fixture.destroy();
+    expect(poll.cancelled).toBe(true);
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    expect(navigate).toHaveBeenCalledTimes(calls);
+  });
+
+  it.each(
+    MKTG_DOCUMENT_TYPES.filter((candidate) => !!findMktgRunIntake(candidate.agentKey)?.endpoints.answers).flatMap((target) =>
+      ['project', 'foundation'].map((lens) => ({ target, lens }))
+    )
+  )('returns $target.agentKey questions on the $lens mount without another answers POST', async ({ target, lens }) => {
+    const registered = findMktgRunIntake(target.agentKey);
+    if (!registered) {
+      throw new Error('Missing registered questions intake');
     }
-    const req: MktgGenerateRequest = { ...request, agentId: FOUNDATION_MESSAGE_INTAKE.agentId, intake: FOUNDATION_MESSAGE_INTAKE };
+    const req: MktgGenerateRequest = { ...request, agentId: registered.agentId, intake: registered };
     const attempts = TestBed.inject(MktgRunAttemptService);
     attempts.save({
       request: req,
@@ -324,11 +356,11 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
       updatedAt: new Date().toISOString(),
     });
     const token = attempts.prepare(req, true);
-    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${frameworkType.agentKey}/living?generation=${token}`, MktgDocumentViewComponent);
+    await harness.navigateByUrl(`/${lens}/mktg-os-agents/documents/${target.agentKey}/living?generation=${token}`, MktgDocumentViewComponent);
     await settle();
     http
-      .expectOne((candidate) => candidate.url.endsWith(`/documents/${frameworkType.agentKey}/living`))
-      .flush({ project: project.uid, type: frameworkType, documentId: 'living', revisions: [], runs: [] });
+      .expectOne((candidate) => candidate.url.endsWith(`/documents/${target.agentKey}/living`))
+      .flush({ project: project.uid, type: target, documentId: 'living', revisions: [], approvedCurrent: null, runs: [] });
     await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
     const returned = navigation();
     http.expectOne(req.intake.endpoints.result).flush({
