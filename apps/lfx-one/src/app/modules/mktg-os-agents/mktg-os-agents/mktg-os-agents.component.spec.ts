@@ -91,6 +91,8 @@ describe('MktgOsAgentsComponent — catalog states and listing dates', () => {
     await fixture.whenStable();
     const root: HTMLElement = fixture.nativeElement;
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    expect(root.querySelector('[data-testid="mktg-breadcrumb-current"]')?.textContent).toBe('Agents');
+    expect(root.querySelector('[data-testid="mktg-breadcrumb-link-0"]')?.getAttribute('href')).toContain('project=proj-one');
     const button = root.querySelector<HTMLButtonElement>('[data-testid="mktg-os-agents-tile-foundation-setup"]');
     expect(button).not.toBeNull();
     button?.click();

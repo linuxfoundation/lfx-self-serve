@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, computed, inject, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { map } from 'rxjs';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { MKTG_KIT_FILTERS, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
@@ -19,15 +21,29 @@ import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-h
   templateUrl: './mktg-kit.component.html',
 })
 export class MktgKitComponent {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   protected readonly kit = inject(MktgKitService);
   protected readonly filters = MKTG_KIT_FILTERS;
   protected readonly familyCount = MKTG_KIT_FAMILIES.length;
-  protected readonly selectedFilter = signal<MktgKitFilter>('all');
+  protected readonly selectedFilter = this.initSelectedFilter();
   protected readonly cards = this.initCards();
 
   protected selectFilter(id: string): void {
     const filter = this.filters.find((option) => option.id === id);
-    if (filter) this.selectedFilter.set(filter.id);
+    if (filter)
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { ...this.kit.projectQueryParams(), state: filter.id === 'all' ? null : filter.id },
+        queryParamsHandling: 'merge',
+      });
+  }
+
+  private initSelectedFilter(): Signal<MktgKitFilter> {
+    return toSignal(
+      this.route.queryParamMap.pipe(map((params): MktgKitFilter => this.filters.find((filter) => filter.id === params.get('state'))?.id ?? 'all')),
+      { initialValue: 'all' }
+    );
   }
 
   private initCards() {

@@ -1,18 +1,15 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto w-full min-w-0 px-4 sm:px-6 lg:px-8" data-testid="mktg-documents-page">
-  <div class="flex flex-col gap-5">
-    <!-- Page header -->
-    <div class="flex flex-col gap-1">
-      <a routerLink=".." queryParamsHandling="preserve" class="text-sm text-blue-600 hover:text-blue-800 w-fit" data-testid="mktg-documents-back-link">
-        <i class="fa-light fa-arrow-left mr-1" aria-hidden="true"></i>Marketing OS
-      </a>
-      <lfx-page-header
-        title="Documents"
-        [description]="'Every document the Marketing OS agents stored for ' + (projectName() || 'this project') + ', with its revisions.'"
-        titleTestId="mktg-documents-title" />
-    </div>
+<div #documentContainer class="@container mx-auto w-full min-w-0 max-w-screen-2xl px-4 sm:px-6 lg:px-8" data-testid="mktg-documents-page">
+  <div class="flex flex-col gap-6">
+    <lfx-mktg-breadcrumb [project]="projectSlug()" [crumbs]="crumbs()" />
+    <lfx-mktg-kit-header [projectName]="projectName()" titleTestId="mktg-documents-project-title" />
+    <lfx-mktg-kit-tabs />
+    <section class="flex flex-col gap-1" aria-labelledby="mktg-documents-heading">
+      <h2 id="mktg-documents-heading" class="text-2xl font-semibold" data-testid="mktg-documents-title">Documents</h2>
+      <p class="text-sm text-gray-500">Every document the Marketing OS agents stored for {{ projectName() }}, with its revisions.</p>
+    </section>
 
     @if (errorText()) {
       <lfx-message severity="error" [text]="errorText()" data-testid="mktg-documents-error" />
@@ -25,11 +22,21 @@
     <div class="grid min-w-0 grid-cols-1 items-start gap-6 @[800px]:grid-cols-[18rem_minmax(0,1fr)]">
       <!-- Navigation: living documents in run order, then the one-off runs -->
       <nav aria-label="Documents by agent" class="flex min-w-0 flex-col gap-1.5" data-testid="mktg-documents-nav">
+        <a
+          [routerLink]="[]"
+          [queryParams]="{ type: null, project: projectSlug() }"
+          queryParamsHandling="merge"
+          [attr.aria-current]="showAll() ? 'page' : null"
+          class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
+          [ngClass]="showAll() ? 'border-blue-600 font-semibold' : 'border-gray-200'"
+          data-testid="mktg-documents-nav-all"
+          >All documents</a
+        >
         <div class="px-3 py-1 font-mono text-xs uppercase tracking-wider text-gray-500">Living documents, in run order</div>
         @for (item of livingNav(); track item.type.agentKey) {
           <a
             [routerLink]="[]"
-            [queryParams]="{ type: item.type.agentKey }"
+            [queryParams]="{ type: item.type.agentKey, project: projectSlug() }"
             queryParamsHandling="merge"
             class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
             [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
@@ -46,7 +53,7 @@
         @for (item of runNav(); track item.type.agentKey) {
           <a
             [routerLink]="[]"
-            [queryParams]="{ type: item.type.agentKey }"
+            [queryParams]="{ type: item.type.agentKey, project: projectSlug() }"
             queryParamsHandling="merge"
             class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
             [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
@@ -62,7 +69,7 @@
       </nav>
 
       <!-- The table's 640px minimum is the design's; zero-min grid tracks keep its overflow inside the card. -->
-      <section aria-label="Documents and revisions" class="flex min-w-0 flex-col gap-5">
+      <section #documentPanel aria-label="Documents and revisions" class="flex min-w-0 scroll-mt-20 flex-col gap-5">
         @if (loading()) {
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-loading">
             Loading documents…
@@ -70,8 +77,31 @@
         } @else if (listFailed()) {
           <!-- The list read failed: the error above is the only answer; no empty state may claim nothing is stored. -->
           <div class="rounded-xl border border-gray-200 bg-white px-6 py-10 text-sm text-gray-500" role="status" data-testid="mktg-documents-list-failed">
-            The documents for {{ projectName() || 'this project' }} are unavailable right now.
+            The documents for {{ projectName() }} are unavailable right now.
           </div>
+        } @else if (showAll()) {
+          <section
+            aria-label="All documents"
+            class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
+            data-testid="mktg-documents-all">
+            <h2 class="text-xl font-semibold">All documents</h2>
+            <ul class="flex flex-col gap-3">
+              @for (item of allDocuments(); track item.type.agentKey + '/' + item.document.documentId) {
+                <li class="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 pb-3">
+                  <a
+                    [routerLink]="[item.type.agentKey, item.document.documentId]"
+                    [queryParams]="{ project: projectSlug() }"
+                    class="font-semibold text-blue-700 hover:underline"
+                    [attr.data-testid]="'mktg-documents-all-open-' + item.type.agentKey + '-' + item.document.documentId"
+                    >{{ item.type.label }}</a
+                  >
+                  <span class="text-sm text-gray-500">{{ item.document.updatedAt | date: 'd MMM y' }} · {{ item.document.revisionCount }} revisions</span>
+                </li>
+              } @empty {
+                <li class="text-sm text-gray-500" data-testid="mktg-documents-empty-all">No documents yet. Run an agent to create the first asset.</li>
+              }
+            </ul>
+          </section>
         } @else if (selectedLiving(); as living) {
           <!-- A living document: its header and its Revisions table -->
           <section

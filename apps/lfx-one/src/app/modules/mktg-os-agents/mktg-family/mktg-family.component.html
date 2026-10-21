@@ -2,17 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="@container mx-auto flex max-w-screen-2xl flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="mktg-family-page">
-  <nav aria-label="Breadcrumb" class="text-sm text-gray-500">
-    <a
-      [routerLink]="['../../']"
-      [queryParams]="kit.projectQueryParams()"
-      queryParamsHandling="merge"
-      class="text-blue-700 hover:underline"
-      data-testid="mktg-family-kit-link"
-      >{{ kit.projectName() }} kit</a
-    >
-    <span aria-hidden="true"> › </span><span aria-current="page">{{ definition()?.name ?? 'Family not found' }}</span>
-  </nav>
+  <lfx-mktg-breadcrumb [project]="kit.projectQueryParams().project" [crumbs]="crumbs()" />
   @if (definition(); as definition) {
     <lfx-page-header data-testid="mktg-family-header" [title]="definition.name" titleTestId="mktg-family-title">
       <div pageHeaderDescription class="max-w-4xl" data-testid="mktg-family-intro">{{ definition.intro ?? definition.description }}</div>

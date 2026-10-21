@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MessageComponent } from '@components/message/message.component';
@@ -18,11 +18,13 @@ import {
   MktgRevisionSummary,
   MktgSelectedLivingDocument,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgRevision, describeMktgRevisionAuthor } from '@lfx-one/shared/utils';
+import { describeMktgRevision, describeMktgRevisionAuthor, mktgKitRootCrumb } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
-import { PageHeaderComponent } from '@components/page-header/page-header.component';
+import { catchError, distinctUntilChanged, filter, map, of, startWith, Subject, switchMap, tap } from 'rxjs';
+import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
+import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
+import { MktgKitHeaderComponent } from '../components/mktg-kit-header/mktg-kit-header.component';
 
 // The Marketing OS Documents area (design of record: "Document store", Main
 // board): living documents in run order with their revision state, the
@@ -31,10 +33,10 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
 // hydration, so SSR output stays stable — same pattern as the marketplace.
 @Component({
   selector: 'lfx-mktg-documents',
-  // Excluding layout gutters: ~620px host at 1024, ~876px at 1280.
+  // Layout queries use the padded inner page's content width, not this routed host.
   // The 800px switch leaves headroom for classic scrollbars.
   host: { class: '@container block w-full min-w-0', 'data-testid': 'mktg-documents-width' },
-  imports: [DatePipe, NgClass, RouterLink, MessageComponent, PageHeaderComponent],
+  imports: [DatePipe, NgClass, RouterLink, MessageComponent, MktgBreadcrumbComponent, MktgKitTabsComponent, MktgKitHeaderComponent],
   templateUrl: './mktg-documents.component.html',
 })
 export class MktgDocumentsComponent {
@@ -44,6 +46,10 @@ export class MktgDocumentsComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly projectContext = inject(ProjectContextService);
   private readonly route = inject(ActivatedRoute);
+  private readonly injector = inject(Injector);
+  private readonly documentPanel = viewChild<ElementRef<HTMLElement>>('documentPanel');
+  private readonly documentContainer = viewChild<ElementRef<HTMLElement>>('documentContainer');
+  private readonly listRefresh = new Subject<void>();
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -60,12 +66,20 @@ export class MktgDocumentsComponent {
   // The project whose list is shown. Switching projects clears the previous
   // project's documents and badges while the new project's list loads.
   private listedProject = '';
+  private listedType: string | null = null;
+  private pendingSelectionScroll = false;
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
   // === Computed ===
-  protected readonly projectName: Signal<string> = computed(() => this.projectContext.activeContext()?.name ?? '');
+  protected readonly projectName: Signal<string> = computed(() => this.projectContext.activeContext()?.name ?? 'Project');
+  protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
+  protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.projectName(), ['..']), { label: 'Documents' }]);
   protected readonly selectedType: Signal<MktgDocumentType> = this.initSelectedType();
+  protected readonly showAll = computed(() => !MKTG_DOCUMENT_TYPES.some((type) => type.agentKey === this.selectedParam()));
+  protected readonly allDocuments = computed(() =>
+    (this.documents()?.groups ?? []).flatMap((group) => group.documents.map((document) => ({ type: group.type, document })))
+  );
   protected readonly livingNav: Signal<MktgDocumentNavItem[]> = this.initNav('living');
   protected readonly runNav: Signal<MktgDocumentNavItem[]> = this.initNav('run');
   protected readonly selectedGroup: Signal<MktgDocumentGroup | null> = computed(
@@ -73,7 +87,7 @@ export class MktgDocumentsComponent {
   );
   protected readonly selectedLiving: Signal<MktgSelectedLivingDocument | null> = computed(() => {
     const type = this.selectedType();
-    return type.kind === 'living' ? { type, document: this.selectedGroup()?.documents[0] ?? null } : null;
+    return !this.showAll() && type.kind === 'living' ? { type, document: this.selectedGroup()?.documents[0] ?? null } : null;
   });
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const detail = this.detail();
@@ -88,7 +102,7 @@ export class MktgDocumentsComponent {
   protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions.find((revision) => revision.latest) ?? null);
 
   // Requests, as observables of their inputs (toObservable needs the injection context).
-  private readonly listRequest$ = toObservable(computed(() => ({ project: this.projectContext.activeContextUid() })));
+  private readonly listRequest$ = toObservable(computed(() => ({ project: this.projectContext.activeContextUid(), type: this.selectedParam() })));
   private readonly detailRequest$ = toObservable(
     computed(() => {
       const living = this.selectedLiving();
@@ -106,26 +120,33 @@ export class MktgDocumentsComponent {
         .pipe(
           filter((request) => !!request.project),
           tap((request) => {
+            this.pendingSelectionScroll = request.project === this.listedProject && request.type !== this.listedType;
+            this.listedType = request.type;
+            this.loading.set(true);
             this.errorText.set('');
             this.listFailed.set(false);
             if (request.project !== this.listedProject) {
               this.listedProject = request.project;
-              this.loading.set(true);
               this.documents.set(null);
               this.notice.set('');
             }
           }),
           switchMap((request) =>
-            this.documentStore.listDocuments(request.project).pipe(
-              catchError((error: HttpErrorResponse) => {
-                this.listFailed.set(true);
-                this.errorText.set(
-                  error.status === 403
-                    ? 'You need write access to this project to see its Marketing OS documents.'
-                    : 'The documents could not be loaded. Try again in a moment.'
-                );
-                return of(null);
-              })
+            this.listRefresh.pipe(
+              startWith(undefined),
+              switchMap(() =>
+                this.documentStore.listDocuments(request.project).pipe(
+                  catchError((error: HttpErrorResponse) => {
+                    this.listFailed.set(true);
+                    this.errorText.set(
+                      error.status === 403
+                        ? 'You need write access to this project to see its Marketing OS documents.'
+                        : 'The documents could not be loaded. Try again in a moment.'
+                    );
+                    return of(null);
+                  })
+                )
+              )
             )
           ),
           takeUntilDestroyed()
@@ -133,6 +154,7 @@ export class MktgDocumentsComponent {
         .subscribe((documents) => {
           this.documents.set(documents);
           this.loading.set(false);
+          this.scrollToSelection();
         });
 
       this.detailRequest$
@@ -160,6 +182,7 @@ export class MktgDocumentsComponent {
         .subscribe((detail) => {
           this.detail.set(detail);
           this.detailLoading.set(false);
+          this.scrollToSelection();
         });
     }
   }
@@ -180,6 +203,8 @@ export class MktgDocumentsComponent {
       next: (restored) => {
         this.restoringId.set(null);
         if (this.destroyRef.destroyed || this.projectContext.activeContextUid() !== project) return;
+        // Replace a read started before this write committed; it must not undo the restored pointer.
+        if (this.loading()) this.listRefresh.next();
         this.documents.update((documents) => this.withCurrentRevision(documents, detail, restored.revision));
         if (!this.sameDocument(project, detail.type.agentKey)) return;
         this.detail.set(restored);
@@ -223,7 +248,7 @@ export class MktgDocumentsComponent {
           ...(countsUnknown
             ? { badge: '', badgeClass: '' }
             : this.navBadge(type, documents.length, documents[0]?.currentRevisionNumber ?? documents[0]?.revisionCount ?? 0)),
-          selected: type.agentKey === selected,
+          selected: !this.showAll() && type.agentKey === selected,
         };
       });
     });
@@ -249,6 +274,23 @@ export class MktgDocumentsComponent {
         };
       }),
     };
+  }
+
+  private scrollToSelection(): void {
+    if (!this.pendingSelectionScroll || this.loading() || this.detailLoading() || (this.selectedLiving()?.document && !this.detail())) return;
+    this.pendingSelectionScroll = false;
+    afterNextRender(
+      () => {
+        if (!isPlatformBrowser(this.platformId)) return;
+        const container = this.documentContainer()?.nativeElement;
+        if (!container) return;
+        const style = window.getComputedStyle(container);
+        const contentWidth = container.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+        // Match the page's @[800px] content-box query, including sidebar and gutter effects.
+        if (contentWidth < 800) this.documentPanel()?.nativeElement.scrollIntoView({ block: 'start' });
+      },
+      { injector: this.injector }
+    );
   }
 
   private sameDocument(project: string, agentKey: string): boolean {

@@ -127,4 +127,5 @@ export const MKTG_KIT_TABS = [
   { path: 'agents', label: 'Agents' },
   { path: 'requests', label: 'Requests' },
   { path: 'access', label: 'Access' },
+  { path: 'documents', label: 'Documents' },
 ] as const;
