@@ -78,16 +78,18 @@
               ariaLabel="Filter by membership tier"
               dataTest="participating-orgs-tier-filter" />
           </div>
-          <div class="w-full sm:w-52" data-testid="participating-orgs-contribution">
-            <lfx-select
-              [form]="filterForm"
-              control="contribution"
-              size="small"
-              [options]="contributionOptions"
-              styleClass="w-full"
-              ariaLabel="Filter by contribution activity"
-              dataTest="participating-orgs-contribution-filter" />
-          </div>
+          @if (isFoundationProject()) {
+            <div class="w-full sm:w-52" data-testid="participating-orgs-contribution">
+              <lfx-select
+                [form]="filterForm"
+                control="contribution"
+                size="small"
+                [options]="contributionOptions"
+                styleClass="w-full"
+                ariaLabel="Filter by contribution activity"
+                dataTest="participating-orgs-contribution-filter" />
+            </div>
+          }
           <!-- The window applies to the tiles and the table alike, and stays reachable when a window has no activity. -->
           <div class="w-full sm:w-44" data-testid="participating-orgs-range">
             <lfx-select

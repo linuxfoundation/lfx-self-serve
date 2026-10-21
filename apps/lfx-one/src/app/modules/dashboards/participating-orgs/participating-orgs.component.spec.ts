@@ -181,7 +181,8 @@ describe('ParticipatingOrgsComponent', () => {
     );
   });
 
-  it('filters by contribution from the first page, and sends nothing for All', async () => {
+  it('filters by contribution from the first page on a foundation project, and sends nothing for All', async () => {
+    getSummary.mockReturnValue(of({ summary: summary({ projectSlug: FOUNDATION_SLUG }) }));
     await render();
     fixture.componentInstance['offset'].set(20);
     await settle();
@@ -193,6 +194,36 @@ describe('ParticipatingOrgsComponent', () => {
     fixture.componentInstance['filterForm'].controls.contribution.setValue('all');
     await settle();
     expect(getPage.mock.lastCall?.[1]).not.toHaveProperty('contribution');
+  });
+
+  it('hides and ignores the contribution filter on a sub-project, where every listed company contributes', async () => {
+    await render();
+    fixture.componentInstance['filterForm'].controls.contribution.setValue('not_contributing');
+    await settle();
+
+    expect(query('participating-orgs-contribution')).toBeNull();
+    expect(getPage.mock.lastCall?.[1]).not.toHaveProperty('contribution');
+  });
+
+  it('never sends a contribution carried from a foundation to a sub-project, in one request', async () => {
+    getSummary.mockReturnValue(of({ summary: summary({ projectSlug: FOUNDATION_SLUG }) }));
+    await render();
+    fixture.componentInstance['filterForm'].controls.contribution.setValue('not_contributing');
+    await settle();
+    expect(getPage).toHaveBeenLastCalledWith(PROJECT_SLUG, expect.objectContaining({ contribution: 'not_contributing' }));
+
+    const subProjectSummary = new Subject<ProjectParticipatingOrgsSummaryResponse>();
+    getSummary.mockReturnValue(subProjectSummary);
+    getPage.mockClear();
+    activeContext.set({ uid: 'other-project-uid', name: 'Other Synthetic Project', slug: 'other-synthetic-project' });
+    await settle();
+    expect(getPage).toHaveBeenCalledTimes(1);
+    expect(getPage.mock.lastCall?.[1]).not.toHaveProperty('contribution');
+
+    subProjectSummary.next({ summary: summary({ projectSlug: 'other-synthetic-project' }) });
+    await settle();
+    expect(getPage).toHaveBeenCalledTimes(1);
+    expect(query('participating-orgs-contribution')).toBeNull();
   });
 
   it('renders a member the viewer cannot open as focusable plain text carrying the access hint', async () => {
@@ -371,14 +402,19 @@ describe('ParticipatingOrgsComponent', () => {
     expect(query('participating-orgs-sort-commits')?.closest('th')?.getAttribute('aria-sort')).toBe('none');
   });
 
-  it('clears and disables the tier filter on the Non-Members tab in one request, from the first page', async () => {
+  it('clears and disables the tier and contribution filters on the Non-Members tab in one request, from the first page', async () => {
+    getSummary.mockReturnValue(of({ summary: summary({ projectSlug: FOUNDATION_SLUG }) }));
     await render();
-    const tier = fixture.componentInstance['filterForm'].controls.tier;
+    const { tier, contribution } = fixture.componentInstance['filterForm'].controls;
 
     tier.setValue('Gold');
+    contribution.setValue('not_contributing');
     fixture.componentInstance['offset'].set(20);
     await settle();
-    expect(getPage).toHaveBeenLastCalledWith(PROJECT_SLUG, expect.objectContaining({ segment: 'all', tier: 'Gold', offset: 20 }));
+    expect(getPage).toHaveBeenLastCalledWith(
+      PROJECT_SLUG,
+      expect.objectContaining({ segment: 'all', tier: 'Gold', contribution: 'not_contributing', offset: 20 })
+    );
     getPage.mockClear();
 
     fixture.debugElement.query(By.directive(CardTabsBarComponent)).componentInstance.filterChange.emit('non_members');
@@ -386,13 +422,16 @@ describe('ParticipatingOrgsComponent', () => {
 
     expect(tier.disabled).toBe(true);
     expect(tier.value).toBeNull();
-    // Exactly one read: no stray `segment=non_members&tier=Gold` before the tier clears.
+    expect(contribution.disabled).toBe(true);
+    expect(contribution.value).toBe('all');
+    // Exactly one read: no stray `segment=non_members&tier=Gold` before the filters clear.
     expect(getPage).toHaveBeenCalledTimes(1);
     expect(getPage).toHaveBeenCalledWith(PROJECT_SLUG, { range: '12mo', segment: 'non_members', sort: 'commits', dir: 'desc', pageSize: 10, offset: 0 });
 
     fixture.debugElement.query(By.directive(CardTabsBarComponent)).componentInstance.filterChange.emit('members');
     await settle();
     expect(tier.enabled).toBe(true);
+    expect(contribution.enabled).toBe(true);
   });
 
   it('shows the Member Commit Share as a whole percent, or a dash when there are no company commits', async () => {

@@ -151,6 +151,14 @@ export class ParticipatingOrgsComponent {
     const state = this.summaryState();
     return state.slug === this.slug() ? state.summary : null;
   });
+  /**
+   * Only a foundation's own project lists members without activity, so the contribution filter shows and applies only
+   * once the summary confirms one; until then, and on a sub-project, a carried-over choice is never sent.
+   */
+  protected readonly isFoundationProject = computed(() => {
+    const summary = this.summary();
+    return summary !== null && summary.projectSlug === summary.foundationSlug;
+  });
   protected readonly page: Signal<ProjectParticipatingOrgsPage> = computed(() => {
     const state = this.pageState();
     return state.slug === this.slug() ? state.page : EMPTY_PROJECT_PARTICIPATING_ORGS_PAGE;
@@ -189,18 +197,22 @@ export class ParticipatingOrgsComponent {
   );
 
   /**
-   * The tier filter narrows to members of one tier, so it has no meaning on the Non-Members tab. It is cleared and
-   * disabled in the same synchronous step as the tab change, so the switch issues one read without a stray tier.
+   * Tier narrows to members of one tier, and every non-member contributes, so neither filter has meaning on the
+   * Non-Members tab. Both are cleared and disabled in the same synchronous step as the tab change, so the switch issues
+   * one read without a stray filter.
    */
   protected onSegmentChange(id: string): void {
     const segment = PROJECT_PARTICIPATING_ORGS_SEGMENTS.find((value) => value === id);
     if (!segment) return;
-    const tier = this.filterForm.controls.tier;
+    const { tier, contribution } = this.filterForm.controls;
     if (segment === 'non_members') {
       tier.setValue(null);
       tier.disable();
+      contribution.setValue('all');
+      contribution.disable();
     } else {
       tier.enable();
+      contribution.enable();
     }
     this.segment.set(segment);
   }
@@ -240,7 +252,7 @@ export class ParticipatingOrgsComponent {
   private exportFilters(): ProjectParticipatingOrgsExportFilters {
     const search = this.search();
     const tier = this.tier();
-    const contribution = this.contribution();
+    const contribution = this.isFoundationProject() ? this.contribution() : 'all';
     return {
       range: this.range(),
       segment: this.segment(),
