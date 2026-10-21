@@ -105,7 +105,12 @@ describe('CommitteeMembersManagerComponent CSV import', () => {
     expect(list.tabIndex).toBe(0);
     expect(list.classList.contains('overflow-y-auto')).toBe(true);
     expect(list.classList.contains('max-h-[64.5rem]')).toBe(true);
-    expect(list.querySelectorAll('[data-testid="member-card"]')).toHaveLength(count);
+    const cards = list.querySelectorAll<HTMLElement>('[data-testid="member-card"]');
+    expect(cards).toHaveLength(count);
+    cards.forEach((card) => {
+      expect(card.classList.contains('min-h-24')).toBe(true);
+      expect(card.classList.contains('shrink-0')).toBe(true);
+    });
 
     component.searchForm.controls['search'].setValue(members.at(-1)!.email);
     await fixture.whenStable();
