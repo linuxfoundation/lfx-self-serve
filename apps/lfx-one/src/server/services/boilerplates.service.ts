@@ -8,6 +8,7 @@ import {
   BoilerplatesResultResponse,
   BoilerplatesRunOutcome,
   MktgRunAnswer,
+  MktgRevisionRef,
 } from '@lfx-one/shared/interfaces';
 import {
   boilerplatesAsset,
@@ -83,7 +84,13 @@ export class BoilerplatesService {
    * caller binds to the requesting user via the owner token. The LFX project
    * uid rides the form for the agent's own LFX lookups.
    */
-  public async startGeneration(req: Request, answers: Record<string, string>, projectUid: string | undefined, guildAgentHandle: string): Promise<string> {
+  public async startGeneration(
+    req: Request,
+    answers: Record<string, string>,
+    projectUid: string | undefined,
+    guildAgentHandle: string,
+    expectedFramework?: MktgRevisionRef
+  ): Promise<string> {
     const payload = buildBoilerplatesFormPayload(answers, { projectUid });
 
     logger.info(req, 'boilerplates_generate', 'Composed the Boilerplates intake', {
@@ -93,9 +100,12 @@ export class BoilerplatesService {
       has_project: !!projectUid,
     });
 
-    return this.structuredAgentInputEnabled
+    const framework = await this.documentStore.captureFramework(req, projectUid, payload.messaging_framework, expectedFramework);
+    const sessionId = await (this.structuredAgentInputEnabled
       ? this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle })
-      : this.guildService.createSession(req, { message: renderBoilerplatesFormText(payload), handle: guildAgentHandle });
+      : this.guildService.createSession(req, { message: renderBoilerplatesFormText(payload), handle: guildAgentHandle }));
+    await this.documentStore.rememberGenerationFramework(req, this.artifactSpec.agentKey, projectUid, sessionId, framework);
+    return sessionId;
   }
 
   /**
