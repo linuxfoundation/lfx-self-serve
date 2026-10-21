@@ -5,6 +5,7 @@ import { MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH } from '@lfx-one/shar
 import {
   MentorshipMentorOpenProgram,
   MentorshipMentorOpenProgramsQuery,
+  MentorshipMentorProgramInvitation,
   MentorshipMentorProgramRequest,
   MentorshipUpstreamProgram,
   MentorshipUpstreamProgramMembership,
@@ -67,6 +68,8 @@ export const mapMentorshipMentorProgramRequests = (memberships: MentorshipUpstre
     return status ? [{ id: membership.id, programId: membership.program_id, programName: membership.program_name, status }] : [];
   });
 
-/** The programs the caller holds an open mentor invitation to, which upstream will not take a request for. */
-export const mapMentorshipMentorInvitedProgramIds = (memberships: MentorshipUpstreamProgramMembership[]): string[] =>
-  memberships.filter((membership) => membership.status === 'invited').map((membership) => membership.program_id);
+/** The caller's open mentor invitations: its `invited` rows, which upstream will not take a request for. */
+export const mapMentorshipMentorInvitations = (memberships: MentorshipUpstreamProgramMembership[]): MentorshipMentorProgramInvitation[] =>
+  memberships
+    .filter((membership) => membership.status === 'invited')
+    .map((membership) => ({ id: membership.id, programId: membership.program_id, programName: membership.program_name }));
