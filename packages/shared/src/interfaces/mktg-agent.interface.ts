@@ -46,6 +46,8 @@ interface BaseMktgAgent {
    * Dependency handling is generic: nothing keys on a specific agent id.
    */
   dependsOn?: string[];
+  /** This agent must start from its entitlement-checked form, never free-text chat. */
+  formOnly?: boolean;
 }
 
 /** An agent backed by a live Guild agent: clickable tile, routable chat. */

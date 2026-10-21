@@ -138,8 +138,7 @@ export const MKTG_DOCUMENT_TYPES: MktgDocumentType[] = [
   {
     agentKey: 'member-360',
     kind: 'run',
-    // Member 360 has no catalog entry yet, so its name is spelled out here.
-    agentName: 'Member 360 Agent',
+    agentName: catalogAgentName('member-360'),
     label: 'Member 360',
     itemLabel: 'Member 360 run',
   },

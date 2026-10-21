@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { createHash } from 'node:crypto';
+import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { member360Fixture } from '../../../e2e/fixtures/mock-data/member-360.mock';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -241,6 +243,35 @@ describe('MktgDocumentStoreService', () => {
     }));
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     service = new MktgDocumentStoreService();
+  });
+
+  it.each(['valid', 'hash', 'schema'])('projects only verified Member 360 sidecars without losing current metadata (%s)', async (mode) => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'member-360');
+    if (!type) throw new Error('Missing synthetic Member 360 type');
+    const member360 = member360Fixture();
+    if (mode === 'hash') member360.content_sha256 = '0'.repeat(64);
+    const generated = { ...envelope('# Member 360'), member360: mode === 'schema' ? { ...member360, kind: 'invalid' } : member360 };
+    const saved = await service.recordGeneration(req, type, PROJECT, generated, 'member-run');
+    const view = await service.getRevision(req, PROJECT, type, saved.record.documentId, saved.id);
+    expect(view?.current?.revisionId).toBe(saved.id);
+    expect(view?.revision.approval).toBeNull();
+    expect(view?.member360).toEqual(mode === 'valid' ? member360 : undefined);
+    expect(view?.sidecar?.['member360']).toEqual(mode === 'valid' ? member360 : undefined);
+  });
+
+  it.each([false, true])('fails strict Member 360 listing on an unreadable newest run (older readable=%s)', async (older) => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'member-360');
+    if (!type) throw new Error('Missing synthetic Member 360 type');
+    if (older) await service.recordGeneration(req, type, PROJECT, envelope('# Older'), 'older');
+    const newest = await service.recordGeneration(req, type, PROJECT, envelope('# Newest'), 'newest');
+    const original = service.getDocument.bind(service);
+    const read = vi.spyOn(service, 'getDocument');
+    read.mockImplementation((...args) => {
+      if (args[3] === newest.record.documentId) return Promise.reject(new MicroserviceError('Unavailable', 503, 'STORE_UNAVAILABLE'));
+      return original(...args);
+    });
+    await expect(service.listDocuments(req, PROJECT, 'member-360')).rejects.toMatchObject({ statusCode: 503 });
+    read.mockRestore();
   });
 
   async function approveStored(type: MktgDocumentType, number: number): Promise<void> {
@@ -1497,6 +1528,7 @@ describe('MktgDocumentStoreService', () => {
 
       const group = (await service.listDocuments(req, PROJECT)).groups.find((candidate) => candidate.type.agentKey === 'linkedin-post');
       expect(group?.documents).toHaveLength(2);
+      expect(group?.documents.map((document) => document.documentId).sort()).toEqual(['session-a', 'session-b'].map(buildMktgRunDocumentId).sort());
       expect(group?.documents.every((document) => document.revisionCount === 1 && /^run-[0-9a-f]{24}$/.test(document.documentId))).toBe(true);
     });
   });

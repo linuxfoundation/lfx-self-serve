@@ -5,6 +5,7 @@ import { FOUNDATION_MESSAGE_FILE_UPLOAD_CONTENT_TYPE, FOUNDATION_MESSAGE_MAX_FIL
 import express, { NextFunction, Request, RequestHandler, Response, Router } from 'express';
 
 import type { LinkedinPostController } from '../controllers/linkedin-post.controller';
+import { Member360Controller } from '../controllers/member-360.controller';
 import { MktgAgentsController } from '../controllers/mktg-agents.controller';
 import { MktgDocumentsController } from '../controllers/mktg-documents.controller';
 import { MktgSlidesExportController } from '../controllers/mktg-slides-export.controller';
@@ -64,6 +65,10 @@ router.patch('/linkedin-post/documents/:documentId/share-link', blockDuringImper
 const mktgAgentsController = new MktgAgentsController();
 const mktgDocumentsController = new MktgDocumentsController();
 const mktgSlidesExportController = new MktgSlidesExportController();
+const member360Controller = new Member360Controller();
+
+router.post('/member-360/generate', (req, res, next) => member360Controller.generate(req, res, next));
+router.post('/member-360/result', (req, res, next) => member360Controller.result(req, res, next));
 
 // POST /api/mktg-agents/chat - create a Guild session or post a follow-up
 router.post('/chat', (req, res, next) => mktgAgentsController.chat(req, res, next));
