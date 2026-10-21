@@ -10,6 +10,7 @@ export * from './calendar-colors.constants';
 export * from './colors.constants';
 export * from './tag.constants';
 export * from './committees.constants';
+export * from './member-import.constants';
 export * from './countries.constants';
 export * from './file-upload.constants';
 export * from './font-sizes.constants';
