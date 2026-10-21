@@ -52,6 +52,7 @@ export const LINKEDIN_VOICE_FIELDS = [
   },
 ] as const;
 
+export const LINKEDIN_AGENT_KEY = 'linkedin-post';
 export const LINKEDIN_CONTRACT_ID = 'linkedin-post-output/v1';
 export const LINKEDIN_API = '/api/mktg-agents/linkedin-post';
 export const LINKEDIN_SHARE_LINK_ANSWER_KEY = 'share_link';

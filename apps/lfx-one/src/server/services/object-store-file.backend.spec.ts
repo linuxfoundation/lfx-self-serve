@@ -11,12 +11,19 @@ import { OBJECT_STORE_FILE_METADATA_SUFFIX } from '../constants';
 import { ServiceValidationError } from '../errors';
 import { FileObjectStoreBackend } from './object-store-file.backend';
 
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>();
+  return { ...fs, mkdir: vi.fn(fs.mkdir) };
+});
+const realFs = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+
 describe('FileObjectStoreBackend', () => {
   let scratch: string;
   let root: string;
   let backend: FileObjectStoreBackend;
 
   beforeEach(async () => {
+    vi.mocked(mkdir).mockImplementation(realFs.mkdir);
     scratch = await mkdtemp(join(tmpdir(), 'lfx-file-backend-spec-'));
     root = join(scratch, 'marketing-os-artifacts');
     backend = new FileObjectStoreBackend(root);
@@ -24,6 +31,39 @@ describe('FileObjectStoreBackend', () => {
 
   afterEach(async () => {
     await rm(scratch, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('retries a writer whose empty parent was pruned before lock acquisition', async () => {
+    const input = { body: Buffer.from('Synthetic profile'), contentType: 'text/plain', cacheControl: 'private' };
+    await backend.putObject('profiles/one/current.json', input);
+    let started: (() => void) | undefined;
+    let release: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const resumed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let intercepted = false;
+    vi.mocked(mkdir).mockImplementation(async (path, options) => {
+      if (path === join(root, 'profiles/one/next.json.lock.partial') && !intercepted) {
+        intercepted = true;
+        started?.();
+        await resumed;
+      }
+      return realFs.mkdir(path, options);
+    });
+    const writing = new FileObjectStoreBackend(root).putObject('profiles/one/next.json', input);
+    try {
+      await paused;
+      await backend.deleteObject('profiles/one/current.json');
+      await expect(stat(join(root, 'profiles/one'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      release?.();
+      await writing;
+    }
+    expect(await backend.getObject('profiles/one/next.json')).toMatchObject({ body: 'Synthetic profile' });
   });
 
   it('serializes conditional writes across independent backend instances', async () => {

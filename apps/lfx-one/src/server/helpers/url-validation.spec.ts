@@ -60,6 +60,21 @@ describe('fetchSafeUrl final URL after redirects', () => {
 
   beforeAll(async () => {
     redirectServer = http.createServer((req, res) => {
+      if (req.url === '/bounded-old') {
+        res.writeHead(302, { location: '/bounded-text', 'content-type': 'application/octet-stream' });
+        res.end();
+        return;
+      }
+      if (req.url === '/bounded-text') {
+        res.writeHead(200, { 'content-type': 'Text/Plain; charset=utf-8' });
+        res.end('List<T>');
+        return;
+      }
+      if (req.url === '/missing') {
+        res.writeHead(404, { 'content-type': 'application/octet-stream' });
+        res.end();
+        return;
+      }
       if (req.url === '/old') {
         // Same host, DIFFERENT directory -- the case that silently breaks a relative og:image.
         res.writeHead(302, { location: '/events/new/' });
@@ -89,6 +104,31 @@ describe('fetchSafeUrl final URL after redirects', () => {
     // disappears. Against the final url it is .../events/new/hero.jpg, which is the real one.
     expect(result.finalUrl).toBe('https://events.example.com/events/new/');
     expect(new URL('hero.jpg', result.finalUrl).href).toBe('https://events.example.com/events/new/hero.jpg');
+  });
+  it('skips the content-type allowlist on redirects and errors, reporting the final normalized type', async () => {
+    const { fetchSafeUrl } = await import('./url-validation');
+    const options = { allowedContentTypes: ['text/plain'] };
+    const result = await fetchSafeUrl('https://events.example.com/bounded-old', new AbortController().signal, options);
+    expect(result).toMatchObject({ ok: true, html: 'List<T>', contentType: 'text/plain', finalUrl: 'https://events.example.com/bounded-text' });
+    expect(await fetchSafeUrl('https://events.example.com/missing', new AbortController().signal, options)).toMatchObject({
+      ok: false,
+      status: 404,
+      contentType: 'application/octet-stream',
+    });
+  });
+
+  it('classifies bounded source content-type and size refusals as validation errors', async () => {
+    const { fetchSafeUrl } = await import('./url-validation');
+    await expect(fetchSafeUrl('https://events.example.com/page', new AbortController().signal, { allowedContentTypes: ['text/plain'] })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      validationErrors: [expect.objectContaining({ field: 'url', message: 'Unsupported response content type' })],
+    });
+    await expect(fetchSafeUrl('https://events.example.com/page', new AbortController().signal, { maxResponseBytes: 4 })).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR',
+      validationErrors: [expect.objectContaining({ field: 'url', message: 'Response exceeded 4 bytes' })],
+    });
   });
 });
 

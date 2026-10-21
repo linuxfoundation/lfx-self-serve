@@ -353,11 +353,15 @@ export async function validateScrapeUrl(url: string): Promise<string> {
  */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
-export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number; finalUrl: string }> {
+export async function fetchSafeUrl(
+  url: string,
+  signal: AbortSignal,
+  options: { maxResponseBytes?: number; allowedContentTypes?: readonly string[] } = {}
+): Promise<{ html: string; ok: boolean; status: number; finalUrl: string; contentType?: string }> {
   const https = await import('node:https');
   const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
 
-  const doRequest = (t: SsrfSafeTarget): Promise<{ body: string; statusCode: number; location?: string }> =>
+  const doRequest = (t: SsrfSafeTarget): Promise<{ body: string; statusCode: number; contentType: string; location?: string }> =>
     new Promise((resolve, reject) => {
       const req = https.request(
         {
@@ -370,23 +374,46 @@ export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ 
           signal: combinedSignal,
         },
         (res) => {
+          const contentType = (res.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+          if (
+            res.statusCode &&
+            res.statusCode >= 200 &&
+            res.statusCode < 300 &&
+            options.allowedContentTypes &&
+            !options.allowedContentTypes.includes(contentType)
+          ) {
+            req.destroy();
+            reject(
+              ServiceValidationError.fromFieldErrors({ url: 'Unsupported response content type' }, 'Unsupported response content type', {
+                operation: 'fetch_safe_url',
+              })
+            );
+            return;
+          }
+          const maxBytes = options.maxResponseBytes ?? MAX_RESPONSE_BYTES;
           const chunks: Buffer[] = [];
           let received = 0;
           res.on('data', (chunk: Buffer) => {
             received += chunk.length;
-            if (received > MAX_RESPONSE_BYTES) {
+            if (received > maxBytes) {
               // Destroy the REQUEST, not just the response: this stops the transfer at the socket
               // rather than letting the remote keep streaming into a buffer nobody will read. The
               // reject lands before the 'end' handler can resolve, so no partial body escapes.
               req.destroy();
-              reject(new Error(`Response exceeded ${MAX_RESPONSE_BYTES} bytes`));
+              const message = `Response exceeded ${maxBytes} bytes`;
+              reject(ServiceValidationError.fromFieldErrors({ url: message }, message, { operation: 'fetch_safe_url' }));
               return;
             }
             chunks.push(chunk);
           });
           res.on('end', () => {
             const loc = res.headers['location'];
-            resolve({ body: Buffer.concat(chunks).toString('utf-8'), statusCode: res.statusCode ?? 0, location: Array.isArray(loc) ? loc[0] : loc });
+            resolve({
+              body: Buffer.concat(chunks).toString('utf-8'),
+              statusCode: res.statusCode ?? 0,
+              contentType,
+              location: Array.isArray(loc) ? loc[0] : loc,
+            });
           });
           res.on('error', reject);
         }
@@ -418,8 +445,8 @@ export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ 
   const finalUrl = `https://${target.host}${target.path}`;
 
   if (result.statusCode < 200 || result.statusCode >= 300) {
-    return { html: '', ok: false, status: result.statusCode, finalUrl };
+    return { html: '', ok: false, status: result.statusCode, finalUrl, contentType: result.contentType };
   }
 
-  return { html: result.body, ok: true, status: result.statusCode, finalUrl };
+  return { html: result.body, ok: true, status: result.statusCode, finalUrl, contentType: result.contentType };
 }

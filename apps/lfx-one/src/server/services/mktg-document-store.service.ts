@@ -17,7 +17,9 @@ import {
   MKTG_REVISION_STATUS_METADATA_MAX_CHARS,
   MKTG_RUN_DOCUMENT_ID_PREFIX,
 } from '@lfx-one/shared/constants';
+import { LINKEDIN_AGENT_KEY } from '@lfx-one/shared/constants/linkedin-post.constants';
 import {
+  LinkedinShareLinkResponse,
   MktgArtifactEnvelope,
   MktgArtifactIntakeMode,
   MktgArtifactJsonEnvelope,
@@ -58,12 +60,14 @@ import {
   findMktgDocumentType,
   parseMktgLegacyRevisionId,
   parseMktgRevisionKey,
+  readLinkedinDocumentContent,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash } from 'node:crypto';
 
-import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ServiceValidationError } from '../errors';
+import { AuthenticationError, ConflictError, MicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { LinkedinDocumentPresentationService } from './linkedin-document-presentation.service';
 import { logger } from './logger.service';
 import { MktgArtifactService } from './mktg-artifact.service';
 import { ObjectStoreService } from './object-store.service';
@@ -80,6 +84,7 @@ import type { UserService } from './user.service';
 export class MktgDocumentStoreService {
   private readonly objectStore = new ObjectStoreService();
   private readonly artifactService = new MktgArtifactService();
+  private readonly linkedinPresentation = new LinkedinDocumentPresentationService();
   private readonly authors = new WeakMap<Request, Map<string, Promise<MktgRevisionAuthor>>>();
   private userService?: Promise<UserService>;
 
@@ -156,7 +161,7 @@ export class MktgDocumentStoreService {
     envelope: MktgArtifactEnvelope | MktgRevisionContentSource,
     sessionId: string
   ): Promise<MktgStoredRevision> {
-    const documentId = type.kind === 'run' ? `${MKTG_RUN_DOCUMENT_ID_PREFIX}${this.sha256(sessionId).slice(0, 24)}` : MKTG_LIVING_DOCUMENT_ID;
+    const documentId = type.kind === 'run' ? this.runDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
     const source = 'document_markdown' in envelope ? this.markdownSource(envelope) : envelope;
     return this.recordRevision(
       req,
@@ -451,6 +456,30 @@ export class MktgDocumentStoreService {
     }
   }
 
+  /** Update only the run's mutable presentation object, never its immutable revision. */
+  public async saveLinkedinShareLink(
+    req: Request,
+    project: string,
+    documentId: string,
+    value: unknown,
+    initialize = false
+  ): Promise<LinkedinShareLinkResponse> {
+    const type = findMktgDocumentType(LINKEDIN_AGENT_KEY);
+    const detail = type ? await this.getDocument(req, project, type, documentId) : null;
+    const summary = detail?.revisions[0];
+    const stored = detail && summary ? await this.loadSummaryRevision(req, detail, summary) : null;
+    const cards = stored ? readLinkedinDocumentContent(stored.record.bundle.sidecar) : null;
+    if (!stored || !cards) throw new ResourceNotFoundError('LinkedIn document', documentId);
+    // A late first supplied answer may seed an absent overlay, never replace supplied or edited answers.
+    if (initialize && stored.record.bundle.sidecar && 'answers' in stored.record.bundle.sidecar) return { share_link: cards.answers['share_link'] };
+    return this.linkedinPresentation.save(req, project, documentId, value, initialize);
+  }
+
+  /** A run's document id: stable per Guild session, so repeated result polls address one document. */
+  public runDocumentId(sessionId: string): string {
+    return `${MKTG_RUN_DOCUMENT_ID_PREFIX}${this.sha256(sessionId).slice(0, 24)}`;
+  }
+
   /** Export approved current only; stale explicit selectors fail instead of silently selecting different bytes. */
   public async readExportRevision(
     req: Request,
@@ -622,7 +651,19 @@ export class MktgDocumentStoreService {
       restoredFromNumber: detail.revisions.find((entry) => entry.id === stored.record.restoredFromId)?.number ?? null,
       status: this.recordStatus(stored.record),
     };
-    return { ...detail, revision: selected, approval: selected.approval, markdown: stored.record.bundle.markdown, sidecar: stored.record.bundle.sidecar };
+    const cards = type.agentKey === LINKEDIN_AGENT_KEY ? readLinkedinDocumentContent(stored.record.bundle.sidecar) : null;
+    const presentation = cards ? await this.linkedinPresentation.read(req, project, documentId, cards) : null;
+    const linkedinPost = presentation
+      ? { ...presentation, ...(stored.authorId && selected.author ? { author: selected.author, isAuthor: getEffectiveSub(req) === stored.authorId } : {}) }
+      : null;
+    return {
+      ...detail,
+      revision: selected,
+      approval: selected.approval,
+      markdown: stored.record.bundle.markdown,
+      sidecar: stored.record.bundle.sidecar,
+      ...(linkedinPost ? { linkedinPost } : {}),
+    };
   }
 
   /** Capture the manifest and CAS token together; corrupt pointers must never select another revision. */
@@ -789,7 +830,7 @@ export class MktgDocumentStoreService {
         });
         return null;
       }
-      return { id: entry.id, key: entry.key, record };
+      return { id: entry.id, key: entry.key, record, ...(object.metadata['author-id'] ? { authorId: object.metadata['author-id'] } : {}) };
     } catch (error) {
       logger.warning(req, 'mktg_document_store_read', 'Stored revision bytes do not match the content-addressed key or schema — skipping', {
         key: entry.key,
