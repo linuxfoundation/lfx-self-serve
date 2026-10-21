@@ -198,26 +198,32 @@ export class OrgLensPeopleService {
 
   /**
    * Company-affiliated emails for a person identified by LF username (governance surfaces).
-   * Cache misses read only the materialized address table; failures are never cached.
+   *
+   * A username that resolves to one roster person (the same person `getEmployeeDetailByUsername` shows) reads that
+   * person's addresses by person key, so an empty result is "none on record" and a NULL username on the address rows
+   * cannot hide them. Any other username falls back to the address view's own username column, which also covers
+   * people the roster's engagement gate excludes (most key contacts). Failures are never cached.
    */
   public async getCompanyEmailsByUsername(accountId: string, username: string): Promise<OrgPersonCompanyEmailsResponse> {
     const normalizedUsername = username.trim().toLowerCase();
     if (!normalizedUsername) {
       return UNAVAILABLE_COMPANY_EMAILS;
     }
-    // Hashed so the raw identifier is never a `:`-delimited cache-key segment.
-    const usernameDigest = createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
     try {
+      const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
+      if (personKey) {
+        return await this.getCompanyEmailsForPersonKey(accountId, personKey);
+      }
       return await withOrgCache(
         accountId,
-        `people-username:${usernameDigest}:emails`,
+        `people-username:${usernameDigest(normalizedUsername)}:emails`,
         VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
         () => this.fetchCompanyEmailsByUsername(accountId, normalizedUsername),
         isCompanyEmailsResponse,
         isCacheableCompanyEmails
       );
     } catch (error) {
-      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed; serving detail without addresses', {
+      logger.info(undefined, 'get_org_lens_people_company_emails_by_username', 'company email lookup failed', {
         err: error,
       });
       return FAILED_COMPANY_EMAILS;
@@ -235,16 +241,20 @@ export class OrgLensPeopleService {
     if (!normalizedUsername) {
       return null;
     }
-    // Hashed so the raw identifier is never a `:`-delimited cache-key segment.
-    const usernameDigest = createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
+    const personKey = await this.resolvePersonKeyByUsername(accountId, normalizedUsername);
+    return personKey ? this.getEmployeeDetail(req, accountId, personKey) : null;
+  }
+
+  /** The one roster person key carrying a normalized username at this account, cached per username digest; null when none or several do. */
+  private async resolvePersonKeyByUsername(accountId: string, normalizedUsername: string): Promise<string | null> {
     const { personKey } = await withOrgCache(
       accountId,
-      `people-username:${usernameDigest}:person-key`,
+      `people-username:${usernameDigest(normalizedUsername)}:person-key`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchPersonKeyByUsername(accountId, normalizedUsername),
       isPersonKeyLookup
     );
-    return personKey ? this.getEmployeeDetail(req, accountId, personKey) : null;
+    return personKey;
   }
 
   /** The one roster person key carrying the username; null when none or several do (the HAVING guard fails closed). */
@@ -738,6 +748,11 @@ function isCacheableCompanyEmails(value: OrgPersonCompanyEmailsResponse): boolea
 function isPersonKeyLookup(value: unknown): boolean {
   const lookup = value as { personKey?: unknown } | null;
   return !!lookup && (lookup.personKey === null || typeof lookup.personKey === 'string');
+}
+
+/** Hashed so a raw username is never a `:`-delimited cache-key segment. */
+function usernameDigest(normalizedUsername: string): string {
+  return createHash('sha256').update(normalizedUsername).digest('hex').slice(0, 16);
 }
 
 /** Reject legacy/failed cache entries; unavailable identities cannot carry addresses. */
