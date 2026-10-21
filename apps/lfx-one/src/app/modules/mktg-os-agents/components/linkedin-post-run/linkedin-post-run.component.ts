@@ -348,7 +348,7 @@ export class LinkedinPostRunComponent {
       else if (this.source() === 'url') answers['content_url'] = this.contentForm.controls.url.value.trim();
       else {
         const file = this.file();
-        if (!file || file.size > LINKEDIN_SOURCE_MAX_BYTES) throw new Error('Choose a text file up to 1 MB.');
+        if (!file || file.size > this.maxFileBytes) throw new Error(`Choose a text file up to ${this.maxFileBytes.toLocaleString('en-US')} bytes.`);
         answers['content_file_name'] = file.name;
         answers['content_file_base64'] = await this.readFile(file);
       }

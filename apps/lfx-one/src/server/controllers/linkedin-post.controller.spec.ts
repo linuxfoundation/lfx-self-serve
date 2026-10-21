@@ -4,7 +4,9 @@
 import '@angular/compiler';
 import { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { MKTG_AGENTS } from '@lfx-one/shared/constants';
+import { LinkedinStoredProfile } from '@lfx-one/shared/interfaces';
+import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils';
+import { LINKEDIN_SOURCE_MAX_WORDS, MKTG_AGENTS } from '@lfx-one/shared/constants';
 vi.mock('@lfx-one/shared/constants', async (original) => {
   const actual = await original<typeof import('@lfx-one/shared/constants')>();
   return {
@@ -158,6 +160,23 @@ describe('LinkedIn endpoint boundaries', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.anything(), 'subject-one', expect.anything(), undefined, 'linkedin-post');
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ ownerToken: createSessionOwnerToken('subject-one', 'session-one') }));
   });
+  it('preserves omitted answers and bounds sourceWords in words, not bytes', async () => {
+    const controller = new LinkedinPostController();
+    const body = {
+      project: 'project-one',
+      sessionId: 'session-one',
+      ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+      sourceWords: LINKEDIN_SOURCE_MAX_WORDS,
+    };
+    const next = vi.fn();
+    await controller.result(request(body), response(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.result).toHaveBeenCalledWith(expect.anything(), 'subject-one', 'session-one', 'project-one', undefined, LINKEDIN_SOURCE_MAX_WORDS);
+    mocks.result.mockClear();
+    await controller.result(request({ ...body, sourceWords: LINKEDIN_SOURCE_MAX_WORDS + 1 }), response(), next);
+    expect(next).toHaveBeenLastCalledWith(expect.objectContaining({ statusCode: 400 }));
+    expect(mocks.result).not.toHaveBeenCalled();
+  });
 
   it('refuses another user’s token before reading events or saving profiles', async () => {
     const next = vi.fn();
@@ -184,7 +203,41 @@ describe('LinkedIn endpoint boundaries', () => {
     await controller.getProfile(request({}, 'stable-subject', 'renamed-user'), response(), vi.fn());
     expect(mocks.read.mock.calls.map((call) => call[1])).toEqual(['stable-subject', 'stable-subject']);
   });
-
+  it('validates profile input and delegates transformation under a distinct write operation', async () => {
+    const setup = { name: 'Example author', role: 'Maintainer', focus_areas: 'Code', primary_audience: 'Developers' };
+    const profile = linkedinProfileFromSetup(setup);
+    const saved: LinkedinStoredProfile = { profile, profile_markdown: renderLinkedinProfileMarkdown(profile) };
+    mocks.saveFromInput.mockResolvedValue(saved);
+    const req = request({ setup });
+    const res = response();
+    const next = vi.fn();
+    await new LinkedinPostController().saveProfile(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.saveFromInput).toHaveBeenCalledWith(req, 'subject-one', { setup });
+    expect(mocks.startOperation).toHaveBeenCalledWith(req, 'update_linkedin_profile', {});
+    expect(res.json).toHaveBeenCalledWith({ profile: saved });
+    mocks.saveFromInput.mockClear();
+    await new LinkedinPostController().saveProfile(request({ profile: { ...profile, about: { ...profile.about, name: 'x'.repeat(4001) } } }), response(), next);
+    expect(mocks.saveFromInput).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+  });
+  it('passes only validated LFX share-link answers on an owned result poll', async () => {
+    const body = {
+      project: 'project-one',
+      sessionId: 'session-one',
+      ownerToken: createSessionOwnerToken('subject-one', 'session-one'),
+      answers: { share_link: 'https://public.example/shared' },
+    };
+    const req = request(body);
+    const next = vi.fn();
+    await new LinkedinPostController().result(req, response(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(mocks.result).toHaveBeenCalledWith(req, 'subject-one', 'session-one', 'project-one', body.answers, 0);
+    mocks.result.mockClear();
+    await new LinkedinPostController().result(request({ ...body, answers: { share_link: 'javascript:bad' } }), response(), next);
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
+    expect(mocks.result).not.toHaveBeenCalled();
+  });
   it('erases only the effective user and requires authentication for deletion', async () => {
     const controller = new LinkedinPostController();
     const req = request({ user: 'other-user' });

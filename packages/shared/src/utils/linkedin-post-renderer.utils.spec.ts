@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { LINKEDIN_MAX_QUESTIONS } from '../constants/linkedin-post.constants';
-import type { LinkedinSetup } from '../interfaces/linkedin-post.interface';
+import { LINKEDIN_FORM_RENDER_VERSION, LINKEDIN_MAX_QUESTIONS } from '../constants/linkedin-post.constants';
+import type { LinkedinSetup, LinkedinForm } from '../interfaces/linkedin-post.interface';
 import { linkedinProfileFromSetup, neutralizeDelimiters, renderLinkedinFormText } from './linkedin-post.utils';
 
 const setup: LinkedinSetup = { name: 'Example author', role: 'Maintainer', focus_areas: 'Open source', primary_audience: 'Developers' };
@@ -23,6 +23,28 @@ describe('LinkedIn request renderer', () => {
     expect(text).toContain('----- END CONTENT -----');
     expect(text).toContain('===== BEGIN PROFILE TO SAVE =====');
     expect(text).toContain('Tone: conversational / authoritative / educational / enthusiastic (skipped; your default, provisional until the gap round)');
+  });
+  it('defaults to2.0 after deployment and retains exact1.x rendering behind the shared switch', () => {
+    const form: LinkedinForm = {
+      today: '2026-10-19',
+      setup,
+      content_source: 'url',
+      content_url: 'https://public.example/release',
+      content_text: 'Prefetched source text.',
+    };
+    expect(LINKEDIN_FORM_RENDER_VERSION).toBe(2);
+    const legacy = renderLinkedinFormText(form, 1);
+    const future = renderLinkedinFormText(form);
+    expect(future).toBe(renderLinkedinFormText(form, 2));
+    expect(legacy).toContain('Do NOT ask the user anything.');
+    expect(legacy).toContain('you cannot fetch URLs');
+    expect(legacy).not.toContain('PROFILE GAPS:');
+    expect(legacy).not.toContain('PROJECT SCOPE:');
+    expect(future).toContain('PROFILE GAPS:');
+    expect(future).toContain('PROJECT SCOPE:');
+    expect(future).toContain('provisional until the gap round');
+    expect(future).toContain('fetch this URL yourself');
+    expect(future.split('\n').slice(0, 4)).toEqual(legacy.split('\n').slice(0, 4));
   });
 
   it('rejects missing profile and URL inputs without non-null assertions', () => {

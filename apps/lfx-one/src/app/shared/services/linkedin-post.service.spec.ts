@@ -54,8 +54,10 @@ describe('LinkedIn pending document recovery', () => {
     });
     send.flush({ success: true });
     expect(service.pending(LINKEDIN_POST_INTAKE, 'project-one')?.answeredQuestionsId).toBe(questions.questionsId);
+    localStorage.clear(); // Same-session acknowledgement must not depend on recovery storage.
+    expect(run).not.toHaveProperty('answeredQuestionsId');
     const completed = vi.fn();
-    service.wait(LINKEDIN_POST_INTAKE, 'project-one', { ...run, answeredQuestionsId: questions.questionsId }, progress).subscribe(completed);
+    service.wait(LINKEDIN_POST_INTAKE, 'project-one', run, progress).subscribe(completed);
     vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
     http.expectOne(LINKEDIN_POST_INTAKE.endpoints.result).flush(questions);
     expect(completed).not.toHaveBeenCalled();

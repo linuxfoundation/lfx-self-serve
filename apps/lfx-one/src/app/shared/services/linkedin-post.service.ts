@@ -33,6 +33,7 @@ export class LinkedinPostService {
   private readonly http = inject(HttpClient);
   private readonly platform = inject(PLATFORM_ID);
   private readonly user = inject(UserService);
+  private readonly answeredRounds = new WeakMap<LinkedinGeneration, string>();
 
   public profile(): Observable<{ profile: LinkedinStoredProfile | null }> {
     return this.http.get<{ profile: LinkedinStoredProfile | null }>(`${LINKEDIN_API}/profile`).pipe(
@@ -132,6 +133,7 @@ export class LinkedinPostService {
         take(1),
         tap(() => {
           if (owner !== this.user.user()?.sub) throw new Error('The effective user changed.');
+          this.answeredRounds.set(run, questionsId);
           this.rememberQuestions(project, run, questionsId);
         })
       );
@@ -158,7 +160,10 @@ export class LinkedinPostService {
       filter(
         (result) =>
           (result.status === 'ready' && !!result.envelope && !!result.persistence) ||
-          (result.status === 'questions' && !!result.questions?.length && !!result.questionsId && result.questionsId !== run.answeredQuestionsId)
+          (result.status === 'questions' &&
+            !!result.questions?.length &&
+            !!result.questionsId &&
+            result.questionsId !== (this.answeredRounds.get(run) ?? run.answeredQuestionsId))
       ),
       take(1),
       timeout(MKTG_RUN_POLL.timeoutMs),
