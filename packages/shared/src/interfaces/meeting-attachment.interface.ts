@@ -311,6 +311,14 @@ export interface MeetingAttachmentChanges {
   deletedUids: ReadonlySet<string>;
 }
 
+/** What a save adds to and removes from {@link MeetingAttachmentChanges}; either side may be omitted. */
+export interface MeetingAttachmentChangeInput {
+  /** Attachments that were created */
+  added?: MeetingAttachment[];
+  /** UIDs of attachments that were deleted */
+  deletedUids?: string[];
+}
+
 /** {@link MeetingAttachmentChanges} keyed by meeting id */
 export type MeetingAttachmentChangesByMeeting = ReadonlyMap<string, MeetingAttachmentChanges>;
 

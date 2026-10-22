@@ -30,6 +30,7 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
+  MeetingAttachmentChangeInput,
   MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
   MeetingRegistrant,
@@ -433,7 +434,7 @@ export class MeetingService {
     });
   }
 
-  public recordAttachmentChanges(meetingId: string, changes: { added?: MeetingAttachment[]; deletedUids?: string[] }): void {
+  public recordAttachmentChanges(meetingId: string, changes: MeetingAttachmentChangeInput): void {
     const added = changes.added ?? [];
     const deletedUids = changes.deletedUids ?? [];
     if (added.length === 0 && deletedUids.length === 0) return;
@@ -466,7 +467,11 @@ export class MeetingService {
   }
 
   public deleteMeetingAttachment(meetingId: string, attachmentId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(take(1));
+    // Recorded here, not by each caller, so a delete from the drawer or the meeting editor never leaves an earlier addition listed.
+    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(
+      take(1),
+      tap(() => this.recordAttachmentChanges(meetingId, { deletedUids: [attachmentId] }))
+    );
   }
 
   public presignMeetingAttachment(meetingId: string, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {

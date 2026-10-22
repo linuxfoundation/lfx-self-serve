@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { MeetingAttachment, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { MeetingAttachment, MeetingAttachmentChanges, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { of, throwError } from 'rxjs';
@@ -41,10 +41,12 @@ async function mount(
     attachments?: MeetingAttachment[];
     pastMeetingId?: string;
     scopeOverrides?: Map<string, string>;
+    changes?: Map<string, MeetingAttachmentChanges>;
   } = {}
 ) {
   const meetingService = {
     attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(options.scopeOverrides ?? new Map()),
+    attachmentChanges: signal<ReadonlyMap<string, MeetingAttachmentChanges>>(options.changes ?? new Map()),
     recordAttachmentScopeChanges: vi.fn(),
     recordAttachmentChanges: vi.fn(),
     getMeetingAttachments: vi.fn().mockReturnValue(of(options.attachments ?? [])),
@@ -363,8 +365,27 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
 
       expect(meetingService.recordAttachmentChanges).toHaveBeenCalledWith('m1', {
         added: [expect.objectContaining({ uid: 'file-1', meeting_id: 'm1' })],
-        deletedUids: ['series'],
       });
+    });
+
+    it('records a file with the scope it was queued with when the upload response omits it', async () => {
+      const { component, meetingService } = await mount({ occurrence });
+      component.setNewItemScope('occurrence');
+      component.onFileSelect({ files: [pdf('notes.pdf')] });
+
+      component.onSave();
+
+      expect(meetingService.recordAttachmentChanges).toHaveBeenCalledWith('m1', {
+        added: [expect.objectContaining({ uid: 'file-1', occurrence_id: OCCURRENCE_ID })],
+      });
+      expect(component.existingAttachments().find((a) => a.uid === 'file-1')?.occurrence_id).toBe(OCCURRENCE_ID);
+    });
+
+    it("shows this session's additions and deletions when the drawer is reopened before indexing", async () => {
+      const changes = new Map([['m1', { added: [attachment({ uid: 'fresh' })], deletedUids: new Set(['gone']) }]]);
+      const { component } = await mount({ attachments: [attachment({ uid: 'gone' })], changes });
+
+      expect(component.existingAttachments().map((a) => a.uid)).toEqual(['fresh']);
     });
 
     it('does not report a deletion that failed', async () => {
@@ -374,7 +395,7 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
 
       component.onSave();
 
-      expect(meetingService.recordAttachmentChanges).toHaveBeenCalledWith('m1', { added: [], deletedUids: [] });
+      expect(meetingService.recordAttachmentChanges).toHaveBeenCalledWith('m1', { added: [] });
     });
 
     it('leaves a past meeting to its parent', async () => {
