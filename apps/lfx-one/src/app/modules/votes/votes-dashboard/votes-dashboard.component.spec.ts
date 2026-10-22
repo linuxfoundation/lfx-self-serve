@@ -7,6 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { PollStatus, VoteResponseStatus } from '@lfx-one/shared';
+import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
 import { Lens, MyVotesResponse, ProjectContext, Vote, VoteListResponse, VotePermalinkTarget, VoteStatusCounts, VoteSummary } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
@@ -54,6 +55,7 @@ describe('VotesDashboardComponent personal summary', () => {
   let activeContext: WritableSignal<ProjectContext | null>;
   let canWrite: WritableSignal<boolean>;
   let getMyVotes: ReturnType<typeof vi.fn>;
+  let hasVotesAwaitingInvitationCount: ReturnType<typeof vi.fn>;
   const cards = () => dashboard['myVoteStatCards']();
   const rows = () => table['displayedVotes']().map((row) => row.uid);
   const tabPills = () =>
@@ -81,6 +83,7 @@ describe('VotesDashboardComponent personal summary', () => {
     activeContext = signal<ProjectContext | null>(null);
     canWrite = signal(false);
     getMyVotes = vi.fn(() => of({ votes: feed, complete: true }));
+    hasVotesAwaitingInvitationCount = vi.fn(() => false);
     TestBed.configureTestingModule({
       imports: [VotesDashboardComponent],
       providers: [
@@ -93,6 +96,8 @@ describe('VotesDashboardComponent personal summary', () => {
             getMyVotes,
             mergeRecentlyOpenedVotes: (votes: Vote[]) => votes,
             mergeRecentlyCreatedVotes: (votes: Vote[]) => votes,
+            isAwaitingInvitationCount: () => false,
+            hasVotesAwaitingInvitationCount,
             getVotesCountByProject: vi.fn(() => of(20)),
             getVotesSummaryByProject: vi.fn(() => of({ active_votes: 20, closing_soon: 3, as_of: new Date(NOW).toISOString() })),
             getVoteStatusCountsByProject: vi.fn(() => of({ all: 9, active: 4, disabled: 2, ended: 3 })),
@@ -141,6 +146,36 @@ describe('VotesDashboardComponent personal summary', () => {
   it.each<Lens>(['project', 'foundation'])('enables participation progress in the %s lens', async (lens) => {
     await management(lens);
     expect(table.showParticipationProgress()).toBe(true);
+  });
+
+  it('re-fetches the page and counts while a just-opened vote is still counting invitations (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const fetchPage = list.getMockImplementation()!;
+    // The first fetched page is still counting; the next one (the catch-up refetch) has converged.
+    let fetches = 0;
+    hasVotesAwaitingInvitationCount.mockImplementation((votes: Vote[]) => fetches === 1 && votes.length > 0);
+    list.mockImplementation((...args: Parameters<typeof fetchPage>) => {
+      fetches++;
+      return fetchPage(...args);
+    });
+    dashboard['fetch$'].next();
+    await settle();
+    list.mockClear();
+    counts.mockClear();
+
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(counts).toHaveBeenCalledTimes(1);
+
+    list.mockClear();
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS * 3);
+    await settle();
+    expect(list).not.toHaveBeenCalled();
   });
 
   it('shows personal voting status in the Me lens', () => {

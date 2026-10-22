@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
-import { MY_VOTES_STATS_WINDOW_DAYS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
+import { MY_VOTES_STATS_WINDOW_DAYS, VOTE_INVITATION_COUNT_REFRESH_MS, VOTES_STATS_WINDOW_DAYS } from '@lfx-one/shared/constants';
 import {
   Committee,
   MyVotesQuickFilter,
@@ -37,7 +37,24 @@ import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { formatInTimeZone } from 'date-fns-tz';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, finalize, last, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
+import {
+  BehaviorSubject,
+  catchError,
+  combineLatest,
+  EMPTY,
+  expand,
+  filter,
+  finalize,
+  last,
+  map,
+  Observable,
+  of,
+  startWith,
+  switchMap,
+  take,
+  tap,
+  timer,
+} from 'rxjs';
 
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
@@ -193,6 +210,7 @@ export class VotesDashboardComponent {
       });
 
     this.initPermalinkDrawer();
+    this.initInvitationCountRefresh();
   }
 
   protected onManagementVoteStatClick(action: string): void {
@@ -567,6 +585,24 @@ export class VotesDashboardComponent {
       ),
       { initialValue: 0 }
     );
+  }
+
+  /**
+   * Re-fetches the current page in place while a just-opened vote still shows "Counting invitations…"
+   * (GH-4078), so its real participation count — and the tab counts / footer total — appear once the
+   * search index catches up, without a manual reload. Self-terminating: each fetch re-evaluates, and
+   * the carrier window (RECENTLY_OPENED_VOTE_TTL_MS) ends the polling even if the index never converges.
+   */
+  private initInvitationCountRefresh(): void {
+    toObservable(this.votes)
+      .pipe(
+        switchMap((votes) => (!this.isMeLens() && this.voteService.hasVotesAwaitingInvitationCount(votes) ? timer(VOTE_INVITATION_COUNT_REFRESH_MS) : EMPTY)),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        this.fetch$.next();
+        this.refresh$.next();
+      });
   }
 
   private initVotes(): Signal<Vote[]> {

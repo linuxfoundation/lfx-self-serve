@@ -5,7 +5,8 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
 import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
-import type { Committee, CommitteeMember, CommitteeTab, Meeting } from '@lfx-one/shared/interfaces';
+import { VOTE_INVITATION_COUNT_REFRESH_MS } from '@lfx-one/shared/constants';
+import type { Committee, CommitteeMember, CommitteeTab, Meeting, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeJoinApplicationSessionService } from '@services/committee-join-application-session.service';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -97,6 +98,7 @@ describe('CommitteeViewComponent', () => {
             getVotesByCommittee: vi.fn(() => of([])),
             mergeRecentlyOpenedVotes: vi.fn((v: unknown[]) => v),
             mergeRecentlyCreatedVotes: vi.fn((v: unknown[]) => v),
+            hasVotesAwaitingInvitationCount: vi.fn(() => false),
           },
         },
         { provide: SurveyService, useValue: { getSurveysByCommittee: vi.fn(() => of([])) } },
@@ -153,6 +155,34 @@ describe('CommitteeViewComponent', () => {
     flush();
 
     expect(getMeetingsByCommittee).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-fetches votes while a just-opened vote is still counting invitations, then stops (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      // The first fetched list is still counting; the catch-up refetch has converged.
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation(
+        (votes: Vote[]) => votes.length > 0 && getVotesByCommittee.mock.calls.length === 1
+      );
+
+      createComponent();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS * 3);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   describe('Members tab badge', () => {

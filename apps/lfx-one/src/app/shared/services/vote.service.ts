@@ -11,7 +11,7 @@ import {
   VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
   VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
 } from '@lfx-one/shared/constants';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { PollStatus, VoteRowParticipationState } from '@lfx-one/shared/enums';
 import {
   CommentResponseInput,
   CreateVoteRequest,
@@ -35,7 +35,7 @@ import {
   VoteStatusCounts,
   VoteSummary,
 } from '@lfx-one/shared/interfaces';
-import { isVoteClosingSoon } from '@lfx-one/shared/utils';
+import { computeVoteRowParticipation, isVoteClosingSoon } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
@@ -382,7 +382,9 @@ export class VoteService {
    * back with any other status have converged — the server's value wins and the entry is evicted
    * (a just-opened vote can end early inside the TTL via ITX's `EndPollIfAllResponded`, so
    * non-disabled ≠ active). Self-healing — once the index catches up, the fetched value flows
-   * through unchanged and the carrier empties.
+   * through unchanged and the carrier empties. Eviction also waits for a positive invitation count
+   * (GH-4078): the index can report the open status before the electorate, and evicting early would
+   * flip the row back to "No one invited"; the TTL still ends the carrier if the count never arrives.
    */
   public mergeRecentlyOpenedVotes(votes: Vote[]): Vote[] {
     const recentlyOpened = this.getLiveRecentlyOpenedVotes();
@@ -395,11 +397,33 @@ export class VoteService {
         return vote;
       }
       if (vote.status !== PollStatus.DISABLED) {
-        this.evictRecentlyOpenedVote(vote.uid);
+        if ((vote.total_voting_request_invitations ?? 0) > 0) this.evictRecentlyOpenedVote(vote.uid);
         return vote;
       }
       return { ...vote, status: PollStatus.ACTIVE };
     });
+  }
+
+  /**
+   * True while a vote sits in the live just-opened or just-created carrier window (GH-4078) — its
+   * index row (or synthesized row) can't be trusted to report the invited electorate yet, so the
+   * votes table shows "Counting invitations…" instead of "No one invited". Read-only: unlike the
+   * getLive* helpers this never prunes, so it is safe to call from a computed.
+   */
+  public isAwaitingInvitationCount(voteUid: string): boolean {
+    const now = Date.now();
+    const openedAt = this.recentlyOpenedVotes().get(voteUid);
+    if (openedAt !== undefined && now - openedAt < RECENTLY_OPENED_VOTE_TTL_MS) return true;
+    const created = this.recentlyCreatedVotes().get(voteUid);
+    return created !== undefined && created.vote.status !== PollStatus.DISABLED && now - created.markedAt < RECENTLY_OPENED_VOTE_TTL_MS;
+  }
+
+  /**
+   * True when any row in a rendered votes list would show "Counting invitations…" (GH-4078) — derived from the same
+   * computeVoteRowParticipation state the votes table renders, so polling and the label cannot drift apart.
+   */
+  public hasVotesAwaitingInvitationCount(votes: Vote[]): boolean {
+    return votes.some((vote) => computeVoteRowParticipation(vote, this.isAwaitingInvitationCount(vote.uid)).state === VoteRowParticipationState.COUNTING);
   }
 
   /**
@@ -455,7 +479,8 @@ export class VoteService {
    * happen on a *different* tab/page than the one the vote was created from, e.g. Active →
    * Draft → Active before the index catches up) so the carried status is kept instead of
    * discarding the synthesized vote; only a fetched row reporting any other status is treated as
-   * real convergence and evicts the carrier.
+   * real convergence and evicts the carrier — once it also reports a positive invitation count
+   * (GH-4078, same reasoning as `mergeRecentlyOpenedVotes`).
    */
   public mergeRecentlyCreatedVotes(
     votes: Vote[],
@@ -482,7 +507,7 @@ export class VoteService {
       if (!carried) return vote;
       present.add(vote.uid);
       if (vote.status !== PollStatus.DISABLED) {
-        this.evictRecentlyCreatedVote(vote.uid);
+        if ((vote.total_voting_request_invitations ?? 0) > 0) this.evictRecentlyCreatedVote(vote.uid);
         return vote;
       }
       // Don't re-badge a stale Disabled row outside the tab its carried status actually belongs to

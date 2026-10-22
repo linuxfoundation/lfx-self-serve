@@ -42,7 +42,12 @@ import {
   TabConfigEntry,
   Vote,
 } from '@lfx-one/shared/interfaces';
-import { COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW, COMMITTEE_VALID_TABS, WG_ENGAGEMENT_METRICS_FLAG } from '@lfx-one/shared/constants';
+import {
+  COMMITTEE_ENGAGEMENT_DEFAULT_WINDOW,
+  COMMITTEE_VALID_TABS,
+  VOTE_INVITATION_COUNT_REFRESH_MS,
+  WG_ENGAGEMENT_METRICS_FLAG,
+} from '@lfx-one/shared/constants';
 import {
   canManageCommitteeMembers,
   canViewCommitteeRoster,
@@ -553,6 +558,15 @@ export class CommitteeViewComponent {
 
   public constructor() {
     this.initAutoSelectInitialTab();
+
+    // Re-fetch votes while a just-opened vote still shows "Counting invitations…" (GH-4078) so its
+    // real participation count appears without a manual reload; stops once the carrier window ends.
+    toObservable(this.rawVotes)
+      .pipe(
+        switchMap((votes) => (this.voteService.hasVotesAwaitingInvitationCount(votes) ? timer(VOTE_INVITATION_COUNT_REFRESH_MS) : EMPTY)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => this.votesRefresh.update((v) => v + 1));
 
     // Self-healing eviction for extendedVoteOverrides (mirrors votes-table's own extendedDeadlines
     // pattern): once rawVotes() reflects a deadline at least as new as the override, drop it rather
