@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 
 import { DOCUMENTS_URL, DOCUMENT_VIEW_URL, documentFixture, openDocuments, setupDocuments } from './helpers/mktg-os-documents.helper';
 
 test.describe('Marketing OS current revisions', () => {
   test.use({ viewport: { width: 1440, height: 1000 }, timezoneId: 'UTC' });
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
   test.afterEach(async ({ page }, testInfo) => {
     await page.screenshot({ path: testInfo.outputPath('final-state.png'), fullPage: true });
   });
@@ -94,7 +98,7 @@ test.describe('Marketing OS current revisions', () => {
     const summary = page.getByTestId('mktg-document-view-history-bar-summary');
     await expect(summary).toBeVisible();
     expect(await summary.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-    await page.getByTestId('mktg-document-crumb-family').focus();
+    await page.getByTestId('mktg-breadcrumb-link-1').focus();
     await page.keyboard.press('Tab');
     await expect(summary).toBeFocused();
     await expect(page.getByRole('tooltip')).toHaveText(`You're viewing v7 · 13 Oct · ${name} · v9 is current`);

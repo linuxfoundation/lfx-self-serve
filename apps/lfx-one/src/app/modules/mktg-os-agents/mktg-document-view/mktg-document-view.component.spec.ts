@@ -595,7 +595,16 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-restore-current')).toBeNull();
     expect(query('mktg-document-view-history-bar')).toBeNull();
     expect(query('mktg-document-view-current-since-2')).toBeNull();
-    expect(query('mktg-document-crumb-kit')?.getAttribute('href')).toBe('/?project=testorbit');
+    expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toContain('/families/positioning-brand?project=testorbit');
+    expect(query('mktg-document-view-back-link')).toBeNull();
+  });
+
+  it('omits project query state from parent links when context is absent', async () => {
+    await render('/documents/brand-kit/living');
+    activeContext.set(null);
+    await settle();
+    expect(query('mktg-breadcrumb-link-0')?.getAttribute('href')).not.toContain('project=');
+    expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).not.toContain('project=');
   });
 
   it('requests an explicit current pointer even when its revision is missing from the summaries', async () => {
@@ -633,12 +642,20 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-document-view-notice')?.textContent).toContain('Revision 1 is now current.');
   });
 
-  it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps an ungrouped document back link in its %s host', async (host) => {
+  it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps legacy ICP navigation in its %s host', async (host) => {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === 'icp');
-    if (!type) throw new Error('Synthetic ungrouped document type missing');
+    if (!type) throw new Error('Synthetic legacy document type missing');
     store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type }));
     await render(`${host}/documents/icp/living`);
-    expect(query('mktg-document-view-back-link')?.getAttribute('href')).toBe(`${host}/documents?project=testorbit&type=icp`);
+    expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe(`${host}/families/positioning-brand?project=testorbit`);
+    expect(query('mktg-document-view-back-link')).toBeNull();
+  });
+
+  it.each(['/project/mktg-os-agents', '/foundation/mktg-os-agents'])('keeps fixed parents in its %s host without revision/type state', async (host) => {
+    await render(`${host}/documents/brand-kit/living?type=brand-kit&revision=${LATEST.id}`);
+    expect(query('mktg-breadcrumb-link-0')?.getAttribute('href')).toBe(`${host}?project=testorbit`);
+    expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe(`${host}/families/positioning-brand?project=testorbit`);
+    expect(query('mktg-breadcrumb-current')?.textContent).toContain('Brand Kit');
   });
 
   it.each([
@@ -678,23 +695,20 @@ describe('MktgDocumentViewComponent', () => {
   });
 
   it.each([
-    ['brand-kit', 'Positioning & brand', 'positioning-brand', 'Brand kit'],
-    ['linkedin-post', 'Social & community', 'social-community', null],
-    ['icp', null, null, null],
-  ])('maps %s to living crumbs, a run family back, or Documents', async (key, familyName, familyId, assetLabel) => {
+    ['brand-kit', 'Positioning & brand', 'positioning-brand'],
+    ['linkedin-post', 'Social & community', 'social-community'],
+    ['icp', 'Positioning & brand', 'positioning-brand'],
+  ])('maps %s to fixed shared parents and a current asset crumb', async (key, familyName, familyId) => {
     const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === key);
     if (!type) throw new Error('Synthetic document type missing');
-    // An ungrouped run is synthetic: every current run type belongs to a family.
-    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type: { ...type, kind: familyName === null ? 'run' : type.kind } }));
+    store.getRevision.mockReturnValue(of({ ...revisionResponse(LATEST), type }));
     await render(`/project/mktg-os-agents/documents/${key}/living?project=proj-1&revision=${LATEST.id}`);
-    expect(query('mktg-document-view-back-link') !== null).toBe(familyName === null);
-    if (familyName) {
-      expect(query('mktg-document-crumb-kit')?.textContent).toContain('TestOrbit kit');
-      expect(query('mktg-document-crumb-kit')?.getAttribute('href')).toBe('/project/mktg-os-agents?project=testorbit');
-      expect(query('mktg-document-crumb-family')?.textContent).toBe(familyName);
-      expect(query('mktg-document-crumb-family')?.getAttribute('href')).toBe(`/project/mktg-os-agents/families/${familyId}?project=testorbit`);
-      expect(harness.routeNativeElement?.querySelector('nav [aria-current="page"]')?.textContent ?? null).toBe(assetLabel);
-    } else expect(query('mktg-document-view-back-link')?.textContent).toContain('Documents');
+    expect(query('mktg-document-view-back-link')).toBeNull();
+    expect(query('mktg-breadcrumb-link-0')?.textContent).toContain('TestOrbit kit');
+    expect(query('mktg-breadcrumb-link-0')?.getAttribute('href')).toBe('/project/mktg-os-agents?project=testorbit');
+    expect(query('mktg-breadcrumb-link-1')?.textContent).toBe(familyName);
+    expect(query('mktg-breadcrumb-link-1')?.getAttribute('href')).toBe(`/project/mktg-os-agents/families/${familyId}?project=testorbit`);
+    expect(query('mktg-breadcrumb-current')?.textContent).toBe(type.itemLabel);
     expect(query('mktg-document-view-title')).not.toBeNull();
     // LinkedIn posts hide the revision chip (Joan's LinkedIn post board: no Approve, you finish by copying a post).
     expect(query('mktg-document-view-revision-chip') !== null).toBe(key !== 'linkedin-post');
@@ -705,7 +719,7 @@ describe('MktgDocumentViewComponent', () => {
     activeContext.set({ ...PROJECT, uid: 'next', slug: 'current' });
     await settle();
     expect(TestBed.inject(Router).url).toContain('project=stale');
-    for (const id of ['mktg-document-crumb-kit', 'mktg-document-crumb-family']) {
+    for (const id of ['mktg-breadcrumb-link-0', 'mktg-breadcrumb-link-1']) {
       const params = new URL(query(id)?.getAttribute('href') ?? '', 'https://synthetic.example').searchParams;
       expect(params.get('project')).toBe('current');
       expect(params.has('type')).toBe(false);

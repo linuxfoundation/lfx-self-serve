@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { Component, signal } from '@angular/core';
+import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ProjectContextService } from '@services/project-context.service';
 import { MktgFaqAsset } from '@lfx-one/shared/interfaces';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgFaqViewComponent } from './mktg-faq-view.component';
 
@@ -54,10 +57,56 @@ describe('MktgFaqViewComponent', () => {
   const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [HostComponent] }).compileComponents();
+    await TestBed.configureTestingModule({
+      imports: [HostComponent],
+      providers: [
+        provideRouter([{ path: '**', children: [] }]),
+        { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
+      ],
+    }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     host = fixture.componentInstance;
     await fixture.whenStable();
+  });
+
+  it('loads its URL tab and pushes one history entry per user switch', async () => {
+    fixture.destroy();
+    await TestBed.inject(Router).navigateByUrl('/?project=synthetic&profile=edit&tab=unanswered');
+    fixture = TestBed.createComponent(HostComponent);
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-tab-unanswered')?.getAttribute('aria-selected')).toBe('true');
+    const push = vi.spyOn(TestBed.inject(Location), 'go');
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(TestBed.inject(Router).url).toContain('tab=sources');
+    expect(TestBed.inject(Router).url).toContain('profile=edit');
+    expect(push).toHaveBeenCalledTimes(1);
+    push.mockRestore();
+  });
+
+  it('focuses the opened panel start only after routed content renders', async () => {
+    const router = TestBed.inject(Router);
+    const navigate = router.navigate.bind(router);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = vi.spyOn(router, 'navigate').mockImplementationOnce(async (...args) => {
+      await gate;
+      return navigate(...args);
+    });
+    query('mktg-faq-view-tab-faq')?.focus();
+    const before = document.activeElement;
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-panel-sources')).toBeNull();
+    expect(document.activeElement).toBe(before);
+    release();
+    await pending.mock.results[0]?.value;
+    await fixture.whenStable();
+    const panel = query('mktg-faq-view-panel-sources');
+    expect(document.activeElement).toBe(panel);
+    expect(panel?.getAttribute('tabindex')).toBe('-1');
   });
 
   it('heads the page with the title, the version, the mode, the size and what needs the team', () => {
@@ -103,10 +152,11 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-faq-view-tab-unanswered')).toBe('Needs an answer');
   });
 
-  it('moves the focus onto the selected tab once it has rendered when a shortcut opens it', async () => {
+  it('moves focus to the rendered panel start when a shortcut opens it', async () => {
     query('mktg-faq-view-unanswered-chip')?.click();
     await fixture.whenStable();
-    expect(document.activeElement).toBe(query('mktg-faq-view-tab-unanswered'));
+    const panel = query('mktg-faq-view-panel-unanswered');
+    expect(document.activeElement).toBe(panel);
   });
 
   it('shows the sources read, the failed ones, the gaps and the checks', async () => {

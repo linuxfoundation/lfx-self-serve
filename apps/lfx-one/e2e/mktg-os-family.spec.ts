@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { expect } from '@playwright/test';
+import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { kitTest as test, KIT_PROJECT, openKit, setupKit } from './helpers/mktg-kit.helper';
 
 test.describe('Marketing family content', () => {
+  test.beforeEach(async ({ page }) => {
+    await suppressCookieBanner(page);
+  });
   test('opens from the kit, shows stored versions, and leaves exports and rebuild inert', async ({ page }) => {
     await setupKit(page, { loaded: true });
     await openKit(page);
@@ -34,12 +38,12 @@ test.describe('Marketing family content', () => {
     await expect(page).toHaveURL(/\/documents\/foundation-message\/living\?project=kit-synthetic-project/);
     await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
     await expect(page.getByTestId('mktg-framework-view')).toBeVisible();
-    await expect(page.getByTestId('mktg-document-crumb-kit')).toContainText('Synthetic Kit Project');
+    await expect(page.getByTestId('mktg-breadcrumb-link-0')).toContainText('Synthetic Kit Project');
     await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Messaging framework');
-    await page.getByTestId('mktg-document-crumb-family').click();
+    await page.getByTestId('mktg-breadcrumb-link-1').click();
     await expect(page.getByTestId('mktg-family-title')).toHaveText('Positioning & brand');
     await page.getByTestId('mktg-family-open-messaging-framework').click();
-    await page.getByTestId('mktg-document-crumb-kit').click();
+    await page.getByTestId('mktg-breadcrumb-link-0').click();
     await expect(page).toHaveURL(/\/mktg-os-agents\?project=kit-synthetic-project$/);
     await expect(page.getByTestId('mktg-kit-page')).toBeVisible();
   });

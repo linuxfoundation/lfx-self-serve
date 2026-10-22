@@ -49,7 +49,8 @@ version. A valid approved-current seam supplies the approved revision number; th
 listing date remains `updatedAt` until an approved-current date is exposed. Run assets instead show current-local-calendar-month counts from `createdAt`, and
 the Family Current cell shows the run date, not a revision version.
 
-State filters are local signals (All by default), retaining all family cards. Count-only
+State filters read `?state=` (All by default), retaining all family cards. A user filter click
+pushes a history entry, so browser Back restores the previous filter. Count-only
 runs appear under All, not workflow-state chips. `summarizeMktgKit` centralizes provisional
 formulas: In the kit counts **Approved only**, Core floor counts families with at least one
 approved asset out of the catalog length, and Kit level is Core only once every store-backed
@@ -113,12 +114,29 @@ cancel old reads. Kit and Agents never make these detail reads.
 
 ## Routing and verification
 
-Static Kit/Agents/Requests/Access/Family routes precede `:agentId`; Documents routes remain
-unchanged, and the deleted standalone brand-kit-form route stays deleted. Run-page Back actions
-return to Agents. The empty Kit tab uses exact matching so it is not active everywhere; named
-tabs use subset matching with query params ignored. Family titles follow the family name.
-The document view shows kit › family › asset for living kit assets, kit › family for mapped
-runs, and ← Documents otherwise; kit/family links clear type/revision while keeping project.
+Static Kit/Agents/Requests/Access/Documents/Family routes precede `:agentId`; Documents routes remain
+unchanged, and the deleted standalone brand-kit-form route stays deleted. The empty Kit tab uses
+exact matching so it is not active everywhere; named tabs use subset matching with query params ignored.
+Family titles follow the family name.
+
+Up is a fixed-parent `lfx-mktg-breadcrumb`, independent of the entry route. The pure shared
+`mktgKitRootCrumb` builds the `<Project> kit` label once; `mktgKitCrumbsFor` derives a document or
+agent's family from the shared catalog/family registries. Every crumb except the last is a link;
+the last has `aria-current="page"`. Kit home is the root and has no breadcrumb. Tab pages show
+`<Project> kit › <Tab>`; a family shows `<Project> kit › <Family>`; generic run and shared document
+views show `<Project> kit › <Family> › <Agent or asset>`. Unmapped legacy documents use Documents
+as their middle parent. Parent links use the active project slug and do not inherit asset-only query state;
+an absent project is omitted, not serialized as `?project=`. Separate run/document/Marketing OS back
+arrows are removed. Run again targets the catalog run route via `mktgRunRouteFor`.
+
+Back is the browser's history. A user tab or filter click **pushes** one history entry:
+Kit uses `state=`, Documents uses `type=`, and Framework/Brand Kit/Boilerplates/FAQ views use `tab=`
+through `createMktgAssetTab`. Asset tab switches merge unrelated query parameters so project,
+revision and `profile=edit` survive. Missing or unknown tab ids render the view's default panel;
+selecting that default clears `tab=`. Back then restores the preceding tab/filter rather than
+skipping it.
+Only automatic hops replace history: the generic unknown/coming-soon/intake-less agent redirect
+uses `replaceUrl: true`. Main's generic run renders result and questions inline.
 
 No-project branches are defensive and unit-covered, not stable route-level e2e states:
 `projectQueryParamGuard` permits an absent slug, but `NavigationService.applyDefaultSelection`

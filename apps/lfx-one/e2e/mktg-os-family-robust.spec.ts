@@ -83,8 +83,8 @@ test.describe('Marketing family responsive structure', () => {
         await testInfo.attach(`family-${familyId}-${width}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
         if (familyId === 'positioning-brand') {
           await page.getByTestId('mktg-family-open-messaging-framework').click();
-          await expect(page.getByTestId('mktg-document-crumb-family')).toHaveText('Positioning & brand');
-          await expect(page.getByTestId('mktg-document-crumb-kit')).toBeVisible();
+          await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveText('Positioning & brand');
+          await expect(page.getByTestId('mktg-breadcrumb-link-0')).toBeVisible();
           expect(await page.getByTestId('mktg-document-view-page').evaluate((element) => element.scrollWidth > element.clientWidth + 1)).toBe(false);
           await testInfo.attach(`asset-breadcrumb-${width}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
         }

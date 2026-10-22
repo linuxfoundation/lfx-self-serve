@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, inject, Injector, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
 import { FAQ_MODE_LABELS, FAQ_NEEDS_ANSWER_LABEL, FAQ_VIEW_TABS } from '@lfx-one/shared/constants';
 import { FaqGroupView, FaqViewTab, MktgFaqAsset, MktgFaqViewTab, MktgAssetHeaderMetadata, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
 import { faqGroupViews, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
+import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 
 // The FAQ asset view, an app page in the Messaging Framework view's look
@@ -22,6 +23,8 @@ import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset
 export class MktgFaqViewComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   // === Inputs ===
   /** The project the FAQ is for. */
@@ -37,7 +40,11 @@ export class MktgFaqViewComponent {
   public readonly note = input('');
 
   // === Signals ===
-  protected readonly selectedTab = signal<FaqViewTab>('faq');
+  private readonly tabState = createMktgAssetTab(
+    FAQ_VIEW_TABS.map((tab) => tab.id),
+    'faq'
+  );
+  protected readonly selectedTab = this.tabState.selected;
 
   // === Computed ===
   protected readonly title = computed(() => `${this.projectName()} FAQ`);
@@ -76,25 +83,32 @@ export class MktgFaqViewComponent {
   };
 
   // === Protected methods ===
-  protected onSelectTab(id: FaqViewTab): void {
-    this.selectedTab.set(id);
+  protected async onSelectTab(id: FaqViewTab): Promise<void> {
+    await this.tabState.select(id);
+    if (isPlatformBrowser(this.platformId) && !this.destroyRef.destroyed) {
+      afterNextRender(
+        () => {
+          if (this.selectedTab() !== id) return;
+          const panel = this.host.nativeElement.querySelector<HTMLElement>('[role="tabpanel"]');
+          if (panel) {
+            if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+            panel.focus();
+          }
+        },
+        { injector: this.injector }
+      );
+    }
   }
 
   /**
    * A shortcut into a tab from outside the tablist (the header's "need an
    * answer" chip, the FAQ tab's callout): the button that was clicked may go
-   * with the panel it sat in, so focus moves onto the selected tab once it
+   * with the panel it sat in, so focus moves to the new panel's start once it
    * has rendered. afterNextRender is bound to this component's injector, so
    * the hook is dropped with the component and never fires after it is gone.
    */
   protected onGoToTab(id: FaqViewTab): void {
-    this.selectedTab.set(id);
-    if (isPlatformBrowser(this.platformId)) {
-      const tab = this.tabs().find((entry) => entry.id === id);
-      if (tab) {
-        afterNextRender(() => document.getElementById(tab.tabId)?.focus(), { injector: this.injector });
-      }
-    }
+    void this.onSelectTab(id);
   }
 
   /**
@@ -123,7 +137,7 @@ export class MktgFaqViewComponent {
         return;
     }
     event.preventDefault();
-    this.selectedTab.set(tabs[next].id);
+    void this.tabState.select(tabs[next].id);
     if (isPlatformBrowser(this.platformId)) {
       document.getElementById(tabs[next].tabId)?.focus();
     }
