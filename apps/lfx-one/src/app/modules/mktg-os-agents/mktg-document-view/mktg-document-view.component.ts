@@ -1089,6 +1089,23 @@ export class MktgDocumentViewComponent {
     }
     if (progress.type === 'document' || progress.type === 'persisted') {
       const location = progress.run?.versions.at(-1)?.documentLocation;
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === pending.request.agentId);
+      if (
+        location &&
+        (!type ||
+          location.agentKey !== type.agentKey ||
+          location.agentKey !== this.params().agentKey ||
+          location.documentId !== this.params().documentId ||
+          pending.request.projectUid !== this.projectContext.activeContextUid() ||
+          progress.run?.projectUid !== pending.request.projectUid ||
+          progress.run?.agentId !== pending.request.agentId)
+      ) {
+        this.submittingGeneration.set(false);
+        this.localProgress.set('failed');
+        this.unconfirmed.set(false);
+        this.errorText.set('The completed run receipt belongs to another asset. Your intake is kept; open Documents to check it.');
+        return;
+      }
       this.dependencyService.notifyDocumentsChanged(pending.request.projectUid);
       if (location) {
         this.localProgress.set(null);

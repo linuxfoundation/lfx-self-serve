@@ -966,6 +966,58 @@ describe('MktgDocumentViewComponent', () => {
     expect(component['submittingGeneration']()).toBe(false);
   });
 
+  it.each((['document', 'persisted'] as const).flatMap((event) => ['agent', 'project', 'document', 'valid'].map((binding) => ({ event, binding }))))(
+    'binds a $event receipt to the requested catalog/project/document ($binding)',
+    async ({ event, binding }) => {
+      await render('/documents/brand-kit/living');
+      const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+      const other = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey !== BRAND_KIT.agentKey);
+      if (!component || !other) throw new Error('Missing synthetic receiver binding fixtures');
+      const pending: MktgPendingGeneration = {
+        request: { agentId: BRAND_KIT_INTAKE.agentId, projectUid: PROJECT.uid, intake: BRAND_KIT_INTAKE, answers: {} },
+        state: 'writing',
+        updatedAt: new Date().toISOString(),
+      };
+      const run: MktgStoredAgentRun = {
+        agentId: BRAND_KIT_INTAKE.agentId,
+        projectUid: binding === 'project' ? 'synthetic-other-project' : PROJECT.uid,
+        sessionId: 'synthetic-binding-session',
+        ownerToken: 'synthetic-owner',
+        answers: {},
+        savedAt: new Date().toISOString(),
+        versions: [
+          {
+            version: 1,
+            document: '# Synthetic accepted asset',
+            createdAt: new Date().toISOString(),
+            documentLocation: {
+              agentKey: binding === 'agent' ? other.agentKey : BRAND_KIT.agentKey,
+              documentId: binding === 'document' ? 'run-0123456789abcdef01234567' : 'living',
+              revisionId: LATEST.id,
+            },
+          },
+        ],
+      };
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+      const changed = vi.mocked(TestBed.inject(MktgDependencyService).notifyDocumentsChanged);
+      changed.mockClear();
+      component['onProgress']({ type: event, run }, pending);
+      await settle();
+      if (binding === 'valid') {
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(
+          [expect.any(String), 'documents', BRAND_KIT.agentKey, 'living'],
+          expect.objectContaining({ queryParams: expect.objectContaining({ revision: LATEST.id }) })
+        );
+        expect(changed).toHaveBeenCalledWith(PROJECT.uid);
+      } else {
+        expect(navigate).not.toHaveBeenCalled();
+        expect(changed).not.toHaveBeenCalled();
+        expect(component['errorText']()).toContain('receipt belongs to another asset');
+        expect(component['submittingGeneration']()).toBe(false);
+      }
+    }
+  );
+
   it.each(['metadata', 'body'])('bounds repeated %s failures together and manual refresh restores the loaded asset', async (failure) => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     store.getDocument.mockReturnValue(of({ ...detail, runs: [started('writing')] }));
