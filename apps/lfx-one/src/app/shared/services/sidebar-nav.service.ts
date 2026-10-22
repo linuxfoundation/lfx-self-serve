@@ -74,7 +74,7 @@ export class SidebarNavService {
   private readonly isCrowdfundingAttributionEnabled = this.featureFlagService.getBooleanFlag(CROWDFUNDING_ATTRIBUTION_STEP_FLAG, false);
   /** Rollout gate for the Project Lens Participating Organizations entry (#2091), matching `projectParticipatingOrgsEnabledGuard`. */
   private readonly isProjectParticipatingOrgsEnabled = this.featureFlagService.getBooleanFlag(PROJECT_LENS_PARTICIPATING_ORGS_FLAG, false);
-  /** Pilot gate: decides whether the Communications links point at the embed or at LFX's own pages. */
+  /** Pilot gate: decides whether the Newsletters links point at the embed or at LFX's own pages. */
   private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);

@@ -114,7 +114,7 @@ const SIDEBAR = {
   votes: 'sidebar-item-votes',
   surveys: 'sidebar-item-surveys',
   permissions: 'sidebar-item-permissions',
-  // Communications section — canSeeNewsletters() = ED OR canWrite()
+  // Communications section (foundation lens only) — canSeeNewsletters() = ED OR canWrite()
   communicationsSection: 'sidebar-item-communications',
   foundationNewsletters: 'sidebar-foundation-newsletters', // explicit
   projectNewsletters: 'sidebar-project-newsletters', // explicit
@@ -417,18 +417,12 @@ test.describe('S4: Foundation lens — board-member without canWrite hides Newsl
 // ─── S5–S6: Project lens ───────────────────────────────────────────────────────
 
 test.describe('S5: Project lens — contributor without canWrite hides Newsletters', () => {
-  test('Communications section and Newsletters are hidden when writer=false', async ({ page }) => {
+  test('Newsletters is hidden when writer=false', async ({ page }) => {
     await stubPersona(page, ['contributor']);
     await stubNavLensItems(page, 'project');
     await stubProjectApi(page, MOCK_PROJECT_SLUG, false);
     await gotoAndWaitForSidebar(page, `/project/overview?project=${MOCK_PROJECT_SLUG}`);
 
-    await expect(
-      page.getByTestId(SIDEBAR.communicationsSection),
-      'persona=contributor canWrite=false lens=project section=communications should be absent'
-    ).toHaveCount(0, {
-      timeout: ELEMENT_TIMEOUT,
-    });
     await expect(page.getByTestId(SIDEBAR.projectNewsletters), 'persona=contributor canWrite=false lens=project item=newsletters should be absent').toHaveCount(
       0,
       {
@@ -439,18 +433,20 @@ test.describe('S5: Project lens — contributor without canWrite hides Newslette
 });
 
 test.describe('S6: Project lens — contributor with canWrite sees Newsletters', () => {
-  test('Communications section and Newsletters are visible when writer=true', async ({ page }) => {
+  test('Newsletters is visible when writer=true, with no Communications section', async ({ page }) => {
     await stubPersona(page, ['contributor']);
     await stubNavLensItems(page, 'project');
     await stubProjectApi(page, MOCK_PROJECT_SLUG, true);
     await gotoAndWaitForSidebar(page, `/project/overview?project=${MOCK_PROJECT_SLUG}`);
 
-    await expect(page.getByTestId(SIDEBAR.communicationsSection), 'persona=contributor canWrite=true lens=project section=communications').toBeVisible({
-      timeout: ELEMENT_TIMEOUT,
-    });
     await expect(page.getByTestId(SIDEBAR.projectNewsletters), 'persona=contributor canWrite=true lens=project item=newsletters').toBeVisible({
       timeout: ELEMENT_TIMEOUT,
     });
+    // Newsletters is a top-level project-lens item; the Communications section only exists on the foundation lens.
+    await expect(
+      page.getByTestId(SIDEBAR.communicationsSection),
+      'persona=contributor canWrite=true lens=project section=communications should be absent'
+    ).toHaveCount(0);
   });
 });
 
