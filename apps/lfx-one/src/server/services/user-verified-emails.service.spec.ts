@@ -132,13 +132,13 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
     });
   });
 
-  it('treats a failed preference lookup as best-effort', async () => {
+  it('flags a failed preference lookup as incomplete but keeps the auth-service emails', async () => {
     getMeetingInviteEmail.mockResolvedValue(null);
 
     await expect(service.getUserVerifiedEmails(buildReq())).resolves.toEqual({
       emails: [PRIMARY, 'alt@example.org'],
       preferenceEmail: null,
-      incomplete: false,
+      incomplete: true,
     });
   });
 

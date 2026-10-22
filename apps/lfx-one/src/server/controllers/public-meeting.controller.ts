@@ -178,28 +178,36 @@ export class PublicMeetingController {
       // service OR lookup had a false negative. Re-check directly by email with M2M.
       if (isAuthenticated) {
         const userEmail = getEffectiveEmail(req);
-        if (userEmail) {
-          try {
+        let fallbackMatch = false;
+        try {
+          if (userEmail) {
             const registrantsByEmail = await this.meetingService.getMeetingRegistrantsByEmail(req, id, userEmail, m2mToken);
-            if (registrantsByEmail.length > 0) {
+            fallbackMatch = registrantsByEmail.length > 0;
+            if (fallbackMatch) {
               logger.warning(req, 'get_public_meeting_by_id', 'invited flag was false negative; email fallback succeeded', {
                 meeting_id: id,
                 email: userEmail,
               });
-              meeting.invited = true;
-              await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
-              res.json({
-                meeting,
-                project: this.toPublicMeetingProject(project, parent),
-              });
-              return;
             }
-          } catch (fallbackError) {
-            logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
-              meeting_id: id,
-              err: fallbackError,
-            });
           }
+          // An alias row (meeting-invite preference) only matches through the user's other verified emails.
+          if (!fallbackMatch && !isImpersonating(req)) {
+            fallbackMatch = (await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, id, userEmail || undefined)).registrants.length > 0;
+          }
+        } catch (fallbackError) {
+          logger.warning(req, 'get_public_meeting_by_id', 'Email registrant fallback check failed, continuing to password gate', {
+            meeting_id: id,
+            err: fallbackError,
+          });
+        }
+        if (fallbackMatch) {
+          meeting.invited = true;
+          await this.addInviteeRegistrantCount(req, meeting, id, m2mToken);
+          res.json({
+            meeting,
+            project: this.toPublicMeetingProject(project, parent),
+          });
+          return;
         }
       }
 
@@ -914,6 +922,20 @@ export class PublicMeetingController {
         }
       } catch (error) {
         logger.warning(req, 'get_public_meeting_occurrences', 'Registrant check failed, continuing to organizer check', {
+          meeting_id: meeting.id,
+          err: error,
+        });
+      }
+    }
+
+    if (!isImpersonating(req)) {
+      try {
+        const { registrants } = await this.meetingService.getMeetingRegistrantsByVerifiedEmails(req, meeting.id, email || undefined);
+        if (registrants.length > 0) {
+          return true;
+        }
+      } catch (error) {
+        logger.warning(req, 'get_public_meeting_occurrences', 'Verified-email registrant check failed, continuing to organizer check', {
           meeting_id: meeting.id,
           err: error,
         });

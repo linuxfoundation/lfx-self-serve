@@ -32,7 +32,7 @@ export class UserVerifiedEmailsService {
 
   /**
    * The signed-in user's verified emails, or none for an anonymous caller. Never throws.
-   * `incomplete` is set when auth-service failed; the preference is best-effort since it is always a verified address.
+   * `incomplete` is set when auth-service or the preference lookup failed.
    */
   public async getUserVerifiedEmails(req: Request): Promise<UserVerifiedEmails> {
     const sub = getEffectiveSub(req);
@@ -58,7 +58,7 @@ export class UserVerifiedEmailsService {
     return {
       emails: dedupeEmails([preferenceEmail, ...authServiceEmails]),
       preferenceEmail,
-      incomplete: !emailData,
+      incomplete: !emailData || (!!v1Token && preference === null),
     };
   }
 }

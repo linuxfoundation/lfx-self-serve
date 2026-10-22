@@ -533,6 +533,34 @@ describe('PublicMeetingController.getMeetingById registrant count', () => {
     expect(meeting.registrant_count).toBe(12);
   });
 
+  it('marks an alias-row invitee invited through the verified-email fallback', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [{ uid: 'reg-alias' }], lookupFailed: false });
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com');
+    expect(res.json.mock.calls[0][0].meeting.invited).toBe(true);
+  });
+
+  it('skips the verified-email fallback while impersonating', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
+    addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    isImpersonatingMock.mockReturnValue(true);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+    isImpersonatingMock.mockReturnValue(false);
+  });
+
   it('still serves the meeting when the count is unavailable', async () => {
     meetingSvc.getMeetingRegistrantCount.mockRejectedValue(new Error('query service down'));
     const { req, res, next } = buildReqRes(true);
@@ -1038,6 +1066,37 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     expect(next).not.toHaveBeenCalled();
     expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalledWith(req, MEETING_ID, 'user@example.com', 'm2m-token');
     expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
+  });
+
+  it('allows an alias-row registrant on a restricted meeting via the verified-email check', async () => {
+    meetingSvc.getPastOccurrencesForMeeting.mockResolvedValue(pastSummaries);
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    validatePasswordMock.mockReturnValue(false);
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [{ email: 'alias@example.com' }], lookupFailed: false });
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingOccurrences(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].past).toEqual(pastSummaries);
+  });
+
+  it('skips the verified-email check while impersonating', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ restricted: true } as Partial<Meeting>));
+    validatePasswordMock.mockReturnValue(false);
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    isImpersonatingMock.mockReturnValue(true);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getMeetingOccurrences(req, res, next);
+
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(403);
+    isImpersonatingMock.mockReturnValue(false);
   });
 
   it('allows an authenticated organizer on a private meeting and restores the M2M token', async () => {
