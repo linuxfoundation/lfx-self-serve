@@ -36,6 +36,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
+import { mktgRunProgressFixture } from '@shared/testing/mktg-run-progress-test-data';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
 import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
@@ -756,7 +757,7 @@ describe('MktgDocumentViewComponent', () => {
       versions: [{ version: 1, document: '# Synthetic output', createdAt: '2026-10-19T08:00:00Z' }],
       savedAt: '2026-10-19T08:00:00Z',
     };
-    events.next({ type: 'document', run });
+    events.next(mktgRunProgressFixture('document', run, 1));
     events.next(writingActivity());
     await settle();
     expect(query('mktg-document-view-run-steps')?.textContent).toContain('Saving');
@@ -1001,7 +1002,7 @@ describe('MktgDocumentViewComponent', () => {
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
       const changed = vi.mocked(TestBed.inject(MktgDependencyService).notifyDocumentsChanged);
       changed.mockClear();
-      component['onProgress']({ type: event, run }, pending);
+      component['onProgress'](mktgRunProgressFixture(event, run, 1), pending);
       await settle();
       if (binding === 'valid') {
         expect(navigate).toHaveBeenCalledExactlyOnceWith(
@@ -1014,6 +1015,45 @@ describe('MktgDocumentViewComponent', () => {
         expect(changed).not.toHaveBeenCalled();
         expect(component['errorText']()).toContain('receipt belongs to another asset');
         expect(component['submittingGeneration']()).toBe(false);
+      }
+    }
+  );
+
+  it.each((['document', 'persisted'] as const).flatMap((event) => [false, true].map((receipted) => ({ event, receipted }))))(
+    'does not substitute a newer cached receipt for selected $event v1 (receipt=$receipted)',
+    async ({ event, receipted }) => {
+      await render('/documents/brand-kit/living');
+      const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+      if (!component) throw new Error('Missing selected outcome receiver');
+      const pending: MktgPendingGeneration = {
+        request: { agentId: BRAND_KIT_INTAKE.agentId, projectUid: PROJECT.uid, intake: BRAND_KIT_INTAKE, answers: {} },
+        state: 'writing',
+        updatedAt: new Date().toISOString(),
+      };
+      const location = { agentKey: BRAND_KIT.agentKey, documentId: 'living', revisionId: OLDER.id };
+      const run: MktgStoredAgentRun = {
+        agentId: BRAND_KIT_INTAKE.agentId,
+        projectUid: PROJECT.uid,
+        sessionId: 'synthetic-newer-session',
+        ownerToken: 'synthetic-newer-proof',
+        answers: {},
+        savedAt: new Date().toISOString(),
+        versions: [
+          { version: 1, document: '# Older replay', createdAt: '2026-10-21T09:00:00Z', documentLocation: receipted ? location : undefined },
+          { version: 2, document: '# Newer cached document', createdAt: '2026-10-21T10:00:00Z', documentLocation: { ...location, revisionId: LATEST.id } },
+        ],
+      };
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+      component['onProgress'](mktgRunProgressFixture(event, run, 1), pending);
+      await settle();
+      if (receipted) {
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(
+          expect.anything(),
+          expect.objectContaining({ queryParams: expect.objectContaining({ revision: OLDER.id }) })
+        );
+      } else {
+        expect(navigate).not.toHaveBeenCalled();
+        expect(component['localProgress']()).toBe('storing');
       }
     }
   );
