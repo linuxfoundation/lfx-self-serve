@@ -871,6 +871,28 @@ describe('LinkedIn profile and post surface', () => {
     fixture.detectChanges();
     expect(component['busy']()).toBe(false);
     expect(component['result']()).toBeNull();
+    for (const action of ['cancel', 'save'] as const) {
+      component['onEdit']();
+      await fixture.whenStable();
+      if (action === 'cancel') component['onCancelEdit']();
+      else component['onProfileSubmit']();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(component['runFailed']()).toBe(true);
+      expect(component['error']()).toBe(MKTG_RUN_FAILURE_REASON);
+      expect(component['editing']()).toBe(false);
+      expect(api.start).not.toHaveBeenCalled();
+      expect(api.wait).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-run"] button')?.textContent.trim()).toBe('Retry');
+    }
+    component['contentForm'].controls.text.setValue('');
+    await component['onDraft']();
+    fixture.detectChanges();
+    expect(component['error']()).toContain('Supply pasted text');
+    expect(component['runFailed']()).toBe(true);
+    expect(component['run']()).toBe(run);
+    expect(api.start).not.toHaveBeenCalled();
+    expect(api.wait).not.toHaveBeenCalled();
     const retry = fixture.nativeElement.querySelector('[data-testid="mktg-linkedin-retry-run"] button');
     expect(retry.textContent.trim()).toBe('Retry');
     api.start.mockReturnValue(of({ ...run, sessionId: 'fresh-session' }));

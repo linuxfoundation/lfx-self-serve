@@ -301,8 +301,8 @@ export class LinkedinPostRunComponent {
   }
   protected onCancelEdit(): void {
     this.finishEditing();
-    this.error.set('');
-    if (this.run() && !this.result()) this.onRetryRun();
+    this.error.set(this.runFailed() ? MKTG_RUN_FAILURE_REASON : '');
+    if (!this.runFailed() && this.run() && !this.result()) this.onRetryRun();
   }
   protected onProfileSubmit(): void {
     if (this.busy() || !this.writer()) return;
@@ -333,7 +333,8 @@ export class LinkedinPostRunComponent {
           this.setup.set(null);
           this.finishEditing();
           this.busy.set(false);
-          if (this.run() && !this.result()) this.onRetryRun();
+          if (this.runFailed()) this.error.set(MKTG_RUN_FAILURE_REASON);
+          else if (this.run() && !this.result()) this.onRetryRun();
         },
         error: () => {
           this.busy.set(false);
@@ -366,7 +367,6 @@ export class LinkedinPostRunComponent {
     this.busy.set(true);
     this.startedAt.set(Date.now());
     this.profileSaved.set(false);
-    this.runFailed.set(false);
     this.activity.set([]);
     this.questionsId.set('');
     this.questionsProject.set('');
@@ -400,6 +400,7 @@ export class LinkedinPostRunComponent {
       this.linkError.set('');
       this.linkStatus.set('');
       this.run.set(null);
+      this.runFailed.set(false);
       this.generation = this.api
         .start(this.intake(), project, answers, this.setup() ?? undefined)
         .pipe(

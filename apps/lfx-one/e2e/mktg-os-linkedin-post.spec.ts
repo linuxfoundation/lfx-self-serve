@@ -3,7 +3,13 @@
 
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
-import { LINKEDIN_API, LINKEDIN_POST_INTAKE, MKTG_DOCUMENTS_API_PATH, MKTG_PENDING_DOCUMENT_STORAGE_PREFIX } from '@lfx-one/shared/constants';
+import {
+  LINKEDIN_API,
+  LINKEDIN_POST_INTAKE,
+  MKTG_DOCUMENTS_API_PATH,
+  MKTG_PENDING_DOCUMENT_STORAGE_PREFIX,
+  MKTG_RUN_FAILURE_REASON,
+} from '@lfx-one/shared/constants';
 import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post-recorded.fixture';
 import { linkedinProfileFromSetup, renderLinkedinProfileMarkdown } from '@lfx-one/shared/utils/linkedin-post.utils';
 import {
@@ -80,6 +86,24 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await expect.poll(() => polls).toBe(1);
     await expect(page.getByTestId('mktg-linkedin-generating')).toHaveCount(0);
     await expect(page.getByTestId('mktg-linkedin-content-text').locator('textarea')).toHaveValue('Synthetic release notes kept for Retry.');
+    for (const action of ['cancel', 'save'] as const) {
+      await page.getByTestId('mktg-linkedin-edit-profile').click();
+      await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
+      await page
+        .getByTestId(`mktg-linkedin-${action === 'cancel' ? 'cancel-edit' : 'save-profile'}`)
+        .getByRole('button')
+        .click();
+      await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+      await expect(page.getByTestId('mktg-linkedin-error')).toContainText(MKTG_RUN_FAILURE_REASON);
+      await expect(page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+      expect(submitted).toHaveLength(1);
+      expect(polls).toBe(1);
+    }
+    await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('');
+    await page.getByTestId('mktg-linkedin-draft').getByRole('button').click();
+    await expect(page.getByTestId('mktg-linkedin-error')).toContainText('Supply pasted text');
+    expect(submitted).toHaveLength(1);
+    expect(polls).toBe(1);
     await page.getByTestId('mktg-linkedin-retry-run').getByRole('button', { name: 'Retry', exact: true }).click();
     await expect(page.getByTestId('mktg-linkedin-error')).toHaveCount(0);
     await expect.poll(() => submitted.length).toBe(2);
