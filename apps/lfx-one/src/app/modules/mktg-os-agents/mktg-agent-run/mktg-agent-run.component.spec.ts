@@ -457,6 +457,48 @@ describe('MktgAgentRunComponent', () => {
       expect(answerQuestions).not.toHaveBeenCalled();
     });
 
+    it.each(['opened', 'cancelled', 'rejected'] as const)('coalesces receipt-less document then persisted while original navigation is %s', async (outcome) => {
+      await configure('browser', target.agentId);
+      await fill();
+      const { request } = accepted();
+      let finish: ((opened: boolean) => void) | undefined;
+      let fail: ((error: Error) => void) | undefined;
+      const navigate = vi
+        .spyOn(TestBed.inject(Router), 'navigate')
+        .mockResolvedValue(true)
+        .mockImplementationOnce(
+          () =>
+            new Promise<boolean>((resolve, reject) => {
+              finish = resolve;
+              fail = reject;
+            })
+        );
+      const run = storedRun(PROJECT_1.uid, '# Synthetic asset', request.answers);
+      run.agentId = target.agentId;
+      component['onProgress']({ type: 'document', run }, PROJECT_1.uid);
+      const destination = component['navigation']();
+      expect(destination?.generation).toBeTruthy();
+      const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === target.agentId);
+      if (!type || !finish || !fail) throw new Error('Missing deferred document navigation');
+      run.versions[0].documentLocation = { agentKey: type.agentKey, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+      component['onProgress']({ type: 'persisted', run }, PROJECT_1.uid);
+      expect(component['navigation']()).toBe(destination);
+      expect(navigate).toHaveBeenCalledTimes(1);
+      if (outcome === 'rejected') fail(new Error('Synthetic navigation rejection'));
+      else finish(outcome === 'opened');
+      await fixture.whenStable();
+      expect(component['navigating']()).toBe(false);
+      if (outcome !== 'opened') {
+        const retry = host().querySelector<HTMLButtonElement>('[data-testid="mktg-agent-run-open-asset"] button');
+        expect(retry?.disabled).toBe(false);
+        retry?.click();
+        await fixture.whenStable();
+        expect(navigate).toHaveBeenCalledTimes(2);
+      }
+      expect(generate).not.toHaveBeenCalled();
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
     it('coalesces repeated checking and completed receipts while navigation is still unresolved', async () => {
       await configure('browser', target.agentId);
       await fill();
