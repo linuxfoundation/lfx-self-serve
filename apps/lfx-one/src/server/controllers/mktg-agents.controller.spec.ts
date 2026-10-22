@@ -173,7 +173,7 @@ vi.mock('../utils/auth-helper', () => authMocks);
 vi.mock('../utils/mktg-session-token.util', () => tokenMocks);
 
 import type { NextFunction, Request, Response } from 'express';
-import { MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS, MKTG_AGENT_INTAKES, MKTG_CHAT_MESSAGE_MAX_CHARS } from '@lfx-one/shared/constants';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { MktgAgentsController } from './mktg-agents.controller';
@@ -361,6 +361,35 @@ describe('MktgAgentsController', () => {
     await controller.chat(chatRequest(true), buildRes(), next);
     expect(runMocks.startForCatalogAgent).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalled();
+  });
+
+  describe('chat message size cap', () => {
+    it.each([undefined, 'existing-session'])('rejects a message over the cap before any Guild call (session %s)', async (sessionId) => {
+      const req = buildIcpReq('/api/mktg-agents/chat', {
+        agentId: 'member-360',
+        message: 'a'.repeat(MKTG_CHAT_MESSAGE_MAX_CHARS + 1),
+        sessionId,
+        ownerToken: 'synthetic-token',
+      });
+      const res = buildRes();
+
+      await controller.chat(req, res, next);
+
+      expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400, validationErrors: [expect.objectContaining({ field: 'message' })] });
+      expect(guildMocks.createSession).not.toHaveBeenCalled();
+      expect(guildMocks.sendFollowUp).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    it('measures the trimmed message, so one exactly at the cap passes the size gate', async () => {
+      const req = buildIcpReq('/api/mktg-agents/chat', { agentId: 'member-360', message: `  ${'a'.repeat(MKTG_CHAT_MESSAGE_MAX_CHARS)}\n` });
+
+      await controller.chat(req, buildRes(), next);
+
+      // member-360 is form-only, so the request stops at the later agent gate —
+      // proof the message cleared the size gate.
+      expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400, validationErrors: [expect.objectContaining({ field: 'agentId' })] });
+    });
   });
 
   describe('storedBrandKit (GET /api/mktg-agents/brand-kit/stored)', () => {
@@ -732,6 +761,27 @@ describe('MktgAgentsController', () => {
 
       expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
       expect(icpMocks.startGeneration).not.toHaveBeenCalled();
+    });
+
+    it('rejects feedback over the per-answer cap before starting a generation', async () => {
+      await controller.generateIcp(
+        buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), feedback: 'f'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS + 1), priorVersion: 1 }),
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 400, validationErrors: [expect.objectContaining({ field: 'feedback' })] });
+      expect(icpMocks.startGeneration).not.toHaveBeenCalled();
+    });
+
+    it('measures the trimmed feedback, so one exactly at the cap starts a generation', async () => {
+      icpMocks.startGeneration.mockResolvedValue({ sessionId: 'sess-icp', readme: { fetched: true, source: 'repository' } });
+      const feedback = `  ${'f'.repeat(FOUNDATION_MESSAGE_ANSWER_MAX_CHARS)}\n`;
+
+      await controller.generateIcp(buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), feedback, priorVersion: 1 }), buildRes(), next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(icpMocks.startGeneration).toHaveBeenCalledWith(expect.anything(), expect.anything(), { feedback, priorVersion: 1 }, 'icp');
     });
 
     it('rejects feedback without a prior version so a first document is never finalized as v2', async () => {

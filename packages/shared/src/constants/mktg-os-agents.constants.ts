@@ -185,3 +185,11 @@ export const MKTG_AGENTS: MktgAgent[] = [
     formOnly: true,
   },
 ];
+
+/**
+ * Longest `/api/mktg-agents/chat` message the BFF forwards to Guild, measured
+ * on the trimmed text. Generous because a follow-up carries a whole rendered
+ * intake (`renderMktgIntakeMessage`); it exists to keep unbounded payloads
+ * away from Guild and from the session-history parser that reads them back.
+ */
+export const MKTG_CHAT_MESSAGE_MAX_CHARS = 200_000;

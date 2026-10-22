@@ -440,6 +440,11 @@ function toEpoch(value: string): number {
  * Guild wraps the original trigger input in JSON (sometimes inside a ```json
  * markdown block, sometimes double-serialized). Ported from guild_embed's
  * history route. Falls back to the raw string when nothing parses.
+ *
+ * The content is user-authored and unbounded, so the ```json block is located
+ * with `indexOf` (linear in the subject length) rather than a regex, whose
+ * backtracking was cubic on an unclosed fence (CWE-1333,
+ * linuxfoundation/lfx-self-serve-ops#53).
  */
 function extractTriggerMessageText(data: string): string {
   if (!data) {
@@ -469,12 +474,22 @@ function extractTriggerMessageText(data: string): string {
     return null;
   };
 
-  // 1. JSON inside a markdown code block.
-  const jsonMatch = data.match(/```json\s*([\s\S]*?)\s*```/);
-  if (jsonMatch && jsonMatch[1]) {
-    const fromBlock = parseInput(jsonMatch[1].trim());
-    if (fromBlock !== null) {
-      return fromBlock;
+  // 1. JSON inside a markdown code block: the first ```json fence and the next
+  // ``` after it, the same block the former lazy regex captured.
+  const fenceOpen = '```json';
+  const fenceClose = '```';
+  const open = data.indexOf(fenceOpen);
+  if (open >= 0) {
+    const blockStart = open + fenceOpen.length;
+    const close = data.indexOf(fenceClose, blockStart);
+    if (close >= 0) {
+      const block = data.slice(blockStart, close).trim();
+      if (block) {
+        const fromBlock = parseInput(block);
+        if (fromBlock !== null) {
+          return fromBlock;
+        }
+      }
     }
   }
 
