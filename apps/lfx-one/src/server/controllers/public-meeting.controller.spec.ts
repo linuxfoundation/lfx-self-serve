@@ -550,6 +550,35 @@ describe('PublicMeetingController.getMeetingById tiered access (#3999)', () => {
     expect(Object.keys(payload.meeting).every((key) => (PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS as readonly string[]).includes(key))).toBe(true);
   });
 
+  it('keeps a signed-in non-registrant on the guest projection when no verified-email row matches', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, password: 'pw' } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValueOnce({ registrants: [], lookupFailed: false });
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByVerifiedEmails).toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].full_access).toBe(false);
+  });
+
+  it('falls through to the password gate when the verified-email lookup fails', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE, restricted: true, password: 'pw' } as Partial<Meeting>));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockRejectedValueOnce(new Error('auth-service down'));
+    isImpersonatingMock.mockReturnValue(false);
+    const { req, res, next } = buildReqRes(true);
+    req.headers['x-meeting-password'] = 'pw';
+
+    await controller.getMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].full_access).toBe(false);
+  });
+
   it('computes can_join from the full internal meeting before the anonymous projection strips start_time', async () => {
     // Starts 10 minutes ago, inside the join window — the allowlist would otherwise make
     // this unknowable to the client once start_time is stripped from the guest response.

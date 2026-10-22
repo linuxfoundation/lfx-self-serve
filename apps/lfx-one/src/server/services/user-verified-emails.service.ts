@@ -4,7 +4,7 @@
 import { EmailManagementData, UserVerifiedEmails } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { getEffectiveEmail, getEffectiveSub, isImpersonating } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { EmailVerificationService } from './email-verification.service';
 import { logger } from './logger.service';
 import { MeetingPreferenceService } from './meeting-preference.service';
@@ -32,18 +32,19 @@ export class UserVerifiedEmailsService {
 
   /**
    * The signed-in user's verified emails, or none for an anonymous caller. Never throws.
-   * `incomplete` is set when auth-service or the preference lookup failed.
+   * `incomplete` is set when auth-service failed or the preference could not be read (no gateway token or a failed lookup).
    */
   public async getUserVerifiedEmails(req: Request): Promise<UserVerifiedEmails> {
-    const sub = getEffectiveSub(req);
-    if (!sub) {
+    const userIdentifier = getEffectiveUsername(req) ?? getEffectiveSub(req);
+    if (!userIdentifier) {
       return { emails: [], preferenceEmail: null, incomplete: false };
     }
 
     // The gateway token belongs to the real session user, so skip the preference while impersonating.
-    const v1Token = isImpersonating(req) ? undefined : req.apiGatewayToken;
+    const impersonating = isImpersonating(req);
+    const v1Token = impersonating ? undefined : req.apiGatewayToken;
     const [emailData, preference] = await Promise.all([
-      this.emailVerificationService.getUserEmails(req, sub),
+      this.emailVerificationService.getUserEmails(req, userIdentifier),
       v1Token ? this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : Promise.resolve(undefined),
     ]);
 
@@ -58,7 +59,7 @@ export class UserVerifiedEmailsService {
     return {
       emails: dedupeEmails([preferenceEmail, ...authServiceEmails]),
       preferenceEmail,
-      incomplete: !emailData || (!!v1Token && preference === null),
+      incomplete: !emailData || (!impersonating && (!v1Token || preference === null)),
     };
   }
 }

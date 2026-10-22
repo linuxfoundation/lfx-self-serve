@@ -3,12 +3,13 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getUserEmails, getMeetingInviteEmail, getEffectiveEmail, getEffectiveSub, isImpersonating, loggerWarning } = vi.hoisted(() => ({
+const { getUserEmails, getMeetingInviteEmail, getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating, loggerWarning } = vi.hoisted(() => ({
   loggerWarning: vi.fn(),
   getUserEmails: vi.fn(),
   getMeetingInviteEmail: vi.fn(),
   getEffectiveEmail: vi.fn(),
   getEffectiveSub: vi.fn(),
+  getEffectiveUsername: vi.fn(),
   isImpersonating: vi.fn(),
 }));
 
@@ -23,7 +24,7 @@ vi.mock('./meeting-preference.service', () => ({
   }),
 }));
 vi.mock('./logger.service', () => ({ logger: { warning: loggerWarning } }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveSub, isImpersonating }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveEmail, getEffectiveSub, getEffectiveUsername, isImpersonating }));
 
 import type { Request } from 'express';
 
@@ -63,6 +64,7 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
     vi.clearAllMocks();
     service = new UserVerifiedEmailsService();
     getEffectiveSub.mockReturnValue('auth0|user123');
+    getEffectiveUsername.mockReturnValue(null);
     getEffectiveEmail.mockReturnValue(PRIMARY);
     isImpersonating.mockReturnValue(false);
     getUserEmails.mockResolvedValue({ primary_email: PRIMARY, alternate_emails: [{ email: 'alt@example.org', verified: true }] });
@@ -113,13 +115,22 @@ describe('UserVerifiedEmailsService.getUserVerifiedEmails', () => {
     expect(getMeetingInviteEmail).not.toHaveBeenCalled();
   });
 
-  it('skips the preference without a gateway token', async () => {
+  it('flags a missing gateway token as incomplete without reading the preference', async () => {
     await expect(service.getUserVerifiedEmails(buildReq(false))).resolves.toEqual({
       emails: [PRIMARY, 'alt@example.org'],
       preferenceEmail: null,
-      incomplete: false,
+      incomplete: true,
     });
     expect(getMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
+  it('keys the auth-service lookup on the username when there is one', async () => {
+    getEffectiveUsername.mockReturnValue('user123');
+    const req = buildReq();
+
+    await service.getUserVerifiedEmails(req);
+
+    expect(getUserEmails).toHaveBeenCalledWith(req, 'user123');
   });
 
   it('treats a preference with no override as complete', async () => {
