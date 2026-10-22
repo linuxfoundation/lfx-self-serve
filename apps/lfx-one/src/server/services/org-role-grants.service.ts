@@ -446,7 +446,7 @@ export class OrgRoleGrantsService {
 
   /**
    * Asks the platform authorizer whether the caller belongs to any team in `ORG_WIDE_READ_TEAM_IDS`:
-   * the teams that read every `b2b_org`, through a plain `auditor` grant (`LF_TEAM_IDS`, `lf-staff`) or
+   * the teams that read every `b2b_org`, through a plain `auditor` grant (`LF_TEAM_IDS`: `lf-staff`, `global-org-auditors`) or
    * the `global_org_admin` relation (`ORG_ADMIN_TEAM_IDS`, #3077). One batched `checkAccessStrict` over
    * that list plus `LF_CONTRACTOR_TEAM_ID` (#2961), which rides the same batch only to set
    * `isContractor`: it explains an empty Org Lens and grants nothing.
