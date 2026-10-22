@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ICP_CONTRACT_ID, ICP_FINALIZE_TOOL, ICP_MAX_DOCUMENT_BYTES, ICP_PROJECT_UID_REGEX } from '@lfx-one/shared/constants';
-import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgRunPersistReceipt } from '@lfx-one/shared/interfaces';
+import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgRunPersistReceipt, MktgGenerationAttribution } from '@lfx-one/shared/interfaces';
 import {
   buildIcpFormPayload,
   buildIcpObjectKey,
@@ -60,7 +60,11 @@ export class IcpService {
   private readonly objectStore = new ObjectStoreService();
   private readonly projectService = new ProjectService();
   /** Records every persisted ICP document as a revision of the project's ICP document (the Documents area). */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /**
    * Whether the typed form payload is sent as the Guild session's structured

@@ -7,13 +7,16 @@
 // deliberately not here (it is environment-specific); the server recomputes
 // every sha with node:crypto.
 
-import type { MktgDocumentRunProgress, MktgStartedRunRecord } from '../interfaces/mktg-document-run.interface';
+import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
+import { MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
+import type { MktgDocumentRunProgress, MktgStartedRunRecord, MktgStoredDocumentRunState } from '../interfaces/mktg-document-run.interface';
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX } from '../constants/mktg-artifact.constants';
 import {
   MKTG_DOCUMENT_ID_REGEX,
   MKTG_DOCUMENT_STORE_KEY_PREFIX,
   MKTG_DOCUMENT_TYPES,
   MKTG_LEGACY_REVISION_ID_PREFIX,
+  MKTG_STARTED_RUN_ATTEMPT_ID_REGEX,
   MKTG_REVISION_GENERATED_LABEL,
   MKTG_REVISION_KEY_SUFFIX,
   MKTG_REVISION_NAME_UNAVAILABLE_LABEL,
@@ -27,7 +30,7 @@ import type {
   MktgRevisionSummary,
   ParsedMktgRevisionKey,
 } from '../interfaces/mktg-document-store.interface';
-import type { MktgRunPersistReceipt } from '../interfaces/mktg-run.interface';
+import type { MktgRunPersistReceipt, MktgRunResultResponse } from '../interfaces/mktg-run.interface';
 
 /** Normalize the artifact receipt's snake-case location for camel-case UI/progress models. */
 export function mktgDocumentLocationOfReceipt(receipt?: MktgRunPersistReceipt): MktgDocumentLocation | undefined {
@@ -151,7 +154,14 @@ export function describeMktgRevision(
   return label;
 }
 
-/** Explicit public projection: never expose session capabilities or closed records. */
+/** Pure run membership, validation and public projection shared by the durable reader. */
+export function findMktgRunIntake(key: string) {
+  const type = findMktgDocumentType(key);
+  const id = type?.catalogAgentId;
+  return type?.kind === 'living' && id && MKTG_AGENTS.some((agent) => agent.id === id && agent.status === 'active') ? MKTG_AGENT_INTAKES[id] : undefined;
+}
+
+/** Explicit public projection: never expose session capabilities, initiating subjects or private coverage. */
 export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failureText): MktgDocumentRunProgress | null {
   if (run.state === 'completed' || run.state === 'superseded') {
     return null;
@@ -166,4 +176,42 @@ export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failu
     ...(run.state === 'failed' && fullReply !== undefined && { failureText: fullReply }),
   };
   return progress;
+}
+
+export function matchesMktgRunProgress(run: MktgDocumentRunProgress | null, agentKey?: string, documentId?: string): MktgDocumentRunProgress | null {
+  return run && (!agentKey || run.agentKey === agentKey) && (!documentId || run.documentId === documentId) ? run : null;
+}
+
+export function mktgRunRenewAt(run: MktgStartedRunRecord, now: number): string {
+  return new Date(Math.max(now, Date.parse(run.retryAt ?? run.startedAt) + 1)).toISOString();
+}
+
+export function isMktgRunClosed(state: MktgStoredDocumentRunState): boolean {
+  return state === 'completed' || state === 'superseded';
+}
+
+export function isMktgRunTerminal(state: MktgStoredDocumentRunState): boolean {
+  return isMktgRunClosed(state) || state === 'failed';
+}
+
+export function isMktgRunAttemptId(value: string): boolean {
+  return typeof value === 'string' && MKTG_STARTED_RUN_ATTEMPT_ID_REGEX.test(value);
+}
+
+export function mktgRunIdFromKey(key: string): string {
+  return key.split('/').at(-1)?.slice(0, -5) ?? '';
+}
+
+/** Bounded dedup identity, never an authorization token; sessionId remains a separate version key. */
+export function mktgRunResultIdentity(result: MktgRunResultResponse, preferReceipt = true): string {
+  const sha = result.persistence?.content_sha256;
+  if (preferReceipt && sha && MKTG_ARTIFACT_SHA256_REGEX.test(sha)) return sha;
+  const text = JSON.stringify({ document: result.documentMarkdown, asset: result.asset, brandKit: result.brandKit });
+  let first = 2166136261;
+  let second = 5381;
+  for (let i = 0; i < text.length; i++) {
+    first = Math.imul(first ^ text.charCodeAt(i), 16777619) >>> 0;
+    second = (Math.imul(second, 33) ^ text.charCodeAt(i)) >>> 0;
+  }
+  return first.toString(16).padStart(8, '0') + second.toString(16).padStart(8, '0');
 }

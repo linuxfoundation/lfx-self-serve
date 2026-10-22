@@ -204,3 +204,102 @@ acknowledgements cannot update another project or view.
 The pre-revision artifact compatibility write carries `revision-managed`
 metadata. Failed new saves therefore cannot manufacture a pre-revision v1 from
 their leftover artifact.
+
+## Durable started runs
+
+Starts use the same private purpose, at
+`document-runs/{project}/{sha256(sessionId)}.json`. The body binds the resolved
+project, registered agent, document, private Guild session and opaque `creatorSubject`.
+Owner tokens are never written; legacy missing subjects mean unattributed writes.
+Mutable metadata holds attempt id, a bounded accepted-attempt ledger, original Started date,
+retry/answers budget origin, answered questions id, prior revision, persist retry count,
+`failure-text`, `revision-id` and state. Tracking metadata still uses HEAD/check/unconditional PUT:
+concurrent writers can overwrite a completion with stale failed/storing metadata and lose its receipt.
+This accepted limitation is reproduced in the run-service specs; “Make metadata-only retirement
+conditional across writers” is a separate storage-contract WorkItem, not an atomic guarantee here.
+The record body remains unchanged. The 384-byte ASCII ACK ledger never evicts an accepted id: a full ledger
+rejects a new turn and requires a new session rather than allowing an old ACK to reopen it.
+Public progress is an explicit projection: opaque run id, project/agent/document,
+Started, state and plain-text failure text (agent reply or server-authored deadline /
+storage-exhaustion reason); no session capability or starter identity is exposed.
+
+States are `writing`, `questions`, `storing`, `failed`, `completed` and
+`superseded`. Questions pause the writing deadline until accepted answers renew
+the same attempt, preserving Started. Only a successful Guild lookup can spend
+the writing deadline. A ready receipt equal to the prior attempt's revision is
+not fresh completion evidence: it follows the pending path and can exhaust the
+writing deadline. Ready without a recorded revision enters storing first,
+with its own three-retry persistence budget, never the writing deadline. A
+matching late receipt can finish a failed attempt on a creator poll or explicit
+detail refresh. Effective start/run-id order retires older same-document runs.
+Retirement is best-effort, off the durable ACK path; LIST failures cannot force a new Generate.
+Reconciliation keeps the visiting writer's authorization but uses immutable per-generation
+creator attribution (legacy unknown), never the visitor. Retry checks the exact stored session;
+it creates no generation and does not change the document's current pointer.
+
+The prefix LIST still enumerates keys. Run-discovery HEAD/GET/Guild work uses
+the newest-mtime **128-record discovery window**, with concurrency four per operation for both
+navigation reconciliation and Generate's supersede scan. Both paths HEAD first
+and skip completed/superseded bodies; Generate GETs unfinished/failed candidates
+only. A per-process **256-entry LRU terminal key/mtime cache** skips repeated terminal reads;
+it is disposable, invalidated on writes/mtime changes and never an authority.
+Fresh write timestamps are not memoized within S3's current write second. Failed,
+completed and superseded runs are not automatically queried against Guild.
+Failures keep a UTF-8/base64 snapshot capped at 768 source bytes, within object
+metadata's size budget; one scoped detail-navigation refresh can return the full
+reply. Errors are isolated per record. Terminal-record pruning/TTL is a follow-up;
+there is no second active-run index or bucketed listing in this item.
+
+Coverage is a private BFF count plus retained unfinished IDs, never a full list of
+outside-window keys. The count includes unchecked history whose state is unknown
+(and may already be closed); retained IDs require HEAD evidence or a matching
+terminal cache and are capped at discovery + cache limits (384). Matching closed
+cache entries contribute neither IDs nor count. Timer skips within the discovery
+window HEAD first to exclude closed records, without GET/Guild work. The Documents transport treats
+this as opaque partial coverage: retain known rows, never echo coverage IDs to
+the client or interpret an unchecked count as active work or a current revision.
+
+`readProgress` consumes this private coverage before HTTP serialization. It reuses
+known cached public rows or materializes at most 384 retained IDs through bounded
+tracking-store reads (concurrency 4), without Guild calls. Only validated public
+rows leave the BFF, never coverage IDs/counts or private sessions. A real lookup
+failure adds `progressUnavailable` so clients can warn/retry even with no row;
+intentional window coverage alone never manufactures active work or endless retries.
+Window-skipped unfinished writing/storing snapshots are last-known, not fresh
+liveness: poll reads mark them unavailable, so the client's existing bounded
+availability budget stops automatic checks. Closed-history coverage is not flagged.
+Explicit detail navigation may pass `refreshRun` to refresh ONE scoped failed run;
+timer reads reject that selector. A stale/foreign selector or transient tracking
+error retains the stored document/known rows with an availability warning, never
+a run-id-based document 404. Detail is loaded after refresh so late persistence
+is visible. Retry POSTs recheck the stored session, never submit Generate or move
+the approved-current pointer. Overview polls cancel on project/effective-subject
+changes and destruction. Same-scope reloads and polls retain last loaded documents
+on transient errors; 401/403 clears inaccessible data. Consecutive unavailable
+reads back off to eight intervals and stop after the normal poll timeout, leaving
+a warning/manual refresh; healthy reads reset the budget. Questions-only rows do
+not start automatic polling. Unavailable tracking retains missing same-scope
+run rows and suppresses absence claims, without hiding a known stored-current badge.
+
+Document navigation keeps `?generation=` (single-use in-memory prepared intake)
+separate from `?run=` (durable selected run). Only a fresh prepared proof can
+submit Generate; restored intake needs explicit action. Metadata/body failures
+share one bounded read budget and manual refresh, without hiding an acknowledged
+current-pointer write. Structured views come from the document/intake registry;
+malformed structured assets are unsupported, never Markdown fallback. ICP is unchanged.
+
+Persistence receipts carry the exact `document_location` with `agent_key`,
+`document_id`, `revision_id`; it is not a lookup of whichever revision is current.
+UI models normalize this to their camel-case location. JSON content, sidecars,
+CAS publication, current selection and attribution stay on the shared writer.
+`getRawEventPayloads` replaces user/trigger content with
+`mktg_session_turn_started`; a full unfiltered page appends
+`mktg_session_events_truncated`. These content-free markers prevent an old
+completion or finalize replay from ending a queued/truncated turn. Reasoning
+MIME is filtered before any text, questions, envelope or reply extraction.
+
+Retained opaque attempt ids reject sequential ACK replay but do not order distinct concurrent same-session
+ACKs. Shipping intake submissions use fresh sessions and serialize their UI
+handoff; arbitrary concurrent chat callers can still reorder start ACKs. A
+monotonic admission token for that uncommon API path is a follow-up, not an
+ordering guarantee supplied by this metadata refresh predicate.

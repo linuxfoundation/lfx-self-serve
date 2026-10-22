@@ -8,6 +8,7 @@ import {
   BoilerplatesResultResponse,
   BoilerplatesRunOutcome,
   MktgRunAnswer,
+  MktgGenerationAttribution,
   MktgRevisionRef,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -70,10 +71,14 @@ export class BoilerplatesService {
   private readonly guildService = new GuildService();
 
   /** The Marketing OS document store: every validated result is a revision of the project's Boilerplates document. */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
 
   /** The Boilerplates' knobs for the shared persistence layer: the document type and the log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['boilerplates'];
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {

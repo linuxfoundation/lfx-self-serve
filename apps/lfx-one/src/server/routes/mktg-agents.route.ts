@@ -183,6 +183,9 @@ router.post('/documents/:agentKey/:documentId/revisions/:revisionId/approve', bl
 // POST /api/mktg-agents/documents/:agentKey/:documentId/restore - move current without adding a revision
 router.post('/documents/:agentKey/:documentId/restore', (req, res, next) => mktgDocumentsController.restoreRevision(req, res, next));
 
+// POST /api/mktg-agents/documents/:agentKey/:documentId/runs/:runId/retry - recheck a recorded session, not a generation
+router.post('/documents/:agentKey/:documentId/runs/:runId/retry', (req, res, next) => mktgDocumentsController.retryRun(req, res, next));
+
 // Family exports: the document writer boundary, with every family operation blocked while impersonating.
 router.post('/slides-export/family/start', blockDuringImpersonation, (req, res, next) => mktgSlidesExportController.family(req, res, next, 'start'));
 router.post('/slides-export/family/result', blockDuringImpersonation, (req, res, next) => mktgSlidesExportController.family(req, res, next, 'result'));

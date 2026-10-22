@@ -20,7 +20,7 @@ import { expect, Page } from '@playwright/test';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { ApiMockHelper } from './api-mock.helper';
-import { brandKitTestRevision } from '../../src/app/shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 
 const PAGE_LOAD_TIMEOUT = 20_000;
 

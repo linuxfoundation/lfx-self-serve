@@ -8,6 +8,7 @@ import {
   FoundationMessageResultResponse,
   FoundationMessageStoredResponse,
   MktgIntakeDocument,
+  MktgGenerationAttribution,
   MktgRunAnswer,
   MktgRunQuestion,
 } from '@lfx-one/shared/interfaces';
@@ -77,10 +78,14 @@ export class FoundationMessageService {
    * record and provenance ride in the revision's sidecar). Plain and sidecar
    * stored reads serve approved current, never a newer Draft.
    */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
 
   /** The foundation-message knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['foundation-message'];
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {
