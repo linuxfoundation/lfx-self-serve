@@ -176,6 +176,14 @@ describe('VoteDetailComponent', () => {
       expect(read(fixture, 'audience')).toBe('voter');
       expect(testId(fixture, 'vote-detail-summary')).toBeNull();
     });
+
+    it('keeps the line breaks of a plain-text description', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ description: 'First paragraph\n\nSecond paragraph' })));
+      const fixture = await setup();
+
+      const description = testId(fixture, 'vote-detail-description')?.querySelector('[class*="whitespace-pre-line"]');
+      expect(description?.textContent).toBe('First paragraph\n\nSecond paragraph');
+    });
   });
 
   describe('voter results', () => {

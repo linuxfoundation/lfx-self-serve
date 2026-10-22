@@ -51,7 +51,8 @@
                   <lfx-card data-testid="vote-detail-description">
                     <div class="flex flex-col gap-2">
                       <h2 class="text-base font-semibold text-gray-900">About this vote</h2>
-                      <div class="text-sm text-gray-700 leading-relaxed" [innerHTML]="voteData.description"></div>
+                      <!-- whitespace-pre-line keeps the line breaks of plain-text descriptions, as the cast drawer does (GH-2326). -->
+                      <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-line break-words" [innerHTML]="voteData.description"></div>
                     </div>
                   </lfx-card>
                 }
