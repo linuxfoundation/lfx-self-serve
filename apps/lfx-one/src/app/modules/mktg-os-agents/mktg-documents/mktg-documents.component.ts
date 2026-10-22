@@ -7,7 +7,7 @@ import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, I
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { MessageComponent } from '@components/message/message.component';
-import { MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentGroup,
@@ -80,8 +80,15 @@ export class MktgDocumentsComponent {
   protected readonly allDocuments = computed(() =>
     (this.documents()?.groups ?? []).flatMap((group) => group.documents.map((document) => ({ type: group.type, document })))
   );
-  protected readonly livingNav: Signal<MktgDocumentNavItem[]> = this.initNav('living');
-  protected readonly runNav: Signal<MktgDocumentNavItem[]> = this.initNav('run');
+  /** All documents under their Kit family headings, in Kit order. */
+  protected readonly allDocumentSections = computed(() => {
+    const documents = this.allDocuments();
+    return this.familyTypes()
+      .map((family) => ({ name: family.name, items: family.types.flatMap((type) => documents.filter((item) => item.type.agentKey === type.agentKey)) }))
+      .filter((family) => family.items.length > 0);
+  });
+  /** The nav, grouped and ordered as the Kit's families. */
+  protected readonly familyNav: Signal<{ name: string; items: MktgDocumentNavItem[] }[]> = this.initFamilyNav();
   protected readonly selectedGroup: Signal<MktgDocumentGroup | null> = computed(
     () => this.documents()?.groups.find((group) => group.type.agentKey === this.selectedType().agentKey) ?? null
   );
@@ -233,22 +240,41 @@ export class MktgDocumentsComponent {
     });
   }
 
-  private initNav(kind: MktgDocumentType['kind']): Signal<MktgDocumentNavItem[]> {
+  /** Document types per Kit family in board order; types no family lists (e.g. legacy ICPs) close the list as Other documents. */
+  private familyTypes(): { name: string; types: MktgDocumentType[] }[] {
+    const placed = new Set<string>();
+    const families = MKTG_KIT_FAMILIES.map((family) => {
+      const types = family.assets.flatMap((asset) => MKTG_DOCUMENT_TYPES.filter((type) => type.agentKey === asset.agentKey && !placed.has(type.agentKey)));
+      types.forEach((type) => placed.add(type.agentKey));
+      return { name: family.name, types };
+    });
+    const others = MKTG_DOCUMENT_TYPES.filter((type) => !placed.has(type.agentKey));
+    return [...families, { name: 'Other documents', types: others }].filter((family) => family.types.length > 0);
+  }
+
+  private initFamilyNav(): Signal<{ name: string; items: MktgDocumentNavItem[] }[]> {
     return computed(() => {
       const groups = this.documents()?.groups ?? [];
       // Until a list read succeeds (still loading, during SSR, or failed) nothing is
       // known about the counts: no badge rather than "Not generated yet" / "No runs yet".
       const countsUnknown = this.listFailed() || this.loading() || !this.documents();
       const selected = this.selectedType().agentKey;
-      return MKTG_DOCUMENT_TYPES.filter((type) => type.kind === kind).map((type, index) => {
-        const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
+      return this.familyTypes().map((family) => {
+        // Number living documents only where a family has a run order to show.
+        const living = family.types.filter((type) => type.kind === 'living');
         return {
-          type,
-          position: kind === 'living' ? index + 1 : null,
-          ...(countsUnknown
-            ? { badge: '', badgeClass: '' }
-            : this.navBadge(type, documents.length, documents[0]?.currentRevisionNumber ?? documents[0]?.revisionCount ?? 0)),
-          selected: !this.showAll() && type.agentKey === selected,
+          name: family.name,
+          items: family.types.map((type) => {
+            const documents = groups.find((group) => group.type.agentKey === type.agentKey)?.documents ?? [];
+            return {
+              type,
+              position: type.kind === 'living' && living.length > 1 ? living.indexOf(type) + 1 : null,
+              ...(countsUnknown
+                ? { badge: '', badgeClass: '' }
+                : this.navBadge(type, documents.length, documents[0]?.currentRevisionNumber ?? documents[0]?.revisionCount ?? 0)),
+              selected: !this.showAll() && type.agentKey === selected,
+            };
+          }),
         };
       });
     });

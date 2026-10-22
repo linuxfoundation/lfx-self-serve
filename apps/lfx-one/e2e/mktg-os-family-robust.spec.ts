@@ -34,33 +34,24 @@ test.describe('Marketing family responsive structure', () => {
         for (const cell of await page.getByTestId(/^mktg-family-(state|current)-/).all()) {
           await expect(cell).toHaveCSS('white-space', 'nowrap');
         }
-        const rebuildButton = page.getByTestId('mktg-family-rebuild').getByRole('button');
-        const rebuild = await rebuildButton.boundingBox();
-        expect(rebuild).not.toBeNull();
-        await expect(rebuildButton).toBeDisabled();
+        // This fixture has nothing stale: the header carries no rebuild, only the run action.
+        await expect(page.getByTestId('mktg-family-rebuild')).toHaveCount(0);
         if (familyId === MKTG_KIT_POSITIONING_FAMILY_ID) {
-          // The real producer is present; this fixture has no stale downstream assets.
           await expect(page.locator('lfx-mktg-rebuild')).toBeAttached();
           await expect(page.getByTestId('mktg-rebuild-progress')).toHaveCount(0);
-          await expect(page.getByTestId('mktg-family-rebuild-unavailable')).toHaveCount(0);
-        } else {
-          await expect(page.locator('lfx-mktg-rebuild')).toHaveCount(0);
-          const caption = await page.getByTestId('mktg-family-rebuild-unavailable').boundingBox();
-          expect(caption).not.toBeNull();
-          if (rebuild && caption) expect(caption.y).toBeGreaterThanOrEqual(rebuild.y + rebuild.height);
-        }
+        } else await expect(page.locator('lfx-mktg-rebuild')).toHaveCount(0);
         await expect(page.getByTestId('mktg-breadcrumb-link-0')).toContainText('Synthetic Kit Project kit');
         if (familyId === 'positioning-brand') await expect(page.getByTestId('mktg-family-sources')).toBeVisible();
         else {
           await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
           const family = MKTG_KIT_FAMILIES.find((entry) => entry.id === familyId);
           const runnable = MKTG_AGENTS.find((agent) => family?.agentIds.includes(agent.id) && agent.status === 'active');
-          const runButton = page.getByTestId('mktg-family-run').getByRole('button');
+          const runButton = page.getByTestId('mktg-family-run').locator('a, button').first();
           const run = await page.getByTestId('mktg-family-run').boundingBox();
           expect(run).not.toBeNull();
           if (runnable) {
-            await expect(runButton).toBeEnabled();
-            await expect(runButton).toHaveAccessibleName(`Run ${runnable.name}`);
+            await expect(runButton).toBeVisible();
+            await expect(runButton).toHaveAccessibleName(new RegExp(`Run (next agent: )?${runnable.name}`));
             await expect(page.getByTestId('mktg-family-run-unavailable')).toHaveCount(0);
           } else {
             await expect(runButton).toBeDisabled();

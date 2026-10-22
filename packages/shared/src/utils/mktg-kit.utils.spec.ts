@@ -141,7 +141,7 @@ describe('Marketing kit plan of record', () => {
     for (const [state, label] of [
       ['draft', 'Draft'],
       ['needs-rebuild', 'Needs rebuild'],
-      ['missing', 'Missing'],
+      ['missing', 'Not run yet'],
       ['coming-soon', 'Coming soon'],
     ] as const) {
       expect(describeMktgKitAsset({ state, version: 3, monthlyCount: null })).toBe(label);

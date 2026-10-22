@@ -32,38 +32,28 @@
           data-testid="mktg-documents-nav-all"
           >All documents</a
         >
-        <div class="px-3 py-1 font-mono text-xs uppercase tracking-wider text-gray-500">Living documents, in run order</div>
-        @for (item of livingNav(); track item.type.agentKey) {
-          <a
-            [routerLink]="[]"
-            [queryParams]="{ type: item.type.agentKey, project: projectSlug() }"
-            queryParamsHandling="merge"
-            class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
-            [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
-            [attr.aria-current]="item.selected ? 'page' : null"
-            [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
-            <span>{{ item.position }} · {{ item.type.label }}</span>
-            @if (item.badge) {
-              <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
-            }
-          </a>
-        }
-
-        <div class="px-3 pt-4 pb-1 font-mono text-xs uppercase tracking-wider text-gray-500">Runs</div>
-        @for (item of runNav(); track item.type.agentKey) {
-          <a
-            [routerLink]="[]"
-            [queryParams]="{ type: item.type.agentKey, project: projectSlug() }"
-            queryParamsHandling="merge"
-            class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
-            [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
-            [attr.aria-current]="item.selected ? 'page' : null"
-            [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
-            <span>{{ item.type.label }}</span>
-            @if (item.badge) {
-              <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
-            }
-          </a>
+        @for (family of familyNav(); track family.name) {
+          <div class="px-3 pt-3 pb-1 font-mono text-xs uppercase tracking-wider text-gray-500" data-testid="mktg-documents-nav-family">{{ family.name }}</div>
+          @for (item of family.items; track item.type.agentKey) {
+            <a
+              [routerLink]="[]"
+              [queryParams]="{ type: item.type.agentKey, project: projectSlug() }"
+              queryParamsHandling="merge"
+              class="flex items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm text-gray-900 no-underline hover:border-gray-300"
+              [ngClass]="item.selected ? 'border-blue-600 font-semibold' : 'border-gray-200'"
+              [attr.aria-current]="item.selected ? 'page' : null"
+              [attr.data-testid]="'mktg-documents-nav-' + item.type.agentKey">
+              <span>
+                @if (item.position) {
+                  {{ item.position }} ·
+                }
+                {{ item.type.label }}
+              </span>
+              @if (item.badge) {
+                <span class="text-xs font-normal shrink-0" [ngClass]="item.badgeClass">{{ item.badge }}</span>
+              }
+            </a>
+          }
         }
         <p class="mx-3 mt-3 text-xs text-gray-500">Living documents get revisions. Runs are one-off documents: a new run is a new document.</p>
       </nav>
@@ -85,22 +75,25 @@
             class="flex min-w-0 flex-col gap-3 rounded-xl border border-gray-200 bg-white p-5"
             data-testid="mktg-documents-all">
             <h2 class="text-xl font-semibold">All documents</h2>
-            <ul class="flex flex-col gap-3">
-              @for (item of allDocuments(); track item.type.agentKey + '/' + item.document.documentId) {
-                <li class="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-100 pb-3">
-                  <a
-                    [routerLink]="[item.type.agentKey, item.document.documentId]"
-                    [queryParams]="{ project: projectSlug() }"
-                    class="font-semibold text-blue-700 hover:underline"
-                    [attr.data-testid]="'mktg-documents-all-open-' + item.type.agentKey + '-' + item.document.documentId"
-                    >{{ item.type.label }}</a
-                  >
-                  <span class="text-sm text-gray-500">{{ item.document.updatedAt | date: 'd MMM y' }} · {{ item.document.revisionCount }} revisions</span>
-                </li>
-              } @empty {
-                <li class="text-sm text-gray-500" data-testid="mktg-documents-empty-all">No documents yet. Run an agent to create the first asset.</li>
-              }
-            </ul>
+            @for (family of allDocumentSections(); track family.name) {
+              <h3 class="pt-2 font-mono text-xs uppercase tracking-wider text-gray-500" data-testid="mktg-documents-all-family">{{ family.name }}</h3>
+              <ul class="flex flex-col gap-3">
+                @for (item of family.items; track item.type.agentKey + '/' + item.document.documentId) {
+                  <li class="relative flex flex-wrap items-baseline justify-between gap-2 rounded-lg border-b border-gray-100 pb-3 hover:bg-gray-50">
+                    <a
+                      [routerLink]="[item.type.agentKey, item.document.documentId]"
+                      [queryParams]="{ project: projectSlug() }"
+                      class="font-semibold text-blue-700 after:absolute after:inset-0 after:content-[''] hover:underline"
+                      [attr.data-testid]="'mktg-documents-all-open-' + item.type.agentKey + '-' + item.document.documentId"
+                      >{{ item.type.label }}</a
+                    >
+                    <span class="text-sm text-gray-500">{{ item.document.updatedAt | date: 'd MMM y' }} · {{ item.document.revisionCount }} revisions</span>
+                  </li>
+                }
+              </ul>
+            } @empty {
+              <p class="text-sm text-gray-500" data-testid="mktg-documents-empty-all">No documents yet. Run an agent to create the first asset.</p>
+            }
           </section>
         } @else if (selectedLiving(); as living) {
           <!-- A living document: its header and its Revisions table -->

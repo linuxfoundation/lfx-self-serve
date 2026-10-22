@@ -12,6 +12,7 @@ import {
   MKTG_KIT_EXCLUDED_AGENT_IDS,
   MKTG_DOCUMENT_TYPES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
+  MKTG_KIT_STATE_LABELS,
   MKTG_REBUILD_NAVIGATION_STATE_KEY,
 } from '@lfx-one/shared/constants';
 import { MktgAgent, MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
@@ -27,10 +28,12 @@ import { MktgFamilyExportActionsComponent } from '../components/mktg-family-expo
 import { MktgFamilyDetailsComponent } from '../components/mktg-family-details/mktg-family-details.component';
 import { MktgRebuildComponent } from '../components/mktg-rebuild/mktg-rebuild.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-mktg-family',
   imports: [
+    TooltipModule,
     DatePipe,
     RouterLink,
     ButtonComponent,
@@ -60,11 +63,27 @@ export class MktgFamilyComponent {
   protected readonly hasStale = computed(() => this.family()?.rows.some((row) => row.state === 'needs-rebuild') ?? false);
   private readonly familyId = toSignal(this.route.paramMap.pipe(map((params) => params.get('familyId'))), { initialValue: '' });
   protected readonly definition = computed(() => MKTG_KIT_FAMILIES.find((family) => family.id === this.familyId()));
+  /** Why the family's lead agent cannot run yet: one copy for the tooltip and the note under the button. */
+  protected readonly pendingReason = computed(() => this.definition()?.pendingAgentReason ?? MKTG_KIT_STATE_LABELS['coming-soon']);
   protected readonly crumbs = computed(() => [mktgKitRootCrumb(this.kit.projectName(), ['../../']), { label: this.definition()?.name ?? 'Family not found' }]);
   protected readonly family = computed(() => this.kit.families().find((family) => family.family.id === this.familyId()));
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly firstAgent: Signal<MktgAgent | undefined> = this.initFirstAgent();
   protected readonly rowRunAgents: Signal<Record<string, MktgAgent>> = this.initRowRunAgents();
+  /** The first asset not run yet, in the family's run order (the framework before the assets that read it). */
+  protected readonly nextAgent = computed(() => {
+    const agents = this.rowRunAgents();
+    const row = this.family()?.rows.find((candidate) => agents[candidate.asset.id]);
+    return row ? { agent: agents[row.asset.id], label: row.asset.label } : null;
+  });
+  protected readonly rebuildBlockedReason = computed(() => {
+    const panel = this.rebuildPanel();
+    if (!panel || panel.canStart()) return '';
+    if (panel.active()) return 'A rebuild is already running';
+    if (!this.context.canWrite()) return 'You need write access to this project to rebuild';
+    if (!this.kit.documents()?.approvedFramework) return 'Approve the messaging framework first: rebuilds start from the approved framework';
+    return 'Rebuild is not available right now';
+  });
   private readonly routeQueryParams = toSignal(this.route.queryParams, { initialValue: {} });
   protected readonly autoRebuild = computed(() =>
     this.navigationIntent()?.project === this.kit.projectUid() ? (this.navigationIntent()?.frameworkRevisionId ?? '') : ''

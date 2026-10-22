@@ -143,21 +143,27 @@ describe('Marketing family page', () => {
       '/project/mktg-os-agents/documents/foundation-message/living?project=synthetic'
     );
     expect(root?.querySelector('[data-testid="mktg-family-open-brand-kit"]')).toBeNull();
-    for (const id of ['family-export-pdf', 'family-export-slides', 'mktg-family-rebuild']) {
+    for (const id of ['family-export-pdf', 'family-export-slides']) {
       expect(root?.querySelector<HTMLButtonElement>(`[data-testid="${id}"] button`)?.disabled).toBe(true);
     }
-    expect(root?.querySelector('[data-testid="mktg-family-rebuild"] button')?.getAttribute('aria-label')).toBe('Rebuild what is stale');
+    // Nothing stale: the one header action runs the next asset not run yet.
+    expect(root?.querySelector('[data-testid="mktg-family-rebuild"]')).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-run"]')?.textContent).toContain('Run next agent');
+    expect(root?.querySelector('[data-testid="mktg-family-run-next"]')?.textContent).toContain('Next: Boilerplates');
     expect(root?.querySelector('lfx-mktg-family-export-actions')?.getAttribute('data-family-id')).toBe('positioning-brand');
     projectSlug.set('next');
     await harness.fixture.whenStable();
     expect(TestBed.inject(Router).url).toContain('project=synthetic');
     for (const link of root?.querySelectorAll<HTMLAnchorElement>('a') ?? []) expect(link.search).toContain('project=next');
-    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-    root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.click();
-    expect(navigate).toHaveBeenCalledWith(
-      ['../../', 'foundation-setup'],
-      expect.objectContaining({ queryParams: { project: 'next' }, queryParamsHandling: 'merge' })
+    expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe('/project/mktg-os-agents/boilerplates?project=next');
+    families.update((value) =>
+      value.map((family) => ({ ...family, rows: family.rows.map((row) => (row.asset.id === 'faq' ? { ...row, state: 'needs-rebuild' as const } : row)) }))
     );
+    harness.detectChanges();
+    // Something stale: the header action becomes the rebuild, disabled here with its reason as a tooltip.
+    expect(root?.querySelector('[data-testid="mktg-family-run"]')).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-rebuild"] button')?.getAttribute('aria-label')).toBe('Rebuild what is stale');
+    expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-rebuild"] button')?.disabled).toBe(true);
   });
   it('offers only active Missing-row agents, preserving project scope; header action stays unchanged', async () => {
     const harness = await RouterTestingHarness.create();
@@ -224,7 +230,7 @@ describe('Marketing family page', () => {
     await harness.navigateByUrl('/project/mktg-os-agents/families/website-web', MktgFamilyComponent);
     expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(true);
     expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-run-unavailable"]')?.textContent).toContain('Coming soon');
-    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-rebuild-unavailable"]')?.textContent).toContain('Coming soon');
+    expect(harness.routeNativeElement?.querySelector('[data-testid="mktg-family-rebuild"]')).toBeNull();
     await harness.navigateByUrl('/project/mktg-os-agents/families/member-sponsor', MktgFamilyComponent);
     const run = harness.routeNativeElement?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button');
     expect(run?.disabled).toBe(true);

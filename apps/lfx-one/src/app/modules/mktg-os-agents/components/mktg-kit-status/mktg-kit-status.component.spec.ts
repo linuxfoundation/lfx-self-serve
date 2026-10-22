@@ -23,7 +23,7 @@ describe('Kit asset status', () => {
       ['approved', 'Approved'],
       ['draft', 'Draft'],
       ['needs-rebuild', 'Needs rebuild'],
-      ['missing', 'Missing'],
+      ['missing', 'Not run yet'],
       ['coming-soon', 'Coming soon'],
     ] as const) {
       fixture.componentRef.setInput('row', { ...row, state });
