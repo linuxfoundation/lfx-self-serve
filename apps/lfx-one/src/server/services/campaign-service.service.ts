@@ -57,6 +57,8 @@ import type {
   CampaignServiceCampaignResolution,
   CampaignServiceConnection,
   CampaignServiceCreateResult,
+  CampaignSendWorkflowRequest,
+  CampaignSendWorkflowResult,
   CampaignServiceHubSpotCampaign,
   CampaignServiceHubSpotCampaigns,
   CampaignServiceHubSpotEmailMonitor,
@@ -2075,6 +2077,80 @@ export class CampaignServiceClient {
    * The name is the SIXTH argument (body), not the fifth (query): a POST payload in the query
    * position sends no body at all, and upstream would reject it as a request naming no campaign.
    */
+  /**
+   * Build ONE HubSpot workflow that sends an already-staged series.
+   *
+   * Upstream does every check that matters -- each brief staged, none on the paid surface, no
+   * repeats, and the source workflow's step counts matching -- because only it can see the briefs
+   * and the workflow. This proxies rather than re-deciding, so the two cannot drift into
+   * disagreeing about what is buildable.
+   *
+   * The result is a NON-IDEMPOTENT create, so a 2xx carrying an unusable body is treated as a
+   * failure rather than reported as a workflow: an operator told it worked, with no link to open,
+   * would go looking in HubSpot for something that may not be there.
+   */
+  public async createSendWorkflow(req: Request, projectSlug: string, body: CampaignSendWorkflowRequest): Promise<CampaignSendWorkflowResult> {
+    // The shape campaign-service actually publishes. Declared beside its one use rather than in
+    // the shared package, which holds the CLIENT contract -- these names belong to the wire.
+    interface WireSendWorkflowResult {
+      flow_id?: string;
+      name?: string;
+      edit_url?: string;
+      source_flow_id?: string;
+      source_flow_name?: string;
+      is_enabled?: boolean;
+      send_email_steps?: number;
+      dated_steps?: number;
+      enrollment_list_id?: string;
+    }
+    if (projectSlug === '') {
+      throw new Error('A send workflow requires the project.');
+    }
+    const created = await this.microserviceProxy.proxyRequest<WireSendWorkflowResult>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/send-workflows`,
+      'POST',
+      undefined,
+      {
+        // WRAPPED in `input`, which is how Goa publishes this request: the design declares one
+        // `input` attribute carrying the whole shape, so a flat body is rejected with
+        // `"input" is missing from body` before any handler runs.
+        input: {
+          // Omitted rather than sent empty when the caller named none: upstream reads ABSENCE as
+          // "use the configured workflow", and an empty string is a value it would try to parse.
+          ...(body.sourceWorkflowUrl && body.sourceWorkflowUrl.trim() !== '' ? { source_workflow_url: body.sourceWorkflowUrl.trim() } : {}),
+          name: body.name,
+          brief_ids: body.briefIds,
+          ...(body.sendDates && body.sendDates.length > 0 ? { send_dates: body.sendDates } : {}),
+        },
+      }
+    );
+    // MAPPED from the wire, not cast to it. Upstream publishes snake_case (`flow_id`, `edit_url`),
+    // and reading camelCase off that body found undefined on every field -- so a workflow that had
+    // ALREADY been created in HubSpot was reported to the operator as a 500, with no link to the
+    // thing that now existed. The proxy types a body without checking it, which is what let the
+    // mismatch compile.
+    //
+    // VALIDATED too, for the reason createHubSpotCampaign below is: `edit_url` is what the
+    // operator needs most, since the workflow is created DISABLED and does nothing until they open
+    // it and turn it on, so a response without one is not a usable success.
+    if (typeof created?.flow_id !== 'string' || created.flow_id.trim() === '' || typeof created?.edit_url !== 'string' || created.edit_url.trim() === '') {
+      throw new Error('The campaign service reported a workflow but returned no usable workflow link.');
+    }
+    return {
+      flowId: created.flow_id,
+      name: created.name ?? '',
+      editUrl: created.edit_url,
+      sourceFlowId: created.source_flow_id ?? '',
+      ...(created.source_flow_name ? { sourceFlowName: created.source_flow_name } : {}),
+      isEnabled: created.is_enabled ?? false,
+      sendEmailSteps: created.send_email_steps ?? 0,
+      datedSteps: created.dated_steps ?? 0,
+      ...(created.enrollment_list_id ? { enrollmentListId: created.enrollment_list_id } : {}),
+    };
+  }
+
   public async createHubSpotCampaign(req: Request, projectSlug: string, name: string): Promise<CampaignServiceHubSpotCampaign> {
     if (projectSlug === '' || name === '') {
       throw new Error('A HubSpot campaign creation requires both the project and a campaign name.');

@@ -45,6 +45,8 @@ import {
   CampaignCreateResponse,
   CampaignDeliveryType,
   CampaignEmailSegment,
+  CampaignSendWorkflowRequest,
+  CampaignSendWorkflowResult,
   CampaignSendStage,
   CampaignEmailVariant,
   CampaignJobOutcome,
@@ -257,6 +259,22 @@ export class CampaignService {
     const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}), ...(segment ? { segment } : {}) };
     return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', body, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
+  }
+
+  /**
+   * Build ONE HubSpot workflow that sends an already-staged series.
+   *
+   * The briefs travel in SEND ORDER, which is the order the workflow's steps are pointed at their
+   * drafts. Nothing here re-checks that each one is staged: only campaign-service can see the
+   * briefs and the workflow, and it names the send that is not ready in its refusal.
+   *
+   * The created workflow is always DISABLED, so this call sends nothing -- it leaves a workflow a
+   * human then reviews and turns on.
+   */
+  public createSendWorkflow(projectSlug: string, body: CampaignSendWorkflowRequest): Observable<CampaignSendWorkflowResult> {
+    return this.http.post<CampaignSendWorkflowResult>('/api/campaigns/send-workflow', body, {
+      params: new HttpParams().set('project', projectSlug),
     });
   }
 

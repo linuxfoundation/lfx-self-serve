@@ -294,6 +294,69 @@ export interface CampaignEventSponsor {
   logoUrl: string;
 }
 
+/**
+ * One send of a survey series, as the page holds it between generating and building.
+ *
+ * Carries the brief id because each send is its own brief upstream, and the copy because the
+ * operator reviews all of them together before anything reaches HubSpot.
+ */
+export interface CampaignSequenceSend {
+  stage: CampaignSurveyStage;
+  /** The send's operator-facing name, e.g. "Survey Reminder". */
+  label: string;
+  briefId: string;
+  copy: EmailBriefCopy;
+  /** The calendar date (YYYY-MM-DD) this send goes out, typed by the operator. */
+  sendDate: string;
+  /** The HubSpot draft this send was staged as: its link, and its id for pasting into search. */
+  draftUrl?: string;
+  draftId?: string;
+}
+
+/**
+ * What a send workflow is built from: the series' briefs, in SEND ORDER, and the workflow whose
+ * schedule and enrollment it copies.
+ *
+ * Brief ids rather than HubSpot email ids, because which draft a brief produced is
+ * campaign-service's own record -- a client that looked that up could pair a brief with another
+ * campaign's email, and a workflow is exactly where that goes unnoticed: every step looks filled in.
+ */
+export interface CampaignSendWorkflowRequest {
+  /**
+   * The workflow to copy. Its HubSpot editor URL, or its bare numeric id. Only ever READ.
+   *
+   * OPTIONAL: omitted, campaign-service uses the deployment's configured survey-sequence
+   * workflow, which is the ordinary case -- an operator should not have to find a URL in HubSpot
+   * to do the usual thing.
+   */
+  sourceWorkflowUrl?: string;
+  /** Name for the new workflow. */
+  name: string;
+  /** The briefs this workflow sends, in send order. At least two -- one email needs no workflow. */
+  briefIds: string[];
+  /**
+   * Calendar dates (YYYY-MM-DD) for the source workflow's wait-until-date steps, in flow order.
+   * Omitted keeps the source's own schedule; each step's time of day is always the source's.
+   */
+  sendDates?: string[];
+}
+
+/** The created workflow, which is always disabled until a human enables it in HubSpot. */
+export interface CampaignSendWorkflowResult {
+  flowId: string;
+  name: string;
+  /** Where the operator reviews and enables it. */
+  editUrl: string;
+  sourceFlowId: string;
+  sourceFlowName?: string;
+  /** Always false on create. Reported rather than assumed, so a portal that ignored it is visible. */
+  isEnabled: boolean;
+  /** How many of the source's send steps were pointed at this campaign's drafts. */
+  sendEmailSteps: number;
+  /** How many wait-until-date steps had their date replaced. */
+  datedSteps: number;
+}
+
 export interface CampaignEventDetails {
   /**
    * The SURVEY surface's primary input: the survey instrument or report text the copy is written
