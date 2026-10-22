@@ -373,6 +373,23 @@ export class EventBusService {
 
 ## Marketing OS asset-run handoff
 
+An explicit `?mode=new` opens Sources for review, never a generation or a
+questions-token consumption. Scalar prefill comes from the writer-gated durable
+last-intake snapshot, then this user's device run, then honestly labelled defaults.
+An unavailable history read is distinct from no history; denied access suppresses
+private fallback and Start. Recorded blank fields remain blank. Project, effective
+subject and mode changes cancel the previous reads and reset the form; SSR never
+reads private browser history or starts a history request.
+
+Edit exposes the registered intake controls in place. Start alone prepares or
+submits a fresh run, resolving dependency documents again, and removes fresh mode
+from the asset handoff URL. Sources stay read-only above research/questions once
+started. Uploaded payloads can be reused only from matching same-visit memory;
+that cache outlives successful attempt cleanup, not an application reload. Missing
+source counts require reattachment or an explicit choice to continue without them,
+never a false kept-file claim. No uploaded content is added to browser persistence.
+The explicit omission action is PROVISIONAL pending design sign-off, alongside the Family row Run affordance.
+
 The run route owns intake, the research/writing feed and questions, not the
 result or a feedback form. Direct no-answers intakes open the document route
 before their first POST. Questions runs transfer their owned attempt after the

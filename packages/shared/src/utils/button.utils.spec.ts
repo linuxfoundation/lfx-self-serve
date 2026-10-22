@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 import { resolveButtonAriaPt } from './button.utils';
 
 describe('resolveButtonAriaPt', () => {
+  it('forwards the controlled region alongside expanded state without inventing toggle/popup attributes', () => {
+    expect(resolveButtonAriaPt(undefined, false, undefined, 'synthetic-form')).toEqual({ root: { 'aria-expanded': false, 'aria-controls': 'synthetic-form' } });
+  });
+
   it('returns undefined (no pt object) when all three are unset — the ordinary-button case', () => {
     expect(resolveButtonAriaPt(undefined, undefined, undefined)).toBeUndefined();
   });
