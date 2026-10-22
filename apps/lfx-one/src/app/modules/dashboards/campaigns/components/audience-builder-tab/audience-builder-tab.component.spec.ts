@@ -3324,6 +3324,18 @@ describe('AudienceBuilderTabComponent', () => {
         ).toBe(true);
       });
 
+      it("takes the last draft's opt-in lists out of Include when the event changes", async () => {
+        await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), 'fixture precondition').not.toBeNull();
+
+        typeEventUrl('https://events.example.org/other-summit/');
+        click('campaigns-audience-event-generate');
+        completeDiscovery(discovered({ lists: [optIn('402', 'lf_newsletter_opt_in', 10)] }));
+
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-401"]'), "the first event's opt-in list stayed in the send").toBeNull();
+        expect(host().querySelector('[data-testid="campaigns-audience-remove-402"]')).not.toBeNull();
+      });
+
       it('says which opt-in signal has no list', async () => {
         await draftWith([optIn('401', 'lf_newsletter_opt_in', 4000)]);
 
