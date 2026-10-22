@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_DOCUMENT_TYPES } from '@lfx-one/shared/constants';
+import { BRAND_KIT_INTAKE, FOUNDATION_MESSAGE_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_KIT_FAMILIES } from '@lfx-one/shared/constants';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import {
   DOCUMENT_PROJECT,
@@ -27,15 +27,18 @@ test.describe('Marketing OS fixed-parent navigation', () => {
   });
 
   test('Kit → Family → asset has the same linked parents as a shared asset URL', async ({ page }) => {
-    await setupDocuments(page);
-    await openDocuments(page, DOCUMENT_VIEW_URL);
+    await setupNoQuestionsHandoff(page);
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === FOUNDATION_MESSAGE_INTAKE.agentId);
+    const asset = MKTG_KIT_FAMILIES.flatMap((family) => family.assets).find((entry) => entry.agentKey === type?.agentKey);
+    if (!type || !asset) throw new Error('Missing registered Family framework asset');
+    await openDocuments(page, `/project/mktg-os-agents/documents/${asset.agentKey}/living?project=${DOCUMENT_PROJECT.slug}`);
     const crumb = page.getByRole('navigation', { name: 'Breadcrumb', exact: true });
     await expect(crumb).toContainText(`${DOCUMENT_PROJECT.name} kit`);
     await expect(crumb).toContainText('Positioning & brand');
     const familyHref = await crumb.getByTestId('mktg-breadcrumb-link-1').getAttribute('href');
     await crumb.getByTestId('mktg-breadcrumb-link-0').click();
     await page.getByTestId('mktg-kit-family-link-positioning-brand').click();
-    await page.getByTestId(`mktg-family-open-${DOCUMENT_TYPE.agentKey}`).click();
+    await page.getByTestId(`mktg-family-open-${asset.id}`).click();
     await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', familyHref ?? '');
     await page.getByTestId('mktg-breadcrumb-link-1').click();
     await expect(page.getByTestId('mktg-family-page')).toBeVisible();
@@ -75,7 +78,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await openDocuments(page, DOCUMENT_VIEW_URL);
     await page.getByTestId('mktg-breadcrumb-link-0').click();
     await page.getByTestId('mktg-kit-family-link-positioning-brand').click();
-    await page.getByTestId('mktg-family-run-brand-kit').getByRole('button').click();
+    await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
     await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
@@ -122,7 +125,7 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await openDocuments(page, DOCUMENT_VIEW_URL);
     await page.getByTestId('mktg-breadcrumb-link-0').click();
     await page.getByTestId('mktg-kit-family-link-positioning-brand').click();
-    await page.getByTestId('mktg-family-run-brand-kit').getByRole('button').click();
+    await page.getByTestId('mktg-family-run-brand-kit').getByRole('link').click();
     await fixture.openAndGenerate(false);
     fixture.startChecking();
     await expect(page.getByTestId('mktg-document-view-page')).toBeVisible();
