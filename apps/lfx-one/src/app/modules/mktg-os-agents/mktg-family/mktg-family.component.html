@@ -10,7 +10,12 @@
         <!-- One primary action, chosen by the family's state: rebuild what is stale, else run the next asset not run yet, else run the lead agent again. -->
         <div pageHeaderActions class="flex flex-wrap items-start gap-3" data-testid="mktg-family-actions">
           @if (definition.id === rebuildFamilyId && hasStale()) {
-            <span [pTooltip]="rebuildBlockedReason()" tooltipPosition="bottom" [attr.tabindex]="rebuildBlockedReason() ? 0 : null">
+            <span
+              [pTooltip]="rebuildBlockedReason()"
+              tooltipPosition="bottom"
+              tooltipEvent="both"
+              [attr.aria-label]="rebuildBlockedReason() || null"
+              [attr.tabindex]="rebuildBlockedReason() ? 0 : null">
               <lfx-button
                 label="Rebuild what is stale"
                 icon="fa-light fa-arrows-rotate"
@@ -34,6 +39,8 @@
             <span
               [pTooltip]="firstAgent()?.status === 'active' ? '' : pendingReason()"
               tooltipPosition="bottom"
+              tooltipEvent="both"
+              [attr.aria-label]="(firstAgent()?.status === 'active' ? '' : pendingReason()) || null"
               [attr.tabindex]="firstAgent()?.status === 'active' ? null : 0">
               <lfx-button
                 [label]="'Run ' + name"

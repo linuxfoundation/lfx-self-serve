@@ -9,7 +9,12 @@
   <p class="text-sm text-gray-500">
     Everything is rendered in the app; a file exists only when you ask for one. Exports use the family's approved current assets.
   </p>
-  <span [pTooltip]="pdfDisabledReason()" tooltipPosition="bottom" [attr.tabindex]="pdfDisabledReason() ? 0 : null">
+  <span
+    [pTooltip]="pdfDisabledReason()"
+    tooltipPosition="bottom"
+    tooltipEvent="both"
+    [attr.aria-label]="pdfDisabledReason() || null"
+    [attr.tabindex]="pdfDisabledReason() ? 0 : null">
     <lfx-button
       label="Download PDF"
       [disabled]="!canPrint()"
@@ -19,7 +24,12 @@
       data-testid="family-export-pdf"
       (onClick)="downloadPdf()" />
   </span>
-  <span [pTooltip]="exportDisabledReason()" tooltipPosition="bottom" [attr.tabindex]="exportDisabledReason() ? 0 : null">
+  <span
+    [pTooltip]="exportDisabledReason()"
+    tooltipPosition="bottom"
+    tooltipEvent="both"
+    [attr.aria-label]="exportDisabledReason() || null"
+    [attr.tabindex]="exportDisabledReason() ? 0 : null">
     <lfx-button
       label="Export to Google Slides"
       [disabled]="!canExport()"

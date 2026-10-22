@@ -24,7 +24,12 @@
     }
     <div class="grow"></div>
     <div class="flex flex-wrap items-center gap-2" data-testid="brand-kit-web-view-actions">
-      <span [pTooltip]="pdfTooltip()" tooltipPosition="bottom" [attr.tabindex]="pdfTooltip() ? 0 : null">
+      <span
+        [pTooltip]="pdfTooltip()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="pdfTooltip() || null"
+        [attr.tabindex]="pdfTooltip() ? 0 : null">
         <lfx-button
           label="Download PDF"
           icon="fa-light fa-file-pdf"
@@ -36,7 +41,12 @@
           (onClick)="onDownloadPdf()" />
       </span>
       <!-- The kit as a deck: the panel below the header shows the export. -->
-      <span [pTooltip]="slidesExport.disabledReason()" tooltipPosition="bottom" [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
+      <span
+        [pTooltip]="slidesExport.disabledReason()"
+        tooltipPosition="bottom"
+        tooltipEvent="both"
+        [attr.aria-label]="slidesExport.disabledReason() || null"
+        [attr.tabindex]="slidesExport.disabledReason() ? 0 : null">
         <lfx-button
           label="Export to Google Slides"
           icon="fa-light fa-presentation-screen"
