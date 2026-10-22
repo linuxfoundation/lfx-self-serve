@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
@@ -46,7 +47,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-async function setup(getVoteImpl: ReturnType<typeof vi.fn>): Promise<void> {
+async function setup(getVoteImpl: ReturnType<typeof vi.fn>, voteServiceOverrides: Record<string, unknown> = {}): Promise<void> {
   getVote = getVoteImpl;
 
   TestBed.resetTestingModule();
@@ -55,7 +56,7 @@ async function setup(getVoteImpl: ReturnType<typeof vi.fn>): Promise<void> {
     providers: [
       provideNoopAnimations(),
       provideRouter([]),
-      { provide: VoteService, useValue: { getVote } },
+      { provide: VoteService, useValue: { getVote, ...voteServiceOverrides } },
       { provide: MessageService, useValue: { add: vi.fn() } },
     ],
   }).compileComponents();
@@ -262,5 +263,57 @@ describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
     // Benign content survives sanitization.
     expect(description!.querySelector('p')?.textContent).toBe('ok');
     expect(description!.textContent).toContain('link');
+  });
+});
+
+/**
+ * #4075: upstream ITX emits poll_type='majority' for single-choice board votes. PollType had no
+ * MAJORITY member, so `!== PollType.GENERIC` treated it as ranked-choice and rendered the
+ * drag-to-reorder ballot instead of single-choice radios. isRankedPollType is an allowlist of the
+ * actual ranked methods, so majority (and a missing poll_type) fall through to the single/multiple
+ * choice branches here.
+ */
+describe('VoteCastDrawerComponent — majority poll_type renders single-choice (#4075)', () => {
+  it('renders radio buttons, not the drag-to-reorder ranked list, for a majority single_choice question', async () => {
+    await setup(vi.fn().mockReturnValue(of({ ...VOTE, poll_type: PollType.MAJORITY })));
+
+    await openWithoutListVote();
+
+    expect(el('vote-cast-choice-c1')).toBeTruthy();
+    expect(el('vote-cast-rank-c1')).toBeNull();
+  });
+
+  it('renders radio buttons when poll_type is omitted (legacy/omitted field)', async () => {
+    // VOTE carries no poll_type field at all — the omitted-field case, distinct from the MAJORITY case above.
+    await setup(vi.fn().mockReturnValue(of(VOTE)));
+
+    await openWithoutListVote();
+
+    expect(el('vote-cast-choice-c1')).toBeTruthy();
+    expect(el('vote-cast-rank-c1')).toBeNull();
+  });
+
+  it('submits choice_ids, not ranked_choices, for a majority vote', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const majorityVote = { ...VOTE, poll_type: PollType.MAJORITY };
+    await setup(vi.fn().mockReturnValue(of(majorityVote)), { submitMyResponse });
+
+    await openWithoutListVote();
+
+    (fixture.componentInstance.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledWith(
+      majorityVote.uid,
+      expect.objectContaining({
+        userVoteContent: [expect.objectContaining({ question_id: 'q1', choice_ids: ['c1'] })],
+      })
+    );
+    const [, payload] = submitMyResponse.mock.calls[0] as [string, { userVoteContent: Record<string, unknown>[] }];
+    expect(payload.userVoteContent[0]['ranked_choices']).toBeUndefined();
   });
 });

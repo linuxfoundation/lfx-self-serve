@@ -911,6 +911,17 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.form().disabled).toBe(false);
     });
 
+    // #4075: majority is not in isRankedPollType's allowlist, so it's exactly as representable by
+    // this plain (non-ranked, non-anonymous) form as a generic poll — it must remain clonable.
+    it('clones a majority-poll-type source successfully: no warning, form patched', async () => {
+      fetchVote.mockReturnValue(of(sourceVote({ poll_type: PollType.MAJORITY, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Cannot clone' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
+
     // GH-3781 review round 3 (PRRT_kwDOPMiRQ86uDywE, dealako; pins the uAPFY/vote.utils.ts SSR fix):
     // cloning an ended vote resets its deadline through getUserTimezone() unless running on the
     // server, matching every other getUserTimezone() call site's isPlatformBrowser guard. Pins that

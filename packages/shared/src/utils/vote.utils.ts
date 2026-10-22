@@ -15,7 +15,7 @@ import {
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { VOTES_STATS_WINDOW_DAYS } from '../constants/vote.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
+import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, getUserTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import { normalizePollStatus, sortCommentResponsesByRecency } from './poll.utils';
@@ -57,6 +57,16 @@ export function isVoteClosingSoon(vote: Vote, nowMs: number): boolean {
 export function matchesMyVotesQuickFilter(vote: Vote, filter: MyVotesQuickFilter, nowMs: number): boolean {
   if (filter === 'closing-soon') return isVoteClosingSoon(vote, nowMs);
   return normalizePollStatus(vote.status) === PollStatus.ACTIVE && vote.response_status === VoteResponseStatus.AWAITING_RESPONSE;
+}
+
+/**
+ * True when a poll type uses ranked-choice balloting (drag-to-reorder UI, `ranked_choices` wire shape).
+ * @description Implemented as an allowlist, not a negation of GENERIC — upstream ITX can emit poll_type
+ * values with no corresponding ranked UI (e.g. `majority`, #4075), and PollType may grow more non-ranked
+ * members later. An unrecognized or missing value defaults to false (single/multi-choice), never to ranked.
+ */
+export function isRankedPollType(pollType: PollType | string | null | undefined): boolean {
+  return pollType === PollType.CONDORCET_IRV || pollType === PollType.INSTANT_RUNOFF_VOTE || pollType === PollType.MEEK_STV;
 }
 
 /**
