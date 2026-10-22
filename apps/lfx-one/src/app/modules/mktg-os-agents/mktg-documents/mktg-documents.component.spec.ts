@@ -169,7 +169,7 @@ describe('MktgDocumentsComponent', () => {
     await TestBed.inject(Router).navigateByUrl('/?type=brand-kit');
     await fixture.whenStable();
     expect(store.listDocuments).toHaveBeenCalledTimes(2);
-    expect(query('mktg-documents-revisions')?.querySelectorAll('th[scope="col"]')).toHaveLength(5);
+    expect(query('mktg-documents-revisions')?.querySelectorAll('th[scope="col"]')).toHaveLength(4);
     fixture.destroy();
     await render();
     expect(store.listDocuments).toHaveBeenCalledTimes(3);
@@ -212,7 +212,7 @@ describe('MktgDocumentsComponent', () => {
     activeContext.set(null);
     await render('/');
     expect(query('mktg-documents-project-title')?.textContent).toBe('Project');
-    expect(query('mktg-documents-page')?.textContent).toContain('stored for Project, with its revisions.');
+    expect(query('mktg-documents-page')?.textContent).toContain('written for Project. Open a document');
     expect(query('mktg-documents-page')?.textContent).not.toContain('this project');
   });
 
@@ -255,7 +255,7 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-revision-2')).toBeNull();
   });
 
-  it('shows the selected document’s Revisions table: latest first, View and Restore on older revisions', async () => {
+  it('shows the selected document’s Revisions table: latest first, Open and Restore on older revisions', async () => {
     await render();
 
     expect(store.getDocument).toHaveBeenCalledWith('proj-1', 'brand-kit', 'living');

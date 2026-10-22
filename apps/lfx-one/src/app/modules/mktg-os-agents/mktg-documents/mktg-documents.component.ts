@@ -131,6 +131,8 @@ export class MktgDocumentsComponent {
       : [];
   });
   protected readonly latestRevision: Signal<MktgRevisionSummary | null> = computed(() => this.detail()?.revisions.find((revision) => revision.latest) ?? null);
+  /** The current revision as the header describes it: how it was made and by whom. */
+  protected readonly latestRow: Signal<MktgRevisionRow | null> = computed(() => this.revisionRows().find((row) => row.revision.latest) ?? null);
 
   protected readonly runs: Signal<MktgDocumentRunRow[]> = this.initRuns();
   protected readonly selectedRuns = computed(() => this.runs().filter((run) => run.agentKey === this.selectedType().agentKey));
