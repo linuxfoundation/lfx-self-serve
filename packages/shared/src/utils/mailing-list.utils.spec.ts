@@ -20,6 +20,22 @@ describe('normalizeServicePrefix', () => {
     expect(normalizeServicePrefix(input)).toBe('');
   });
 
+  it('returns an empty string when the prefix is only hyphens', () => {
+    expect(normalizeServicePrefix('---')).toBe('');
+  });
+
+  it('only trims the end, leaving hyphens elsewhere untouched', () => {
+    expect(normalizeServicePrefix('-a--b-')).toBe('-a--b');
+  });
+
+  it('handles a very long run of hyphens quickly', () => {
+    const input = `${'-'.repeat(100_000)}x`;
+    const start = Date.now();
+
+    expect(normalizeServicePrefix(input)).toBe(input);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
   it('never produces a double hyphen when joined with a list name', () => {
     expect(`${normalizeServicePrefix('example-project-')}-dev`).toBe('example-project-dev');
     expect(`${normalizeServicePrefix('example-project')}-dev`).toBe('example-project-dev');
