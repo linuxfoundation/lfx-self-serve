@@ -512,7 +512,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
-      const result: BrandKitResultResponse = await this.brandKitService.getResult(req, validSessionId, validProjectUid);
+      const result: BrandKitResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.brandKitService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'brand_kit_result', startTime, { status: result.status });
       res.json(result);
@@ -861,7 +865,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
-      const result: FoundationMessageResultResponse = await this.foundationMessageService.getResult(req, validSessionId, validProjectUid);
+      const result: FoundationMessageResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.foundationMessageService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'foundation_message_result', startTime, { status: result.status });
       res.json(result);
@@ -1094,7 +1102,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_result', {});
 
     try {
-      const result: BoilerplatesResultResponse = await this.boilerplatesService.getResult(req, validSessionId, validProjectUid);
+      const result: BoilerplatesResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.boilerplatesService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'boilerplates_result', startTime, { status: result.status });
       res.json(result);
@@ -1289,7 +1301,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_result', {});
 
     try {
-      const result: IcpResultResponse = await this.icpService.getResult(req, validSessionId, validProjectUid);
+      const result: IcpResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.icpService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'icp_result', startTime, { status: result.status });
       res.json(result);
@@ -1584,7 +1600,11 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_result', {});
 
     try {
-      const result: FaqResultResponse = await this.faqService.getResult(req, validSessionId, validProjectUid);
+      const result: FaqResultResponse = await this.guildService.resolveRunOutcome(
+        req,
+        validSessionId,
+        await this.faqService.getResult(req, validSessionId, validProjectUid)
+      );
       await this.trackResult(req, validSessionId, result, validProjectUid);
       logger.success(req, 'faq_result', startTime, { status: result.status });
       res.json(result);

@@ -1,17 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import '@angular/compiler';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
-// `@lfx-one/shared/interfaces` provides types only here; mock it so the barrel's
-// Angular-tainted transitive imports never load (weekly-brief.service.spec.ts convention).
-vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/constants', async () => {
-  return vi.importActual('../../../../../packages/shared/src/constants/mktg-run.constants');
-});
 
 import type { Request } from 'express';
 

@@ -388,11 +388,13 @@ function isParticipationCount(value: unknown): value is number {
  * membership. Upstream counts abstentions in `num_response_received`, matching `num_votes_cast` in the results drawer.
  * Drafts never show counts; missing counts degrade to UNAVAILABLE/COUNT_ONLY instead of a false zero; a zero electorate
  * never yields a percent. Use the same completion-aware rounding as the results drawer: incomplete counts cap at 99%,
- * complete/excess counts at 100%.
+ * complete/excess counts at 100%. A just-opened vote whose index row has not reported a positive electorate yet shows
+ * COUNTING instead of a false "No one invited" (GH-4078).
  * @param vote - Vote list row from the query-service index or per-vote REST
+ * @param awaitingInvitationCount - True while the vote is in the client's just-opened/just-created carrier window
  * @returns VoteRowParticipation for the Responses cell
  */
-export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
+export function computeVoteRowParticipation(vote: Vote, awaitingInvitationCount = false): VoteRowParticipation {
   const status = normalizePollStatus(vote.status);
   const empty = { responses: null, invited: null, percent: null, secondaryLabel: null, ariaLabel: null };
 
@@ -400,12 +402,16 @@ export function computeVoteRowParticipation(vote: Vote): VoteRowParticipation {
     return { ...empty, state: VoteRowParticipationState.NOT_OPEN, label: 'Not open yet' };
   }
 
+  const invited = vote.total_voting_request_invitations;
+  if (awaitingInvitationCount && !(isParticipationCount(invited) && invited > 0)) {
+    return { ...empty, state: VoteRowParticipationState.COUNTING, label: 'Counting invitations…' };
+  }
+
   const responses = vote.num_response_received;
   if (!isParticipationCount(responses)) {
     return { ...empty, state: VoteRowParticipationState.UNAVAILABLE, label: 'Unavailable' };
   }
 
-  const invited = vote.total_voting_request_invitations;
   if (!isParticipationCount(invited)) {
     return {
       ...empty,
