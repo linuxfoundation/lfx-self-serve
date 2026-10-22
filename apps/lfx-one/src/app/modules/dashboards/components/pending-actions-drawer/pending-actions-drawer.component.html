@@ -88,7 +88,7 @@
                           <span class="truncate group-hover:underline">{{ item.text }}</span>
                           <i class="fa-light fa-arrow-up-right-from-square text-[11px] text-gray-400 shrink-0 no-underline" aria-hidden="true"></i>
                         </a>
-                        @if (item.date) {
+                        @if (item.type === 'RSVP' && item.date) {
                           <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-meeting-date">{{ item.date }}</span>
                         }
                       </div>

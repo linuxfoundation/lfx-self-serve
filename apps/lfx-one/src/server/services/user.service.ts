@@ -588,7 +588,7 @@ export class UserService {
 
     // Drop past meetings; recurring meetings survive if any occurrence is still active.
     // Basic mode powers pending-actions aggregation, where a completed meeting can't yield an
-    // actionable RSVP/agenda nag — so the 40-minute grace `hasMeetingEnded` allows doesn't apply.
+    // actionable RSVP — so the 40-minute grace `hasMeetingEnded` allows doesn't apply.
     const upcomingMeetings = options?.basic
       ? normalizedMeetings.filter((meeting) => {
           const now = Date.now();
@@ -1890,7 +1890,7 @@ export class UserService {
         icon: 'fa-regular fa-check-to-slot',
         severity: PENDING_ACTION_SEVERITY.Vote,
         buttonText: 'Cast Vote',
-        // Inline launch is the active path (template branches on isVoteInline when voteUid is set); buttonLink kept for the older Survey/Agenda code path and any future caller that hasn't migrated.
+        // Inline launch is the active path (template branches on isVoteInline when voteUid is set); buttonLink kept for the older Survey code path and any future caller that hasn't migrated.
         buttonLink: '/votes',
         voteUid,
         date: `Closes ${formattedEnd}`,

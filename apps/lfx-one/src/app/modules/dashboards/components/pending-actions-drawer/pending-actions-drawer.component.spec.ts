@@ -348,10 +348,11 @@ describe('PendingActionsDrawerComponent — section grouping', () => {
     expect(byTestId('pending-actions-drawer-count')?.textContent).toContain('(2)');
   });
 
-  it('renders the meeting date under the title of a linked meeting row', async () => {
+  it('renders the date under the title of a linked RSVP row only', async () => {
     await render([
       row('RSVP', 'Board', { buttonLink: '/meetings/m-1', date: 'Mon, Oct 19, 7:00 PM' }),
       row('RSVP', 'No Date', { buttonLink: '/meetings/m-2' }),
+      row('Vote', 'Vote A', { buttonLink: '/votes', date: 'Closes Oct 30, 2026' }),
     ]);
 
     const dates = Array.from(document.body.querySelectorAll('[data-testid="pending-actions-drawer-meeting-date"]'));
