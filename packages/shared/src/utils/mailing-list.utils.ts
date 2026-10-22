@@ -5,6 +5,25 @@ import type { GroupsIOMailingList } from '../interfaces/mailing-list.interface';
 
 import { getEntityCommands } from './entity-route.utils';
 
+/**
+ * Strips trailing hyphens from a stored service prefix. Some services are stored with a trailing
+ * hyphen (e.g. `example-project-`) and some without; the group name is always built as
+ * `${prefix}-${name}`, so a trailing hyphen would produce `--`, which Groups.io rejects.
+ */
+export function normalizeServicePrefix(prefix: string | null | undefined): string {
+  if (!prefix) {
+    return '';
+  }
+
+  // Trim from the end with a loop rather than `/-+$/`, which backtracks quadratically on long runs of hyphens.
+  let end = prefix.length;
+  while (end > 0 && prefix[end - 1] === '-') {
+    end--;
+  }
+
+  return prefix.slice(0, end);
+}
+
 /** Address from the mailing list's indexed domain; never depend on a readable parent service. */
 export function getMailingListEmail(list: Pick<GroupsIOMailingList, 'group_name' | 'domain'> | null | undefined): string {
   const groupName = list?.group_name?.trim();
