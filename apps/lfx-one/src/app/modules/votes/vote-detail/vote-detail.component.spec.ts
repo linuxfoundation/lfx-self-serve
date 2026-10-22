@@ -6,8 +6,17 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { NO_ERRORS_SCHEMA, PLATFORM_ID, REQUEST_CONTEXT, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, ParamMap, Router } from '@angular/router';
-import { IndexedVoteResponseStatus, PollStatus } from '@lfx-one/shared/enums';
-import { MyVoteResponse, Project, ServerRequestContext, StatCardItem, Vote, VoteDetailState, VoteResultsResponse } from '@lfx-one/shared/interfaces';
+import { IndexedVoteResponseStatus, PollStatus, PollType } from '@lfx-one/shared/enums';
+import {
+  MyVoteResponse,
+  PollQuestionResult,
+  Project,
+  ServerRequestContext,
+  StatCardItem,
+  Vote,
+  VoteDetailState,
+  VoteResultsResponse,
+} from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { ProjectService } from '@services/project.service';
@@ -39,6 +48,31 @@ function makeResponse(status: IndexedVoteResponseStatus, overrides: Partial<MyVo
 
 function makeResults(): VoteResultsResponse {
   return { poll_results: [], comment_results: [], num_recipients: 4, num_votes_cast: 3, num_abstained: 0, poll_end_time: '2026-10-30T16:00:00Z' };
+}
+
+/** One question carrying both plurality and ranked tallies, so the voting method alone picks the layout. */
+function makeMethodResults(): VoteResultsResponse {
+  const question = {
+    question_id: 'question-1',
+    prompt: 'Approve the roadmap?',
+    choices: [
+      { choice_id: 'choice-yes', choice_text: 'Yes' },
+      { choice_id: 'choice-no', choice_text: 'No' },
+    ],
+  } as PollQuestionResult['question'];
+  return {
+    ...makeResults(),
+    poll_results: [
+      {
+        question,
+        generic_choice_votes: [
+          { choice_id: 'choice-yes', vote_count: 2 },
+          { choice_id: 'choice-no', vote_count: 1 },
+        ],
+        ranked_choice_votes: [{ choice_id: 'choice-yes', rank_counts: [{ rank: 1, count: 2 }] }],
+      } as PollQuestionResult,
+    ],
+  };
 }
 
 function httpError(status: number): Observable<never> {
@@ -183,6 +217,35 @@ describe('VoteDetailComponent', () => {
 
       const description = testId(fixture, 'vote-detail-description')?.querySelector('[class*="whitespace-pre-line"]');
       expect(description?.textContent).toBe('First paragraph\n\nSecond paragraph');
+    });
+  });
+
+  describe('voting method', () => {
+    const element = (fixture: ComponentFixture<VoteDetailComponent>, selector: string): Element | null => fixture.nativeElement.querySelector(selector);
+
+    beforeEach(() => {
+      queryParamMap.next(convertToParamMap({ tab: 'results' }));
+      projectService.getProjectStrict.mockReturnValue(of({ writer: true } as Project));
+      voteService.getVoteResults.mockReturnValue(of(makeMethodResults()));
+    });
+
+    it('renders a majority vote with the plurality option results, never the ranked layout', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.MAJORITY })));
+      const fixture = await setup();
+
+      expect(element(fixture, 'lfx-vote-option-results')).not.toBeNull();
+      expect(element(fixture, 'lfx-vote-ranked-question-results')).toBeNull();
+      expect(testId(fixture, 'vote-detail-results-ranked-method')).toBeNull();
+      expect(testId(fixture, 'vote-detail-results-empty')).toBeNull();
+    });
+
+    it('renders a ranked vote with the ranked note and distributions', async () => {
+      voteService.fetchVote.mockReturnValue(of(makeVote({ poll_type: PollType.CONDORCET_IRV })));
+      const fixture = await setup();
+
+      expect(testId(fixture, 'vote-detail-results-ranked-method')).not.toBeNull();
+      expect(element(fixture, 'lfx-vote-ranked-question-results')).not.toBeNull();
+      expect(element(fixture, 'lfx-vote-option-results')).toBeNull();
     });
   });
 

@@ -59,6 +59,12 @@ describe('VoteDetailHeaderComponent', () => {
     expect(text('vote-detail-header-invited')).toBe('12 invited voters');
   });
 
+  it('labels a majority vote as majority, not as a ranked method', () => {
+    render({ vote: makeVote({ poll_type: PollType.MAJORITY }) });
+
+    expect(text('vote-detail-header-method')).toBe('Majority Vote');
+  });
+
   it('labels a pseudo-anonymous ended vote', () => {
     render({ vote: makeVote({ status: PollStatus.ENDED, pseudo_anonymity: true, total_voting_request_invitations: 1 }) });
 
