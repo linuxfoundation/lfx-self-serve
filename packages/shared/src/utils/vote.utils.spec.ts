@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { PollStatus, VoteResponseStatus, VoteRowParticipationState } from '../enums';
+import { PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums';
 import type { PollCommentResponse, PollCommentResult, PollQuestionResult, Vote, VoteFormValue, VoteResultsResponse } from '../interfaces/poll.interface';
 import { getUserTimezone } from './date-time.utils';
 import {
@@ -25,6 +25,7 @@ import {
   compareVotesByRecency,
   computeVoteParticipationStats,
   computeVoteRowParticipation,
+  isRankedPollType,
   isVoteClosingSoon,
   mapFiltersToEligibility,
   mapVoteToCloneFormValue,
@@ -914,5 +915,20 @@ describe('votePermalinkPath', () => {
 
   it('encodes reserved characters so the uid stays one path segment', () => {
     expect(votePermalinkPath('a/b?c#d')).toBe('/votes/a%2Fb%3Fc%23d');
+  });
+});
+
+describe('isRankedPollType', () => {
+  it.each([
+    ['generic', PollType.GENERIC, false],
+    ['majority', PollType.MAJORITY, false],
+    ['undefined', undefined, false],
+    ['null', null, false],
+    ['meek_stv', PollType.MEEK_STV, true],
+    ['instant_runoff_vote', PollType.INSTANT_RUNOFF_VOTE, true],
+    ['condorcet_irv', PollType.CONDORCET_IRV, true],
+    ['an unrecognized string', 'something_new', false],
+  ] as const)('%s -> %s', (_label, input, expected) => {
+    expect(isRankedPollType(input)).toBe(expected);
   });
 });

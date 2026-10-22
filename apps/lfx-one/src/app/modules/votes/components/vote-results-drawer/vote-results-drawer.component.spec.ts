@@ -635,6 +635,26 @@ describe('VoteResultsDrawerComponent — rendered results', () => {
     expect(byTestId('vote-results-voter-option-abstain')).toBeNull();
   });
 
+  // #4075: majority is not in isRankedPollType's allowlist, so it must render through the plurality
+  // results block (like generic), not the ranked one, and get its own voting-method label.
+  it('renders a majority vote through the plurality results block, not the ranked one', async () => {
+    await setupResultsDrawer(
+      makeResultsVote({ poll_type: PollType.MAJORITY }),
+      makeResults({
+        poll_results: [
+          makeGenericQuestion('q1', [
+            ['c1', 3, 60],
+            ['c2', 1, 20],
+          ]),
+        ],
+      })
+    );
+
+    expect(byTestId('vote-results-participation')).toBeTruthy();
+    expect(byTestId('vote-results-ranked')).toBeNull();
+    expect(textOf('vote-results-drawer-header')).toContain(squash('Majority Vote'));
+  });
+
   it('renders the creator ranked breakdown with test ids, empty states and the round-summary banner', async () => {
     await setupResultsDrawer(
       makeResultsVote({ status: PollStatus.ENDED, poll_type: PollType.INSTANT_RUNOFF_VOTE }),

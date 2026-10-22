@@ -19,7 +19,6 @@ import {
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
-import { PollType } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
@@ -27,6 +26,7 @@ import {
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
   getUserTimezone,
+  isRankedPollType,
   mapVoteToCloneFormValue,
   mapVoteToFormValue,
   markFormControlsAsTouched,
@@ -1114,7 +1114,7 @@ export class VoteManageComponent {
         // ballot — prefilling from a ranked-choice or pseudo-anonymous source would silently submit a
         // plain plurality vote in its place. Updates are only permitted while a vote is disabled, so
         // once a published election has ballots coming in a silently-wrong clone can't be corrected.
-        if ((vote.poll_type ?? PollType.GENERIC) !== PollType.GENERIC || vote.pseudo_anonymity) {
+        if (isRankedPollType(vote.poll_type) || vote.pseudo_anonymity) {
           this.messageService.add({
             severity: 'warn',
             summary: 'Cannot clone',

@@ -7,6 +7,7 @@
  */
 export enum PollType {
   GENERIC = 'generic',
+  MAJORITY = 'majority',
   CONDORCET_IRV = 'condorcet_irv',
   INSTANT_RUNOFF_VOTE = 'instant_runoff_vote',
   MEEK_STV = 'meek_stv',
