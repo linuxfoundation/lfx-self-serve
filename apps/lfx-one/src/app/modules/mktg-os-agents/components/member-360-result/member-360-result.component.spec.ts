@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { TestBed } from '@angular/core/testing';
+import { Location } from '@angular/common';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
+import { signal } from '@angular/core';
+import { ProjectContextService } from '@services/project-context.service';
 import { Member360Service } from '@services/member-360.service';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,8 +17,20 @@ import { Member360ResultComponent } from './member-360-result.component';
 
 describe('Member360ResultComponent', () => {
   const api = { download: vi.fn(() => of(new Blob(['workbook']))) };
-  beforeEach(() => TestBed.configureTestingModule({ providers: [provideRouter([]), provideNoopAnimations(), { provide: Member360Service, useValue: api }] }));
+  const context = signal({ slug: 'sample-foundation', name: 'Sample Foundation', uid: 'sample-project' });
+  beforeEach(() =>
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: Member360Service, useValue: api },
+        { provide: ProjectContextService, useValue: { activeContext: context } },
+      ],
+    })
+  );
   afterEach(() => {
+    TestBed.resetTestingModule();
+    if (vi.isFakeTimers()) vi.clearAllTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -36,6 +51,162 @@ describe('Member360ResultComponent', () => {
     };
     return { fixture, component: fixture.componentInstance, query, names, sort };
   }
+  it('builds New run through the shared route helper without carrying asset state or stale project', async () => {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/documents/member-360/run-0123456789abcdef01234567?project=old&revision=old&tab=old');
+    const view = render();
+    await view.fixture.whenStable();
+    expect(view.query('member-360-new-run').getAttribute('href')).toBe('/project/mktg-os-agents/member-360?project=sample-foundation');
+  });
+  it('loads ranking filters and sort from a shared URL, pushes changes and restores preceding query state', async () => {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    const path = '/project/mktg-os-agents/documents/member-360/run-0123456789abcdef01234567';
+    await router.navigateByUrl(`${path}?project=sample-foundation&tier=At%20Risk&sort=engagement_score&direction=ascending`);
+    const view = render();
+    await view.fixture.whenStable();
+    expect(view.names()).toEqual([SYNTHETIC_ORG_NAME]);
+    expect(view.component.filters.controls.tier.value).toBe('At Risk');
+    view.component.filters.controls.owner.setValue('Sales');
+    await view.fixture.whenStable();
+    expect(router.url).toContain('owner=Sales');
+    expect(view.query('member-360-no-matches')).not.toBeNull();
+    await router.navigateByUrl(`${path}?project=sample-foundation&tier=At%20Risk&sort=engagement_score&direction=ascending`);
+    await view.fixture.whenStable();
+    expect(view.component.filters.controls.owner.value).toBe('All');
+    expect(view.names()).toEqual([SYNTHETIC_ORG_NAME]);
+  });
+  it('pushes once for a settled search burst and keeps the same focused input and term on its URL echo', async () => {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/documents/member-360/example?project=sample-foundation');
+    const view = render();
+    await view.fixture.whenStable();
+    const input = view.query('member-360-search').querySelector('input');
+    if (!input) throw new Error('Expected the ranking search input');
+    const writes = vi.spyOn(router, 'navigate');
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    input.focus();
+    for (const value of ['S', 'Sy', 'Synthetic']) {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      view.fixture.detectChanges();
+    }
+    expect(writes).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(input);
+    vi.advanceTimersByTime(300);
+    await view.fixture.whenStable();
+    expect(writes).toHaveBeenCalledOnce();
+    expect(writes).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { project: 'sample-foundation', search: 'Synthetic' } }));
+    expect(input.value).toBe('Synthetic');
+    expect(document.activeElement).toBe(input);
+    expect(view.query('member-360-search').querySelector('input')).toBe(input);
+  });
+  it('keeps newer typing, focus and caret while a prior settled term finishes navigating', async () => {
+    const router = TestBed.inject(Router);
+    let held = false;
+    let release: () => void = () => undefined;
+    router.resetConfig([
+      {
+        path: '**',
+        children: [],
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [
+          () => {
+            if (router.getCurrentNavigation()?.extractedUrl.queryParams['search'] !== 'Sy') return true;
+            held = true;
+            return new Promise<boolean>((resolve) => {
+              release = () => resolve(true);
+            });
+          },
+        ],
+      },
+    ]);
+    await router.navigateByUrl('/project/mktg-os-agents/documents/member-360/example?project=sample-foundation');
+    const view = render();
+    await view.fixture.whenStable();
+    const input = view.query('member-360-search').querySelector('input');
+    if (!input) throw new Error('Expected the ranking search input');
+    const writes = vi.spyOn(router, 'navigate');
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    input.focus();
+    input.value = 'Sy';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.advanceTimersByTime(300);
+    await vi.waitFor(() => expect(held).toBe(true));
+    expect(writes).toHaveBeenCalledOnce();
+    input.value = 'Synthetic';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.setSelectionRange(3, 7);
+    release();
+    await view.fixture.whenStable();
+    expect(new URL(router.url, 'https://app.example.test').searchParams.get('search')).toBe('Sy');
+    expect(input.value).toBe('Synthetic');
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([3, 7]);
+    vi.advanceTimersByTime(300);
+    await view.fixture.whenStable();
+    expect(writes).toHaveBeenCalledTimes(2);
+    expect(new URL(router.url, 'https://app.example.test').searchParams.get('search')).toBe('Synthetic');
+  });
+  it('pushes a retyped term after Back within the debounce window and clears equal-term pending state', async () => {
+    const router = TestBed.inject(Router);
+    const location = TestBed.inject(Location);
+    router.resetConfig([{ path: '**', children: [] }]);
+    router.setUpLocationChangeListener();
+    const path = '/project/mktg-os-agents/documents/member-360/example?project=sample-foundation';
+    await router.navigateByUrl(path);
+    const view = render();
+    await view.fixture.whenStable();
+    const input = view.query('member-360-search').querySelector('input');
+    if (!input) throw new Error('Expected the ranking search input');
+    const writes = vi.spyOn(router, 'navigate');
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    input.value = 'Synthetic';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.advanceTimersByTime(300);
+    await view.fixture.whenStable();
+    expect(writes).toHaveBeenCalledOnce();
+    const beforeBack = Date.now();
+    location.back();
+    await vi.waitFor(() => expect(router.url).toBe(path));
+    await view.fixture.whenStable();
+    expect(Date.now() - beforeBack).toBeLessThan(300);
+    expect(input.value).toBe('');
+    // Retype before the restored empty value can settle for 300 ms.
+    input.value = 'Synthetic';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.advanceTimersByTime(300);
+    await view.fixture.whenStable();
+    expect(writes).toHaveBeenCalledTimes(2);
+    expect(new URL(router.url, 'https://app.example.test').searchParams.get('search')).toBe('Synthetic');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    vi.advanceTimersByTime(300);
+    await view.fixture.whenStable();
+    expect(writes).toHaveBeenCalledTimes(2);
+    await router.navigateByUrl(`${path}&search=Other`);
+    await view.fixture.whenStable();
+    expect(input.value).toBe('Other');
+  });
+  it('clears default sort/filter params and retains unrelated document state', async () => {
+    const router = TestBed.inject(Router);
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl(
+      '/project/mktg-os-agents/documents/member-360/example?project=sample-foundation&revision=retained&profile=edit&tier=At%20Risk&sort=engagement_score&direction=ascending'
+    );
+    const view = render();
+    await view.fixture.whenStable();
+    view.sort('engagement_score');
+    await view.fixture.whenStable();
+    expect(router.url).not.toContain('sort=');
+    expect(router.url).not.toContain('direction=');
+    view.component.filters.controls.tier.setValue('All');
+    await view.fixture.whenStable();
+    expect(router.url).not.toContain('tier=');
+    expect(router.url).toContain('revision=retained');
+    expect(router.url).toContain('profile=edit');
+  });
   it('shows an em dash for an empty score range', () => {
     const envelope = member360Fixture();
     envelope.tabs.member_ranking = [];

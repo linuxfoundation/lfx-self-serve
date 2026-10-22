@@ -12,6 +12,7 @@ import {
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_INTAKE,
   ICP_INTAKE,
+  LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   MKTG_DOCUMENT_TYPES,
   MKTG_RUN_POLL,
   MKTG_AGENT_INTAKES,
@@ -486,7 +487,13 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-linkedin-document-date')?.textContent).toMatch(/\d{1,2} Oct 2026/);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     query('mktg-linkedin-document-edit-profile')?.click();
-    expect(navigate).toHaveBeenCalledWith(['linkedin-post'], expect.objectContaining({ queryParams: { profile: 'edit', revision: null, type: null } }));
+    expect(navigate).toHaveBeenCalledWith(
+      ['linkedin-post'],
+      expect.objectContaining({
+        queryParams: { profile: 'edit', revision: null, type: null },
+        state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      })
+    );
   });
 
   it('explicitly drops the profile-edit marker when drafting another post', async () => {

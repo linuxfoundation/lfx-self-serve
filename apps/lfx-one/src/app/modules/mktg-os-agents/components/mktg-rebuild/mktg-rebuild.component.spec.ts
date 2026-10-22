@@ -84,7 +84,8 @@ describe('Family rebuild progress', () => {
   });
   it('opens saved Drafts in a new tab during an active chain, with the switched project slug, without stopping progress', async () => {
     const router = TestBed.inject(Router);
-    await router.navigateByUrl('/?project=old-slug');
+    router.resetConfig([{ path: '**', children: [] }]);
+    await router.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=old-slug&tab=old');
     fixture.componentRef.setInput('project', 'next-project');
     fixture.componentRef.setInput('projectSlug', 'next-slug');
     await fixture.whenStable();
@@ -112,14 +113,16 @@ describe('Family rebuild progress', () => {
     expect(button?.getAttribute('aria-label')).toBe('Open Draft in a new tab');
     button?.click();
     expect(open).toHaveBeenCalledWith(expect.stringContaining(`project=next-slug&revision=${framework.revisionId}`), '_blank', 'noopener,noreferrer');
-    expect(router.url).toBe('/?project=old-slug');
+    expect(router.url).toBe('/project/mktg-os-agents/families/positioning-brand?project=old-slug&tab=old');
     expect(updates.observed).toBe(true);
     updates.next({ ...chain, status: 'complete', steps: chain.steps.map((step) => ({ ...step, status: 'draft' })) });
     await fixture.whenStable();
     expect(fixture.componentInstance.chain()?.status).toBe('complete');
     const navigate = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
     button?.click();
-    expect(router.serializeUrl(navigate.mock.calls[0][0] as ReturnType<Router['createUrlTree']>)).toContain('project=next-slug');
+    expect(router.serializeUrl(navigate.mock.calls[0][0] as ReturnType<Router['createUrlTree']>)).toBe(
+      `/project/mktg-os-agents/documents/boilerplates/living?project=next-slug&revision=${framework.revisionId}`
+    );
     expect(open).toHaveBeenCalledOnce();
   });
   it('blocks without write evidence and during impersonation', async () => {
