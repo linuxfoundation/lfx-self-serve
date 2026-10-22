@@ -222,11 +222,11 @@ describe('MktgAgentRunComponent', () => {
   });
 
   for (const agentId of ['not-catalogued', MKTG_AGENTS.find((agent) => agent.status === 'coming-soon')?.id ?? 'not-catalogued']) {
-    it(`redirects unrunnable ${agentId} to the grid route`, async () => {
+    it(`redirects unrunnable ${agentId} to the Kit`, async () => {
       const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
       try {
         await configure('browser', agentId);
-        expect(navigate).toHaveBeenCalledWith(['..', 'agents'], expect.objectContaining({ queryParamsHandling: 'preserve', replaceUrl: true }));
+        expect(navigate).toHaveBeenCalledWith(['..'], expect.objectContaining({ queryParamsHandling: 'preserve', replaceUrl: true }));
       } finally {
         navigate.mockRestore();
       }

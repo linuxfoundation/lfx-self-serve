@@ -3,6 +3,7 @@
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
@@ -66,6 +67,7 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 @Component({
   selector: 'lfx-mktg-framework-view',
   imports: [
+    TooltipModule,
     NgClass,
     MktgAssetMetaComponent,
     MessageComponent,

@@ -64,18 +64,6 @@ test.describe('Marketing OS fixed-parent navigation', () => {
     await expect(page.getByTestId('mktg-documents-page')).toBeVisible();
   });
 
-  test('Agents → generic run has linked Family and Kit parents', async ({ page }) => {
-    await setupDocuments(page);
-    await openDocuments(page);
-    await page.getByTestId('mktg-kit-tab-agents').click();
-    await page.getByTestId(`mktg-os-agents-tile-${FOUNDATION_MESSAGE_INTAKE.agentId}`).click();
-    await expect(page.getByTestId('mktg-agent-run-page')).toBeVisible();
-    await expect(page.getByTestId('mktg-breadcrumb-link-1')).toContainText('Positioning & brand');
-    await expect(page.getByTestId('mktg-agent-run-back-button')).toHaveCount(0);
-    await page.goBack();
-    await expect(page.getByTestId('mktg-os-agents-page')).toBeVisible();
-  });
-
   test('unrunnable redirects replace the rejected URL', async ({ page }) => {
     await setupDocuments(page);
     await openDocuments(page);

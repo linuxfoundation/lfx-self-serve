@@ -20,7 +20,7 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
     await openStaleness(page);
     await expect(page.getByTestId('mktg-family-state-boilerplates')).toContainText('Needs rebuild');
     await expect(page.getByTestId('mktg-family-state-faq')).toContainText('Needs rebuild');
-    await expect(page.getByTestId('mktg-family-state-brand-kit')).toContainText('Missing');
+    await expect(page.getByTestId('mktg-family-state-brand-kit')).toContainText('Not run yet');
     await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toBeEnabled();
     await openStaleness(page, STALENESS_KIT_URL);
     await expect(page.getByTestId('mktg-kit-asset-boilerplates')).toContainText('Needs rebuild');
@@ -73,7 +73,7 @@ test.describe('Marketing OS current-revision staleness and rebuild', () => {
   test('empty and unknown historical provenance never enable a false rebuild', async ({ page }) => {
     await setupStaleness(page, { empty: true });
     await openStaleness(page);
-    await expect(page.getByTestId('mktg-family-state-messaging-framework')).toContainText('Missing');
+    await expect(page.getByTestId('mktg-family-state-messaging-framework')).toContainText('Not run yet');
     await expect(page.getByTestId('mktg-family-rebuild').getByRole('button')).toBeDisabled();
   });
   test('unknown provenance has no Downstream warning', async ({ page }) => {

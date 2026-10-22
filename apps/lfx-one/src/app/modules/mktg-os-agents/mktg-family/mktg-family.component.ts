@@ -27,10 +27,12 @@ import { MktgFamilyExportActionsComponent } from '../components/mktg-family-expo
 import { MktgFamilyDetailsComponent } from '../components/mktg-family-details/mktg-family-details.component';
 import { MktgRebuildComponent } from '../components/mktg-rebuild/mktg-rebuild.component';
 import { MktgBreadcrumbComponent } from '../components/mktg-breadcrumb/mktg-breadcrumb.component';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-mktg-family',
   imports: [
+    TooltipModule,
     DatePipe,
     RouterLink,
     ButtonComponent,
@@ -65,6 +67,20 @@ export class MktgFamilyComponent {
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly firstAgent: Signal<MktgAgent | undefined> = this.initFirstAgent();
   protected readonly rowRunAgents: Signal<Record<string, MktgAgent>> = this.initRowRunAgents();
+  /** The first asset not run yet, in the family's run order (the framework before the assets that read it). */
+  protected readonly nextAgent = computed(() => {
+    const agents = this.rowRunAgents();
+    const row = this.family()?.rows.find((candidate) => agents[candidate.asset.id]);
+    return row ? { agent: agents[row.asset.id], label: row.asset.label } : null;
+  });
+  protected readonly rebuildBlockedReason = computed(() => {
+    const panel = this.rebuildPanel();
+    if (!panel || panel.canStart()) return '';
+    if (panel.active()) return 'A rebuild is already running';
+    if (!this.context.canWrite()) return 'You need write access to this project to rebuild';
+    if (!this.kit.documents()?.approvedFramework) return 'Approve the messaging framework first: rebuilds start from the approved framework';
+    return 'Rebuild is not available right now';
+  });
   private readonly routeQueryParams = toSignal(this.route.queryParams, { initialValue: {} });
   protected readonly autoRebuild = computed(() =>
     this.navigationIntent()?.project === this.kit.projectUid() ? (this.navigationIntent()?.frameworkRevisionId ?? '') : ''

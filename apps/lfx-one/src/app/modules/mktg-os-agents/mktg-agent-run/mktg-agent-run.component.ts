@@ -632,9 +632,9 @@ export class MktgAgentRunComponent {
         this.copyTimer = null;
       }
     });
-    // Unknown, coming-soon, or intake-less agents have no run page — back to the grid.
+    // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
+      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
       return;
     }
     if (this.intake.oneOffDocument) {

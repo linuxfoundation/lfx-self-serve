@@ -193,12 +193,13 @@ describe('MktgDocumentsComponent', () => {
     expect(query('mktg-documents-page')?.textContent).not.toContain('this project');
   });
 
-  it('lists the living documents in run order with their revision state, and the runs', async () => {
+  it('lists the documents grouped and ordered as the Kit families, with their revision state', async () => {
     await render();
 
     expect(query('mktg-documents-nav-all')?.classList.contains('border-gray-200')).toBe(true);
     expect(query('mktg-documents-nav-all')?.classList.contains('font-semibold')).toBe(false);
-    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('1 · Brand Kit');
+    expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('Brand Kit');
+    expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('1 ·');
     expect(query('mktg-documents-nav-brand-kit')?.textContent).toContain('v2 · current');
     expect(query('mktg-documents-nav-foundation-message')?.textContent).toContain('Not generated yet');
     expect(query('mktg-documents-nav-linkedin-post')?.textContent).toContain('No runs yet');

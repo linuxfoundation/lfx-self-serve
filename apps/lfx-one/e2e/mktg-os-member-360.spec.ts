@@ -14,18 +14,6 @@ test.beforeEach(({ page, isMobile }) => {
   if (isMobile) expect(page.viewportSize()?.width).toBeLessThan(640);
 });
 
-test('catalog tile opens the Member 360 form', async ({ page }, info) => {
-  await setupMember360(page);
-  await openMember360(page, 'agents');
-  const family = page.getByTestId('mktg-os-agents-family-member-sponsor');
-  const tile = family.getByTestId('mktg-os-agents-tile-member-360');
-  await tile.scrollIntoViewIfNeeded();
-  await expect(tile).toBeEnabled();
-  await tile.click();
-  await expect(page.getByTestId('member-360-run-page')).toBeVisible();
-  await page.screenshot({ path: info.outputPath('catalog-to-form.png'), fullPage: true });
-});
-
 test('form-only intake fixes the project, parses/removes CSV, and has an empty history', async ({ page, isMobile }, info) => {
   if (!isMobile) await page.setViewportSize({ width: 1280, height: 1000 });
   await setupMember360(page);

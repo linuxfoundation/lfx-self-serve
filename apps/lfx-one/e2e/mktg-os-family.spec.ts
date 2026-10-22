@@ -57,7 +57,7 @@ test.describe('Marketing family content', () => {
   test('empty living assets stay Missing, not fabricated Drafts', async ({ page }) => {
     await setupKit(page);
     await openKit(page, '/families/positioning-brand');
-    await expect(page.getByTestId('mktg-family-asset-brand-kit')).toContainText('Missing');
+    await expect(page.getByTestId('mktg-family-asset-brand-kit')).toContainText('Not run yet');
     await expect(page.getByTestId('mktg-family-open-brand-kit')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-sources')).toHaveCount(0);
     await expect(page.getByTestId('mktg-family-run-faq').getByRole('link')).toContainText('Run FAQ');
