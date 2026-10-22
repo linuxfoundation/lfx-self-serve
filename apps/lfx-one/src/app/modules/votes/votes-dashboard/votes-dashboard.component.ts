@@ -391,6 +391,10 @@ export class VotesDashboardComponent {
           }
           if (!scope) return of(null);
           const summary$ = this.voteService.getVotesSummaryByProject(scope.uid, scope.group || undefined).pipe(
+            // A silent poll skips the reset above, so a success clears an earlier failure itself (GH-4078).
+            tap(() => {
+              if (this.managementSummaryScope() === scope) this.managementSummaryError.set(false);
+            }),
             catchError(() => {
               if (silent) return EMPTY;
               if (this.managementSummaryScope() === scope) this.managementSummaryError.set(true);
@@ -438,6 +442,10 @@ export class VotesDashboardComponent {
           }
           if (!scope) return of(null);
           const counts$ = this.voteService.getVoteStatusCountsByProject(scope.uid, scope.search || undefined, scope.group || undefined).pipe(
+            // A silent poll skips the reset above, so a success clears an earlier failure itself (GH-4078).
+            tap(() => {
+              if (this.managementStatusCountsScope() === scope) this.managementStatusCountsError.set(false);
+            }),
             catchError(() => {
               if (silent) return EMPTY;
               if (this.managementStatusCountsScope() === scope) this.managementStatusCountsError.set(true);
@@ -586,13 +594,14 @@ export class VotesDashboardComponent {
           const searchName = this.searchQuery();
           const queryFilters = this.buildFilters();
           return this.voteService.getVotesCountByProject(project.uid, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
+            // A failed foreground count still settles the footer on zero; a failed silent poll keeps the last total (GH-4078).
+            catchError(() => (silent ? EMPTY : of(0))),
             tap((count) => {
               if (!this.managementClosingOnly() && this.project()?.uid === project.uid) {
                 this.totalRecords.set(count);
                 this.totalCountReady.set(true);
               }
-            }),
-            catchError(() => (silent ? EMPTY : of(0)))
+            })
           );
         })
       ),
@@ -606,12 +615,16 @@ export class VotesDashboardComponent {
    * search index catches up, without a manual reload. Self-terminating: each fetch re-evaluates, and
    * the carrier window (RECENTLY_OPENED_VOTE_TTL_MS) ends the polling even if the index never converges.
    * Runs as a silent refresh (see `backgroundRefresh`) so the table, tabs and stat cards don't flash
-   * their loading states, and a failed poll keeps the rows and retries inside the window.
+   * their loading states, and a failed poll keeps the rows and retries inside the window. A tick that
+   * lands while a foreground fetch (scope, filter or page change) is loading is skipped, so the poll
+   * never cancels it and never falls back to the previous scope's rows; the poll re-arms once that
+   * fetch's rows arrive.
    */
   private initInvitationCountRefresh(): void {
     toObservable(this.votes)
       .pipe(
         switchMap((votes) => (!this.isMeLens() && this.voteService.hasVotesAwaitingInvitationCount(votes) ? timer(VOTE_INVITATION_COUNT_REFRESH_MS) : EMPTY)),
+        filter(() => !this.loading()),
         takeUntilDestroyed()
       )
       .subscribe(() => {

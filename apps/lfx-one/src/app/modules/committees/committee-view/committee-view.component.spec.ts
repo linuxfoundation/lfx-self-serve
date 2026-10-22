@@ -217,6 +217,36 @@ describe('CommitteeViewComponent', () => {
     }
   });
 
+  it('skips a poll tick while a foreground votes fetch is loading, so it cannot cancel it (GH-4078)', () => {
+    vi.useFakeTimers();
+    try {
+      currentCommittee = { ...committee, enable_voting: true } as unknown as Committee;
+      const voteService = TestBed.inject(VoteService);
+      const getVotesByCommittee = vi.mocked(voteService.getVotesByCommittee);
+      getVotesByCommittee.mockReturnValue(of([{ uid: 'vote-1' } as unknown as Vote]));
+      vi.mocked(voteService.hasVotesAwaitingInvitationCount).mockImplementation((votes: Vote[]) => votes.length > 0);
+
+      const component = createComponent();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(1);
+
+      // A foreground reload is still in flight when the armed timer fires.
+      const pending = new Subject<Vote[]>();
+      getVotesByCommittee.mockReturnValue(pending);
+      component.onVotesRefreshed();
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(component.votesLoading()).toBe(true);
+
+      vi.advanceTimersByTime(VOTE_INVITATION_COUNT_REFRESH_MS);
+      flush();
+      expect(getVotesByCommittee).toHaveBeenCalledTimes(2);
+      expect(pending.observed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   describe('Members tab badge', () => {
     it('shows roster length (not total_members) for a writer who is not a regular member', () => {
       // The admin has total_members=0 on the committee object, but the roster fetch returns 3 rows.

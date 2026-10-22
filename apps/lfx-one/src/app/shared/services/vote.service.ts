@@ -154,10 +154,9 @@ export class VoteService {
       }
     }
 
-    return this.http.get<QueryServiceCountResponse>('/api/votes/count', { params }).pipe(
-      catchError(() => of({ count: 0 })),
-      map((response) => response.count)
-    );
+    // Errors propagate (GH-4078): the dashboard decides whether a failure reads as zero (foreground) or
+    // keeps the last confirmed total (silent invitation-count poll).
+    return this.http.get<QueryServiceCountResponse>('/api/votes/count', { params }).pipe(map((response) => response.count));
   }
 
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */

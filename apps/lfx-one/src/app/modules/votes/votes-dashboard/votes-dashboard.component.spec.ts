@@ -213,6 +213,57 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(list).toHaveBeenCalledTimes(3);
   });
 
+  it('clears earlier summary/count errors on a successful poll and keeps the total when a polled count fails (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    const summary = vi.mocked(service.getVotesSummaryByProject);
+    const counts = vi.mocked(service.getVoteStatusCountsByProject);
+    const total = vi.mocked(service.getVotesCountByProject);
+    const succeedSummary = summary.getMockImplementation()!;
+    const succeedCounts = counts.getMockImplementation()!;
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    summary.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    counts.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    dashboard['fetch$'].next();
+    dashboard['refresh$'].next();
+    await settle();
+    expect(dashboard['managementSummaryError']()).toBe(true);
+    expect(dashboard['managementStatusCountsError']()).toBe(true);
+    expect(dashboard['totalRecords']()).toBe(20);
+
+    summary.mockImplementation(succeedSummary);
+    counts.mockImplementation(succeedCounts);
+    total.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(dashboard['managementSummaryError']()).toBe(false);
+    expect(dashboard['managementStatusCountsError']()).toBe(false);
+    expect(dashboard['totalRecords']()).toBe(20);
+    expect(dashboard['totalCountReady']()).toBe(true);
+  });
+
+  it('skips a poll tick while a foreground fetch is loading, so it cannot cancel it (GH-4078)', async () => {
+    const service = TestBed.inject(VoteService);
+    await management();
+    hasVotesAwaitingInvitationCount.mockReturnValue(true);
+    dashboard['fetch$'].next();
+    await settle();
+
+    // A foreground fetch (e.g. a scope or page change) is still in flight when the armed timer fires.
+    const list = vi.mocked(service.getVotesByProjectPaginated);
+    const pending = new Subject<VoteListResponse>();
+    list.mockClear();
+    list.mockReturnValue(pending);
+    dashboard['fetch$'].next();
+    await vi.advanceTimersByTimeAsync(VOTE_INVITATION_COUNT_REFRESH_MS);
+    await settle();
+
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(pending.observed).toBe(true);
+    expect(dashboard['loading']()).toBe(true);
+  });
+
   it('shows personal voting status in the Me lens', () => {
     expect(table.showParticipationProgress()).toBe(false);
   });

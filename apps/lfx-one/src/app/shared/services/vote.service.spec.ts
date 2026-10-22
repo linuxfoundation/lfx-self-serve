@@ -173,6 +173,16 @@ describe('VoteService', () => {
     expect(error).toHaveBeenCalledWith(failure);
   });
 
+  it('propagates vote-count HTTP failures instead of reporting a zero total (GH-4078)', () => {
+    const failure = new HttpErrorResponse({ status: 503 });
+    http.get.mockReturnValue(throwError(() => failure));
+    const next = vi.fn();
+    const error = vi.fn();
+    service.getVotesCountByProject('p1').subscribe({ next, error });
+    expect(next).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledWith(failure);
+  });
+
   // GH-2730: the carrier overlays a just-opened vote's known-active status over stale index rows
   // while the search index catches up. It must self-heal — evict on convergence, prune at the
   // TTL — or it would pin a stale 'active' over the fetched server value indefinitely.
