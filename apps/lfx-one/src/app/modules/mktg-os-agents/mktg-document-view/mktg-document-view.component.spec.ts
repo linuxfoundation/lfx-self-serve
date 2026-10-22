@@ -38,7 +38,7 @@ import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { MessageService } from 'primeng/api';
-import { NEVER, of, Subject, throwError } from 'rxjs';
+import { NEVER, of, Subject, throwError, TimeoutError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgDocumentViewComponent } from './mktg-document-view.component';
@@ -570,6 +570,34 @@ describe('MktgDocumentViewComponent', () => {
     expect(query('mktg-run-activity-title')).toBeNull();
     expect(store.getDocument).not.toHaveBeenCalled();
     expect(store.getRevision).not.toHaveBeenCalled();
+  });
+
+  it('shows Member360 activity after Retry of a timed-out receiver, including renewed questions', async () => {
+    const completion = new Subject<Member360Result>();
+    run.isPending.mockReturnValue(true);
+    run.waitForStored
+      .mockReset()
+      .mockReturnValueOnce(throwError(() => new TimeoutError()))
+      .mockReturnValueOnce(completion);
+    await render('/documents/member-360/run-0123456789abcdef01234567');
+    const retry = query('mktg-document-view-retry')?.querySelector('button');
+    if (!retry) throw new Error('Missing synthetic timeout Retry');
+    retry.click();
+    await settle();
+    expect(run.waitForStored).toHaveBeenCalledTimes(2);
+    expect(query('mktg-run-activity-title')).not.toBeNull();
+    expect(query('mktg-document-view-error')).toBeNull();
+    run.waitForStored.mock.calls.at(-1)?.[2]?.([
+      { id: 'synthetic-retry-step', kind: 'lfx', label: 'Checking LFX again', status: 'running', startedAt: '2026-10-19T10:00:00.000Z' },
+    ]);
+    await settle();
+    expect(query('mktg-run-activity-steps')?.textContent).toContain('Checking LFX again');
+    completion.next({ status: 'needs_input' });
+    await settle();
+    expect(query('member-360-needs-input')).not.toBeNull();
+    expect(query('mktg-run-activity-title')).not.toBeNull();
+    expect(store.getDocument).not.toHaveBeenCalled();
+    expect(TestBed.inject(MktgAgentRunService).resume).not.toHaveBeenCalled();
   });
 
   it('keeps a questions turn open with the feed instead of an error or stored result', async () => {

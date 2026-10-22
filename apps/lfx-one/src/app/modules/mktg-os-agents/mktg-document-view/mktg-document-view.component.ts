@@ -470,6 +470,7 @@ export class MktgDocumentViewComponent {
               return EMPTY;
             }
             if (request.agentKey === 'member-360') {
+              this.loading.set(true);
               const pending = !!request.user && this.member360.isPending(request.project, request.documentId);
               this.generating.set(pending);
               this.runStartedAt.set(pending ? (this.member360.pendingStartedAt(request.project, request.documentId) ?? Date.now()) : 0);
