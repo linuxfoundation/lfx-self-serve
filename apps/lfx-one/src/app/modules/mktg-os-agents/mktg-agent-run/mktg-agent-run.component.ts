@@ -441,7 +441,7 @@ export class MktgAgentRunComponent {
     this.seedLinkRows();
     // Unknown, coming-soon, or intake-less agents have no run page — back to the Kit.
     if (!this.agent || this.agent.status !== 'active' || !this.intake) {
-      this.router.navigate(['..'], { relativeTo: this.route, queryParamsHandling: 'preserve', replaceUrl: true });
+      this.router.navigate(['..'], { relativeTo: this.route, queryParams: { project: this.projectSlug() }, replaceUrl: true });
       return;
     }
     if (this.intake.oneOffDocument) {
@@ -520,8 +520,13 @@ export class MktgAgentRunComponent {
     void this.router
       .navigate(['..', 'documents', destination.agentKey, destination.documentId ?? MKTG_LIVING_DOCUMENT_ID], {
         relativeTo: this.route,
-        queryParams: { generation: destination.generation ?? null, revision: destination.revisionId ?? null, run: destination.runId ?? null, questions: null },
-        queryParamsHandling: 'merge',
+        queryParams: {
+          project: this.projectSlug(),
+          generation: destination.generation ?? null,
+          revision: destination.revisionId ?? null,
+          run: destination.runId ?? null,
+        },
+        replaceUrl: true,
       })
       .then((opened) => {
         if (!current()) {
@@ -547,12 +552,12 @@ export class MktgAgentRunComponent {
 
   // === Protected methods ===
   protected onBack(): void {
-    this.router.navigate(['..', 'agents'], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['..'], { relativeTo: this.route, queryParams: { project: this.projectSlug() } });
   }
 
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
   protected onOpenAgent(agentId: string): void {
-    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParams: { project: this.projectSlug() } });
   }
 
   /** Re-runs the dependency check that failed, for the active project. */

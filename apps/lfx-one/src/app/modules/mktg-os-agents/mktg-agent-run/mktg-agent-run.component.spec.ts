@@ -219,12 +219,26 @@ describe('MktgAgentRunComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="mktg-agent-run-back-button"]')).toBeNull();
   });
 
+  it('pushes user navigation with only the active project, including the legacy Kit handler', async () => {
+    await configure();
+    activeContext.set(PROJECT_2);
+    await fixture.whenStable();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+    component['onBack']();
+    expect(navigate).toHaveBeenLastCalledWith(['..'], { relativeTo: TestBed.inject(ActivatedRoute), queryParams: { project: PROJECT_2.slug } });
+    component['onOpenAgent']('foundation-setup');
+    expect(navigate).toHaveBeenLastCalledWith(['..', 'foundation-setup'], {
+      relativeTo: TestBed.inject(ActivatedRoute),
+      queryParams: { project: PROJECT_2.slug },
+    });
+  });
+
   for (const agentId of ['not-catalogued', MKTG_AGENTS.find((agent) => agent.status === 'coming-soon')?.id ?? 'not-catalogued']) {
     it(`redirects unrunnable ${agentId} to the Kit`, async () => {
       const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
       try {
         await configure('browser', agentId);
-        expect(navigate).toHaveBeenCalledWith(['..'], expect.objectContaining({ queryParamsHandling: 'preserve', replaceUrl: true }));
+        expect(navigate).toHaveBeenCalledWith(['..'], expect.objectContaining({ queryParams: { project: null }, replaceUrl: true }));
       } finally {
         navigate.mockRestore();
       }
@@ -521,10 +535,12 @@ describe('MktgAgentRunComponent', () => {
         component['onProgress'](mktgRunProgressFixture(event, run, 1, attempt), PROJECT_1.uid);
         await fixture.whenStable();
         expect(navigate).toHaveBeenCalledTimes(1);
+        expect(navigate.mock.calls[0]?.[1]?.replaceUrl).toBe(true);
+        expect(navigate.mock.calls[0]?.[1]?.queryParamsHandling).toBeUndefined();
         if (receipted) {
           expect(navigate).toHaveBeenCalledWith(
             expect.anything(),
-            expect.objectContaining({ queryParams: expect.objectContaining({ revision: location.revisionId }) })
+            expect.objectContaining({ replaceUrl: true, queryParams: expect.objectContaining({ project: PROJECT_1.slug, revision: location.revisionId }) })
           );
         } else {
           const token = component['navigation']()?.generation;
@@ -558,7 +574,8 @@ describe('MktgAgentRunComponent', () => {
         expect(navigate).toHaveBeenCalledWith(
           ['..', 'documents', type.agentKey, 'living'],
           expect.objectContaining({
-            queryParams: expect.objectContaining({ revision: `000001-${'a'.repeat(64)}` }),
+            replaceUrl: true,
+            queryParams: expect.objectContaining({ project: PROJECT_1.slug, revision: `000001-${'a'.repeat(64)}` }),
           })
         );
       }
@@ -1313,7 +1330,7 @@ describe('MktgAgentRunComponent', () => {
 
         (chip as HTMLButtonElement | null)?.click();
 
-        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { project: PROJECT_1.slug } }));
       });
 
       it.each(['none stored', 'stored but unapproved'])('requires approval when the framework is %s', async () => {
@@ -1335,7 +1352,7 @@ describe('MktgAgentRunComponent', () => {
 
         link?.querySelector('button')?.click();
 
-        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { project: PROJECT_1.slug } }));
         component['onSubmit']();
         expect(generate).not.toHaveBeenCalled();
       });
@@ -1621,7 +1638,7 @@ describe('MktgAgentRunComponent', () => {
       const link = query('mktg-agent-run-missing-dependency-link');
       expect(link?.textContent).toContain('Open the Messaging Framework page');
       link?.querySelector('button')?.click();
-      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { project: PROJECT_1.slug } }));
       component['onSubmit']();
       expect(generate).not.toHaveBeenCalled();
     });

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, formatDate, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -14,6 +14,7 @@ import { MessageComponent } from '@components/message/message.component';
 import {
   LINKEDIN_POST_INTAKE,
   LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
+  LINKEDIN_PROFILE_EDIT_ORIGINS,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
@@ -34,6 +35,7 @@ import {
   MktgFaqAsset,
   MktgFrameworkAsset,
   MktgRevisionResponse,
+  MktgBreadcrumbItem,
   MktgRevisionRow,
   MktgRevisionSummary,
   MktgSlidesExportTarget,
@@ -224,9 +226,7 @@ export class MktgDocumentViewComponent {
     () => `Working on ${MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey)?.label ?? 'the document'}`
   );
   protected readonly title: Signal<string> = this.initTitle();
-  protected readonly crumbs = computed(() =>
-    mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), this.view()?.type.itemLabel ?? 'Document')
-  );
+  protected readonly crumbs = this.initCrumbs();
   protected readonly revisionRows: Signal<MktgRevisionRow[]> = computed(() => {
     const view = this.view();
     return view
@@ -798,7 +798,7 @@ export class MktgDocumentViewComponent {
     if (!this.linkedinContent()?.isAuthor) return;
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.document },
       queryParams: { profile: 'edit', revision: null, type: null },
       queryParamsHandling: 'merge',
     });
@@ -862,8 +862,7 @@ export class MktgDocumentViewComponent {
   protected onDraftAnother(): void {
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
-      queryParams: { profile: null, revision: null, type: null },
-      queryParamsHandling: 'merge',
+      queryParams: this.runAgainParams(),
     });
   }
 
@@ -1018,6 +1017,17 @@ export class MktgDocumentViewComponent {
     });
   }
 
+  private initCrumbs(): Signal<MktgBreadcrumbItem[]> {
+    return computed(() => {
+      const view = this.view();
+      let label = view?.type.itemLabel ?? 'Document';
+      if (view?.type.agentKey === 'aeo-geo' && view.revision.createdAt) {
+        label += ` · ${formatDate(view.revision.createdAt, 'd MMM y', 'en-US', 'UTC')}`;
+      }
+      return mktgKitCrumbsFor(this.params().agentKey, this.projectName(), mktgKitRootPath(this.router.url), label);
+    });
+  }
+
   private initTitle(): Signal<string> {
     return computed(() => {
       const view = this.view();
@@ -1111,6 +1121,7 @@ export class MktgDocumentViewComponent {
         this.localProgress.set(null);
         void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {
           queryParams: { ...this.runAgainParams(), revision: location.revisionId },
+          replaceUrl: true,
         });
       } else {
         this.localProgress.set('storing');
@@ -1127,6 +1138,7 @@ export class MktgDocumentViewComponent {
       const token = this.attempts.prepare(pending.request, true);
       void this.router.navigate([mktgKitRootPath(this.router.url), pending.request.agentId], {
         queryParams: { ...this.runAgainParams(), questions: token },
+        replaceUrl: true,
       });
     }
   }
