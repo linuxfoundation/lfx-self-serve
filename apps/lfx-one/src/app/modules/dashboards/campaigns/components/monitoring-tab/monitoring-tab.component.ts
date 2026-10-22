@@ -484,6 +484,8 @@ export class MonitoringTabComponent implements OnInit {
    * The action on a panel's empty state. A connection state is re-read (a connection may have been
    * added or bound meanwhile), which re-fetches the selected panel once it arrives; "metrics not
    * enabled" is cleared and the panel read again, since enabling them changes nothing on our side.
+   * A shared-account refusal (`restricted`) is cleared and read again too: the BFF decides it per
+   * read, from the caller's ROOT grants, so there is no connection to re-read.
    */
   protected retryPanel(panel: MonitorPanelKey): void {
     if (panel === 'hubspot') {
