@@ -24,11 +24,12 @@ test.describe('Marketing OS new run Sources', () => {
       const website = page.locator('[data-test="mktg-intake-website_url"]');
       await expect(website).toHaveValue(sources.answers.website_url);
       await website.fill('https://edited.example');
+      await page.locator('[data-test="mktg-intake-notes"]').fill('');
       sources.handoff.finish();
       await start.click();
       await expect(page).toHaveURL(new RegExp('revision=' + sources.handoff.revision.id), { timeout: DATA_LOAD_TIMEOUT });
       expect(sources.generated).toHaveLength(1);
-      expect(sources.generated[0]).toMatchObject({ answers: { website_url: 'https://edited.example' } });
+      expect(sources.generated[0]).toMatchObject({ answers: { website_url: 'https://edited.example', notes: '' } });
       await expect(page.getByTestId('mktg-document-view-run-again')).toBeVisible();
       await page.screenshot({ path: test.info().outputPath('fresh-run-exact-asset.png'), fullPage: true });
     });

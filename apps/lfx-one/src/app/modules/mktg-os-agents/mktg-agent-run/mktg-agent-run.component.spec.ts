@@ -294,6 +294,34 @@ describe('MktgAgentRunComponent', () => {
       expect(query('mktg-agent-run-result')).toBeNull();
     });
 
+    it('clears entry-only fresh mode when opening a sibling agent', async () => {
+      await configure('browser', agentId, { mode: 'new', project: 'synthetic' });
+      component['onOpenAgent']('brand-kit');
+      expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(
+        ['..', 'brand-kit'],
+        expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' })
+      );
+    });
+
+    it('keeps a deliberately cleared optional source blank through submit, save and reopening', async () => {
+      await configure('browser', agentId, { mode: 'new' });
+      projects[PROJECT_1.slug] = { repository_url: 'https://github.com/synthetic/default' };
+      lastIntake.mockReturnValue(of({ ...history, answers: { ...history.answers, github_url: 'https://github.com/synthetic/previous' } }));
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      component['intakeForm'].get('github_url')?.setValue('');
+      component['onSubmit']();
+      const submitted = generate.mock.calls[0]?.[0] as MktgGenerateRequest;
+      expect(submitted.answers['github_url']).toBe('');
+      lastIntake.mockReturnValue(of({ ...history, answers: submitted.answers }));
+      queryParams.next(convertToParamMap({}));
+      await fixture.whenStable();
+      queryParams.next(convertToParamMap({ mode: 'new' }));
+      await fixture.whenStable();
+      expect(component['intakeForm'].get('github_url')?.value).toBe('');
+      expect(component['sourceFields']().find((field) => field.key === 'github_url')?.value).toBe('');
+    });
+
     it('blocks missing uploads until reattachment or an explicit choice to omit them', async () => {
       await configure('browser', agentId, { mode: 'new' });
       lastIntake.mockReturnValue(of({ ...history, documentCount: 2 }));
@@ -311,7 +339,7 @@ describe('MktgAgentRunComponent', () => {
       expect(component['submitDisabled']()).toBe(false);
     });
 
-    it('reuses matching same-visit source files without overwriting the pending attempt', async () => {
+    it.each([true, false])('reuses reserved same-visit inputs without changing the pending attempt (history exists=%s)', async (accepted) => {
       await configure('browser', agentId, { mode: 'new' });
       const intake = MKTG_AGENT_INTAKES[agentId];
       const request = {
@@ -324,11 +352,16 @@ describe('MktgAgentRunComponent', () => {
       const attempts = TestBed.inject(MktgRunAttemptService);
       attempts.reserve(request);
       const before = attempts.load(PROJECT_1.uid, agentId);
-      lastIntake.mockReturnValue(of({ ...history, documentCount: 1 }));
+      // A failed first Generate before acknowledgement leaves only this reserved draft, not durable or completed-run history.
+      lastIntake.mockReturnValue(of(accepted ? { ...history, documentCount: 1 } : null));
       activeContext.set(PROJECT_1);
       await fixture.whenStable();
       expect(component['documents']()[0]?.title).toBe('synthetic.txt');
       expect(component['missingDocuments']()).toBe(0);
+      expect(component['priorDocumentCount']()).toBe(1);
+      expect(component['intakeForm'].get('website_url')?.value).toBe(history.answers.website_url);
+      if (!accepted) expect(loadRun).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
       expect(attempts.load(PROJECT_1.uid, agentId)).toBe(before);
     });
 
@@ -1562,7 +1595,10 @@ describe('MktgAgentRunComponent', () => {
 
         (chip as HTMLButtonElement | null)?.click();
 
-        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+        expect(navigate).toHaveBeenCalledWith(
+          ['..', 'foundation-setup'],
+          expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' })
+        );
       });
 
       it.each(['none stored', 'stored but unapproved'])('requires approval when the framework is %s', async () => {
@@ -1584,7 +1620,10 @@ describe('MktgAgentRunComponent', () => {
 
         link?.querySelector('button')?.click();
 
-        expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+        expect(navigate).toHaveBeenCalledWith(
+          ['..', 'foundation-setup'],
+          expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' })
+        );
         component['onSubmit']();
         expect(generate).not.toHaveBeenCalled();
       });
@@ -1870,7 +1909,7 @@ describe('MktgAgentRunComponent', () => {
       const link = query('mktg-agent-run-missing-dependency-link');
       expect(link?.textContent).toContain('Open the Messaging Framework page');
       link?.querySelector('button')?.click();
-      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      expect(navigate).toHaveBeenCalledWith(['..', 'foundation-setup'], expect.objectContaining({ queryParams: { mode: null }, queryParamsHandling: 'merge' }));
       component['onSubmit']();
       expect(generate).not.toHaveBeenCalled();
     });

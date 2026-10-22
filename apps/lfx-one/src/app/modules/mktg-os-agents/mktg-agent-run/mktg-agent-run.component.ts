@@ -606,7 +606,7 @@ export class MktgAgentRunComponent {
   // === Protected methods ===
   /** The sibling agent's page — where the document this run needs is made (the Messaging Framework page). */
   protected onOpenAgent(agentId: string): void {
-    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParamsHandling: 'preserve' });
+    this.router.navigate(['..', agentId], { relativeTo: this.route, queryParams: { mode: null }, queryParamsHandling: 'merge' });
   }
 
   /** Re-runs the dependency check that failed, for the active project. */
@@ -850,12 +850,12 @@ export class MktgAgentRunComponent {
     return new FormGroup(controls);
   }
 
-  /** Assembles the submitted answers from the form: blank optional fields are omitted. */
+  /** Fresh snapshots keep intentional blanks; ordinary submissions omit blank optionals. */
   private buildAnswers(): Record<string, string> {
     const answers: Record<string, string> = {};
     for (const field of this.intake?.fields ?? []) {
       const value = this.intakeForm.controls[field.key].value.trim();
-      if (field.optional && !value) {
+      if (field.optional && !value && !this.freshMode()) {
         continue;
       }
       answers[field.key] = value;
@@ -866,7 +866,7 @@ export class MktgAgentRunComponent {
   /**
    * Every intake field with its trimmed value, BLANKS INCLUDED — the answer
    * memory needs the full submitted state to erase a field the user cleared,
-   * which the submit payload (`buildAnswers`) deliberately omits. Without it
+   * which ordinary submit payloads omit (fresh snapshots retain them). Without it
    * the memory would keep re-offering an optional answer the user removed.
    */
   private buildIntakeState(): Record<string, string> {
@@ -1067,8 +1067,9 @@ export class MktgAgentRunComponent {
 
   private restoreFreshInputs(project: string, history: MktgLastIntake | null): void {
     if (!this.agent || !this.intake) return;
-    const local = history ? null : this.runService.loadRun(project, this.agent.id);
-    const prior = history?.answers ?? local?.answers;
+    const memory = this.runAttempts.lastInputs(project, this.agent.id);
+    const local = history || memory ? null : this.runService.loadRun(project, this.agent.id);
+    const prior = history?.answers ?? memory?.answers ?? local?.answers;
     this.lastSourceLabel.set(history ? 'From the last run' : 'Saved on this device');
     if (!prior) {
       if (!this.sourceNote()) this.sourceNote.set('Suggested defaults — no previous run inputs are available.');
@@ -1077,7 +1078,6 @@ export class MktgAgentRunComponent {
     const answers = Object.fromEntries(this.intake.fields.filter((field) => Object.hasOwn(prior, field.key)).map((field) => [field.key, prior[field.key]]));
     this.lastSourceValues.set(answers);
     this.intakeForm.patchValue(answers);
-    const memory = this.runAttempts.lastInputs(project, this.agent.id);
     // Only reuse same-visit payloads whose scalar inputs and attachment counts still match.
     const matches =
       memory &&
