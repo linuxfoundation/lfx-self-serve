@@ -684,7 +684,7 @@ describe('PublicMeetingController.getMeetingById registrant count', () => {
     meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ visibility: MeetingVisibility.PRIVATE } as Partial<Meeting>));
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
     meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
-    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [{ uid: 'reg-alias' }], lookupFailed: false });
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValueOnce({ registrants: [{ uid: 'reg-alias' }], lookupFailed: false });
     isImpersonatingMock.mockReturnValue(false);
     const { req, res, next } = buildReqRes(true);
 
@@ -1221,7 +1221,7 @@ describe('PublicMeetingController.getMeetingOccurrences', () => {
     validatePasswordMock.mockReturnValue(false);
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
-    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValue({ registrants: [{ email: 'alias@example.com' }], lookupFailed: false });
+    meetingSvc.getMeetingRegistrantsByVerifiedEmails.mockResolvedValueOnce({ registrants: [{ email: 'alias@example.com' }], lookupFailed: false });
     isImpersonatingMock.mockReturnValue(false);
     const { req, res, next } = buildReqRes(true);
 
