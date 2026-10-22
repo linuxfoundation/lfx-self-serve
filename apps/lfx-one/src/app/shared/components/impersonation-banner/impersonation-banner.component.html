@@ -15,13 +15,32 @@
     } @else {
       <i class="fa-light fa-eye shrink-0 text-sm" aria-hidden="true"></i>
       <!-- One line at every width: the banner height is a fixed layout offset, so lower-priority text drops out and the email truncates instead of wrapping. -->
-      <span class="min-w-0 truncate"
+      <!-- Tooltips only show when a label is actually cut off (measured on hover/focus); otherwise they repeat visible text. -->
+      <span
+        class="min-w-0 truncate"
+        [pTooltip]="truncatedLabels().has('email') ? userService.user()?.email : ''"
+        tooltipEvent="both"
+        tooltipPosition="bottom"
+        (mouseenter)="onLabelEnter('email', $event)"
+        (focus)="onLabelEnter('email', $event)"
+        tabindex="0"
+        role="note"
         ><span class="hidden sm:inline">Viewing as </span><strong>{{ userService.user()?.email }}</strong></span
       >
-      <span class="hidden min-w-0 truncate text-black/60 md:inline">— by {{ userService.impersonator()?.name }}</span>
+      <span
+        class="hidden min-w-0 truncate text-black/60 md:inline"
+        [pTooltip]="truncatedLabels().has('impersonator') ? userService.impersonator()?.name : ''"
+        tooltipEvent="both"
+        tooltipPosition="bottom"
+        (mouseenter)="onLabelEnter('impersonator', $event)"
+        (focus)="onLabelEnter('impersonator', $event)"
+        tabindex="0"
+        role="note"
+        >— by {{ userService.impersonator()?.name }}</span
+      >
     }
     <!-- Short labels below sm leave the email room to show; the full labels return from sm up. -->
-    <!-- !px-[8px]: exact 8px side padding per design; px-2 would render 7px on the 14px root. -->
+    <!-- !h-[22px] / !px-[8px]: exact design sizes; h-6 and px-2 would undershoot on the 14px root. -->
     <!-- Resting border stays non-important: Tailwind emits hover: variants unlayered, and a layered !important would beat hover:!border-black. -->
     <div class="ml-1 flex shrink-0 items-center gap-2">
       <lfx-button
