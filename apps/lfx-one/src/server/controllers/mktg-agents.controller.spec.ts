@@ -55,7 +55,11 @@ const faqMocks = vi.hoisted(() => ({
   startGeneration: vi.fn(),
   sendAnswers: vi.fn(),
 }));
-const guildMocks = vi.hoisted(() => ({ createSession: vi.fn(), sendFollowUp: vi.fn() }));
+const guildMocks = vi.hoisted(() => ({
+  createSession: vi.fn(),
+  sendFollowUp: vi.fn(),
+  resolveRunOutcome: vi.fn(async (_req: unknown, _id: string, result: unknown) => result),
+}));
 const sourceTextMocks = vi.hoisted(() => ({
   readFile: vi.fn(),
 }));
@@ -116,6 +120,7 @@ vi.mock('../services/mktg-source-text.service', () => ({
 }));
 vi.mock('../services/guild.service', () => ({
   GuildService: class {
+    public resolveRunOutcome = guildMocks.resolveRunOutcome;
     public createSession = guildMocks.createSession;
     public sendFollowUp = guildMocks.sendFollowUp;
   },
@@ -593,6 +598,32 @@ describe('MktgAgentsController', () => {
       expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
       expect(brandKitMocks.sendAnswers).not.toHaveBeenCalled();
     });
+  });
+
+  it.each([
+    ['brandKitResult', brandKitMocks],
+    ['foundationMessageResult', foundationMessageMocks],
+    ['boilerplatesResult', boilerplatesMocks],
+    ['icpResult', icpMocks],
+    ['faqResult', faqMocks],
+  ] as const)('%s tracks the resolved provider failure, never the earlier pending outcome', async (method, service) => {
+    const pending = { status: 'pending' };
+    const failed = { status: 'failed', failure: { eventType: 'runtime_error', reason: 'The agent could not complete this run. Retry.' } };
+    service.getResult.mockResolvedValueOnce(pending);
+    guildMocks.resolveRunOutcome.mockResolvedValueOnce(failed);
+    const req = buildResultReq({ sessionId: 'sess-1', ownerToken: 'token-1', project: 'proj-uid-1' });
+    const res = buildRes();
+    runMocks.recordResultBestEffort.mockImplementationOnce(async () => {
+      expect(loggerMocks.success).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+    });
+
+    await controller[method](req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(guildMocks.resolveRunOutcome).toHaveBeenCalledWith(req, 'sess-1', pending);
+    expect(runMocks.recordResultBestEffort).toHaveBeenCalledWith(req, 'sess-1', failed, 'proj-uid-1');
+    expect(res.json).toHaveBeenCalledWith(failed);
   });
 
   describe('brandKitResult (POST /api/mktg-agents/brand-kit/result)', () => {

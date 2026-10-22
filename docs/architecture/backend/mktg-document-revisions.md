@@ -7,6 +7,29 @@
 purpose `marketing-os-artifacts`. The existing project writer entitlement and
 server-resolved project partition still gate every route.
 
+## Run outcomes
+
+Catalog result controllers await `GuildService.resolveRunOutcome` after authorization
+and before logging or recording their response. It only adds failure to pending/questions;
+validated ready/refused and already-returned failed results are unchanged. The request's existing raw-event read is reused.
+The existing idle-runtime completion path uses failed/failureText for a final plain
+reply without an asset. Provider error events add failed/failure when no output
+arrives; both fields are additive, and terminal outcomes are never replaced.
+An error outside a tool task must settle for 30 seconds without recovery. Only
+explicit new work (`llm_start`, `runtime_start`, `llm_done`, `tool_*`) or trusted
+agent text, including progress/questions, proves recovery. Status, heartbeat,
+unknown and lifecycle/completion events leave the error standing at any age.
+Tool-task errors are excluded using the same `isMktgToolTaskEvent` metadata predicate
+as Member 360. Queued-turn boundaries discard prior-turn errors; capped pages
+remain inconclusive rather than proving a terminal outcome.
+Slides shares this strict recovery rule too. Its undated-error policy is unchanged;
+the five-second constant remains exported for compatibility, not recovery evidence.
+The recorded healthy stream supports immediate new-work recovery and long silent
+model turns; a recorded failed stream is still unavailable. No unverified session
+metadata probe is used. Lookup failures log a warning and preserve the result.
+Generic browser history retains versions/answers/Q&A on failure, marks session reuse
+invalid, and retries the exact failed request including feedback on a new session.
+
 ## Current is not newest
 
 Revision bundles remain immutable JSON at
