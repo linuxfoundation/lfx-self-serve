@@ -156,6 +156,8 @@ describe('MktgDocumentsComponent', () => {
     await fixture.whenStable();
     expect(TestBed.inject(Router).url).toContain('project=previous');
     expect(query('mktg-documents-nav-faq')?.getAttribute('href')).toContain('project=current');
+    expect(query('mktg-documents-run-again-brand-kit')?.getAttribute('href')).toContain('project=current');
+    expect(query('mktg-documents-run-again-brand-kit')?.getAttribute('href')).not.toContain('project=previous');
     query('mktg-documents-nav-faq')?.click();
     await fixture.whenStable();
     expect(TestBed.inject(Router).url).toContain('project=current');
