@@ -18,6 +18,8 @@ const guildMocks = vi.hoisted(() => ({
 }));
 const documentStoreMocks = vi.hoisted(() => ({
   persistJsonGeneration: vi.fn(),
+  captureFramework: vi.fn(async () => null),
+  rememberGenerationFramework: vi.fn(async () => undefined),
 }));
 
 vi.mock('@lfx-one/shared/utils', async () => {
@@ -45,6 +47,8 @@ vi.mock('./guild.service', () => ({
 vi.mock('./mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
     public persistJsonGeneration = documentStoreMocks.persistJsonGeneration;
+    public captureFramework = documentStoreMocks.captureFramework;
+    public rememberGenerationFramework = documentStoreMocks.rememberGenerationFramework;
   },
 }));
 vi.mock('./logger.service', () => ({
@@ -182,6 +186,37 @@ describe('BoilerplatesService.startGeneration', () => {
   });
 });
 
+describe('BoilerplatesService provenance failure boundary', () => {
+  it('does not create a Guild session if capture fails', async () => {
+    vi.clearAllMocks();
+    documentStoreMocks.captureFramework.mockRejectedValueOnce(new Error('capture unavailable'));
+    await expect(
+      new BoilerplatesService().startGeneration(
+        req,
+        { project_name: 'Synthetic mesh', messaging_framework: JSON.stringify(FRAMEWORK_SIDECAR) },
+        'proj-uid-1',
+        'boilerplates'
+      )
+    ).rejects.toThrow('capture unavailable');
+    expect(guildMocks.createSession).not.toHaveBeenCalled();
+  });
+  it('does not return a capability if the durable capture write fails', async () => {
+    vi.clearAllMocks();
+    guildMocks.createSession.mockResolvedValueOnce('untracked-session');
+    documentStoreMocks.rememberGenerationFramework.mockRejectedValueOnce(new Error('write unavailable'));
+    await expect(
+      new BoilerplatesService().startGeneration(
+        req,
+        { project_name: 'Synthetic mesh', messaging_framework: JSON.stringify(FRAMEWORK_SIDECAR) },
+        'proj-uid-1',
+        'boilerplates'
+      )
+    ).rejects.toThrow('write unavailable');
+    expect(documentStoreMocks.rememberGenerationFramework).toHaveBeenCalledWith(req, 'boilerplates', 'proj-uid-1', 'untracked-session', null);
+    expect(documentStoreMocks.captureFramework.mock.invocationCallOrder[0]).toBeLessThan(guildMocks.createSession.mock.invocationCallOrder[0]);
+  });
+});
+
 describe('BoilerplatesService.sendAnswers', () => {
   it('sends the answers turn on the same session', async () => {
     vi.clearAllMocks();
@@ -297,6 +332,31 @@ describe('BoilerplatesService.getResult', () => {
       'The Boilerplates run for Acme Mesh ended without a validated result: the boilerplates were submitted before the finalize step accepted them, so nothing was delivered. Could you submit the Boilerplates request again?';
     guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload(reply), agentTextPayload(questionsText())]);
 
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+  });
+
+  it('does not keep an already-answered questions block as a pause after an idle runtime ends without an asset', async () => {
+    const questions = agentTextPayload(questionsText());
+    const started = JSON.stringify({ type: 'runtime_start', task: { id: 'synthetic-boilerplates-task', entity_type: 'EntTaskAgent' } });
+    const ended = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-boilerplates-task', entity_type: 'EntTaskAgent' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([questions, ended]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('questions');
+    const replay = JSON.stringify({
+      type: 'llm_start',
+      payload: JSON.stringify({ messages: [{ role: 'assistant', content: [{ type: 'text', text: questionsText() }] }] }),
+    });
+    guildMocks.getRawEventPayloads.mockResolvedValue([questions, JSON.stringify({ type: 'mktg_session_turn_started' }), started, replay, ended]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: '' });
+  });
+
+  it('requires a fresh finalize after a queued turn and applies the shared later-reply failure rule', async () => {
+    const old = finalizePayload(AGENT_ENVELOPE);
+    guildMocks.getRawEventPayloads.mockResolvedValue([old, JSON.stringify({ type: 'mktg_session_turn_started' }), old]);
+    expect((await service.getResult(req, 'session-1')).status).toBe('pending');
+    const done = JSON.stringify({ type: 'runtime_done', task: { id: 'synthetic-task', entity_type: 'EntTaskAgent' } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload(questionsText()), agentTextPayload('Synthetic operation stopped.'), done]);
+    expect(await service.getResult(req, 'session-1')).toMatchObject({ status: 'failed', failureText: 'Synthetic operation stopped.' });
+    guildMocks.getRawEventPayloads.mockResolvedValue([agentTextPayload('Synthetic operation stopped.'), agentTextPayload(questionsText()), done]);
     expect((await service.getResult(req, 'session-1')).status).toBe('questions');
   });
 

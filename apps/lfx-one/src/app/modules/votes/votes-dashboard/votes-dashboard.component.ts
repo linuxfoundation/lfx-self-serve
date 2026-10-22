@@ -42,6 +42,7 @@ import { BehaviorSubject, catchError, combineLatest, EMPTY, expand, filter, fina
 import { VoteCastDrawerComponent } from '../components/vote-cast-drawer/vote-cast-drawer.component';
 import { VoteResultsDrawerComponent } from '../components/vote-results-drawer/vote-results-drawer.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-votes-dashboard',
@@ -55,6 +56,7 @@ import { VotesTableComponent } from '../components/votes-table/votes-table.compo
     EmptyStateComponent,
     SkeletonModule,
     StatCardGridComponent,
+    PageHeaderComponent,
   ],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',
@@ -94,6 +96,10 @@ export class VotesDashboardComponent {
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly castDrawerVisible = signal<boolean>(false);
   protected readonly selectedVoteId = signal<string | null>(null);
+  // Confirmed deadline from votes-table's voteExtended output, held until votes()/myVotes() reflects a
+  // deadline at least as new — a stale search-index refresh otherwise leaves the open results drawer
+  // showing the pre-extension deadline indefinitely (per @greptile-apps, GH-3823 review).
+  private readonly extendedVoteOverride = signal<Vote | null>(null);
   protected readonly rowsPerPage = signal<number>(10);
   protected readonly currentFirst = signal<number>(0);
   protected readonly totalRecords = signal<number>(0);
@@ -276,6 +282,23 @@ export class VotesDashboardComponent {
     this.currentFirst.set(0);
     this.fetch$.next();
     this.refresh$.next();
+  }
+
+  /** votes-table's voteExtended output — carries the confirmed vote so the open drawer updates immediately
+   *  instead of waiting on refresh()'s eventually-consistent search-index refetch (per @greptile-apps).
+   *  Also reconciles the closing-soon count and filtered list (per @greptile-apps / @copilot-pull-request-reviewer,
+   *  GH-3823 review): the table no longer emits `refresh` on extend (that reset pagination, per @cursor), so this
+   *  handler re-triggers the summary count and current-page fetch itself — fetch$/refresh$ refetch the page/list
+   *  in place without touching pageTokens or currentFirst, unlike refreshVotes(). extendedVoteOverride above keeps
+   *  the open drawer and this row's rendered deadline correct in the meantime while the search index catches up. */
+  protected onVoteExtended(vote: Vote): void {
+    this.extendedVoteOverride.set(vote);
+    if (this.isMeLens()) {
+      this.refresh$.next();
+    } else {
+      this.fetch$.next();
+      this.managementSummaryRefresh$.next();
+    }
   }
 
   protected onPageChange(event: { first: number; rows: number }): void {
@@ -589,7 +612,35 @@ export class VotesDashboardComponent {
             // index rows. Skipped under a server-side `status:` filter — the filtered response can't
             // contain the just-opened row (Active tab: absent until convergence) and mustn't re-badge
             // it (Draft tab: an Active-badged row would violate the filter while `totalRecords` still
-            // counts it as draft); only the All tab (`status: null`) keeps the merge.
+            // counts it as draft); only the All tab (`status: null`) keeps the re-badge overlay.
+            //
+            // mergeRecentlyCreatedVotes (GH-4007) inserts a just-created/cloned vote missing from the
+            // page entirely. Unlike the re-badge overlay above, this must run under every tab — a
+            // created vote has a real status already, so passing `statusFilter` lets it insert into
+            // whichever tab its own status actually matches (and nowhere else), scoped to this
+            // project and limited to the first page so it isn't duplicated across paginated pages.
+            // `closingOnly`/`nowMs` additionally gate insertion under the Closing Soon quick filter —
+            // the lazy table doesn't locally re-filter returned rows, so a newly created vote outside
+            // the rolling seven-day window must never be inserted while that filter is active.
+            // `searchName`/`group` likewise gate insertion under the free-text search box and the
+            // Group dropdown — same reasoning, the lazy table never locally re-filters inserted rows.
+            //
+            // Runs on the RAW fetched rows, before the opened-overlay above (Copilot/dealako, GH-4007
+            // round 4): the created-carrier's eviction check reads `vote.status`, and if the opened
+            // overlay ran first it would see an already-rebadged Active row and evict the carrier
+            // while the index is still actually lagging — losing the new vote again on the next tab
+            // that skips the overlay (e.g. the server-filtered Active tab).
+            map((votes) =>
+              this.voteService.mergeRecentlyCreatedVotes(votes, {
+                projectUid: project.uid,
+                statusFilter: filterState.status,
+                closingOnly: this.managementClosingOnly(),
+                nowMs: Date.now(),
+                searchName: searchName || undefined,
+                group: filterState.group || undefined,
+                isFirstPage: pageIndex === 0,
+              })
+            ),
             map((votes) => (filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes))),
             catchError(() => {
               this.loading.set(false);
@@ -660,7 +711,12 @@ export class VotesDashboardComponent {
       const id = this.selectedVoteId();
       if (!id) return null;
       const source = this.isMeLens() ? this.myVotes() : this.votes();
-      return source.find((v) => v.uid === id) || null;
+      const row = source.find((v) => v.uid === id) || null;
+      const override = this.extendedVoteOverride();
+      if (override?.uid === id && (!row || new Date(row.end_time).getTime() < new Date(override.end_time).getTime())) {
+        return { ...(row ?? override), ...override };
+      }
+      return row;
     });
   }
 
@@ -680,8 +736,11 @@ export class VotesDashboardComponent {
           return this.voteService.getMyVotes().pipe(
             tap((response) => this.myVotesComplete.set(response.complete === true)),
             // Optimistic merge (GH-2730), same overlay as the project lens: just-opened votes'
-            // known-active status over stale index rows. Unconditional here — the Me lens has no
-            // server-side status filter (its filtering is client-side over these rows).
+            // known-active status over stale index rows. getMyVotes() is invitation-scoped
+            // (built from the caller's own invitation/response records), not creator-scoped, so
+            // mergeRecentlyCreatedVotes (GH-4007) does not apply here — inserting a just-created
+            // vote would show the creator a ballot they were never invited to, and the raw Vote
+            // snapshot lacks the response_status the Me lens's action/drawer logic depends on.
             map((response) => this.voteService.mergeRecentlyOpenedVotes(response.votes)),
             tap(() => this.myVotesNowMs.set(Date.now())),
             catchError(() => {

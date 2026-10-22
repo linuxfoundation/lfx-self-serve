@@ -3,21 +3,20 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   @if (!personaLoaded()) {
-    <div class="mt-3 flex flex-col gap-4" data-testid="my-newsletters-persona-loading">
+    <div class="flex flex-col gap-4" data-testid="my-newsletters-persona-loading">
       <p-skeleton width="12rem" height="2rem" />
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
     <!-- Page Header -->
-    <div class="flex flex-col gap-1 mb-6">
-      <h1 class="font-display font-light text-2xl" data-testid="my-newsletters-title">My Newsletters</h1>
-      <p class="text-sm text-gray-500 m-0" data-testid="my-newsletters-description">
+    <lfx-page-header class="mb-6" title="My Newsletters" titleTestId="my-newsletters-title">
+      <span pageHeaderDescription data-testid="my-newsletters-description">
         Newsletters you receive, by foundation.
         @if (inviter().eligible && inviter().company_name) {
           As an employee of {{ inviter().company_name }}, you can invite colleagues to the newsletters of foundations your company is a member of.
         }
-      </p>
-    </div>
+      </span>
+    </lfx-page-header>
 
     @if (incomplete()) {
       <div class="flex items-center gap-3 mb-4 p-4 rounded-lg bg-amber-50 text-sm text-gray-700" role="status" data-testid="my-newsletters-completeness-notice">

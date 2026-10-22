@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL) wraps inside its card instead of running across the next one. -->
-<section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-faq-view">
+<section class="@container/asset flex min-w-0 w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="mktg-faq-view">
   <!-- Header: what this is, which version, how big, and what needs the team -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="mktg-faq-view-header">
     @if (showMetadata()) {
@@ -75,7 +75,7 @@
           </div>
         }
 
-        <div class="grid grid-cols-1 gap-3 xl:grid-cols-2" data-testid="mktg-faq-view-groups">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2" data-testid="mktg-faq-view-groups">
           @for (group of groups(); track group.path; let g = $index) {
             <article class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4" [attr.data-testid]="'mktg-faq-view-group-' + g">
               <h3 class="text-base font-semibold text-gray-900">{{ group.name }}</h3>
@@ -121,7 +121,7 @@
           <p class="max-w-prose text-sm text-gray-600">
             The sources the agent read do not answer these. They stay in the FAQ, marked as needing an answer, until your team gives one.
           </p>
-          <ul class="grid grid-cols-1 gap-3 lg:grid-cols-2" data-testid="mktg-faq-view-unanswered-list">
+          <ul class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2" data-testid="mktg-faq-view-unanswered-list">
             @for (item of unanswered(); track item.path) {
               <li class="flex flex-col gap-1 rounded-xl border border-amber-200 bg-white p-4">
                 <span class="text-2xs font-semibold uppercase tracking-wider text-gray-500">{{ item.group }}</span>
@@ -140,7 +140,7 @@
     <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state -->
     @case ('sources') {
       <div
-        class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+        class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2"
         role="tabpanel"
         id="mktg-faq-panel-sources"
         aria-labelledby="mktg-faq-tab-sources"

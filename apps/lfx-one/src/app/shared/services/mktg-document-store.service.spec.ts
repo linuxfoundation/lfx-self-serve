@@ -156,6 +156,14 @@ describe('MktgDocumentStoreService', () => {
     request.flush({});
   });
 
+  it('PATCHes only the run presentation link and project, not a revision or agent request', () => {
+    service.saveLinkedinShareLink('proj-1', 'run-example', 'https://public.example/new').subscribe();
+    const request = http.expectOne('/api/mktg-agents/linkedin-post/documents/run-example/share-link');
+    expect(request.request.method).toBe('PATCH');
+    expect(request.request.body).toEqual({ project: 'proj-1', share_link: 'https://public.example/new' });
+    request.flush({ share_link: 'https://public.example/new' });
+  });
+
   it('POSTs a restore with the project and the revision id in the body', () => {
     service.restoreRevision('proj-1', 'icp', 'living', REVISION_ID).subscribe();
 
@@ -163,6 +171,33 @@ describe('MktgDocumentStoreService', () => {
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({ project: 'proj-1', revisionId: REVISION_ID });
     request.flush({});
+  });
+
+  it('marks timer reads explicitly and keeps failure-detail refresh scoped to an explicit navigation', () => {
+    service.listDocuments('proj-1', true).subscribe();
+    service.getDocument('proj-1', 'brand-kit', 'living', true).subscribe();
+    service.getRevision('proj-1', 'brand-kit', 'living', REVISION_ID, true).subscribe();
+    const timers = http.match(() => true);
+    expect(timers).toHaveLength(3);
+    for (const request of timers) {
+      expect(request.request.params.get('poll')).toBe('1');
+      expect(request.request.params.has('refreshRun')).toBe(false);
+      request.flush({});
+    }
+    const id = 'b'.repeat(64);
+    service.getDocument('proj-1', 'brand-kit', 'living', false, id).subscribe();
+    const refresh = http.expectOne((request) => request.params.get('refreshRun') === id);
+    expect(refresh.request.params.has('poll')).toBe(false);
+    refresh.flush({});
+  });
+
+  it('retries the exact recorded run without a Generate or Restore request', () => {
+    const id = 'b'.repeat(64);
+    service.retryRun('proj-1', 'brand-kit', 'living', id).subscribe();
+    const retry = http.expectOne(`/api/mktg-agents/documents/brand-kit/living/runs/${id}/retry`);
+    expect(retry.request.method).toBe('POST');
+    expect(retry.request.body).toEqual({ project: 'proj-1' });
+    retry.flush({});
   });
 
   it('logs and rethrows a failed read, so it never reads as "no documents yet"', () => {

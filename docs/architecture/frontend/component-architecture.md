@@ -193,6 +193,18 @@ The primary layout that wraps every authenticated route (header + sidebar + cont
 
 Wraps the `/profile` sub-tree to render tabbed profile pages (overview, edit, affiliations, developer, email, password). Used only by profile-feature routes.
 
+### Page header (`lfx-page-header`)
+
+Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header>` (`apps/lfx-one/src/app/shared/components/page-header/`), so title, description and spacing look the same everywhere:
+
+- **Title.** It is always an `h1` in Roboto Slab light at `text-2xl`, `text-gray-900`. Pages never restyle it or bump its size per breakpoint.
+- **Description.** The optional `description` input renders Inter `text-sm` in `text-gray-500`, `gap-1` under the title. When the copy needs markup, project a `<span pageHeaderDescription>` instead; it renders under the input in the same style, so it can also carry a second line.
+- **Spacing.** The component has no outer margin. The header sits at the top of the page content, so `MainLayoutComponent`'s `py-6` is the only top spacing. Pages leave `mb-6` below it (or a parent `gap-6`; 21px at the 14px root).
+- **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
+- **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
+
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header.
+
 ### Tab shells: signal state vs. child routes
 
 Most tabbed pages hold the active tab in a signal and swap content with `@if` — `marketing-impact`, `campaigns`, `org-contributions` and `org-project-detail-tab-bar` all work this way. Prefer that: it is simpler, and a tab that is just a panel does not need a URL.

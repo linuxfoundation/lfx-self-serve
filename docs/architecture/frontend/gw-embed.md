@@ -147,7 +147,7 @@ It is deliberately a constant rather than a flag: a flag can be switched on for 
 
 Enforced in two places, because the sidebar alone is not enough — the URL is guessable and shareable:
 
-- `sidebar-nav.service.ts` — the Communications entries fall back to LFX's own newsletters page.
+- `sidebar-nav.service.ts` — the Newsletters entries fall back to LFX's own newsletters page.
 - `gwEmbedTenantGuard` — a `CanActivate` guard on both mounts; the route itself refuses.
 
 **The guard decides on the route snapshot, not on `ProjectContextService`**, and that distinction is the whole correctness of it. Two earlier versions got it wrong from opposite directions:

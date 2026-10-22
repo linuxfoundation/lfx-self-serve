@@ -25,6 +25,7 @@ import {
   NewsletterRecipientsResponse,
   NewsletterScheduleResult,
   NewsletterSendResult,
+  NewsletterStatusCounts,
   NewsletterTestSendPayload,
   UpdateNewsletterRequest,
 } from '@lfx-one/shared/interfaces';
@@ -88,6 +89,10 @@ export class NewsletterService {
     return this.http
       .get<NewsletterRecipientEngagementResponse>(`/api/projects/${this.enc(projectUid)}/newsletters/${this.enc(newsletterUid)}/analytics/recipients`)
       .pipe(take(1));
+  }
+
+  public getStatusCounts(projectUid: string): Observable<NewsletterStatusCounts> {
+    return this.http.get<NewsletterStatusCounts>(`/api/projects/${this.enc(projectUid)}/newsletters/status-counts`).pipe(take(1));
   }
 
   public listOptOuts(projectUid: string): Observable<NewsletterOptOutListResponse> {

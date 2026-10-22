@@ -97,10 +97,8 @@ export class PersonDetailDrawerComponent implements OnDestroy {
     };
   }
 
+  // Addresses arrive on their own request, so they render independently of the activity fetch's loading or error state.
   private initCompanyEmails(): string[] {
-    if (!this.companyEmailFeatureEnabled() || this.drawer.loading() || this.drawer.error()) {
-      return [];
-    }
-    return this.drawer.companyEmails();
+    return this.companyEmailFeatureEnabled() ? this.drawer.companyEmails() : [];
   }
 }

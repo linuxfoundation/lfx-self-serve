@@ -16,6 +16,11 @@
     </div>
   </div>
 
+  <!-- Something always moving, even between steps -->
+  <div class="h-1 w-full overflow-hidden rounded-full bg-blue-50" aria-hidden="true">
+    <div class="h-full w-2/5 rounded-full bg-gradient-to-r from-blue-300 via-blue-500 to-blue-300 motion-safe:animate-indeterminate"></div>
+  </div>
+
   <!-- Phases: where the run is in the whole -->
   <ol class="flex flex-wrap items-center gap-1.5" aria-label="Progress" data-testid="mktg-run-activity-phases">
     @for (phase of phases(); track phase.id) {
@@ -54,7 +59,12 @@
           <span class="flex items-center justify-center w-8 h-8 rounded-full bg-blue-50 text-blue-600 ring-4 ring-blue-50 shrink-0">
             <i class="fa-light fa-spinner-third motion-safe:animate-spin text-sm" aria-hidden="true"></i>
           </span>
-          <span class="text-sm font-medium text-gray-900">Starting the agent</span>
+          <div class="flex min-w-0 flex-col">
+            <span class="text-sm font-medium text-gray-900">Starting the agent</span>
+            @for (line of [startingLine()]; track line) {
+              <span class="text-xs text-gray-500 motion-safe:animate-step-in" data-testid="mktg-run-activity-starting-line">{{ line }}…</span>
+            }
+          </div>
         </li>
       }
       @for (row of visibleRows(); track row.id; let last = $last) {
@@ -95,6 +105,14 @@
       }
     </ol>
   </div>
+
+  <!-- A tip while you wait -->
+  @for (line of [tip()]; track line) {
+    <p class="flex items-start gap-2 text-sm text-gray-500 motion-safe:animate-step-in" data-testid="mktg-run-activity-tip">
+      <i class="fa-light fa-lightbulb mt-0.5 text-amber-500" aria-hidden="true"></i
+      ><span><span class="font-medium text-gray-700">While you wait:</span> {{ line }}</span>
+    </p>
+  }
 
   <!-- What a screen reader hears as the run moves on: only the step under way, not the whole list on every poll. -->
   <span class="sr-only" role="status" aria-live="polite" data-testid="mktg-run-activity-status">{{ currentLabel() }}</span>

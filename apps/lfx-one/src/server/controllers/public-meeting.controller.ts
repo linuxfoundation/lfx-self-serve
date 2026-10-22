@@ -5,6 +5,7 @@ import { Meeting } from '@lfx-one/shared';
 import {
   ERROR_CODES,
   MEETING_PASSWORD_HEADER,
+  PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS,
   PUBLIC_ANONYMOUS_PAST_MEETING_KEYS,
   PUBLIC_REGISTRATION_FIELD_LABELS,
   PUBLIC_REGISTRATION_FIELD_MAX_LENGTH,
@@ -18,12 +19,13 @@ import {
   MeetingRegistrant,
   PastMeeting,
   Project,
+  PublicAnonymousLiveMeeting,
   PublicAnonymousPastMeeting,
   PublicMeetingOccurrencesResponse,
   PublicMeetingProject,
   PublicMeetingRegistrationResponse,
 } from '@lfx-one/shared/interfaces';
-import { getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { canJoinMeeting, getCurrentOrNextOccurrence, getPastMeetingResourceId, joinAsSentenceList, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -152,10 +154,20 @@ export class PublicMeetingController {
       // Log the success
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
 
+      // Computed once against the full internal meeting (before any field stripping below) so every
+      // response branch — including the anonymous/guest one — can tell the client whether the join
+      // window is currently open. Mirrors the full-access client's own canJoinMeeting(meeting,
+      // currentOccurrence) — bounded by the 40-minute end buffer and occurrence-aware for recurring
+      // series — rather than isWithinJoinWindow's open-ended, series-start-only check used to gate
+      // postMeetingLink. This is advisory for UI state only, never a bypass of that gate.
+      const canJoin = canJoinMeeting(meeting, getCurrentOrNextOccurrence(meeting));
+
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
         res.json({
           meeting,
           project: this.toPublicMeetingProject(project, parent),
+          full_access: true,
+          can_join: canJoin,
         });
         return;
       }
@@ -170,6 +182,8 @@ export class PublicMeetingController {
         res.json({
           meeting,
           project: this.toPublicMeetingProject(project, parent),
+          full_access: true,
+          can_join: canJoin,
         });
         return;
       }
@@ -206,6 +220,8 @@ export class PublicMeetingController {
           res.json({
             meeting,
             project: this.toPublicMeetingProject(project, parent),
+            full_access: true,
+            can_join: canJoin,
           });
           return;
         }
@@ -217,8 +233,17 @@ export class PublicMeetingController {
         return;
       }
 
-      // Send the meeting and project data to the client
-      res.json({ meeting, project: this.toPublicMeetingProject(project, parent) });
+      // A correct password only proves the caller has the shared link/passcode — not that they
+      // have a real session with access (organizer/invitee/member). Anonymous visitors and
+      // password-only guests both land here, so neither gets agenda, materials, or date/time:
+      // only the title + enough context to join as a guest (per Nirav/Jordan — a private meeting
+      // must show nothing beyond that without login).
+      res.json({
+        meeting: this.toAnonymousLiveMeetingResponse(meeting),
+        project: this.toPublicMeetingProject(project, parent),
+        full_access: false,
+        can_join: canJoin,
+      });
     } catch (error) {
       // Error handler will log
       next(error);
@@ -841,6 +866,15 @@ export class PublicMeetingController {
    */
   private toAnonymousPastMeetingResponse(meeting: PastMeeting): PublicAnonymousPastMeeting {
     return Object.fromEntries(PUBLIC_ANONYMOUS_PAST_MEETING_KEYS.filter((field) => meeting[field] !== undefined).map((field) => [field, meeting[field]]));
+  }
+
+  /**
+   * Projects a live/upcoming meeting down to the anonymous/guest-access allowlist through an
+   * allowlist rather than a denylist, so new upstream fields (agenda, materials, date/time,
+   * password) cannot pass through by default to a caller who only has the shared password.
+   */
+  private toAnonymousLiveMeetingResponse(meeting: Meeting): PublicAnonymousLiveMeeting {
+    return Object.fromEntries(PUBLIC_ANONYMOUS_LIVE_MEETING_KEYS.filter((field) => meeting[field] !== undefined).map((field) => [field, meeting[field]]));
   }
 
   /**

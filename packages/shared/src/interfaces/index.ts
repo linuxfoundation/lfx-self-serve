@@ -15,6 +15,7 @@ export * from './org-cache-compact.interface';
 
 // Member interfaces
 export * from './member.interface';
+export * from './member-import.interface';
 
 // Organization interfaces
 export * from './organization.interface';
@@ -261,6 +262,7 @@ export * from './mktg-agent.interface';
 export * from './mktg-artifact.interface';
 export * from './mktg-chat.interface';
 export * from './mktg-document-store.interface';
+export * from './mktg-document-run.interface';
 export * from './mktg-print.interface';
 export * from './mktg-run.interface';
 export * from './mktg-slides-export.interface';
@@ -434,4 +436,8 @@ export * from './log-scrub.interface';
 export * from './navbar.interface';
 export * from './mktg-asset.interface';
 export * from './mktg-kit.interface';
+export * from './mktg-rebuild.interface';
+export * from './mktg-breadcrumb.interface';
 export * from './linkedin-post.interface';
+export * from './member-360.interface';
+export * from './mktg-family-export.interface';

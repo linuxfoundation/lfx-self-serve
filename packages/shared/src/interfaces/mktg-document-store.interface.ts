@@ -13,7 +13,17 @@
 // deletion or anonymization request could require removing must never be
 // inside the hashed bytes, or removing it would drop the revision.
 
+import type { MktgRebuildStaleness, MktgRevisionRef } from './mktg-rebuild.interface';
+import type { LinkedinDocumentContent } from './linkedin-post.interface';
 import type { MktgArtifactIntakeMode, MktgArtifactKey } from './mktg-artifact.interface';
+import type { Member360Envelope } from './member-360.interface';
+import type { MktgDocumentRunSnapshot, MktgDocumentRunState } from './mktg-document-run.interface';
+import type { MktgAssetViewKind } from './mktg-run.interface';
+
+/** The stored structured views extend registered intake assets with the Brand Kit view. */
+export type MktgDocumentStructuredView = MktgAssetViewKind | 'brand-kit';
+/** Creator-side progress before a validated server row is observed. */
+export type MktgDocumentLocalProgress = Exclude<MktgDocumentRunState, 'questions'> | null;
 
 /**
  * Agent key of a document type — the artifact namespace for the agents that
@@ -89,6 +99,8 @@ export interface MktgDocumentType {
   kind: MktgDocumentKind;
   /** Marketplace catalog agent id, when the agent is in the catalog. */
   catalogAgentId?: string;
+  /** Structured stored view when it is not declared by the registered intake. */
+  structuredView?: MktgDocumentStructuredView;
   /** Name of the agent that writes the document, e.g. `Brand Kit Agent`. */
   agentName: string;
   /** Document name for living documents (`Brand Kit`), group name for runs (`LinkedIn posts`). */
@@ -197,6 +209,8 @@ export interface MktgRevisionSummary {
   /** Whether the revision's content is a Markdown document or a JSON asset. */
   format: MktgRevisionFormat;
   commentCount: number;
+  /** Server-owned captured input identity, read from summary metadata without loading the body. */
+  upstreamFramework?: MktgRevisionRef | null;
   /** Current, not necessarily newest (kept for existing consumers). */
   latest: boolean;
   approval: MktgRevisionApproval | null;
@@ -214,6 +228,11 @@ export interface MktgDocumentListItem {
   latestRevisionId: string;
   approvedCurrent: MktgApprovedCurrent | null;
   currentRevisionNumber?: number;
+  /** Current content hash from summary metadata; absent for old API producers. */
+  contentSha256?: string;
+  upstreamFramework?: MktgRevisionRef | null;
+  /** Server-only policy projection: clients render this value, never infer it from dates. */
+  needsRebuild?: MktgRebuildStaleness | null;
   /** When the current revision was stored (not when it was made current). */
   updatedAt: string | null;
   /** When the first revision was stored (the run date of a one-off run). */
@@ -228,13 +247,15 @@ export interface MktgDocumentGroup {
 }
 
 /** Response of `GET /api/mktg-agents/documents?project=<uid>`. */
-export interface MktgDocumentsResponse {
+export interface MktgDocumentsResponse extends Partial<MktgDocumentRunSnapshot> {
   project: string;
   groups: MktgDocumentGroup[];
+  /** Approved-current framework identity for the Downstream card and rebuild precondition. */
+  approvedFramework?: MktgRevisionRef | null;
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId?project=<uid>`: the document and its revisions, newest first. */
-export interface MktgDocumentDetailResponse {
+export interface MktgDocumentDetailResponse extends Partial<MktgDocumentRunSnapshot> {
   project: string;
   type: MktgDocumentType;
   documentId: string;
@@ -242,6 +263,20 @@ export interface MktgDocumentDetailResponse {
   approvedCurrent: MktgApprovedCurrent | null;
   /** Absent/null for documents whose newest revision is current by default. */
   current?: MktgDocumentCurrentSelection | null;
+}
+
+/** Snake-case location nested in an artifact persistence receipt. */
+export interface MktgDocumentPersistLocation {
+  agent_key: MktgDocumentAgentKey;
+  document_id: string;
+  revision_id: string;
+}
+
+/** Exact stored revision produced by a result poll, never whichever revision happens to be current. */
+export interface MktgDocumentLocation {
+  agentKey: MktgDocumentAgentKey;
+  documentId: string;
+  revisionId: string;
 }
 
 /** Response of `GET /api/mktg-agents/documents/:agentKey/:documentId/revisions/:revisionId?project=<uid>`. */
@@ -257,6 +292,16 @@ export interface MktgRevisionResponse extends MktgDocumentDetailResponse {
    * inputs record from it.
    */
   sidecar: Record<string, unknown> | null;
+  /** Validated read-only LinkedIn cards and LFX-side link/provenance metadata. */
+  linkedinPost?: LinkedinDocumentContent;
+  /** Validated structured document type; absent for prose documents. */
+  member360?: Member360Envelope;
+}
+
+/** One client read cycle; a metadata success alone cannot clear a failed asset read. */
+export interface MktgDocumentReadCycle {
+  detail: MktgDocumentDetailResponse;
+  view: MktgRevisionResponse | null;
 }
 
 /** Body of `POST /api/mktg-agents/documents/:agentKey/:documentId/restore`. */
@@ -272,6 +317,8 @@ export interface MktgRestoreRevisionResponse extends MktgDocumentDetailResponse 
 
 /** A stored revision read back, integrity-checked. */
 export interface MktgStoredRevision {
+  /** Server-only object metadata; never returned by the document HTTP projection. */
+  authorId?: string;
   id: string;
   key: string;
   record: MktgRevisionRecord;

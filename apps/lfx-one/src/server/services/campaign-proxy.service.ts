@@ -52,6 +52,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { AiProxyError, aiErrorDetail, aiErrorSummary } from '../helpers/ai-error.helper';
 import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { resolveRegistrationUrl, scanPageLinks, verifyPageLink } from '../helpers/event-links.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
@@ -443,6 +444,10 @@ async function resolveHubSpotUtm(eventName: string): Promise<string | null> {
 
 // ---------------------------------------------------------------------------
 // AI service helpers (LiteLLM proxy — same pattern as ai.service.ts)
+//
+// `AiProxyError`, `aiErrorSummary` and `aiErrorDetail` live in
+// `../helpers/ai-error.helper`, shared with `ai.service.ts`'s `makeAiRequest`, which posts to the
+// same proxy and needs the same body capture, length bound and key redaction.
 // ---------------------------------------------------------------------------
 
 /**
@@ -474,8 +479,7 @@ async function aiChat(systemPrompt: string, userPrompt: string, externalSignal?:
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`AI request failed (${response.status}): ${text}`);
+    throw new AiProxyError(`AI request failed (${response.status})`, await aiErrorDetail(response, aiApiKey));
   }
 
   const data = (await response.json()) as { choices?: { message?: { content?: string } }[] };
@@ -510,8 +514,14 @@ async function* aiChatStream(systemPrompt: string, userPrompt: string, signal: A
     signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
   });
 
-  if (!response.ok || !response.body) {
-    throw new Error(`AI streaming request failed (${response.status})`);
+  // Split from the null-body case below rather than left as one condition. Collapsed, a 200 with
+  // no body threw `AI streaming request failed (200)` — a sentence that contradicts itself and
+  // sends the next reader hunting for a 200-level error that does not exist.
+  if (!response.ok) {
+    throw new AiProxyError(`AI streaming request failed (${response.status})`, await aiErrorDetail(response, aiApiKey));
+  }
+  if (!response.body) {
+    throw new AiProxyError(`AI streaming request returned no response body (${response.status})`, '');
   }
 
   const reader = response.body.getReader();
@@ -1707,7 +1717,11 @@ export class CampaignProxyService {
         }
       } catch (error) {
         if (signal.aborted) return;
-        yield { type: 'error', data: `Ad copy generation failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        // This stage logged nothing before #3996, so a proxy 401 reached the operator only as
+        // whatever the browser chose to show. `{ err: error }` is what puts the proxy's own body —
+        // the thing that took days to attribute — into the log. The browser gets `summary` only.
+        logger.warning(req, 'campaign_brief_copy', 'Ad copy generation failed', { err: error });
+        yield { type: 'error', data: `Ad copy generation failed: ${aiErrorSummary(error)}` };
         return;
       }
     }
@@ -1904,7 +1918,10 @@ export class CampaignProxyService {
         }
       } catch (error) {
         if (signal.aborted) return;
-        yield { type: 'error', data: `Brief refinement failed: ${error instanceof Error ? error.message : 'Unknown error'}` };
+        // Same as the copy stage above — the other `aiChatStream` caller, and the other stage that
+        // logged nothing at all before #3996.
+        logger.warning(req, 'campaign_refine_copy', 'Brief refinement failed', { err: error });
+        yield { type: 'error', data: `Brief refinement failed: ${aiErrorSummary(error)}` };
         return;
       }
     }

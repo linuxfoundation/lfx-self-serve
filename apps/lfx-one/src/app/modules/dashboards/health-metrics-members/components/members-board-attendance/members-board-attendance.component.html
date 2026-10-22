@@ -36,13 +36,9 @@
   } @else {
     <div class="flex flex-col gap-4 md:flex-row md:items-start md:gap-9" data-testid="members-board-hero">
       <div class="flex flex-col gap-2">
-        <span
-          class="text-3xl font-semibold tabular-nums"
-          [class.text-amber-600]="summary().isBelowExpectedLevel"
-          [class.text-gray-900]="!summary().isBelowExpectedLevel"
-          data-testid="members-board-latest"
-          >{{ summary().latestPctLabel }}</span
-        >
+        <span class="text-3xl font-semibold tabular-nums" [ngClass]="summary().latestTextClass" data-testid="members-board-latest">{{
+          summary().latestPctLabel
+        }}</span>
         <span class="text-[12.5px] text-gray-500" data-testid="members-board-caption">{{ summary().latestCaption }}</span>
       </div>
 

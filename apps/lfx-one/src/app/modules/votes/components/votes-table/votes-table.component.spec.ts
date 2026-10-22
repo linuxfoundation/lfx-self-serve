@@ -11,7 +11,7 @@ import { GroupsIOMailingList, MyVotesQuickFilter, PollStatus, Vote, VoteResponse
 import { ClipboardShareService } from '@services/clipboard-share.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { VoteService } from '@services/vote.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -231,6 +231,8 @@ describe('VotesTableComponent — personal summary filters', () => {
   let fixture: ComponentFixture<unknown>;
   let table: VotesTableComponent;
   beforeEach(async () => {
+    // RxJS debounceTime uses intervals; leave Angular's timeout/rAF scheduler real.
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     TestBed.overrideComponent(SummaryHostComponent, {
       set: {
         imports: [VotesTableComponent],
@@ -251,10 +253,14 @@ describe('VotesTableComponent — personal summary filters', () => {
       ],
     }).compileComponents();
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function settle(debounce = false): Promise<void> {
-    if (debounce) await new Promise((resolve) => setTimeout(resolve, 350));
+    if (debounce) await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -442,6 +448,7 @@ describe('VotesTableComponent — empty-state copy', () => {
   const NO_MATCH = ['No votes match your filters', 'Try changing your search or filters, or reset filters to see all votes.'];
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
@@ -458,10 +465,14 @@ describe('VotesTableComponent — empty-state copy', () => {
     fixture.componentRef.setInput('groupOptions', GROUPS);
     fixture.componentRef.setInput('quickFilterNowMs', NOW);
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function settle(debounce = true): Promise<void> {
-    if (debounce) await new Promise((resolve) => setTimeout(resolve, 350));
+    if (debounce) await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -634,6 +645,7 @@ describe('VotesTableComponent — row More menu', () => {
   const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     copyLink = vi.fn();
     openDialog = vi.fn();
     messageAdd = vi.fn();
@@ -662,15 +674,29 @@ describe('VotesTableComponent — row More menu', () => {
             }),
         },
       ],
-    }).compileComponents();
+    })
+      // DialogService is a component-level provider (see the "deliberately not here" comment on
+      // VotesTableComponent) — it must be overridden on the component itself, not the TestBed root.
+      .overrideComponent(VotesTableComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: openDialog } }] },
+      })
+      .compileComponents();
     fixture = TestBed.createComponent(VotesTableComponent);
     table = fixture.componentInstance;
     fixture.componentRef.setInput('votes', ROWS);
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function settle(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await vi.advanceTimersByTimeAsync(300);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // Noop animation callbacks (including the menu's onShow/onHide) arrive on the real clock.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -779,15 +805,24 @@ describe('VotesTableComponent — row More menu', () => {
     moreButton('active')!.click();
     await settle();
 
-    // Clone rides on project access, reminders on per-vote writer access — the two gates are
-    // independent, which is the whole point of this case. Clone is appended last (#3781), so the
-    // reminder stays at index 1 whether or not it is there.
+    // Clone rides on project access, reminders (and Extend) on per-vote writer access — the gates
+    // are independent, which is the whole point of this case. Clone is appended last (#3781), so
+    // the reminder stays at index 2 (after Extend) whether or not Clone is there.
     const items = table['rowActionMenuItems']();
     expect(items.map((item) => item.label)).toEqual(
-      hasPMOAccess ? ['Copy link', 'Send reminder', 'Reminder mailing list', 'Clone'] : ['Copy link', 'Send reminder', 'Reminder mailing list']
+      hasPMOAccess
+        ? ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list', 'Clone']
+        : ['Copy link', 'Extend', 'Send reminder', 'Send reminder to mailing list']
     );
 
-    items[1].command!({});
+    const reminderItem = document.querySelector<HTMLElement>('[role="menuitem"][aria-label="Send reminder"]')!;
+    reminderItem.dispatchEvent(new Event('mouseenter'));
+    await fixture.whenStable();
+    expect(document.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Opens a dialog to send reminders to eligible voters who have not voted yet');
+    expect(items[2].tooltipOptions?.tooltipPosition).toBe('left');
+    reminderItem.dispatchEvent(new Event('mouseleave'));
+
+    items[2].command!({});
 
     expect(openDialog).toHaveBeenCalledWith(
       VoteReminderDialogComponent,
@@ -800,12 +835,12 @@ describe('VotesTableComponent — row More menu', () => {
     );
   });
 
-  describe('Reminder mailing list (#3658)', () => {
+  describe('Send reminder to mailing list (#3658)', () => {
     const TSC = { uid: 'ml-1', group_name: 'tsc', domain: 'lists.example.org' } as GroupsIOMailingList;
     const MAIN = { uid: 'ml-2', group_name: 'main', domain: 'lists.example.org' } as GroupsIOMailingList;
     const UNSAFE = { uid: 'ml-3', group_name: 'tsc,other@evil.example', domain: 'lists.example.org' } as GroupsIOMailingList;
 
-    /** Opens the active row's menu as a manager and returns the Reminder mailing list item. */
+    /** Opens the active row's menu as a manager and returns the mailing list reminder item. */
     async function reminderItem(overrides: Partial<Vote> = { committee_uid: 'committee-1' }) {
       fixture.componentRef.setInput(
         'votes',
@@ -814,12 +849,13 @@ describe('VotesTableComponent — row More menu', () => {
       await settle();
       moreButton('active')!.click();
       await settle();
-      return table['rowActionMenuItems']().find((item) => item.label === 'Reminder mailing list')!;
+      return table['rowActionMenuItems']().find((item) => item.label === 'Send reminder to mailing list')!;
     }
 
     it('shows on manager rows with a tooltip saying it opens the mail app', async () => {
       const item = await reminderItem();
 
+      expect(Array.from(document.querySelectorAll('[role="menuitem"]'), (element) => element.textContent?.trim())).toContain('Send reminder to mailing list');
       expect(item.icon).toBe('fa-light fa-envelopes-bulk');
       expect(item.tooltipOptions?.tooltipLabel).toBe('Opens your mail app to send a reminder email to the mailing list');
     });
@@ -985,11 +1021,11 @@ describe('VotesTableComponent — row More menu', () => {
   });
 
   it.each([
-    { hasPMOAccess: true, writer: false, uid: 'active' },
-    { hasPMOAccess: true, writer: undefined, uid: 'active' },
-    { hasPMOAccess: false, writer: false, uid: 'active' },
-    { hasPMOAccess: true, writer: true, uid: 'ended' },
-  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid }) => {
+    { hasPMOAccess: true, writer: false, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
+    { hasPMOAccess: true, writer: undefined, uid: 'active', expectedLabels: ['Copy link', 'Clone'] },
+    { hasPMOAccess: false, writer: false, uid: 'active', expectedLabels: ['Copy link'] },
+    { hasPMOAccess: true, writer: true, uid: 'ended', expectedLabels: ['Copy link', 'Clone'] },
+  ])('omits reminders for $uid with project access $hasPMOAccess and vote writer $writer (#3769)', async ({ hasPMOAccess, writer, uid, expectedLabels }) => {
     fixture.componentRef.setInput('hasPMOAccess', hasPMOAccess);
     fixture.componentRef.setInput(
       'votes',
@@ -1003,7 +1039,7 @@ describe('VotesTableComponent — row More menu', () => {
     // Asserting the absence of the reminder, not of Clone: Clone follows project access (#3781) and
     // is expected in every case here that has it, including the ended vote — a vote that has closed
     // can still be cloned into a new one.
-    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(hasPMOAccess ? ['Copy link', 'Clone'] : ['Copy link']);
+    expect(table['rowActionMenuItems']().map((item) => item.label)).toEqual(expectedLabels);
   });
 
   it('exposes menu semantics and expands only the row whose menu is open', async () => {
@@ -1075,6 +1111,7 @@ describe('VotesTableComponent — participation progress', () => {
   const text = (testId: string): string => el(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
   beforeEach(async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     await TestBed.configureTestingModule({
       imports: [VotesTableComponent],
       providers: [
@@ -1089,11 +1126,15 @@ describe('VotesTableComponent — participation progress', () => {
     fixture = TestBed.createComponent(VotesTableComponent);
     fixture.componentRef.setInput('votes', ROWS);
   });
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.resetTestingModule();
+    vi.useRealTimers();
+  });
 
   async function render(showParticipationProgress = true): Promise<void> {
     if (showParticipationProgress) fixture.componentRef.setInput('showParticipationProgress', true);
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await vi.advanceTimersByTimeAsync(300);
     fixture.detectChanges();
     await fixture.whenStable();
   }
@@ -1224,5 +1265,161 @@ describe('VotesTableComponent — participation progress', () => {
     for (const cell of cells) {
       expect(`${cell.textContent} ${cell.getAttribute('aria-label') ?? ''}`).not.toMatch(/quorum|approv|winn|passed/i);
     }
+  });
+});
+
+describe('VotesTableComponent — Extend deadline', () => {
+  let fixture: ComponentFixture<VotesTableComponent>;
+  let table: VotesTableComponent;
+  let extendVote: ReturnType<typeof vi.fn>;
+  let dialogOpen: ReturnType<typeof vi.fn>;
+  let onClose: Subject<{ end_time: string; end_time_timezone: string } | undefined>;
+  const ROWS = [
+    vote('active', { writer: true }),
+    vote('ended', { status: PollStatus.ENDED, writer: true }),
+    vote('draft', { status: PollStatus.DISABLED, writer: true }),
+  ];
+  const moreButton = (uid: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="votes-more-${uid}"] button`);
+  /** Opens the row's "..." menu and returns its 'Extend' item, if present. */
+  async function extendItem(uid: string) {
+    const button = moreButton(uid);
+    if (!button) return undefined;
+    button.click();
+    await settle();
+    return table['rowActionMenuItems']().find((item) => item.label === 'Extend');
+  }
+
+  beforeEach(async () => {
+    extendVote = vi.fn().mockReturnValue(of(vote('active')));
+    onClose = new Subject();
+    dialogOpen = vi.fn().mockReturnValue({ onClose });
+    await TestBed.configureTestingModule({
+      imports: [VotesTableComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        { provide: VoteService, useValue: { extendVote } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MailingListService, useValue: {} },
+      ],
+    })
+      // DialogService is a component-level provider (see the "deliberately not here" comment on
+      // VotesTableComponent) — it must be overridden on the component itself, not the TestBed root.
+      .overrideComponent(VotesTableComponent, {
+        set: { providers: [ConfirmationService, { provide: DialogService, useValue: { open: dialogOpen } }] },
+      })
+      .compileComponents();
+    fixture = TestBed.createComponent(VotesTableComponent);
+    table = fixture.componentInstance;
+    fixture.componentRef.setInput('votes', ROWS);
+    fixture.componentRef.setInput('hasPMOAccess', true);
+  });
+  afterEach(() => fixture?.destroy());
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  it('shows the Extend item only for a manager on an active vote', async () => {
+    await settle();
+    expect(await extendItem('active')).toBeDefined();
+    expect(await extendItem('ended')).toBeUndefined();
+    expect(moreButton('draft')).toBeNull();
+  });
+
+  it('hides the Extend item for a non-manager viewer', async () => {
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
+    );
+    await settle();
+    expect(await extendItem('active')).toBeUndefined();
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uO-ES @copilot-pull-request-reviewer): the item was previously
+  // gated on project-level hasPMOAccess() rather than the vote's own writer flag — a committee-only
+  // writer without project access couldn't extend their own vote's deadline, even though they could
+  // already "Send reminder" on the same row (toggleRowActionMenu() already used vote.writer there).
+  it('shows the Extend item for a writable vote even without project access', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', false);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: true } : row))
+    );
+    await settle();
+    expect(await extendItem('active')).toBeDefined();
+  });
+
+  it('hides the Extend item for a non-writable vote even with project access', async () => {
+    fixture.componentRef.setInput('hasPMOAccess', true);
+    fixture.componentRef.setInput(
+      'votes',
+      ROWS.map((row) => (row.uid === 'active' ? { ...row, writer: false } : row))
+    );
+    await settle();
+    expect(await extendItem('active')).toBeUndefined();
+  });
+
+  it('opens the dialog seeded with the vote name/current deadline and extends on confirm', async () => {
+    await settle();
+
+    const item = await extendItem('active');
+    item!.command!({});
+    await settle();
+
+    expect(dialogOpen).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        data: expect.objectContaining({ voteName: 'Board active', currentEndTime: '2026-10-12T12:00:00Z' }),
+      })
+    );
+
+    const result = { end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' };
+    onClose.next(result);
+    await settle();
+
+    expect(extendVote).toHaveBeenCalledWith('active', result);
+  });
+
+  it('does nothing when the dialog is dismissed without a result', async () => {
+    await settle();
+
+    const item = await extendItem('active');
+    item!.command!({});
+    onClose.next(undefined);
+    await settle();
+
+    expect(extendVote).not.toHaveBeenCalled();
+  });
+
+  // GH-3823 review (PRRT_kwDOPMiRQ86uAB0b @greptile-apps, PRRT_kwDOPMiRQ86uAElJ @copilot-pull-request-reviewer):
+  // the eviction effect only cleared a saved override on an exact end_time match, so a second extension
+  // (e.g. by another manager) landing in a refresh before the first eviction never matched and the
+  // table kept showing — and reseeding the dialog from — the stale, older deadline. Pins the fix:
+  // eviction now compares timestamps (>=) so a later deadline evicts the override too.
+  it('evicts a stale override once a refresh shows a later deadline, not just an exact match', async () => {
+    extendVote.mockReturnValue(of(vote('active', { end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' })));
+    await settle();
+
+    let item = await extendItem('active');
+    item!.command!({});
+    await settle();
+    onClose.next({ end_time: '2026-11-01T23:59:00.000Z', end_time_timezone: 'UTC' });
+    await settle();
+
+    // A second, later extension lands in the row before this client's own refresh ever matches exactly.
+    fixture.componentRef.setInput('votes', [vote('active', { end_time: '2026-12-01T23:59:00.000Z', end_time_timezone: 'UTC', writer: true })]);
+    await settle();
+
+    item = await extendItem('active');
+    item!.command!({});
+    await settle();
+
+    expect(dialogOpen).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ data: expect.objectContaining({ currentEndTime: '2026-12-01T23:59:00.000Z' }) })
+    );
   });
 });

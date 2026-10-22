@@ -4,10 +4,11 @@
 <div class="w-full" data-testid="account-settings">
   <!-- Page Header — suppressed when embedded in the Profile shell, which owns the header -->
   @if (!embedded) {
-    <div class="mb-6">
-      <h1 class="font-display font-light text-2xl" data-testid="account-settings-title">Account Settings</h1>
-      <p class="mt-1 text-sm text-gray-500">Manage your account preferences, email addresses, and security settings.</p>
-    </div>
+    <lfx-page-header
+      class="mb-6"
+      title="Account Settings"
+      description="Manage your account preferences, email addresses, and security settings."
+      titleTestId="account-settings-title" />
   }
 
   <!-- Read-only notice while impersonating — account changes act on the real account and are disabled.

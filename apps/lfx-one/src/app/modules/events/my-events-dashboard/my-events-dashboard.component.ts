@@ -27,6 +27,7 @@ import { EventsTopBarComponent } from '../components/events-top-bar/events-top-b
 import { EventsListComponent } from './components/events-list/events-list.component';
 import { buildDeepLinkKey } from './utils/deep-link-consumption.util';
 import { UserService } from '@app/shared/services/user.service';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /** Dedicated toast key so the custom support-CTA template renders only for this component's Salesforce-ID error toast. */
 const SALESFORCE_ERROR_TOAST_KEY = 'my-events-salesforce-error';
@@ -44,6 +45,7 @@ const SALESFORCE_ERROR_TOAST_KEY = 'my-events-salesforce-error';
     ToastModule,
     ToastMessageComponent,
     OpenIntercomDirective,
+    PageHeaderComponent,
   ],
   templateUrl: './my-events-dashboard.component.html',
 })

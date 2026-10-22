@@ -46,7 +46,7 @@ The saved confirmation and current response show the date scope. Choosing No lea
 
 ## Meeting materials
 
-The join page shows a **Meeting Materials** panel with two kinds of materials the organizer has added: **Primary Materials** (uploaded files you can download) and **Supporting Materials** (links). You need to be **signed in** to see materials — this applies to every meeting, not just Private ones. Only the meeting organizer can add or update materials.
+The join page shows a **Meeting Materials** panel with two kinds of materials the organizer has added: **Primary Materials** (uploaded files you can download) and **Supporting Materials** (links). You need to be **signed in** to see materials — this applies to every meeting, not just Private ones. On a recurring meeting, each item is labeled **This occurrence** (added for this date only) or **All occurrences** (shared by every date), so you can tell which materials belong to the date you are viewing. Only the meeting organizer can add or update materials.
 
 ## After the meeting: recording, transcript, and AI summary
 

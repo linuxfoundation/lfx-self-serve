@@ -105,6 +105,37 @@ export class OrgLensPeopleController {
   }
 
   /**
+   * GET /api/orgs/:orgUid/lens/people/:personKey/company-emails — company-affiliated addresses for a
+   * person key, served apart from `/detail` so the drawer renders activity without waiting on the
+   * slower address read.
+   */
+  public async getCompanyEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const personKey = req.params['personKey'];
+    const operation = 'get_org_lens_people_company_emails';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertPersonKey(personKey, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid, person_key: personKey });
+
+      const result = await this.service.getCompanyEmails(req, orgUid, personKey);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        person_key: personKey,
+        company_email_count: result.companyEmails.length,
+        company_emails_status: result.companyEmailsStatus,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/orgs/:orgUid/lens/people/by-username/:username/company-emails — company-affiliated
    * addresses for the governance surfaces, keyed on LF username and never on an address.
    */
@@ -128,6 +159,40 @@ export class OrgLensPeopleController {
 
       res.setHeader('Cache-Control', 'no-store');
       res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/orgs/:orgUid/lens/people/by-username/:username/detail — activity for openers that carry only an LF username.
+   * A username with no single roster person is answered `null` (200), not 404: the miss is routine, and the error
+   * handler would log the username-bearing path at WARN on every such drawer open.
+   */
+  public async getEmployeeDetailByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const orgUid = req.params['orgUid'];
+    const username = req.params['username'];
+    const operation = 'get_org_lens_people_detail_by_username';
+
+    try {
+      assertOrgUid(orgUid, operation);
+      this.assertUsername(username, operation);
+      const startTime = logger.startOperation(req, operation, { org_uid: orgUid });
+
+      const response = await this.service.getEmployeeDetailByUsername(req, orgUid, username);
+
+      logger.success(req, operation, startTime, {
+        org_uid: orgUid,
+        resolved: response !== null,
+        board_seats: response?.boardSeats.length ?? 0,
+        committee_seats: response?.committeeSeats.length ?? 0,
+        code_rows: response?.code.length ?? 0,
+        event_rows: response?.events.length ?? 0,
+        training_rows: response?.training.length ?? 0,
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(response);
     } catch (error) {
       next(error);
     }

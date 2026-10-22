@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { IndexedVoteResponseStatus, IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus, VoteRowParticipationState } from '../enums/poll.enum';
+import type {
+  IndexedVoteResponseStatus,
+  IndividualVoteStatus,
+  PollStatus,
+  PollType,
+  VoteResponseStatus,
+  VoteRowParticipationState,
+  VoteVoterStatus,
+} from '../enums/poll.enum';
 import type { PaginatedResponse } from './api.interface';
 import type { CommitteeReference } from './committee.interface';
 import type { GroupsIOMailingList } from './mailing-list.interface';
@@ -117,6 +125,14 @@ export interface PollAnswer {
   ranked_user_choice: UserChoice[];
   /** Total voters for this question */
   total_voters?: number;
+}
+
+/** Indexed answer wire format: upstream omits empty choice arrays. */
+export interface IndexedPollAnswer extends Omit<PollAnswer, 'user_choice' | 'ranked_user_choice'> {
+  /** Selected choices for non-ranked questions; omitted when empty */
+  user_choice?: UserChoice[];
+  /** Ranked choices for ranked questions; omitted when empty */
+  ranked_user_choice?: UserChoice[];
 }
 
 /**
@@ -387,8 +403,18 @@ export interface IndexedVoteResponse {
   user_role?: string;
   /** Invitee's voting eligibility status (e.g. `'Voting Rep'`) */
   user_voting_status?: string;
-  /** When the ballot was cast — empty until the invitee votes */
+  /** When the ballot was cast — empty until the invitee votes; ITX rewrites it on every ballot change */
   vote_creation_time?: string;
+  /** Whether the submitted ballot was an abstention */
+  abstained?: boolean;
+  /** The invitee's answers to the poll questions — empty until the invitee votes */
+  poll_answers?: IndexedPollAnswer[];
+  /** The invitee's free-text responses to comment prompts — may be present on an abstention */
+  comment_responses?: CommentResponseInput[];
+  /** Invitee's organization identifier */
+  user_org_id?: string;
+  /** URL of the invitee's profile picture */
+  profile_picture?: string;
 }
 
 /**
@@ -409,6 +435,40 @@ export interface VoteReminderRecipient {
   user_role?: string;
   /** Invitee's voting eligibility status */
   user_voting_status?: string;
+}
+
+/**
+ * Invited voter with their participation status and current ballot, returned by
+ * GET /api/votes/:uid/voters (#3911) to vote writers on named votes.
+ * @description A projection of an `IndexedVoteResponse` row. The ballot fields (`submitted_at`,
+ * `poll_answers`, `comment_responses`) are optional so a participation-only mode for
+ * pseudo-anonymous votes (#3916) can omit them without changing the response shape.
+ */
+export interface VoteVoter {
+  /** Vote response row identifier */
+  uid: string;
+  /** Invitee's display name */
+  user_name?: string;
+  /** Invitee's email address */
+  user_email?: string;
+  /** Invitee's LFID username — empty when the invitation was email-only */
+  username?: string;
+  /** Invitee's organization name */
+  user_org_name?: string;
+  /** Invitee's committee role */
+  user_role?: string;
+  /** Invitee's voting eligibility status */
+  user_voting_status?: string;
+  /** URL of the invitee's profile picture */
+  profile_picture?: string;
+  /** Whether the invitee has voted, abstained or not voted yet */
+  status: VoteVoterStatus;
+  /** When the current ballot was last submitted — absent until the invitee votes */
+  submitted_at?: string;
+  /** The invitee's current answers to the poll questions */
+  poll_answers?: PollAnswer[];
+  /** The invitee's current responses to comment prompts */
+  comment_responses?: CommentResponseInput[];
 }
 
 /** Request body for POST /api/votes/:uid/reminders (#3769) */
@@ -756,10 +816,10 @@ export interface PollCommentResult {
 }
 
 /**
- * Drawer-side view model for a single comment response
+ * Results view model for a single comment response
  * @description PollCommentResponse with `comment_text` pre-split into paragraphs (blank-line
  * separated, single line breaks preserved within a paragraph) so the template can render
- * comment paragraphs directly. Assembled by VoteResultsDrawerComponent.
+ * comment paragraphs directly. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
 export interface CommentResponseView extends PollCommentResponse {
   /** `comment_text` split into paragraphs via `splitIntoParagraphs` */
@@ -767,10 +827,10 @@ export interface CommentResponseView extends PollCommentResponse {
 }
 
 /**
- * Drawer-side view model for one comment prompt's results page
+ * Results view model for one comment prompt's results page
  * @description PollCommentResult with `responses` decorated for display and sliced to the
  * current page; `totalResponses` and `first` keep the pre-slice count and page offset so the
- * paginator can render against the full list. Assembled by VoteResultsDrawerComponent.
+ * paginator can render against the full list. Assembled by VoteCommentResultsComponent (`lfx-vote-comment-results`).
  */
 export interface CommentResultPageView extends Omit<PollCommentResult, 'responses'> {
   /** Page-sliced responses with display-ready paragraph splits */
@@ -973,14 +1033,27 @@ export interface UpdateVoteRequest {
   winning_threshold_percentage?: number;
 }
 
-/** Per-rank distribution row for a ranked-choice question (drawer-side projection of RankedChoiceVoteResult.rank_counts). */
+/**
+ * Request body for extending a vote/poll's deadline
+ * @description Proxies to the dedicated extend_vote upstream endpoint (POST /votes/{uid}/extend),
+ * which — unlike updateVote — is permitted on an active vote. Both fields are required upstream.
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface ExtendVoteRequest {
+  /** New poll end/deadline timestamp in RFC3339/ISO format. Must be later than the vote's current end_time. */
+  end_time: string;
+  /** IANA timezone the end_time wall-clock was picked in (e.g. "America/New_York") — ITX honors end_time exactly as sent in this timezone. */
+  end_time_timezone: string;
+}
+
+/** Per-rank distribution row for a ranked-choice question (projection of RankedChoiceVoteResult.rank_counts, built by `buildRankedQuestionViews`). */
 export interface RankCountDistribution {
   rank: number;
   count: number;
   percentage: number;
 }
 
-/** Per-choice rank distribution for a ranked-choice question (drawer-side projection of PollQuestionResult.ranked_choice_votes). */
+/** Per-choice rank distribution for a ranked-choice question (projection of PollQuestionResult.ranked_choice_votes, built by `buildRankedQuestionViews`). */
 export interface RankedChoiceDistribution {
   choiceId: string;
   choiceText: string;
@@ -988,7 +1061,7 @@ export interface RankedChoiceDistribution {
   rankCounts: RankCountDistribution[];
 }
 
-/** Drawer-side view model for a ranked-choice question — projection of PollQuestionResult assembled by VoteResultsDrawerComponent.initRankedQuestions. */
+/** Results view model for a ranked-choice question — projection of PollQuestionResult built by `buildRankedQuestionViews` (vote.utils) and rendered by `lfx-vote-ranked-question-results`. */
 export interface RankedQuestionView {
   questionId: string;
   prompt: string;

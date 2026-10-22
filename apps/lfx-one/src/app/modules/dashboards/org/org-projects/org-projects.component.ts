@@ -63,6 +63,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { SelectComponent } from '@components/select/select.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { TableComponent } from '@components/table/table.component';
@@ -80,6 +81,7 @@ type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
 @Component({
   selector: 'lfx-org-projects',
   imports: [
+    PageHeaderComponent,
     AvatarComponent,
     ButtonComponent,
     CardComponent,

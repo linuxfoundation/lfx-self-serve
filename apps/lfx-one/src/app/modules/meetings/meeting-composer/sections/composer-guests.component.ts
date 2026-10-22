@@ -18,6 +18,7 @@ import {
   isShowMeetingAttendeesLocked,
   isSameOccurrenceId,
 } from '@lfx-one/shared/utils';
+import { MeetingInviteResendService } from '@services/meeting-invite-resend.service';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { updateTruncatedKeys } from '@shared/utils/truncation.util';
@@ -50,6 +51,7 @@ export class ComposerGuestsComponent {
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
   protected readonly formService = inject(MeetingComposerFormService);
+  protected readonly inviteResend = inject(MeetingInviteResendService);
 
   public readonly form = input.required<FormGroup>();
 
@@ -261,6 +263,18 @@ export class ComposerGuestsComponent {
 
   protected onOpenManualDialog(): void {
     this.openManualDialog(null);
+  }
+
+  /** Resend is only offered once the meeting exists upstream (edit mode) and the guest is saved. */
+  protected canResendInvite(guest: MeetingRegistrantWithState): boolean {
+    return this.formService.isEditMode() && !!this.formService.meetingId() && this.inviteResend.canResend(guest);
+  }
+
+  protected onRequestResendInvite(guest: MeetingRegistrantWithState): void {
+    const meetingId = this.formService.meetingId();
+    if (meetingId) {
+      this.inviteResend.confirmAndResend(this.confirmationService, meetingId, guest);
+    }
   }
 
   protected onRequestRemoveGuest(guest: MeetingRegistrantWithState, displayName: string): void {

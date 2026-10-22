@@ -29,10 +29,9 @@ export const PROFILE_BIO_MAX_LENGTH = 2000;
 
 /**
  * Sentinel accepted by the meeting-service `preferred_email.set` RPC in place of an address to
- * clear the meeting-invitation override, so invitations follow whatever the primary email is.
- * Must stay in sync with `primaryEmailSentinel` in lfx-v2-meeting-service; the upstream match
- * is case-insensitive. Sending the literal primary address instead would pin an explicit
- * override that no longer follows a later primary-email change.
+ * clear the meeting-invitation override. Must stay in sync with `primaryEmailSentinel` in
+ * lfx-v2-meeting-service; the upstream match is case-insensitive. The UI no longer sends it:
+ * invitations stick to an address, so it always pins a literal one (#3983).
  */
 export const MEETING_INVITE_PRIMARY_SENTINEL = 'primary';
 

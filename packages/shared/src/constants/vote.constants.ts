@@ -51,6 +51,12 @@ export const RECENTLY_OPENED_VOTE_TTL_MS = 30 * 1000;
 /** Reminder reads/sends reject an inactive poll with this state-conflict code. */
 export const VOTE_REMINDER_INACTIVE = 'VOTE_REMINDER_INACTIVE';
 
+/** The voter list (#3911) rejects a draft or unrecognized-status vote with this state-conflict code. */
+export const VOTE_VOTERS_DRAFT = 'VOTE_VOTERS_DRAFT';
+
+/** The voter list (#3911) refuses a vote that is not explicitly named (`pseudo_anonymity !== false`) with this code. */
+export const VOTE_VOTERS_PSEUDO_ANONYMOUS = 'VOTE_VOTERS_PSEUDO_ANONYMOUS';
+
 /** No reminders were sent because at least one selected recipient is no longer eligible. */
 export const VOTE_REMINDER_SELECTION_STALE = 'VOTE_REMINDER_SELECTION_STALE';
 

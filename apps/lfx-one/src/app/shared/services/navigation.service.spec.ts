@@ -25,6 +25,7 @@ describe('NavigationService — favoritedUids threading (GH-3453)', () => {
   let favoriteState: ReturnType<typeof signal<{ data: Set<string>; loading: boolean; error: boolean }>>;
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
     http = { get: vi.fn().mockReturnValue(of(emptyPage())) };
     favoriteState = signal({ data: new Set<string>(), loading: false, error: false });
 
@@ -63,8 +64,8 @@ describe('NavigationService — favoritedUids threading (GH-3453)', () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     TestBed.resetTestingModule();
+    vi.useRealTimers();
   });
 
   function lastParams(): HttpParams {
@@ -72,7 +73,8 @@ describe('NavigationService — favoritedUids threading (GH-3453)', () => {
   }
 
   async function waitForDebounce(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, NAV_SEARCH_DEBOUNCE_MS + 50));
+    TestBed.inject(ApplicationRef).tick();
+    await vi.advanceTimersByTimeAsync(NAV_SEARCH_DEBOUNCE_MS);
     TestBed.inject(ApplicationRef).tick();
   }
 

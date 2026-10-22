@@ -3,21 +3,23 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   @if (!personaLoaded()) {
-    <div class="mt-3 flex flex-col gap-4" data-testid="dashboard-persona-loading">
+    <div class="flex flex-col gap-4" data-testid="dashboard-persona-loading">
       <p-skeleton width="12rem" height="2rem" />
       <p-skeleton width="min(28rem, 100%)" height="1rem" />
     </div>
   } @else {
     <!-- Page Header -->
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h1 class="font-display font-light text-2xl" data-testid="votes-dashboard-title">{{ isMeLens() ? 'My ' + voteLabelPlural : voteLabelPlural }}</h1>
-        <p class="mt-1 text-sm text-gray-500" data-testid="votes-dashboard-description">
-          {{ isMeLens() ? voteLabelPlural + ' you have been invited to across all foundations and projects.' : 'Make decisions with your project groups.' }}
-        </p>
-      </div>
+    <lfx-page-header
+      class="mb-6"
+      [title]="isMeLens() ? 'My ' + voteLabelPlural : voteLabelPlural"
+      [description]="
+        isMeLens() ? voteLabelPlural + ' you have been invited to across all foundations and projects.' : 'Make decisions with your project groups.'
+      "
+      titleTestId="votes-dashboard-title"
+      descriptionTestId="votes-dashboard-description">
       @if (!isMeLens() && canWrite()) {
         <lfx-button
+          pageHeaderActions
           [label]="'Create ' + voteLabel"
           size="small"
           icon="fa-light fa-check-to-slot"
@@ -26,7 +28,7 @@
           data-testid="votes-create-button">
         </lfx-button>
       }
-    </div>
+    </lfx-page-header>
 
     @if (isMeLens()) {
       <div class="mb-6" data-testid="votes-me-stats">
@@ -103,6 +105,7 @@
         (viewVote)="onViewVote($event)"
         (viewResults)="onViewResults($event)"
         (refresh)="refreshVotes()"
+        (voteExtended)="onVoteExtended($event)"
         (pageChange)="onPageChange($event)"
         (filtersChange)="onFiltersChange($event)"
         data-testid="votes-table-container">

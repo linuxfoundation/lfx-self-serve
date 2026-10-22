@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { DOCUMENT, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, PLATFORM_ID, Signal } from '@angular/core';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
+import { TooltipModule } from 'primeng/tooltip';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   BRAND_KIT_MODE_LABELS,
@@ -26,6 +27,7 @@ import {
 import { brandKitChapterSummaries, buildBrandKitBookView, mktgAssetHeaderFallback } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 
+import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { BrandKitViewComponent } from '../brand-kit-view/brand-kit-view.component';
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 
@@ -45,7 +47,16 @@ import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-exp
 // and the revision to export.
 @Component({
   selector: 'lfx-brand-kit-web-view',
-  imports: [NgClass, NgTemplateOutlet, MktgAssetMetaComponent, MessageComponent, ButtonComponent, BrandKitViewComponent, MktgSlidesExportComponent],
+  imports: [
+    TooltipModule,
+    NgClass,
+    NgTemplateOutlet,
+    MktgAssetMetaComponent,
+    MessageComponent,
+    ButtonComponent,
+    BrandKitViewComponent,
+    MktgSlidesExportComponent,
+  ],
   templateUrl: './brand-kit-web-view.component.html',
 })
 export class BrandKitWebViewComponent {
@@ -54,6 +65,8 @@ export class BrandKitWebViewComponent {
   private readonly document = inject(DOCUMENT);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly printService = inject(MktgPrintService);
+  private readonly injector = inject(Injector);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   // === Inputs ===
   /** The kit to show. */
@@ -67,13 +80,18 @@ export class BrandKitWebViewComponent {
   public readonly exportTarget = input<MktgSlidesExportTarget | null>(null);
   /** The viewed document for last-export lookup, independent of approved export bytes. */
   public readonly exportLookupTarget = input<MktgSlidesExportTarget | null>(null);
+  public readonly viewingDraft = input(false);
   public readonly approvedKit = input<BrandKitRevision | null>(null);
   public readonly approvedVersion = input<number | null>(null);
   public readonly approvedLoading = input(false);
   public readonly approvedError = input('');
 
   // === Signals ===
-  protected readonly selectedTab = signal<BrandKitWebViewTabId>('overview');
+  private readonly tabState = createMktgAssetTab(
+    BRAND_KIT_WEB_VIEW_TABS.map((tab) => tab.id),
+    'overview'
+  );
+  protected readonly selectedTab = this.tabState.selected;
 
   // === Computed ===
   /** Every value the samples bind — built once here and handed to the printed book, which lays out the same view model. */
@@ -88,6 +106,8 @@ export class BrandKitWebViewComponent {
     const kit = this.approvedKit();
     return kit ? buildBrandKitBookView(kit, this.approvedVersion() ?? kit.version) : null;
   });
+  /** Why Download PDF is disabled (no approved current yet); empty once it can print. */
+  protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
   /** What the reviewer should look at: the gaps and the sources that could not be read. */
@@ -132,24 +152,31 @@ export class BrandKitWebViewComponent {
   }
 
   // === Protected methods ===
-  protected onSelectTab(id: BrandKitWebViewTabId): void {
-    this.selectedTab.set(id);
+  protected async onSelectTab(id: BrandKitWebViewTabId): Promise<void> {
+    await this.tabState.select(id);
+    if (isPlatformBrowser(this.platformId) && !this.destroyRef.destroyed) {
+      afterNextRender(
+        () => {
+          if (this.selectedTab() !== id) return;
+          const panel = this.host.nativeElement.querySelector<HTMLElement>('[role="tabpanel"]');
+          if (panel) {
+            if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+            panel.focus();
+          }
+        },
+        { injector: this.injector }
+      );
+    }
   }
 
   /**
    * A shortcut into a tab from outside the tablist (the Overview's "Open …"
    * buttons, the header's sources link): the button that was clicked goes
-   * with the panel it sat in, so focus moves onto the selected tab once it
+   * with the panel it sat in, so focus moves to the new panel's start once it
    * has rendered, as on the framework view.
    */
   protected onGoToTab(id: BrandKitWebViewTabId): void {
-    this.selectedTab.set(id);
-    if (isPlatformBrowser(this.platformId)) {
-      const tab = this.tabs().find((entry) => entry.id === id);
-      if (tab) {
-        setTimeout(() => this.document.getElementById(tab.tabId)?.focus());
-      }
-    }
+    void this.onSelectTab(id);
   }
 
   /**
@@ -178,7 +205,7 @@ export class BrandKitWebViewComponent {
         return;
     }
     event.preventDefault();
-    this.selectedTab.set(tabs[next].id);
+    void this.tabState.select(tabs[next].id);
     if (isPlatformBrowser(this.platformId)) {
       this.document.getElementById(tabs[next].tabId)?.focus();
     }

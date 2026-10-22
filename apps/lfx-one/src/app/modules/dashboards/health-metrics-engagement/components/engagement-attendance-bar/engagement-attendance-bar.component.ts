@@ -2,16 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
-import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE,
+  HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+} from '@lfx-one/shared/constants';
 import {
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementCount,
   resolveHealthMetricsEngagementAttendanceTone,
 } from '@lfx-one/shared/utils';
 
+import type { HealthMetricsEngagementAttendanceRule } from '@lfx-one/shared/interfaces';
+
 /**
- * Track + fill + numeric label, shared by the three attendance tables. Three tones only, not the
- * Overview's five classification codes — amber marks the one threshold that matters. With
+ * Track + fill + numeric label, shared by the attendance tables. A row below its rule turns amber, or
+ * red for the board; not the Overview's five classification codes. With
  * `countMax` set it draws `meetingsHeld` as a count against that max instead (the design's `meetCell`).
  */
 @Component({
@@ -24,6 +30,8 @@ export class EngagementAttendanceBarComponent {
   public readonly meetingsHeld = input.required<number | null>();
   /** Count mode: the largest count in the table, which fills the track. */
   public readonly countMax = input<number | null>(null);
+  /** The row's group-level rule; groups without a level of their own take the general one. */
+  public readonly rule = input<HealthMetricsEngagementAttendanceRule>(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_RULE);
 
   private readonly countMode = computed(() => this.countMax() !== null);
 
@@ -33,7 +41,8 @@ export class EngagementAttendanceBarComponent {
       : formatHealthMetricsEngagementAttendance(this.attendancePct(), this.meetingsHeld())
   );
   protected readonly fillClass = computed(
-    () => HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[this.countMode() ? 'ok' : resolveHealthMetricsEngagementAttendanceTone(this.attendancePct())]
+    () =>
+      HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[this.countMode() ? 'ok' : resolveHealthMetricsEngagementAttendanceTone(this.attendancePct(), this.rule())]
   );
   // Mirrors the label's own rule rather than reading its text: below the confidence threshold a
   // filled bar would read as a real measurement, and a copy change must not silently zero the bar.

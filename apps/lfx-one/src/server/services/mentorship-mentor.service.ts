@@ -68,7 +68,7 @@ import {
 import { buildMentorshipUpstreamMentorProfileUpdate } from '../helpers/mentorship-mentor-profile-update.helper';
 import {
   escapeMentorshipIlikeSearch,
-  mapMentorshipMentorInvitedProgramIds,
+  mapMentorshipMentorInvitations,
   mapMentorshipMentorOpenProgram,
   mapMentorshipMentorProgramRequests,
 } from '../helpers/mentorship-mentor-request.helper';
@@ -161,7 +161,7 @@ export class MentorshipMentorService {
 
   /**
    * The caller's own mentor `program_members` rows, as request rows with their status folded for the mentor.
-   * Invited rows are not requests, so they are left out of `data`; their programs go in `invitedProgramIds`.
+   * Invited rows are not requests, so they are left out of `data` and go in `invitations`.
    */
   public async getMentorRequests(req: Request): Promise<MentorshipMentorProgramRequestsResponse> {
     logger.debug(req, 'mentorship_get_mentor_requests', 'Loading mentor program requests');
@@ -169,13 +169,13 @@ export class MentorshipMentorService {
       member_type: 'mentor',
     });
     const data = mapMentorshipMentorProgramRequests(memberships);
-    const invitedProgramIds = mapMentorshipMentorInvitedProgramIds(memberships);
+    const invitations = mapMentorshipMentorInvitations(memberships);
     logger.debug(req, 'mentorship_get_mentor_requests', 'Mentor program requests loaded', {
       count: data.length,
-      invited: invitedProgramIds.length,
+      invited: invitations.length,
       dropped: memberships.length - data.length,
     });
-    return { data, invitedProgramIds };
+    return { data, invitations };
   }
 
   /**
@@ -197,6 +197,20 @@ export class MentorshipMentorService {
       this.microserviceProxy,
       req,
       `${MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH}/${encodeURIComponent(requestId)}/withdraw`,
+      'POST'
+    );
+  }
+
+  /**
+   * Accepts or declines one of the caller's mentor invitations by its `program_members` id, the in-app
+   * counterpart of the emailed token. Upstream's 404 passes through when the row is not the caller's, and
+   * its 409 once the invitation is no longer open.
+   */
+  public async respondToMentorInvitation(req: Request, invitationId: string, decision: MentorshipMentorInviteDecision): Promise<void> {
+    await proxyMentorshipRequest<unknown>(
+      this.microserviceProxy,
+      req,
+      `${MENTORSHIP_ME_PROGRAM_MEMBERSHIPS_PATH}/${encodeURIComponent(invitationId)}/${decision}`,
       'POST'
     );
   }

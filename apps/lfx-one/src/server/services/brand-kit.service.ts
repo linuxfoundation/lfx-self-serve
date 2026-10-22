@@ -10,6 +10,8 @@ import {
   BrandKitStoredResponse,
   MktgRunAnswer,
   MktgRunQuestion,
+  MktgGenerationAttribution,
+  MktgRevisionRef,
 } from '@lfx-one/shared/interfaces';
 import {
   brandKitQuestionsId,
@@ -18,9 +20,10 @@ import {
   buildMktgRunActivity,
   extractBrandKitQuestions,
   extractBrandKitRefusal,
-  extractMktgAgentTexts,
+  extractMktgCurrentTurnAgentTexts,
+  mktgFailureAfterQuestions,
   extractMktgEnvelopeCandidates,
-  extractMktgToolResults,
+  extractMktgCurrentTurnToolResults,
   renderBrandKitAnswersText,
   renderBrandKitFormText,
   validateBrandKitEnvelope,
@@ -78,10 +81,14 @@ export class BrandKitService {
    * layer and recorded as a revision of the project's Brand Kit document,
    * whose approved current is what plain and sidecar stored reads serve.
    */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
 
   /** Brand Kit knobs for the shared persistence layer: key prefix, size cap, log namespace. */
   private readonly artifactSpec = MKTG_ARTIFACT_SPECS['brand-kit'];
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /** Structured `agent_input` transport, default OFF (Guild coerces objects to JSON text before the agent's preprocess). */
   private get structuredAgentInputEnabled(): boolean {
@@ -98,7 +105,8 @@ export class BrandKitService {
     answers: Record<string, string>,
     logoFiles: BrandKitLogoFile[],
     projectUid: string | undefined,
-    guildAgentHandle: string
+    guildAgentHandle: string,
+    expectedFramework?: MktgRevisionRef
   ): Promise<string> {
     const payload = buildBrandKitFormPayload(answers, { logoFiles, projectUid });
 
@@ -113,9 +121,12 @@ export class BrandKitService {
       has_project: !!projectUid,
     });
 
-    return this.structuredAgentInputEnabled
+    const framework = await this.documentStore.captureFramework(req, projectUid, payload.messaging_framework, expectedFramework);
+    const sessionId = await (this.structuredAgentInputEnabled
       ? this.guildService.createSession(req, { agentInput: payload, handle: guildAgentHandle })
-      : this.guildService.createSession(req, { message: renderBrandKitFormText(payload), handle: guildAgentHandle });
+      : this.guildService.createSession(req, { message: renderBrandKitFormText(payload), handle: guildAgentHandle }));
+    await this.documentStore.rememberGenerationFramework(req, this.artifactSpec.agentKey, projectUid, sessionId, framework);
+    return sessionId;
   }
 
   /**
@@ -133,18 +144,14 @@ export class BrandKitService {
   }
 
   /**
-   * Fetch the session's current result: `ready` once a valid envelope appears
-   * in the event stream, with the kit the page renders, the Markdown
-   * rendering the store keeps and (when the write succeeded) the persistence
-   * receipt of the stored revision; `questions` whenever the session holds a
-   * questions block and no valid envelope yet — the LATEST block the agent
-   * wrote, reported on every poll until a newer block or the envelope
-   * appears, with a `questionsId` so the run shell ignores the block it
-   * already answered; `refused` when the agent ended the session with its
-   * refusal reply instead of running (brand-kit-output.md §2d), the reply
-   * as the requester reads it; `pending` otherwise. `projectUid` decides the storage
-   * partition and is entitlement-checked before anything is written; without
-   * it the kit is still returned, just not stored.
+   * Read only the latest queued turn's finalize results and agent texts.
+   * `ready` carries the validated kit, its Markdown rendering and, after a
+   * successful write, the exact revision receipt. Otherwise a refusal in the
+   * current turn takes precedence over questions. `questions` carries the latest unanswered
+   * block and its `questionsId`; a later real reply ends that pause. `failed`
+   * means the runtime ended without a valid asset or an open questions pause;
+   * `pending` means it is still running. Without `projectUid` the kit is not
+   * stored; with it, writer entitlement is checked before persistence.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<BrandKitResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
@@ -154,12 +161,16 @@ export class BrandKitService {
 
     if (!envelope) {
       const questions = this.findLatestQuestions(req, payloads);
-      if (questions) {
-        return { status: 'questions', questions, questionsId: brandKitQuestionsId(questions), activity };
-      }
       const reply = this.findRefusal(req, payloads);
       if (reply) {
         return { status: 'refused', reply, activity };
+      }
+      const outcome = mktgFailureAfterQuestions(payloads, (text) => !!extractBrandKitQuestions(text));
+      if (outcome) {
+        return { status: 'failed', failureText: outcome.replyText, activity };
+      }
+      if (questions) {
+        return { status: 'questions', questions, questionsId: brandKitQuestionsId(questions), activity };
       }
       return { status: 'pending', activity };
     }
@@ -203,14 +214,12 @@ export class BrandKitService {
    * one: the raw payloads are chronological and so are the agent's texts
    * within each, so the last block found is the latest. Only the agent's own
    * text turns are read — never a tool result, where a fetched page could
-   * plant a block, and never a user event, which `getRawEventPayloads` drops.
+   * plant a block, and never user content, which becomes a content-free turn marker.
    */
   private findLatestQuestions(req: Request, payloads: string[]): MktgRunQuestion[] | null {
     let latest: MktgRunQuestion[] | null = null;
-    for (const payload of payloads) {
-      for (const text of extractMktgAgentTexts(payload)) {
-        latest = extractBrandKitQuestions(text) ?? latest;
-      }
+    for (const text of extractMktgCurrentTurnAgentTexts(payloads)) {
+      latest = extractBrandKitQuestions(text) ?? latest;
     }
     if (latest) {
       logger.debug(req, 'brand_kit_result', 'The agent is asking questions', { questions: latest.length, keys: latest.map((question) => question.key) });
@@ -226,16 +235,17 @@ export class BrandKitService {
    * tool result. Null while the agent is running or asking.
    */
   private findRefusal(req: Request, payloads: string[]): string | null {
-    for (const payload of payloads) {
-      for (const text of extractMktgAgentTexts(payload)) {
-        const reply = extractBrandKitRefusal(text);
-        if (reply) {
-          logger.info(req, 'brand_kit_result', 'The agent refused the run', { reply_chars: reply.length });
-          return reply;
-        }
+    let latest: string | null = null;
+    for (const text of extractMktgCurrentTurnAgentTexts(payloads)) {
+      if (extractBrandKitQuestions(text)) {
+        latest = null;
       }
+      latest = extractBrandKitRefusal(text) ?? latest;
     }
-    return null;
+    if (latest) {
+      logger.debug(req, 'brand_kit_result', 'The agent refused the run', { reply_chars: latest.length });
+    }
+    return latest;
   }
 
   /**
@@ -249,7 +259,7 @@ export class BrandKitService {
   }
 
   /**
-   * The authoritative envelope of the session: the LATEST valid result of the
+   * The latest queued turn's authoritative envelope: the LATEST valid result of the
    * agent's finalize tool (`finalize_brand_kit`), read only from that tool's
    * result events. The raw payloads are chronological, so a later valid
    * finalize (the agent fixed a gate failure and finalized again) supersedes
@@ -262,29 +272,27 @@ export class BrandKitService {
     let candidateCount = 0;
     let invalidCount = 0;
 
-    for (const payload of payloads) {
-      for (const resultText of extractMktgToolResults(payload, BRAND_KIT_FINALIZE_TOOL)) {
-        for (const candidate of extractMktgEnvelopeCandidates(resultText, BRAND_KIT_CONTRACT_ID)) {
-          candidateCount++;
-          const result = validateBrandKitEnvelope(candidate);
-          if (!result.valid) {
-            invalidCount++;
-            logger.debug(req, 'brand_kit_result', 'Rejected envelope candidate', { errors: result.errors });
-            continue;
-          }
-          // Safe: validateBrandKitEnvelope passed every schema gate.
-          const envelope = candidate as BrandKitEnvelope;
-          const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
-          if (recomputedSha !== envelope.content_sha256) {
-            invalidCount++;
-            logger.warning(req, 'brand_kit_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
-              expected: envelope.content_sha256,
-              recomputed: recomputedSha,
-            });
-            continue;
-          }
-          latest = envelope;
+    for (const resultText of extractMktgCurrentTurnToolResults(payloads, BRAND_KIT_FINALIZE_TOOL)) {
+      for (const candidate of extractMktgEnvelopeCandidates(resultText, BRAND_KIT_CONTRACT_ID)) {
+        candidateCount++;
+        const result = validateBrandKitEnvelope(candidate);
+        if (!result.valid) {
+          invalidCount++;
+          logger.debug(req, 'brand_kit_result', 'Rejected envelope candidate', { errors: result.errors });
+          continue;
         }
+        // Safe: validateBrandKitEnvelope passed every schema gate.
+        const envelope = candidate as BrandKitEnvelope;
+        const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
+        if (recomputedSha !== envelope.content_sha256) {
+          invalidCount++;
+          logger.warning(req, 'brand_kit_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
+            expected: envelope.content_sha256,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
+        latest = envelope;
       }
     }
 

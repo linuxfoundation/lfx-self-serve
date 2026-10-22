@@ -32,14 +32,16 @@ import { concat, defer, Observable, of, switchMap, timer } from 'rxjs';
  *
  * The status dropdown saves through `MenteeTaskStatusService`. While a change is saving the select
  * is read-only and a spinner shows beside it; on any failure the control returns to the last saved
- * status. Which options are enabled, and the hint that explains a disabled one, come from the shared
+ * status. A status change and a file change never run at once, since both move the task's status upstream. Which options are enabled, and the hint that explains a disabled one, come from the shared
  * `getMentorshipMenteeTaskStatusOptions` util. The hint is wired to the combobox through
  * `ariaLabelledBy`, because PrimeNG marks neither disabled options nor a read-only select for
  * assistive technology.
  *
  * File actions go through `MentorshipTaskFileService`. A task that needs a file shows Upload until one is
- * stored, and Submitted stays disabled until then. A stored file can be downloaded; it can be replaced
- * until the reviewer completes the task, and removed only before the task is submitted, as upstream allows.
+ * stored, and Submitted stays disabled until then. Upstream marks the task submitted with every upload, so the
+ * row holds Submitted until the refresh that follows carries it. A submitted task can go back to In Progress until the
+ * reviewer completes it. A stored file can be downloaded; it can be replaced until the reviewer completes
+ * the task, and removed only while the task is not submitted, as upstream allows.
  * Once a task is past due (the end of its due date's UTC day), Submitted and every file change are closed.
  * The row re-reads the clock whenever the due date changes and again at its cutoff, so a page left open
  * across it locks without a reload.
@@ -88,6 +90,11 @@ export class MenteeTaskRowComponent {
   protected readonly statusState: Signal<MentorshipMenteeTaskStatusOptionsState> = computed(() => getMentorshipMenteeTaskStatusOptions(this.effectiveTask()));
   protected readonly statusLabelId: Signal<string> = computed(() => `mentee-task-status-label-${this.task().id}`);
   protected readonly statusHintId: Signal<string> = computed(() => `mentee-task-status-hint-${this.task().id}`);
+  /**
+   * True while either a status change or a file change is in flight. Both move the task's status upstream, so they run one
+   * at a time: responses settling out of order could otherwise leave the row holding a status upstream no longer has.
+   */
+  protected readonly busy: Signal<boolean> = computed(() => this.saving() || this.fileSaving());
   /** Upload is closed once the task is past due; the status hint, which then shows, says why. */
   protected readonly uploadBlocked: Signal<boolean> = computed(() => this.effectiveTask().pastDue);
   /** A stored file can be replaced until the reviewer completes the task or it is past due. */
@@ -115,7 +122,8 @@ export class MenteeTaskRowComponent {
     const current = this.effectiveTask();
     const saved = normalizeMentorshipMenteeTaskStatus(current.status);
     const requested = this.form().controls[current.id]?.value;
-    if (!isMentorshipMenteeUpdatableTaskStatus(requested) || requested === saved) {
+    // A file change in flight will move the status itself, so a change picked meanwhile is reverted rather than raced.
+    if (this.fileSaving() || !isMentorshipMenteeUpdatableTaskStatus(requested) || requested === saved) {
       this.setControl(current.id, saved);
       return;
     }
@@ -125,18 +133,31 @@ export class MenteeTaskRowComponent {
     this.taskStatusService.changeStatus(current.id, requested).subscribe((changed) => this.onStatusSettled(current.id, requested, changed));
   }
 
-  /** Uploads the picked file, which replaces any stored one. The input is cleared so the same file can be picked again. */
+  /**
+   * Uploads the picked file, which replaces any stored one and marks the task submitted upstream. The input is cleared so
+   * the same file can be picked again.
+   */
   protected onFileSelected(input: HTMLInputElement): void {
     const file = input.files?.[0];
     input.value = '';
-    if (!file || this.fileSaving()) return;
+    if (!file || this.busy()) return;
+    const taskId = this.task().id;
     this.fileSaving.set(true);
     // No takeUntilDestroyed: the toast and cache invalidation must run even if the row is destroyed mid-flight.
-    this.taskFileService.upload(this.task().id, file).subscribe(() => this.fileSaving.set(false));
+    this.taskFileService.upload(taskId, file).subscribe((saved) => {
+      if (saved) {
+        // Upstream marked the task submitted, so hold that until the refresh lands, as a status change does. Holding
+        // nothing would show the stale status meanwhile; keeping a held reopen would outlive a refresh that brings back
+        // the very `submitted` status it started from.
+        this.confirmed.set({ from: normalizeMentorshipMenteeTaskStatus(this.task().status), to: 'submitted' });
+        this.setControl(taskId, 'submitted');
+      }
+      this.fileSaving.set(false);
+    });
   }
 
   protected onRemoveFile(): void {
-    if (this.fileSaving()) return;
+    if (this.busy()) return;
     this.fileSaving.set(true);
     this.taskFileService.remove(this.task().id).subscribe(() => this.fileSaving.set(false));
   }

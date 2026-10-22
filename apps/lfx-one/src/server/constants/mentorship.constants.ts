@@ -230,7 +230,7 @@ export const MENTORSHIP_MENTEE_HISTORY_STATUS_ORDER: readonly MentorshipUpstream
  * How a mentor's own program membership status reads on their request list. `requested` is the
  * mentor's own ask and `pending` an administrator's hold, so both are still waiting on the program,
  * and `approved` is an accepted mentor. `invited` is left out: an invitation is not a
- * request the mentor raised, and mentor invites are their own story, so those rows are not listed.
+ * request the mentor raised, so those rows are listed as invitations instead.
  */
 export const MENTORSHIP_MENTOR_REQUEST_STATUS_MAP: Readonly<Partial<Record<MentorshipUpstreamProgramMemberStatus, MentorshipMentorStatus>>> = {
   requested: 'pending',

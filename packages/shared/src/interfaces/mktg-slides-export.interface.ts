@@ -115,16 +115,20 @@ export interface MktgSlidesExportValidationResult {
  * document is its "last export", whose deck an update refreshes. Holds no
  * personal identity.
  */
-export interface MktgSlidesExportRecord {
-  schema: string;
-  /** The SERVER-resolved project uid. */
-  project: string;
+export interface MktgSlidesExportRecord extends MktgSlidesExportDeckRecord {
   agentKey: MktgSlidesExportAgentKey;
   documentId: string;
   /** The revision exported, its number in Documents, and the hash of its content. */
   revisionId: string;
   revisionNumber: number;
   contentSha256: string;
+}
+
+/** Deck metadata shared by document and family export records. */
+export interface MktgSlidesExportDeckRecord {
+  schema: string;
+  /** The SERVER-resolved project uid. */
+  project: string;
   mode: MktgSlidesExportMode;
   deckId: string;
   link: string;
@@ -184,12 +188,15 @@ export interface MktgSlidesExportResultRequest extends MktgSlidesExportTarget {
 }
 
 /** Response of a result poll. */
-export type MktgSlidesExportResultResponse =
+export type MktgSlidesExportResultResponse = MktgSlidesExportPollResponse<MktgSlidesExportRecord>;
+
+/** The same poll states for document and family record scopes. */
+export type MktgSlidesExportPollResponse<TRecord extends MktgSlidesExportDeckRecord> =
   | { status: 'pending' }
-  | { status: 'ready'; record: MktgSlidesExportRecord }
+  | { status: 'ready'; record: TRecord }
   | { status: 'failed'; failure: MktgSlidesExportFailure; message: string; deckLink: string | null };
 
-/** Last export and newest revision identity for freshness comparison, not exported-byte selection. */
+/** Last export and approved-current identity for freshness comparison, not exported-byte selection. */
 export interface MktgSlidesExportLastResponse {
   last: MktgSlidesExportRecord | null;
   latestRevision: MktgSlidesExportRevisionRef | null;
@@ -259,6 +266,9 @@ export interface MktgSlidesExportStarted {
   mode: MktgSlidesExportMode;
   logoNote: MktgSlidesExportLogoNote | null;
 }
+
+/** Export scope retained by server-side background poll logs. */
+export type MktgSlidesExportLogContext = { agent: MktgSlidesExportAgentKey } | { family: string };
 
 /** The revision a result poll keeps the deck with (server-side). */
 export interface MktgSlidesExportResultContext {

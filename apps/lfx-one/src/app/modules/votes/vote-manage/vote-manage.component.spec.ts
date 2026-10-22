@@ -52,6 +52,7 @@ describe('VoteManageComponent', () => {
     confirmSpeculativeVote: ReturnType<typeof vi.fn>;
     discardSpeculativeVote: ReturnType<typeof vi.fn>;
     markVoteOpened: ReturnType<typeof vi.fn>;
+    markVoteCreated: ReturnType<typeof vi.fn>;
   };
 
   // Mutable route double — edit mode by default; create-mode tests call setRouteMode(null) before
@@ -129,6 +130,7 @@ describe('VoteManageComponent', () => {
       confirmSpeculativeVote: vi.fn().mockReturnValue(of({ vote: unenrichedVote(), opened: true })),
       discardSpeculativeVote: vi.fn(),
       markVoteOpened: vi.fn(),
+      markVoteCreated: vi.fn(),
     };
 
     TestBed.configureTestingModule({
@@ -313,7 +315,7 @@ describe('VoteManageComponent', () => {
       expect(fixture.componentInstance.confirmingOpenVote()).toBe(true);
     });
 
-    it('accept chains onto the speculation: success toast + navigate, and the service (not the component) marks the vote opened', async () => {
+    it('accept chains onto the speculation: success toast + navigate, and the service (not the component) marks the vote opened/created', async () => {
       const router = TestBed.inject(Router);
       const fixture = await submitFromValidForm();
 
@@ -324,8 +326,10 @@ describe('VoteManageComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
       expect(router.navigate).toHaveBeenCalledWith(['/votes']);
       expect(fixture.componentInstance.submitting()).toBe(false);
-      // markVoteOpened moved into the service's confirm chain (it must survive navigation).
+      // markVoteOpened and markVoteCreated both moved into the service's confirm chain (GH-4007
+      // round 2: marking from the component's own subscriber drops the carrier on fast navigation).
       expect(voteServiceMock.markVoteOpened).not.toHaveBeenCalled();
+      expect(voteServiceMock.markVoteCreated).not.toHaveBeenCalled();
       expect(voteServiceMock.discardSpeculativeVote).not.toHaveBeenCalled();
     });
 
@@ -546,6 +550,43 @@ describe('VoteManageComponent', () => {
 
       expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
       expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({ project_uid: SOURCE_PROJECT_UID });
+    });
+
+    // GH-4007: a cloned vote previously went missing from the votes list until a manual page
+    // reload, because the search index hadn't caught up yet. Clone shares submitVote()'s create
+    // path exactly, so confirming creation marks the new vote the same way a plain create does —
+    // now inside the service's own confirm chain (see vote.service.spec.ts), so this component test
+    // only needs to verify the clone flow reaches confirmSpeculativeVote, not the marking itself.
+    it('reaches confirmSpeculativeVote for the cloned vote so it gets marked created the same way a plain create does (GH-4007)', async () => {
+      const SOURCE_PROJECT_UID = 'source-project-uid';
+      const createdVote = { uid: 'new-cloned-vote-uid', project_uid: SOURCE_PROJECT_UID } as unknown as Vote;
+      voteServiceMock.confirmSpeculativeVote.mockReturnValue(of({ vote: createdVote, opened: true }));
+      activeContext.set({ uid: SOURCE_PROJECT_UID, slug: 'source-project', name: 'Source Project' });
+      getProject.mockReturnValue(of({ uid: SOURCE_PROJECT_UID, writer: true }));
+      fetchVote.mockReturnValue(of(sourceVote({ project_uid: SOURCE_PROJECT_UID, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      let capturedConfirmation: Confirmation | null = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation: Confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+
+      const form = fixture.componentInstance.form();
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+
+      fixture.componentInstance.onSubmit();
+      (capturedConfirmation as Confirmation | null)?.accept?.();
+
+      expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledTimes(1);
+      expect(fixture.componentInstance.submitting()).toBe(false);
     });
 
     // GH-3781 review (PRRT_kwDOPMiRQ86t4nFQ): fail closed rather than silently trusting the clone's own
@@ -867,6 +908,17 @@ describe('VoteManageComponent', () => {
 
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Cannot clone' }));
       expect(fixture.componentInstance.form().get('title')?.value).toBe('');
+      expect(fixture.componentInstance.form().disabled).toBe(false);
+    });
+
+    // #4075: majority is not in isRankedPollType's allowlist, so it's exactly as representable by
+    // this plain (non-ranked, non-anonymous) form as a generic poll — it must remain clonable.
+    it('clones a majority-poll-type source successfully: no warning, form patched', async () => {
+      fetchVote.mockReturnValue(of(sourceVote({ poll_type: PollType.MAJORITY, committee_uid: COMMITTEE_UID })));
+      const fixture = await createComponent();
+
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Cannot clone' }));
+      expect(fixture.componentInstance.form().get('title')?.value).toBe('Copy of Original board election');
       expect(fixture.componentInstance.form().disabled).toBe(false);
     });
 

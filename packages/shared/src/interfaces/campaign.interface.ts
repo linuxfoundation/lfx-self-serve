@@ -995,6 +995,25 @@ export interface CampaignImplementationDraft {
    */
   googleSitelinks?: CampaignSitelink[];
   /**
+   * Google's structured snippets, as the operator typed them.
+   *
+   * Held and restored on the same rule as {@link googleCallouts} and {@link googleSitelinks}: absent
+   * and empty agree, and a list saved under a non-Search channel is kept rather than discarded.
+   *
+   * Its LIFETIME is shorter than theirs, and deliberately so. This draft is in-memory scratch on the
+   * campaigns page: it survives switching away from the Implement tab and back, and nothing else. It
+   * is cleared on every hand-over from Planning and on Start Over, and a reload never had it.
+   *
+   * Callouts and sitelinks outlive that clear because they also exist on `CampaignBriefOutput` —
+   * they are GENERATED from the event page, so `briefWithCarriedExtensions` replays the operator's
+   * edits onto an incoming brief whose generated lists are the ones those edits were typed over.
+   * Snippets are typed by hand, have no brief counterpart, and are outside that carry: a re-generate
+   * or a Start Over drops them and the operator types them again. That is the accepted scope of this
+   * slice, not an oversight — a carry needs a generated baseline to compare against, and there is
+   * none until snippet generation exists.
+   */
+  googleStructuredSnippets?: CampaignStructuredSnippet[];
+  /**
    * The Google bidding section, as RAW form text — the same choice `googleCreatives` and
    * {@link microsoftCpcBid} make, and for the same reason: a draft hands the operator back the
    * form they left, and an empty string is "they have not filled this in", which is a different
@@ -2014,6 +2033,42 @@ export interface CampaignSitelink {
 }
 
 /**
+ * One Google structured snippet: a header and the list of things it enumerates, rendered under the
+ * text ad as a single "Header: value, value, value" line.
+ *
+ * Both fields are REQUIRED. A snippet carries no link of its own, so unlike {@link CampaignSitelink}
+ * there is no destination; what makes it servable is having a header and enough values, and upstream
+ * (`assets.go`'s `validateStructuredSnippets`) refuses the whole create when either is missing.
+ *
+ * `values` is bounded at BOTH ends — see {@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, which is counted
+ * after blanks and case-folded repeats are removed, so the length of this array is not the number
+ * upstream judges.
+ *
+ * `header` must be one of Google's predefined headers FOR THE CAMPAIGN'S LANGUAGE, a list Google
+ * publishes per locale; neither upstream nor this app checks membership. See
+ * {@link GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES}.
+ */
+export interface CampaignStructuredSnippet {
+  header: string;
+  values: string[];
+}
+
+/**
+ * The structured-snippet sub-form as the operator is filling it in, before it becomes a
+ * {@link CampaignStructuredSnippet}.
+ *
+ * `values` is ONE STRING here, not a list: the box is a textarea taking one value per line, the
+ * same shape the Google conversion-action textarea uses. Keeping the raw text rather than a parsed
+ * list is what lets a refused snippet stay on screen exactly as it was typed — trailing blank
+ * lines, repeats and all — so the warning the operator is being asked to act on still describes
+ * what they can see.
+ */
+export interface CampaignStructuredSnippetDraft {
+  header: string;
+  values: string;
+}
+
+/**
  * The radius unit a {@link CampaignProximityTarget} is measured in.
  *
  * Derived from {@link GOOGLE_ADS_RADIUS_UNITS} rather than written out again, so a unit added to
@@ -2281,6 +2336,13 @@ export interface CampaignCreateRequest {
    * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
    */
   sitelinks?: CampaignSitelink[];
+  /**
+   * The Google campaign's structured snippets — one "Header: value, value, value" line each,
+   * enumerating what the campaign offers rather than claiming anything about it.
+   *
+   * Omitted when empty and SEARCH ONLY, on the same rule as {@link callouts}.
+   */
+  structuredSnippets?: CampaignStructuredSnippet[];
   /**
    * How the Google campaign bids, and the numbers that go with the strategy it names.
    *

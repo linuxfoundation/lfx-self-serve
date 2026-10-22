@@ -48,6 +48,7 @@ import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
   isMeetingAttendeeListShared,
+  isSameOccurrenceId,
   isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
@@ -1331,6 +1332,52 @@ export class MeetingService {
   }
 
   /**
+   * Resends the meeting invitation to the authenticated user's own registrant record using their own bearer token.
+   * The caller's registrant is resolved server-side (by email or username) so the client never needs a registrant UID;
+   * upstream re-verifies ownership and returns 403 for anyone else's record, so the M2M token is used only for the lookup.
+   * A person can hold several rows for one meeting (a direct row plus rows from committees), and each would send its own
+   * email to the same address, so the invite is resent once, to the row `pickRegistrantToResend` chooses for the
+   * occurrence the caller is viewing.
+   * @param occurrenceId the occurrence the caller is viewing, when the surface has one; rows are scoped to an occurrence
+   * @returns the ID of the registrant the invitation was resent to
+   */
+  public async resendMeetingInvitationSelf(
+    req: Request,
+    meetingUid: string,
+    email: string | undefined,
+    username: string | undefined,
+    m2mToken: string,
+    occurrenceId?: string
+  ): Promise<string> {
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username, m2mToken);
+
+    if (registrants.length === 0) {
+      throw new ResourceNotFoundError('Meeting registration', meetingUid, {
+        operation: 'resend_meeting_invitation_self',
+        service: 'meeting_service',
+      });
+    }
+
+    const registrant = MeetingService.pickRegistrantToResend(registrants, occurrenceId);
+
+    logger.debug(req, 'resend_meeting_invitation_self', 'Resending meeting invitation to the authenticated user', {
+      meeting_id: meetingUid,
+      registrant_id: registrant.uid,
+      registrant_count: registrants.length,
+      occurrence_id: occurrenceId,
+    });
+
+    await this.microserviceProxy.proxyRequest<void>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${encodePathSegment(meetingUid)}/registrants/${encodePathSegment(registrant.uid)}/self_resend`,
+      'POST'
+    );
+
+    return registrant.uid;
+  }
+
+  /**
    * Fetches meeting join URL by meeting UID
    */
   public async getMeetingJoinUrl(req: Request, meetingUid: string, email?: string): Promise<MeetingJoinURL> {
@@ -1978,15 +2025,17 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_attachments', 'Fetching meeting attachments', { meeting_id: meetingUid, query_params: params });
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(
+    // Every page is read: attachments are filtered per occurrence in the browser, so a list cut off after the first
+    // page could hide an occurrence's materials behind other dates' ones. A partial list would do the same.
+    return fetchAllQueryResources<MeetingAttachment>(
       req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingAttachment>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...params,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
-
-    return resources.map((resource) => resource.data);
   }
 
   /**
@@ -2423,6 +2472,26 @@ export class MeetingService {
         ),
       { failOnPartial }
     );
+  }
+
+  /**
+   * Chooses which of the caller's own registrant rows to resend an invitation to.
+   * A row can be scoped to one occurrence (`occurrence_id`) or cover the whole series (none), and the invitation the
+   * meeting service sends is for that row's scope, so the row has to fit what the caller is looking at:
+   *  1. a row scoped to the occurrence being viewed (compared with `isSameOccurrenceId`, since the id the client holds
+   *     is in Unix seconds from Zoom/ITX while an indexed row may carry milliseconds, and `===` would miss it), then
+   *  2. a series-wide row, which covers every occurrence including the one being viewed, then
+   *  3. any row, when none fits (or no occurrence was given): the caller still gets an invitation rather than an error.
+   * Within the chosen group a direct row beats a committee-derived one. Past that the order is whatever the lookup
+   * returned, and that is arbitrary on purpose: every row for one caller is addressed to the caller's own email, so
+   * either sends the same person the same kind of message.
+   */
+  private static pickRegistrantToResend(registrants: MeetingRegistrant[], occurrenceId: string | undefined): MeetingRegistrant {
+    const scopedToViewed = occurrenceId ? registrants.filter((row) => isSameOccurrenceId(row.occurrence_id, occurrenceId)) : [];
+    const seriesWide = registrants.filter((row) => !row.occurrence_id);
+    const candidates = [scopedToViewed, seriesWide, registrants].find((group) => group.length > 0) ?? registrants;
+
+    return candidates.find((row) => row.type === 'direct') ?? candidates[0];
   }
 
   /**

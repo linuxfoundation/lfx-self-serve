@@ -1941,6 +1941,51 @@ export const GOOGLE_ADS_MAX_SITELINK_DESCRIPTION_RUNES = 35;
 export const GOOGLE_ADS_MAX_FINAL_URL_BYTES = 2084;
 
 /**
+ * Upstream's own bound on a Google Ads structured-snippet list (`assets.go`'s
+ * `maxStructuredSnippets`), checked on the raw slice before any entry is inspected — the same shape
+ * as {@link GOOGLE_ADS_MAX_CALLOUTS}, at half the count.
+ */
+export const GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS = 10;
+
+/**
+ * Upstream's per-snippet header bound (`assets.go`'s `maxSnippetHeaderRunes`), in RUNES.
+ *
+ * Count it with the spread (`[...header].length`), never `.length` — see
+ * {@link GOOGLE_ADS_MAX_CALLOUT_TEXT_RUNES} for why a UTF-16 count over-refuses here.
+ *
+ * The LENGTH is all that is bounded. Google also requires the header to be one of its predefined
+ * ones, but that list is PER LOCALE — "Brands" in English, "Marcas" in Spanish — so upstream
+ * validates the header's shape and not its membership, and this mirror does the same. A hardcoded
+ * English list would refuse every correct non-English header, and refusing a create Google would
+ * have accepted is the more expensive error. Same reasoning as the numeric geo-target constant ids.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_HEADER_RUNES = 25;
+
+/**
+ * Upstream's per-value bound (`assets.go`'s `maxSnippetValueRunes`), in RUNES, applied to each value
+ * separately rather than to their total.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_VALUE_RUNES = 25;
+
+/**
+ * How many values upstream requires on a snippet (`assets.go`'s `minSnippetValues`), counted AFTER
+ * blanks are dropped and case-folded repeats are collapsed.
+ *
+ * The order matters and is upstream's own: "three values of which two are the same renders as two,
+ * which is below what Google accepts". So a snippet listing `Go`, `go` and `Rust` is refused for
+ * having two values, not for repeating one — and a guard that counted the raw list would report it
+ * as acceptable and let the create fail upstream as the opaque "platform campaign creation failed".
+ */
+export const GOOGLE_ADS_MIN_SNIPPET_VALUES = 3;
+
+/**
+ * Upstream's ceiling on one snippet's values (`assets.go`'s `maxSnippetValues`), counted on the same
+ * de-duplicated list as {@link GOOGLE_ADS_MIN_SNIPPET_VALUES} — so a list over the ceiling only
+ * because it repeats a value is NOT refused.
+ */
+export const GOOGLE_ADS_MAX_SNIPPET_VALUES = 10;
+
+/**
  * Micros per whole currency unit, the denomination google-ads bills budgets in.
  *
  * Shared rather than inlined at the guard because the guard's whole purpose is to compute the
@@ -3384,6 +3429,43 @@ export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
  */
 export const MAX_GOOGLE_CREATIVE_LIST_ENTRIES = 100;
 export const MAX_GOOGLE_CREATIVE_FIELD_LENGTH = 2048;
+
+/**
+ * The same resource bound for a list nested INSIDE a list entry, where the widest legitimate list
+ * is not the one a cap names.
+ *
+ * `structuredSnippets[].values` is the only such list today, and upstream puts no cap on its raw
+ * length at all: `validateStructuredSnippets` skips blanks and collapses case-folded repeats
+ * BEFORE counting, so its 3..10 bound is on DISTINCT values
+ * ({@link GOOGLE_ADS_MIN_SNIPPET_VALUES}, {@link GOOGLE_ADS_MAX_SNIPPET_VALUES}) and a hundred
+ * lines of `Alpha` / `Beta` / `Gamma` is a valid three-value snippet. The Implementation tab
+ * stores what the operator typed rather than the collapsed list, so a duplicate-heavy paste
+ * reaches the BFF at its raw length — which is why the 100 above, sized against lists whose caps
+ * are 20 and 60, would refuse a create upstream would have accepted.
+ *
+ * Far above any paste an operator produces, so the invariant the bound above states — a resource
+ * ceiling never refuses what upstream accepts — holds here too, while a pathological body is still
+ * stopped before `createConfigEnvelope` walks it. Only the one field named above is measured against
+ * it: every other nested name upstream decodes as a plain `string`, so an array under one of those
+ * is a body upstream refuses outright and has no over-refusal to relax.
+ */
+export const MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES = 1000;
+
+/**
+ * The ceiling on nested entries SUMMED across one list, because per-list ceilings multiply: the
+ * outer list is bounded at {@link MAX_GOOGLE_CREATIVE_LIST_ENTRIES}, so the bound above on its own
+ * would admit a hundred thousand nested strings for the normalisers to trim and re-allocate one at
+ * a time — the hazard the flat ceiling above names, back at the same order of magnitude.
+ *
+ * Derived rather than chosen, so it cannot refuse what upstream accepts: `validateStructuredSnippets`
+ * refuses more than {@link GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS} snippets on the RAW `len()`, before it
+ * reads a single one, so no body upstream accepts can carry more than that many snippets — and with
+ * each snippet's values bounded above, this product is the most nested entries such a body can hold.
+ * A smaller round number would not be: three snippets of a thousand-line duplicate-heavy paste is a
+ * create upstream takes, and a bound of a few thousand would refuse it, which is the very
+ * over-refusal this file exists to prevent.
+ */
+export const MAX_GOOGLE_CREATIVE_NESTED_LIST_TOTAL = MAX_GOOGLE_CREATIVE_NESTED_LIST_ENTRIES * GOOGLE_ADS_MAX_STRUCTURED_SNIPPETS;
 
 /**
  * The Google channels this application can ask campaign-service to create, in the order the

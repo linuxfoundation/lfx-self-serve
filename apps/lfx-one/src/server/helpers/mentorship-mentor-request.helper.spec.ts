@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { ServiceValidationError } from '../errors';
 import {
   escapeMentorshipIlikeSearch,
-  mapMentorshipMentorInvitedProgramIds,
+  mapMentorshipMentorInvitations,
   mapMentorshipMentorOpenProgram,
   mapMentorshipMentorProgramRequests,
   parseMentorshipMentorOpenProgramsQuery,
@@ -98,14 +98,17 @@ describe('mapMentorshipMentorProgramRequests', () => {
   });
 });
 
-describe('mapMentorshipMentorInvitedProgramIds', () => {
-  it('returns the program of each invited row only', () => {
-    const ids = mapMentorshipMentorInvitedProgramIds([
-      { ...membership, program_id: 'prog-1', status: 'invited' },
-      { ...membership, program_id: 'prog-2', status: 'requested' },
-      { ...membership, program_id: 'prog-3', status: 'invited' },
-      { ...membership, program_id: 'prog-4', status: undefined },
+describe('mapMentorshipMentorInvitations', () => {
+  it('maps each invited row only, with its id and program', () => {
+    const invitations = mapMentorshipMentorInvitations([
+      { ...membership, id: 'member-1', program_id: 'prog-1', program_name: 'Program 1', status: 'invited' },
+      { ...membership, id: 'member-2', program_id: 'prog-2', status: 'requested' },
+      { ...membership, id: 'member-3', program_id: 'prog-3', program_name: 'Program 3', status: 'invited' },
+      { ...membership, id: 'member-4', program_id: 'prog-4', status: undefined },
     ]);
-    expect(ids).toEqual(['prog-1', 'prog-3']);
+    expect(invitations).toEqual([
+      { id: 'member-1', programId: 'prog-1', programName: 'Program 1' },
+      { id: 'member-3', programId: 'prog-3', programName: 'Program 3' },
+    ]);
   });
 });

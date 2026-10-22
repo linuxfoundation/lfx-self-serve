@@ -110,11 +110,11 @@ export const HEALTH_METRICS_TRAINING_DELIVERY_TYPE_LABELS: Readonly<Record<strin
   Bundle: 'Bundles',
 };
 
-/** Types whose zero on a measure is structural: Bundle is a purchase container, edX revenue is never captured. */
-export const HEALTH_METRICS_TRAINING_STRUCTURAL_ZERO_TYPES: Readonly<Record<HealthMetricsTrainingEnrollmentMetric, readonly string[]>> = {
-  enrollments: ['Bundle'],
-  revenue: ['edX'],
-};
+/** Types left out of revenue by type: edX revenue is never captured, so its zero is coverage, not free training. */
+export const HEALTH_METRICS_TRAINING_REVENUE_UNCAPTURED_TYPES: readonly string[] = ['edX'];
+
+/** Years the enrollment trend draws, ending with the current one; the view now goes back to 2016. */
+export const HEALTH_METRICS_TRAINING_TREND_YEARS = 6;
 
 /** Read-failed / no-foundation value: no rows and no scope total, so nothing reads as zero courses. */
 export const HEALTH_METRICS_TRAINING_COURSES_UNMEASURED: HealthMetricsTrainingCourses = { rows: [], totalRecords: 0, scopeTotal: null };

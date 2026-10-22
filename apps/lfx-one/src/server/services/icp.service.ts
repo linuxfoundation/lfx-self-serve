@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { ICP_CONTRACT_ID, ICP_FINALIZE_TOOL, ICP_MAX_DOCUMENT_BYTES, ICP_PROJECT_UID_REGEX } from '@lfx-one/shared/constants';
-import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgRunPersistReceipt } from '@lfx-one/shared/interfaces';
+import { IcpEnvelope, IcpGenerationStart, IcpResultResponse, MktgRunPersistReceipt, MktgGenerationAttribution } from '@lfx-one/shared/interfaces';
 import {
   buildIcpFormPayload,
   buildIcpObjectKey,
   extractIcpEnvelopeCandidates,
-  extractMktgToolResults,
+  extractMktgCurrentTurnToolResults,
+  getMktgSessionOutcome,
   renderIcpFormText,
   validateIcpEnvelope,
 } from '@lfx-one/shared/utils';
@@ -59,7 +60,11 @@ export class IcpService {
   private readonly objectStore = new ObjectStoreService();
   private readonly projectService = new ProjectService();
   /** Records every persisted ICP document as a revision of the project's ICP document (the Documents area). */
-  private readonly documentStore = new MktgDocumentStoreService();
+  private readonly documentStore: MktgDocumentStoreService;
+
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documentStore = new MktgDocumentStoreService(attribution);
+  }
 
   /**
    * Whether the typed form payload is sent as the Guild session's structured
@@ -121,7 +126,8 @@ export class IcpService {
   /**
    * Fetch the session's current result: `pending` until a valid envelope
    * appears in the event stream, then `ready` with the validated document and
-   * (when the object-store write succeeds) its persistence receipt.
+   * (when the object-store write succeeds) its persistence receipt. A finished
+   * runtime with no valid envelope returns `failed` with its plain-text reply.
    *
    * `projectUid` is the LFX project the run is scoped to — it decides the
    * storage partition and is entitlement-checked before anything is written
@@ -134,7 +140,8 @@ export class IcpService {
     const envelope = this.findAuthoritativeEnvelope(req, payloads);
 
     if (!envelope) {
-      return { status: 'pending' };
+      const outcome = getMktgSessionOutcome(payloads);
+      return outcome.ended ? { status: 'failed', failureText: outcome.replyText } : { status: 'pending' };
     }
 
     logger.info(req, 'icp_result', 'ICP document ready', {
@@ -329,35 +336,33 @@ export class IcpService {
     let candidateCount = 0;
     let invalidCount = 0;
 
-    for (const payload of payloads) {
-      for (const resultText of extractMktgToolResults(payload, ICP_FINALIZE_TOOL)) {
-        for (const candidate of extractIcpEnvelopeCandidates(resultText)) {
-          candidateCount++;
-          const result = validateIcpEnvelope(candidate);
-          if (!result.valid) {
-            invalidCount++;
-            logger.debug(req, 'icp_result', 'Rejected envelope candidate', { errors: result.errors });
-            continue;
-          }
-          // Safe: validateIcpEnvelope passed every schema and structure gate.
-          const envelope = candidate as IcpEnvelope;
+    for (const resultText of extractMktgCurrentTurnToolResults(payloads, ICP_FINALIZE_TOOL)) {
+      for (const candidate of extractIcpEnvelopeCandidates(resultText)) {
+        candidateCount++;
+        const result = validateIcpEnvelope(candidate);
+        if (!result.valid) {
+          invalidCount++;
+          logger.debug(req, 'icp_result', 'Rejected envelope candidate', { errors: result.errors });
+          continue;
+        }
+        // Safe: validateIcpEnvelope passed every schema and structure gate.
+        const envelope = candidate as IcpEnvelope;
 
-          // Recompute the sha over the UTF-8 bytes and require equality —
-          // envelope integrity rests wholly on the BFF. A mismatch
-          // disqualifies THIS candidate only.
-          const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
-          if (recomputedSha !== envelope.content_sha256) {
-            invalidCount++;
-            logger.warning(req, 'icp_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
-              expected: envelope.content_sha256,
-              recomputed: recomputedSha,
-            });
-            continue;
-          }
+        // Recompute the sha over the UTF-8 bytes and require equality —
+        // envelope integrity rests wholly on the BFF. A mismatch
+        // disqualifies THIS candidate only.
+        const recomputedSha = createHash('sha256').update(Buffer.from(envelope.document_markdown, 'utf8')).digest('hex');
+        if (recomputedSha !== envelope.content_sha256) {
+          invalidCount++;
+          logger.warning(req, 'icp_result', 'Envelope content_sha256 does not match the document bytes — discarding candidate', {
+            expected: envelope.content_sha256,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
 
-          if (!best || envelope.version >= best.version) {
-            best = envelope;
-          }
+        if (!best || envelope.version >= best.version) {
+          best = envelope;
         }
       }
     }

@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { ExtendVoteDeadlineDialogComponent } from '@components/extend-vote-deadline-dialog/extend-vote-deadline-dialog.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -81,7 +82,8 @@ import { VoteReminderDialogComponent } from '../vote-reminder-dialog/vote-remind
     ConfirmDialogModule,
     EmptyStateComponent,
   ],
-  providers: [ConfirmationService],
+  // ExtendVoteDeadlineDialogComponent is deliberately not here — it's opened dynamically via DialogService.
+  providers: [ConfirmationService, DialogService],
   templateUrl: './votes-table.component.html',
 })
 export class VotesTableComponent {
@@ -145,6 +147,14 @@ export class VotesTableComponent {
   public readonly projectFilterChange = output<string | null>();
   public readonly statusTabSelected = output<string>();
   public readonly filtersReset = output<void>();
+  /**
+   * Fires immediately with the confirmed vote once extendVote() succeeds (GH-3823 review, @greptile-apps) —
+   * refresh.emit()'s search-index refetch can echo back a not-yet-reindexed (stale) deadline, which would
+   * otherwise leave an already-open results drawer showing the pre-extension deadline indefinitely, since its
+   * listVote input would see no change. A host feeding this table's votes into that drawer's listVote should
+   * apply this override until its own votes/refresh source catches up.
+   */
+  public readonly voteExtended = output<Vote>();
 
   // === Forms ===
   public searchForm = new FormGroup({
@@ -164,6 +174,12 @@ export class VotesTableComponent {
   protected readonly rowActionMenuOpen = signal(false);
   private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
   private readonly isResolvingMailingList = signal(false);
+  /**
+   * Overlays a just-extended deadline onto its row (GH-3661) — `extendVote()`'s success response lands
+   * here immediately rather than waiting on `refresh.emit()`'s possibly-stale search-index refetch.
+   * Self-healing: an effect below evicts an entry once the incoming `votes()` row shows the same value.
+   */
+  private readonly extendedDeadlines = signal<Map<string, Pick<Vote, 'end_time' | 'end_time_timezone'>>>(new Map());
 
   // === Computed Signals ===
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
@@ -197,6 +213,28 @@ export class VotesTableComponent {
         untracked(() => this.statusTab.set('all'));
       }
     });
+    // toObservable().subscribe() rather than effect() — effect() side-effect writes are disallowed in this
+    // codebase (per @cursor), matching the drawer's initVote() fix.
+    toObservable(this.votes)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((votes) => {
+        const overrides = this.extendedDeadlines();
+        if (overrides.size === 0) return;
+        const next = new Map(overrides);
+        let changed = false;
+        for (const vote of votes) {
+          const override = next.get(vote.uid);
+          // A later extension landing before this one's refresh must also evict the override — comparing
+          // timestamps (>=) rather than exact string equality (per @greptile-apps, @copilot-pull-request-reviewer).
+          if (override && new Date(vote.end_time).getTime() >= new Date(override.end_time).getTime()) {
+            next.delete(vote.uid);
+            changed = true;
+          }
+        }
+        if (changed) {
+          this.extendedDeadlines.set(next);
+        }
+      });
     // Only personal/client scope owns these options. Do not clear controls during a feed refresh.
     const availableGroups = computed(() => (this.lazy() || this.loading() ? null : this.groupOptions()));
     toObservable(availableGroups)
@@ -248,11 +286,20 @@ export class VotesTableComponent {
     event.stopPropagation();
     this.rowActionMenuVoteUid.set(vote.uid);
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'fa-light fa-link', command: () => this.copyVoteLink(vote.uid) }];
-    // Managers only, and only while the vote is open — upstream rejects reminders for any other status.
+    // Managers only, and only while the vote is open — upstream rejects reminders/extension for any
+    // other status. Gated on the vote's own writer flag, not project-level hasPMOAccess() — a
+    // committee writer without project write access can still extend their own vote's deadline
+    // (per @copilot-pull-request-reviewer).
     if (vote.writer === true && vote.status === PollStatus.ACTIVE) {
-      items.push({ label: 'Send reminder', icon: 'fa-light fa-envelope', command: () => this.openReminderDialog(vote) });
+      items.push({ label: 'Extend', icon: 'fa-light fa-calendar', command: () => this.onExtendDeadline(vote) });
       items.push({
-        label: 'Reminder mailing list',
+        label: 'Send reminder',
+        icon: 'fa-light fa-envelope',
+        tooltipOptions: { tooltipLabel: 'Opens a dialog to send reminders to eligible voters who have not voted yet', tooltipPosition: 'left' },
+        command: () => this.openReminderDialog(vote),
+      });
+      items.push({
+        label: 'Send reminder to mailing list',
         icon: 'fa-light fa-envelopes-bulk',
         tooltipOptions: { tooltipLabel: 'Opens your mail app to send a reminder email to the mailing list', tooltipPosition: 'left' },
         command: () => this.sendMailingListReminder(vote),
@@ -364,6 +411,51 @@ export class VotesTableComponent {
     });
   }
 
+  protected onExtendDeadline(vote: Vote): void {
+    const ref = this.dialogService.open(ExtendVoteDeadlineDialogComponent, {
+      header: 'Extend Deadline',
+      width: '480px',
+      modal: true,
+      data: {
+        voteName: vote.name,
+        currentEndTime: vote.end_time,
+        currentEndTimeTimezone: vote.end_time_timezone,
+      },
+    });
+
+    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result) => {
+      if (!result) return;
+
+      this.voteService
+        .extendVote(vote.uid, result)
+        .pipe(take(1))
+        .subscribe({
+          next: (updatedVote) => {
+            this.extendedDeadlines.update((map) =>
+              new Map(map).set(vote.uid, { end_time: updatedVote.end_time, end_time_timezone: updatedVote.end_time_timezone })
+            );
+            this.voteExtended.emit(updatedVote);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: `${this.voteLabel.singular} deadline extended successfully`,
+            });
+            // No refresh.emit() here (per @cursor, GH-3823 review) — extendedDeadlines already applies the
+            // new deadline to this row locally, and voteExtended() already tells the host. A full refresh
+            // would force a lazy host's dashboard back to page 1, which is an unnecessary and disruptive
+            // reload for a change the table has already reflected.
+          },
+          error: (error) => {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: `Failed to extend ${this.voteLabel.singular.toLowerCase()} deadline: ${error.message || 'Unknown error'}`,
+            });
+          },
+        });
+    });
+  }
+
   // === Private Initializers ===
   private initStatusTabOptions(): Signal<FilterPillOption[]> {
     return computed(() => {
@@ -433,7 +525,8 @@ export class VotesTableComponent {
 
   private initDisplayedVotes(): Signal<VoteTableRow[]> {
     return computed(() => {
-      const allVotes = this.votes();
+      const overrides = this.extendedDeadlines();
+      const allVotes = overrides.size === 0 ? this.votes() : this.votes().map((vote) => ({ ...vote, ...overrides.get(vote.uid) }));
 
       // For lazy (server-side paginated) mode, the server handles all filtering via filtersChange
       if (this.lazy()) {

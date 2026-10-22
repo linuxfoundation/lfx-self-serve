@@ -48,6 +48,7 @@ import { SkillsPickerComponent } from '../../components/skills-picker/skills-pic
 import { TermsAcknowledgementComponent } from '../../components/terms-acknowledgement/terms-acknowledgement.component';
 import { MentorProgramRequestService } from '../../services/mentor-program-request.service';
 import { MentorProgramsSectionComponent } from './components/mentor-programs-section/mentor-programs-section.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Become a Mentor registration form. Ported from menv3 `mentor-register`.
@@ -77,6 +78,7 @@ import { MentorProgramsSectionComponent } from './components/mentor-programs-sec
     ProfileCardComponent,
     SkillsPickerComponent,
     TermsAcknowledgementComponent,
+    PageHeaderComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './mentor-register.component.html',

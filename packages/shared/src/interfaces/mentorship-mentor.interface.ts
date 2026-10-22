@@ -33,20 +33,30 @@ export interface MentorshipMentorProgramRequest {
   status: MentorshipMentorStatus;
 }
 
+/**
+ * An open invitation to mentor a program: the mentor's `invited` `program_members` row, which the mentor
+ * accepts or declines by its `id`.
+ */
+export interface MentorshipMentorProgramInvitation {
+  id: string;
+  programId: string;
+  programName: string;
+}
+
 /** Response body from `GET /api/mentorship/mentor/requests`. */
 export interface MentorshipMentorProgramRequestsResponse {
   data: MentorshipMentorProgramRequest[];
   /**
-   * Programs the mentor has an open invitation to. They are not requests, so `data` leaves them out,
-   * but upstream refuses a request for them, so the picker leaves them out too.
+   * The mentor's open invitations. They are not requests, so `data` leaves them out, but upstream
+   * refuses a request for their programs, so the picker disables those programs too.
    */
-  invitedProgramIds: string[];
+  invitations: MentorshipMentorProgramInvitation[];
 }
 
 /** The profile drawer's view of the mentor's requests: a failed read is its own state, never an empty list. */
 export interface MentorshipMentorRequestsState {
   requests: MentorshipMentorProgramRequest[];
-  invitedProgramIds: string[];
+  invitations: MentorshipMentorProgramInvitation[];
   loading: boolean;
   failed: boolean;
 }
@@ -232,8 +242,14 @@ export interface MentorshipMentorTaskReviewRequest {
   status: MentorshipMentorTaskReviewDecision;
 }
 
-/** What an invited mentor does with the invitation on `/mentorship/mentor/invites`. */
+/** What an invited mentor does with the invitation, on `/mentorship/mentor/invites` or in the profile edit drawer. */
 export type MentorshipMentorInviteDecision = 'accept' | 'decline';
+
+/** An answer to one of the mentor's invitations, by its id, as the profile edit drawer sends it. */
+export interface MentorshipMentorInvitationResponse {
+  invitationId: string;
+  decision: MentorshipMentorInviteDecision;
+}
 
 /** Body of `POST /api/mentorship/mentor/invites/accept|decline`: the signed token from the invite email. */
 export interface MentorshipMentorInviteResponseRequest {

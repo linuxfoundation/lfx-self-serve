@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { S3Client } from '@aws-sdk/client-s3';
-import { ObjectStoreBackend, ObjectStoreListEntry, ObjectStorePurpose, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
+import { ErasableObjectStoreBackend, ObjectStoreListEntry, ObjectStorePutInput, ObjectStorePurpose, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 import { resolve } from 'node:path';
 
 import { OBJECT_STORE_LOCAL_DEFAULT_DIR, OBJECT_STORE_LOCAL_DIR_ENV, OBJECT_STORE_PURPOSE_BUCKET_ENV, OBJECT_STORE_PURPOSE_FILE_FALLBACK } from '../constants';
-import { PreconditionFailedError, ServiceValidationError } from '../errors';
+import { MicroserviceError, PreconditionFailedError, ServiceValidationError } from '../errors';
 import { buildAvatarUrl, getAvatarCdnPrefix, toAvatarKeySegment } from '../utils/avatar-url.util';
 import { logger } from './logger.service';
 import { FileObjectStoreBackend } from './object-store-file.backend';
@@ -32,7 +32,7 @@ import { S3ObjectStoreBackend } from './object-store-s3.backend';
  */
 export class ObjectStoreService {
   private client: S3Client | null = null;
-  private backends: Partial<Record<ObjectStorePurpose, ObjectStoreBackend>> = {};
+  private backends: Partial<Record<ObjectStorePurpose, ErasableObjectStoreBackend>> = {};
   private ensureBucketPromises: Partial<Record<ObjectStorePurpose, Promise<void>>> = {};
 
   /**
@@ -228,20 +228,74 @@ export class ObjectStoreService {
   }
 
   /** Atomic create/replace. A false result is contention, never an outage or denial. */
-  public async putConditionalObject(req: Request, purpose: ObjectStorePurpose, key: string, input: ObjectStorePutInput): Promise<boolean> {
+  public async putConditionalObject(req: Request, purpose: ObjectStorePurpose, key: string, input: ObjectStorePutInput, privateKey = false): Promise<boolean> {
     if ((!input.ifMatch && !input.ifNoneMatch) || (input.ifMatch && input.ifNoneMatch)) {
       throw ServiceValidationError.forField('precondition', 'A conditional write requires exactly one precondition');
     }
     await this.ensureBucket(purpose, { degradable: true });
     try {
       await this.getBackend(purpose).putObject(key, input);
-      logger.debug(req, 'object_store_conditional_put', 'Conditional write committed', { purpose, key });
+      logger.debug(req, 'object_store_conditional_put', 'Conditional write committed', { purpose, ...(!privateKey && { key }) });
       return true;
     } catch (error) {
       if (error instanceof PreconditionFailedError) {
         return false;
       }
       throw error;
+    }
+  }
+
+  /** Read private data without logging its key, provider message or returned body. */
+  public async getPrivateObject(req: Request, purpose: ObjectStorePurpose, key: string): Promise<ObjectStoreReadResult | null> {
+    try {
+      const object = await this.getBackend(purpose).getObject(key);
+      logger.debug(req, 'object_store_private_read', 'Read a private object', { purpose, found: object !== null });
+      return object;
+    } catch (error) {
+      throw this.privateStorageFailure(req, 'object_store_private_read', 'OBJECT_STORE_PRIVATE_READ_FAILED', error);
+    }
+  }
+
+  /** Create private state only once; a concurrent creator wins without being overwritten. */
+  public async putPrivateObjectIfAbsent(req: Request, purpose: ObjectStorePurpose, key: string, input: ObjectStorePutInput): Promise<boolean> {
+    try {
+      return await this.putConditionalObject(req, purpose, key, { ...input, ifMatch: undefined, ifNoneMatch: '*' }, true);
+    } catch (error) {
+      throw this.privateStorageFailure(req, 'object_store_private_create', 'OBJECT_STORE_PRIVATE_CREATE_FAILED', error);
+    }
+  }
+
+  /** Replace the current private object; backend version-retention policies still apply. */
+  public async putMutableObject(req: Request, purpose: ObjectStorePurpose, key: string, input: ObjectStorePutInput): Promise<void> {
+    try {
+      await this.ensureBucket(purpose);
+      // Read directly so the private key cannot enter the generic read logger.
+      const observed = await this.getBackend(purpose).getObject(key);
+      if (observed && !observed.etag) throw new PreconditionFailedError('The private object has no version token.');
+      const written = await this.putConditionalObject(
+        req,
+        purpose,
+        key,
+        {
+          ...input,
+          ...(observed?.etag ? { ifMatch: observed.etag } : { ifNoneMatch: '*' as const }),
+        },
+        true
+      );
+      if (!written) throw new PreconditionFailedError('The private object changed. Try again.');
+      logger.debug(req, 'object_store_replace', 'Replaced a mutable object', { purpose });
+    } catch (error) {
+      throw this.privateStorageFailure(req, 'object_store_replace', 'OBJECT_STORE_REPLACE_FAILED', error);
+    }
+  }
+
+  /** Delete the current private object, without requiring access to historical S3 versions. */
+  public async deletePrivateObject(req: Request, purpose: ObjectStorePurpose, key: string): Promise<void> {
+    try {
+      await this.getBackend(purpose).deleteObject(key);
+      logger.debug(req, 'object_store_delete', 'Deleted a current private object', { purpose });
+    } catch (error) {
+      throw this.privateStorageFailure(req, 'object_store_delete', 'OBJECT_STORE_DELETE_FAILED', error);
     }
   }
 
@@ -327,6 +381,25 @@ export class ObjectStoreService {
     }
   }
 
+  private privateStorageFailure(req: Request, operation: string, code: string, error: unknown): MicroserviceError {
+    const record = error && typeof error === 'object' ? (error as Record<string, unknown>) : {};
+    const metadata = record['$metadata'];
+    const status = metadata && typeof metadata === 'object' && 'httpStatusCode' in metadata ? metadata.httpStatusCode : undefined;
+    const label = (value: unknown): string | undefined => (typeof value === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(value) ? value : undefined);
+    // Retain actionable provider classification without logging messages,
+    // object identifiers, request payloads or paths that may identify a user.
+    // This is a summary, not an Error: keep it outside the err serializer,
+    // which intentionally omits an object's name property.
+    logger.warning(req, operation, 'Private object storage operation failed', {
+      storage_failure: {
+        name: label(record['name']) ?? 'UnknownError',
+        code: label(record['Code'] ?? record['code']),
+        httpStatusCode: typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599 ? status : undefined,
+      },
+    });
+    return new MicroserviceError('The private object storage operation could not be completed.', 503, code, { service: 'object_store', operation });
+  }
+
   /**
    * The backend serving a purpose (lazy, memoized per purpose): S3 when its
    * bucket env var is set; the file-backed folder when it is not, for a
@@ -336,7 +409,7 @@ export class ObjectStoreService {
    * never quietly writes documents to its own ephemeral disk. Every other
    * unset var is a configuration error.
    */
-  private getBackend(purpose: ObjectStorePurpose): ObjectStoreBackend {
+  private getBackend(purpose: ObjectStorePurpose): ErasableObjectStoreBackend {
     const existing = this.backends[purpose];
     if (existing) {
       return existing;
@@ -345,7 +418,7 @@ export class ObjectStoreService {
     const envVar = OBJECT_STORE_PURPOSE_BUCKET_ENV[purpose];
     const bucket = process.env[envVar];
     const mayFallBack = OBJECT_STORE_PURPOSE_FILE_FALLBACK[purpose] && process.env['NODE_ENV'] !== 'production';
-    let backend: ObjectStoreBackend;
+    let backend: ErasableObjectStoreBackend;
     if (bucket) {
       // Region before client: a missing AWS_REGION must fail here, before any client exists.
       const region = this.getRegion();

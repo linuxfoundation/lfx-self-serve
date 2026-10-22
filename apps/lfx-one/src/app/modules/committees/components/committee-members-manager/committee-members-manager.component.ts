@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
+import { HttpParams } from '@angular/common/http';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -22,7 +23,9 @@ import {
   CreateCommitteeInviteRequest,
   CreateCommitteeMemberRequest,
   MemberPendingChanges,
+  MemberImportDialogData,
   SucceededMemberOperations,
+  StagedCommitteeMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -33,6 +36,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { catchError, finalize, of, take, tap } from 'rxjs';
 
 import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
+import { ImportMembersDialogComponent } from '../import-members-dialog/import-members-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
@@ -125,6 +129,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
   // In-flight guard so rapid clicks on "Invite by email" don't stack overlapping dialogs.
   private readonly loadingInvites = signal(false);
+  private readonly loadingImportInvites = signal(false);
+  private readonly importInvites = signal<MemberPendingChanges['importInvites']>(undefined);
 
   // Simple computed signals
   // Members in state 'deleted' stay in membersWithState (so emitMemberUpdates() keeps re-queuing
@@ -139,11 +145,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public readonly votingCount = computed(() => this.visibleMembers().filter((m) => this.isVotingMember(m)).length);
   /** Gates every action that stages/mutates member or invite state — load-in-progress, load-failed, or an active flush. */
   public readonly mutationsDisabled = computed(
-    () => this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting()
+    () =>
+      this.loading() || this.committeeLoading() || this.membersLoadFailed() || this.committeeLoadFailed() || this.submitting() || this.loadingImportInvites()
   );
 
   // Complex computed signals (using private initializers)
   public readonly filteredMembers = this.initFilteredMembers();
+  private readonly importedInviteUidsByEmail = this.initImportedInviteUidsByEmail();
 
   // Form instances
   public searchForm: FormGroup;
@@ -180,6 +188,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   public ngOnInit(): void {
     // Rehydrate from the parent-bound input now that it's applied (see the field comment above).
     this.pendingInvites.set(this.memberUpdates().toInvite);
+    this.importInvites.set(this.memberUpdates().importInvites);
 
     this.initializeMembers();
     this.loadCommittee();
@@ -233,6 +242,47 @@ export class CommitteeMembersManagerComponent implements OnInit {
     this.emitMemberUpdates();
   }
 
+  /**
+   * Collect CSV members into the same pending state as Add with details; only Done (create wizard)
+   * or Update Group (edit wizard) writes them. The create wizard reaches this step only after the
+   * group exists, so both flows have a resolved group to validate and dedupe against.
+   */
+  public openImportMembersDialog(): void {
+    const committee = this.committee();
+    const committeeId = this.committeeId();
+    // The route identifier can be a vanity slug; pin its resolved UUID separately for API calls.
+    const committeeUid = committee?.uid;
+    if (!committeeId || !committeeUid || this.mutationsDisabled()) {
+      return;
+    }
+    if (committeeId !== committeeUid && committee?.sso_group_name?.toLowerCase() !== committeeId.toLowerCase()) {
+      return;
+    }
+    this.loadingImportInvites.set(true);
+    this.committeeService
+      .getCommitteeInvites(committeeUid, new HttpParams().set('require_complete', 'true'))
+      .pipe(
+        take(1),
+        finalize(() => this.loadingImportInvites.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (invites) => {
+          this.loadingImportInvites.set(false);
+          this.openCollectImportDialog(committeeId, committeeUid, invites);
+        },
+        error: (error: { status?: number }) => {
+          console.error('Failed to load invitations for CSV import', { status: error.status });
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Open Import Dialog',
+            detail: 'Could not load existing invitations. Please try again.',
+            life: 6000,
+          });
+        },
+      });
+  }
+
   public openAddMemberDialog(): void {
     const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Add Member',
@@ -283,6 +333,8 @@ export class CommitteeMembersManagerComponent implements OnInit {
             state: m.state === 'existing' ? ('modified' as CommitteeMemberState) : m.state,
             originalData: m.originalData,
             tempId: m.tempId,
+            createOptions: m.createOptions,
+            pendingInviteUids: m.email.trim().toLowerCase() === updateData.data.email.trim().toLowerCase() ? m.pendingInviteUids : undefined,
           } as CommitteeMemberWithState;
         }
         return m;
@@ -353,6 +405,52 @@ export class CommitteeMembersManagerComponent implements OnInit {
     this.pendingInvites.update((current) => current.filter((invite) => !succeeded.invitedEmails.has((invite.invitee_email ?? '').trim().toLowerCase())));
 
     this.emitMemberUpdates();
+  }
+
+  private openCollectImportDialog(committeeId: string, committeeUid: string, invites: CommitteeInvite[]): void {
+    const committee = this.committee();
+    if (committee?.uid !== committeeUid || this.committeeId() !== committeeId || this.mutationsDisabled()) {
+      return;
+    }
+    const data: MemberImportDialogData = {
+      committee: { ...committee, ...this.organizationRequirements() },
+      existingMembers: this.membersWithState(),
+      existingInvites: invites,
+      collectOnly: true,
+    };
+    const dialogRef = this.dialogService.open(ImportMembersDialogComponent, {
+      header: 'Import Members',
+      width: '960px',
+      breakpoints: { '1024px': '95vw' },
+      modal: true,
+      closable: false,
+      closeOnEscape: false,
+      dismissableMask: false,
+      data,
+    });
+    dialogRef?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((members: StagedCommitteeMemberRequest[] | undefined) => {
+      if (!members?.length || this.mutationsDisabled() || this.committeeId() !== committeeId || this.committee()?.uid !== committeeUid) {
+        return;
+      }
+      this.importInvites.set(
+        invites
+          .filter((invite) => (invite.status ?? '').toLowerCase() === 'pending')
+          .map(({ uid, invitee_email: inviteeEmail }) => ({ uid, invitee_email: inviteeEmail }))
+      );
+      const seen = new Set(this.membersWithState().map((member) => (member.email ?? '').trim().toLowerCase()));
+      const additions: CommitteeMemberWithState[] = [];
+      for (const member of members) {
+        const email = member.email.trim().toLowerCase();
+        if (!seen.has(email)) {
+          seen.add(email);
+          additions.push(this.createPendingMember({ ...member, email }));
+        }
+      }
+      if (additions.length > 0) {
+        this.membersWithState.update((current) => [...current, ...additions]);
+        this.emitMemberUpdates();
+      }
+    });
   }
 
   private openCollectInviteDialog(serverInvites: CommitteeInvite[]): void {
@@ -426,30 +524,47 @@ export class CommitteeMembersManagerComponent implements OnInit {
     });
   }
 
-  private handleAddMemberResult(memberData: CreateCommitteeMemberRequest): void {
+  private handleAddMemberResult(memberData: StagedCommitteeMemberRequest): void {
+    this.membersWithState.update((members) => [...members, this.createPendingMember(memberData)]);
+    this.emitMemberUpdates();
+  }
+
+  private createPendingMember(memberData: StagedCommitteeMemberRequest): CommitteeMemberWithState {
     // Build complete CommitteeMember object from the form data
     const newMemberData: CommitteeMember = {
       ...this.memberFieldsFromRequest(memberData),
       uid: '',
-      committee_uid: this.committeeId() || '',
+      committee_uid: this.committee()?.uid || this.committeeId() || '',
       committee_name: this.committee()?.name || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     // Create new member with temporary ID for immediate UI updates
-    const newMember: CommitteeMemberWithState = {
+    return {
       ...newMemberData,
       state: 'new' as CommitteeMemberState,
       tempId: generateTempId(),
       originalData: undefined,
+      createOptions: memberData.createOptions,
+      pendingInviteUids: memberData.pendingInviteUids,
     };
+  }
 
-    // Add to local state for immediate UI feedback
-    this.membersWithState.update((members) => [...members, newMember]);
-
-    // Emit updated member updates
-    this.emitMemberUpdates();
+  private initImportedInviteUidsByEmail() {
+    return computed(() => {
+      const byEmail = new Map<string, string[]>();
+      for (const invite of this.importInvites() ?? []) {
+        if (!invite.uid) {
+          continue;
+        }
+        const email = (invite.invitee_email ?? '').trim().toLowerCase();
+        const uids = byEmail.get(email) ?? [];
+        uids.push(invite.uid);
+        byEmail.set(email, uids);
+      }
+      return byEmail;
+    });
   }
 
   private initFilteredMembers() {
@@ -530,17 +645,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       };
     });
 
-    const added: CommitteeMemberWithState[] = pending.toAdd.map((request) => ({
-      ...this.memberFieldsFromRequest(request),
-      uid: '',
-      committee_uid: this.committeeId() || '',
-      committee_name: this.committee()?.name || '',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      state: 'new' as CommitteeMemberState,
-      tempId: generateTempId(),
-      originalData: undefined,
-    }));
+    const added = pending.toAdd.map((request) => this.createPendingMember(request));
 
     return [...reconciled, ...added];
   }
@@ -548,12 +653,13 @@ export class CommitteeMembersManagerComponent implements OnInit {
   /** Maps a CreateCommitteeMemberRequest's display fields onto the CommitteeMember shape. */
   private memberFieldsFromRequest(
     request: CreateCommitteeMemberRequest
-  ): Pick<CommitteeMember, 'email' | 'first_name' | 'last_name' | 'job_title' | 'appointed_by' | 'organization' | 'role' | 'voting'> {
+  ): Pick<CommitteeMember, 'email' | 'first_name' | 'last_name' | 'job_title' | 'linkedin_profile' | 'appointed_by' | 'organization' | 'role' | 'voting'> {
     return {
       email: request.email,
       first_name: request.first_name || '',
       last_name: request.last_name || '',
       job_title: request.job_title || undefined,
+      linkedin_profile: request.linkedin_profile || undefined,
       appointed_by: request.appointed_by || undefined,
       organization: request.organization
         ? {
@@ -617,7 +723,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
 
     this.membersLoadFailed.set(false);
     this.committeeService
-      .getCommitteeMembers(committeeId)
+      .getCommitteeMembers(committeeId, new HttpParams().set('require_complete', 'true'))
       .pipe(
         take(1),
         catchError((error) => {
@@ -655,7 +761,16 @@ export class CommitteeMembersManagerComponent implements OnInit {
     }
 
     this.memberUpdatesChange.emit({
-      toAdd: members.filter((m) => m.state === 'new').map((m) => this.stripMetadata(m)),
+      toAdd: members
+        .filter((m) => m.state === 'new')
+        .map((m) => {
+          const pendingInviteUids = this.getImportedInviteUids(m);
+          return {
+            ...this.stripMetadata(m),
+            ...(m.createOptions ? { createOptions: m.createOptions } : {}),
+            ...(pendingInviteUids ? { pendingInviteUids } : {}),
+          };
+        }),
       toUpdate: members
         .filter((m) => m.state === 'modified')
         .map((m) => ({
@@ -664,7 +779,18 @@ export class CommitteeMembersManagerComponent implements OnInit {
         })),
       toDelete: members.filter((m) => m.state === 'deleted').map((m) => m.uid),
       toInvite,
+      ...(this.importInvites() ? { importInvites: this.importInvites() } : {}),
     });
+  }
+
+  /** Re-match the current email, not the address originally uploaded, without duplicating the snapshot on every member. */
+  private getImportedInviteUids(member: CommitteeMemberWithState): string[] | undefined {
+    const invites = this.importInvites();
+    if (!member.createOptions || !invites) {
+      return member.pendingInviteUids;
+    }
+    const email = member.email.trim().toLowerCase();
+    return [...(this.importedInviteUidsByEmail().get(email) ?? [])];
   }
 
   private stripMetadata(member: CommitteeMemberWithState): CreateCommitteeMemberRequest {
@@ -673,6 +799,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
       first_name: member.first_name || null,
       last_name: member.last_name || null,
       job_title: member.job_title || null,
+      linkedin_profile: member.linkedin_profile || null,
       organization: member.organization
         ? {
             name: member.organization.name || null,

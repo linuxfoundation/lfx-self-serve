@@ -14,6 +14,7 @@ import type {
 } from '../constants/health-metrics-members.constants';
 import type { FilterPillOption } from './dashboard-metric.interface';
 import type { FilterOption } from './filter.interface';
+import type { HealthMetricsEngagementAttendanceTone } from './health-metrics-engagement.interface';
 import type { HealthMetricsL2Range, HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `M2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
@@ -513,7 +514,7 @@ export interface HealthMetricsMembersBoardCohortSummary {
   latestInvitedCount: number | null;
   meetingsInRangeCount: number | null;
   neverAttendedCount: number | null;
-  /** The view's own level flag; the page never compares the share with a threshold. */
+  /** The view's level flag (one 90% line for both cohorts); read only when the share is missing. */
   isBelowExpectedLevel: boolean | null;
 }
 
@@ -539,12 +540,17 @@ export interface HealthMetricsMembersBoardAttendance {
   totalRecords: number;
 }
 
+/** The latest meeting against its cohort's rule: below it (red or amber), or not. */
+export type HealthMetricsMembersBoardLatestTone = Extract<HealthMetricsEngagementAttendanceTone, 'low' | 'critical' | 'ok'>;
+
 /** The board hero as the section renders it. */
 export interface HealthMetricsMembersBoardSummaryView {
   meetingsLabel: string;
   latestPctLabel: string;
   latestCaption: string;
   isBelowExpectedLevel: boolean;
+  latestTone: HealthMetricsMembersBoardLatestTone;
+  latestTextClass: string;
   otherCohortLabel: string;
   otherCohortPctLabel: string;
   attendedInvitedLabel: string;
@@ -581,7 +587,7 @@ export interface HealthMetricsMembersNpsQuery {
   audience: string | null;
 }
 
-/** One audience surveyed in the period; `isSampleTooSmall` marks a score that rests on too few replies. */
+/** One audience surveyed in the period; `isSampleTooSmall` is the view's 40% response-rate line, read only without a rate. */
 export interface HealthMetricsMembersNpsAudience {
   audience: string;
   npsScore: number | null;
@@ -693,9 +699,8 @@ export interface HealthMetricsMembersChurnYear {
   openingCount: number | null;
   duesLostUsd: number | null;
   duesLostPriorUsd: number | null;
-  revenueChurnRate: number | null;
-  revenueChurnRatePrior: number | null;
-  revenueChurnRateChangePp: number | null;
+  /** Share of the opening dues that did not renew (`dues_lost_usd / opening_arr_usd`), not the view's net rate. */
+  revenueNotRenewedRate: number | null;
   logoChurnRate: number | null;
 }
 
@@ -717,7 +722,7 @@ export interface HealthMetricsMembersChurn {
   tiers: HealthMetricsMembersChurnTier[];
 }
 
-/** `GET /api/analytics/members-churn-departures` — one page of the organizations that lapsed in a year. */
+/** `GET /api/analytics/members-churn-departures` — one page of the memberships lost in a year. */
 export interface HealthMetricsMembersChurnDeparturesQuery {
   foundationSlug: string;
   year: number;
@@ -725,8 +730,10 @@ export interface HealthMetricsMembersChurnDeparturesQuery {
   pageSize: number;
 }
 
-/** One churned `MEMBERSHIP_MOVEMENT_DETAIL` row. Dates are ISO `YYYY-MM-DD`. */
+/** One lost membership from `MEMBERSHIP_CHURNED_MEMBERS`, keyed by its term; dates are ISO `YYYY-MM-DD`. */
 export interface HealthMetricsMembersChurnDeparture {
+  /** An organization can lose two memberships in a year, so rows are keyed by the lost term, not the account. */
+  key: string;
   accountId: string;
   accountName: string;
   membershipTier: string | null;
@@ -737,7 +744,7 @@ export interface HealthMetricsMembersChurnDeparture {
 
 export interface HealthMetricsMembersChurnDepartures {
   rows: HealthMetricsMembersChurnDeparture[];
-  /** Every organization that lapsed in the year, so the table can check it against the churn count. */
+  /** Every membership lost in the year, so the table can check it against the churn count. */
   totalRecords: number;
 }
 
@@ -813,8 +820,9 @@ export interface HealthMetricsMembersChurnView {
   trendRose: boolean;
 }
 
-/** One organization in "Who left". */
+/** One lost membership in "Who left"; an organization appears once per lost term. */
 export interface HealthMetricsMembersChurnDepartureRowView {
+  key: string;
   accountId: string;
   accountName: string;
   tierLabel: string;

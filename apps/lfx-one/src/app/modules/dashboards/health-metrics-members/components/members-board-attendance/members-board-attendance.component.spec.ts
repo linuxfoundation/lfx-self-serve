@@ -122,7 +122,7 @@ describe('MembersBoardAttendanceComponent', () => {
     expect(text('members-board-latest')).toBe('82%');
     // The hero sits flush in the section, as the design draws it, not inside a card.
     expect(query('members-board-hero')?.classList).not.toContain('border');
-    expect(query('members-board-latest')?.classList).toContain('text-amber-600');
+    expect(query('members-board-latest')?.classList).toContain('text-red-600');
     expect(text('members-board-caption')).toBe('Last board meeting · below the ~100% this should be');
     expect(text('members-board-other')).toBe('65%');
     expect(text('members-board-attended')).toBe('9 / 11');
@@ -158,7 +158,7 @@ describe('MembersBoardAttendanceComponent', () => {
 
   it("highlights the view's latest meeting, not the last bar, when meetings share a date", async () => {
     const sameDay = [meeting({ meetingId: 'm-a', isLatestMeeting: true }), meeting({ meetingId: 'm-b' })];
-    await render(response({ trend: sameDay, cohorts: { board: cohort({ isBelowExpectedLevel: false }), voting_members: null } }));
+    await render(response({ trend: sameDay, cohorts: { board: cohort({ latestAttendancePct: 0.95, isBelowExpectedLevel: false }), voting_members: null } }));
 
     expect(fixture.componentInstance['chartData']().datasets[0].backgroundColor).toEqual([lfxColors.blue[500], lfxColors.blue[200]]);
   });

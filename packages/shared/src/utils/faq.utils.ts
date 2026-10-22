@@ -15,6 +15,7 @@ import {
   FAQ_ANSWER_KEYS,
   FAQ_ANSWERS_HEADER,
   FAQ_CONTENT_LIMITS,
+  FAQ_SLIDES_UNANSWERED_REGEX,
   FAQ_CONTRACT_ID,
   FAQ_DESCRIPTION_KEY,
   FAQ_DOCUMENT_KIND_LABELS,
@@ -54,6 +55,7 @@ import {
 import {
   FaqChecks,
   FaqContent,
+  FaqSlidesExportQuestion,
   FaqDocumentKind,
   FaqEnvelope,
   FaqFormDocument,
@@ -693,6 +695,17 @@ export function readFaqContent(text: string): FaqContent | null {
     return null;
   }
   return findFaqContentErrors(parsed).length === 0 ? (parsed as FaqContent) : null;
+}
+
+/** Flatten stored groups to the Slides exporter's answered object entries, in source order. */
+export function faqSlidesExportQuestions(content: FaqContent): FaqSlidesExportQuestion[] {
+  return content.faq.flatMap(([, questions]) =>
+    questions.flatMap(([question, answer]) => {
+      const q = question.trim();
+      const a = answer?.trim();
+      return q && a && !FAQ_SLIDES_UNANSWERED_REGEX.test(a) ? [{ q, a }] : [];
+    })
+  );
 }
 
 /** The run's asset out of a validated envelope: what the run page shows and the stored version keeps. */

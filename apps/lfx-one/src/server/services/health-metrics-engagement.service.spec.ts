@@ -240,7 +240,7 @@ describe('HealthMetricsEngagementService', () => {
     expect(sql).toContain('COUNT_IF(is_dormant_prev_completed_year) AS dormant_groups');
     expect(sql).toContain('COUNT_IF(group_type_label IN (?) AND is_dormant_prev_completed_year) AS type_dormant_groups_0');
     expect(sql).toContain(
-      'COUNT_IF(NOT COALESCE(is_dormant_prev_completed_year, FALSE) AND attendance_pct_prev_completed_year < ? AND meetings_count_prev_completed_year >= ?) AS low_attendance_groups'
+      'COUNT_IF(NOT COALESCE(is_dormant_prev_completed_year, FALSE) AND ROUND(attendance_pct_prev_completed_year * 100) < ? AND meetings_count_prev_completed_year >= ?) AS low_attendance_groups'
     );
     expect(sql).toContain('project_id, project_slug');
     // Totals come from an aggregate over the scoped set joined onto the page, never a window over it.
@@ -253,7 +253,7 @@ describe('HealthMetricsEngagementService', () => {
   });
 
   // The below-50% count binds its threshold and meeting floor ahead of the chip columns, as in SQL.
-  const lowAttendanceBinds = [HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE];
+  const lowAttendanceBinds = [Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100), HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE];
   // Every chip's labels are bound twice in SQL order: its group count, then its dormant count.
   const chipBinds = ['Governance', 'Governance', 'SIG / TAG', 'SIG / TAG', 'Working groups', 'Working groups'];
 
@@ -284,9 +284,11 @@ describe('HealthMetricsEngagementService', () => {
     await service.getGroupAttendance(req, query());
 
     const sql = lastSql();
-    const lowColumn = 'COUNT_IF(NOT COALESCE(is_dormant_ytd, FALSE) AND attendance_pct_ytd < ? AND meetings_count_ytd >= ?) AS low_attendance_groups';
+    const lowColumn =
+      'COUNT_IF(NOT COALESCE(is_dormant_ytd, FALSE) AND ROUND(attendance_pct_ytd * 100) < ? AND meetings_count_ytd >= ?) AS low_attendance_groups';
     expect(sql).toContain(`COUNT_IF(is_dormant_ytd) AS dormant_groups, ${lowColumn}, COUNT_IF(group_type_label IN (?)) AS type_groups_0`);
-    expect(lastBinds().slice(1, 3)).toEqual([0.5, 3]);
+    // Whole percent, as the bars round it: 49.6% reads "50%" and must not count as below 50%.
+    expect(lastBinds().slice(1, 3)).toEqual([50, 3]);
   });
 
   it('reads the below-50% count as zero when the totals row leaves it null', async () => {

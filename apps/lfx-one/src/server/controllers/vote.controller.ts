@@ -7,6 +7,7 @@ import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
   EnableVoteRequest,
+  ExtendVoteRequest,
   SendVoteReminderRequest,
   UpdateVoteRequest,
 } from '@lfx-one/shared/interfaces';
@@ -251,6 +252,56 @@ export class VoteController {
         vote_uid: uid,
         project_uid: vote.project_uid,
         name: vote.name,
+      });
+
+      res.json(vote);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /votes/:uid/extend
+   */
+  public async extendVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const data: ExtendVoteRequest = req.body;
+    const startTime = logger.startOperation(req, 'extend_vote', { vote_uid: uid });
+
+    try {
+      const validationContext = { operation: 'extend_vote', service: 'vote_controller' } as const;
+
+      if (!validateUidParameter(uid, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequestBody(data, req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequiredParameter(data.end_time, 'end_time', req, next, validationContext)) {
+        return;
+      }
+
+      if (!validateRequiredParameter(data.end_time_timezone, 'end_time_timezone', req, next, validationContext)) {
+        return;
+      }
+
+      if (typeof data.end_time !== 'string') {
+        next(ServiceValidationError.forField('end_time', 'end_time must be a string', validationContext));
+        return;
+      }
+
+      if (typeof data.end_time_timezone !== 'string') {
+        next(ServiceValidationError.forField('end_time_timezone', 'end_time_timezone must be a string', validationContext));
+        return;
+      }
+
+      const vote = await this.voteService.extendVote(req, uid, data);
+
+      logger.success(req, 'extend_vote', startTime, {
+        vote_uid: uid,
+        end_time: vote.end_time,
       });
 
       res.json(vote);
@@ -562,6 +613,42 @@ export class VoteController {
       });
 
       res.json(recipients);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /votes/:uid/voters — every invited voter with their status and current ballot (#3911).
+   * Gated on `vote#writer` before any read: every vote auditor can read the underlying
+   * `vote_response` rows. The service refuses drafts and pseudo-anonymous votes before reading them.
+   */
+  public async getVoteVoters(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_voters', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_voters',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      await assertVoteWrite(req, uid, 'get_vote_voters');
+
+      const voters = await this.voteService.getVoteVoters(req, uid);
+
+      logger.success(req, 'get_vote_voters', startTime, {
+        vote_uid: uid,
+        voter_count: voters.length,
+      });
+
+      res.json(voters);
     } catch (error) {
       next(error);
     }

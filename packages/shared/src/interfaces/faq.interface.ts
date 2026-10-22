@@ -36,6 +36,12 @@ export type FaqViewTab = (typeof FAQ_VIEW_TABS)[number]['id'];
 /** `[question, answer | null, source | null]` — a null answer needs an answer from the team and has a null source. */
 export type FaqQuestionEntry = [string, string | null, string | null];
 
+/** Answered entries in the Slides exporter's object format, not the stored grouped tuples. */
+export interface FaqSlidesExportQuestion {
+  q: string;
+  a: string;
+}
+
 /** `[groupName, questions]`. */
 export type FaqGroup = [string, FaqQuestionEntry[]];
 

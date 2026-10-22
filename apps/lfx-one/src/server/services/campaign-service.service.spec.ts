@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Same shape as access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into
 // this app's vitest config, so runtime collaborators are mocked. This file's own imports from
@@ -353,7 +353,13 @@ describe('deriveEventSlug', () => {
 
 describe('CampaignServiceClient.saveBrief', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     proxyRequestWithResponse.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   // The documented first-time case: `design/brief.go:302` calls a find-brief 404 "the ordinary
@@ -722,8 +728,10 @@ describe('CampaignServiceClient.saveBrief', () => {
         return Promise.resolve(apiResponse({ id: 'b-1', version: 4, ...envelope.brief }, { etag: '"4"' }));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
-  }, 20000);
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
+  });
 
   it('keeps reading when the first recovery read still shows the pre-PUT payload', async () => {
     // Where create and replace differ. A create has no row until it commits, so any 200 answers
@@ -743,10 +751,12 @@ describe('CampaignServiceClient.saveBrief', () => {
       })
       .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 6 }, { etag: '"6"' }));
 
-    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"');
+    const save = new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"');
+    await vi.runAllTimersAsync();
+    const result = await save;
     expect(result.briefId).toBe('b-1');
     expect(result.conflict).toBeUndefined();
-  }, 20000);
+  });
 
   it("does not claim a replace that landed on someone else's payload", async () => {
     // The row moved, but to content this request did not write. Adopting it would report another
@@ -759,7 +769,9 @@ describe('CampaignServiceClient.saveBrief', () => {
         return Promise.resolve(apiResponse({ id: 'b-1', version: 5, ...envelope.brief, copy: { structured: { headline: 'not ours' } } }, { etag: '"5"' }));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf', 'b-1', '"4"')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('does not reconcile a replace the server REFUSED', async () => {
@@ -810,7 +822,9 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
       .mockResolvedValueOnce(apiResponse({ id: 'other', version: 4, program_type: 'events', event_slug: 'e' }, { etag: '"4"' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it("does not adopt another writer's row that differs only in payload", async () => {
@@ -835,7 +849,9 @@ describe('CampaignServiceClient.saveBrief', () => {
         )
       );
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('recovers a create that commits AFTER the reconciliation first looks', async () => {
@@ -853,7 +869,9 @@ describe('CampaignServiceClient.saveBrief', () => {
       })
       .mockResolvedValueOnce(apiResponse({ id: 'b-1', version: 2 }, { etag: '"2"' }));
 
-    const result = await new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    const save = new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf');
+    await vi.runAllTimersAsync();
+    const result = await save;
     expect(result.briefId).toBe('b-1');
     expect(result.created).toBe(true);
   });
@@ -874,9 +892,13 @@ describe('CampaignServiceClient.saveBrief', () => {
         return new Promise((_resolve, reject) => setTimeout(() => reject(NOT_FOUND), 4500));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    const startedAt = Date.now();
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
     expect(reads).toBe(1);
-  }, 20000);
+    expect(Date.now() - startedAt).toBe(5500);
+  });
 
   it('stops re-reading once a slow read has spent the budget', async () => {
     // `proxyRequestWithResponse` takes no timeout parameter, so every read here carries the
@@ -896,9 +918,13 @@ describe('CampaignServiceClient.saveBrief', () => {
         return new Promise((_resolve, reject) => setTimeout(() => reject(NOT_FOUND), 5100));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    const startedAt = Date.now();
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
     expect(reconcileReads).toBe(1);
-  }, 20000);
+    expect(Date.now() - startedAt).toBe(5100);
+  });
 
   // The recovery read has to name the SAME brief the lost write targeted, which under 000030 means
   // all four parts of the key. Sending only `event_slug` let campaign-service apply its defaults
@@ -926,7 +952,7 @@ describe('CampaignServiceClient.saveBrief', () => {
     const gets = proxyRequestWithResponse.mock.calls.filter((c) => c[3] === 'GET') as unknown as [unknown, unknown, unknown, string, Record<string, string>][];
     expect(gets.length, 'no reconciliation GET was issued').toBeGreaterThan(0);
     expect(gets.at(-1)?.[4]).toMatchObject({ event_slug: 'e', delivery_type: 'email', stage: 'Final Countdown' });
-  }, 20000);
+  });
 
   // A SIBLING STAGE must not be accepted as this request's committed write. Two sends in one
   // event's series carry identical base payloads before either is edited, so a content-only
@@ -946,8 +972,10 @@ describe('CampaignServiceClient.saveBrief', () => {
         return Promise.resolve(apiResponse({ id: 'brief-sibling', version: 1, ...envelope.brief, stage: 'CFP Launch' }, { etag: '"1"' }));
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf')).rejects.toThrow('timeout');
-  }, 20000);
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, emailBrief, 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
+  });
 
   it('gives up rather than guessing when the create never resolves', async () => {
     // Bounded: the request has already spent part of its own budget on the failed POST, so the
@@ -958,7 +986,9 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockRejectedValueOnce(new MicroserviceError('timeout', 408, 'TIMEOUT', {}))
       .mockRejectedValue(NOT_FOUND);
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('timeout');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it("does not adopt another writer's row that differs only in the generated copy", async () => {
@@ -976,7 +1006,9 @@ describe('CampaignServiceClient.saveBrief', () => {
         );
       });
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('adopts a row whose blobs differ only in key order', async () => {
@@ -1004,7 +1036,9 @@ describe('CampaignServiceClient.saveBrief', () => {
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
       .mockResolvedValueOnce(apiResponse({ id: 'other', version: 1, program_type: 'education', event_slug: 'e' }, { etag: '"1"' }));
 
-    await expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    const rejection = expect(new CampaignServiceClient().saveBrief(req, briefWithSlug('e'), 'e', 'tlf')).rejects.toThrow('gateway');
+    await vi.runAllTimersAsync();
+    await rejection;
   });
 
   it('does not reconcile a create the server REFUSED', async () => {

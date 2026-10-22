@@ -1,9 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ObjectStoreBackend, ObjectStoreFileSidecar, ObjectStoreListEntry, ObjectStorePutInput, ObjectStoreReadResult } from '@lfx-one/shared/interfaces';
+import {
+  ErasableObjectStoreBackend,
+  ObjectStoreFileSidecar,
+  ObjectStoreListEntry,
+  ObjectStorePutInput,
+  ObjectStoreReadResult,
+} from '@lfx-one/shared/interfaces';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 import { OBJECT_STORE_FILE_METADATA_SUFFIX, OBJECT_STORE_FILE_PARTIAL_SUFFIX } from '../constants';
@@ -55,7 +61,7 @@ import { PreconditionFailedError, ServiceValidationError } from '../errors';
  * Keys are resolved and then checked to still sit inside the purpose folder,
  * so no key — however it was built — can read or write outside the store.
  */
-export class FileObjectStoreBackend implements ObjectStoreBackend {
+export class FileObjectStoreBackend implements ErasableObjectStoreBackend {
   public readonly kind = 'file' as const;
   private readonly root: string;
 
@@ -106,23 +112,25 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
   public async putObject(key: string, input: ObjectStorePutInput): Promise<void> {
     const bodyPath = this.resolveKey(key);
     const lock = `${bodyPath}.lock${OBJECT_STORE_FILE_PARTIAL_SUFFIX}`;
-    try {
-      await mkdir(dirname(bodyPath), { recursive: true });
-    } catch (error) {
-      if (isNestedKeyCollision(error)) {
-        throw ServiceValidationError.forField('key', `Object key collides with a stored object: "${key}"`, { operation: 'object_store_put_object' });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await mkdir(dirname(bodyPath), { recursive: true });
+      } catch (error) {
+        if (isNestedKeyCollision(error)) {
+          throw ServiceValidationError.forField('key', `Object key collides with a stored object: "${key}"`, { operation: 'object_store_put_object' });
+        }
+        throw error;
       }
-      throw error;
-    }
-    try {
-      // mkdir is exclusive across backend instances AND processes. Never steal a
-      // lock: a crashed local writer needs operator recovery, not a lost update.
-      await mkdir(lock);
-    } catch (error) {
-      if (fsErrorCode(error) === 'EEXIST') {
-        throw new PreconditionFailedError('An object write is already in flight');
+      try {
+        // Exclusive across instances/processes; never steal an abandoned lock.
+        await mkdir(lock);
+        break;
+      } catch (error) {
+        // A delete may prune the empty parent between the two mkdir calls.
+        if (fsErrorCode(error) === 'ENOENT' && attempt === 0) continue;
+        if (fsErrorCode(error) === 'EEXIST') throw new PreconditionFailedError('An object write is already in flight');
+        throw error;
       }
-      throw error;
     }
     try {
       if (input.ifMatch || input.ifNoneMatch) {
@@ -134,6 +142,36 @@ export class FileObjectStoreBackend implements ObjectStoreBackend {
       await this.writeObject(key, input);
     } finally {
       await rm(lock, { recursive: true, force: true });
+    }
+  }
+
+  public async deleteObject(key: string): Promise<void> {
+    const bodyPath = this.resolveKey(key);
+    const lock = `${bodyPath}.lock${OBJECT_STORE_FILE_PARTIAL_SUFFIX}`;
+    try {
+      await mkdir(lock);
+    } catch (error) {
+      if (fsErrorCode(error) === 'ENOENT') return; // Missing parent means no current object to delete.
+      if (fsErrorCode(error) === 'EEXIST') throw new PreconditionFailedError('An object write is already in flight');
+      throw error;
+    }
+    try {
+      await rm(bodyPath, { force: true });
+      await rm(`${bodyPath}${OBJECT_STORE_FILE_METADATA_SUFFIX}`, { force: true });
+    } finally {
+      await rm(lock, { recursive: true, force: true });
+    }
+    // Remove now-empty partition folders too, but never another object's data
+    // or the store root. Nonempty folders are the expected stopping point.
+    let parent = dirname(bodyPath);
+    while (parent !== this.root) {
+      try {
+        await rmdir(parent);
+      } catch (error) {
+        if (fsErrorCode(error) === 'ENOTEMPTY') break;
+        if (fsErrorCode(error) !== 'ENOENT') throw error;
+      }
+      parent = dirname(parent);
     }
   }
 

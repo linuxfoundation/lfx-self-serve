@@ -44,6 +44,7 @@ export interface ProjectParticipatingOrgsSummaryRow {
   AS_OF_DATE: Date | string | null;
   ORGS_COUNT: number | null;
   MEMBERS_COUNT: number | null;
+  CONTRIBUTING_MEMBERS_COUNT: number | null;
   NON_MEMBERS_COUNT: number | null;
   UNIDENTIFIED_COUNT: number | null;
   MEMBER_COMMITS: number | null;

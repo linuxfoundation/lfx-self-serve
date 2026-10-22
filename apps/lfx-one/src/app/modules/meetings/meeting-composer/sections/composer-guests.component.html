@@ -230,6 +230,19 @@
                     {{ row.scopeLabel }}
                   </span>
                 }
+                @if (canResendInvite(row.guest)) {
+                  <button
+                    type="button"
+                    class="flex-none rounded-md p-2 text-gray-400 hover:bg-gray-50 hover:text-blue-600 disabled:opacity-50"
+                    [attr.aria-label]="'Resend invite to ' + (row.displayName || row.guest.email || 'guest')"
+                    pTooltip="Resend invite"
+                    tooltipPosition="top"
+                    [disabled]="inviteResend.isResending(row.guest.uid)"
+                    (click)="onRequestResendInvite(row.guest)"
+                    [attr.data-testid]="'composer-guest-resend-' + row.trackId">
+                    <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
+                  </button>
+                }
                 @if (row.removable) {
                   <button
                     type="button"

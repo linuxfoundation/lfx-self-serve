@@ -3,7 +3,14 @@
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
-import { MKTG_RUN_ACTIVITY_ICONS, MKTG_RUN_ACTIVITY_VISIBLE_ROWS } from '@lfx-one/shared/constants';
+import {
+  MKTG_RUN_ACTIVITY_ICONS,
+  MKTG_RUN_ACTIVITY_LINE_MS,
+  MKTG_RUN_ACTIVITY_STARTING_LINES,
+  MKTG_RUN_ACTIVITY_TIP_MS,
+  MKTG_RUN_ACTIVITY_TIPS,
+  MKTG_RUN_ACTIVITY_VISIBLE_ROWS,
+} from '@lfx-one/shared/constants';
 import { MktgRunActivity, MktgRunActivityPhase, MktgRunActivityRow, MktgRunActivityStatus } from '@lfx-one/shared/interfaces';
 import { mktgRunActivityPhases } from '@lfx-one/shared/utils';
 
@@ -45,6 +52,8 @@ export class MktgRunActivityComponent {
   public readonly iconClass = input('bg-blue-50 text-blue-600');
   /** The agent's icon. */
   public readonly icon = input('fa-light fa-sparkles');
+  /** Form-only agents have no questions turn, even before any activity arrives. */
+  public readonly showQuestions = input(true);
 
   // === Signals ===
   protected readonly showAll = signal(false);
@@ -59,6 +68,15 @@ export class MktgRunActivityComponent {
   protected readonly hiddenCount = computed(() => this.rows().length - this.visibleRows().length);
   protected readonly phases: Signal<ActivityPhaseView[]> = this.initPhases();
   protected readonly elapsed = computed(() => this.formatDuration(this.now() - this.startedAt()));
+  /** Rotate off the elapsed clock: no timer of their own. The last starting line holds once reached. */
+  protected readonly startingLine = computed(() => {
+    const index = Math.floor(Math.max(0, this.now() - this.startedAt()) / MKTG_RUN_ACTIVITY_LINE_MS);
+    return MKTG_RUN_ACTIVITY_STARTING_LINES[Math.min(index, MKTG_RUN_ACTIVITY_STARTING_LINES.length - 1)];
+  });
+  protected readonly tip = computed(() => {
+    const index = Math.floor(Math.max(0, this.now() - this.startedAt()) / MKTG_RUN_ACTIVITY_TIP_MS);
+    return MKTG_RUN_ACTIVITY_TIPS[index % MKTG_RUN_ACTIVITY_TIPS.length];
+  });
   /** The step under way, for the screen-reader status line. */
   protected readonly currentLabel = computed(() => [...this.rows()].reverse().find((row) => row.status === 'running')?.label ?? '');
 
@@ -116,7 +134,7 @@ export class MktgRunActivityComponent {
     return computed(() =>
       mktgRunActivityPhases(this.activity())
         // A phase the run passed over says nothing; one not reached yet is shown so the user sees what is ahead.
-        .filter((phase) => phase.state !== 'skipped')
+        .filter((phase) => phase.state !== 'skipped' && (this.showQuestions() || phase.id !== 'questions'))
         .map((phase) => ({ ...phase, ...this.phaseClasses[phase.state] }))
     );
   }

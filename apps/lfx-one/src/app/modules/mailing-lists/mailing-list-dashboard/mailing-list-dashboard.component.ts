@@ -32,6 +32,7 @@ import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntil
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MailingListTableComponent } from '../components/mailing-list-table/mailing-list-table.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
@@ -44,6 +45,7 @@ import { MailingListTableComponent } from '../components/mailing-list-table/mail
     StatCardGridComponent,
     SkeletonModule,
     OpenIntercomDirective,
+    PageHeaderComponent,
   ],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',

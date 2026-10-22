@@ -167,6 +167,9 @@ export const FAQ_CONTENT_LIMITS = {
   questions: { min: 1, max: 12 },
 } as const;
 
+/** Non-answers the deployed Slides exporter omits, case-insensitively after trimming. */
+export const FAQ_SLIDES_UNANSWERED_REGEX = /^(tbd|n\/a|none|-)$/i;
+
 /** Project slug pattern (lowercase kebab-case, ≤64 chars) from the contract schema. */
 export const FAQ_PROJECT_SLUG_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 

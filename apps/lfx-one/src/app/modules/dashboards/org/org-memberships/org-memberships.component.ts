@@ -17,6 +17,7 @@ import { OrgLensMembershipsService } from '@services/org-lens-memberships.servic
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { CardComponent } from '@components/card/card.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 import { TableComponent } from '@components/table/table.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
@@ -42,6 +43,7 @@ type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[
   selector: 'lfx-org-memberships',
   standalone: true,
   imports: [
+    PageHeaderComponent,
     FormsModule,
     RouterLink,
     TableComponent,

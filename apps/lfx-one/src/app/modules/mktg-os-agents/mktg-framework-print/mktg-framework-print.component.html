@@ -4,11 +4,12 @@
 @let v = view();
 <!--
   The print's utility sets, declared once and reused on every section. Sizes
-  are arbitrary pt and in values on purpose: this is a letter page, portrait,
-  printed at size (styles.scss pins the sheet: 0.55 in top and bottom, 0.6 in
-  at the sides, so the page area is 7.3 × 9.9 in), which no rem-based spacing
-  step expresses. Colours and the typeface are the brand's custom properties
-  (the component's SCSS), never the app's palette.
+  are arbitrary pt and in values on purpose: this is a portrait page printed
+  at size, on the paper the print dialog has (A4 or US Letter; styles.scss
+  sets the margins: 0.55 in top and bottom, 0.6 in at the sides, and makes the
+  document as wide as the page area), which no rem-based spacing step
+  expresses. Colours and the typeface are the brand's custom properties (the
+  component's SCSS), never the app's palette.
 -->
 @let section = 'flex flex-col gap-[14pt] break-before-page';
 @let head = 'flex items-center justify-between gap-[12pt] border-b border-black/10 pb-[6pt] text-[7.5pt] uppercase tracking-[0.18em]';
@@ -35,9 +36,9 @@
   [style.--mfp-font]="v.brand.fontStack"
   [attr.data-brand]="v.brand.source"
   data-testid="mktg-framework-print">
-  <!-- COVER: the whole first page area, on the brand's dark -->
+  <!-- COVER: the whole first page area, on the brand's dark. In print a viewport height is the page area's height, so the cover fills the first page of either paper and its contents list stays on it. -->
   <section
-    class="flex h-[9.8in] flex-col gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
+    class="flex h-screen flex-col gap-[18pt] rounded-[10pt] bg-[color:var(--mfp-dark)] p-[0.55in] text-[color:var(--mfp-on-dark)] break-after-page"
     aria-label="Cover"
     data-testid="mktg-framework-print-cover">
     <div class="flex items-baseline justify-between gap-[12pt] text-[7.5pt] uppercase tracking-[0.2em] opacity-80">

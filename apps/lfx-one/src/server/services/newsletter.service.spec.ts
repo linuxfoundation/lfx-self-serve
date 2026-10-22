@@ -7,8 +7,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirror meeting.service.spec.ts: isolate constructed collaborators at the module boundary.
 // The pure project classifier is real, resolved by the server Vitest alias.
-const { listCommitteeNewsletters, getMyCommitteeUids, getProjectsByIds } = vi.hoisted(() => ({
+const { listCommitteeNewsletters, listNewsletters, listOptOuts, getMyCommitteeUids, getProjectsByIds } = vi.hoisted(() => ({
   listCommitteeNewsletters: vi.fn(),
+  listNewsletters: vi.fn(),
+  listOptOuts: vi.fn(),
   getMyCommitteeUids: vi.fn(),
   getProjectsByIds: vi.fn(),
 }));
@@ -16,6 +18,8 @@ const { listCommitteeNewsletters, getMyCommitteeUids, getProjectsByIds } = vi.ho
 vi.mock('./newsletter-service.client', () => ({
   NewsletterServiceClient: class {
     public listCommitteeNewsletters = listCommitteeNewsletters;
+    public listNewsletters = listNewsletters;
+    public listOptOuts = listOptOuts;
   },
 }));
 vi.mock('./committee.service', () => ({
@@ -244,5 +248,76 @@ describe('NewsletterService.getMyNewsletters', () => {
     expect(unresolved.newsletters[0]).toMatchObject({ id: 'n1', parent_project_uid: 'foundation' });
     expect(unresolved.newsletters[0]).not.toHaveProperty('parent_is_foundation');
     expect(unresolved.complete).toBe(true);
+  });
+});
+
+describe('NewsletterService.getNewsletterStatusCounts', () => {
+  let service: NewsletterService;
+  const row = (status: string, scheduledAt?: string) => ({ id: `n-${Math.random()}`, status, ...(scheduledAt && { scheduled_at: scheduledAt }) });
+
+  beforeEach(() => {
+    listNewsletters.mockReset();
+    listOptOuts.mockReset().mockResolvedValue({ opt_outs: [{ id: 'o1' }, { id: 'o2' }] });
+    service = new NewsletterService();
+  });
+
+  it('buckets rows across pages like the list tabs and counts opt-outs', async () => {
+    listNewsletters
+      .mockResolvedValueOnce({ newsletters: [row('draft'), row('sent'), row('sending', '2026-12-01T00:00:00Z')], next_page_token: 't2' })
+      .mockResolvedValueOnce({ newsletters: [row('scheduled'), row('sending'), row('draft')] });
+
+    const result = await service.getNewsletterStatusCounts(req, 'p1');
+
+    expect(result).toEqual({ draft: 2, scheduled: 2, sent: 2, optout: 2, truncated: false });
+    expect(listNewsletters).toHaveBeenNthCalledWith(1, req, 'p1', { page_token: undefined });
+    expect(listNewsletters).toHaveBeenNthCalledWith(2, req, 'p1', { page_token: 't2' });
+  });
+
+  it('marks the counts truncated when the page cap is hit with a cursor outstanding', async () => {
+    listNewsletters.mockResolvedValue({ newsletters: [row('draft')], next_page_token: 'more' });
+
+    const result = await service.getNewsletterStatusCounts(req, 'p1');
+
+    expect(listNewsletters).toHaveBeenCalledTimes(20);
+    expect(result).toMatchObject({ draft: 20, truncated: true });
+  });
+
+  it('drops only the opt-out count when the opt-out read fails', async () => {
+    listNewsletters.mockResolvedValue({ newsletters: [row('sent')] });
+    listOptOuts.mockRejectedValue(new MicroserviceError('forbidden', 403, 'FORBIDDEN'));
+
+    const result = await service.getNewsletterStatusCounts(req, 'p1');
+
+    expect(result).toEqual({ draft: 0, scheduled: 0, sent: 1, optout: null, truncated: false });
+  });
+
+  it('fails the request when the list read fails, without an unhandled opt-out rejection', async () => {
+    listNewsletters.mockRejectedValue(new MicroserviceError('upstream down', 503, 'UNAVAILABLE'));
+    listOptOuts.mockRejectedValue(new MicroserviceError('also down', 503, 'UNAVAILABLE'));
+
+    await expect(service.getNewsletterStatusCounts(req, 'p1')).rejects.toMatchObject({ statusCode: 503 });
+  });
+
+  it('does not raise an unhandled rejection when the opt-out 401 lands while the page walk is still pending', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      listNewsletters.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({ newsletters: [] }), 20)));
+      listOptOuts.mockRejectedValue(new MicroserviceError('expired', 401, 'UNAUTHORIZED'));
+
+      await expect(service.getNewsletterStatusCounts(req, 'p1')).rejects.toMatchObject({ statusCode: 401 });
+      // unhandledRejection fires after the microtask queue drains; give it a tick to surface.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
+  it('rethrows a 401 from the opt-out read', async () => {
+    listNewsletters.mockResolvedValue({ newsletters: [] });
+    listOptOuts.mockRejectedValue(new MicroserviceError('expired', 401, 'UNAUTHORIZED'));
+
+    await expect(service.getNewsletterStatusCounts(req, 'p1')).rejects.toMatchObject({ statusCode: 401 });
   });
 });

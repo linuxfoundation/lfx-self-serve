@@ -12,6 +12,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 import { OrgMeetingsInfluenceComponent } from './components/org-meetings-influence/org-meetings-influence.component';
 import { OrgMeetingsKpiCardsComponent } from './components/org-meetings-kpi-cards/org-meetings-kpi-cards.component';
@@ -29,6 +30,7 @@ import { OrgMeetingsTimeRangeComponent } from './components/org-meetings-time-ra
 @Component({
   selector: 'lfx-org-meetings',
   imports: [
+    PageHeaderComponent,
     OrgMeetingsTimeRangeComponent,
     OrgMeetingsKpiCardsComponent,
     OrgMeetingsSpendBreakdownComponent,

@@ -7,6 +7,10 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import {
+  MENTORSHIP_MENTOR_INVITATION_ACCEPT_LABEL,
+  MENTORSHIP_MENTOR_INVITATION_DECLINE_LABEL,
+  MENTORSHIP_MENTOR_INVITATION_STATUS_BADGE_CLASS,
+  MENTORSHIP_MENTOR_INVITATION_STATUS_LABEL,
   MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_DEBOUNCE_MS,
   MENTORSHIP_MENTOR_OPEN_PROGRAMS_SEARCH_MAX_LENGTH,
   MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES,
@@ -26,10 +30,12 @@ import {
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
 } from '@lfx-one/shared/constants';
 import {
+  MentorshipMentorInviteDecision,
   MentorshipMentorOpenProgram,
   MentorshipMentorOpenProgramsQuery,
   MentorshipMentorOpenProgramsResponse,
   MentorshipMentorOpenProgramsState,
+  MentorshipMentorProgramInvitation,
   MentorshipMentorProgramOption,
   MentorshipMentorProgramRequest,
 } from '@lfx-one/shared/interfaces';
@@ -42,7 +48,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  * Program picker and request list, shared by the Become a Mentor form and the mentor profile edit
  * drawer. The select acts as a one-shot action rather than a stored value: it hands the program up
  * and clears itself. A program with a pending, approved or declined request
- * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), or with an open invitation (`invitedProgramIds`),
+ * (`MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES`), or with an open invitation (`invitations`),
  * stays listed but disabled, with its status as a note; so does one a request found gone (404), noted
  * as no longer available. A program whose request was withdrawn stays
  * pickable, since asking again reopens it. When the parent could not read the requests, the section
@@ -61,6 +67,9 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, Sub
  * nothing here is required and the section surfaces no validation error. The parent owns the list
  * and decides what picking and withdrawing do: the form keeps picks until submit, the drawer sends
  * them right away. Only a pending request can be withdrawn, so only its row offers the button.
+ *
+ * Open invitations are listed above the requests, each with Accept and Decline icon buttons. Only the
+ * drawer passes invitations, and it decides what answering does.
  */
 @Component({
   selector: 'lfx-mentorship-mentor-programs-section',
@@ -80,8 +89,12 @@ export class MentorProgramsSectionComponent {
   public readonly withdrawingId = input<string | null>(null);
 
   public readonly requests = input.required<MentorshipMentorProgramRequest[]>();
-  /** Programs the mentor is already invited to; upstream refuses a request for them. */
-  public readonly invitedProgramIds = input<string[]>([]);
+  /** The mentor's open invitations: listed with Accept and Decline, and their programs disabled in the picker, since upstream refuses a request for them. */
+  public readonly invitations = input<MentorshipMentorProgramInvitation[]>([]);
+  /** The invitation being answered, or `null`. Every invitation's buttons are disabled meanwhile. */
+  public readonly respondingInvitationId = input<string | null>(null);
+  /** The answer being sent for `respondingInvitationId`, so only the button pressed shows a loading state. */
+  public readonly respondingDecision = input<MentorshipMentorInviteDecision | null>(null);
   /** True while the parent is still reading the requests: the select waits, since it cannot yet tell which programs are requested. */
   public readonly requestsLoading = input(false);
   /** True when the parent could not read the requests: shows the failure and its Retry instead of the list. */
@@ -89,11 +102,17 @@ export class MentorProgramsSectionComponent {
   public readonly add = output<MentorshipMentorOpenProgram>();
   public readonly withdraw = output<string>();
   public readonly retry = output<void>();
+  public readonly acceptInvitation = output<string>();
+  public readonly declineInvitation = output<string>();
 
   protected readonly intro = MENTORSHIP_MENTOR_PROGRAMS_INTRO;
   protected readonly helper = MENTORSHIP_MENTOR_PROGRAMS_HELPER;
   protected readonly requestsFailedMessage = MENTORSHIP_MENTOR_REQUESTS_LOAD_FAILED_MESSAGE;
   protected readonly programsFailedMessage = MENTORSHIP_MENTOR_PROGRAMS_LOAD_FAILED_MESSAGE;
+  protected readonly invitationStatusLabel = MENTORSHIP_MENTOR_INVITATION_STATUS_LABEL;
+  protected readonly invitationStatusBadgeClass = MENTORSHIP_MENTOR_INVITATION_STATUS_BADGE_CLASS;
+  protected readonly acceptLabel = MENTORSHIP_MENTOR_INVITATION_ACCEPT_LABEL;
+  protected readonly declineLabel = MENTORSHIP_MENTOR_INVITATION_DECLINE_LABEL;
   protected readonly itemSize = MENTORSHIP_MENTOR_PICKER_ITEM_SIZE;
   protected readonly scrollerOptions = MENTORSHIP_MENTOR_PICKER_SCROLLER_OPTIONS;
   /** On close the select clears its filter box (`resetFilterOnHide`); this clears the search behind it. */
@@ -178,7 +197,7 @@ export class MentorProgramsSectionComponent {
    */
   private initProgramOptions() {
     return computed((): MentorshipMentorProgramOption[] => {
-      const notes = new Map<string, string>(this.invitedProgramIds().map((programId) => [programId, MENTORSHIP_MENTOR_PICKER_INVITED_NOTE]));
+      const notes = new Map<string, string>(this.invitations().map((invitation) => [invitation.programId, MENTORSHIP_MENTOR_PICKER_INVITED_NOTE]));
       for (const request of this.requests()) {
         if (MENTORSHIP_MENTOR_PICKER_EXCLUDED_STATUSES.includes(request.status)) {
           notes.set(request.programId, MENTORSHIP_MENTOR_REQUEST_STATUS_LABELS[request.status]);

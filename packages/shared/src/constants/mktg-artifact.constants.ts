@@ -62,9 +62,15 @@ export const MKTG_ARTIFACT_DEFAULT_DRAFT_VERSION = 1;
  * `MktgArtifactService`.
  *
  * Adding the remaining agents is an entry here plus BFF wiring — a `pitch-deck`
- * entry would read exactly like the three below.
+ * entry follows the same shape as the existing entries.
  */
 export const MKTG_ARTIFACT_SPECS: Record<MktgArtifactKey, MktgArtifactSpec> = {
+  'linkedin-post': {
+    agentKey: 'linkedin-post',
+    keyPrefix: 'linkedin-post',
+    maxDocumentBytes: MKTG_ARTIFACT_MAX_DOCUMENT_BYTES,
+    logNamespace: 'linkedin_post',
+  },
   'brand-kit': {
     agentKey: 'brand-kit',
     keyPrefix: 'brand-kit',

@@ -63,6 +63,8 @@ vi.mock('./mktg-document-store.service', async () => {
   const { MktgArtifactService } = await import('./mktg-artifact.service');
   return {
     MktgDocumentStoreService: class {
+      public captureFramework = vi.fn(async () => null);
+      public rememberGenerationFramework = vi.fn(async () => undefined);
       private readonly artifactService = new MktgArtifactService();
       public async persistJsonGeneration(
         req: Request,
@@ -227,6 +229,44 @@ describe('FaqService.getResult', () => {
     expect(result.questions?.map((question) => question.key)).toEqual(['membership-cost']);
     expect(result.questionsId).toMatch(/^[0-9a-f]{8}$/);
     expect(projectMocks.getProjectById).not.toHaveBeenCalled();
+  });
+
+  it.each([FAQ_NOT_FINALIZED_REPLY, questionsText])('does not reuse a previous turn outcome after renewal: %s', async (text) => {
+    const old = agentTextPayload(text);
+    guildMocks.getRawEventPayloads.mockResolvedValue([old, JSON.stringify({ type: 'mktg_session_turn_started' }), old]);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe('pending');
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+  });
+
+  it.each([
+    { text: FAQ_NOT_FINALIZED_REPLY, status: 'refused' },
+    { text: questionsText, status: 'questions' },
+  ])('recognizes an identical but genuinely new $status reply in the next turn', async ({ text, status }) => {
+    const notification = (id: string) => JSON.stringify({ id, type: 'agent_notification_message', content: { type: 'text', data: text } });
+    guildMocks.getRawEventPayloads.mockResolvedValue([
+      notification('synthetic-old-reply'),
+      JSON.stringify({ type: 'mktg_session_turn_started' }),
+      notification('synthetic-old-reply'),
+      notification('synthetic-new-reply'),
+    ]);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe(status);
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+  });
+
+  it.each([
+    { text: '', status: 'pending' },
+    { text: questionsText, status: 'questions' },
+    { text: FAQ_NOT_FINALIZED_REPLY, status: 'refused' },
+  ])('never lets a prior finalize hide renewed-turn $status', async ({ text, status }) => {
+    const old = toolResultPayload(ENVELOPE, 'old-finalize');
+    const events = [old, JSON.stringify({ type: 'mktg_session_turn_started' }), old];
+    if (text) events.push(agentTextPayload(text));
+    guildMocks.getRawEventPayloads.mockResolvedValue(events);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe(status);
+    expect(documentStoreMocks.recorded).toHaveLength(0);
+    guildMocks.getRawEventPayloads.mockResolvedValue([...events, toolResultPayload(ENVELOPE, 'new-finalize')]);
+    expect((await service.getResult(req, 'session-1', PROJECT_UID)).status).toBe('ready');
+    expect(documentStoreMocks.recorded).toHaveLength(1);
   });
 
   it('reports the reply that ended the run — even after a questions round — and stores nothing', async () => {

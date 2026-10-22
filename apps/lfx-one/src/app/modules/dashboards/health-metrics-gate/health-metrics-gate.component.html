@@ -8,21 +8,21 @@
          (its own `margin-top:-32px;padding-top:32px` trick, mirrored below) — the sticky offset of every
          tab's own rail or sub-nav is measured from this element's rendered height, tab bar included.
          -mt-6 cancels main-layout's `py-6` so the header has zero distance to travel before it locks, and
-         pt-9 restores that 1.5rem plus the other pages' `mt-3`, so the title sits where theirs does.
+         pt-6 restores that 1.5rem, so the title sits where every other page's header does.
          Page-colored and opaque so content scrolls under; pinned below the impersonation banner. -->
-    <header
+    <div
       #pageHeader
-      class="mt-3 mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-6 lg:bg-gray-50 lg:pt-9"
-      [ngClass]="{ 'lg:top-12': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
+      data-testid="health-metrics-sticky-header"
+      class="mb-6 flex flex-col gap-4 lg:sticky lg:z-10 lg:-mt-6 lg:bg-gray-50 lg:pt-6"
+      [ngClass]="{ 'lg:top-[36px]': userService.impersonating(), 'lg:top-0': !userService.impersonating() }">
       <!-- The design's `.phead`: title and controls share a row, the controls top-aligned to the title. The
-           20px/16px gaps are the design's; the 14px root makes `gap-5`/`gap-4` undershoot them. -->
-      <div class="flex flex-wrap items-start justify-between gap-[20px]">
-        <div class="flex flex-col gap-1">
-          <h1 class="font-display text-2xl font-light" data-testid="health-metrics-title">Health Metrics</h1>
-          <p class="text-sm text-gray-500" data-testid="health-metrics-subtitle">Operational health across your foundation.</p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-[16px]">
+           16px control gap is the design's; the 14px root makes `gap-4` undershoot it. -->
+      <lfx-page-header
+        title="Health Metrics"
+        description="Operational health across your foundation."
+        titleTestId="health-metrics-title"
+        descriptionTestId="health-metrics-subtitle">
+        <div pageHeaderActions class="flex flex-wrap items-center gap-[16px]">
           <!-- Project drill-down pill (`.projsel`/`.pstrig`): live on tabs flagged `projectScoped`, inert
                elsewhere since those tabs still read foundation-wide. Hidden once the list loads empty
                (unless a selection is kept); the menu checks the URL slug, not the list. After a failed load it keeps the selection and a click retries the list.
@@ -122,7 +122,7 @@
             Export
           </button>
         </div>
-      </div>
+      </lfx-page-header>
 
       <!-- Inside the sticky header on purpose (the design's `#tabs` sits in `.stickyhead`), so the
            measured offset a tab's sub-nav pins below already accounts for the bar. -->
@@ -142,7 +142,7 @@
           </a>
         }
       </nav>
-    </header>
+    </div>
 
     <router-outlet />
   </div>

@@ -13,10 +13,10 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     canActivate: [authGuard],
   },
   {
+    // The Agents tab is gone: agents are reached from their Kit family. Old links land on the Kit.
     path: 'agents',
-    title: 'Marketing agents',
-    loadComponent: () => import('./mktg-os-agents/mktg-os-agents.component').then((m) => m.MktgOsAgentsComponent),
-    canActivate: [authGuard],
+    redirectTo: '',
+    pathMatch: 'full',
   },
   {
     path: 'requests',
@@ -51,6 +51,12 @@ export const MKTG_OS_AGENTS_ROUTES: Routes = [
     path: 'families/:familyId',
     title: 'Marketing family',
     loadComponent: () => import('./mktg-family/mktg-family.component').then((m) => m.MktgFamilyComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: 'member-360',
+    title: 'Member 360',
+    loadComponent: () => import('./member-360-run/member-360-run.component').then((m) => m.Member360RunComponent),
     canActivate: [authGuard],
   },
   {

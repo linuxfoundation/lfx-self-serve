@@ -38,10 +38,14 @@ vi.mock('./user.service', () => ({
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-artifact.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-rebuild.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-envelope.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/brand-kit.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-slides-export.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-family-export.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/boilerplates.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/faq.utils')),
   readFoundationMessageContent: (text: string): unknown => {
     try {
       const value = JSON.parse(text) as Record<string, unknown>;
@@ -55,9 +59,13 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-rebuild.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-asset.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/brand-kit.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-slides-export.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-family-export.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-kit.constants')),
 }));
 vi.mock('./logger.service', () => ({ logger: loggerMocks }));
 vi.mock('./project.service', () => ({
@@ -127,11 +135,13 @@ import { MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_POLL } fro
 import type { MktgDocumentType, MktgSlidesExportStartInput } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
-import { brandKitTestRevision } from '../../app/shared/testing/brand-kit-test-data';
+import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { isMktgSlidesExportStale } from '../../../../../packages/shared/src/utils/mktg-slides-export.utils';
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
 import { ConflictError } from '../errors';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { MktgSlidesExportService } from './mktg-slides-export.service';
+import { ObjectStoreService } from './object-store.service';
 
 const req = {
   path: '/api/mktg-agents/slides-export/start',
@@ -287,6 +297,209 @@ describe('MktgSlidesExportService', () => {
     vi.unstubAllEnvs();
   });
 
+  describe('family exports', () => {
+    const familyInput = { project: PROJECT, projectName: 'Synthetic project', familyId: 'positioning-brand', mode: 'create' as const };
+
+    it('refuses a family with no approved members without calling Guild', async () => {
+      await seedFramework(documentStore, 'Draft only.', false);
+      await expect(service.startFamilyExport(req, familyInput)).rejects.toMatchObject({ statusCode: 409, code: 'FAMILY_NOTHING_APPROVED' });
+      expect(guildMocks.createSession).not.toHaveBeenCalled();
+    });
+
+    it('composes every approved family asset in deck order with the full kit and skips only unapproved members', async () => {
+      await seedFramework(documentStore);
+      await seedKit(documentStore);
+      const bp = ['One-liner', '25 words', '50 words', '100 words'].map((l, index) => ({ l, max: [15, 25, 50, 100][index], t: 'Synthetic boilerplate.' }));
+      const faq = [
+        [
+          'General',
+          [
+            ['What is this project?', 'A synthetic project.', null],
+            ['Unanswered?', null, null],
+          ],
+        ],
+      ];
+      for (const [agentKey, content] of [
+        ['boilerplates', { bp }],
+        ['faq', { faq }],
+      ] as const) {
+        const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === agentKey);
+        if (!type) throw new Error('Synthetic type missing');
+        await documentStore.recordGeneration(
+          req,
+          type,
+          PROJECT,
+          {
+            text: JSON.stringify(content),
+            format: 'json',
+            contentSha256: sha(JSON.stringify(content)),
+            version: 1,
+            intakeMode: 'form',
+            sidecar: null,
+          },
+          `synthetic-${agentKey}`
+        );
+        await approveNewest(documentStore, type);
+      }
+      await service.startExport(req, input({ type: BRAND_KIT, agentKey: 'brand-kit' }));
+      const documentKit = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]).kit;
+      const started = await service.startFamilyExport(req, familyInput);
+      expect(started.skippedMembers).toEqual([]);
+      expect(started.snapshot.members.map((member) => member.agentKey)).toEqual(['foundation-message', 'brand-kit', 'boilerplates', 'faq']);
+      expect(sentMessage()).toContain('ASSETS: framework, kit, boilerplates, faq');
+      const assets = JSON.parse(sentMessage().split('--- ASSETS (JSON) ---\n')[1].split('\n--- END ASSETS ---')[0]);
+      expect(assets.kit).toHaveProperty('chapters');
+      expect(assets.kit).toHaveProperty('kit');
+      expect(assets.kit).toEqual(documentKit);
+      expect(assets.boilerplates).toEqual(bp);
+      expect(assets.faq).toEqual([{ q: 'What is this project?', a: 'A synthetic project.' }]);
+    });
+
+    it('refuses an unreadable approved asset with family-specific copy before calling Guild', async () => {
+      await documentStore.recordGeneration(
+        req,
+        FRAMEWORK,
+        PROJECT,
+        {
+          text: '{}',
+          format: 'json',
+          contentSha256: sha('{}'),
+          version: 1,
+          intakeMode: 'form',
+          sidecar: null,
+        },
+        'synthetic-unreadable-framework'
+      );
+      await approveNewest(documentStore, FRAMEWORK);
+      await expect(service.startFamilyExport(req, familyInput)).rejects.toMatchObject({ statusCode: 409, code: 'FAMILY_ASSET_UNREADABLE' });
+      expect(guildMocks.createSession).not.toHaveBeenCalled();
+    });
+
+    it('refuses an approved FAQ with no exportable answers rather than sending an exporter-invalid empty list', async () => {
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'faq');
+      if (!type) throw new Error('Synthetic FAQ type missing');
+      const text = JSON.stringify({ faq: [['General', [['Unanswered?', null, null]]]] });
+      await documentStore.recordGeneration(
+        req,
+        type,
+        PROJECT,
+        {
+          text,
+          format: 'json',
+          contentSha256: sha(text),
+          version: 1,
+          intakeMode: 'form',
+          sidecar: null,
+        },
+        'synthetic-unanswered-faq'
+      );
+      await approveNewest(documentStore, type);
+      await expect(service.startFamilyExport(req, familyInput)).rejects.toMatchObject({ statusCode: 409, code: 'FAMILY_ASSET_UNREADABLE' });
+      expect(guildMocks.createSession).not.toHaveBeenCalled();
+    });
+
+    it('keeps exact started revisions after approval moves, independently of document exports', async () => {
+      await seedFramework(documentStore);
+      const started = await service.startFamilyExport(req, familyInput);
+      expect(started.skippedMembers).toEqual(['brand-kit', 'boilerplates', 'faq']);
+      await seedFramework(documentStore, 'New approved.');
+      expect(await service.getFamilyResult(req, started.sessionId, started.snapshot)).toEqual({ status: 'pending' });
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      const ready = await service.getFamilyResult(req, started.sessionId, started.snapshot);
+      expect(ready).toMatchObject({ status: 'ready', record: { familyId: 'positioning-brand', members: started.snapshot.members } });
+      await service.getFamilyResult(req, started.sessionId, started.snapshot);
+      const records = [...store.objects.keys()].filter((key) => key.startsWith('slides-exports/'));
+      expect(records).toHaveLength(1);
+      expect(records[0]).toContain('/families/positioning-brand/');
+      expect((await service.getFamilyLast(req, PROJECT, familyInput.familyId)).stale).toBe(true);
+      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last).toBeNull();
+    });
+
+    it('reads approved identities without loading revision bodies, even when an approved body is corrupt', async () => {
+      await seedFramework(documentStore);
+      const started = await service.startFamilyExport(req, familyInput);
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await service.getFamilyResult(req, started.sessionId, started.snapshot);
+      const member = started.snapshot.members[0];
+      if (!member) throw new Error('Missing synthetic member');
+      const key = `documents/${PROJECT}/${member.agentKey}/living/${member.revisionId}.json`;
+      const stored = store.objects.get(key);
+      if (!stored) throw new Error('Missing synthetic revision');
+      stored.body = 'unreadable approved revision';
+      const exportRead = vi.spyOn(MktgDocumentStoreService.prototype, 'readExportRevision');
+      const objectRead = vi.spyOn(ObjectStoreService.prototype, 'getObject');
+      const last = await service.getFamilyLast(req, PROJECT, familyInput.familyId);
+      expect(last.currentMembers).toEqual(started.snapshot.members);
+      expect(last.last?.deckId).toBe(DECK_ID);
+      expect(last.stale).toBe(false);
+      expect(exportRead).not.toHaveBeenCalled();
+      expect(objectRead.mock.calls.some((call) => call[2] === key)).toBe(false);
+      exportRead.mockRestore();
+      objectRead.mockRestore();
+      await expect(service.startFamilyExport(req, familyInput)).rejects.toMatchObject({ code: 'MKTG_APPROVED_REVISION_UNREADABLE' });
+    });
+
+    it.each([false, true])('fails start and freshness when an approved object disappears (other approved member=%s)', async (withKit) => {
+      await seedFramework(documentStore);
+      if (withKit) await seedKit(documentStore);
+      const started = await service.startFamilyExport(req, familyInput);
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await service.getFamilyResult(req, started.sessionId, started.snapshot);
+      const member = started.snapshot.members[0];
+      if (!member) throw new Error('Missing synthetic member');
+      store.objects.delete(`documents/${PROJECT}/${member.agentKey}/living/${member.revisionId}.json`);
+      guildMocks.createSession.mockClear();
+      const failure = { statusCode: 502, code: 'MKTG_APPROVED_REVISION_UNREADABLE' };
+      for (const mode of ['create', 'update'] as const) {
+        await expect(service.startFamilyExport(req, { ...familyInput, mode })).rejects.toMatchObject(failure);
+      }
+      await expect(service.getFamilyLast(req, PROJECT, familyInput.familyId)).rejects.toMatchObject(failure);
+      expect(guildMocks.createSession).not.toHaveBeenCalled();
+      expect([...store.objects.keys()].filter((key) => key.startsWith('slides-exports/'))).toHaveLength(1);
+    });
+
+    it('drafts do not stale the export; newly approved members do', async () => {
+      await seedFramework(documentStore);
+      const started = await service.startFamilyExport(req, familyInput);
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await service.getFamilyResult(req, started.sessionId, started.snapshot);
+      await seedFramework(documentStore, 'New draft.', false);
+      expect((await service.getFamilyLast(req, PROJECT, familyInput.familyId)).stale).toBe(false);
+      await seedKit(documentStore);
+      expect((await service.getFamilyLast(req, PROJECT, familyInput.familyId)).stale).toBe(true);
+    });
+
+    it('updates the family last deck, creates a new one on request, and does not trust a mismatching result', async () => {
+      await seedFramework(documentStore);
+      const read = vi.spyOn(MktgDocumentStoreService.prototype, 'readExportRevision');
+      await expect(service.startFamilyExport(req, { ...familyInput, mode: 'update' })).rejects.toMatchObject({ code: 'NO_DECK_TO_UPDATE' });
+      expect(read).not.toHaveBeenCalled();
+      read.mockRestore();
+      const first = await service.startFamilyExport(req, familyInput);
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await service.getFamilyResult(req, first.sessionId, first.snapshot);
+      const update = await service.startFamilyExport(req, { ...familyInput, mode: 'update' });
+      expect(sentMessage()).toContain(`DECK ID: ${DECK_ID}`);
+      expect(update.snapshot.deckId).toBe(DECK_ID);
+      expect(await service.getFamilyResult(req, update.sessionId, update.snapshot)).toMatchObject({ status: 'failed' });
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent({ mode: 'update' })]);
+      expect(await service.getFamilyResult(req, update.sessionId, update.snapshot)).toMatchObject({
+        status: 'ready',
+        record: { mode: 'update', deckId: DECK_ID },
+      });
+      await service.startFamilyExport(req, familyInput);
+      expect(sentMessage()).toContain('DECK ID: none (create a new deck');
+    });
+
+    it('finishes and keeps family exports even when the browser leaves', async () => {
+      await seedFramework(documentStore);
+      await service.startFamilyExport(req, familyInput);
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+      expect((await service.getFamilyLast(req, PROJECT, familyInput.familyId)).last?.deckId).toBe(DECK_ID);
+    });
+  });
+
   describe('startExport', () => {
     it('sends the stored framework with the project’s kit tokens to the Marketing OS folder, the mention on its own line', async () => {
       await seedKit(documentStore);
@@ -438,8 +651,10 @@ describe('MktgSlidesExportService', () => {
         revisionId: byHash.revision.id,
       });
       expect(result).toMatchObject({ status: 'ready', record: { revisionId: byHash.revision.id, revisionNumber: 1, contentSha256: olderSha } });
-      // The newer revision stands beside it, so the panel says the deck is out of date.
-      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).latestRevision).toMatchObject({ number: 2 });
+      // A newer Draft does not change approved current or stale the deck.
+      const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
+      expect(last.latestRevision).toEqual(byHash.revision);
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(false);
     });
 
     it('refuses an update before any deck exists, and a revision it does not store', async () => {
@@ -472,7 +687,10 @@ describe('MktgSlidesExportService', () => {
         revisionId: started.revision.id,
       });
       expect(result).toMatchObject({ status: 'ready', record: { revisionId: started.revision.id, deckId: DECK_ID } });
-      expect((await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living')).last?.deckId).toBe(DECK_ID);
+      const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
+      expect(last.last?.deckId).toBe(DECK_ID);
+      expect(last.latestRevision === null).toBe(!approved);
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(approved);
     });
     it('keeps a ready deck with the revision it came from, once however often it is polled, and updates that deck next time', async () => {
       await seedFramework(documentStore);
@@ -501,6 +719,7 @@ describe('MktgSlidesExportService', () => {
       const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
       expect(last.last?.deckId).toBe(DECK_ID);
       expect(last.latestRevision).toEqual(started.revision);
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(false);
 
       await service.startExport(req, input({ mode: 'update' }));
       expect(sentMessage()).toContain(`\nDECK ID: ${DECK_ID}\n`);
@@ -524,9 +743,11 @@ describe('MktgSlidesExportService', () => {
       expect(guildMocks.getRawEventPayloads).toHaveBeenCalledTimes(polls);
     });
 
-    it('gives up on the server at the poll deadline, and a failed poll is tried again', async () => {
+    it.each([false, true])('keeps scope in retry/deadline logs (family=%s)', async (family) => {
       await seedFramework(documentStore);
-      await service.startExport(req, input());
+      if (family) await service.startFamilyExport(req, { project: PROJECT, projectName: 'Synthetic project', familyId: 'positioning-brand', mode: 'create' });
+      else await service.startExport(req, input());
+      const logContext = family ? { family: 'positioning-brand' } : { agent: 'foundation-message' };
       guildMocks.getRawEventPayloads.mockRejectedValueOnce(new Error('guild unavailable'));
 
       await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs * 2);
@@ -535,17 +756,23 @@ describe('MktgSlidesExportService', () => {
         req,
         'mktg_slides_export_finish',
         expect.any(String),
-        expect.objectContaining({ session_id: 'session-1' })
+        expect.objectContaining({ session_id: 'session-1', ...logContext })
       );
 
       await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.timeoutMs);
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_finish',
+        expect.stringContaining('deadline'),
+        expect.objectContaining(logContext)
+      );
       const polls = guildMocks.getRawEventPayloads.mock.calls.length;
       expect(polls).toBeLessThanOrEqual(MKTG_SLIDES_EXPORT_POLL.maxAttempts + 1);
       await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs * 5);
       expect(guildMocks.getRawEventPayloads).toHaveBeenCalledTimes(polls);
     });
 
-    it('reports the newer revision beside the last export once the framework changes', async () => {
+    it('reports newly approved current beside the last export', async () => {
       await seedFramework(documentStore, 'First.');
       const started = await service.startExport(req, input());
       guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
@@ -562,6 +789,20 @@ describe('MktgSlidesExportService', () => {
 
       expect(last.last?.contentSha256).toBe(started.revision.contentSha256);
       expect(last.latestRevision).toMatchObject({ number: 2, contentSha256: newer });
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(true);
+    });
+
+    it('marks a deck stale when Make current selects older approved content', async () => {
+      await seedFramework(documentStore, 'Older approval.');
+      const olderId = (await documentStore.readApprovedCurrentSummary(req, PROJECT, FRAMEWORK, 'living'))?.id ?? '';
+      await seedFramework(documentStore, 'Exported approval.');
+      const started = await service.startExport(req, input());
+      guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+      await service.getResult(req, 'session-1', { ...input(), revisionId: started.revision.id });
+      await documentStore.restoreRevision(req, PROJECT, FRAMEWORK, 'living', olderId);
+      const last = await service.getLast(req, PROJECT, FRAMEWORK, 'foundation-message', 'living');
+      expect(last.latestRevision).toMatchObject({ id: olderId, number: 1 });
+      expect(isMktgSlidesExportStale(last.last, last.latestRevision)).toBe(true);
     });
 
     it('answers a failed export with a plain message and the deck it left behind, never the error text', async () => {
@@ -587,6 +828,12 @@ describe('MktgSlidesExportService', () => {
         deckLink: link,
       });
       expect(JSON.stringify(result)).not.toContain('update_presentation');
+      expect(loggerMocks.warning).toHaveBeenCalledWith(
+        req,
+        'mktg_slides_export_result',
+        'Slides export failed',
+        expect.objectContaining({ agent: 'foundation-message' })
+      );
     });
 
     it('waits on an error the session may still recover from: a recent one, or one followed by more work', async () => {

@@ -3,6 +3,9 @@
 
 import type { LinkedinFormRenderVersion } from '../interfaces/linkedin-post.interface';
 
+/** Provenance belongs to the pushed edit history entry, not the previous route. */
+export const LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY = 'mktgEditPushed';
+
 /** Verbatim Step 1/2 copy and defaults from the live agent src/profile.ts. */
 export const LINKEDIN_ABOUT_FIELDS = [
   { key: 'name', label: 'Name', ask: 'Their name' },
@@ -52,6 +55,7 @@ export const LINKEDIN_VOICE_FIELDS = [
   },
 ] as const;
 
+export const LINKEDIN_AGENT_KEY = 'linkedin-post';
 export const LINKEDIN_CONTRACT_ID = 'linkedin-post-output/v1';
 export const LINKEDIN_API = '/api/mktg-agents/linkedin-post';
 export const LINKEDIN_SHARE_LINK_ANSWER_KEY = 'share_link';

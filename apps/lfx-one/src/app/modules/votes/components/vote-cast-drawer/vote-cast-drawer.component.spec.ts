@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
-import { PollStatus } from '@lfx-one/shared/enums';
+import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { Vote } from '@lfx-one/shared/interfaces';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { Subject, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteCastDrawerComponent } from './vote-cast-drawer.component';
@@ -46,7 +47,7 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-async function setup(getVoteImpl: ReturnType<typeof vi.fn>): Promise<void> {
+async function setup(getVoteImpl: ReturnType<typeof vi.fn>, voteServiceOverrides: Record<string, unknown> = {}): Promise<void> {
   getVote = getVoteImpl;
 
   TestBed.resetTestingModule();
@@ -55,7 +56,7 @@ async function setup(getVoteImpl: ReturnType<typeof vi.fn>): Promise<void> {
     providers: [
       provideNoopAnimations(),
       provideRouter([]),
-      { provide: VoteService, useValue: { getVote } },
+      { provide: VoteService, useValue: { getVote, ...voteServiceOverrides } },
       { provide: MessageService, useValue: { add: vi.fn() } },
     ],
   }).compileComponents();
@@ -94,7 +95,7 @@ describe('VoteCastDrawerComponent — always-visible header (GH-2350)', () => {
 
     // The reported bug: with listVote null, the pre-fix template rendered no header at all while
     // the request was in flight — the drawer had no title and could not be closed.
-    expect(getVote).toHaveBeenCalledWith(VOTE.uid);
+    expect(getVote).toHaveBeenCalledWith(VOTE.uid, { skipCache: false });
     expect(el('vote-cast-drawer-header')).toBeTruthy();
     expect(el('vote-cast-drawer-close')).toBeTruthy();
     // A skeleton occupies the title slot until the detail lands; neither content nor error shows.
@@ -145,6 +146,48 @@ describe('VoteCastDrawerComponent — always-visible header (GH-2350)', () => {
     expect(el('vote-cast-drawer-title')?.textContent?.trim()).toBe('Vote Details');
     expect(el('vote-cast-drawer-close')).toBeTruthy();
     expect(el('vote-cast-drawer-error')).toBeTruthy();
+  });
+});
+
+/**
+ * GH-3823 review (PRRT_kwDOPMiRQ86uw_wC @greptile-apps "Ballot keeps the old deadline",
+ * PRRT_kwDOPMiRQ86uxHEw @copilot-pull-request-reviewer): initVote()'s fallback preferred the last
+ * fetched full detail over listVote wholesale (to avoid wiping an in-progress ballot — see the
+ * initVote() doc comment), but that meant a just-extended deadline on listVote was discarded in
+ * favor of the cached detail's pre-extension end_time whenever the refetch that should have
+ * picked up the extension then failed. Pins the fix: the fallback keeps the cached detail's
+ * questions/answers but overlays listVote's end_time/end_time_timezone onto it.
+ */
+describe('VoteCastDrawerComponent — deadline fallback (GH-3823 review)', () => {
+  it('shows the newer listVote deadline, not the stale cached detail, when a deadline-change refetch fails', async () => {
+    const detail = { ...VOTE, end_time: '2026-01-01T00:00:00Z' };
+    const extendedList = { ...VOTE, end_time: '2026-02-01T00:00:00Z' };
+
+    const getVoteFn = vi
+      .fn()
+      .mockReturnValueOnce(of(detail))
+      .mockReturnValueOnce(throwError(() => new Error('500')));
+    await setup(getVoteFn);
+
+    fixture.componentRef.setInput('voteId', VOTE.uid);
+    fixture.componentRef.setInput('listVote', detail);
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['vote']()?.end_time).toBe(detail.end_time);
+
+    // Deadline extended while the drawer stays open; the deadline-change refetch (skipCache) fails.
+    fixture.componentRef.setInput('listVote', extendedList);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getVoteFn).toHaveBeenCalledTimes(2);
+    expect(getVoteFn).toHaveBeenLastCalledWith(VOTE.uid, { skipCache: true });
+    // Regression: shows the NEW deadline from listVote, not the stale cached detail's end_time,
+    // while still keeping the full ballot detail (poll_questions) from the cached fetch.
+    expect(fixture.componentInstance['vote']()?.end_time).toBe(extendedList.end_time);
+    expect(fixture.componentInstance['vote']()?.poll_questions).toEqual(detail.poll_questions);
   });
 });
 
@@ -220,5 +263,82 @@ describe('VoteCastDrawerComponent — description rendering (GH-2326)', () => {
     // Benign content survives sanitization.
     expect(description!.querySelector('p')?.textContent).toBe('ok');
     expect(description!.textContent).toContain('link');
+  });
+});
+
+/**
+ * #4075: upstream ITX emits poll_type='majority' for single-choice board votes. PollType had no
+ * MAJORITY member, so `!== PollType.GENERIC` treated it as ranked-choice and rendered the
+ * drag-to-reorder ballot instead of single-choice radios. isRankedPollType is an allowlist of the
+ * actual ranked methods, so majority (and a missing poll_type) fall through to the single/multiple
+ * choice branches here.
+ */
+describe('VoteCastDrawerComponent — majority poll_type renders single-choice (#4075)', () => {
+  it('renders radio buttons, not the drag-to-reorder ranked list, for a majority single_choice question', async () => {
+    await setup(vi.fn().mockReturnValue(of({ ...VOTE, poll_type: PollType.MAJORITY })));
+
+    await openWithoutListVote();
+
+    expect(el('vote-cast-choice-c1')).toBeTruthy();
+    expect(el('vote-cast-rank-c1')).toBeNull();
+  });
+
+  it('renders radio buttons when poll_type is omitted (legacy/omitted field)', async () => {
+    // VOTE carries no poll_type field at all — the omitted-field case, distinct from the MAJORITY case above.
+    await setup(vi.fn().mockReturnValue(of(VOTE)));
+
+    await openWithoutListVote();
+
+    expect(el('vote-cast-choice-c1')).toBeTruthy();
+    expect(el('vote-cast-rank-c1')).toBeNull();
+  });
+
+  it('submits choice_ids, not ranked_choices, for a majority vote', async () => {
+    const submitMyResponse = vi.fn().mockReturnValue(of(undefined));
+    const majorityVote = { ...VOTE, poll_type: PollType.MAJORITY };
+    await setup(vi.fn().mockReturnValue(of(majorityVote)), { submitMyResponse });
+
+    await openWithoutListVote();
+
+    (fixture.componentInstance.form.get('q1') as unknown as FormControl<string | null>).setValue('c1');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    fixture.componentInstance['onSubmit']();
+    await fixture.whenStable();
+
+    expect(submitMyResponse).toHaveBeenCalledWith(
+      majorityVote.uid,
+      expect.objectContaining({
+        userVoteContent: [expect.objectContaining({ question_id: 'q1', choice_ids: ['c1'] })],
+      })
+    );
+    const [, payload] = submitMyResponse.mock.calls[0] as [string, { userVoteContent: Record<string, unknown>[] }];
+    expect(payload.userVoteContent[0]['ranked_choices']).toBeUndefined();
+  });
+});
+
+/**
+ * PR #4076 review (dealako, copilot-pull-request-reviewer): the first-open fallback strips poll_type
+ * from an unconfirmed listVote so an unconfirmed majority claim can't flip the ballot to ranked (see
+ * the block above) — but stripping it unconditionally also meant a failed first detail fetch for a
+ * genuinely ranked vote fell back to that same stripped value, silently downgrading it to a
+ * submittable single-choice ballot. Pins the fix: the terminal-failure fallback (no cached detail to
+ * fall back to) restores the list row's own poll_type instead of the stripped transient one.
+ */
+describe('VoteCastDrawerComponent — ranked listVote survives a failed first-open detail fetch (#4076 review)', () => {
+  it('keeps a ranked listVote classified as ranked when the first detail fetch fails outright', async () => {
+    const rankedListVote: Vote = { ...VOTE, poll_type: PollType.INSTANT_RUNOFF_VOTE };
+    await setup(vi.fn().mockReturnValue(throwError(() => new Error('500'))));
+
+    fixture.componentRef.setInput('voteId', rankedListVote.uid);
+    fixture.componentRef.setInput('listVote', rankedListVote);
+    fixture.componentRef.setInput('visible', true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['isRankedPoll']()).toBe(true);
+    expect(el('vote-cast-rank-c1')).toBeTruthy();
+    expect(el('vote-cast-choice-c1')).toBeNull();
   });
 });

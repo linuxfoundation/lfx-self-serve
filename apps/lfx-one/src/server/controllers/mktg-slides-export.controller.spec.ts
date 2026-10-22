@@ -7,7 +7,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // SERVER-resolved project, and the owner token that binds a session to its
 // creator and to the revision it exports. The export service is mocked; the
 // session token util runs for real.
-const exportMocks = vi.hoisted(() => ({ startExport: vi.fn(), getResult: vi.fn(), getLast: vi.fn() }));
+const exportMocks = vi.hoisted(() => ({
+  startExport: vi.fn(),
+  getResult: vi.fn(),
+  getLast: vi.fn(),
+  startFamilyExport: vi.fn(),
+  getFamilyResult: vi.fn(),
+  getFamilyLast: vi.fn(),
+}));
 const projectMocks = vi.hoisted(() => ({ getProjectById: vi.fn() }));
 const authMocks = vi.hoisted(() => ({ getEffectiveUsername: vi.fn((): string | null => 'user-1') }));
 const loggerMocks = vi.hoisted(() => ({
@@ -28,12 +35,16 @@ vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-document-store.utils')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-slides-export.utils')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/mktg-family-export.utils')),
 }));
 vi.mock('../services/mktg-slides-export.service', () => ({
   MktgSlidesExportService: class {
     public startExport = exportMocks.startExport;
     public getResult = exportMocks.getResult;
     public getLast = exportMocks.getLast;
+    public startFamilyExport = exportMocks.startFamilyExport;
+    public getFamilyResult = exportMocks.getFamilyResult;
+    public getFamilyLast = exportMocks.getFamilyLast;
   },
 }));
 vi.mock('../services/project.service', () => ({
@@ -140,6 +151,86 @@ describe('MktgSlidesExportController', () => {
 
     expect(next.mock.calls[0][0]).toBeInstanceOf(AuthorizationError);
     expect(exportMocks.startExport).not.toHaveBeenCalled();
+  });
+
+  describe('family boundary', () => {
+    const target = { project: 'proj-uid-1', familyId: 'positioning-brand' };
+    const snapshot = {
+      ...target,
+      mode: 'create',
+      deckId: null,
+      members: [{ agentKey: 'foundation-message', documentId: 'living', revisionId: REVISION_ID, revisionNumber: 1, contentSha256: 'a'.repeat(64) }],
+    };
+    async function familyCall(action: 'start' | 'result' | 'last', raw: Record<string, unknown>) {
+      const json = vi.fn();
+      const next = vi.fn();
+      const req = { body: raw, query: raw, path: `/slides-export/family/${action}` } as Request;
+      const res: Partial<Response> = { json };
+      await new MktgSlidesExportController().family(req, res as Response, next, action);
+      return { json, next };
+    }
+    async function started() {
+      exportMocks.startFamilyExport.mockResolvedValue({
+        sessionId: 'family-session',
+        snapshot,
+        skippedMembers: ['brand-kit', 'boilerplates', 'faq'],
+        logoNote: 'no-logo',
+      });
+      const result = await familyCall('start', { ...target, mode: 'create', assets: { forged: true }, deckId: 'forged-deck' });
+      expect(result.next).not.toHaveBeenCalled();
+      return result.json.mock.calls[0][0] as { ownerToken: string };
+    }
+
+    it('starts with server project identity and no browser assets; signs a poll bound to the member revisions', async () => {
+      const start = await started();
+      expect(exportMocks.startFamilyExport).toHaveBeenCalledWith(expect.anything(), { ...target, projectName: 'Example Project', mode: 'create' });
+      exportMocks.getFamilyResult.mockResolvedValue({ status: 'pending' });
+      const result = await familyCall('result', { ...target, sessionId: 'family-session', ownerToken: start.ownerToken, snapshot });
+      expect(result.next).not.toHaveBeenCalled();
+      expect(result.json).toHaveBeenCalledWith({ status: 'pending' });
+    });
+
+    it('rejects tampered refs, mode, family, project, session, token and different users', async () => {
+      const start = await started();
+      for (const change of [
+        { snapshot: { ...snapshot, members: [{ ...snapshot.members[0], revisionNumber: 2 }] } },
+        { snapshot: { ...snapshot, mode: 'update', deckId: 'synthetic_deck_123' } },
+        { snapshot: { ...snapshot, project: 'other-project' } },
+        { sessionId: 'other-session' },
+        { ownerToken: 'invalid' },
+      ]) {
+        const result = await familyCall('result', { ...target, sessionId: 'family-session', ownerToken: start.ownerToken, snapshot, ...change });
+        expect(result.next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+      }
+      authMocks.getEffectiveUsername.mockReturnValue('other-writer');
+      expect((await familyCall('result', { ...target, sessionId: 'family-session', ownerToken: start.ownerToken, snapshot })).next).toHaveBeenCalledWith(
+        expect.any(AuthorizationError)
+      );
+      expect(exportMocks.getFamilyResult).not.toHaveBeenCalled();
+    });
+
+    it.each(['start', 'result', 'last'] as const)('requires writer access for family %s', async (action) => {
+      projectMocks.getProjectById.mockResolvedValue({ uid: target.project, writer: false });
+      expect((await familyCall(action, { ...target, mode: 'create' })).next).toHaveBeenCalledWith(expect.any(AuthorizationError));
+    });
+
+    it('validates the catalog family, project and mode before calling the exporter', async () => {
+      for (const input of [
+        { ...target, familyId: '../escape' },
+        { ...target, familyId: 'website-web' },
+        { ...target, project: '../escape' },
+        { ...target, mode: 'replace' },
+      ]) {
+        expect((await familyCall('start', input)).next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
+      }
+      expect(exportMocks.startFamilyExport).not.toHaveBeenCalled();
+    });
+
+    it('returns the last export and approved freshness independently of start', async () => {
+      exportMocks.getFamilyLast.mockResolvedValue({ last: null, currentMembers: [], skippedMembers: [], stale: false });
+      expect((await familyCall('last', target)).json).toHaveBeenCalledWith({ last: null, currentMembers: [], skippedMembers: [], stale: false });
+      expect(exportMocks.getFamilyLast).toHaveBeenCalledWith(expect.anything(), target.project, target.familyId);
+    });
   });
 
   it('reads the last export of a document for a writer', async () => {

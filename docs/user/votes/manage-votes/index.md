@@ -50,7 +50,7 @@ While sending, the dialog's close button, Escape, and Cancel are disabled. If th
 Draft a reminder to the poll's group mailing list in your own email app. LFX doesn't send this message: you review it and send it yourself. Only users who can manage the poll see this option, and only on active polls.
 
 1. Find an active poll and select the **More** (⋮) menu on its row.
-2. Select **Reminder mailing list**. Your email app opens a draft addressed to the group's mailing list. The draft names the poll, its closing date and time, and links to the poll.
+2. Select **Send reminder to mailing list**. Your email app opens a draft addressed to the group's mailing list. The draft names the poll, its closing date and time, and links to the poll.
 3. If the group has several mailing lists, LFX first asks which one to use. Pick a list and select **Open in email**.
 4. Review and edit the draft in your email app, then send it.
 

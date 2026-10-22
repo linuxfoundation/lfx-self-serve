@@ -11,6 +11,7 @@ import { MentorshipMenteeOverview, MentorshipMenteePageTab } from '@lfx-one/shar
 import { buildMentorshipMenteeOverview, buildMentorshipProgramsUrl } from '@lfx-one/shared/utils';
 import { MentorshipMenteeService } from '@services/mentorship-mentee.service';
 import { catchError, filter, map, of, switchMap } from 'rxjs';
+import { PageHeaderComponent } from '@components/page-header/page-header.component';
 
 /**
  * Shell for the mentee experience — owns the page H1 ("My Mentorship"), the
@@ -24,7 +25,7 @@ import { catchError, filter, map, of, switchMap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentee-page',
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, PageHeaderComponent],
   templateUrl: './mentee-page.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -1,14 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import type { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
-import { of } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { of, Subject } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DashboardMeetingCardComponent } from './dashboard-meeting-card.component';
@@ -46,9 +47,18 @@ describe('DashboardMeetingCardComponent', () => {
   let fixture: ComponentFixture<DashboardMeetingCardComponent>;
 
   let getPastMeetingRecording: ReturnType<typeof vi.fn>;
+  let resendMyMeetingInvitation: ReturnType<typeof vi.fn>;
+  let toastAdd: ReturnType<typeof vi.fn>;
+  let removedIds: WritableSignal<ReadonlySet<string>>;
 
-  const render = async (meeting: Meeting, options?: { occurrence?: MeetingOccurrence | null; pastMeeting?: boolean }): Promise<void> => {
+  const render = async (
+    meeting: Meeting,
+    options?: { occurrence?: MeetingOccurrence | null; pastMeeting?: boolean; authenticated?: boolean; removedMeetingIds?: string[] }
+  ): Promise<void> => {
     getPastMeetingRecording = vi.fn(() => of(null));
+    resendMyMeetingInvitation = vi.fn(() => of({ message: 'Invitation resent successfully' }));
+    toastAdd = vi.fn();
+    removedIds = signal<ReadonlySet<string>>(new Set(options?.removedMeetingIds ?? []));
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [DashboardMeetingCardComponent],
@@ -63,13 +73,19 @@ describe('DashboardMeetingCardComponent', () => {
             get meetingJoinIdentity() {
               return this.user;
             },
-            authenticated: signal(false),
+            authenticated: signal(options?.authenticated ?? false),
           },
         },
         {
           provide: MeetingService,
-          useValue: { getPublicMeetingJoinUrl: vi.fn(() => of(null)), getPastMeetingRecording },
+          useValue: {
+            getPublicMeetingJoinUrl: vi.fn(() => of(null)),
+            getPastMeetingRecording,
+            resendMyMeetingInvitation,
+            removedRegistrationMeetingIds: removedIds,
+          },
         },
+        { provide: MessageService, useValue: { add: toastAdd } },
       ],
     }).compileComponents();
 
@@ -152,5 +168,144 @@ describe('DashboardMeetingCardComponent', () => {
 
     expect(fixture.componentInstance.meetingTypeInfo()).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="dashboard-meeting-card-type-chip"]')).toBeNull();
+  });
+
+  describe('resend my invitation', () => {
+    const RESEND_BUTTON = '[data-testid="dashboard-meeting-card-resend-button"]';
+
+    it('offers the action to a signed-in invitee on an upcoming meeting', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(true);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).not.toBeNull();
+    });
+
+    it.each([
+      ['signed out', buildMeeting({ invited: true }), { authenticated: false }],
+      ['not invited', buildMeeting({ invited: false }), { authenticated: true }],
+      ['a past meeting', buildMeeting({ invited: true }), { authenticated: true, pastMeeting: true }],
+      ['an organizer who is not registered themselves', buildMeeting({ invited: true, organizer: true, my_registrant_ids: [] }), { authenticated: true }],
+    ])('does not offer the action when %s', async (_label, meeting, options) => {
+      await render(meeting, options);
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+    });
+
+    it('offers the action to an organizer who also has a registration of their own', async () => {
+      await render(buildMeeting({ invited: true, organizer: true, my_registrant_ids: ['reg-1'] }), { authenticated: true });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(true);
+    });
+
+    it('resends to the viewer, without a confirmation, when clicked', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+
+      fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+      // A one-time meeting has no occurrences to tell apart, so no occurrence is named.
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', null);
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Invitation Sent' }));
+    });
+
+    describe('when only the meeting is passed, as on Groups Overview', () => {
+      const NEXT_START = '2030-03-07T15:00:00Z';
+      const recurring = { recurrence: { type: 'weekly' } } as unknown as Partial<Meeting>;
+
+      it('names the occurrence of the date the card shows, found in the meeting occurrences', async () => {
+        await render(
+          buildMeeting({
+            ...recurring,
+            invited: true,
+            next_occurrence_start_time: NEXT_START,
+            occurrences: [
+              { occurrence_id: 'occ-earlier', start_time: '2030-02-28T15:00:00Z', duration: 60 },
+              { occurrence_id: 'occ-next', start_time: NEXT_START, duration: 60 },
+            ] as Meeting['occurrences'],
+          }),
+          { authenticated: true }
+        );
+
+        fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-next');
+      });
+
+      it("falls back to the shown start's Unix seconds when the list has no matching occurrence", async () => {
+        await render(buildMeeting({ ...recurring, invited: true, next_occurrence_start_time: NEXT_START }), { authenticated: true });
+
+        fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+        expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', String(Date.parse(NEXT_START) / 1000));
+      });
+    });
+
+    it('does not offer the action to a non-organizer whose feed shows no active registration, even though invited is true', async () => {
+      await render(buildMeeting({ invited: true, my_registrant_ids: [] }), { authenticated: true });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+    });
+
+    it('offers the action to a non-organizer whose feed lists an active registration', async () => {
+      await render(buildMeeting({ invited: true, my_registrant_ids: ['reg-1'] }), { authenticated: true });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(true);
+    });
+
+    it('resends for the occurrence the card is showing, so the matching registration is chosen', async () => {
+      await render(buildMeeting({ invited: true }), {
+        authenticated: true,
+        occurrence: { occurrence_id: 'occ-b', start_time: '2026-10-08T15:00:00Z', duration: 45 },
+      });
+
+      fixture.nativeElement.querySelector(RESEND_BUTTON).click();
+
+      expect(resendMyMeetingInvitation).toHaveBeenCalledWith('meeting-1', 'occ-b');
+    });
+
+    it('does not offer the action when the viewer already removed themselves, even if the cached feed still says invited', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true, removedMeetingIds: ['meeting-1'] });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+    });
+
+    it('stops offering the action as soon as the viewer removes themselves elsewhere', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).not.toBeNull();
+
+      removedIds.update((ids) => new Set(ids).add('meeting-1'));
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(false);
+      expect(fixture.nativeElement.querySelector(RESEND_BUTTON)).toBeNull();
+    });
+
+    it('still offers the action for a different meeting the viewer has not removed themselves from', async () => {
+      await render(buildMeeting({ invited: true }), { authenticated: true, removedMeetingIds: ['meeting-2'] });
+
+      expect(fixture.componentInstance.canResendInvite()).toBe(true);
+    });
+
+    it('disables the button while a resend is in flight and ignores a second click', async () => {
+      const pending$ = new Subject<{ message: string }>();
+      await render(buildMeeting({ invited: true }), { authenticated: true });
+      resendMyMeetingInvitation.mockReturnValue(pending$);
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector(RESEND_BUTTON);
+      button.click();
+      fixture.detectChanges();
+
+      expect(button.disabled).toBe(true);
+      fixture.componentInstance.resendInvite();
+      expect(resendMyMeetingInvitation).toHaveBeenCalledTimes(1);
+
+      pending$.next({ message: 'ok' });
+      pending$.complete();
+      fixture.detectChanges();
+
+      expect(button.disabled).toBe(false);
+    });
   });
 });

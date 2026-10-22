@@ -25,6 +25,7 @@ import {
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
+  HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS,
   HEALTH_METRICS_EVENTS_FORECAST_VERDICT_TONES,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_BAR_CLASS,
   HEALTH_METRICS_EVENTS_ORGANIZATIONS_MEMBERSHIP,
@@ -32,6 +33,7 @@ import {
   HEALTH_METRICS_EVENTS_SPEAKERS_UNGROUPED_BADGE_CLASS,
   HEALTH_METRICS_EVENTS_SPONSORSHIP_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_AT_RISK_BAR_CLASS,
+  HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS,
   HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
   HEALTH_METRICS_MEMBERS_DIRECTORY_ENGAGEMENT_DOT_CLASSES,
   HEALTH_METRICS_MEMBERS_DIRECTORY_NPS_CHIP_CLASSES,
@@ -217,6 +219,9 @@ export default {
     ...Object.values(HEALTH_METRICS_NON_MEMBERS_FIT_BAND_DOT_CLASS),
     // Members churn share-of-loss bar fill (HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS in @lfx-one/shared) — applied via [class].
     HEALTH_METRICS_MEMBERS_CHURN_SHARE_BAR_CLASS,
+    // Engagement attendance bar fills and the board hero colour, per attendance tone — applied via [class] / [ngClass].
+    ...Object.values(HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS),
+    ...Object.values(HEALTH_METRICS_MEMBERS_BOARD_LATEST_TEXT_CLASS),
     // Training course type pills (HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES in @lfx-one/shared) — applied via [class].
     ...Object.values(HEALTH_METRICS_TRAINING_COURSE_TYPE_PILL_CLASSES).flatMap((c) => c.split(' ')),
   ],
@@ -258,6 +263,11 @@ export default {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        // An indeterminate progress bar sliding across its track (Marketing OS run loading).
+        indeterminate: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(250%)' },
+        },
         'fade-in-up': {
           '0%': {
             opacity: '0',
@@ -273,6 +283,7 @@ export default {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
         // A new row or card settling in (Marketing OS run feed and questions stepper); used behind `motion-safe:`.
         'step-in': 'step-in 180ms ease-out both',
+        indeterminate: 'indeterminate 1.6s ease-in-out infinite',
       },
       fontWeight: {
         normal: 400,
