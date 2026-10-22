@@ -132,6 +132,38 @@ describe('Member360ResultComponent', () => {
     expect(view.query('member-360-ranking').textContent).toContain('Unknown');
     expect(view.query('member-360-ranking').querySelector('[role="img"]')?.getAttribute('tabindex')).toBe('0');
   });
+  it.each([
+    { values: [null], note: 'No list-price value for this renewal' },
+    { values: [null, null], note: 'No list-price value for these 2 renewals' },
+    { values: [25000, null], note: '$25,000 known at list price · 1 without a value' },
+    { values: [25000, null, null], note: '$25,000 known at list price · 2 without a value' },
+    { values: [25000, 15000], note: '$40,000 at list price' },
+    { values: [0], note: '$0 at list price' },
+    { values: [0, null], note: '$0 known at list price · 1 without a value' },
+    { values: [], note: 'No renewals within 120 days' },
+  ])('shows renewal value coverage for $values', ({ values, note }) => {
+    const envelope = member360Fixture();
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = values.map((annualValue, index) => ({ ...row, annual_value: annualValue, days_to_renewal: index === 0 ? 0 : 120 }));
+    const card = render(envelope).query('member-360-summary-renewals');
+    expect(card.querySelector('b')?.textContent?.trim()).toBe(String(values.length));
+    expect(card.querySelector('span:last-child')?.textContent?.trim()).toBe(note);
+    if (values.length > 0 && values.every((value) => value === null)) expect(card.textContent).not.toContain('$0');
+  });
+  it('excludes unknown, overdue and later renewals from both the subtotal and missing-value count', () => {
+    const envelope = member360Fixture();
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = [
+      { ...row, annual_value: 25000, days_to_renewal: 120 },
+      ...[null, -1, 121].flatMap((daysToRenewal) => [
+        { ...row, annual_value: null, days_to_renewal: daysToRenewal },
+        { ...row, annual_value: 90000, days_to_renewal: daysToRenewal },
+      ]),
+    ];
+    const card = render(envelope).query('member-360-summary-renewals');
+    expect(card.querySelector('b')?.textContent?.trim()).toBe('1');
+    expect(card.querySelector('span:last-child')?.textContent?.trim()).toBe('$25,000 at list price');
+  });
   it('copies team actions and reports clipboard denial', async () => {
     const view = render();
     const previous = Object.getOwnPropertyDescriptor(navigator, 'clipboard');

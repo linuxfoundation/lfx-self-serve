@@ -232,6 +232,30 @@ test('ranking sorts, filters, expands evidence, copies team actions and exports 
   await page.screenshot({ path: info.outputPath('filtered-expanded-ranking.png'), fullPage: true });
 });
 
+for (const scenario of [
+  { name: 'all unknown', values: [null, null], note: 'No list-price value for these 2 renewals' },
+  { name: 'partly known', values: [25000, null], note: '$25,000 known at list price · 1 without a value' },
+  { name: 'all known', values: [25000, 15000], note: '$40,000 at list price' },
+  { name: 'no upcoming renewals', values: [], note: 'No renewals within 120 days' },
+]) {
+  test(`renewal card distinguishes ${scenario.name} list-price coverage`, async ({ page }, info) => {
+    await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+    const view = member360Revision();
+    const envelope = view.member360;
+    if (!envelope) throw new Error('Member 360 fixture is missing');
+    const row = envelope.tabs.member_ranking[0];
+    envelope.tabs.member_ranking = scenario.values.map((annualValue, index) => ({ ...row, annual_value: annualValue, days_to_renewal: index === 0 ? 0 : 120 }));
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
+    await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+    const card = page.getByTestId('member-360-summary-renewals');
+    await expect(card.locator('b')).toHaveText(String(scenario.values.length));
+    await expect(card.locator('span').last()).toHaveText(scenario.note);
+    await expect(card).not.toContainText('$0 at list price');
+    await page.screenshot({ path: info.outputPath(`renewals-${scenario.name.replaceAll(' ', '-')}.png`), fullPage: true });
+  });
+}
+
 test('a failed submission preserves the form and permits retry', async ({ page }, info) => {
   await setupMember360(page);
   await page.route('**/api/mktg-agents/member-360/generate', (route) => route.fulfill({ status: 503, body: '{}' }));
