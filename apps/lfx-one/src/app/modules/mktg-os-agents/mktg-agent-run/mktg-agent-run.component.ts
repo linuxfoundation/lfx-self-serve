@@ -1082,6 +1082,9 @@ export class MktgAgentRunComponent {
           error: (error: unknown) => {
             const errorType = error instanceof Error ? error.name : typeof error;
             console.error('Failed to re-check Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
+            this.discardPendingNavigation();
+            this.navigating.set(false);
+            this.writingStretch.set(false);
             this.recheckingAttempt.set(false);
             this.phase.set('form');
             this.errorText.set('The recorded run could not be checked. Your intake is kept; try again.');
@@ -1253,6 +1256,10 @@ export class MktgAgentRunComponent {
       .subscribe({
         next: (progress) => this.onProgress(progress, projectUid),
         error: () => {
+          this.discardPendingNavigation();
+          this.navigating.set(false);
+          this.recheckingAttempt.set(false);
+          this.writingStretch.set(false);
           this.errorText.set('The agent could not complete this run. Your answers are kept — try again.');
           this.phase.set('form');
         },

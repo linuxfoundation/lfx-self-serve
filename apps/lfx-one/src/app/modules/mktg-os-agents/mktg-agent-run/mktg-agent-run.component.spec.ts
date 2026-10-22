@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -389,6 +389,73 @@ describe('MktgAgentRunComponent', () => {
       type: 'activity',
       activity: [{ id: 'synthetic-check', kind: 'checking', label: 'Checking the synthetic asset', status: 'running', startedAt: '2026-10-20T10:00:00Z' }],
     };
+
+    it.each([
+      ['generate', 'cancelled'],
+      ['generate', 'rejected'],
+      ['resume', 'cancelled'],
+      ['resume', 'rejected'],
+    ] as const)('clears a cancelled handoff on %s stream error after navigation was %s', async (origin, outcome) => {
+      const intake = Object.values(MKTG_AGENT_INTAKES).find(
+        (entry) => entry.endpoints.answers && entry.liveActivity && !(entry.attachments ?? []).some((attachment) => !attachment.optional)
+      );
+      if (!intake) throw new Error('Missing registered self-contained live intake');
+      await configure('browser', intake.agentId);
+      activeContext.set(PROJECT_1);
+      await fixture.whenStable();
+      for (const field of intake.fields) {
+        if (field.kind === 'url-list') continue;
+        let value = 'Synthetic answer';
+        if (field.format?.startsWith('github')) value = 'https://github.com/synthetic-org/synthetic-orbit';
+        else if (field.key.includes('url')) value = 'https://example.org/source';
+        component['intakeForm'].controls[field.key].setValue(value);
+      }
+      await fixture.whenStable();
+      const progress = new Subject<MktgGenerateProgress>();
+      const request: MktgGenerateRequest = { agentId: intake.agentId, projectUid: PROJECT_1.uid, intake, answers: component['intakeForm'].getRawValue() };
+      const pending: MktgPendingGeneration = {
+        request,
+        state: 'writing',
+        updatedAt: new Date().toISOString(),
+        attempt: { session: { agentId: intake.agentId, sessionId: 'synthetic-error-session', ownerToken: 'synthetic-proof' }, priorVersion: 0 },
+      };
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      attempts.save(pending);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate');
+      if (outcome === 'rejected') navigate.mockRejectedValue(new Error('Synthetic navigation rejection'));
+      else navigate.mockResolvedValue(false);
+      if (origin === 'generate') {
+        generate.mockReturnValue(progress);
+        component['onSubmit']();
+        expect(generate).toHaveBeenCalledTimes(1);
+      } else {
+        vi.spyOn(TestBed.inject(MktgAgentRunService), 'resume').mockReturnValue(progress);
+        const token = attempts.prepare(request, true);
+        Object.defineProperty(TestBed.inject(ActivatedRoute).snapshot, 'queryParamMap', { value: convertToParamMap({ questions: token }), configurable: true });
+        activeContext.set(null);
+        await fixture.whenStable();
+        activeContext.set(PROJECT_1);
+        await fixture.whenStable();
+      }
+      expect(progress.observed).toBe(true);
+      progress.next(checking);
+      await fixture.whenStable();
+      const token = component['navigation']()?.generation;
+      expect(token).toBeTruthy();
+      expect(component['navigation']()).not.toBeNull();
+      progress.error(new HttpErrorResponse({ status: 503 }));
+      await fixture.whenStable();
+      expect(component['navigation']()).toBeNull();
+      expect(component['navigating']()).toBe(false);
+      expect(component['recheckingAttempt']()).toBe(false);
+      expect(attempts.consume(token ?? '', PROJECT_1.uid, intake.agentId)).toBeNull();
+      expect(component['phase']()).toBe('form');
+      expect(component['submitDisabled']()).toBe(false);
+      component['onRetryHandoff']();
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(generate).toHaveBeenCalledTimes(origin === 'generate' ? 1 : 0);
+      expect(answerQuestions).not.toHaveBeenCalled();
+    });
 
     it.each(['cancelled', 'rejected'] as const)('clears a terminal failure after checking navigation was %s', async (outcome) => {
       await configure('browser', target.agentId);
