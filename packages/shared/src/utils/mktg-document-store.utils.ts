@@ -7,6 +7,7 @@
 // deliberately not here (it is environment-specific); the server recomputes
 // every sha with node:crypto.
 
+import type { MktgDocumentRunProgress, MktgStartedRunRecord } from '../interfaces/mktg-document-run.interface';
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX } from '../constants/mktg-artifact.constants';
 import {
   MKTG_DOCUMENT_ID_REGEX,
@@ -19,7 +20,20 @@ import {
   MKTG_REVISION_SEQUENCE_DIGITS,
   MKTG_REVISION_UNKNOWN_AUTHOR_LABEL,
 } from '../constants/mktg-document-store.constants';
-import type { MktgDocumentType, MktgRevisionAuthor, MktgRevisionSummary, ParsedMktgRevisionKey } from '../interfaces/mktg-document-store.interface';
+import type {
+  MktgDocumentLocation,
+  MktgDocumentType,
+  MktgRevisionAuthor,
+  MktgRevisionSummary,
+  ParsedMktgRevisionKey,
+} from '../interfaces/mktg-document-store.interface';
+import type { MktgRunPersistReceipt } from '../interfaces/mktg-run.interface';
+
+/** Normalize the artifact receipt's snake-case location for camel-case UI/progress models. */
+export function mktgDocumentLocationOfReceipt(receipt?: MktgRunPersistReceipt): MktgDocumentLocation | undefined {
+  const location = receipt?.document_location;
+  return location ? { agentKey: location.agent_key, documentId: location.document_id, revisionId: location.revision_id } : undefined;
+}
 
 /** The registered document type for an agent key, or undefined when the key names none. */
 export function findMktgDocumentType(agentKey: string): MktgDocumentType | undefined {
@@ -135,4 +149,21 @@ export function describeMktgRevision(
   if (revision.commentCount) label = `revised from ${revision.commentCount} ${revision.commentCount === 1 ? 'comment' : 'comments'}`;
   if (revision.basedOnNumber && revision.number && revision.basedOnNumber !== revision.number - 1) label += ` · based on v${revision.basedOnNumber}`;
   return label;
+}
+
+/** Explicit public projection: never expose session capabilities or closed records. */
+export function mktgRunProgress(run: MktgStartedRunRecord, fullReply = run.failureText): MktgDocumentRunProgress | null {
+  if (run.state === 'completed' || run.state === 'superseded') {
+    return null;
+  }
+  const progress: MktgDocumentRunProgress = {
+    runId: run.runId,
+    project: run.project,
+    agentKey: run.agentKey,
+    documentId: run.documentId,
+    startedAt: run.startedAt,
+    state: run.state,
+    ...(run.state === 'failed' && fullReply !== undefined && { failureText: fullReply }),
+  };
+  return progress;
 }

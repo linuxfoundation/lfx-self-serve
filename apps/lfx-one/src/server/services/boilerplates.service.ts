@@ -17,9 +17,10 @@ import {
   buildMktgRunActivity,
   extractBoilerplatesQuestions,
   extractBoilerplatesRefusal,
-  extractMktgAgentTexts,
+  extractMktgCurrentTurnAgentTexts,
+  mktgFailureAfterQuestions,
   extractMktgEnvelopeCandidates,
-  extractMktgToolResults,
+  extractMktgCurrentTurnToolResults,
   foundationMessageQuestionsId,
   renderBoilerplatesAnswersText,
   renderBoilerplatesFormText,
@@ -122,17 +123,14 @@ export class BoilerplatesService {
   }
 
   /**
-   * Fetch the session's current result: `ready` once a valid envelope appears
-   * in the event stream, with the boilerplates as the run's asset and (when
-   * the write succeeded) the persistence receipt of the stored revision;
-   * otherwise the agent's LATEST outcome decides: `questions` when it is a
-   * questions block, with a `questionsId` so the run shell ignores the block
-   * it already answered; `refused` when it is the agent's one plain reply
-   * ending the session instead of an envelope — even after an earlier,
-   * answered questions block; `pending` when there is neither. `projectUid`
-   * decides the storage partition and is entitlement-checked before anything
-   * is written; without it the boilerplates are still returned, just not
-   * stored.
+   * Read only the latest queued turn's finalize results and agent texts.
+   * `ready` carries validated boilerplates and, after a successful write, the
+   * exact revision receipt. Otherwise the latest outcome decides: `questions`
+   * carries its unanswered block and `questionsId`; `refused` carries a later
+   * refusal reply, including after answered questions. `failed` means the
+   * runtime ended with no valid asset or open questions pause; `pending` means
+   * it is still running. Without `projectUid` the asset is not stored; with
+   * it, writer entitlement is checked before persistence.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<BoilerplatesResultResponse> {
     const payloads = await this.guildService.getRawEventPayloads(req, sessionId);
@@ -144,6 +142,10 @@ export class BoilerplatesService {
       const outcome = this.findLatestOutcome(req, payloads);
       if (outcome?.kind === 'refused') {
         return { status: 'refused', reply: outcome.reply, activity };
+      }
+      const failure = mktgFailureAfterQuestions(payloads, (text) => !!extractBoilerplatesQuestions(text));
+      if (failure) {
+        return { status: 'failed', failureText: failure.replyText, activity };
       }
       if (outcome?.kind === 'questions') {
         return { status: 'questions', questions: outcome.questions, questionsId: foundationMessageQuestionsId(outcome.questions), activity };
@@ -184,22 +186,20 @@ export class BoilerplatesService {
    * questions block therefore ends the run, and a questions block after a
    * reply is the one to answer. Only the agent's own text turns are read —
    * never a tool result, where a fetched page could plant a block, and never
-   * a user event, which `getRawEventPayloads` drops. Null while the agent is
+   * user content, replaced by content-free queued-turn markers. Null while the agent is
    * still working.
    */
   private findLatestOutcome(req: Request, payloads: string[]): BoilerplatesRunOutcome | null {
     let latest: BoilerplatesRunOutcome | null = null;
-    for (const payload of payloads) {
-      for (const text of extractMktgAgentTexts(payload)) {
-        const questions = extractBoilerplatesQuestions(text);
-        if (questions) {
-          latest = { kind: 'questions', questions };
-          continue;
-        }
-        const reply = extractBoilerplatesRefusal(text);
-        if (reply) {
-          latest = { kind: 'refused', reply };
-        }
+    for (const text of extractMktgCurrentTurnAgentTexts(payloads)) {
+      const questions = extractBoilerplatesQuestions(text);
+      if (questions) {
+        latest = { kind: 'questions', questions };
+        continue;
+      }
+      const reply = extractBoilerplatesRefusal(text);
+      if (reply) {
+        latest = { kind: 'refused', reply };
       }
     }
     if (latest?.kind === 'questions') {
@@ -227,7 +227,7 @@ export class BoilerplatesService {
   }
 
   /**
-   * The authoritative envelope of the session: the LATEST valid result of the
+   * The latest queued turn's authoritative envelope: the LATEST valid result of the
    * agent's finalize tool (`finalize_boilerplates`), read only from that
    * tool's result events. The raw payloads are chronological, so a later
    * valid finalize (the agent fixed a gate failure and finalized again)
@@ -240,31 +240,29 @@ export class BoilerplatesService {
     let candidateCount = 0;
     let invalidCount = 0;
 
-    for (const payload of payloads) {
-      for (const resultText of extractMktgToolResults(payload, BOILERPLATES_FINALIZE_TOOL)) {
-        for (const candidate of extractMktgEnvelopeCandidates(resultText, BOILERPLATES_CONTRACT_ID)) {
-          candidateCount++;
-          const result = validateBoilerplatesEnvelope(candidate);
-          if (!result.valid) {
-            invalidCount++;
-            logger.debug(req, 'boilerplates_result', 'Rejected envelope candidate', { errors: result.errors });
-            continue;
-          }
-          // Safe: validateBoilerplatesEnvelope passed every schema gate.
-          const envelope = candidate as BoilerplatesEnvelope;
-          const recomputedSha = createHash('sha256')
-            .update(Buffer.from(boilerplatesContentJson(envelope.content), 'utf8'))
-            .digest('hex');
-          if (recomputedSha !== envelope.content_sha256) {
-            invalidCount++;
-            logger.warning(req, 'boilerplates_result', 'Envelope content_sha256 does not match the content JSON — discarding candidate', {
-              expected: envelope.content_sha256,
-              recomputed: recomputedSha,
-            });
-            continue;
-          }
-          latest = envelope;
+    for (const resultText of extractMktgCurrentTurnToolResults(payloads, BOILERPLATES_FINALIZE_TOOL)) {
+      for (const candidate of extractMktgEnvelopeCandidates(resultText, BOILERPLATES_CONTRACT_ID)) {
+        candidateCount++;
+        const result = validateBoilerplatesEnvelope(candidate);
+        if (!result.valid) {
+          invalidCount++;
+          logger.debug(req, 'boilerplates_result', 'Rejected envelope candidate', { errors: result.errors });
+          continue;
         }
+        // Safe: validateBoilerplatesEnvelope passed every schema gate.
+        const envelope = candidate as BoilerplatesEnvelope;
+        const recomputedSha = createHash('sha256')
+          .update(Buffer.from(boilerplatesContentJson(envelope.content), 'utf8'))
+          .digest('hex');
+        if (recomputedSha !== envelope.content_sha256) {
+          invalidCount++;
+          logger.warning(req, 'boilerplates_result', 'Envelope content_sha256 does not match the content JSON — discarding candidate', {
+            expected: envelope.content_sha256,
+            recomputed: recomputedSha,
+          });
+          continue;
+        }
+        latest = envelope;
       }
     }
 

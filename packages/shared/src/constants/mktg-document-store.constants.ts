@@ -14,6 +14,9 @@ import { MKTG_AGENT_INTAKES } from './mktg-run.constants';
 /** BFF base path of the Documents area: `GET ?project=`, `GET /:agentKey/:documentId`, `GET …/revisions/:revisionId`, `POST …/restore`. */
 export const MKTG_DOCUMENTS_API_PATH = '/api/mktg-agents/documents';
 
+/** Schema tag stamped on every MktgStartedRunRecord in the private document store. */
+export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
+
 /** Key prefix of every revision: `documents/{project}/{agentKey}/{documentId}/{sequence}-{sha256}.json`. */
 export const MKTG_DOCUMENT_STORE_KEY_PREFIX = 'documents';
 
