@@ -41,7 +41,7 @@ import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-
 import { buildMktgRunActivity } from '@lfx-one/shared/utils/mktg-run-activity.utils';
 import { noQuestionsActivityPayloads } from '@lfx-one/shared/utils/__fixtures__/mktg-run-activity.no-questions';
 import { MessageService } from 'primeng/api';
-import { filter, firstValueFrom, of, take } from 'rxjs';
+import { filter, firstValueFrom, NEVER, of, take } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunComponent } from './mktg-agent-run/mktg-agent-run.component';
@@ -135,7 +135,7 @@ describe('Asset handoff through real nested Router, HTTP and run attempt service
         { provide: MktgAnswerMemoryService, useValue: { load: () => ({}), remember: vi.fn() } },
         {
           provide: MktgDependencyService,
-          useValue: { resolveDependencies: () => of(dependencies), resolveBrandKit: () => of(null), notifyDocumentsChanged: vi.fn() },
+          useValue: { resolveDependencies: () => of(dependencies), resolveBrandKit: () => of(null), notifyDocumentsChanged: vi.fn(), documentsChanged$: NEVER },
         },
       ],
     }).compileComponents();

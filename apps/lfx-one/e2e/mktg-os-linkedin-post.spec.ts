@@ -131,6 +131,91 @@ test.describe('Marketing OS LinkedIn posts', () => {
       expect(pollsAfterReload).toBe(1);
       await page.screenshot({ path: info.outputPath('dead-capability-retired.png'), fullPage: true });
     });
+  test('shared run uses fixed linked parents and Back returns from Family without bouncing', async ({ page }, info) => {
+    // The helper calls suppressCookieBanner and stubs all LinkedIn reads and project rights.
+    await setupLinkedin(page, { saved: true });
+    await openLinkedin(page);
+    const crumb = page.getByTestId('mktg-linkedin-breadcrumb');
+    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('LinkedIn Post Agent');
+    await expect(crumb.getByRole('link')).toHaveCount(2);
+    await expect(crumb.getByTestId('mktg-breadcrumb-link-0')).toHaveAttribute('href', '/project/mktg-os-agents?project=linkedin-e2e');
+    await expect(crumb.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', '/project/mktg-os-agents/families/social-community?project=linkedin-e2e');
+    await crumb.getByTestId('mktg-breadcrumb-link-1').click();
+    await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await expect(crumb.getByTestId('mktg-breadcrumb-current')).toHaveText('LinkedIn Post Agent');
+    await page.screenshot({ path: info.outputPath('linkedin-fixed-parent-back.png'), fullPage: true });
+  });
+  test('profile edit keeps its URL until save, while Back and Cancel return to the draft inputs', async ({ page }, info) => {
+    await setupLinkedin(page, { saved: true });
+    await openLinkedin(page);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await page.getByTestId('mktg-linkedin-edit-profile').click();
+    await expect(page).toHaveURL(/profile=edit/);
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await page.goForward();
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
+    await page.getByTestId('mktg-linkedin-cancel-edit').getByRole('button').click();
+    await expect(page).not.toHaveURL(/profile=edit/);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('profile-history.png'), fullPage: true });
+  });
+  test('a cold profile edit stays on intake when Cancel follows Family and Back', async ({ page }, info) => {
+    await setupLinkedin(page, { saved: true }); // openLinkedin calls suppressCookieBanner(page).
+    await openLinkedin(page);
+    const runUrl = page.url();
+    const editUrl = new URL(runUrl);
+    editUrl.searchParams.set('profile', 'edit');
+    await page.getByTestId('mktg-breadcrumb-link-1').click();
+    await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+    // A full navigation creates an unmarked edit entry, independent of router predecessors.
+    await page.goto(editUrl.toString());
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
+    await page.getByTestId('mktg-breadcrumb-link-1').click();
+    await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
+    await page.getByTestId('mktg-linkedin-cancel-edit').getByRole('button').click();
+    await expect(page).toHaveURL(runUrl);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('cold-profile-family-back-cancel.png'), fullPage: true });
+  });
+  test('Edit → Save returns to the run entry and the next Back leaves for its family', async ({ page }, info) => {
+    await setupLinkedin(page, { saved: true }); // openLinkedin calls suppressCookieBanner(page).
+    await openLinkedin(page);
+    await page.getByTestId('mktg-breadcrumb-link-1').click();
+    await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+    await page.getByTestId('mktg-family-run').getByRole('button').click();
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await page.getByTestId('mktg-linkedin-edit-profile').click();
+    await expect(page).toHaveURL(/profile=edit/);
+    await page.getByTestId('mktg-linkedin-save-profile').getByRole('button').click();
+    await expect(page).not.toHaveURL(/profile=edit/);
+    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    await page.goBack();
+    await expect(page.getByTestId('mktg-family-page')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('profile-save-back-to-family.png'), fullPage: true });
+  });
+  test('content source filters push URLs and Back restores the previous input view', async ({ page }, info) => {
+    await setupLinkedin(page, { saved: true });
+    await openLinkedin(page);
+    const entries = await page.evaluate(() => history.length);
+    await page.getByTestId('mktg-linkedin-source-url').click();
+    await expect(page).toHaveURL(/source=url/);
+    expect(await page.evaluate(() => history.length)).toBe(entries + 1);
+    await page.getByTestId('mktg-linkedin-source-file').click();
+    await expect(page).toHaveURL(/source=file/);
+    await page.goBack();
+    await expect(page.getByTestId('mktg-linkedin-source-url')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('mktg-linkedin-content-url')).toBeVisible();
+    await page.goBack();
+    await expect(page).not.toHaveURL(/[?&]source=/);
+    await expect(page.getByTestId('mktg-linkedin-content-text')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('source-history.png'), fullPage: true });
+  });
   test('keeps a failed first-run profile recoverable and saves it without another generation', async ({ page }, info) => {
     await setupLinkedin(page);
     let starts = 0;
@@ -568,17 +653,22 @@ test.describe('Marketing OS LinkedIn posts', () => {
     await page.getByTestId('mktg-linkedin-content-text').locator('textarea').fill('Synthetic release.');
     await page.getByTestId('mktg-linkedin-draft').click();
     await page.getByTestId('mktg-linkedin-open-document').click();
+    await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
+    const documentUrl = page.url();
     await page.getByTestId('mktg-linkedin-document-edit-profile').click();
+    await expect(page).toHaveURL(/[?&]profile=edit/);
     await expect(page.getByRole('heading', { name: 'Edit your LinkedIn profile', exact: true })).toBeVisible();
-    await expect(page).not.toHaveURL(/[?&]profile=edit/);
+    await expect(page.getByTestId('mktg-linkedin-profile-form')).toBeVisible();
     await page.getByTestId('mktg-linkedin-save-profile').click();
-    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
+    // Save consumes the pushed edit entry by returning to its document, not a duplicate intake URL.
+    await expect(page).toHaveURL(documentUrl);
+    await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
+    await expect(page).not.toHaveURL(/[?&]profile=edit/);
     await page.reload();
-    await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
-    await expect(page.getByTestId('mktg-linkedin-profile-form')).toHaveCount(0);
-    await page.goBack();
+    await expect(page).toHaveURL(documentUrl);
     await expect(page.getByTestId('mktg-document-view-document')).toBeVisible();
     await page.getByTestId('mktg-linkedin-draft-another').click();
+    await expect(page).not.toHaveURL(/[?&]profile=edit/);
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();
     await page.reload();
     await expect(page.getByTestId('mktg-linkedin-post-form')).toBeVisible();

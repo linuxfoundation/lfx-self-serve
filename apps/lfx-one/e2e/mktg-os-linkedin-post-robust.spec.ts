@@ -8,6 +8,7 @@ import { LINKEDIN_RECORDED_CASES } from '@lfx-one/shared/constants/linkedin-post
 import { LINKEDIN_RECORDED_PROGRESS } from '@lfx-one/shared/constants/linkedin-post-questions.fixture';
 import { json, LINKEDIN_RUN_TIMEOUT, openLinkedin, setupLinkedin } from './helpers/mktg-linkedin.helper';
 
+// openLinkedin calls suppressCookieBanner(page) before every navigation.
 test.describe('Marketing OS LinkedIn structure and states', () => {
   test('a slow healthy session remains pending without a failure or Retry control', async ({ page }, info) => {
     await suppressCookieBanner(page);
@@ -71,8 +72,8 @@ test.describe('Marketing OS LinkedIn structure and states', () => {
     await expect(page.getByTestId('mktg-linkedin-post-form')).toHaveCount(0);
     await expect(page.getByTestId('mktg-linkedin-breadcrumb')).toContainText('Social & community');
     await expect(page.getByRole('navigation', { name: 'Breadcrumb', exact: true })).toHaveCount(1);
-    await expect(page.getByTestId('mktg-linkedin-family-back')).toHaveAttribute('href', /\/families\/social-community\?project=/);
-    await expect(page.getByTestId('mktg-linkedin-back')).not.toHaveAttribute('href', /\/families\//);
+    await expect(page.getByTestId('mktg-breadcrumb-link-1')).toHaveAttribute('href', /\/families\/social-community\?project=/);
+    await expect(page.getByTestId('mktg-breadcrumb-link-0')).not.toHaveAttribute('href', /\/families\//);
     await page.screenshot({ path: info.outputPath('standalone-profile-questions.png'), fullPage: true });
   });
   test('profile loading is a neutral state until the read settles', async ({ page }, info) => {

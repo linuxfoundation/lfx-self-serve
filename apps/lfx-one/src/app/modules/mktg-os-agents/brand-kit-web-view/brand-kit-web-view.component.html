@@ -10,7 +10,8 @@
 @let sample = 'flex items-center justify-center overflow-hidden rounded-lg p-6';
 
 <!-- [overflow-wrap:anywhere] is inherited by every text block: a long token (a URL, a hash) wraps inside its card instead of running across the next one. -->
-<section class="flex w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="brand-kit-web-view">
+<!-- Screen-only containment leaves the book's print positioning context unchanged. -->
+<section class="[@media_screen]:@container/asset flex min-w-0 w-full flex-col gap-4 [overflow-wrap:anywhere]" data-testid="brand-kit-web-view">
   <!-- Header: what this is, which version, and what you can do with it -->
   <div class="flex flex-wrap items-center gap-2 px-1" data-testid="brand-kit-web-view-header">
     @if (showMetadata()) {
@@ -81,7 +82,12 @@
     }
   }
   <!-- Export to Google Slides: the last export, the choice between updating it and a new deck, progress, the deck or a plain error -->
-  <lfx-mktg-slides-export #slidesExport [target]="exportTarget()" [lookupTarget]="exportLookupTarget()" data-testid="brand-kit-web-view-slides-export" />
+  <lfx-mktg-slides-export
+    #slidesExport
+    [target]="exportTarget()"
+    [lookupTarget]="exportLookupTarget()"
+    [viewingDraft]="viewingDraft()"
+    data-testid="brand-kit-web-view-slides-export" />
 
   <!-- Tabs: the overview, the six chapters, the run's report -->
   <div class="border-b border-gray-200" role="tablist" aria-label="Brand kit" data-testid="brand-kit-web-view-tabs" (keydown)="onTabKeydown($event)">
@@ -113,8 +119,8 @@
         id="brand-kit-web-view-panel-overview"
         aria-labelledby="brand-kit-web-view-tab-overview"
         data-testid="brand-kit-web-view-panel-overview">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div class="lg:col-span-2" [class]="card">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3">
+          <div class="@2xl/asset:col-span-2" [class]="card">
             <h3 [class]="cardTitle">What this kit is built from</h3>
             <p class="text-sm leading-relaxed text-gray-800" data-testid="brand-kit-web-view-built-from">{{ v.builtFrom }}</p>
             <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -149,7 +155,7 @@
 
         <div class="flex flex-col gap-2">
           <h3 [class]="cardTitle">Chapters</h3>
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="brand-kit-web-view-chapters">
+          <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2 @4xl/asset:grid-cols-3" data-testid="brand-kit-web-view-chapters">
             @for (chapter of chapters(); track chapter.id) {
               <article [class]="card" [attr.data-testid]="'brand-kit-web-view-chapter-' + chapter.id">
                 <div class="flex items-baseline justify-between gap-2">
@@ -187,13 +193,13 @@
             No logo artwork yet: the marks below are placeholders until the logo files are uploaded.
           </div>
         }
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3">
           <div [class]="card">
             <h3 [class]="cardTitle">Logo system</h3>
             <p class="text-sm text-gray-800">{{ v.logo.system }}</p>
             <p class="text-sm text-gray-800">Logo artwork is supplied as files. Never retype the wordmark.</p>
           </div>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:col-span-2" data-testid="brand-kit-web-view-lockups">
+          <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3 @2xl/asset:col-span-2" data-testid="brand-kit-web-view-lockups">
             <article [class]="card">
               <div class="h-36 border border-gray-200 bg-white" [class]="sample">
                 <ng-container *ngTemplateOutlet="logoTpl; context: { $implicit: v.logos.primary, what: 'Horizontal lockup' }" />
@@ -231,7 +237,7 @@
             Full color on white and light grounds. Reversed (white) on {{ v.darkName }} and dark imagery. One-color black for print, engraving and embossing
             only. Accent colors are never logo colors.
           </p>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="brand-kit-web-view-colorways">
+          <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2 @4xl/asset:grid-cols-4" data-testid="brand-kit-web-view-colorways">
             @for (colorway of v.colorways; track colorway.name) {
               <article [class]="card" data-testid="brand-kit-web-view-colorway">
                 <div class="h-32" [class]="sample" [ngClass]="{ 'border border-gray-200': colorway.light }" [style.background]="colorway.ground">
@@ -246,7 +252,7 @@
         </div>
 
         <!-- Clear space and minimum sizes -->
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-clear-space">
             <h3 [class]="cardTitle">Clear space</h3>
             <p class="text-sm text-gray-800">{{ v.logo.clear_space }}</p>
@@ -287,7 +293,7 @@
         </div>
 
         <!-- The symbol in shape, and the partnership lockup -->
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card">
             <h3 [class]="cardTitle">Symbol in shape</h3>
             <p class="text-sm text-gray-800">For contained uses, place the symbol in a circle or rounded square, with one X of padding to the edge.</p>
@@ -332,7 +338,7 @@
           <p class="text-sm text-gray-600">
             Consistency is what makes the mark recognizable. When in doubt: full color on white, or reversed on {{ v.darkName }}, with X of clear space.
           </p>
-          <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="brand-kit-web-view-watchouts">
+          <div class="grid grid-cols-2 gap-3 @2xl/asset:grid-cols-3 @4xl/asset:grid-cols-6" data-testid="brand-kit-web-view-watchouts">
             @for (watchout of v.watchouts; track watchout.label) {
               <article [class]="card" data-testid="brand-kit-web-view-watchout">
                 <div class="relative h-24 border border-gray-200 bg-white" [class]="sample" [style.background]="watchout.ground || null">
@@ -370,7 +376,7 @@
           <p [class]="caption">Values come from the logo artwork, the site and the brand page; each card says where.</p>
         </div>
         <!-- auto-fit: as many swatch columns as fit at 13rem each (arbitrary value, see styling.md). -->
-        <div class="grid grid-cols-[repeat(auto-fit,minmax(13rem,1fr))] gap-3" data-testid="brand-kit-web-view-swatches">
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3" data-testid="brand-kit-web-view-swatches">
           @for (swatch of v.palette; track swatch.hex) {
             <article
               class="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white"
@@ -417,7 +423,7 @@
         <div [class]="card">
           <h3 [class]="cardTitle">Contrast</h3>
           <p class="text-sm text-gray-800">{{ v.color.contrast.rule }}</p>
-          <table class="w-full text-sm" data-testid="brand-kit-web-view-contrast">
+          <table class="w-full table-fixed text-sm" data-testid="brand-kit-web-view-contrast">
             <thead>
               <tr class="text-left text-2xs font-semibold uppercase tracking-wider text-gray-500">
                 <th class="pb-1 pr-3 font-semibold">Sample</th>
@@ -466,8 +472,8 @@
         id="brand-kit-web-view-panel-type"
         aria-labelledby="brand-kit-web-view-tab-type"
         data-testid="brand-kit-web-view-panel-type">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div class="lg:col-span-2" [class]="card" data-testid="brand-kit-web-view-specimen">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3">
+          <div class="@2xl/asset:col-span-2" [class]="card" data-testid="brand-kit-web-view-specimen">
             <span [class]="label">Typeface</span>
             <div class="flex flex-col gap-3 text-gray-900" [style.font-family]="v.fontStack">
               <span class="text-4xl font-medium leading-tight">{{ v.type.family }}</span>
@@ -501,7 +507,7 @@
         <div class="[container-type:inline-size]" [class]="card" data-testid="brand-kit-web-view-scale">
           <h3 [class]="cardTitle">Type scale</h3>
           @for (row of v.scale; track row.label) {
-            <div class="grid grid-cols-1 items-baseline gap-x-4 gap-y-1 border-t border-gray-100 py-2 md:grid-cols-[8rem_9rem_1fr]">
+            <div class="grid grid-cols-1 items-baseline gap-x-4 gap-y-1 border-t border-gray-100 py-2 @2xl/asset:grid-cols-[8rem_9rem_minmax(0,1fr)]">
               <span class="text-sm font-medium text-gray-900">{{ row.label }}</span>
               <span class="text-xs text-gray-500">{{ row.spec }}</span>
               <span
@@ -528,7 +534,7 @@
         id="brand-kit-web-view-panel-visual"
         aria-labelledby="brand-kit-web-view-tab-visual"
         data-testid="brand-kit-web-view-panel-visual">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2">
           <div [class]="card" data-testid="brand-kit-web-view-icons">
             <h3 [class]="cardTitle">Iconography</h3>
             <ul class="flex list-disc flex-col gap-1 pl-5 text-sm text-gray-800">
@@ -560,7 +566,7 @@
 
         <div [class]="card" data-testid="brand-kit-web-view-elements">
           <h3 [class]="cardTitle">Graphic elements</h3>
-          <div class="grid grid-cols-1 gap-3 lg:grid-cols-3" [style.font-family]="v.fontStack">
+          <div class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-3" [style.font-family]="v.fontStack">
             <div class="flex min-h-36 flex-col justify-end gap-1.5 rounded-lg p-5 text-white" [style.background]="v.dark">
               <span class="text-xs uppercase tracking-widest opacity-80">— Eyebrow</span>
               <span class="text-xl font-medium leading-snug">{{ v.voice.line }}</span>
@@ -593,7 +599,7 @@
           <h3 [class]="cardTitle">Example usage</h3>
           <p class="text-sm text-gray-800">{{ v.usage.summary }}</p>
         </div>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="brand-kit-web-view-usages">
+        <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2" data-testid="brand-kit-web-view-usages">
           @for (usage of v.usageTiles; track usage.caption) {
             <article [class]="card" data-testid="brand-kit-web-view-usage">
               <div
@@ -636,7 +642,7 @@
         id="brand-kit-web-view-panel-voice"
         aria-labelledby="brand-kit-web-view-tab-voice"
         data-testid="brand-kit-web-view-panel-voice">
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2">
           <div [class]="card">
             <span [class]="label">Umbrella message</span>
             <p class="text-sm leading-relaxed text-gray-900" data-testid="brand-kit-web-view-umbrella">{{ v.voice.umbrella }}</p>
@@ -648,7 +654,7 @@
         </div>
         <div class="flex flex-col gap-2">
           <h3 [class]="cardTitle">Attributes</h3>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="brand-kit-web-view-attributes">
+          <div class="grid grid-cols-1 gap-3 @lg/asset:grid-cols-2 @4xl/asset:grid-cols-4" data-testid="brand-kit-web-view-attributes">
             @for (attribute of v.voice.attributes; track attribute.name) {
               <article [class]="card">
                 <h4 class="text-base font-semibold text-gray-900">{{ attribute.name }}</h4>
@@ -667,7 +673,7 @@
     <!-- SOURCES AND GAPS: what the run read, what it could not, and what the sources do not state (the framework view's treatment) -->
     @case ('sources') {
       <div
-        class="grid grid-cols-1 gap-3 lg:grid-cols-2"
+        class="grid grid-cols-1 gap-3 @2xl/asset:grid-cols-2"
         role="tabpanel"
         id="brand-kit-web-view-panel-sources"
         aria-labelledby="brand-kit-web-view-tab-sources"

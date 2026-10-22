@@ -37,7 +37,7 @@ test.describe('Marketing kit home content', () => {
       await expect(page.getByTestId(`mktg-kit-family-availability-${family.id}`)).toHaveText('Coming soon');
       await expect(page.getByTestId(`mktg-kit-family-${family.id}`)).toContainText(family.description);
     }
-    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('None yet');
+    await expect(page.getByTestId('mktg-kit-asset-linkedin-post')).toContainText('Not run yet');
   });
   test('loading never claims zero assets', async ({ page }) => {
     let release = () => {};

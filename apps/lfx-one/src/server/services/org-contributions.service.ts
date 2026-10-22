@@ -17,6 +17,7 @@ import type {
   OrgContributionsResponse,
 } from '@lfx-one/shared/interfaces';
 
+import { toIsoTimestamp } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache } from './valkey.service';
 
@@ -545,20 +546,6 @@ function parseGithubUsername(value: string | null): string | null {
   }
   const match = trimmed.match(/github\.com\/([^/?#]+)/i);
   return match?.[1] ?? null;
-}
-
-function toIsoTimestamp(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  if (typeof value === 'string') {
-    const isoLike = value.includes(' ') ? value.replace(' ', 'T') : value;
-    const normalized = /[zZ]|[+-]\d{2}:?\d{2}$/.test(isoLike) ? isoLike : `${isoLike}Z`;
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
-  return null;
 }
 
 function emptyResponse(accountId: string, dateRange: ContributionsDateRange): OrgContributionsResponse {

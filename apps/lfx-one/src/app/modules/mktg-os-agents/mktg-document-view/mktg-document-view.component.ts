@@ -13,6 +13,7 @@ import { MarkdownRendererComponent } from '@components/markdown-renderer/markdow
 import { MessageComponent } from '@components/message/message.component';
 import {
   LINKEDIN_POST_INTAKE,
+  LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY,
   LINKEDIN_SHARE_LINK_ANSWER_KEY,
   LINKEDIN_SHARE_LINK_HINT,
   LINKEDIN_SHARE_LINK_MAX_CHARS,
@@ -287,8 +288,6 @@ export class MktgDocumentViewComponent {
     const view = this.view();
     return view && this.assetViewKind() === 'brand-kit' ? readBrandKitRevision(view.sidecar) : null;
   });
-  /** Boilerplates, FAQ and Brand Kit stay full width; the framework keeps Revisions and Downstream in the right column. */
-  protected readonly fullWidth = computed(() => this.boilerplates() !== null || this.faq() !== null || this.brandKit() !== null);
   /** The project name the framework view titles itself with. */
   protected readonly projectName = computed(() => this.projectContext.activeContext()?.name ?? '');
   protected readonly projectSlug = computed(() => this.projectContext.activeContext()?.slug ?? null);
@@ -799,6 +798,7 @@ export class MktgDocumentViewComponent {
     if (!this.linkedinContent()?.isAuthor) return;
     void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
       relativeTo: this.route.parent,
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: true },
       queryParams: { profile: 'edit', revision: null, type: null },
       queryParamsHandling: 'merge',
     });
