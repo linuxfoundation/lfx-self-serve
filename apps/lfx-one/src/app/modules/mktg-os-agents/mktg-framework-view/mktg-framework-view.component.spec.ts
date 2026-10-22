@@ -8,6 +8,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { provideRouter, Router } from '@angular/router';
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { BrandKitRevision, MktgFrameworkAsset, MktgFrameworkViewState, MktgSlidesExportTarget, MktgRevisionApproval } from '@lfx-one/shared/interfaces';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
@@ -155,6 +156,7 @@ describe('MktgFrameworkViewComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext: () => ({ slug: 'synthetic' }) } },
         { provide: MktgPrintService, useValue: printer },
         provideMktgSlidesExportStub(slidesExport),
+        { provide: MktgDependencyService, useValue: { documentsChanged$: NEVER } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);

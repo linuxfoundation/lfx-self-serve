@@ -429,5 +429,8 @@ POST; missing memory-only files require reattachment and explicit Generate.
 
 A stored-revision count or newest write is not an approved-current selection.
 Generation receipts identify the produced revision; they do not move an approval
-pointer. The asset-store item's single approved-current pointer and its chip/state
+pointer. Client `document`/`persisted` events carry the selected outcome's explicit
+location (or `null` until its receipt arrives) and accepted attempt. Cached history
+order never selects a handoff revision; receipt-less recovery retains that attempt's
+session, capability and prior-version hint, not a newer cached run's. The asset-store item's single approved-current pointer and its chip/state
 are the authority for current status, never a separate run/list-derived flag.

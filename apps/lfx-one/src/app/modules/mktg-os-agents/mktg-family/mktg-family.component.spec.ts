@@ -155,7 +155,16 @@ describe('Marketing family page', () => {
     await harness.fixture.whenStable();
     expect(TestBed.inject(Router).url).toContain('project=synthetic');
     for (const link of root?.querySelectorAll<HTMLAnchorElement>('a') ?? []) expect(link.search).toContain('project=next');
+    // The framework is a draft: Boilerplates is next but cannot run until it is approved.
+    expect(root?.querySelector<HTMLButtonElement>('[data-testid="mktg-family-run"] button')?.disabled).toBe(true);
+    expect(root?.querySelector('[data-testid="mktg-family-run"] a')).toBeNull();
+    expect(root?.querySelector('[data-testid="mktg-family-run"]')?.parentElement?.getAttribute('aria-label')).toContain(
+      'Approve the messaging framework first'
+    );
+    documents.set({ project: 'synthetic', groups: [], approvedFramework: framework });
+    harness.detectChanges();
     expect(root?.querySelector('[data-testid="mktg-family-run"] a')?.getAttribute('href')).toBe('/project/mktg-os-agents/boilerplates?project=next');
+    documents.set({ project: 'synthetic', groups: [] });
     families.update((value) =>
       value.map((family) => ({ ...family, rows: family.rows.map((row) => (row.asset.id === 'faq' ? { ...row, state: 'needs-rebuild' as const } : row)) }))
     );
@@ -169,6 +178,16 @@ describe('Marketing family page', () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl('/project/mktg-os-agents/families/positioning-brand?project=synthetic', MktgFamilyComponent);
     const root = harness.routeNativeElement;
+    // No approved framework: every agent that reads it is greyed out, saying why.
+    for (const id of ['boilerplates', 'faq', 'brand-kit']) {
+      const button = root?.querySelector<HTMLButtonElement>(`[data-testid="mktg-family-run-${id}"] button`);
+      expect(button?.disabled).toBe(true);
+      expect(root?.querySelector(`[data-testid="mktg-family-run-${id}"]`)?.parentElement?.getAttribute('aria-label')).toContain(
+        'Approve the messaging framework first'
+      );
+    }
+    documents.set({ project: 'synthetic', groups: [], approvedFramework: framework });
+    harness.detectChanges();
     expect(root?.querySelector('[data-testid="mktg-family-run-brand-kit"] a')?.getAttribute('href')).toBe(
       '/project/mktg-os-agents/brand-kit?project=synthetic'
     );

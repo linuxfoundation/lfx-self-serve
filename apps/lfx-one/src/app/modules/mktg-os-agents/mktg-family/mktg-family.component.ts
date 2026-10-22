@@ -9,6 +9,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import {
   MKTG_KIT_FAMILIES,
   MKTG_AGENTS,
+  MKTG_AGENT_INTAKES,
+  MKTG_KIT_FRAMEWORK_AGENT_ID,
   MKTG_KIT_EXCLUDED_AGENT_IDS,
   MKTG_DOCUMENT_TYPES,
   MKTG_KIT_POSITIONING_FAMILY_ID,
@@ -70,11 +72,13 @@ export class MktgFamilyComponent {
   protected readonly live: Signal<boolean> = this.initLive();
   protected readonly firstAgent: Signal<MktgAgent | undefined> = this.initFirstAgent();
   protected readonly rowRunAgents: Signal<Record<string, MktgAgent>> = this.initRowRunAgents();
+  /** Why each not-run-yet row's agent cannot run yet (a required document is not approved); absent when it can. */
+  protected readonly rowRunBlocked: Signal<Record<string, string>> = this.initRowRunBlocked();
   /** The first asset not run yet, in the family's run order (the framework before the assets that read it). */
   protected readonly nextAgent = computed(() => {
     const agents = this.rowRunAgents();
     const row = this.family()?.rows.find((candidate) => agents[candidate.asset.id]);
-    return row ? { agent: agents[row.asset.id], label: row.asset.label } : null;
+    return row ? { agent: agents[row.asset.id], label: row.asset.label, blocked: this.rowRunBlocked()[row.asset.id] ?? '' } : null;
   });
   protected readonly rebuildBlockedReason = computed(() => {
     const panel = this.rebuildPanel();
@@ -138,6 +142,37 @@ export class MktgFamilyComponent {
         if (agent && !MKTG_KIT_EXCLUDED_AGENT_IDS.includes(agent.id)) agents[row.asset.id] = agent;
       }
       return agents;
+    });
+  }
+
+  /**
+   * The run page refuses an agent whose intake requires another agent's approved
+   * document (boilerplates, FAQ and brand kit read the approved messaging
+   * framework); the Run buttons follow the same rule instead of opening a form
+   * that cannot be submitted.
+   */
+  private initRowRunBlocked(): Signal<Record<string, string>> {
+    return computed(() => {
+      const blocked: Record<string, string> = {};
+      const rows = this.family()?.rows ?? [];
+      for (const [assetId, agent] of Object.entries(this.rowRunAgents())) {
+        for (const attachment of MKTG_AGENT_INTAKES[agent.id]?.attachments ?? []) {
+          if (attachment.format !== 'json' || attachment.optional) continue;
+          const approved =
+            attachment.sourceAgentId === MKTG_KIT_FRAMEWORK_AGENT_ID
+              ? !!this.kit.documents()?.approvedFramework
+              : rows.some(
+                  (row) =>
+                    !!row.document?.approvedCurrent &&
+                    MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === row.asset.agentKey)?.catalogAgentId === attachment.sourceAgentId
+                );
+          if (!approved) {
+            blocked[assetId] = `Approve the ${attachment.documentName.toLowerCase()} first: ${agent.name} builds on the approved one.`;
+            break;
+          }
+        }
+      }
+      return blocked;
     });
   }
 

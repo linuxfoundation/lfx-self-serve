@@ -33,6 +33,9 @@
   } @else {
     <!-- KPI strip -->
     <lfx-stat-card-grid [cards]="kpiCards()" [loading]="isLoading()" data-testid="org-contributions-kpis" />
+    <p class="-mt-2 text-xs text-gray-500" data-testid="org-contributions-window-caption">
+      Distinct commits authored by contributors affiliated with {{ companyName() }}, {{ windowCaption() }}.
+    </p>
 
     <!-- Content card: tabs + shared filter bar + active table -->
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-contributions-content-card">

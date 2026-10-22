@@ -14,6 +14,7 @@ import {
   MktgSlidesExportStartResponse,
   MktgSlidesExportTarget,
 } from '@lfx-one/shared/interfaces';
+import { MktgDependencyService } from '@services/mktg-dependency.service';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -52,16 +53,18 @@ function record(overrides: Partial<MktgSlidesExportRecord> = {}): MktgSlidesExpo
   imports: [MktgSlidesExportComponent],
   template: `
     <button type="button" data-testid="host-export" (click)="exporter.onExport()">Export</button>
-    <lfx-mktg-slides-export #exporter [target]="target()" [lookupTarget]="lookupTarget()" />
+    <lfx-mktg-slides-export #exporter [target]="target()" [lookupTarget]="lookupTarget()" [viewingDraft]="viewingDraft()" />
   `,
 })
 class HostComponent {
   public readonly target = signal<MktgSlidesExportTarget | null>(TARGET);
   public readonly lookupTarget = signal<MktgSlidesExportTarget | null>(null);
+  public readonly viewingDraft = signal(false);
 }
 
 describe('MktgSlidesExportComponent', () => {
   let fixture: ComponentFixture<HostComponent>;
+  let documentsChanged: Subject<string>;
   let lastResponse: MktgSlidesExportLastResponse;
   let started: MktgSlidesExportStartResponse;
   let pollResult: Observable<MktgSlidesExportResultResponse>;
@@ -87,13 +90,19 @@ describe('MktgSlidesExportComponent', () => {
     };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [provideNoopAnimations(), provideMktgSlidesExportStub(service), { provide: PLATFORM_ID, useValue: platformId }],
+      providers: [
+        provideNoopAnimations(),
+        provideMktgSlidesExportStub(service),
+        { provide: MktgDependencyService, useValue: { documentsChanged$: documentsChanged.asObservable() } },
+        { provide: PLATFORM_ID, useValue: platformId },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
   }
 
   beforeEach(() => {
+    documentsChanged = new Subject<string>();
     lastResponse = { last: null, latestRevision: { id: `000002-${SHA}`, number: 2, contentSha256: SHA } };
     started = {
       sessionId: 'session-1',
@@ -166,7 +175,81 @@ describe('MktgSlidesExportComponent', () => {
     expect(query('mktg-slides-export-logo-note')?.textContent).toContain(MKTG_SLIDES_EXPORT_LOGO_NOTES['not-public']);
   });
 
-  it('shows the last export with its date, and marks it out of date when the asset has a newer revision', async () => {
+  it('accepts a newer server deck after a local export, both in the open success panel and after Close', async () => {
+    await setup();
+    await click('host-export');
+    expect(query('mktg-slides-export-open')?.getAttribute('href')).toBe(DECK_LINK);
+
+    const newer = record({
+      deckId: 'NewerSyntheticDeck',
+      link: 'https://docs.google.com/presentation/d/NewerSyntheticDeck/edit',
+      revisionId: `000003-${'b'.repeat(64)}`,
+      revisionNumber: 3,
+      contentSha256: 'b'.repeat(64),
+      exportedAt: '2026-10-20T11:00:00.000Z',
+    });
+    lastResponse = { last: newer, latestRevision: { id: newer.revisionId, number: 3, contentSha256: newer.contentSha256 } };
+    documentsChanged.next(TARGET.project);
+    await fixture.whenStable();
+
+    expect(query('mktg-slides-export-open')?.getAttribute('href')).toBe(newer.link);
+    expect(query('mktg-slides-export-stale')).toBeNull();
+    await click('mktg-slides-export-close');
+    expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe(newer.link);
+    expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 3');
+    expect(query('mktg-slides-export-last')?.textContent).toContain('20 Oct 2026');
+    expect(query('mktg-slides-export-stale')).toBeNull();
+  });
+
+  it('keeps a local completed deck when a delayed older server response arrives afterwards', async () => {
+    const results = new Subject<MktgSlidesExportResultResponse>();
+    pollResult = results;
+    await setup();
+    await click('host-export');
+    const lookup = new Subject<MktgSlidesExportLastResponse>();
+    service.last.mockReturnValueOnce(lookup);
+    documentsChanged.next(TARGET.project);
+
+    results.next({ status: 'ready', record: record() });
+    results.complete();
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-open')?.getAttribute('href')).toBe(DECK_LINK);
+    lookup.next({
+      last: record({
+        link: 'https://docs.google.com/presentation/d/OlderSyntheticDeck/edit',
+        revisionNumber: 1,
+        contentSha256: 'b'.repeat(64),
+        exportedAt: '2026-10-19T09:00:00.000Z',
+      }),
+      latestRevision: lastResponse.latestRevision,
+    });
+    lookup.complete();
+    await fixture.whenStable();
+
+    expect(query('mktg-slides-export-open')?.getAttribute('href')).toBe(DECK_LINK);
+    await click('mktg-slides-export-close');
+    expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe(DECK_LINK);
+    expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 2');
+    expect(query('mktg-slides-export-stale')).toBeNull();
+  });
+
+  it('shows the freshness badge in the open success panel when Make current moves from exported v2 to approved v1', async () => {
+    await setup();
+    await click('host-export');
+    expect(query('mktg-slides-export-done')).not.toBeNull();
+    expect(query('mktg-slides-export-stale')).toBeNull();
+
+    lastResponse = { last: record(), latestRevision: { id: `000001-${'b'.repeat(64)}`, number: 1, contentSha256: 'b'.repeat(64) } };
+    documentsChanged.next(TARGET.project);
+    await fixture.whenStable();
+
+    expect(query('mktg-slides-export-done')).not.toBeNull();
+    expect(query('mktg-slides-export-last')).toBeNull();
+    expect(query('mktg-slides-export-open')?.getAttribute('href')).toBe(DECK_LINK);
+    expect(query('mktg-slides-export-stale')?.textContent).toContain("the messaging framework's approved revision has changed");
+  });
+
+  it('shows the last export with its date, and marks it out of date when the approved revision has changed', async () => {
     lastResponse = {
       last: record({ revisionNumber: 1, contentSha256: 'b'.repeat(64) }),
       latestRevision: { id: `000002-${SHA}`, number: 2, contentSha256: SHA },
@@ -176,7 +259,86 @@ describe('MktgSlidesExportComponent', () => {
     expect((query('mktg-slides-export-last-link') as HTMLAnchorElement).href).toBe(DECK_LINK);
     expect(query('mktg-slides-export-last')?.textContent).toContain('19 Oct 2026');
     expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
-    expect(query('mktg-slides-export-stale')?.textContent).toContain('the messaging framework has a newer revision');
+    expect(query('mktg-slides-export-stale')?.textContent).toContain("the messaging framework's approved revision has changed");
+  });
+
+  it.each(['Approve', 'Make current'])('rechecks the approved current after %s without a reload, ignoring other projects', async () => {
+    lastResponse = { ...lastResponse, last: record() };
+    await setup();
+    // As on the document view, the lookup identity has no revision and stays unchanged.
+    fixture.componentInstance.lookupTarget.set({ project: TARGET.project, agentKey: TARGET.agentKey, documentId: TARGET.documentId });
+    await fixture.whenStable();
+    service.last.mockClear();
+    expect(query('mktg-slides-export-stale')).toBeNull();
+
+    documentsChanged.next('another-project');
+    expect(service.last).not.toHaveBeenCalled();
+    const lookup = new Subject<MktgSlidesExportLastResponse>();
+    service.last.mockReturnValueOnce(lookup);
+    documentsChanged.next(TARGET.project);
+    expect(service.last).toHaveBeenCalledExactlyOnceWith(fixture.componentInstance.lookupTarget());
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    expect(exporter.canExport()).toBe(false);
+    lookup.next({ last: record(), latestRevision: { id: `000003-${'b'.repeat(64)}`, number: 3, contentSha256: 'b'.repeat(64) } });
+    lookup.complete();
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-stale')).not.toBeNull();
+    expect(exporter.canExport()).toBe(true);
+
+    fixture.destroy();
+    documentsChanged.next(TARGET.project);
+    expect(service.last).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the loaded deck and approved-current status after a failed notification refresh, keeping Export enabled', async () => {
+    lastResponse = { last: record({ revisionNumber: 1 }), latestRevision: { id: `000003-${'b'.repeat(64)}`, number: 3, contentSha256: 'b'.repeat(64) } };
+    await setup();
+    const exporter = fixture.debugElement.query(By.directive(MktgSlidesExportComponent)).componentInstance as MktgSlidesExportComponent;
+    expect(exporter.canExport()).toBe(true);
+    expect(query('mktg-slides-export-stale')).not.toBeNull();
+
+    const lookup = new Subject<MktgSlidesExportLastResponse>();
+    service.last.mockReturnValueOnce(lookup);
+    documentsChanged.next(TARGET.project);
+    expect(exporter.canExport()).toBe(false);
+    lookup.error(new HttpErrorResponse({ status: 503 }));
+    await fixture.whenStable();
+
+    expect(exporter.canExport()).toBe(true);
+    expect(exporter.disabledReason()).toBe('');
+    expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe(DECK_LINK);
+    expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
+    expect(query('mktg-slides-export-stale')).not.toBeNull();
+    expect(query('mktg-slides-export-lookup-failed')?.textContent).toContain('Could not check for an earlier deck');
+    expect(query('mktg-slides-export-check-again')?.textContent).toContain('Check again');
+    await click('host-export');
+    expect(query('mktg-slides-export-choice')).not.toBeNull();
+    expect(service.start).not.toHaveBeenCalled();
+  });
+
+  it('labels a Draft with the deck revision, keeping the last deck link/date and the approved-view wording', async () => {
+    lastResponse = { last: record({ revisionNumber: 1 }), latestRevision: { id: `000003-${'b'.repeat(64)}`, number: 3, contentSha256: 'b'.repeat(64) } };
+    await setup();
+    fixture.componentInstance.viewingDraft.set(true);
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-last-link')?.textContent).toContain('Last export: from approved v1');
+    expect(query('mktg-slides-export-last-link')?.getAttribute('href')).toBe(DECK_LINK);
+    expect(query('mktg-slides-export-last')?.textContent).toContain('19 Oct 2026');
+    expect(query('mktg-slides-export-last')?.textContent).not.toContain('from revision 1');
+    expect(query('mktg-slides-export-stale')).not.toBeNull();
+
+    fixture.componentInstance.viewingDraft.set(false);
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-last-link')?.textContent).toContain('Open the last export');
+    expect(query('mktg-slides-export-last')?.textContent).toContain('from revision 1');
+
+    lastResponse = { ...lastResponse, latestRevision: null };
+    fixture.componentInstance.viewingDraft.set(true);
+    documentsChanged.next(TARGET.project);
+    await fixture.whenStable();
+    expect(query('mktg-slides-export-last-link')?.textContent).toContain('Last export: from approved v1');
+    expect(query('mktg-slides-export-last')?.textContent).not.toContain('from revision 1');
+    expect(query('mktg-slides-export-stale')).toBeNull();
   });
 
   it('offers Update or Create when a deck exists, and updates the same deck when asked', async () => {
@@ -400,7 +562,12 @@ describe('MktgSlidesExportComponent', () => {
     service = { last: vi.fn(() => lookup), start: vi.fn(() => of(started)), poll: vi.fn(() => pollResult) };
     await TestBed.configureTestingModule({
       imports: [HostComponent],
-      providers: [provideNoopAnimations(), provideMktgSlidesExportStub(service), { provide: PLATFORM_ID, useValue: 'browser' }],
+      providers: [
+        provideNoopAnimations(),
+        provideMktgSlidesExportStub(service),
+        { provide: MktgDependencyService, useValue: { documentsChanged$: documentsChanged.asObservable() } },
+        { provide: PLATFORM_ID, useValue: 'browser' },
+      ],
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     await fixture.whenStable();
