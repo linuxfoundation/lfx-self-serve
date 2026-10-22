@@ -215,7 +215,7 @@ export class MktgDocumentViewComponent {
   private readonly revisionParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('revision') ?? '')), { initialValue: '' });
 
   // === Computed ===
-  protected readonly writePending = computed(() => this.approvingId() !== null || this.restoringId() !== null);
+  protected readonly writePending = computed(() => this.submittingGeneration() || this.approvingId() !== null || this.restoringId() !== null);
   protected readonly proseView = computed(() => (this.view()?.member360 ? null : this.view()));
   protected readonly isLinkedinDocument = computed(() => this.view()?.type.agentKey === LINKEDIN_POST_INTAKE.agentId);
   protected readonly linkedinContent = this.initLinkedinContent();
@@ -1087,8 +1087,8 @@ export class MktgDocumentViewComponent {
       this.localProgress.set('writing');
     }
     if (progress.type === 'document' || progress.type === 'persisted') {
-      this.dependencyService.notifyDocumentsChanged(pending.request.projectUid);
       const location = progress.run?.versions.at(-1)?.documentLocation;
+      this.dependencyService.notifyDocumentsChanged(pending.request.projectUid);
       if (location) {
         this.localProgress.set(null);
         void this.router.navigate([mktgKitRootPath(this.router.url), 'documents', location.agentKey, location.documentId], {

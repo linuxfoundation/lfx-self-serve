@@ -297,7 +297,9 @@
                 <span class="sm:hidden" aria-hidden="true">·</span>
                 <a
                   class="shrink-0 text-blue-700 underline hover:text-blue-900"
-                  [routerLink]="[]"
+                  [routerLink]="submittingGeneration() ? null : []"
+                  [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
+                  [attr.tabindex]="submittingGeneration() ? -1 : null"
                   [queryParams]="{ revision: active.id }"
                   queryParamsHandling="merge"
                   data-testid="mktg-document-view-history-bar-back">
@@ -436,7 +438,9 @@
                       class="flex w-16 shrink-0 flex-col items-end gap-1 text-right font-normal"
                       [attr.data-testid]="'mktg-document-view-row-actions-' + row.revision.number">
                       <a
-                        [routerLink]="[]"
+                        [routerLink]="submittingGeneration() ? null : []"
+                        [attr.aria-disabled]="submittingGeneration() ? 'true' : null"
+                        [attr.tabindex]="submittingGeneration() ? -1 : null"
                         [queryParams]="{ revision: row.revision.id }"
                         queryParamsHandling="merge"
                         class="text-blue-600 hover:text-blue-800"

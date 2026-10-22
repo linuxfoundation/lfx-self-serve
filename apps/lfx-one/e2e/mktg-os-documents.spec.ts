@@ -250,6 +250,7 @@ test.describe('Marketing OS current revisions', () => {
     await expect(page.getByTestId('mktg-document-view-history-bar-summary')).toHaveText("You're viewing v7 · 13 Oct · The writer · v9 is current");
     await expect(page.getByTestId('mktg-document-view-history-bar-make-current')).toHaveAccessibleName('Make v7 current');
     await expect(page.getByTestId('mktg-document-view-history-bar-back')).toHaveAccessibleName('Back to v9');
+    await expect(page.getByTestId('mktg-document-view-history-bar-back')).not.toHaveAttribute('aria-disabled', 'true');
     await page.getByTestId('mktg-document-view-history-bar-back').click();
     await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 9');
     await expect(page.getByTestId('mktg-document-view-history-bar')).toHaveCount(0);

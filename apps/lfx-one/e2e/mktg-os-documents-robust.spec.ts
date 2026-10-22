@@ -82,6 +82,23 @@ test.describe('Marketing OS Documents structure', () => {
     await expect(page.getByTestId('mktg-agent-run-version-chips')).toHaveCount(0);
   });
 
+  test('loaded revision controls remain keyboard-operable outside submission', async ({ page }) => {
+    await setupDocuments(page);
+    await openDocuments(page, DOCUMENT_VIEW_URL);
+    const open = page.getByTestId('mktg-document-view-open-1');
+    await expect(open).not.toHaveAttribute('aria-disabled', 'true');
+    await open.focus();
+    await expect(open).toBeFocused();
+    await open.press('Enter');
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 1');
+    const back = page.getByTestId('mktg-document-view-history-bar-back');
+    await expect(back).not.toHaveAttribute('aria-disabled', 'true');
+    await back.focus();
+    await expect(back).toBeFocused();
+    await back.press('Enter');
+    await expect(page.getByTestId('mktg-document-view-document')).toContainText('Revision 2');
+  });
+
   test('loading does not claim empty counts; success produces semantic table headers', async ({ page }) => {
     await setupDocuments(page);
     let release!: () => void;

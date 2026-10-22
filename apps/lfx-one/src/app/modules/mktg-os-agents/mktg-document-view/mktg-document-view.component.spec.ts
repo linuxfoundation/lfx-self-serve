@@ -8,7 +8,15 @@ import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { BRAND_KIT_CONTRACT_ID, BRAND_KIT_INTAKE, MKTG_DOCUMENT_TYPES, MKTG_RUN_POLL, MKTG_AGENT_INTAKES, MKTG_AGENTS } from '@lfx-one/shared/constants';
+import {
+  BRAND_KIT_CONTRACT_ID,
+  BRAND_KIT_INTAKE,
+  ICP_INTAKE,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_RUN_POLL,
+  MKTG_AGENT_INTAKES,
+  MKTG_AGENTS,
+} from '@lfx-one/shared/constants';
 import {
   MktgDocumentDetailResponse,
   MktgDocumentRunProgress,
@@ -861,6 +869,73 @@ describe('MktgDocumentViewComponent', () => {
     expect(attempts.consume).toHaveBeenCalledTimes(1);
     expect(service.resume).toHaveBeenCalledTimes(1);
     expect(query('mktg-document-view-error')).toBeNull();
+  });
+
+  it.each([LATEST, OLDER])('blocks revision links and Make current before the prepared ACK while viewing v$number', async (selected) => {
+    const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.catalogAgentId === ICP_INTAKE.agentId);
+    if (!type) throw new Error('Missing catalog ICP fixture');
+    store.getDocument.mockReturnValue(of({ ...detail, type }));
+    store.getRevision.mockImplementation((_project: string, _agent: string, _document: string, id: string) =>
+      of({ ...revisionResponse(id === OLDER.id ? OLDER : LATEST), type })
+    );
+    await render(`/documents/${type.agentKey}/living?revision=${selected.id}`);
+    const progress = new Subject<MktgGenerateProgress>();
+    const pending: MktgPendingGeneration = {
+      request: { agentId: ICP_INTAKE.agentId, projectUid: PROJECT.uid, intake: ICP_INTAKE, answers: {} },
+      state: 'draft',
+      updatedAt: new Date().toISOString(),
+    };
+    const attempts = TestBed.inject(MktgRunAttemptService);
+    const service = TestBed.inject(MktgAgentRunService);
+    vi.mocked(attempts.consume).mockReturnValueOnce({ subject: subject(), pending });
+    vi.mocked(service.resume).mockReturnValue(progress);
+    await harness.navigateByUrl(`/documents/${type.agentKey}/living?revision=${selected.id}&generation=synthetic-held-ack`, MktgDocumentViewComponent);
+    await settle();
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing prepared receiver');
+    const links = [
+      ...(harness.routeNativeElement?.querySelectorAll<HTMLAnchorElement>(
+        '[data-testid^="mktg-document-view-open-"], [data-testid="mktg-document-view-history-bar-back"]'
+      ) ?? []),
+    ];
+    expect(links.length).toBeGreaterThan(0);
+    const url = TestBed.inject(Router).url;
+    for (const link of links) {
+      expect(link.getAttribute('aria-disabled')).toBe('true');
+      expect(link.getAttribute('tabindex')).toBe('-1');
+      expect(link.getAttribute('href')).toBeNull();
+      link.click();
+    }
+    const writes = [
+      ...(harness.routeNativeElement?.querySelectorAll<HTMLButtonElement>(
+        '[data-testid^="mktg-document-view-restore-"], [data-testid="mktg-document-view-history-bar-make-current"]'
+      ) ?? []),
+    ];
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes.every((button) => button.disabled)).toBe(true);
+    component['onRestore'](OLDER);
+    component['onApprove']();
+    await settle();
+    expect(TestBed.inject(Router).url).toBe(url);
+    expect(progress.observed).toBe(true);
+    expect(attempts.consume).toHaveBeenCalledTimes(1);
+    expect(service.resume).toHaveBeenCalledExactlyOnceWith(pending);
+    expect(store.restoreRevision).not.toHaveBeenCalled();
+    expect(store.approveRevision).not.toHaveBeenCalled();
+    vi.mocked(attempts.load).mockReturnValue({
+      ...pending,
+      state: 'writing',
+      attempt: {
+        runId: 'b'.repeat(64),
+        priorVersion: 0,
+        session: { agentId: ICP_INTAKE.agentId, sessionId: 'synthetic-held-session', ownerToken: 'synthetic-owner' },
+      },
+    });
+    progress.next({ type: 'submitted' });
+    await settle();
+    expect(progress.observed).toBe(true);
+    expect(service.resume).toHaveBeenCalledTimes(1);
+    expect(component['submittingGeneration']()).toBe(false);
   });
 
   it.each(['metadata', 'body'])('bounds repeated %s failures together and manual refresh restores the loaded asset', async (failure) => {
