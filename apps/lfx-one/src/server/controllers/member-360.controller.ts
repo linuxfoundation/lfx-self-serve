@@ -9,6 +9,7 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { Member360Service } from '../services/member-360.service';
+import { GuildService } from '../services/guild.service';
 import { getEffectiveSub } from '../utils/auth-helper';
 import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-session-token.util';
 
@@ -58,7 +59,7 @@ export class Member360Controller {
       if (typeof ownerToken !== 'string' || !verifySessionOwnerToken(ownerToken, user, `member-360:${project}:${sessionId}`)) {
         throw new AuthorizationError('This run belongs to another user or project.', { operation, service: 'member_360' });
       }
-      const response = await this.service.result(req, sessionId, project);
+      const response = await new GuildService().resolveRunOutcome(req, sessionId, await this.service.result(req, sessionId, project));
       logger.success(req, operation, start, { status: response.status });
       res.json(response);
     } catch (error) {

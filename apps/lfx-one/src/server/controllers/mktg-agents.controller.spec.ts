@@ -98,6 +98,7 @@ vi.mock('../services/mktg-source-text.service', () => ({
 }));
 vi.mock('../services/guild.service', () => ({
   GuildService: class {
+    public resolveRunOutcome = vi.fn(async (_req: unknown, _id: string, result: unknown) => result);
     public createSession = guildMocks.createSession;
     public sendFollowUp = guildMocks.sendFollowUp;
   },

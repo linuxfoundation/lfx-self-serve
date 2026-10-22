@@ -702,6 +702,14 @@ export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
   persistsDocument: true,
 };
 
+/** A last runtime error must settle before it is considered terminal. */
+export const MKTG_RUN_ERROR_SETTLE_MS = 30_000;
+/** Completion events inside this window may be teardown; new work recovers immediately. */
+export const MKTG_RUN_ERROR_TEARDOWN_MS = 5_000;
+
+/** Safe failure copy: raw provider errors can contain private URLs or credentials. */
+export const MKTG_RUN_FAILURE_REASON = 'The agent stopped before it could finish this run. Your inputs are kept — retry with a new run.';
+
 /** Batch intake registry keyed by catalog agent id; dedicated surfaces declare oneOffDocument. */
 export const MKTG_AGENT_INTAKES: Record<string, MktgAgentIntake> = {
   [BRAND_KIT_INTAKE.agentId]: BRAND_KIT_INTAKE,

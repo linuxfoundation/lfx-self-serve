@@ -7,6 +7,25 @@
 purpose `marketing-os-artifacts`. The existing project writer entitlement and
 server-resolved project partition still gate every route.
 
+## Run outcomes
+
+Catalog result controllers await `GuildService.resolveRunOutcome` after authorization
+and before logging or recording their response. It only adds failure to pending/questions;
+validated ready/refused and already-returned failed results are unchanged. The request's existing raw-event read is reused.
+The existing idle-runtime completion path uses failed/failureText for a final plain
+reply without an asset. Provider error events add failed/failure when no output
+arrives; both fields are additive, and terminal outcomes are never replaced.
+A non-tool error must settle for 30 seconds without recovery. Agent text, including
+progress text and questions, and new LLM/runtime/tool work recover immediately.
+Only completion/lifecycle-end events inside five seconds can count as teardown.
+These timings are inherited from the Slides export contract: no recorded failed
+stream verifies that teardown assumption yet. The recorded healthy stream supports
+immediate recovery on new work and long silent model turns, not failure teardown.
+Slides deliberately shares this rule: new work or text inside five seconds now
+recovers; its undated-error policy is unchanged. No session metadata probe is used
+because its status vocabulary is unverified. Lookup failures log a warning and
+preserve the original outcome.
+
 ## Current is not newest
 
 Revision bundles remain immutable JSON at

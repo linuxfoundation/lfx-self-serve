@@ -43,6 +43,8 @@ export type LinkedinFormRenderVersion = 1 | 2;
 
 /** Server-composed form; no feedback path in this WorkItem. */
 export interface LinkedinForm {
+  project_name?: string;
+  project_uid?: string;
   today: string;
   saved_profile?: LinkedinProfile;
   setup?: LinkedinSetup;

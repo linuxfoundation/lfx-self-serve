@@ -9,12 +9,13 @@ import {
   MKTG_AGENTS,
   MKTG_ARTIFACT_PARTITION_REGEX,
 } from '@lfx-one/shared/constants';
-import { LinkedinProfileInput } from '@lfx-one/shared/interfaces';
+import { LinkedinProfileInput, Project } from '@lfx-one/shared/interfaces';
 import { isLinkedinProfile, isLinkedinSetup, normalizeLinkedinShareAnswers, normalizeLinkedinShareLink, validLinkedinAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
 import { LinkedinPostService } from '../services/linkedin-post.service';
+import { GuildService } from '../services/guild.service';
 import { LinkedinProfileService } from '../services/linkedin-profile.service';
 import { logger } from '../services/logger.service';
 import { MktgDocumentStoreService } from '../services/mktg-document-store.service';
@@ -25,6 +26,7 @@ import { createSessionOwnerToken, verifySessionOwnerToken } from '../utils/mktg-
 /** Identity from the authenticated session only; every run also requires project writer access. */
 export class LinkedinPostController {
   private readonly posts = new LinkedinPostService();
+  private readonly guild = new GuildService();
   private readonly profiles = new LinkedinProfileService();
   private readonly projects = new ProjectService();
   private readonly documents = new MktgDocumentStoreService();
@@ -96,8 +98,8 @@ export class LinkedinPostController {
         throw ServiceValidationError.forField('answers', 'Unexpected content input.');
       const setup = body['setup'];
       if (setup !== undefined && !isLinkedinSetup(setup)) throw ServiceValidationError.forField('setup', 'Complete the required profile fields.');
-      await this.writableProject(req, body['project']);
-      const result = await this.posts.start(req, user, answers, setup, this.routingHandle());
+      const project = await this.writableProject(req, body['project']);
+      const result = await this.posts.start(req, user, answers, setup, this.routingHandle(), project);
       logger.success(req, operation, start, {});
       res.set('Cache-Control', 'private, no-store').json({ ...result, ownerToken: createSessionOwnerToken(user, result.sessionId) });
     } catch (error) {
@@ -118,7 +120,7 @@ export class LinkedinPostController {
       if (typeof sourceWords !== 'number' || !Number.isInteger(sourceWords) || sourceWords < 0 || sourceWords > LINKEDIN_SOURCE_MAX_WORDS)
         throw ServiceValidationError.forField('sourceWords', 'Invalid source word count.');
       const project = await this.writableProject(req, body['project']);
-      const result = await this.posts.result(req, user, sessionId, project, answers, sourceWords);
+      const result = await this.guild.resolveRunOutcome(req, sessionId, await this.posts.result(req, user, sessionId, project.uid, answers, sourceWords));
       logger.success(req, operation, start, { status: result.status });
       res.set('Cache-Control', 'private, no-store').json(result);
     } catch (error) {
@@ -163,7 +165,7 @@ export class LinkedinPostController {
       const link = normalizeLinkedinShareLink(body['share_link']);
       if (link === null) throw ServiceValidationError.forField('share_link', 'Enter one HTTPS link or leave it empty.');
       const project = await this.writableProject(req, body['project']);
-      const result = await this.documents.saveLinkedinShareLink(req, project, documentId, link);
+      const result = await this.documents.saveLinkedinShareLink(req, project.uid, documentId, link);
       logger.success(req, operation, start, {});
       res.set('Cache-Control', 'private, no-store').json(result);
     } catch (error) {
@@ -196,11 +198,11 @@ export class LinkedinPostController {
     if (!user) throw new AuthenticationError('Could not identify the requesting user.');
     return user;
   }
-  private async writableProject(req: Request, value: unknown): Promise<string> {
+  private async writableProject(req: Request, value: unknown): Promise<Project> {
     if (typeof value !== 'string' || !MKTG_ARTIFACT_PARTITION_REGEX.test(value)) throw ServiceValidationError.forField('project', 'Select a valid project.');
     const project = await this.projects.getProjectById(req, value, true);
     if (!project.writer || !MKTG_ARTIFACT_PARTITION_REGEX.test(project.uid))
       throw new AuthorizationError('You need write access to this project to draft a post.');
-    return project.uid;
+    return project;
   }
 }
