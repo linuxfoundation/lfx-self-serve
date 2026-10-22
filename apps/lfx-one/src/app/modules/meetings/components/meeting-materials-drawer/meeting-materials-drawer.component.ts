@@ -275,6 +275,10 @@ export class MeetingMaterialsDrawerComponent {
         this.saving.set(false);
         this.messageService.add({ severity: 'success', summary: 'Link Added', detail: `"${title}" has been added.` });
         const addedAttachments: PastMeetingAttachment[] = isPast ? [attachment as PastMeetingAttachment] : [];
+        if (!isPast) {
+          // Every card and page showing this meeting lists the link now, rather than after the query service indexes it.
+          this.meetingService.recordAttachmentChanges(id, { added: [{ ...(attachment as MeetingAttachment), ...this.newItemOccurrence() }] });
+        }
         this.materialsChanged.emit({ deletedUids: [], addedAttachments });
       },
       error: () => {
@@ -384,6 +388,14 @@ export class MeetingMaterialsDrawerComponent {
                   created_by: r.created_by,
                 }))
             : [];
+          if (!isPast) {
+            this.meetingService.recordAttachmentChanges(id!, {
+              added: uploadResults
+                .filter((r): r is MeetingAttachmentUploadResult & { result: PresignAttachmentResponse } => r.result !== null)
+                .map((r) => this.toMeetingAttachment(r.result, id!)),
+              deletedUids: successfullyDeletedUids,
+            });
+          }
           this.materialsChanged.emit({ deletedUids: successfullyDeletedUids, addedAttachments });
           if (hasPartialFailure) {
             this.messageService.add({ severity: 'warn', summary: 'Partial Update', detail: 'Some changes could not be saved. Please try again.' });

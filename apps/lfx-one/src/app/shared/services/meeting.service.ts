@@ -30,6 +30,7 @@ import {
   ITXUpdatePastMeetingParticipantRequest,
   Meeting,
   MeetingAttachment,
+  MeetingAttachmentChangesByMeeting,
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrationRemovalResult,
@@ -91,6 +92,17 @@ export class MeetingService {
    * cost is that a change made by someone else mid-session stays hidden on that attachment until the page reloads.
    */
   public readonly attachmentScopeOverrides: Signal<AttachmentScopeOverrides> = this.attachmentScopeOverridesState.asReadonly();
+
+  private readonly attachmentChangesState: WritableSignal<MeetingAttachmentChangesByMeeting> = signal(new Map());
+  /**
+   * Attachments added to and removed from live meetings in this session that a read may not show yet, keyed by meeting id.
+   * @description Lives here for the same reason as {@link attachmentScopeOverrides}: every card and page showing the
+   * meeting's materials sees a save the moment it lands, rather than after a refetch the query service may not have caught
+   * up with. Entries stay for the session, because each card keeps its own fetched list and dropping an entry once one read
+   * agreed with it would send the other cards back to their stale snapshot. The cost is that an attachment someone else
+   * removes mid-session stays listed here until the page reloads.
+   */
+  public readonly attachmentChanges: Signal<MeetingAttachmentChangesByMeeting> = this.attachmentChangesState.asReadonly();
 
   private readonly http = inject(HttpClient);
   private readonly pastMeetingRecordingCache = new Map<string, { observable: Observable<PastMeetingRecording>; cachedAt: number }>();
@@ -417,6 +429,23 @@ export class MeetingService {
     this.attachmentScopeOverridesState.update((current) => {
       const next = new Map(current);
       changes.forEach((change) => next.set(change.uid, change.occurrence_id ?? ''));
+      return next;
+    });
+  }
+
+  public recordAttachmentChanges(meetingId: string, changes: { added?: MeetingAttachment[]; deletedUids?: string[] }): void {
+    const added = changes.added ?? [];
+    const deletedUids = changes.deletedUids ?? [];
+    if (added.length === 0 && deletedUids.length === 0) return;
+    this.attachmentChangesState.update((current) => {
+      const existing = current.get(meetingId);
+      const deleted = new Set([...(existing?.deletedUids ?? []), ...deletedUids]);
+      const next = new Map(current);
+      next.set(meetingId, {
+        // A deleted attachment must not come back from an earlier addition in the same session.
+        added: [...(existing?.added ?? []), ...added].filter((attachment) => !deleted.has(attachment.uid)),
+        deletedUids: deleted,
+      });
       return next;
     });
   }

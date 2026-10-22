@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AttachmentScope, AttachmentScopeOverrides, Meeting, MeetingOccurrence, OccurrenceScopedAttachment } from '../interfaces';
+import {
+  AttachmentScope,
+  AttachmentScopeOverrides,
+  Meeting,
+  MeetingAttachment,
+  MeetingAttachmentChanges,
+  MeetingOccurrence,
+  OccurrenceScopedAttachment,
+} from '../interfaces';
 import { isMeetingOccurrenceCancelled, isOccurrencePast } from './meeting.utils';
 import { isSameOccurrenceId } from './rsvp-calculator.util';
 
@@ -46,4 +54,16 @@ export function applyAttachmentScopeOverrides<T extends { uid: string; occurrenc
     const override = overrides.get(attachment.uid);
     return override === undefined ? attachment : { ...attachment, occurrence_id: override || undefined };
   });
+}
+
+/**
+ * Shows a read's attachments with this session's additions and deletions applied.
+ * @description An added attachment the read already returns is left as the read has it, and a deleted one is dropped even
+ * if the read still returns it. Additions go first so the newest shows at the top, matching what a refetch returns.
+ */
+export function applyMeetingAttachmentChanges(attachments: MeetingAttachment[], changes: MeetingAttachmentChanges | undefined): MeetingAttachment[] {
+  if (!changes || (changes.added.length === 0 && changes.deletedUids.size === 0)) return attachments;
+  const fetchedUids = new Set(attachments.map((attachment) => attachment.uid));
+  const pending = changes.added.filter((attachment) => !fetchedUids.has(attachment.uid) && !changes.deletedUids.has(attachment.uid)).reverse();
+  return [...pending, ...attachments.filter((attachment) => !changes.deletedUids.has(attachment.uid))];
 }

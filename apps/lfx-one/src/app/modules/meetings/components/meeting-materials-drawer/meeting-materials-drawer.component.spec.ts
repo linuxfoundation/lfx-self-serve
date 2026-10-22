@@ -46,6 +46,7 @@ async function mount(
   const meetingService = {
     attachmentScopeOverrides: signal<ReadonlyMap<string, string>>(options.scopeOverrides ?? new Map()),
     recordAttachmentScopeChanges: vi.fn(),
+    recordAttachmentChanges: vi.fn(),
     getMeetingAttachments: vi.fn().mockReturnValue(of(options.attachments ?? [])),
     getPastMeetingAttachments: vi.fn().mockReturnValue(of([])),
     createMeetingAttachment: vi.fn().mockReturnValue(of(attachment({ uid: 'new' }))),
@@ -336,6 +337,54 @@ describe('MeetingMaterialsDrawerComponent — occurrence scope', () => {
       const [first, second] = component.linkAttachments();
       expect(component.effectiveScope(first)).toBe('occurrence');
       expect(component.effectiveScope(second)).toBe('series');
+    });
+  });
+
+  describe('showing added and removed materials at once', () => {
+    it('tells the rest of the app about a link that was added, with the scope it was added with', async () => {
+      const { component, meetingService } = await mount({ occurrence });
+      component.setNewItemScope('occurrence');
+      component.newLinkTitle.set('Repo');
+      component.newLinkUrl.set('https://example.com/repo');
+
+      component.addLink();
+
+      expect(meetingService.recordAttachmentChanges).toHaveBeenCalledWith('m1', {
+        added: [expect.objectContaining({ uid: 'new', occurrence_id: OCCURRENCE_ID })],
+      });
+    });
+
+    it('tells the rest of the app about the files that uploaded and the attachments that were deleted', async () => {
+      const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'series' })] });
+      component.onFileSelect({ files: [pdf('notes.pdf')] });
+      component.markForDeletion('series');
+
+      component.onSave();
+
+      expect(meetingService.recordAttachmentChanges).toHaveBeenCalledWith('m1', {
+        added: [expect.objectContaining({ uid: 'file-1', meeting_id: 'm1' })],
+        deletedUids: ['series'],
+      });
+    });
+
+    it('does not report a deletion that failed', async () => {
+      const { component, meetingService } = await mount({ occurrence, attachments: [attachment({ uid: 'series' })] });
+      meetingService.deleteMeetingAttachment.mockReturnValue(throwError(() => new Error('rejected')));
+      component.markForDeletion('series');
+
+      component.onSave();
+
+      expect(meetingService.recordAttachmentChanges).toHaveBeenCalledWith('m1', { added: [], deletedUids: [] });
+    });
+
+    it('leaves a past meeting to its parent', async () => {
+      const { component, meetingService } = await mount({ pastMeetingId: 'p1' });
+      component.newLinkTitle.set('Repo');
+      component.newLinkUrl.set('https://example.com/repo');
+
+      component.addLink();
+
+      expect(meetingService.recordAttachmentChanges).not.toHaveBeenCalled();
     });
   });
 

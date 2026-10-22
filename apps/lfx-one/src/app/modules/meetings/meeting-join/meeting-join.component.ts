@@ -76,6 +76,7 @@ import {
 import { MAX_CUSTOM_DURATION, MAX_MEETING_DURATION, MEETING_V2_ENABLED_DEFAULT, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import {
   applyAttachmentScopeOverrides,
+  applyMeetingAttachmentChanges,
   canScopeAttachmentToOccurrence,
   filterAttachmentsForOccurrence,
   getAttachmentScope,
@@ -340,7 +341,10 @@ export class MeetingJoinComponent implements OnInit {
       ? this.pastMeetingAttachments()
       : filterAttachmentsForOccurrence(
           // Scope changes saved in this session are overlaid because a refetch can still return the old scope while the query service catches up.
-          applyAttachmentScopeOverrides(this.attachments(), this.meetingService.attachmentScopeOverrides()),
+          applyAttachmentScopeOverrides(
+            applyMeetingAttachmentChanges(this.attachments(), this.meetingService.attachmentChanges().get(this.meeting()?.id ?? '')),
+            this.meetingService.attachmentScopeOverrides()
+          ),
           this.currentOccurrence()?.occurrence_id
         )
   );
