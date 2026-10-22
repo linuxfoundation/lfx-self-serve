@@ -626,8 +626,10 @@ export class AiService {
 
     // Same three guards the campaign brief path uses, from the same helper: the body read cannot
     // throw over the status it is reporting, the body cannot bury the log line, and the key cannot
-    // ride out in it — this message reaches logger.error in three of the four callers, and
-    // `AI_API_KEY` travels in the Authorization header the proxy is free to echo back.
+    // ride out in it. Every caller puts this message in a log: `generateMeetingAgenda` and
+    // `generateNewsletter` pass it to logger.error directly, and `extractBriefActionItems` and
+    // `reconcileAttendees` fold it into the message their own caller logs at WARN. `AI_API_KEY`
+    // travels in the Authorization header the proxy is free to echo back.
     if (!response.ok) {
       throw new AiProxyError(`AI request failed: ${response.status} ${response.statusText}`, await aiErrorDetail(response, this.aiKey));
     }
