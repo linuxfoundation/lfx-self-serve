@@ -27,6 +27,8 @@ export const MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT = 256;
 export const MKTG_STARTED_RUN_CACHE_STABLE_MS = 2000;
 /** Base64 encoding this UTF-8 snapshot stays below the total object-metadata budget. */
 export const MKTG_STARTED_RUN_FAILURE_BYTES = 768;
+/** ASCII turn-id ledger; never evict accepted ACKs to make room for another turn. */
+export const MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES = 384;
 /** Schema tag stamped on every MktgStartedRunRecord in the private document store. */
 export const MKTG_STARTED_RUN_SCHEMA = 'mktg-started-run/v1';
 /** Automatic progress reads back off on availability failures, not on human questions pauses. */

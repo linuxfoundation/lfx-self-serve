@@ -19,6 +19,7 @@ import {
   MKTG_STARTED_RUN_TERMINAL_CACHE_LIMIT,
   MKTG_STARTED_RUN_CACHE_STABLE_MS,
   MKTG_STARTED_RUN_FAILURE_BYTES,
+  MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES,
   BRAND_KIT_INTAKE,
   FOUNDATION_MESSAGE_INTAKE,
   BOILERPLATES_INTAKE,
@@ -105,7 +106,11 @@ export class MktgDocumentRunService {
     return this.start(req, project, type.agentKey, sessionId, priorVersion, turnId);
   }
 
-  /** Opaque turn ids dedupe ACKs. Concurrent same-session ACK ordering is a documented caller limitation. */
+  /**
+   * Retain accepted turn IDs across sequential replay; a full ledger rejects a new turn, never evicts history.
+   * Concurrent ACKs and state transitions still use HEAD/check/PUT, not cross-writer CAS. A stale update can
+   * replace a completed receipt; conditional metadata transitions are a separately tracked storage follow-up.
+   */
   public async start(
     req: Request,
     project: string,
@@ -122,6 +127,12 @@ export class MktgDocumentRunService {
     const existing = await this.read(req, project, key);
     if (existing && (existing.record.agentKey !== agentKey || existing.record.sessionId !== sessionId)) {
       throw ServiceValidationError.forField('run', 'Stored session does not match this run.');
+    }
+    const accepted = existing?.record.acceptedAttemptIds ?? [];
+    if (accepted.includes(attemptId)) return runId;
+    const history = [...accepted, attemptId].join(',');
+    if (history.length > MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES) {
+      throw ServiceValidationError.forField('run', 'This session has reached its tracked turn limit. Start a new session.');
     }
     const now = new Date().toISOString();
     const record: MktgStartedRunRecord = {
@@ -148,19 +159,23 @@ export class MktgDocumentRunService {
         'started-at': existing?.record.startedAt ?? now,
         'prior-version': String(priorVersion),
         'attempt-id': attemptId,
+        'attempt-history': history,
         'retry-at': now,
         ...(priorRevision && { 'prior-revision-id': priorRevision }),
       },
-      (metadata) => (metadata['attempt-id'] ?? 'initial') !== attemptId
+      (metadata) => {
+        const current = this.acceptedAttempts(metadata, metadata['attempt-id'] ?? 'initial');
+        return !current.includes(attemptId) && [...current, attemptId].join(',').length <= MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES;
+      }
     );
-    if (!written && !existing) {
+    if (!written) {
       const winner = await this.read(req, project, key);
       if (
         !winner ||
         winner.record.agentKey !== agentKey ||
         winner.record.sessionId !== sessionId ||
-        (winner.record.attemptId ?? 'initial') !== attemptId ||
-        winner.record.priorVersion !== priorVersion
+        !winner.record.acceptedAttemptIds?.includes(attemptId) ||
+        ((winner.record.attemptId ?? 'initial') === attemptId && winner.record.priorVersion !== priorVersion)
       ) {
         throw new MicroserviceError('The run could not be recorded.', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE', {
           operation: 'mktg_run_start',
@@ -500,6 +515,7 @@ export class MktgDocumentRunService {
     }
   }
 
+  /** HEAD/check/PUT is not atomic across writers; see the accepted conditional-metadata follow-up beside start. */
   private async mark(
     req: Request,
     stored: MktgStoredStartedRun,
@@ -520,6 +536,7 @@ export class MktgDocumentRunService {
         'started-at': run.startedAt,
         'prior-version': String(run.priorVersion),
         'attempt-id': run.attemptId ?? 'initial',
+        'attempt-history': (run.acceptedAttemptIds ?? [run.attemptId ?? 'initial']).join(','),
         ...(retryAt && { 'retry-at': retryAt }),
         ...(revisionId && { 'revision-id': revisionId }),
         ...(run.priorRevisionId && { 'prior-revision-id': run.priorRevisionId }),
@@ -562,6 +579,14 @@ export class MktgDocumentRunService {
     return this.store.putContentAddressedObject(req, 'marketing-os-artifacts', key, Buffer.from(body), 'application/json; charset=utf-8', 'private', metadata, {
       refreshMetadataWhen,
     });
+  }
+  private acceptedAttempts(metadata: Record<string, string>, attemptId: string): string[] {
+    const history = metadata['attempt-history'] ?? attemptId;
+    const ids = history.split(',');
+    if (history.length > MKTG_STARTED_RUN_ATTEMPT_HISTORY_BYTES || !ids.every(isMktgRunAttemptId) || !ids.includes(attemptId)) {
+      throw ServiceValidationError.forField('run', 'Invalid stored run.');
+    }
+    return ids;
   }
   private async discover(req: Request, project: string, coverage?: MktgDocumentRunCoverage): Promise<ObjectStoreListEntry[]> {
     const prefix = this.prefix(project);
@@ -686,6 +711,7 @@ export class MktgDocumentRunService {
           startedAt,
           priorVersion,
           attemptId,
+          acceptedAttemptIds: this.acceptedAttempts(m, attemptId),
           retryAt: m['retry-at'],
           answeredQuestionsId: m['answered-questions-id'],
           priorRevisionId: m['prior-revision-id'],

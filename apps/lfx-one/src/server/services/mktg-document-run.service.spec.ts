@@ -14,7 +14,17 @@ import {
 } from '@lfx-one/shared/constants';
 
 const objects = vi.hoisted(() => new Map<string, { body: string; metadata: Record<string, string>; lastModified: Date }>());
-const flows = vi.hoisted(() => ({ result: vi.fn(), project: vi.fn(), ensure: vi.fn(), readiness: vi.fn(), get: vi.fn(), head: vi.fn(), active: 0, max: 0 }));
+const flows = vi.hoisted(() => ({
+  result: vi.fn(),
+  project: vi.fn(),
+  ensure: vi.fn(),
+  readiness: vi.fn(),
+  get: vi.fn(),
+  head: vi.fn(),
+  beforePut: vi.fn(),
+  active: 0,
+  max: 0,
+}));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
@@ -90,6 +100,8 @@ vi.mock('./object-store.service', () => ({
       if (old && !options.refreshMetadataWhen?.(old.metadata)) {
         return false;
       }
+      // Model the accepted store contract: the predicate HEAD and unconditional PUT can overlap.
+      if (old) await flows.beforePut(metadata);
       objects.set(key, { body: body.toString('utf8'), metadata, lastModified: new Date() });
       return true;
     }
@@ -135,7 +147,8 @@ describe('MktgDocumentRunService core', () => {
     vi.setSystemTime('2026-10-19T12:00:00Z');
     vi.clearAllMocks();
     objects.clear();
-    flows.result.mockResolvedValue({ status: 'pending' });
+    flows.beforePut.mockReset();
+    flows.result.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
     flows.ensure.mockResolvedValue(undefined);
     flows.readiness.mockResolvedValue(true);
@@ -171,6 +184,44 @@ describe('MktgDocumentRunService core', () => {
     expect(stored().metadata['state']).toBe('completed');
     await service.start(req, project, types[0].agentKey, session);
     expect(stored().metadata['state']).toBe('completed');
+  });
+
+  it.each([false, true])('ignores A after B, including completed B=%s, without changing its receipt', async (completed) => {
+    await service.start(req, project, types[0].agentKey, session, 0, 'turn-A');
+    await service.start(req, project, types[0].agentKey, session, 7, 'turn-B');
+    if (completed) {
+      flows.result.mockResolvedValue(ready());
+      await service.recordResult(req, session, ready(), project);
+    }
+    const before = stored();
+    expect(before.metadata).toMatchObject({ 'attempt-id': 'turn-B', 'attempt-history': 'turn-A,turn-B', 'prior-version': '7' });
+    expect(before.metadata['state']).toBe(completed ? 'completed' : 'writing');
+    if (completed) expect(before.metadata['revision-id']).toBe(location().revision_id);
+    expect(await service.start(req, project, types[0].agentKey, session, 0, 'turn-A')).toBe(hash(session));
+    expect(stored()).toBe(before);
+  });
+
+  it('seeds legacy ACK history from the current attempt without losing it on renewal', async () => {
+    await service.start(req, project, types[0].agentKey, session, 0, 'legacy-turn');
+    delete stored().metadata['attempt-history'];
+    await service.start(req, project, types[0].agentKey, session, 0, 'new-turn');
+    const before = stored();
+    expect(before.metadata['attempt-history']).toBe('legacy-turn,new-turn');
+    await service.start(req, project, types[0].agentKey, session, 0, 'legacy-turn');
+    expect(stored()).toBe(before);
+  });
+
+  it('rejects ledger overflow instead of evicting an accepted ACK', async () => {
+    const first = 'a'.repeat(128);
+    await service.start(req, project, types[0].agentKey, session, 0, first);
+    await service.start(req, project, types[0].agentKey, session, 0, 'b'.repeat(128));
+    const before = stored();
+    await expect(service.start(req, project, types[0].agentKey, session, 0, 'c'.repeat(128))).rejects.toMatchObject({
+      code: 'VALIDATION_ERROR',
+      validationErrors: [{ field: 'run', message: 'This session has reached its tracked turn limit. Start a new session.', code: 'FIELD_VALIDATION_ERROR' }],
+    });
+    await service.start(req, project, types[0].agentKey, session, 0, first);
+    expect(stored()).toBe(before);
   });
 
   it('does not adopt a competing ACK recorded for a different agent', async () => {

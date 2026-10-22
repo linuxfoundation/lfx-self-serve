@@ -63,6 +63,8 @@ export interface MktgStartedRunRecord {
   priorVersion: number;
   /** Delivered turn identity; a duplicate ACK cannot reopen that attempt. */
   attemptId?: string;
+  /** Private bounded ACK ledger; overflow rejects a new turn rather than forgetting accepted ones. */
+  acceptedAttemptIds?: string[];
   state: MktgStoredDocumentRunState;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
