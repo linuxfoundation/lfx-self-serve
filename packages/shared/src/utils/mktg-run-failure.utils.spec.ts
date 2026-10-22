@@ -3,7 +3,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MKTG_RUN_FAILURE_REASON } from '../constants/mktg-run.constants';
+import { MKTG_RUN_FAILURE_REASON, MKTG_SESSION_EVENTS_TRUNCATED, MKTG_SESSION_TURN_STARTED } from '../constants/mktg-run.constants';
 import { mktgRunFailureFromPayloads, settledMktgSessionError } from './mktg-run-failure.utils';
 
 const now = Date.parse('2026-10-21T12:00:00Z');
@@ -42,12 +42,37 @@ describe('shared Guild terminal failure detection', () => {
     const injected = JSON.stringify({ type: 'runtime_error', created_at: new Date(firstAt - 1000).toISOString() });
     expect(mktgRunFailureFromPayloads([injected, ...payloads], now)).toBeNull();
   });
-  it.each(['llm_start', 'llm_done', 'runtime_start', 'runtime_done', 'tool_done', 'agent_notification_progress'])(
-    'treats %s after the teardown window as liveness',
+  it.each(['status_update', 'heartbeat', 'session_closing', 'closing', 'stopping', 'runtime_done', 'agent_notification_progress'])(
+    'does not treat passive %s as recovery even after the former teardown window',
     (type) => {
-      expect(mktgRunFailureFromPayloads([event('runtime_error'), event(type, {}, 54_000)], now)).toBeNull();
+      expect(mktgRunFailureFromPayloads([event('runtime_error'), event(type, {}, 59_000)], now)?.eventType).toBe('runtime_error');
+      expect(mktgRunFailureFromPayloads([event('runtime_error'), event(type, {}, 54_000)], now)?.eventType).toBe('runtime_error');
     }
   );
+  it('does not attribute status text to the agent or tool-task errors to the session', () => {
+    expect(
+      mktgRunFailureFromPayloads([event('runtime_error'), event('status_update', { type: 'text', data: 'Session closing.' }, 59_000)], now)?.eventType
+    ).toBe('runtime_error');
+    const toolError = JSON.stringify({
+      type: 'runtime_error',
+      created_at: new Date(now - 60_000).toISOString(),
+      task: { entity_type: 'EntTaskTool' },
+      content: { type: 'text', data: 'Tool failed.' },
+    });
+    expect(mktgRunFailureFromPayloads([toolError], now)).toBeNull();
+    const activeAgent = JSON.stringify({
+      type: 'runtime_start',
+      created_at: new Date(now - 61_000).toISOString(),
+      task: { entity_type: 'EntTaskAgent', id: 'synthetic-root' },
+    });
+    expect(mktgRunFailureFromPayloads([activeAgent, toolError], now)).toBeNull();
+    expect(mktgRunFailureFromPayloads([event('runtime_error'), toolError], now)?.eventType).toBe('runtime_error');
+  });
+  it('keeps main queued-turn boundaries and capped-page uncertainty without calling them recovery', () => {
+    expect(mktgRunFailureFromPayloads([event('runtime_error'), event(MKTG_SESSION_TURN_STARTED)], now)).toBeNull();
+    expect(mktgRunFailureFromPayloads([event('runtime_error'), event(MKTG_SESSION_EVENTS_TRUNCATED)], now)).toBeNull();
+    expect(mktgRunFailureFromPayloads([event(MKTG_SESSION_TURN_STARTED), event('runtime_error')], now)?.eventType).toBe('runtime_error');
+  });
   it.each([
     event('agent_notification_message', 'QUESTIONS (synthetic gap)', 59_000),
     event('llm_done', { content: [{ type: 'text', text: 'QUESTIONS (synthetic gap)' }] }, 59_000),

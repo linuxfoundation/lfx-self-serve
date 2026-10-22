@@ -59,6 +59,19 @@ describe('shared Guild outcome service (synthetic event replay, no session metad
     const completed = [{ type: 'runtime_start', task }, error, { type: 'runtime_done', task }].map((event) => JSON.stringify(event));
     expect(getMktgSessionOutcome(completed)).toEqual({ ended: true, replyText: '' });
   });
+  it.each(['status_update', 'session_closing'])('does not let passive %s hide a settled session error', async (type) => {
+    fetchMock.mockResolvedValueOnce(ok([error, { type, created_at: new Date(Date.parse(old) + 1000).toISOString() }]));
+    expect(await new GuildService().resolveRunOutcome(request(), 'session', { status: 'pending' })).toMatchObject({ status: 'failed' });
+  });
+  it('does not override a pending result for a tool-task runtime error', async () => {
+    fetchMock.mockResolvedValueOnce(
+      ok([
+        { type: 'runtime_start', created_at: new Date(Date.parse(old) - 1000).toISOString(), task: { entity_type: 'EntTaskAgent', id: 'synthetic-root' } },
+        { ...error, task: { entity_type: 'EntTaskTool', id: 'synthetic-tool' } },
+      ])
+    );
+    expect(await new GuildService().resolveRunOutcome(request(), 'session', { status: 'pending' })).toEqual({ status: 'pending' });
+  });
   it('keeps a recovering/healthy session pending and never calls session metadata', async () => {
     fetchMock.mockResolvedValueOnce(ok([error, { type: 'llm_start', created_at: new Date(Date.parse(old) + 1000).toISOString() }]));
     expect(await new GuildService().resolveRunOutcome(request(), 'session', { status: 'pending' })).toEqual({ status: 'pending' });

@@ -44,10 +44,11 @@ The frontend retains a TTL-bounded pending capability using the shared one-off v
 The shared [`GuildService.resolveRunOutcome` step](./mktg-document-revisions.md#run-outcomes)
 runs before controller logging and response. It reuses raw events and preserves
 healthy/recovering sessions. A non-tool error must settle for 30 seconds without
-recovery. Agent text (including progress/questions) and new work recover immediately;
-only completion events within five seconds can count as teardown. Those timings
-come from the Slides export contract; no recorded failed stream verifies the
-teardown assumption yet. No unverified session-status probe runs. Lookups are
+recovery. Only explicit new-work events or trusted agent text (including progress
+and questions) recover immediately; passive status/heartbeat/completion events do
+not. Tool-task errors are not session errors. The 30-second settle period comes
+from the Slides contract; no recorded failed stream is available yet. No
+unverified session-status probe runs. Lookups are
 best-effort; ready/refused and an already-returned failed status are unchanged.
 Both provider failure metadata and idle-runtime failureText use the client layer's
 same stop/Retry path; raw failureText is not rendered as a document or provider reason.

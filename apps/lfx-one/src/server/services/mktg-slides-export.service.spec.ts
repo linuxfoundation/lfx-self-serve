@@ -833,7 +833,11 @@ describe('MktgSlidesExportService', () => {
 
       guildMocks.getRawEventPayloads.mockResolvedValue([
         drop(minuteAgo.toISOString()),
-        JSON.stringify({ type: 'agent_notification_progress', created_at: new Date(minuteAgo.getTime() + 20_000).toISOString(), content: {} }),
+        JSON.stringify({
+          type: 'agent_notification_progress',
+          created_at: new Date(minuteAgo.getTime() + 20_000).toISOString(),
+          content: { type: 'text', data: 'Reading another source.' },
+        }),
       ]);
       expect(await service.getResult(req, 'session-1', context)).toEqual({ status: 'pending' });
 

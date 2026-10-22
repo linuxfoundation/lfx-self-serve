@@ -105,7 +105,7 @@ export const MKTG_SLIDES_EXPORT_LOGO_SIDE_PX = 1200;
  * nothing came after it beyond the run's own teardown and it is this old.
  */
 export const MKTG_SLIDES_EXPORT_ERROR_SETTLE_MS = MKTG_RUN_ERROR_SETTLE_MS;
-/** Completion events this soon after an error may be teardown; new work recovers immediately. */
+/** Compatibility alias; the shared reader now requires explicit work or agent text for recovery. */
 export const MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS = MKTG_RUN_ERROR_TEARDOWN_MS;
 
 /**

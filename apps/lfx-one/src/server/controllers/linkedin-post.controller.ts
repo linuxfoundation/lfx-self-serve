@@ -14,8 +14,8 @@ import { isLinkedinProfile, isLinkedinSetup, normalizeLinkedinShareAnswers, norm
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, ServiceValidationError } from '../errors';
-import { LinkedinPostService } from '../services/linkedin-post.service';
 import { GuildService } from '../services/guild.service';
+import { LinkedinPostService } from '../services/linkedin-post.service';
 import { LinkedinProfileService } from '../services/linkedin-profile.service';
 import { logger } from '../services/logger.service';
 import { MktgDocumentStoreService } from '../services/mktg-document-store.service';

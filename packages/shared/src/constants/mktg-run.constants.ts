@@ -700,7 +700,7 @@ export const LINKEDIN_POST_INTAKE: MktgAgentIntake = {
 
 /** A last runtime error must settle before it is considered terminal. */
 export const MKTG_RUN_ERROR_SETTLE_MS = 30_000;
-/** Completion events inside this window may be teardown; new work recovers immediately. */
+/** Legacy exported timing retained for compatibility; passive events never prove recovery. */
 export const MKTG_RUN_ERROR_TEARDOWN_MS = 5_000;
 
 /** Safe failure copy: raw provider errors can contain private URLs or credentials. */

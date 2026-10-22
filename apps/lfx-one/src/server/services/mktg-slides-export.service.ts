@@ -9,7 +9,6 @@ import {
   MKTG_LIVING_DOCUMENT_ID,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
   MKTG_SLIDES_EXPORT_CONTRACT_ID,
-  MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS,
   MKTG_SLIDES_EXPORT_GUILD_HANDLE,
   MKTG_SLIDES_EXPORT_LOGO_CONTENT_TYPE,
   MKTG_SLIDES_EXPORT_LOGO_KEY_PREFIX,
@@ -602,7 +601,7 @@ export class MktgSlidesExportService {
    * the next poll looks again.
    */
   private readErrorText(payloads: string[], now: number = Date.now()): string | null {
-    return settledMktgSessionError(payloads, now, MKTG_SLIDES_EXPORT_ERROR_TEARDOWN_MS)?.text ?? null;
+    return settledMktgSessionError(payloads, now)?.text ?? null;
   }
 
   private buildRecord(context: MktgSlidesExportResultContext, summary: MktgRevisionSummary, envelope: MktgSlidesExportEnvelope): MktgSlidesExportRecord {

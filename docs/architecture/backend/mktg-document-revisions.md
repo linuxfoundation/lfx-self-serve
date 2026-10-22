@@ -15,16 +15,18 @@ validated ready/refused and already-returned failed results are unchanged. The r
 The existing idle-runtime completion path uses failed/failureText for a final plain
 reply without an asset. Provider error events add failed/failure when no output
 arrives; both fields are additive, and terminal outcomes are never replaced.
-A non-tool error must settle for 30 seconds without recovery. Agent text, including
-progress text and questions, and new LLM/runtime/tool work recover immediately.
-Only completion/lifecycle-end events inside five seconds can count as teardown.
-These timings are inherited from the Slides export contract: no recorded failed
-stream verifies that teardown assumption yet. The recorded healthy stream supports
-immediate recovery on new work and long silent model turns, not failure teardown.
-Slides deliberately shares this rule: new work or text inside five seconds now
-recovers; its undated-error policy is unchanged. No session metadata probe is used
-because its status vocabulary is unverified. Lookup failures log a warning and
-preserve the original outcome.
+An error outside a tool task must settle for 30 seconds without recovery. Only
+explicit new work (`llm_start`, `runtime_start`, `llm_done`, `tool_*`) or trusted
+agent text, including progress/questions, proves recovery. Status, heartbeat,
+unknown and lifecycle/completion events leave the error standing at any age.
+Tool-task errors are excluded using the same `isMktgToolTaskEvent` metadata predicate
+as Member 360. Queued-turn boundaries discard prior-turn errors; capped pages
+remain inconclusive rather than proving a terminal outcome.
+Slides shares this strict recovery rule too. Its undated-error policy is unchanged;
+the five-second constant remains exported for compatibility, not recovery evidence.
+The recorded healthy stream supports immediate new-work recovery and long silent
+model turns; a recorded failed stream is still unavailable. No unverified session
+metadata probe is used. Lookup failures log a warning and preserve the result.
 Generic browser history retains versions/answers/Q&A on failure, marks session reuse
 invalid, and retries the exact failed request including feedback on a new session.
 
