@@ -263,11 +263,6 @@ export default {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
-        // An indeterminate progress bar sliding across its track (Marketing OS run loading).
-        indeterminate: {
-          '0%': { transform: 'translateX(-100%)' },
-          '100%': { transform: 'translateX(250%)' },
-        },
         'fade-in-up': {
           '0%': {
             opacity: '0',
@@ -283,7 +278,6 @@ export default {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
         // A new row or card settling in (Marketing OS run feed and questions stepper); used behind `motion-safe:`.
         'step-in': 'step-in 180ms ease-out both',
-        indeterminate: 'indeterminate 1.6s ease-in-out infinite',
       },
       fontWeight: {
         normal: 400,

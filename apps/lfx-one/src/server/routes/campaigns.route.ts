@@ -8,7 +8,7 @@ import { AudienceBuilderController } from '../controllers/audience-builder.contr
 import { CampaignController } from '../controllers/campaign.controller';
 import { CampaignOptimizeController } from '../controllers/campaign-optimize.controller';
 import { MicroserviceError } from '../errors';
-import { requireCampaignManager } from '../middleware/require-marketing-access.middleware';
+import { requireCampaignManager, requireGoogleMonitorAccess } from '../middleware/require-marketing-access.middleware';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -47,6 +47,10 @@ const campaignController = new CampaignController();
 const audienceBuilderController = new AudienceBuilderController();
 const optimizeController = new CampaignOptimizeController();
 
+// Google Ads account monitor: requires `?project=`, but reads the shared account, not that project's
+// data. Its route-specific guard admits ROOT callers without granting access to project writes.
+router.get('/monitor', requireGoogleMonitorAccess, (req, res, next) => campaignController.getMonitorData(req, res, next));
+
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
 // server flag is off — this is an intentional tightening of the prior (fully open) behavior, not
@@ -68,7 +72,9 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // campaign-service's OWN metrics and action items for one brief. Distinct from `/monitor` and its
 // per-platform siblings below, which read the ad platforms directly and derive action items from
 // four separate rule engines in this BFF. Brief-scoped where those are account-scoped, so it is
-// not a drop-in replacement for them; nothing is cut over to it yet.
+// not a drop-in replacement for them; nothing is cut over to it yet. Because the Google, Meta,
+// Reddit and X accounts are shared by every foundation, those account monitors (and LinkedIn's
+// legacy arm) are root-only in the controller (lfx-self-serve-ops#54).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 // An image for the brief, stored by campaign-service and named by `redditConfig.imageAssetId`
@@ -87,7 +93,6 @@ router.get('/jobs/:jobId', (req, res, next) => campaignController.getJobStatus(r
 router.get('/hubspot/emails', (req, res, next) => campaignController.searchHubSpotEmails(req, res, next));
 router.get('/hubspot/utm', (req, res, next) => campaignController.lookupHubSpotUtm(req, res, next));
 router.post('/hubspot/utm/create', (req, res, next) => campaignController.createHubSpotUtm(req, res, next));
-router.get('/monitor', (req, res, next) => campaignController.getMonitorData(req, res, next));
 // Which account each LinkedIn/Reddit/Meta/Microsoft/X Monitor panel offers: the project's OWN
 // connection's (#2519). `viaCampaignService: false` while LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR is off.
 router.get('/monitor/connections', (req, res, next) => campaignController.getMonitorConnections(req, res, next));

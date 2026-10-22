@@ -776,6 +776,33 @@ describe('computeVoteRowParticipation', () => {
     expect(participation.label).not.toMatch(/%/);
   });
 
+  // GH-4078: a just-opened vote's index row can still report a zero/missing electorate.
+  it.each([0, undefined])('shows a just-opened vote with a %s electorate as counting, never "No one invited"', (invited) => {
+    const participation = computeVoteRowParticipation(rowVote({ num_response_received: undefined, total_voting_request_invitations: invited }), true);
+
+    expect(participation).toMatchObject({
+      state: VoteRowParticipationState.COUNTING,
+      responses: null,
+      invited: null,
+      percent: null,
+      label: 'Counting invitations…',
+      ariaLabel: null,
+    });
+  });
+
+  it('shows the real participation of a just-opened vote once its electorate is reported', () => {
+    expect(computeVoteRowParticipation(rowVote({ num_response_received: 0, total_voting_request_invitations: 4 }), true)).toMatchObject({
+      state: VoteRowParticipationState.PROGRESS,
+      label: '0 of 4 responded · 0%',
+    });
+  });
+
+  it('keeps a just-created draft as not open while it awaits its count', () => {
+    expect(computeVoteRowParticipation(rowVote({ status: PollStatus.DISABLED, total_voting_request_invitations: 0 }), true).state).toBe(
+      VoteRowParticipationState.NOT_OPEN
+    );
+  });
+
   it('treats zero responses with a known electorate as a confirmed 0%', () => {
     expect(computeVoteRowParticipation(rowVote({ num_response_received: 0 }))).toMatchObject({
       state: VoteRowParticipationState.PROGRESS,
@@ -817,7 +844,7 @@ describe('computeVoteRowParticipation', () => {
       rowVote({ total_voting_request_invitations: 0 }),
     ];
 
-    for (const participation of rows.map(computeVoteRowParticipation)) {
+    for (const participation of rows.map((vote) => computeVoteRowParticipation(vote))) {
       const text = [participation.label, participation.secondaryLabel, participation.ariaLabel].join(' ');
       expect(text).not.toMatch(/quorum|approv|pass|win/i);
     }

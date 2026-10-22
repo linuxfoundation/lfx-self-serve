@@ -147,6 +147,8 @@ import {
   MONITOR_CUTOVER_LEGACY_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_MESSAGE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+  MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE,
   NEGATIVE_KEYWORD_TEXT_PATTERN,
   REDDIT_ADS_MONITOR_ACCOUNT_ID_PATTERN,
   TOGGLEABLE_CAMPAIGN_PLATFORMS,
@@ -167,7 +169,7 @@ import {
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
-import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { CampaignMetricsService, LinkedInMetricsService, MetaMetricsService, RedditMetricsService } from '../services/campaign-metrics.service';
 import { validateScrapeUrl } from '../helpers/url-validation';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
@@ -195,6 +197,7 @@ import {
   isCampaignServiceNotFound,
 } from '../services/campaign-service.service';
 import { logger } from '../services/logger.service';
+import { personaDetectionService } from '../utils/persona-helper';
 import { addShutdownHook, isShuttingDown } from '../utils/shutdown';
 
 /** Platforms that support the campaign status toggle endpoint. */
@@ -2111,7 +2114,10 @@ export class CampaignController {
    *
    * The two are NOT interchangeable. The monitor routes are ACCOUNT-scoped — every campaign in
    * the ad account — while this is BRIEF-scoped. A consumer swapping one for the other narrows
-   * what an operator sees, which is why `brief` is required rather than defaulted.
+   * what an operator sees, which is why `brief` is required rather than defaulted. Because the
+   * Google Ads, Meta, Reddit and X accounts (and LinkedIn's legacy allowlist account) are shared by
+   * every foundation, those account monitors are root-only on every arm — see
+   * `requireSharedAccountMonitorAccess` (lfx-self-serve-ops#54).
    *
    * `window` is optional and is NOT defaulted here, so campaign-service can resolve the default
    * PER ROW, PER PLATFORM: `defaultMetricsWindowFor` (`internal/service/brief.go`) runs inside
@@ -2333,9 +2339,21 @@ export class CampaignController {
     }
   }
 
+  /**
+   * Google Ads account monitor, read account-wide through the BFF's own credentials. That customer
+   * is shared by every foundation, so the read is root-only (lfx-self-serve-ops#54); the project is
+   * still required, so a request naming none is a 400 for every caller.
+   */
   public async getMonitorData(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
-    const startTime = logger.startOperation(req, 'campaign_monitor', { days });
+    const projectSlug = this.requireMonitorProject(req, next, 'campaign_monitor');
+    if (projectSlug === null) {
+      return;
+    }
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_monitor', 'Google Ads'))) {
+      return;
+    }
+    const startTime = logger.startOperation(req, 'campaign_monitor', { days, projectSlug });
 
     try {
       const data = await this.metricsService.getMonitorData(req, days);
@@ -2351,13 +2369,12 @@ export class CampaignController {
    *
    * Behind `CampaignServiceInsights` this reads from campaign-service, scoped to the
    * project's OWN campaigns; with the flag off it keeps the legacy account-wide Google Ads
-   * query. The cutover therefore makes the table SMALLER on a shared ad account, because the
-   * rows it drops belong to other foundations — see the flag's own docs.
+   * query, restricted to ROOT callers because it cannot isolate one foundation's data.
    *
    * The project is REQUIRED on the campaign-service arm and not defaulted: campaign-service
    * scopes by project, and `/foundation/campaigns` is reachable by an ED of any foundation,
    * so a fallback constant would report one foundation's keywords to another. The legacy arm
-   * ignores the project entirely, which is precisely the leak being closed.
+   * ignores the project entirely and therefore requires the shared-account ROOT gate.
    */
   public async getKeywords(req: Request, res: Response, next: NextFunction): Promise<void> {
     const days = Number(req.query['days']) || 14;
@@ -2402,6 +2419,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_keywords', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getKeywords(req, days);
       logger.success(req, 'campaign_keywords', startTime, { viaCampaignService: false });
       res.json(data);
@@ -2642,6 +2662,11 @@ export class CampaignController {
     if (this.refuseCutoverMismatch(req, next, 'linkedin_monitor')) {
       return;
     }
+    // The legacy allowlist account is LF's own, shared by every foundation; the connection arm above
+    // reads the project's own account and stays open.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'linkedin_monitor', 'LinkedIn Ads'))) {
+      return;
+    }
 
     const account = config.accounts.find((a) => a.accountId === rawKey) ?? config.accounts[0];
     if (!account) {
@@ -2671,7 +2696,7 @@ export class CampaignController {
   /**
    * Age/gender/device breakdowns for the campaigns table.
    *
-   * Same flag, same project requirement and same narrowing as `getKeywords` above.
+   * Same flag, project requirement and legacy shared-account ROOT gate as `getKeywords` above.
    *
    * Campaign-service fails the whole read if any one breakdown fails rather than returning
    * the two that loaded, so there is no partial-success arm to handle here: an error is an
@@ -2708,6 +2733,9 @@ export class CampaignController {
         return;
       }
 
+      if (!(await this.requireSharedAccountMonitorAccess(req, next, 'campaign_audience', 'Google Ads'))) {
+        return;
+      }
       const data = await this.metricsService.getAudience(req, days);
       logger.success(req, 'campaign_audience', startTime, { viaCampaignService: false });
       res.json(data);
@@ -2856,6 +2884,11 @@ export class CampaignController {
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
 
+    // Reddit's account is shared by every foundation, so both arms below are root-only.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'reddit_monitor', 'Reddit Ads'))) {
+      return;
+    }
+
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
       // A legacy picker's account, picked on a pod with the flag OFF, is refused — see the LinkedIn route.
@@ -2919,6 +2952,11 @@ export class CampaignController {
     const parsedDays = /^\d+$/.test(rawDays) ? Number(rawDays) : NaN;
     const days = Number.isFinite(parsedDays) ? Math.min(Math.max(parsedDays, 7), 90) : 30;
     const rawKey = String(req.query['accountKey'] ?? '');
+
+    // Meta's account is shared by every foundation, so both arms below are root-only.
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'meta_monitor', 'Meta Ads'))) {
+      return;
+    }
 
     // Cutover on: the connection's account, checked by shape — see the LinkedIn route.
     if (isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
@@ -3035,9 +3073,13 @@ export class CampaignController {
   /**
    * X (Twitter) Ads account monitor, from campaign-service only (#2519). The Microsoft route's
    * sibling; additionally a 409 when the account cannot be monitored as it stands, with the
-   * upstream `reason` forwarded as `upstreamCode`.
+   * upstream `reason` forwarded as `upstreamCode`. Unlike Microsoft's, X's account is shared by
+   * every foundation, so the read is root-only — refused before the flag-off 404 too.
    */
   public async getTwitterMonitor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (!(await this.requireSharedAccountMonitorAccess(req, next, 'twitter_monitor', 'X Ads'))) {
+      return;
+    }
     await this.serveReportBackedMonitor(req, res, next, {
       operation: 'twitter_monitor',
       platformLabel: 'X Ads',
@@ -3954,6 +3996,34 @@ export class CampaignController {
       return null;
     }
     return accountId;
+  }
+
+  /**
+   * Whether the caller may read shared-account monitor data or legacy Google insights, or `false`
+   * after reporting a 403 `MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE` (lfx-self-serve-ops#54).
+   *
+   * `requireCampaignManager` authorises the caller for the ONE project it names, but an account
+   * monitor on a shared account (Google Ads, Meta, Reddit, X, and LinkedIn's legacy allowlist account)
+   * returns every foundation's campaigns. Only a cross-foundation principal may see that: a ROOT
+   * writer, or a holder of ROOT `global_marketing_ops`. LF staff membership is not enough. Both checks
+   * are request-cached and fail closed, and the refusal runs before any upstream call. A ROOT writer
+   * returns immediately without a second ROOT marketing lookup.
+   */
+  private async requireSharedAccountMonitorAccess(req: Request, next: NextFunction, operation: string, platformLabel: string): Promise<boolean> {
+    if ((await personaDetectionService.checkRootWriter(req)) || (await personaDetectionService.checkRootCampaignManager(req))) {
+      return true;
+    }
+    // `apiErrorHandler` logs the 403 itself; this only names the platform for tracing.
+    logger.debug(req, operation, 'Refusing a shared-account monitor read for a non-root caller', { platform: platformLabel });
+    next(
+      new AuthorizationError(MONITOR_SHARED_ACCOUNT_RESTRICTED_MESSAGE, {
+        operation,
+        service: 'campaign_controller',
+        path: req.path,
+        code: MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
+      })
+    );
+    return false;
   }
 
   /**
