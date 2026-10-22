@@ -18,13 +18,13 @@ For what a CLA is, and for the project and corporate consoles outside Self Serve
 
 ## Where do I find EasyCLA?
 
-EasyCLA is under **EasyCLA Management** in the Organization lens.
+EasyCLA is in the Organization lens sidebar, just above **Organization Profile**.
 
 1. Sign in to [app.lfx.dev](https://app.lfx.dev).
 2. Switch to the **Organization** lens and select the organization.
-3. Open **EasyCLA Management**, then **EasyCLA**, or go directly to `/org/<organization>/easycla`.
+3. Open **EasyCLA**, or go directly to `/org/<organization>/easycla`.
 
-A CLA Manager who has no other Organization lens role on that organization sees **EasyCLA Management** and nothing else in the sidebar. The rest of the Organization lens stays closed to them.
+A CLA Manager who has no other Organization lens role on that organization sees **EasyCLA** and nothing else in the sidebar. The rest of the Organization lens stays closed to them.
 
 If no organization is selected, the page says **No org selected** and asks you to select one. The detail page says **Select an organization**.
 
